@@ -16,6 +16,19 @@
       "description": "Attachment IDs returned by /attachments.",
       "title": "Attachments"
     },
+    "client_message_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Stable client submission identity.",
+      "title": "Client Message Id"
+    },
     "content": {
       "description": "User supplied input text.",
       "title": "Content",

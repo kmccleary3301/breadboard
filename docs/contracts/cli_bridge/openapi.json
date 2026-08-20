@@ -1,6 +1,1280 @@
 {
   "components": {
     "schemas": {
+      "AuthActionResponse": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "AuthActionResponse",
+        "type": "object"
+      },
+      "AuthCredentialView": {
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "string"
+          },
+          "alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
+          "auth_scheme_id": {
+            "title": "Auth Scheme Id",
+            "type": "string"
+          },
+          "created_at_ms": {
+            "title": "Created At Ms",
+            "type": "integer"
+          },
+          "credential_id": {
+            "title": "Credential Id",
+            "type": "string"
+          },
+          "credential_kind": {
+            "default": "api_key",
+            "title": "Credential Kind",
+            "type": "string"
+          },
+          "expires_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At Ms"
+          },
+          "has_api_key": {
+            "default": false,
+            "title": "Has Api Key",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "provider_id": {
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "secret_version": {
+            "title": "Secret Version",
+            "type": "integer"
+          },
+          "source": {
+            "default": "broker",
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at_ms": {
+            "title": "Updated At Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "account_id",
+          "credential_id",
+          "provider_id",
+          "auth_scheme_id",
+          "label",
+          "status",
+          "secret_version",
+          "created_at_ms",
+          "updated_at_ms"
+        ],
+        "title": "AuthCredentialView",
+        "type": "object"
+      },
+      "AuthLoginSession": {
+        "properties": {
+          "authorization_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization Url"
+          },
+          "created_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At Ms"
+          },
+          "credential": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthCredentialView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "flow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow Id"
+          },
+          "flow_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow Kind"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          },
+          "login_session_id": {
+            "title": "Login Session Id",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "provider_id": {
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirect Uri"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At Ms"
+          },
+          "user_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Code"
+          }
+        },
+        "required": [
+          "login_session_id",
+          "provider_id",
+          "status"
+        ],
+        "title": "AuthLoginSession",
+        "type": "object"
+      },
+      "AuthProviderView": {
+        "properties": {
+          "auth_schemes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Auth Schemes",
+            "type": "array"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "compatible_protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compatible Protocol"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "login_available": {
+            "default": false,
+            "title": "Login Available",
+            "type": "boolean"
+          },
+          "oauth_flows": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Oauth Flows",
+            "type": "array"
+          },
+          "provider_id": {
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "runtime_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Id"
+          }
+        },
+        "required": [
+          "provider_id",
+          "display_name"
+        ],
+        "title": "AuthProviderView",
+        "type": "object"
+      },
+      "BeginAuthLoginRequest": {
+        "properties": {
+          "auth_scheme_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Scheme Id"
+          },
+          "flow": {
+            "default": "browser",
+            "title": "Flow",
+            "type": "string"
+          },
+          "provider_id": {
+            "title": "Provider Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_id"
+        ],
+        "title": "BeginAuthLoginRequest",
+        "type": "object"
+      },
+      "BeginControlDrainRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "control_request_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Control Request Id",
+            "type": "string"
+          },
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "expected_admission_epoch": {
+            "minimum": 0.0,
+            "title": "Expected Admission Epoch",
+            "type": "integer"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "owner_generation": {
+            "minimum": 1.0,
+            "title": "Owner Generation",
+            "type": "integer"
+          },
+          "registration_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Registration Id",
+            "type": "string"
+          },
+          "requester_client_instance_id": {
+            "maxLength": 128,
+            "minLength": 16,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Requester Client Instance Id",
+            "type": "string"
+          },
+          "requester_registration_generation": {
+            "minimum": 1.0,
+            "title": "Requester Registration Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "owner_generation",
+          "control_request_id",
+          "registration_id",
+          "requester_registration_generation",
+          "requester_client_instance_id",
+          "expected_admission_epoch"
+        ],
+        "title": "BeginControlDrainRequest",
+        "type": "object"
+      },
+      "BootstrapChallengeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id"
+        ],
+        "title": "BootstrapChallengeRequest",
+        "type": "object"
+      },
+      "BootstrapChallengeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "challenge": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Challenge",
+            "type": "string"
+          },
+          "challenge_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "expires_at_unix": {
+            "minimum": 0.0,
+            "title": "Expires At Unix",
+            "type": "number"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "bb.engine_bootstrap_challenge.v1",
+            "default": "bb.engine_bootstrap_challenge.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "challenge_id",
+          "challenge",
+          "expires_at_unix"
+        ],
+        "title": "BootstrapChallengeResponse",
+        "type": "object"
+      },
+      "ClientLeaseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_instance_id": {
+            "maxLength": 128,
+            "minLength": 16,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Client Instance Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "registration_generation": {
+            "minimum": 1.0,
+            "title": "Registration Generation",
+            "type": "integer"
+          },
+          "registration_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Registration Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "registration_id",
+          "registration_generation",
+          "client_instance_id"
+        ],
+        "title": "ClientLeaseRequest",
+        "type": "object"
+      },
+      "ClientRegisterRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_instance_id": {
+            "maxLength": 128,
+            "minLength": 16,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Client Instance Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "first_slice_contract_id": {
+            "const": "p30-e4-session-v1",
+            "default": "p30-e4-session-v1",
+            "title": "First Slice Contract Id",
+            "type": "string"
+          },
+          "first_slice_schema_sha256": {
+            "const": "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4",
+            "default": "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4",
+            "title": "First Slice Schema Sha256",
+            "type": "string"
+          },
+          "lifecycle_mode": {
+            "enum": [
+              "local-owned",
+              "local-external",
+              "remote",
+              "off"
+            ],
+            "title": "Lifecycle Mode",
+            "type": "string"
+          },
+          "workspace_id": {
+            "pattern": "^workspace:v1:sha256:[0-9a-f]{64}$",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "client_instance_id",
+          "workspace_id",
+          "lifecycle_mode"
+        ],
+        "title": "ClientRegisterRequest",
+        "type": "object"
+      },
+      "ClientRegistrationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "admission_epoch": {
+            "minimum": 0.0,
+            "title": "Admission Epoch",
+            "type": "integer"
+          },
+          "client_instance_id": {
+            "title": "Client Instance Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "expires_at_unix": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At Unix"
+          },
+          "first_slice_contract_id": {
+            "const": "p30-e4-session-v1",
+            "default": "p30-e4-session-v1",
+            "title": "First Slice Contract Id",
+            "type": "string"
+          },
+          "first_slice_schema_sha256": {
+            "const": "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4",
+            "default": "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4",
+            "title": "First Slice Schema Sha256",
+            "type": "string"
+          },
+          "lease_ttl_seconds": {
+            "const": 30,
+            "default": 30,
+            "title": "Lease Ttl Seconds",
+            "type": "integer"
+          },
+          "lifecycle_mode": {
+            "enum": [
+              "local-owned",
+              "local-external",
+              "remote"
+            ],
+            "title": "Lifecycle Mode",
+            "type": "string"
+          },
+          "registered_at_unix": {
+            "minimum": 0.0,
+            "title": "Registered At Unix",
+            "type": "number"
+          },
+          "registration_generation": {
+            "minimum": 1.0,
+            "title": "Registration Generation",
+            "type": "integer"
+          },
+          "registration_id": {
+            "title": "Registration Id",
+            "type": "string"
+          },
+          "renewal_interval_seconds": {
+            "const": 10,
+            "default": 10,
+            "title": "Renewal Interval Seconds",
+            "type": "integer"
+          },
+          "result": {
+            "enum": [
+              "registered",
+              "renewed",
+              "detached",
+              "already_detached"
+            ],
+            "title": "Result",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "bb.engine_client_registration.v1",
+            "default": "bb.engine_client_registration.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result",
+          "engine_instance_id",
+          "registration_id",
+          "registration_generation",
+          "client_instance_id",
+          "workspace_id",
+          "lifecycle_mode",
+          "registered_at_unix",
+          "admission_epoch"
+        ],
+        "title": "ClientRegistrationResponse",
+        "type": "object"
+      },
+      "CompleteAuthLoginRequest": {
+        "properties": {
+          "account_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Label"
+          },
+          "alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
+          "authorization_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization Code"
+          },
+          "callback_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Callback Url"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          }
+        },
+        "title": "CompleteAuthLoginRequest",
+        "type": "object"
+      },
+      "DrainControlRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "drain_generation": {
+            "minimum": 1.0,
+            "title": "Drain Generation",
+            "type": "integer"
+          },
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "owner_generation": {
+            "minimum": 1.0,
+            "title": "Owner Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "owner_generation",
+          "drain_generation"
+        ],
+        "title": "DrainControlRequest",
+        "type": "object"
+      },
+      "DrainControlResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "admission_epoch": {
+            "minimum": 0.0,
+            "title": "Admission Epoch",
+            "type": "integer"
+          },
+          "control_request_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Control Request Id",
+            "type": "string"
+          },
+          "drain_generation": {
+            "minimum": 1.0,
+            "title": "Drain Generation",
+            "type": "integer"
+          },
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "registrations_open": {
+            "title": "Registrations Open",
+            "type": "boolean"
+          },
+          "result": {
+            "enum": [
+              "draining",
+              "shutdown_started",
+              "rollback_permitted",
+              "hard_signal_decision_pending",
+              "signal_sent",
+              "process_exited",
+              "rolled_back"
+            ],
+            "title": "Result",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "bb.engine_drain_control.v1",
+            "default": "bb.engine_drain_control.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "session_admission_open": {
+            "title": "Session Admission Open",
+            "type": "boolean"
+          },
+          "signal_permitted": {
+            "title": "Signal Permitted",
+            "type": "boolean"
+          },
+          "turn_admission_open": {
+            "title": "Turn Admission Open",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "control_request_id",
+          "result",
+          "drain_generation",
+          "admission_epoch",
+          "session_admission_open",
+          "turn_admission_open",
+          "registrations_open",
+          "signal_permitted"
+        ],
+        "title": "DrainControlResponse",
+        "type": "object"
+      },
+      "EngineArtifactRevision": {
+        "additionalProperties": false,
+        "properties": {
+          "engine_artifact_sha256": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Engine Artifact Sha256",
+            "type": "string"
+          },
+          "served_backend_commit": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Served Backend Commit"
+          },
+          "served_backend_dirty": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Served Backend Dirty"
+          }
+        },
+        "required": [
+          "engine_artifact_sha256"
+        ],
+        "title": "EngineArtifactRevision",
+        "type": "object"
+      },
+      "EngineIdentityReadinessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_revision": {
+            "$ref": "#/components/schemas/EngineArtifactRevision"
+          },
+          "launch": {
+            "$ref": "#/components/schemas/EngineLaunchIdentity"
+          },
+          "liveness": {
+            "$ref": "#/components/schemas/EngineLiveness"
+          },
+          "process": {
+            "$ref": "#/components/schemas/EngineProcessStart"
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/EngineProtocolIdentity"
+          },
+          "schema_version": {
+            "const": "bb.engine_identity.v1",
+            "default": "bb.engine_identity.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "session_contract": {
+            "$ref": "#/components/schemas/EngineSessionContractIdentity"
+          },
+          "session_readiness": {
+            "$ref": "#/components/schemas/EngineSessionReadiness"
+          }
+        },
+        "required": [
+          "liveness",
+          "process",
+          "launch",
+          "artifact_revision",
+          "protocol",
+          "session_contract",
+          "session_readiness"
+        ],
+        "title": "EngineIdentityReadinessResponse",
+        "type": "object"
+      },
+      "EngineLaunchIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "supervisor",
+              "external_unmanaged"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "launch_id",
+          "source"
+        ],
+        "title": "EngineLaunchIdentity",
+        "type": "object"
+      },
+      "EngineLiveness": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "live",
+            "default": "live",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "EngineLiveness",
+        "type": "object"
+      },
+      "EngineProcessStart": {
+        "additionalProperties": false,
+        "properties": {
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "os_process_start_token": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]*$",
+            "title": "Os Process Start Token",
+            "type": "string"
+          },
+          "pid": {
+            "minimum": 1.0,
+            "title": "Pid",
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "started_at_unix": {
+            "minimum": 0.0,
+            "title": "Started At Unix",
+            "type": "number"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "os_process_start_token",
+          "started_at",
+          "started_at_unix",
+          "pid"
+        ],
+        "title": "EngineProcessStart",
+        "type": "object"
+      },
+      "EngineProtocolIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "protocol_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Protocol Version",
+            "type": "string"
+          }
+        },
+        "title": "EngineProtocolIdentity",
+        "type": "object"
+      },
+      "EngineSessionContractIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "compatibility": {
+            "enum": [
+              "compatible",
+              "incompatible"
+            ],
+            "title": "Compatibility",
+            "type": "string"
+          },
+          "contract_id": {
+            "const": "p30-e4-session-v1",
+            "default": "p30-e4-session-v1",
+            "title": "Contract Id",
+            "type": "string"
+          },
+          "schema_sha256": {
+            "const": "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4",
+            "default": "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4",
+            "title": "Schema Sha256",
+            "type": "string"
+          },
+          "sessionReplayContractDigest": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Sessionreplaycontractdigest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionReplayContractDigest",
+          "compatibility"
+        ],
+        "title": "EngineSessionContractIdentity",
+        "type": "object"
+      },
+      "EngineSessionReadiness": {
+        "additionalProperties": false,
+        "properties": {
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "reason": {
+            "enum": [
+              "ready",
+              "session_contract_missing",
+              "session_contract_mismatch"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ready",
+          "reason"
+        ],
+        "title": "EngineSessionReadiness",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "description": "Backward-compatible OpenAPI name for legacy response declarations.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "GracefulControlResultRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "drain_generation": {
+            "minimum": 1.0,
+            "title": "Drain Generation",
+            "type": "integer"
+          },
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "accepted",
+              "definitive_rejection",
+              "timeout",
+              "uncertain"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "owner_generation": {
+            "minimum": 1.0,
+            "title": "Owner Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "owner_generation",
+          "drain_generation",
+          "outcome"
+        ],
+        "title": "GracefulControlResultRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -12,6 +1286,349 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HardSignalCommitRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "authorization_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Authorization Id",
+            "type": "string"
+          },
+          "drain_generation": {
+            "minimum": 1.0,
+            "title": "Drain Generation",
+            "type": "integer"
+          },
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "os_process_start_token": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]*$",
+            "title": "Os Process Start Token",
+            "type": "string"
+          },
+          "owner_generation": {
+            "minimum": 1.0,
+            "title": "Owner Generation",
+            "type": "integer"
+          },
+          "pid": {
+            "minimum": 1.0,
+            "title": "Pid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "owner_generation",
+          "drain_generation",
+          "pid",
+          "os_process_start_token",
+          "authorization_id"
+        ],
+        "title": "HardSignalCommitRequest",
+        "type": "object"
+      },
+      "HardSignalOutcomeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "authorization_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Authorization Id",
+            "type": "string"
+          },
+          "drain_generation": {
+            "minimum": 1.0,
+            "title": "Drain Generation",
+            "type": "integer"
+          },
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "sent",
+              "abandoned",
+              "process_exited"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "owner_generation": {
+            "minimum": 1.0,
+            "title": "Owner Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "owner_generation",
+          "drain_generation",
+          "authorization_id",
+          "outcome"
+        ],
+        "title": "HardSignalOutcomeRequest",
+        "type": "object"
+      },
+      "HardSignalPermitResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "authorization_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Authorization Id",
+            "type": "string"
+          },
+          "drain_generation": {
+            "minimum": 1.0,
+            "title": "Drain Generation",
+            "type": "integer"
+          },
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "expires_at_unix": {
+            "minimum": 0.0,
+            "title": "Expires At Unix",
+            "type": "number"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "owner_generation": {
+            "minimum": 1.0,
+            "title": "Owner Generation",
+            "type": "integer"
+          },
+          "result": {
+            "const": "signal_permitted",
+            "default": "signal_permitted",
+            "title": "Result",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "bb.engine_hard_signal_permit.v1",
+            "default": "bb.engine_hard_signal_permit.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "signal_permitted": {
+            "const": true,
+            "default": true,
+            "title": "Signal Permitted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "owner_generation",
+          "drain_generation",
+          "authorization_id",
+          "expires_at_unix"
+        ],
+        "title": "HardSignalPermitResponse",
+        "type": "object"
+      },
+      "HardSignalPreparationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "authorization_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Authorization Id",
+            "type": "string"
+          },
+          "drain_generation": {
+            "minimum": 1.0,
+            "title": "Drain Generation",
+            "type": "integer"
+          },
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "expires_at_unix": {
+            "minimum": 0.0,
+            "title": "Expires At Unix",
+            "type": "number"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "owner_generation": {
+            "minimum": 1.0,
+            "title": "Owner Generation",
+            "type": "integer"
+          },
+          "result": {
+            "const": "prepared",
+            "default": "prepared",
+            "title": "Result",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "bb.engine_hard_signal_preparation.v1",
+            "default": "bb.engine_hard_signal_preparation.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "signal_permitted": {
+            "const": false,
+            "default": false,
+            "title": "Signal Permitted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "owner_generation",
+          "drain_generation",
+          "authorization_id",
+          "expires_at_unix"
+        ],
+        "title": "HardSignalPreparationResponse",
+        "type": "object"
+      },
+      "HardSignalPrepareRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "drain_generation": {
+            "minimum": 1.0,
+            "title": "Drain Generation",
+            "type": "integer"
+          },
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "os_process_start_token": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]*$",
+            "title": "Os Process Start Token",
+            "type": "string"
+          },
+          "owner_generation": {
+            "minimum": 1.0,
+            "title": "Owner Generation",
+            "type": "integer"
+          },
+          "pid": {
+            "minimum": 1.0,
+            "title": "Pid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "owner_generation",
+          "drain_generation",
+          "pid",
+          "os_process_start_token"
+        ],
+        "title": "HardSignalPrepareRequest",
         "type": "object"
       },
       "HarnessCreateRequest": {
@@ -39,6 +1656,240 @@
           "definition"
         ],
         "title": "HarnessUpdateRequest",
+        "type": "object"
+      },
+      "ModelRolesResolveRequest": {
+        "properties": {
+          "model_roles": {
+            "additionalProperties": true,
+            "title": "Model Roles",
+            "type": "object"
+          },
+          "role_overrides": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Overrides"
+          },
+          "session_started": {
+            "default": false,
+            "title": "Session Started",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model_roles"
+        ],
+        "title": "ModelRolesResolveRequest",
+        "type": "object"
+      },
+      "ModelRolesResolveResponse": {
+        "properties": {
+          "lock": {
+            "additionalProperties": true,
+            "title": "Lock",
+            "type": "object"
+          },
+          "lock_hash": {
+            "title": "Lock Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lock",
+          "lock_hash"
+        ],
+        "title": "ModelRolesResolveResponse",
+        "type": "object"
+      },
+      "OwnerAcquireRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "bootstrap_challenge_id": {
+            "anyOf": [
+              {
+                "maxLength": 43,
+                "minLength": 43,
+                "pattern": "^[A-Za-z0-9_-]{43}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bootstrap Challenge Id"
+          },
+          "bootstrap_proof_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bootstrap Proof Sha256"
+          },
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "expected_owner_generation": {
+            "minimum": 0.0,
+            "title": "Expected Owner Generation",
+            "type": "integer"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "expected_owner_generation"
+        ],
+        "title": "OwnerAcquireRequest",
+        "type": "object"
+      },
+      "OwnerLeaseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "owner_generation": {
+            "minimum": 1.0,
+            "title": "Owner Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "owner_generation"
+        ],
+        "title": "OwnerLeaseRequest",
+        "type": "object"
+      },
+      "OwnerLeaseResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "engine_boot_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Boot Id",
+            "type": "string"
+          },
+          "engine_instance_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Engine Instance Id",
+            "type": "string"
+          },
+          "expires_at_unix": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At Unix"
+          },
+          "launch_id": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "title": "Launch Id",
+            "type": "string"
+          },
+          "lease_ttl_seconds": {
+            "const": 30,
+            "default": 30,
+            "title": "Lease Ttl Seconds",
+            "type": "integer"
+          },
+          "owner_generation": {
+            "minimum": 1.0,
+            "title": "Owner Generation",
+            "type": "integer"
+          },
+          "renewal_interval_seconds": {
+            "const": 10,
+            "default": 10,
+            "title": "Renewal Interval Seconds",
+            "type": "integer"
+          },
+          "result": {
+            "enum": [
+              "acquired",
+              "renewed",
+              "released",
+              "already_released"
+            ],
+            "title": "Result",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "bb.engine_owner.v1",
+            "default": "bb.engine_owner.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine_instance_id",
+          "engine_boot_id",
+          "launch_id",
+          "result",
+          "owner_generation"
+        ],
+        "title": "OwnerLeaseResponse",
         "type": "object"
       },
       "Problem": {
@@ -199,6 +2050,92 @@
           "data"
         ],
         "title": "PublicResult",
+        "type": "object"
+      },
+      "PutApiKeyRequest": {
+        "properties": {
+          "alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
+          "api_key": {
+            "title": "Api Key",
+            "type": "string"
+          },
+          "auth_scheme_id": {
+            "default": "api_key",
+            "title": "Auth Scheme Id",
+            "type": "string"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "expires_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At Ms"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing"
+          },
+          "ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttl Seconds"
+          }
+        },
+        "required": [
+          "api_key"
+        ],
+        "title": "PutApiKeyRequest",
         "type": "object"
       },
       "SessionApprovalRequest": {
@@ -474,6 +2411,1437 @@
         "tags": [
           "public-artifact"
         ]
+      }
+    },
+    "/v1/auth/credentials": {
+      "get": {
+        "operationId": "list_auth_credentials_v1_auth_credentials_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "provider_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuthCredentialView"
+                  },
+                  "title": "Response List Auth Credentials V1 Auth Credentials Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Auth Credentials",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/credentials/{credential_ref}": {
+      "delete": {
+        "operationId": "logout_auth_credential_v1_auth_credentials__credential_ref__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_ref",
+            "required": true,
+            "schema": {
+              "title": "Credential Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout Auth Credential",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/credentials/{credential_ref}/revoke": {
+      "post": {
+        "operationId": "revoke_auth_credential_v1_auth_credentials__credential_ref__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_ref",
+            "required": true,
+            "schema": {
+              "title": "Credential Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Auth Credential",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/credentials/{provider_id}/{account_label}/api-key": {
+      "put": {
+        "operationId": "put_auth_api_key_v1_auth_credentials__provider_id___account_label__api_key_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "account_label",
+            "required": true,
+            "schema": {
+              "title": "Account Label",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthCredentialView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Auth Api Key",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/login-sessions": {
+      "post": {
+        "operationId": "begin_auth_login_v1_auth_login_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeginAuthLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthLoginSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Begin Auth Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/login-sessions/{login_session_id}": {
+      "delete": {
+        "operationId": "cancel_auth_login_v1_auth_login_sessions__login_session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "login_session_id",
+            "required": true,
+            "schema": {
+              "title": "Login Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Auth Login",
+        "tags": [
+          "auth"
+        ]
+      },
+      "get": {
+        "operationId": "get_auth_login_v1_auth_login_sessions__login_session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "login_session_id",
+            "required": true,
+            "schema": {
+              "title": "Login Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthLoginSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Auth Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/login-sessions/{login_session_id}/complete": {
+      "post": {
+        "operationId": "complete_auth_login_v1_auth_login_sessions__login_session_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "login_session_id",
+            "required": true,
+            "schema": {
+              "title": "Login Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteAuthLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthLoginSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Auth Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/providers": {
+      "get": {
+        "operationId": "list_auth_providers_v1_auth_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuthProviderView"
+                  },
+                  "title": "Response List Auth Providers V1 Auth Providers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Auth Providers",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/engine/clients/detach": {
+      "post": {
+        "operationId": "detach_engine_client_v1_engine_clients_detach_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Registration-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Registration-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientLeaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientRegistrationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Detach Engine Client"
+      }
+    },
+    "/v1/engine/clients/register": {
+      "post": {
+        "operationId": "register_engine_client_v1_engine_clients_register_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Registration-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Registration-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientRegistrationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Engine Client"
+      }
+    },
+    "/v1/engine/clients/renew": {
+      "post": {
+        "operationId": "renew_engine_client_v1_engine_clients_renew_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Registration-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Registration-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientLeaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientRegistrationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Renew Engine Client"
+      }
+    },
+    "/v1/engine/control/drain": {
+      "post": {
+        "operationId": "begin_engine_control_drain_v1_engine_control_drain_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Owner-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Owner-Credential",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Breadboard-Registration-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Registration-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeginControlDrainRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainControlResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Begin Engine Control Drain"
+      }
+    },
+    "/v1/engine/control/drain-rollback": {
+      "post": {
+        "operationId": "rollback_engine_control_drain_v1_engine_control_drain_rollback_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Owner-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Owner-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrainControlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainControlResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Engine Control Drain"
+      }
+    },
+    "/v1/engine/control/graceful-result": {
+      "post": {
+        "operationId": "record_engine_graceful_control_v1_engine_control_graceful_result_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Owner-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Owner-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GracefulControlResultRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainControlResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Engine Graceful Control"
+      }
+    },
+    "/v1/engine/control/hard-signal/commit": {
+      "post": {
+        "operationId": "commit_engine_hard_signal_v1_engine_control_hard_signal_commit_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Owner-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Owner-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HardSignalCommitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardSignalPermitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Commit Engine Hard Signal"
+      }
+    },
+    "/v1/engine/control/hard-signal/outcome": {
+      "post": {
+        "operationId": "record_engine_hard_signal_outcome_v1_engine_control_hard_signal_outcome_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Owner-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Owner-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HardSignalOutcomeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainControlResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Engine Hard Signal Outcome"
+      }
+    },
+    "/v1/engine/control/hard-signal/prepare": {
+      "post": {
+        "operationId": "prepare_engine_hard_signal_v1_engine_control_hard_signal_prepare_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Owner-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Owner-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HardSignalPrepareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardSignalPreparationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Prepare Engine Hard Signal"
+      }
+    },
+    "/v1/engine/identity": {
+      "get": {
+        "operationId": "engine_identity_readiness_v1_engine_identity_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineIdentityReadinessResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Engine Identity Readiness"
+      }
+    },
+    "/v1/engine/owner/acquire": {
+      "post": {
+        "operationId": "acquire_engine_owner_v1_engine_owner_acquire_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Owner-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Owner-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerAcquireRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerLeaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Acquire Engine Owner"
+      }
+    },
+    "/v1/engine/owner/bootstrap-challenge": {
+      "post": {
+        "operationId": "issue_engine_owner_bootstrap_challenge_v1_engine_owner_bootstrap_challenge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BootstrapChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapChallengeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Engine Owner Bootstrap Challenge"
+      }
+    },
+    "/v1/engine/owner/release": {
+      "post": {
+        "operationId": "release_engine_owner_v1_engine_owner_release_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Owner-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Owner-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerLeaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerLeaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Release Engine Owner"
+      }
+    },
+    "/v1/engine/owner/renew": {
+      "post": {
+        "operationId": "renew_engine_owner_v1_engine_owner_renew_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Breadboard-Owner-Credential",
+            "required": true,
+            "schema": {
+              "title": "X-Breadboard-Owner-Credential",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerLeaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerLeaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Renew Engine Owner"
       }
     },
     "/v1/harness-locks/{lock_id}": {
@@ -935,6 +4303,47 @@
         "summary": "Probe",
         "tags": [
           "public-integration"
+        ]
+      }
+    },
+    "/v1/model-roles/resolve": {
+      "post": {
+        "operationId": "resolve_model_roles_v1_model_roles_resolve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelRolesResolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRolesResolveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Model Roles",
+        "tags": [
+          "auth"
         ]
       }
     },

@@ -1,7 +1,7 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
-// openapi-schema-sha256: 432b37826623941a5b10c332468cf4f52a5af81c205721333851b3de9446689c
-// app-source-sha256: 93b5c80ff32b2403f480de2ee846fbe2c4328c2059774bd0e20f76755627d002
+// openapi-schema-sha256: 0c3b57839d621e2819b37f6905314128074f14586249188fe0db9bbf16312f76
+// app-source-sha256: 29fc0025ee45c1af1313f44b7f83ae451c2558ffa6f07bd9363d7bcb9c2ddc9b
 
 export interface RouteEntry { path: string; method: string; operationId: string }
 
@@ -9,6 +9,29 @@ export const ROUTES: readonly RouteEntry[] = [
   { path: "/v1/artifacts", method: "GET", operationId: "artifact.list" },
   { path: "/v1/artifacts/{artifact_id}", method: "GET", operationId: "artifact.get" },
   { path: "/v1/artifacts/{artifact_id}/verify", method: "POST", operationId: "artifact.verify" },
+  { path: "/v1/auth/credentials", method: "GET", operationId: "list_auth_credentials_v1_auth_credentials_get" },
+  { path: "/v1/auth/credentials/{credential_ref}", method: "DELETE", operationId: "logout_auth_credential_v1_auth_credentials__credential_ref__delete" },
+  { path: "/v1/auth/credentials/{credential_ref}/revoke", method: "POST", operationId: "revoke_auth_credential_v1_auth_credentials__credential_ref__revoke_post" },
+  { path: "/v1/auth/credentials/{provider_id}/{account_label}/api-key", method: "PUT", operationId: "put_auth_api_key_v1_auth_credentials__provider_id___account_label__api_key_put" },
+  { path: "/v1/auth/login-sessions", method: "POST", operationId: "begin_auth_login_v1_auth_login_sessions_post" },
+  { path: "/v1/auth/login-sessions/{login_session_id}", method: "DELETE", operationId: "cancel_auth_login_v1_auth_login_sessions__login_session_id__delete" },
+  { path: "/v1/auth/login-sessions/{login_session_id}", method: "GET", operationId: "get_auth_login_v1_auth_login_sessions__login_session_id__get" },
+  { path: "/v1/auth/login-sessions/{login_session_id}/complete", method: "POST", operationId: "complete_auth_login_v1_auth_login_sessions__login_session_id__complete_post" },
+  { path: "/v1/auth/providers", method: "GET", operationId: "list_auth_providers_v1_auth_providers_get" },
+  { path: "/v1/engine/clients/detach", method: "POST", operationId: "detach_engine_client_v1_engine_clients_detach_post" },
+  { path: "/v1/engine/clients/register", method: "POST", operationId: "register_engine_client_v1_engine_clients_register_post" },
+  { path: "/v1/engine/clients/renew", method: "POST", operationId: "renew_engine_client_v1_engine_clients_renew_post" },
+  { path: "/v1/engine/control/drain", method: "POST", operationId: "begin_engine_control_drain_v1_engine_control_drain_post" },
+  { path: "/v1/engine/control/drain-rollback", method: "POST", operationId: "rollback_engine_control_drain_v1_engine_control_drain_rollback_post" },
+  { path: "/v1/engine/control/graceful-result", method: "POST", operationId: "record_engine_graceful_control_v1_engine_control_graceful_result_post" },
+  { path: "/v1/engine/control/hard-signal/commit", method: "POST", operationId: "commit_engine_hard_signal_v1_engine_control_hard_signal_commit_post" },
+  { path: "/v1/engine/control/hard-signal/outcome", method: "POST", operationId: "record_engine_hard_signal_outcome_v1_engine_control_hard_signal_outcome_post" },
+  { path: "/v1/engine/control/hard-signal/prepare", method: "POST", operationId: "prepare_engine_hard_signal_v1_engine_control_hard_signal_prepare_post" },
+  { path: "/v1/engine/identity", method: "GET", operationId: "engine_identity_readiness_v1_engine_identity_get" },
+  { path: "/v1/engine/owner/acquire", method: "POST", operationId: "acquire_engine_owner_v1_engine_owner_acquire_post" },
+  { path: "/v1/engine/owner/bootstrap-challenge", method: "POST", operationId: "issue_engine_owner_bootstrap_challenge_v1_engine_owner_bootstrap_challenge_post" },
+  { path: "/v1/engine/owner/release", method: "POST", operationId: "release_engine_owner_v1_engine_owner_release_post" },
+  { path: "/v1/engine/owner/renew", method: "POST", operationId: "renew_engine_owner_v1_engine_owner_renew_post" },
   { path: "/v1/harness-locks/{lock_id}", method: "GET", operationId: "harness_lock.get" },
   { path: "/v1/harnesses", method: "GET", operationId: "harness.list" },
   { path: "/v1/harnesses", method: "POST", operationId: "harness.create" },
@@ -21,6 +44,7 @@ export const ROUTES: readonly RouteEntry[] = [
   { path: "/v1/integrations", method: "GET", operationId: "integration.list" },
   { path: "/v1/integrations/{integration_id}", method: "GET", operationId: "integration.get" },
   { path: "/v1/integrations/{integration_id}/probe", method: "POST", operationId: "integration.probe" },
+  { path: "/v1/model-roles/resolve", method: "POST", operationId: "resolve_model_roles_v1_model_roles_resolve_post" },
   { path: "/v1/schemas", method: "GET", operationId: "system.schemas" },
   { path: "/v1/sessions", method: "GET", operationId: "session.list" },
   { path: "/v1/sessions", method: "POST", operationId: "session.start" },

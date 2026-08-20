@@ -67,7 +67,8 @@
       "type": "boolean"
     },
     "task": {
-      "description": "User prompt or path to task file.",
+      "default": "",
+      "description": "Optional initial task; omit for an idle session.",
       "title": "Task",
       "type": "string"
     },
@@ -86,8 +87,7 @@
     }
   },
   "required": [
-    "config_path",
-    "task"
+    "config_path"
   ],
   "title": "SessionCreateRequest",
   "type": "object"
