@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
 
@@ -13,9 +13,9 @@ if (pack.status !== 0) { process.stderr.write(pack.stderr); process.exit(pack.st
 const packed = JSON.parse(pack.stdout)[0]
 const tarball = join(out, packed.filename)
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex")
-const files = []
-const walk = (dir) => { for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) { const full = join(dir, entry.name); if (entry.isDirectory()) walk(full); else files.push({ path: full.slice(root.length + 1).replaceAll("\\", "/"), sha256: sha256(readFileSync(full)) }) } }
-walk(join(root, "dist"))
+const files = packed.files
+  .map(({ path }) => ({ path, sha256: sha256(readFileSync(join(root, path))) }))
+  .sort((a, b) => a.path.localeCompare(b.path))
 const archiveHash = sha256(readFileSync(tarball))
 writeFileSync(`${tarball}.sha256`, `${archiveHash}  ${packed.filename}\n`)
 writeFileSync(`${tarball}.installed-files.json`, JSON.stringify({ package: "@breadboard/sdk", version: "0.3.0", files }, null, 2) + "\n")
