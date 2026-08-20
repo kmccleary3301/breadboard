@@ -42,7 +42,7 @@ export const resolveBreadboardRepoPath = (value: string): string => {
   if (path.isAbsolute(trimmed)) return trimmed
 
   const moduleDir = path.dirname(fileURLToPath(import.meta.url))
-  const repoRoot = findUpward(moduleDir, "agentic_coder_prototype")
+  const repoRoot = findUpward(moduleDir, "breadboard_engine")
   if (repoRoot) {
     const repoCandidate = path.join(repoRoot, trimmed)
     if (existsSync(repoCandidate)) return repoCandidate

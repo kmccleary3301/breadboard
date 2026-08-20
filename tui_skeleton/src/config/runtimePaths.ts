@@ -36,7 +36,7 @@ export const resolveRepoRoot = (): string => {
   if (explicit) return path.resolve(explicit)
   const projectRoot = resolveProjectRoot()
   const repoRoot = path.resolve(projectRoot, "..")
-  if (!fs.existsSync(path.join(repoRoot, "agentic_coder_prototype"))) {
+  if (!fs.existsSync(path.join(repoRoot, "breadboard_engine"))) {
     throw new Error(`Unable to resolve BreadBoard repo root from ${projectRoot}`)
   }
   return repoRoot
@@ -53,8 +53,8 @@ export const getCriticalFiles = (options: { includeSource?: boolean; includeDist
   const repoRoot = resolveRepoRoot()
   const files = [
     path.join(projectRoot, "package.json"),
-    path.join(repoRoot, "agentic_coder_prototype", "api", "cli_bridge", "server.py"),
-    path.join(repoRoot, "agentic_coder_prototype", "utils", "safe_delete.py"),
+    path.join(repoRoot, "breadboard_engine", "api", "cli_bridge", "server.py"),
+    path.join(repoRoot, "breadboard_engine", "utils", "safe_delete.py"),
   ]
   if (options.includeSource !== false) {
     files.push(path.join(projectRoot, "src", "main.ts"))

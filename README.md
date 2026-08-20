@@ -138,7 +138,8 @@ The stable top-level zone model is documented in
 ```text
 ├── agent_configs/                 product harness definitions and supporting configs
 │   └── misc/                      scenario-specific and historical configs
-├── agentic_coder_prototype/       canonical Python engine and runtime substrate
+├── agentic_coder_prototype/       temporary compat shim (legacy imports -> breadboard_engine)
+├── breadboard_engine/             canonical Python engine and runtime substrate
 │   ├── api/                       CLI bridge server, session runner, protocol surfaces
 │   ├── execution/                 runtime execution primitives
 │   ├── longrun/                   durable/background execution logic
@@ -185,7 +186,8 @@ The stable top-level zone model is documented in
 Zone intent:
 
 - `breadboard/` is the public product-facing Python package area
-- `agentic_coder_prototype/` is the transitional internal runtime substrate
+- `breadboard_engine/` is the canonical internal engine (renamed from
+  `agentic_coder_prototype/`, which remains as a temporary import shim)
 - `breadboard_ext/` is extension space
 - `breadboard_sdk/` and `sdk/` are SDK and host surfaces
 - `scripts/` and `docs/` are support surfaces with explicit taxonomy
@@ -292,7 +294,7 @@ breadboard harness run ./harness/minimal_harness.v2.yaml \
 Run the engine directly from source:
 
 ```bash
-python -m agentic_coder_prototype.api.cli_bridge.server
+python -m breadboard_engine.api.cli_bridge.server
 ```
 
 ### Python SDK

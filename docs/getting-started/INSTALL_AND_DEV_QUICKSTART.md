@@ -22,8 +22,12 @@ After bootstrap, use the repo-local venv interpreter:
 To launch the engine directly from source:
 
 ```bash
-./.venv/bin/python -m agentic_coder_prototype.api.cli_bridge.server
+./.venv/bin/python -m breadboard_engine.api.cli_bridge.server
 ```
+
+Older scripts that reference `agentic_coder_prototype.*` still work: that
+package is now a compatibility shim that resolves to `breadboard_engine`
+(set `BREADBOARD_LEGACY_IMPORTS=warn` or `error` to surface stragglers).
 
 ---
 
@@ -215,7 +219,7 @@ session records.
 Start the product API in one shell:
 
 ```bash
-./.venv/bin/python -m agentic_coder_prototype.api.cli_bridge.server
+./.venv/bin/python -m breadboard_engine.api.cli_bridge.server
 ```
 
 The Python and TypeScript SDK examples in the repository root use the same

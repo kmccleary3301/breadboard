@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "agentic_coder_prototype/longrun/**"
+      - "breadboard_engine/longrun/**"
       - "scripts/run_longrun_phase1_pilot.py"
       - "scripts/validate_longrun_phase2_warn_artifacts.py"
       - "scripts/evaluate_longrun_phase2_go_no_go.py"
