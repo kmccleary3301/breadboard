@@ -6,28 +6,11 @@ import base64
 import datetime
 import json
 import os
-import random
 import re
 import time
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
-try:  # pragma: no cover - import guard exercised in runtime
-    from openai import OpenAI
-except ImportError:  # pragma: no cover - covered via error path tests
-    OpenAI = None  # type: ignore[assignment]
-
-try:  # pragma: no cover - import guard exercised in runtime
-    from anthropic import Anthropic
-    from anthropic import RateLimitError as AnthropicRateLimitError
-    try:
-        from anthropic._exceptions import OverloadedError as AnthropicOverloadedError  # type: ignore[attr-defined]
-    except Exception:  # pragma: no cover - optional import
-        AnthropicOverloadedError = None  # type: ignore[assignment]
-except ImportError:  # pragma: no cover - covered via error path tests
-    Anthropic = None  # type: ignore[assignment]
-    AnthropicRateLimitError = None  # type: ignore[assignment]
-    AnthropicOverloadedError = None  # type: ignore[assignment]
 
 from .contracts import (
     ProviderMessage,
@@ -38,6 +21,7 @@ from .contracts import (
     ProviderToolCall,
 )
 from .registry import ProviderRuntimeRegistry, provider_registry
+from .sdk_bindings import provider_sdk_bindings
 from .runtimes.testing import CliMockRuntime, MockRuntime, SmokeRuntime
 from .builtins import register_builtin_runtimes
 from ..logging.provider_dump import provider_dump_logger
@@ -59,7 +43,7 @@ class OpenAIBaseRuntime(ProviderRuntime):
     """Utility helpers for OpenAI-compatible runtimes."""
 
     def _require_openai(self) -> None:
-        if OpenAI is None:
+        if provider_sdk_bindings.openai is None:
             raise ProviderRuntimeError("openai package not installed")
 
     def _decode_snippet(self, content: Any) -> str:
@@ -532,7 +516,7 @@ class OpenAIBaseRuntime(ProviderRuntime):
                         retry_schedule.append(wait_time)
                         if wait_time > 0:
                             try:
-                                time.sleep(wait_time)
+                                provider_sdk_bindings.sleep(wait_time)
                             except Exception:
                                 pass
                         continue
@@ -590,7 +574,7 @@ class OpenAIBaseRuntime(ProviderRuntime):
                         try:
                             wait_time = backoffs[attempt] if attempt < len(backoffs) else 0.8
                             retry_schedule.append(wait_time)
-                            time.sleep(wait_time)
+                            provider_sdk_bindings.sleep(wait_time)
                         except Exception:
                             pass
                         continue
@@ -683,7 +667,7 @@ class OpenAIBaseRuntime(ProviderRuntime):
                     try:
                         wait_time = backoffs[attempt] if attempt < len(backoffs) else 0.8
                         retry_schedule.append(wait_time)
-                        time.sleep(wait_time)
+                        provider_sdk_bindings.sleep(wait_time)
                     except Exception:
                         pass
                     continue
@@ -839,7 +823,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 kwargs["timeout"] = float(timeout_env)
             except ValueError:
                 pass
-        return OpenAI(**kwargs)
+        return provider_sdk_bindings.openai(**kwargs)
 
     def _stream_chat_completion(
         self,
@@ -1565,7 +1549,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         base_url: Optional[str] = None,
         default_headers: Optional[Dict[str, str]] = None,
     ) -> Any:
-        if Anthropic is None:
+        if provider_sdk_bindings.anthropic is None:
             raise ProviderRuntimeError("anthropic package not installed")
 
         kwargs: Dict[str, Any] = {"api_key": api_key}
@@ -1573,7 +1557,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             kwargs["base_url"] = base_url
         if default_headers:
             kwargs["default_headers"] = default_headers
-        return Anthropic(**kwargs)
+        return provider_sdk_bindings.anthropic(**kwargs)
 
     def _message_content_to_text(self, content: Any) -> Optional[str]:
         if content is None:
@@ -1886,7 +1870,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             pass
 
     def _is_overloaded_error(self, exc: Exception) -> bool:
-        if AnthropicOverloadedError is not None and isinstance(exc, AnthropicOverloadedError):
+        if provider_sdk_bindings.anthropic_overloaded_error is not None and isinstance(exc, provider_sdk_bindings.anthropic_overloaded_error):
             return True
         status_code = getattr(exc, "status_code", None)
         if status_code is not None:
@@ -1945,7 +1929,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             min_wait = 0.0
         wait_seconds = max(wait_seconds, min_wait or 0.0)
         if wait_seconds > 0:
-            time.sleep(wait_seconds)
+            provider_sdk_bindings.sleep(wait_seconds)
 
     def _compute_rate_limit_retry_delay(
         self,
@@ -1978,7 +1962,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         except Exception:
             jitter = 0.0
         if jitter and jitter > 0:
-            delay += random.uniform(0, jitter)
+            delay += provider_sdk_bindings.uniform(0, jitter)
         if max_delay is not None:
             delay = min(delay, max_delay)
         return max(delay, 0.0)
@@ -2189,7 +2173,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
 
         def _respect_delay() -> None:
             if delay_seconds > 0.0:
-                time.sleep(delay_seconds)
+                provider_sdk_bindings.sleep(delay_seconds)
 
         attempt = 0
         while True:
@@ -2217,7 +2201,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 )
                 return self._normalize_response(response, usage_override=usage_override)
             except Exception as exc:
-                is_rate_limit = AnthropicRateLimitError is not None and isinstance(exc, AnthropicRateLimitError)
+                is_rate_limit = provider_sdk_bindings.anthropic_rate_limit_error is not None and isinstance(exc, provider_sdk_bindings.anthropic_rate_limit_error)
                 is_overloaded = False if is_rate_limit else self._is_overloaded_error(exc)
                 headers: Dict[str, str] = {}
                 status_code = None
@@ -2280,7 +2264,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                             pass
                     attempt += 1
                     if wait_seconds > 0:
-                        time.sleep(wait_seconds)
+                        provider_sdk_bindings.sleep(wait_seconds)
                     continue
                 metadata = {**response_metadata, "attempts": attempt + 1, "error": True}
                 provider_dump_logger.log_response(

@@ -86,7 +86,7 @@ def test_anthropic_runtime_stream_success(monkeypatch):
             self.messages = FakeMessages()
 
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.Anthropic",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.anthropic",
         FakeAnthropic,
     )
 
@@ -129,7 +129,7 @@ def test_anthropic_runtime_stream_error(monkeypatch):
             self.messages = FakeMessages()
 
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.Anthropic",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.anthropic",
         FakeAnthropic,
     )
 
@@ -227,11 +227,11 @@ def test_anthropic_runtime_retries_on_overload(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.time.sleep",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.sleep",
         lambda seconds: None,
     )
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.AnthropicOverloadedError",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.anthropic_overloaded_error",
         FakeOverloadError,
         raising=False,
     )

@@ -52,7 +52,7 @@ def test_openrouter_runtime_uses_openai_client(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -115,7 +115,7 @@ def test_openrouter_gpt5_responses_injects_provider_routing_preferences(monkeypa
             self.chat = types.SimpleNamespace(completions=None)
 
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -206,7 +206,7 @@ def test_openrouter_runtime_injects_accept_headers_on_request(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -294,7 +294,7 @@ def test_openrouter_runtime_parses_event_stream_response(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -377,7 +377,7 @@ def test_openrouter_runtime_event_stream_parse_failure_records_base64(monkeypatc
             )
 
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -462,7 +462,7 @@ def test_openrouter_runtime_html_error_includes_base64(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 

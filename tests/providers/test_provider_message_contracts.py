@@ -98,7 +98,7 @@ def test_openai_chat_runtime_produces_string_content_and_tool_call_arguments(mon
             )
 
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -187,7 +187,7 @@ def test_responses_runtime_produces_string_content(monkeypatch):
             self.chat = types.SimpleNamespace(completions=None)
 
     monkeypatch.setattr(
-        "breadboard_engine.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
     client = runtime.create_client(api_key="test-key")

@@ -10,6 +10,7 @@ import breadboard_engine.provider.runtime as runtime_module
 import breadboard_engine.provider_runtime as root_runtime
 from breadboard_engine.provider.routing import provider_router
 
+from breadboard_engine.provider.sdk_bindings import provider_sdk_bindings
 
 EXPECTED_EXPORTS = (
     "ProviderRuntime",
@@ -120,11 +121,11 @@ def test_optional_sdk_missing_errors_have_current_messages(monkeypatch: pytest.M
     openai_runtime = runtime_module.OpenAIChatRuntime(_descriptor("openai_chat", "openai"))
     anthropic_runtime = runtime_module.AnthropicMessagesRuntime(_descriptor("anthropic_messages", "anthropic"))
 
-    monkeypatch.setattr(runtime_module, "OpenAI", None)
+    monkeypatch.setattr(provider_sdk_bindings, "openai", None)
     with pytest.raises(runtime_module.ProviderRuntimeError, match=r"^openai package not installed$"):
         openai_runtime.create_client("key")
 
-    monkeypatch.setattr(runtime_module, "Anthropic", None)
+    monkeypatch.setattr(provider_sdk_bindings, "anthropic", None)
     with pytest.raises(runtime_module.ProviderRuntimeError, match=r"^anthropic package not installed$"):
         anthropic_runtime.create_client("key")
 
@@ -287,7 +288,7 @@ def test_anthropic_exact_request_payload_and_normalized_result() -> None:
 def test_retry_timing_uses_current_sleep_and_uniform_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime = runtime_module.OpenAIResponsesRuntime(_descriptor("openai_responses", "openai"))
     sleeps: list[float] = []
-    monkeypatch.setattr(runtime_module.time, "sleep", sleeps.append)
+    monkeypatch.setattr(provider_sdk_bindings, "sleep", sleeps.append)
 
     class RateLimitError(Exception):
         def __init__(self) -> None:
@@ -317,7 +318,7 @@ def test_retry_timing_uses_current_sleep_and_uniform_dependencies(monkeypatch: p
     assert sleeps == [0.25]
     assert collection.calls == 2
 
-    monkeypatch.setattr(runtime_module.random, "uniform", lambda lower, upper: upper)
+    monkeypatch.setattr(provider_sdk_bindings, "uniform", lambda lower, upper: upper)
     assert runtime_module.AnthropicMessagesRuntime(_descriptor("anthropic_messages", "anthropic"))._compute_rate_limit_retry_delay(
         {"retry_base_seconds": 1.5, "retry_jitter_seconds": 0.25}, 1, None
     ) == 3.25
