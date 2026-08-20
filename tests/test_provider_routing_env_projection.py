@@ -16,10 +16,17 @@ class _StubBroker:
     def __init__(self, material: dict[str, Any] | None) -> None:
         self.material = material
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.redeem_calls: list[tuple[str, dict[str, Any]]] = []
 
     def issue_execution_material(self, provider_id: str, **kwargs: Any) -> dict[str, Any] | None:
         self.calls.append((provider_id, dict(kwargs)))
         return dict(self.material) if self.material is not None else None
+
+    def redeem_execution_material(self, lease_id: str, **kwargs: Any) -> dict[str, Any] | None:
+        self.redeem_calls.append((lease_id, dict(kwargs)))
+        if self.material is None or self.material.get("lease_id") != lease_id:
+            return None
+        return dict(self.material)
 
 
 def _poison_local_auth(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -63,6 +70,52 @@ def test_openai_client_config_uses_only_broker_execution_material(monkeypatch, t
             {
                 "endpoint_id": "openai/gpt-5.4-mini",
                 "minimum_validity_ms": 0,
+            },
+        )
+    ]
+
+
+def test_provider_router_redeems_exact_lease_channel_without_new_issuance(monkeypatch) -> None:
+    monkeypatch.setenv("BREADBOARD_PROVIDER_LEASE_ID", "bblease-channel")
+    broker = _StubBroker(
+        {
+            "api_key": "broker-token",
+            "lease_id": "bblease-channel",
+        }
+    )
+    monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
+
+    client_config = ProviderRouter().create_client_config("openai/gpt-5.4-mini")
+
+    assert client_config["api_key"] == "broker-token"
+    assert client_config["lease_id"] == "bblease-channel"
+    assert broker.calls == []
+    assert broker.redeem_calls == [
+        (
+            "bblease-channel",
+            {
+                "provider_id": "openai",
+                "endpoint_id": "openai/gpt-5.4-mini",
+            },
+        )
+    ]
+
+
+def test_invalid_lease_channel_fails_closed_without_new_issuance(monkeypatch) -> None:
+    monkeypatch.setenv("BREADBOARD_PROVIDER_LEASE_ID", "bblease-invalid")
+    broker = _StubBroker(None)
+    monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
+
+    client_config = ProviderRouter().create_client_config("openai/gpt-5.4-mini")
+
+    assert client_config["api_key"] is None
+    assert broker.calls == []
+    assert broker.redeem_calls == [
+        (
+            "bblease-invalid",
+            {
+                "provider_id": "openai",
+                "endpoint_id": "openai/gpt-5.4-mini",
             },
         )
     ]
@@ -166,16 +219,23 @@ def test_ray_child_receives_only_the_broker_lease_channel(monkeypatch, tmp_path:
         "BREADBOARD_OPENAI_AUTH_HEADERS_JSON",
     ):
         monkeypatch.setenv(key, f"credential-poison:{key}")
-    monkeypatch.setenv("BREADBOARD_PROVIDER_LEASE_ID", "bblease-child-channel")
     monkeypatch.setattr(agent_module, "_get_ray", lambda: FakeRay())
     monkeypatch.setattr(agent_module, "OpenAIConductor", FakeConductor)
+    broker = _StubBroker(
+        {
+            "api_key": "broker-token",
+            "lease_id": "bblease-child-channel",
+        }
+    )
+    monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
 
     coder = object.__new__(agent_module.AgenticCoder)
     coder.config_path = str(tmp_path / "config.json")
-    coder.config = {"workspace": {}}
+    coder.config = {"providers": {"default_model": "openai/gpt-5.4-mini"}, "workspace": {}}
     coder.workspace_dir = str(tmp_path / "workspace")
     coder.agent = None
     coder._local_mode = False
+    coder._provider_lease_id = None
     monkeypatch.setattr(coder, "_resolve_workspace_path", lambda: tmp_path / "workspace")
 
     coder.initialize()
@@ -183,6 +243,17 @@ def test_ray_child_receives_only_the_broker_lease_channel(monkeypatch, tmp_path:
     assert captured["options"] == {
         "runtime_env": {"env_vars": {"BREADBOARD_PROVIDER_LEASE_ID": "bblease-child-channel"}}
     }
+    assert broker.calls == [
+        (
+            "openai",
+            {
+                "session_id": "agentic-coder",
+                "endpoint_id": "openai/gpt-5.4-mini",
+                "minimum_validity_ms": 0,
+            },
+        )
+    ]
+    assert broker.redeem_calls == []
     serialized = repr(captured)
     assert "credential-poison" not in serialized
 

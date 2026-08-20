@@ -443,6 +443,59 @@ class SQLiteCredentialStore:
             material["label"] = account["label"]
             return material
 
+    def redeem_lease(
+        self,
+        *,
+        lease_id: str,
+        provider_id: str,
+        endpoint_id: str = "",
+    ) -> dict[str, Any] | None:
+        timestamp = now_ms()
+        normalized_lease_id = str(lease_id).strip()
+        normalized_provider_id = str(provider_id).strip().lower()
+        normalized_endpoint_id = str(endpoint_id)
+        if not normalized_lease_id or not normalized_provider_id:
+            return None
+        with self._transaction() as connection:
+            lease = connection.execute(
+                """SELECT * FROM leases
+                   WHERE lease_id = ? AND released_at_ms IS NULL AND expires_at_ms > ?""",
+                (normalized_lease_id, timestamp),
+            ).fetchone()
+            if lease is None:
+                return None
+            if lease["endpoint_id"] and str(lease["endpoint_id"]) != normalized_endpoint_id:
+                return None
+            account = connection.execute(
+                """SELECT * FROM accounts
+                   WHERE account_id = ? AND provider_id = ? AND status = 'active'""",
+                (lease["account_id"], normalized_provider_id),
+            ).fetchone()
+            if account is None:
+                return None
+            if account["expires_at_ms"] is not None and int(account["expires_at_ms"]) <= timestamp:
+                return None
+            secret = connection.execute(
+                """SELECT * FROM secrets WHERE account_id = ? AND revoked_at_ms IS NULL
+                   ORDER BY secret_version DESC LIMIT 1""",
+                (account["account_id"],),
+            ).fetchone()
+            if secret is None:
+                return None
+            material = self._decode_json(secret["material"])
+            if not material.get("api_key") and material.get("access_token"):
+                material["api_key"] = material["access_token"]
+            material["lease_id"] = normalized_lease_id
+            material["lease_expires_at_ms"] = int(lease["expires_at_ms"])
+            material["account_id"] = account["account_id"]
+            material["credential_id"] = account["credential_id"]
+            material["secret_version"] = int(secret["secret_version"])
+            material["expires_at_ms"] = account["expires_at_ms"]
+            material["provider_id"] = account["provider_id"]
+            material["auth_scheme_id"] = account["auth_scheme_id"]
+            material["label"] = account["label"]
+            return material
+
     def release_lease(self, lease_id: str) -> bool:
         with self._transaction() as connection:
             result = connection.execute(

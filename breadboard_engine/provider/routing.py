@@ -15,6 +15,8 @@ from dataclasses import dataclass
 
 from .capabilities import CAPABILITY_MATRIX, ProviderCapabilities
 
+_PROVIDER_LEASE_ENV = "BREADBOARD_PROVIDER_LEASE_ID"
+
 
 
 @dataclass
@@ -365,11 +367,20 @@ class ProviderRouter:
         try:
             from ..provider_broker import get_provider_broker
 
-            overlay = get_provider_broker().issue_execution_material(
-                config.provider_id,
-                endpoint_id=str(model_id),
-                minimum_validity_ms=0,
-            )
+            broker = get_provider_broker()
+            lease_id = (os.getenv(_PROVIDER_LEASE_ENV) or "").strip()
+            if lease_id:
+                overlay = broker.redeem_execution_material(
+                    lease_id,
+                    provider_id=config.provider_id,
+                    endpoint_id=str(model_id),
+                )
+            else:
+                overlay = broker.issue_execution_material(
+                    config.provider_id,
+                    endpoint_id=str(model_id),
+                    minimum_validity_ms=0,
+                )
         except Exception:
             overlay = None
 

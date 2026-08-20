@@ -63,8 +63,39 @@ def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
     assert inspected and "anthropic-lease-secret" not in json.dumps(inspected)
     material = broker.issue_execution_material("anthropic", session_id="session-1", endpoint_id="messages")
     assert material and material["api_key"] == "anthropic-lease-secret"
+    redeemed = broker.redeem_execution_material(
+        material["lease_id"],
+        provider_id="anthropic",
+        endpoint_id="messages",
+    )
+    assert redeemed and redeemed["api_key"] == "anthropic-lease-secret"
+    assert redeemed["lease_id"] == material["lease_id"]
+    assert (
+        broker.redeem_execution_material(
+            material["lease_id"],
+            provider_id="openai",
+            endpoint_id="messages",
+        )
+        is None
+    )
+    assert (
+        broker.redeem_execution_material(
+            material["lease_id"],
+            provider_id="anthropic",
+            endpoint_id="different",
+        )
+        is None
+    )
     assert broker.store.release_lease(material["lease_id"]) is True
     assert broker.store.release_lease(material["lease_id"]) is False
+    assert (
+        broker.redeem_execution_material(
+            material["lease_id"],
+            provider_id="anthropic",
+            endpoint_id="messages",
+        )
+        is None
+    )
 
 
 def test_session_start_child_inherits_no_credential_environment(tmp_path):

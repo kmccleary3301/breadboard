@@ -377,6 +377,33 @@ class ProviderBroker:
                 redaction.register_secret_value(value)
         return dict(material) if material is not None else None
 
+    def redeem_execution_material(
+        self,
+        lease_id: str,
+        *,
+        provider_id: str,
+        endpoint_id: str = "",
+    ) -> dict[str, Any] | None:
+        material = self.store.redeem_lease(
+            lease_id=lease_id,
+            provider_id=provider_id,
+            endpoint_id=endpoint_id,
+        )
+        if material is None:
+            return None
+        redaction.register_secret_value(material.get("api_key"))
+        redaction.register_secret_value(material.get("access_token"))
+        redaction.register_secret_value(material.get("refresh_token"))
+        for value in dict(material.get("headers") or {}).values():
+            redaction.register_secret_value(value)
+        self._emit(
+            "provider_lease_redeemed",
+            provider_id=provider_id,
+            account_id=material.get("account_id"),
+            lease_id=lease_id,
+        )
+        return dict(material)
+
     def release_execution_material(self, lease_id: str) -> bool:
         return self.store.release_lease(lease_id)
 

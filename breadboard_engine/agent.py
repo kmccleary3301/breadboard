@@ -34,6 +34,7 @@ def _get_ray():  # type: ignore[no-untyped-def]
     return _ray
 from .agent_llm_openai import OpenAIConductor
 from .compilation.v2_loader import _config_resolution_base_dirs, load_agent_config
+from .provider.routing import provider_router
 from .provider import provider_adapter_manager
 from .compilation.tool_yaml_loader import load_yaml_tools
 from .compilation.system_prompt_compiler import get_compiler
@@ -79,6 +80,7 @@ class AgenticCoder:
             pass
         self.agent = None
         self._local_mode = force_local_mode or os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1"
+        self._provider_lease_id: Optional[str] = None
         
     def _load_config(self) -> Dict[str, Any]:
         """Load and validate configuration (v2-aware)."""
@@ -233,6 +235,38 @@ class AgenticCoder:
                 workspace_path = _REPO_ROOT / "tmp" / workspace_path
         return validate_workspace_path(workspace_path, repo_root=_REPO_ROOT)
 
+    def _provider_lease_for_remote(self) -> Optional[str]:
+        model_route = self._select_model()
+        descriptor, _ = provider_router.get_runtime_descriptor(model_route)
+        if descriptor.runtime_id in {"codex_app_server", "mock_chat", "replay"}:
+            return None
+        from .provider_broker import get_provider_broker
+
+        broker = get_provider_broker()
+        existing_lease_id = (os.environ.get("BREADBOARD_PROVIDER_LEASE_ID") or "").strip()
+        if existing_lease_id:
+            material = broker.redeem_execution_material(
+                existing_lease_id,
+                provider_id=descriptor.provider_id,
+                endpoint_id=model_route,
+            )
+            if material is None:
+                raise RuntimeError("Configured provider lease channel is invalid or expired.")
+            self._provider_lease_id = existing_lease_id
+            return existing_lease_id
+        material = broker.issue_execution_material(
+            descriptor.provider_id,
+            session_id="agentic-coder",
+            endpoint_id=model_route,
+            minimum_validity_ms=0,
+        )
+        if material is None or not material.get("lease_id"):
+            raise RuntimeError(
+                f"Provider broker has no execution material for {descriptor.provider_id}."
+            )
+        self._provider_lease_id = str(material["lease_id"])
+        return self._provider_lease_id
+
     def initialize(self) -> None:
         """Initialize the agent with the loaded configuration."""
 
@@ -284,10 +318,11 @@ class AgenticCoder:
                 prompt_base_dirs=list(_config_resolution_base_dirs(self.config_path)),
             )
         else:
+            lease_id = self._provider_lease_for_remote()
             runtime_env = {
                 "env_vars": (
-                    {"BREADBOARD_PROVIDER_LEASE_ID": os.environ["BREADBOARD_PROVIDER_LEASE_ID"]}
-                    if os.environ.get("BREADBOARD_PROVIDER_LEASE_ID")
+                    {"BREADBOARD_PROVIDER_LEASE_ID": lease_id}
+                    if lease_id
                     else {}
                 )
             }
