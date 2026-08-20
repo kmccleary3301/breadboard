@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { collectSessionStream, completionSummary } from "../src/commands/sessionStream.js"
-import type { SessionEvent } from "../src/api/types.js"
+import type { SessionEvent } from "@breadboard/sdk"
 
 async function* fromEvents(events: SessionEvent[]) {
   for (const event of events) {

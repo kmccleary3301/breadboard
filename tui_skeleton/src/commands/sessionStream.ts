@@ -1,4 +1,4 @@
-import type { SessionEvent } from "../api/types.js"
+import type { SessionEvent } from "@breadboard/sdk"
 
 export interface SessionStreamResult {
   readonly events: SessionEvent[]

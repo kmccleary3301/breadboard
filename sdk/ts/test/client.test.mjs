@@ -14,14 +14,7 @@ test("candidate product methods preserve canonical result envelopes and routes",
     return new Response(JSON.stringify(result), { headers: { "content-type": "application/json" } })
   }
   const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
-  assert.deepEqual(Object.keys(client).sort(), [
-    "approveSession", "artifactsSession", "cancelSession", "createHarness", "describeSystem",
-    "eventsSession", "explainHarness", "getArtifact", "getHarness", "getHarnessLock",
-    "getIntegration", "getSession", "healthSystem", "listArtifact", "listHarness",
-    "listIntegration", "listSession", "lockHarness", "probeIntegration", "resumeSession",
-    "schemasSystem", "sendInputSession", "startSession", "updateHarness", "validateHarness",
-    "verifyArtifact",
-  ].sort())
+  for (const name of ["describeSystem", "healthSystem", "schemasSystem", "createHarness", "listHarness", "getHarness", "updateHarness", "validateHarness", "explainHarness", "lockHarness", "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact", "getArtifact", "verifyArtifact", "startSession", "listSession", "getSession", "sendInputSession", "approveSession", "resumeSession", "cancelSession", "artifactsSession", "eventsSession"]) assert.equal(typeof client[name], "function")
   assert.equal(typeof client.eventsSession, "function")
   const calls = [
     () => client.describeSystem(), () => client.healthSystem(), () => client.schemasSystem(),

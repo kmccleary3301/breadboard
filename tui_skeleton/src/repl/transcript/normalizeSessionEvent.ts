@@ -1,4 +1,4 @@
-import type { SessionEvent } from "../../api/types.js"
+import type { SessionEvent } from "@breadboard/sdk"
 import type { NormalizedEvent } from "./normalizedEvent.js"
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null

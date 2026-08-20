@@ -1,7 +1,7 @@
 import { Command, Options } from "@effect/cli"
 import { Console, Effect } from "effect"
 import { existsSync } from "node:fs"
-import type { HealthResponse } from "../api/types.js"
+import type { HealthResponse } from "@breadboard/sdk"
 import { DEFAULT_CONFIG_PATH, loadAppConfig } from "../config/appConfig.js"
 import { getUserConfigPath } from "../config/userConfig.js"
 import { resolveAuthToken } from "../config/authTokenProvider.js"

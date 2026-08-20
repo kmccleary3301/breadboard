@@ -1,5 +1,5 @@
 import { Effect, Option } from "effect"
-import type { SessionEvent } from "../api/types.js"
+import type { SessionEvent } from "@breadboard/sdk"
 import { runAsk } from "./askLogic.js"
 import { createOneShotRenderState, renderOneShotEvent } from "./oneshotRender.js"
 import { resolveInvocationContext } from "./invocationContext.js"

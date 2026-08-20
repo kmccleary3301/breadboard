@@ -36,7 +36,7 @@ test("streamSessionEvents uses the v1 endpoint and parses the SSE envelope", asy
 
   assert.equal(
     requestedUrl,
-    "http://breadboard.test:9099/v1/sessions/session-123/events?replay=true&limit=1",
+    "http://breadboard.test:9099/v1/sessions/session-123/events?replay=true&limit=1&schema=2&include_legacy=false",
   )
   assert.equal(events.length, 1)
   assert.equal(events[0].id, "wire-42")

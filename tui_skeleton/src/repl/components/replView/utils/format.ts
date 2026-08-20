@@ -1,4 +1,4 @@
-import type { SessionFileInfo } from "../../../../api/types.js"
+import type { SessionFileInfo } from "@breadboard/sdk"
 import { COLUMN_SEPARATOR, DASH_GLYPH, GLYPHS } from "../theme.js"
 
 export const formatBytes = (bytes: number): string => {

@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { loadAppConfig } from "../config/appConfig.js"
-import type { SessionSummary } from "../api/types.js"
+import type { SessionSummary } from "@breadboard/sdk"
 
 const CACHE_VERSION = 1
 const MAX_RECENT = 50

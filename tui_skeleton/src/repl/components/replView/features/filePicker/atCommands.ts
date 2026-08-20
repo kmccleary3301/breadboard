@@ -1,4 +1,4 @@
-import type { SessionFileInfo } from "../../../../../api/types.js"
+import type { SessionFileInfo } from "@breadboard/sdk"
 import { GLYPHS } from "../../theme.js"
 import { formatFileListLines } from "../../utils/format.js"
 import { stripCommandQuotes } from "../../utils/text.js"

@@ -1,25 +1,4 @@
-export { ApiError, createBreadboardClient, type BreadboardClientConfig } from "./client.js"
-export { streamSessionEvents, type EventStreamOptions, type StreamConfig } from "./stream.js"
-
-export type {
-  PublicResult,
-  EventType,
-  SessionEvent,
-  SessionFileInfo,
-  SessionFileContent,
-  HealthResponse,
-  ModelCatalogEntry,
-  ModelCatalogResponse,
-  SkillType,
-  SkillEntry,
-  SkillSelection,
-  SkillCatalog,
-  SkillCatalogResponse,
-  CTreeSnapshotResponse,
-  SessionArtifactInfo,
-  SessionCreateRequest,
-  SessionCreateResponse,
-  SessionSummary,
-  ErrorResponse,
-} from "./types.js"
-
+export { ApiError, createBreadboardClient, createApiClient, type BreadboardClientConfig, type BreadboardClient, type PublicActionId } from "./client.js"
+export { streamSessionEvents, openEventStream, type EventStreamOptions, type StreamConfig, type EventStreamHandlers, type EventStreamHandle, type OpenEventStreamOptions } from "./stream.js"
+export type * from "./types.js"
+export { ROUTES } from "./generated/routes.js"

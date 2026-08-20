@@ -1,9 +1,9 @@
-import { ApiError } from "../../api/internalClient.js"
+import { ApiError } from "@breadboard/sdk"
 import type {
   CTreeNode,
   CTreeSnapshotSummary,
   SessionEvent,
-} from "../../api/types.js"
+} from "@breadboard/sdk"
 import { reduceCTreeModel } from "../../repl/ctrees/reducer.js"
 import { BRAND_COLORS, SEMANTIC_COLORS } from "../../repl/designSystem.js"
 import { createEmptyTodoStore, reduceTodoStore } from "../../repl/todos/todoStore.js"
