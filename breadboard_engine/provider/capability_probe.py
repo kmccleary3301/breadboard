@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional
 
-from .runtime import (
+from .contracts import (
     ProviderRuntimeError,
     ProviderResult,
     ProviderMessage,

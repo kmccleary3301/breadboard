@@ -16,7 +16,7 @@ from ..messaging.markdown_logger import MarkdownLogger
 from ..provider.ir import IRDeltaEvent
 from ..provider.routing import provider_router
 from ..provider import provider_adapter_manager, sanitize_openai_tool_name
-from ..provider.runtime import ProviderRuntimeContext
+from ..provider.contracts import ProviderRuntimeContext
 from ..provider import normalize_provider_result
 from .components import (
     apply_streaming_policy_for_turn,

@@ -15,14 +15,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
-from .runtime import (
+from .contracts import (
     ProviderMessage,
     ProviderResult,
     ProviderRuntime,
     ProviderRuntimeContext,
     ProviderRuntimeError,
-    provider_registry,
 )
+from .registry import provider_registry
 
 
 _CODEX_BIN_ENV = "BREADBOARD_CODEX_BIN"

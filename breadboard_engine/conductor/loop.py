@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..core.core import ToolDefinition
 from ..error_handling.error_handler import ErrorHandler
 from ..messaging.markdown_logger import MarkdownLogger
-from ..provider.runtime import ProviderResult, ProviderRuntimeError
+from ..provider.contracts import ProviderResult, ProviderRuntimeError
 from ..state.completion_detector import CompletionDetector
 from ..state.session_state import SessionState
 from ..todo.store import TODO_OPEN_STATUSES

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from .runtime import ProviderRuntime, ProviderRuntimeContext, ProviderRuntimeError, ProviderResult
+from .contracts import ProviderRuntime, ProviderRuntimeContext, ProviderRuntimeError, ProviderResult
 
 
 class ReplayRuntime(ProviderRuntime):

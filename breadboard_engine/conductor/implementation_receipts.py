@@ -18,13 +18,13 @@ from .context import ConductorContext
 from ..messaging.markdown_logger import MarkdownLogger
 from ..provider import provider_adapter_manager
 from ..provider.routing import provider_router
-from ..provider.runtime import (
+from ..provider.contracts import (
     ProviderMessage,
     ProviderRuntimeContext,
     ProviderRuntimeError,
     ProviderResult,
-    provider_registry,
 )
+from ..provider.registry import provider_registry
 from ..replay import resolve_todo_placeholders
 from ..orchestration.coordination import (
     build_completion_signal_proposal,

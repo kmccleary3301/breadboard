@@ -5,7 +5,7 @@ import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..messaging.markdown_logger import MarkdownLogger
-from .runtime import ProviderResult, ProviderRuntimeContext, ProviderRuntimeError
+from .contracts import ProviderResult, ProviderRuntimeContext, ProviderRuntimeError
 from ..state.session_state import SessionState
 
 

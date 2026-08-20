@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..provider.routing import provider_router
-from ..provider.runtime import provider_registry
+from ..provider.registry import provider_registry
 from .components import (
     apply_cache_control_to_initial_user_prompt,
     apply_cache_control_to_tool_messages,

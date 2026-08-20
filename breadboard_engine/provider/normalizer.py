@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List
 
-from .runtime import ProviderResult, ProviderMessage, ProviderToolCall
+from .contracts import ProviderResult, ProviderMessage, ProviderToolCall
 
 
 @dataclass
