@@ -35,6 +35,7 @@ Status: `active`
 | `bb.contract_tiers.v1` | Consumer-backed tier registry for the published contract estate | `evidence` |
 | `bb.coordination_verification_result.v1` | bb.coordination_verification_result.v1 | `evidence` |
 | `bb.coordination_view.v1` | BreadBoard Coordination View V1 candidate | `runtime_protocol` |
+| `bb.credentials.v1` | BreadBoard credential store logical model V1 | `host_protocol` |
 | `bb.directive.v1` | bb.directive.v1 | `host_protocol` |
 | `bb.effective_config_graph.v1` | BreadBoard effective config graph | `runtime_protocol` |
 | `bb.effective_operation_policy.v1` | BreadBoard effective operation policy V1 | `runtime_protocol` |
@@ -47,6 +48,7 @@ Status: `active`
 | `bb.kernel_event.v2` | BreadBoard Kernel Event V2 | `runtime_protocol` |
 | `bb.kernel.common.v1` | BreadBoard kernel shared definitions V1 | `config_algebra` |
 | `bb.memory_compaction_plan.v1` | BreadBoard memory compaction plan V1 | `host_protocol` |
+| `bb.model_roles.v1` | BreadBoard model roles V1 | `host_protocol` |
 | `bb.permission.v1` | bb.permission.v1 | `host_protocol` |
 | `bb.projection_event.v1` | BreadBoard projection event V1 | `host_protocol` |
 | `bb.provider_exchange.v1` | bb.provider_exchange.v1 | `host_protocol` |
