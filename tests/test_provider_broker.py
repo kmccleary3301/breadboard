@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialStore
+from breadboard_engine.security import redaction
 
 
 def test_broker_nine_method_surface_and_plain_data(tmp_path):
@@ -65,6 +66,30 @@ def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
     assert material and material["api_key"] == "anthropic-lease-secret"
     assert broker.store.release_lease(material["lease_id"]) is True
     assert broker.store.release_lease(material["lease_id"]) is False
+
+
+def test_restarted_broker_registers_leased_secrets_for_redaction(tmp_path):
+    db = tmp_path / "credentials.sqlite3"
+    original = ProviderBroker(SQLiteCredentialStore(db))
+    original.putApiKey(
+        {
+            "provider_id": "anthropic",
+            "account_label": "restart",
+            "api_key": "anthropic-restart-secret",
+            "headers": {"X-Custom-Auth": "custom-header-secret"},
+        }
+    )
+    redaction.clear_registered_secret_values()
+
+    restarted = ProviderBroker(SQLiteCredentialStore(db))
+    material = restarted.issue_execution_material("anthropic")
+
+    assert material is not None
+    assert {"anthropic-restart-secret", "custom-header-secret"} <= set(
+        redaction.iter_registered_secret_values()
+    )
+    restarted.release_execution_material(material["lease_id"])
+    redaction.clear_registered_secret_values()
 
 
 def test_session_start_child_inherits_no_credential_environment(tmp_path):

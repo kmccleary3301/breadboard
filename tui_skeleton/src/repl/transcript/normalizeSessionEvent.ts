@@ -90,8 +90,8 @@ export const normalizeSessionEvent = (event: SessionEvent): NormalizedEvent | nu
       actor: { kind: "tool" },
       toolCallId: extractString(payload, ["tool_call_id", "toolCallId", "call_id", "callId", "id"]),
       toolName: extractString(payload, ["tool_name", "tool", "name", "command"]),
-      argsText: extractString(payload, ["args_text", "args"]),
-      textDelta: extractString(payload, ["args_text_delta", "delta", "text"]),
+      argsText: extractString(payload, ["arguments", "args_text", "args"]),
+      textDelta: extractString(payload, ["arguments_delta", "args_text_delta", "delta", "text"]),
     }
   }
   if (event.type === "tool.result" || event.type === "tool_result") {

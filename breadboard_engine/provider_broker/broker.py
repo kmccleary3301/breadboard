@@ -370,6 +370,7 @@ class ProviderBroker:
                             account_id=account_ref,
                             minimum_validity_ms=0,
                         )
+        if material is not None:
             redaction.register_secret_value(material.get("api_key"))
             redaction.register_secret_value(material.get("access_token"))
             redaction.register_secret_value(material.get("refresh_token"))

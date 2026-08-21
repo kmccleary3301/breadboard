@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { streamSessionEvents } from "../dist/stream.js"
+import { openEventStream, streamSessionEvents } from "../dist/stream.js"
 
 test("streamSessionEvents uses the v1 endpoint and parses the SSE envelope", async (t) => {
   const originalFetch = globalThis.fetch
@@ -43,4 +43,113 @@ test("streamSessionEvents uses the v1 endpoint and parses the SSE envelope", asy
   assert.equal(events[0].type, "assistant_message")
   assert.equal(events[0].session_id, "session-123")
   assert.deepEqual(events[0].payload, { text: "hello" })
+})
+
+test("openEventStream reuses the authenticated fetch transport", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  let requestedUrl
+  let requestedHeaders
+  globalThis.fetch = async (input, init) => {
+    requestedUrl = String(input)
+    requestedHeaders = new Headers(init?.headers)
+    const encoded = new TextEncoder().encode(
+      'id: wire-43\ndata: {"type":"assistant.message.delta","payload":{"text":"secured"}}\n\n',
+    )
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoded)
+          controller.close()
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    )
+  }
+
+  let handle
+  const event = await new Promise((resolve, reject) => {
+    handle = openEventStream(
+      "session-secured",
+      {
+        onEvent(value) {
+          handle.close()
+          resolve(value)
+        },
+        onError: reject,
+      },
+      {
+        config: {
+          baseUrl: "http://breadboard.test:9099",
+          authToken: async () => "fixture-token",
+        },
+      },
+    )
+  })
+
+  assert.equal(
+    requestedUrl,
+    "http://breadboard.test:9099/v1/sessions/session-secured/events?schema=2&include_legacy=false&replay=true",
+  )
+  assert.equal(requestedHeaders.get("Authorization"), "Bearer fixture-token")
+  assert.equal(event.id, "wire-43")
+  assert.deepEqual(event.payload, { text: "secured" })
+})
+
+test("openEventStream resumes reconnects from the last delivered event", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  const requestedUrls = []
+  let requestCount = 0
+  globalThis.fetch = async (input) => {
+    requestedUrls.push(String(input))
+    requestCount += 1
+    const encoded = new TextEncoder().encode(
+      `id: wire-${requestCount}\ndata: {"type":"assistant.message.delta","payload":{"index":${requestCount}}}\n\n`,
+    )
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoded)
+          controller.close()
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    )
+  }
+
+  let handle
+  const events = await new Promise((resolve, reject) => {
+    const received = []
+    handle = openEventStream(
+      "session-resume",
+      {
+        onEvent(event) {
+          received.push(event)
+          if (received.length === 2) {
+            handle.close()
+            resolve(received)
+          }
+        },
+        onError: reject,
+      },
+      {
+        config: { baseUrl: "http://breadboard.test:9099" },
+        initialRetryMs: 0,
+      },
+    )
+  })
+
+  assert.deepEqual(
+    events.map((event) => event.id),
+    ["wire-1", "wire-2"],
+  )
+  assert.match(requestedUrls[1], /[?&]from_id=wire-1(?:&|$)/)
+  assert.doesNotMatch(requestedUrls[1], /[?&]replay=true(?:&|$)/)
 })

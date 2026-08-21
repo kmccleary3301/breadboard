@@ -2230,7 +2230,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const payload = isRecord(event.payload) ? event.payload : {}
       const callId = this.resolveToolCallId(payload)
       if (!callId) break
-      const delta = extractRawString(payload, ["args_text_delta", "delta", "text"]) ?? ""
+      const delta = extractRawString(payload, ["arguments_delta", "args_text_delta", "delta", "text"]) ?? ""
       const next = this.appendToolCallArgs(callId, delta)
       const slotId = this.toolSlotsByCallId.get(callId)
       if (slotId) {
@@ -2247,7 +2247,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       if (!callId) break
       const toolName = extractString(payload, ["tool_name", "tool", "name"]) ?? "Tool"
       const argsText =
-        extractString(payload, ["args_text", "args"]) ??
+        extractString(payload, ["arguments", "args_text", "args"]) ??
         this.toolCallArgsById.get(callId) ??
         ""
       const callEntryId = this.toolLogEntryByCallId.get(callId) ?? null
