@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List, Mapping, Sequence
+from .build_cache import search_build_request
 
 from .study import SearchStudyRegistry, build_default_search_study_registry, run_search_study
 
@@ -157,5 +158,9 @@ def build_default_search_study_kits(
     *,
     registry: SearchStudyRegistry | None = None,
 ) -> List[SearchStudyKit]:
-    active_registry = registry or build_default_search_study_registry()
-    return [build_search_study_kit(entry.study_key, registry=active_registry) for entry in active_registry.list_entries()]
+    with search_build_request():
+        active_registry = registry or build_default_search_study_registry()
+        return [
+            build_search_study_kit(entry.study_key, registry=active_registry)
+            for entry in active_registry.list_entries()
+        ]

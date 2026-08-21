@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict
+from .build_cache import search_build_entry
 
 from .offline_convergence import (
     build_search_offline_convergence_closeout_packet,
@@ -526,6 +527,7 @@ def build_search_offline_stochasticity_compaction_matrix_payload() -> Dict[str, 
     }
 
 
+@search_build_entry
 def build_search_offline_stochasticity_compaction_ledger_packet() -> SearchOfflineStochasticityCompactionLedgerPacket:
     matrix = build_search_offline_stochasticity_compaction_matrix_packet()
     return SearchOfflineStochasticityCompactionLedgerPacket(
@@ -560,6 +562,7 @@ def build_search_offline_stochasticity_compaction_ledger_payload() -> Dict[str, 
     }
 
 
+@search_build_entry
 def build_search_offline_stochasticity_compaction_closeout_packet() -> SearchOfflineStochasticityCompactionCloseoutPacket:
     matrix = build_search_offline_stochasticity_compaction_matrix_packet()
     ledger = build_search_offline_stochasticity_compaction_ledger_packet()
@@ -681,6 +684,7 @@ def _scoring_jitter_labels() -> tuple[str, ...]:
     )
 
 
+@search_build_entry
 def build_search_offline_stochasticity_scoring_jitter_matrix_packet() -> SearchOfflineStochasticityScoringJitterMatrixPacket:
     compaction = build_search_offline_stochasticity_compaction_matrix_packet()
     ledger = build_search_offline_stochasticity_compaction_ledger_packet()
@@ -719,6 +723,7 @@ def build_search_offline_stochasticity_scoring_jitter_matrix_payload() -> Dict[s
     }
 
 
+@search_build_entry
 def build_search_offline_stochasticity_scoring_jitter_ledger_packet() -> SearchOfflineStochasticityScoringJitterLedgerPacket:
     matrix = build_search_offline_stochasticity_scoring_jitter_matrix_packet()
     return SearchOfflineStochasticityScoringJitterLedgerPacket(
@@ -753,6 +758,7 @@ def build_search_offline_stochasticity_scoring_jitter_ledger_payload() -> Dict[s
     }
 
 
+@search_build_entry
 def build_search_offline_stochasticity_scoring_jitter_closeout_packet() -> SearchOfflineStochasticityScoringJitterCloseoutPacket:
     matrix = build_search_offline_stochasticity_scoring_jitter_matrix_packet()
     ledger = build_search_offline_stochasticity_scoring_jitter_ledger_packet()

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 
 from breadboard_engine.optimize import (
     BenchmarkRunManifest,
@@ -388,6 +389,7 @@ from breadboard_engine.search import (
     render_search_operator_screen_text,
     run_search_study,
 )
+from breadboard_engine.search.build_cache import _memoized_builder, search_build_request
 
 
 def test_search_records_round_trip() -> None:
@@ -1761,6 +1763,43 @@ def test_default_search_study_kits_cover_canonical_families_with_standard_contro
         assert kit.artifact_contract.summary_txt is True
         assert kit.artifact_contract.inspect_supported is True
         assert kit.artifact_contract.compare_supported is True
+
+
+def test_default_search_study_kits_return_mutation_independent_results() -> None:
+    first = {kit.study_key: kit for kit in build_default_search_study_kits()}
+    first["dag_v4_bavt"].top_level_metrics["cache_probe"] = "mutated"
+
+    second = {kit.study_key: kit for kit in build_default_search_study_kits()}
+
+    assert "cache_probe" not in second["dag_v4_bavt"].top_level_metrics
+
+
+def test_default_search_study_kits_support_concurrent_requests() -> None:
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(executor.map(lambda _: build_default_search_study_kits(), range(8)))
+
+    assert {len(kits) for kits in results} == {100}
+    assert all(kits[0] is not results[0][0] for kits in results[1:])
+
+
+def test_search_build_request_rebuilds_between_top_level_requests() -> None:
+    state: dict[str, object] = {"calls": 0, "value": "first"}
+
+    def build_probe() -> dict[str, object]:
+        state["calls"] = int(state["calls"]) + 1
+        return {"value": state["value"]}
+
+    cached_probe = _memoized_builder(build_probe)
+    with search_build_request():
+        first = cached_probe()
+        state["value"] = "second"
+        cached_within_first_request = cached_probe()
+    with search_build_request():
+        rebuilt = cached_probe()
+
+    assert first == cached_within_first_request == {"value": "first"}
+    assert rebuilt == {"value": "second"}
+    assert state["calls"] == 2
 
 
 def test_canonical_study_kit_marks_ready_controls_from_existing_packet_evidence() -> None:
