@@ -6,10 +6,10 @@ import sys
 from pathlib import Path
 
 
-def test_phase15_runner_dry_run_uses_verifier_executor_payload() -> None:
-    repo_root = Path("/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_main_verify_20260313")
-    tasks_path = repo_root / "tmp" / "test_phase15_runner_tasks.json"
-    out_path = repo_root / "tmp" / "test_phase15_runner_results.json"
+def test_phase15_runner_dry_run_uses_verifier_executor_payload(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    tasks_path = tmp_path / "test_phase15_runner_tasks.json"
+    out_path = tmp_path / "test_phase15_runner_results.json"
     tasks_path.parent.mkdir(parents=True, exist_ok=True)
     tasks_path.write_text(
         json.dumps(
@@ -43,7 +43,7 @@ def test_phase15_runner_dry_run_uses_verifier_executor_payload() -> None:
             "--out",
             str(out_path),
             "--workspace-root",
-            "tmp/test_phase15_runner_dry_run",
+            str(tmp_path / "workspace"),
             "--dry-run",
         ],
         cwd=repo_root,

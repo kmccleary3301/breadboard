@@ -1157,6 +1157,25 @@ def run_lane(
                 continue
             continue
         argv = _command_stage_argv(stage_name, lane_def, inventory_lane)
+        capture = lane_def.get("capture")
+        if (
+            argv is None
+            and stage_name == "capture"
+            and out_dir is not None
+            and not promote_accepted
+            and lane_def.get("status") != "accepted"
+            and isinstance(capture, Mapping)
+            and capture.get("strategy") in {"replay_dump", "runtime_records"}
+        ):
+            metadata_result = _finalize_stage_result(
+                _declared_non_execution(stage_name, lane_def, comparator_registry_path, out_dir),
+                lane_def,
+                executed=False,
+            )
+            results.append(metadata_result)
+            if metadata_result["returncode"] != 0:
+                blocked_by = stage_name
+            continue
         if argv is None and stage_name == "capture" and (promote_accepted or out_dir is not None):
             try:
                 from scripts.e4_parity.lane_acceptance_artifacts import (

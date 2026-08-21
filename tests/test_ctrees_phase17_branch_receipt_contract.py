@@ -142,10 +142,10 @@ def test_phase17_verification_receipt_requires_post_patch_shell_evidence(tmp_pat
     assert state["post_patch_shell_seen"] is True
 
 
-def test_phase17_runner_dry_run_uses_branch_receipt_payload() -> None:
-    repo_root = Path("/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_main_verify_20260313")
-    tasks_path = repo_root / "tmp" / "test_phase17_runner_tasks.json"
-    out_path = repo_root / "tmp" / "test_phase17_runner_results.json"
+def test_phase17_runner_dry_run_uses_branch_receipt_payload(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    tasks_path = tmp_path / "test_phase17_runner_tasks.json"
+    out_path = tmp_path / "test_phase17_runner_results.json"
     tasks_path.parent.mkdir(parents=True, exist_ok=True)
     tasks_path.write_text(
         json.dumps(
@@ -180,7 +180,7 @@ def test_phase17_runner_dry_run_uses_branch_receipt_payload() -> None:
             "--out",
             str(out_path),
             "--workspace-root",
-            "tmp/test_phase17_runner_dry_run",
+            str(tmp_path / "workspace"),
             "--dry-run",
         ],
         cwd=repo_root,

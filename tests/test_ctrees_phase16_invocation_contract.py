@@ -63,7 +63,7 @@ def test_phase16_state_advances_allowlist_after_observed_tool_calls(tmp_path: Pa
 
 
 def test_phase16_runner_dry_run_uses_invocation_first_payload(tmp_path: Path) -> None:
-    repo_root = Path("/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_main_verify_20260313")
+    repo_root = Path(__file__).resolve().parents[1]
     tasks_path = tmp_path / "tasks.json"
     out_path = tmp_path / "results.json"
     tasks_path.write_text(
@@ -98,7 +98,7 @@ def test_phase16_runner_dry_run_uses_invocation_first_payload(tmp_path: Path) ->
             "--out",
             str(out_path),
             "--workspace-root",
-            "tmp/test_phase16_runner_dry_run",
+            str(tmp_path / "workspace"),
             "--dry-run",
         ],
         cwd=repo_root,

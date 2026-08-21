@@ -62,14 +62,17 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
     assert help_result.returncode == 0, help_result.stderr
     assert help_result.stdout.startswith("usage: breadboard")
     assert "harness" in help_result.stdout
-    assert "lane" not in help_result.stdout
+    assert "lane" in help_result.stdout
+    for internal_route in ("claim", "lane-execution", "lane-lock"):
+        assert internal_route not in help_result.stdout
     internal_environment = dict(environment, BREADBOARD_ENABLE_E4_API="1")
     internal_help = subprocess.run(
         [str(breadboard), "--help"], cwd=outside_repo, env=internal_environment,
         check=False, capture_output=True, text=True,
     )
     assert internal_help.returncode == 0, internal_help.stderr
-    assert "lane" in internal_help.stdout
+    for route in ("lane", "claim", "lane-execution", "lane-lock"):
+        assert route in internal_help.stdout
 
     describe_result = subprocess.run(
         [str(breadboard), "--json", "system", "describe"],

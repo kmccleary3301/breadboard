@@ -158,5 +158,6 @@ def test_modal_overlay_layout_lock_is_centered():
     stack_file = (_repo_root() / "tui_skeleton" / "src" / "repl" / "components" / "replView" / "overlays" / "buildModalStack.tsx").read_text(
         encoding="utf-8",
     )
-    assert "const useSheetModalLayout = true" in stack_file
-    assert 'layout: useSheetModalLayout ? "sheet" : undefined' in stack_file
+    assert "const useSheetModalLayout = true" not in stack_file
+    assert 'layout: isBreadboardProfile ? "sheet" : undefined' in stack_file
+    assert "layout: undefined" in stack_file

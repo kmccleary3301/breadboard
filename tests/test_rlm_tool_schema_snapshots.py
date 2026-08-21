@@ -60,7 +60,7 @@ def _discover_rlm_enabled_configs() -> Iterable[str]:
     previous_cwd = Path.cwd()
     try:
         os.chdir(repo_root)
-        for cfg_path in sorted((repo_root / "agent_configs").glob("*.yaml")):
+        for cfg_path in sorted((repo_root / "agent_configs").rglob("*.yaml")):
             rel = str(cfg_path.relative_to(repo_root).as_posix())
             try:
                 cfg = load_agent_config(rel)
@@ -105,6 +105,6 @@ def test_non_rlm_base_schema_excludes_rlm_tools_and_stays_stable(monkeypatch) ->
     monkeypatch.setenv("AGENT_SCHEMA_V2_ENABLED", "1")
     snapshot = _compute_tool_schema_snapshot("agent_configs/misc/base_v2.yaml")
     assert _RLM_TOOL_NAMES.isdisjoint(set(snapshot.get("tool_names") or []))
-    assert snapshot["tool_count"] == 20
-    assert snapshot["schema_hash"] == "35f0dabf94d3c8e8a6463ee4f2b796ad0187a9eb55479ef40755660fbdc9e14a"
-    assert snapshot["schema_hash_ordered"] == "a054fb14dbaa04df16ec8efa1e443ce7e29cd6ef84439dbba994387db213c0c7"
+    assert snapshot["tool_count"] == 24
+    assert snapshot["schema_hash"] == "db58034385a13d58e98dc0747b64fd92a19d8ee84eeb1cdb2acd2bd995bb4619"
+    assert snapshot["schema_hash_ordered"] == "89b58690a3fc53da7f1947e25dbbe5ec3a318ff645f53e57e2b30c44ce73d241"

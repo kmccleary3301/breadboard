@@ -57,10 +57,11 @@ def _system(ns):
     p=ns.add_parser("system",help="inspect installed product");_common(p);s=p.add_subparsers(dest="command",required=True)
     for n,fn in (("describe",system.describe),("health",system.health),("schemas",system.schemas)):s.add_parser(n).set_defaults(handler=lambda a,n=n,fn=fn:fn(["system",n],_w(a)))
 def build_parser():
-    p=argparse.ArgumentParser(prog="breadboard",description="BreadBoard product system, harness, session, integration, and artifact CLI.");p.add_argument("--json",action="store_true",help="emit bb.cli.result.v1 JSON");p.add_argument("--quiet",action="store_true");ns=p.add_subparsers(dest="namespace",required=True);_system(ns);_harness(ns);_harness_lock(ns);_session(ns);_integration(ns);_artifact(ns)
-    if _enabled("BREADBOARD_ENABLE_E4_API"):
-        from . import e4
-        e4.register(ns)
+    p=argparse.ArgumentParser(prog="breadboard",description="BreadBoard product system, harness, session, integration, artifact, and lane CLI.");p.add_argument("--json",action="store_true",help="emit bb.cli.result.v1 JSON");p.add_argument("--quiet",action="store_true");ns=p.add_subparsers(dest="namespace",required=True);_system(ns);_harness(ns);_harness_lock(ns);_session(ns);_integration(ns);_artifact(ns)
+    from . import e4
+    internal = _enabled("BREADBOARD_ENABLE_E4_API")
+    e4.register_lane(ns, include_internal=internal)
+    if internal:e4.register_internal(ns)
     return p
 def _legacy_explain(a):
     try:

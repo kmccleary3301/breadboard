@@ -8,9 +8,14 @@ from breadboard_engine.agent_session import OpenCodeAgent
 
 @pytest.fixture(scope="module")
 def ray_cluster():
-    ray.init()
-    yield
-    ray.shutdown()
+    owns_runtime = not ray.is_initialized()
+    if owns_runtime:
+        ray.init()
+    try:
+        yield
+    finally:
+        if owns_runtime and ray.is_initialized():
+            ray.shutdown()
 
 
 def test_agent_persist_messages(ray_cluster, tmp_path):

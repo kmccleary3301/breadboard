@@ -362,7 +362,7 @@ scenarios:
     tags: [claude, replay, e4, refresh]
     enabled: true
     mode: replay
-    config: agent_configs/claude-code_2-1-63_e4_3-6-2026.yaml
+    config: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     session: misc/claude_code_tests/claude_e4_refresh_ping_session_20260304.json
     golden_workspace: misc/claude_code_runs/goldens/2.0.72/claude_e4_refresh_ping_v1/runs/e4_refresh_20260304_probe_claude_ping/workspace
     workspace_seed: misc/claude_code_runs/goldens/2.0.72/claude_e4_refresh_ping_v1/runs/e4_refresh_20260304_probe_claude_ping/workspace
@@ -974,7 +974,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, opencode, oh-my-opencode]
     enabled: true
     mode: replay
-    config: agent_configs/oh-my-opencode_3-10-0_e4_3-6-2026.yaml
+    config: agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml
     session: docs/conformance/e4_recalibration_evidence/ohmy_opencode_phase8_async_subagents_v1_20260305_v3100/replay_session.json
     golden_workspace: docs/conformance/e4_recalibration_evidence/ohmy_opencode_phase8_async_subagents_v1_20260305_v3100/workspace
     equivalence: normalized_trace
@@ -991,7 +991,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, opencode, oh-my-opencode, subagent, nested]
     enabled: true
     mode: replay
-    config: agent_configs/oh-my-opencode_3-10-0_e4_3-6-2026.yaml
+    config: agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml
     session: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_subagent_nested_spawn_v1/current/exports/replay_session.json
     golden_workspace: misc/phase_8_fixtures/phase8_subagent_nested_spawn_v1
     equivalence: normalized_trace
@@ -1008,7 +1008,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, opencode, oh-my-opencode, call_omo_agent]
     enabled: true
     mode: replay
-    config: agent_configs/oh-my-opencode_3-10-0_e4_3-6-2026.yaml
+    config: agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml
     session: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251224_075507/exports/replay_session.json
     golden_workspace: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251224_075507/workspace
     equivalence: normalized_trace
@@ -1025,7 +1025,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, opencode, oh-my-opencode, background_cancel]
     enabled: true
     mode: replay
-    config: agent_configs/oh-my-opencode_3-10-0_e4_3-6-2026.yaml
+    config: agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml
     session: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel/current/exports/replay_session.json
     golden_workspace: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel/current/workspace
     equivalence: normalized_trace
@@ -1042,7 +1042,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, opencode, oh-my-opencode, background_cancel]
     enabled: true
     mode: replay
-    config: agent_configs/oh-my-opencode_3-10-0_e4_3-6-2026.yaml
+    config: agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml
     session: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel_taskid/current/exports/replay_session.json
     golden_workspace: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel_taskid/current/workspace
     equivalence: normalized_trace
@@ -1059,7 +1059,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, claude]
     enabled: true
     mode: replay
-    config: agent_configs/claude-code_2-1-63_e4_3-6-2026.yaml
+    config: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagents_v1/replay_session.json
     golden_workspace: misc/phase_8_fixtures/phase8_async_subagents_v1
     equivalence: normalized_trace
@@ -1076,7 +1076,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, claude, subagent, nested]
     enabled: true
     mode: replay
-    config: agent_configs/claude-code_2-1-63_e4_3-6-2026.yaml
+    config: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_nested_spawn_v1/replay_session.json
     golden_workspace: misc/phase_8_fixtures/phase8_subagent_nested_spawn_v1
     equivalence: normalized_trace
@@ -1093,7 +1093,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, claude, sync]
     enabled: true
     mode: replay
-    config: agent_configs/claude-code_2-1-63_e4_3-6-2026.yaml
+    config: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     session: misc/claude_code_runs/replay_sessions/2.0.72/claude_core_task_subagent_sync/replay_session.json
     golden_workspace: misc/claude_code_fixtures/claude_core_task_subagent_sync
     equivalence: normalized_trace
@@ -1110,7 +1110,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, claude, async, wakeup]
     enabled: true
     mode: replay
-    config: agent_configs/claude-code_2-1-63_e4_3-6-2026.yaml
+    config: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagent_wakeup_ordering_v1/replay_session.json
     golden_workspace: misc/phase_8_fixtures/phase8_async_subagents_v1
     equivalence: normalized_trace
@@ -1144,7 +1144,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, claude, subagent, permissions]
     enabled: true
     mode: replay
-    config: agent_configs/claude-code_2-1-63_e4_3-6-2026.yaml
+    config: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_write_denial_v1/replay_session.json
     golden_workspace: misc/phase_8_fixtures/phase8_subagent_write_denial_v1
     equivalence: normalized_trace
@@ -1161,7 +1161,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, claude, subagent, bash]
     enabled: true
     mode: replay
-    config: agent_configs/claude-code_2-1-63_e4_3-6-2026.yaml
+    config: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_permission_propagation_v1/replay_session.json
     golden_workspace: misc/phase_8_fixtures/phase8_subagent_permission_propagation_v1
     equivalence: normalized_trace
@@ -1178,7 +1178,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, claude, subagent, allowlist]
     enabled: true
     mode: replay
-    config: agent_configs/claude-code_2-1-63_e4_3-6-2026.yaml
+    config: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_allowlist_denial_v1/replay_session.json
     golden_workspace: misc/phase_8_fixtures/phase8_subagent_allowlist_denial_v1
     equivalence: normalized_trace
@@ -1195,7 +1195,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, claude, resume]
     enabled: true
     mode: replay
-    config: agent_configs/claude-code_2-1-63_e4_3-6-2026.yaml
+    config: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagent_resume_taskoutput_v1/replay_session.json
     golden_workspace: misc/phase_8_fixtures/phase8_async_subagents_v1
     equivalence: normalized_trace
@@ -1212,7 +1212,7 @@ scenarios:
     tags: [phase8, multi-agent, replay, claude, resume]
     enabled: true
     mode: replay
-    config: agent_configs/claude-code_2-1-63_e4_3-6-2026.yaml
+    config: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_resume_success_v1/replay_session.json
     golden_workspace: misc/phase_8_fixtures/phase8_subagent_resume_success_v1
     equivalence: normalized_trace

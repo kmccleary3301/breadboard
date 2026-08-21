@@ -9,7 +9,7 @@ from scripts.archive.phase11_benchmark_runner_stub import _seed_workspace_from_t
 
 
 def test_phase13_runner_dry_run_uses_runtime_payload(tmp_path: Path) -> None:
-    repo_root = Path("/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_main_verify_20260313")
+    repo_root = Path(__file__).resolve().parents[1]
     tasks_path = tmp_path / "tasks.json"
     out_path = tmp_path / "results.json"
     tasks_path.write_text(
@@ -41,7 +41,7 @@ def test_phase13_runner_dry_run_uses_runtime_payload(tmp_path: Path) -> None:
             "--out",
             str(out_path),
             "--workspace-root",
-            "tmp/test_phase13_runner_dry_run",
+            str(tmp_path / "workspace"),
             "--dry-run",
         ],
         cwd=repo_root,
@@ -71,7 +71,7 @@ def test_seed_workspace_from_task_copies_repo_subset(tmp_path: Path) -> None:
 
 
 def test_phase13_runner_dry_run_uses_minimal_support_challenger_payload(tmp_path: Path) -> None:
-    repo_root = Path("/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_main_verify_20260313")
+    repo_root = Path(__file__).resolve().parents[1]
     tasks_path = tmp_path / "tasks.json"
     out_path = tmp_path / "results.json"
     tasks_path.write_text(
@@ -103,7 +103,7 @@ def test_phase13_runner_dry_run_uses_minimal_support_challenger_payload(tmp_path
             "--out",
             str(out_path),
             "--workspace-root",
-            "tmp/test_phase13_runner_challenger_dry_run",
+            str(tmp_path / "workspace"),
             "--dry-run",
         ],
         cwd=repo_root,

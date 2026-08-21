@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from ..evidence import (
@@ -149,6 +150,8 @@ def _lane_stage_report(args):
 
 
 def _lane_capture(args):
+    previous_workspace_root = os.environ.get("BB_WORKSPACE_ROOT")
+    os.environ["BB_WORKSPACE_ROOT"] = str(_workspace(args))
     try:
         path = _lane_source(args.MANIFEST, BreadBoardWorkspace(_workspace(args)))
         lane = load_lane(path)
@@ -163,46 +166,54 @@ def _lane_capture(args):
                     return CliResult.failure(["lane", "capture"], 6, "candidate_lane_inactive", str(exc), "lane.capture", status="blocked")
                 raise
         from scripts.authoring.validate_lane import load_lane_manifest
-        from scripts.e4_parity.run_lane import main as run_main, run_lane
+        from scripts.e4_parity.run_lane import main as run_main
         lane = load_lane_manifest(path)
         output = Path(args.out) if args.out else _workspace(args) / "docs_tmp" / "bbh_capture" / str(lane["lane_id"])
-        if isinstance(lane.get("capture"), dict) and lane["capture"].get("strategy") == "replay_dump":
-            report = run_lane(str(lane["lane_id"]), stage="capture", out_dir=output if lane.get("status") == "accepted" else None, lane_def_dir=path.parent)
-            if not report.get("ok"):
-                return CliResult.failure(["lane", "capture"], 4, "stored_capture_invalid", "stored capture artifacts did not validate", "lane.capture", data={"capture": report})
-            result = CliResult.success(["lane", "capture"], {"capture": report, "requested_out": str(output)}, stage="lane.capture")
-            result.warnings.append("stored replay artifacts validated; no new capture process was executed")
-            return result
         argv = ["--lane", str(lane["lane_id"]), "--stage", "capture", "--out", str(output), "--lane-def-dir", str(path.parent)]
         if args.json:
             argv.append("--json")
         return run_main(argv)
     except Exception as exc:
         return from_exception(["lane", "capture"], exc, "lane.capture")
+    finally:
+        if previous_workspace_root is None:
+            os.environ.pop("BB_WORKSPACE_ROOT", None)
+        else:
+            os.environ["BB_WORKSPACE_ROOT"] = previous_workspace_root
 
 
 def _common(parser):
     parser.add_argument("--workspace", metavar="DIR")
 
 
-def register(subparsers) -> None:
-    lane = subparsers.add_parser("lane", help="operate internal E4 lanes")
+def register_lane(subparsers, *, include_internal: bool = False) -> None:
+    lane = subparsers.add_parser("lane", help="operate lanes")
     _common(lane)
     commands = lane.add_subparsers(dest="command", required=True)
-    command = commands.add_parser("init"); command.add_argument("--out"); command.add_argument("--lane-id", default="new_lane"); command.set_defaults(handler=_lane_init)
-    command = commands.add_parser("validate"); command.add_argument("PATH"); command.set_defaults(handler=_lane_validate)
+    if include_internal:
+        command = commands.add_parser("init"); command.add_argument("--out"); command.add_argument("--lane-id", default="new_lane"); command.set_defaults(handler=_lane_init)
+        command = commands.add_parser("validate"); command.add_argument("PATH"); command.set_defaults(handler=_lane_validate)
     command = commands.add_parser("lock"); command.add_argument("PATH"); command.add_argument("--out"); command.add_argument("--check", action="store_true"); command.set_defaults(handler=_lane_lock)
     command = commands.add_parser("capture"); command.add_argument("MANIFEST"); command.add_argument("--out"); command.set_defaults(handler=_lane_capture)
-    for name, handler, argument_count in (("create", _lane_create, 1), ("get", _lane_get, 1), ("list", _lane_list, 0), ("stage-report", _lane_stage_report, 1)):
-        command = commands.add_parser(name)
-        if argument_count:
-            command.add_argument("PATH")
-        command.set_defaults(handler=handler)
-    for name in ("claim", "compare", "normalize", "replay", "run"):
-        command = commands.add_parser(name); command.add_argument("PATH", nargs="?"); command.set_defaults(handler=_unsupported, _command=["lane", name])
+    if include_internal:
+        for name, handler, argument_count in (("create", _lane_create, 1), ("get", _lane_get, 1), ("list", _lane_list, 0), ("stage-report", _lane_stage_report, 1)):
+            command = commands.add_parser(name)
+            if argument_count:
+                command.add_argument("PATH")
+            command.set_defaults(handler=handler)
+        for name in ("claim", "compare", "normalize", "replay", "run"):
+            command = commands.add_parser(name); command.add_argument("PATH", nargs="?"); command.set_defaults(handler=_unsupported, _command=["lane", name])
+
+
+def register_internal(subparsers) -> None:
     for root, names in (("claim", ("evidence", "get", "list", "reverify")), ("lane-execution", ("cancel", "get")), ("lane-lock", ("get",))):
         parser = subparsers.add_parser(root)
         _common(parser)
         commands = parser.add_subparsers(dest="command", required=True)
         for name in names:
             command = commands.add_parser(name); command.add_argument("PATH", nargs="?"); command.set_defaults(handler=_unsupported, _command=[root, name])
+
+
+def register(subparsers) -> None:
+    register_lane(subparsers, include_internal=True)
+    register_internal(subparsers)

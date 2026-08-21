@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def test_phase14_runner_dry_run_uses_executor_payload(tmp_path: Path) -> None:
-    repo_root = Path("/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_main_verify_20260313")
+    repo_root = Path(__file__).resolve().parents[1]
     tasks_path = tmp_path / "tasks.json"
     out_path = tmp_path / "results.json"
     tasks_path.write_text(
@@ -39,7 +39,7 @@ def test_phase14_runner_dry_run_uses_executor_payload(tmp_path: Path) -> None:
             "--out",
             str(out_path),
             "--workspace-root",
-            "tmp/test_phase14_runner_dry_run",
+            str(tmp_path / "workspace"),
             "--dry-run",
         ],
         cwd=repo_root,
@@ -54,7 +54,7 @@ def test_phase14_runner_dry_run_uses_executor_payload(tmp_path: Path) -> None:
 
 
 def test_phase14_runner_dry_run_supports_execution_first_executor(tmp_path: Path) -> None:
-    repo_root = Path("/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_main_verify_20260313")
+    repo_root = Path(__file__).resolve().parents[1]
     tasks_path = tmp_path / "tasks.json"
     out_path = tmp_path / "results.json"
     tasks_path.write_text(
@@ -86,7 +86,7 @@ def test_phase14_runner_dry_run_supports_execution_first_executor(tmp_path: Path
             "--out",
             str(out_path),
             "--workspace-root",
-            "tmp/test_phase14_runner_execution_first_dry_run",
+            str(tmp_path / "workspace"),
             "--dry-run",
         ],
         cwd=repo_root,

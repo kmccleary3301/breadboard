@@ -1,20 +1,33 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List
 
+from scripts.e4_parity.evidence_roots import evidence_root
+
 from .live_grounding import summarize_live_run
-_CONTROL_ROOT = Path("/shared_folders/querylake_server/ray_testing/ray_SCE")
-_PHASE11_MATRIX_PATH = (
-    _CONTROL_ROOT
-    / "docs_tmp"
-    / "c_trees"
-    / "phase_11"
-    / "artifacts"
-    / "candidate_a_live_matrix_v1"
-    / "phase11_candidate_a_live_matrix_summary_v1.json"
-)
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _resolve_evidence_root() -> Path:
+    return evidence_root(
+        os.environ.get("BREADBOARD_EVIDENCE_ROOT"),
+        workspace_root=_REPO_ROOT,
+    )
+
+
+def _phase11_matrix_path() -> Path:
+    return (
+        _resolve_evidence_root()
+        / "c_trees"
+        / "phase_11"
+        / "artifacts"
+        / "candidate_a_live_matrix_v1"
+        / "phase11_candidate_a_live_matrix_summary_v1.json"
+    )
 
 _SYSTEM_KEYS = [
     "practical_flagship",
@@ -28,11 +41,18 @@ def _load_json(path: Path) -> Dict[str, Any]:
 
 
 def load_phase11_live_matrix_summary() -> Dict[str, Any]:
-    return _load_json(_PHASE11_MATRIX_PATH)
+    return _load_json(_phase11_matrix_path())
 
-def _audit_system_row(system_key: str, system_row: Dict[str, Any]) -> Dict[str, Any]:
+
+def _audit_system_row(
+    system_key: str,
+    system_row: Dict[str, Any],
+    *,
+    control_root: Path,
+) -> Dict[str, Any]:
     live_summary = summarize_live_run(
-        run_dir=_CONTROL_ROOT / "breadboard_main_verify_20260313" / str(system_row.get("run_dir") or ""),
+        run_dir=control_root / "breadboard_main_verify_20260313" / str(system_row.get("run_dir") or ""),
+
         completion_summary={
             "completed": bool(system_row.get("completed")),
             "reason": str(system_row.get("reason") or ""),
@@ -52,7 +72,17 @@ def _audit_system_row(system_key: str, system_row: Dict[str, Any]) -> Dict[str, 
 
 
 def build_phase12_grounded_live_audit() -> Dict[str, Any]:
-    matrix = load_phase11_live_matrix_summary()
+    evidence_root_path = _resolve_evidence_root()
+    phase11_matrix_path = (
+        evidence_root_path
+        / "c_trees"
+        / "phase_11"
+        / "artifacts"
+        / "candidate_a_live_matrix_v1"
+        / "phase11_candidate_a_live_matrix_summary_v1.json"
+    )
+    matrix = _load_json(phase11_matrix_path)
+
     audited_rows: List[Dict[str, Any]] = []
     system_summaries: Dict[str, Dict[str, Any]] = {
         key: {
@@ -69,7 +99,12 @@ def build_phase12_grounded_live_audit() -> Dict[str, Any]:
     for row in list(matrix.get("rows") or []):
         audited_row: Dict[str, Any] = {"task_id": str(row.get("task_id") or "")}
         for system_key in _SYSTEM_KEYS:
-            audited = _audit_system_row(system_key, dict(row.get(system_key) or {}))
+            audited = _audit_system_row(
+                system_key,
+                dict(row.get(system_key) or {}),
+                control_root=evidence_root_path.parent,
+            )
+
             audited_row[system_key] = audited
             summary = system_summaries[system_key]
             summary["row_count"] += 1
@@ -89,7 +124,7 @@ def build_phase12_grounded_live_audit() -> Dict[str, Any]:
 
     return {
         "schema_version": "phase12_grounded_live_audit_v1",
-        "source_matrix_path": str(_PHASE11_MATRIX_PATH),
+        "source_matrix_path": str(phase11_matrix_path),
         "row_count": len(audited_rows),
         "rows": audited_rows,
         "system_summaries": system_summaries,

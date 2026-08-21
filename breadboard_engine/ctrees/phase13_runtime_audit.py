@@ -1,26 +1,44 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+from scripts.e4_parity.evidence_roots import evidence_root
 
-_CONTROL_ROOT = Path("/shared_folders/querylake_server/ray_testing/ray_SCE")
-_PHASE12_ROOT = _CONTROL_ROOT / "docs_tmp" / "c_trees" / "phase_12"
-_ANCHOR_V2_PATH = (
-    _PHASE12_ROOT
-    / "artifacts"
-    / "controller_iteration2_v1"
-    / "anchor"
-    / "phase12_controller_iteration2_anchor_summary_v1.json"
-)
-_CALIBRATION_V2_PATH = (
-    _PHASE12_ROOT
-    / "artifacts"
-    / "controller_iteration2_v1"
-    / "calibration"
-    / "phase12_controller_iteration2_calibration_summary_v1.json"
-)
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _resolve_evidence_root() -> Path:
+    return evidence_root(
+        os.environ.get("BREADBOARD_EVIDENCE_ROOT"),
+        workspace_root=_REPO_ROOT,
+    )
+
+
+def _phase12_root() -> Path:
+    return _resolve_evidence_root() / "c_trees" / "phase_12"
+
+
+def _phase12_anchor_v2_path() -> Path:
+    return (
+        _phase12_root()
+        / "artifacts"
+        / "controller_iteration2_v1"
+        / "anchor"
+        / "phase12_controller_iteration2_anchor_summary_v1.json"
+    )
+
+
+def _phase12_calibration_v2_path() -> Path:
+    return (
+        _phase12_root()
+        / "artifacts"
+        / "controller_iteration2_v1"
+        / "calibration"
+        / "phase12_controller_iteration2_calibration_summary_v1.json"
+    )
 
 _ANCHOR_SYSTEM_KEYS = [
     "practical_flagship_old_controller",
@@ -45,11 +63,11 @@ def _load_json(path: Path) -> Dict[str, Any]:
 
 
 def load_phase12_anchor_v2_summary() -> Dict[str, Any]:
-    return _load_json(_ANCHOR_V2_PATH)
+    return _load_json(_phase12_anchor_v2_path())
 
 
 def load_phase12_calibration_v2_summary() -> Dict[str, Any]:
-    return _load_json(_CALIBRATION_V2_PATH)
+    return _load_json(_phase12_calibration_v2_path())
 
 
 def classify_phase13_loop_subfamily(system_row: Dict[str, Any]) -> Dict[str, Any]:
@@ -174,8 +192,8 @@ def build_phase13_runtime_surface_audit() -> Dict[str, Any]:
     return {
         "schema_version": "phase13_runtime_surface_audit_v1",
         "source_paths": {
-            "anchor_v2_summary": str(_ANCHOR_V2_PATH),
-            "calibration_v2_summary": str(_CALIBRATION_V2_PATH),
+            "anchor_v2_summary": str(_phase12_anchor_v2_path()),
+            "calibration_v2_summary": str(_phase12_calibration_v2_path()),
         },
         "runner_adequacy_summary": {
             "practical_flagship_calibration_grounded_count": practical_calibration_grounded,

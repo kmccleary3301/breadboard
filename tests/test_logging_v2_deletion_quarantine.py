@@ -26,7 +26,7 @@ def _active_text_files(repo_root: Path):
         rel = path.relative_to(repo_root)
         if rel == Path("tests/test_logging_v2_deletion_quarantine.py"):
             continue
-        if any(part in _SCAN_EXCLUDED_DIRS for part in rel.parts):
+        if any(part in _SCAN_EXCLUDED_DIRS or part.endswith(".egg-info") for part in rel.parts):
             continue
         if path.suffix in {".pyc", ".png", ".jpg", ".jpeg", ".gif", ".zip", ".tar", ".gz"}:
             continue
