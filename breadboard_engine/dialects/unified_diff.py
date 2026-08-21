@@ -37,7 +37,7 @@ class UnifiedDiffDialect(EnhancedBaseDialect):
     def parse_tool_calls(self, content: str) -> List[ParsedToolCall]:
         if not content:
             return []
-        if "*** Begin Patch" in content:
+        if re.search(r"(?m)^\*\*\* Begin Patch[ \t]*$", content):
             return []
 
 

@@ -197,7 +197,7 @@ class EnhancedToolExecutor:
         if not isinstance(result, dict):
             result = {"result": result}
 
-        self._record_operation(tool_call)
+        self._record_operation(tool_call, result)
         return result
 
     def _validate_tool_call(self, tool_call: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -244,7 +244,88 @@ class EnhancedToolExecutor:
                 return str(message) if message else "Shell write redirection is blocked"
         return None
 
-    def _record_operation(self, tool_call: Dict[str, Any]) -> None:
+    @staticmethod
+    def _tool_result_succeeded(result: Dict[str, Any]) -> bool:
+        if result.get("ok") is False or result.get("success") is False:
+            return False
+        if result.get("error"):
+            return False
+        for key in ("exit", "exit_code", "returncode"):
+            value = result.get(key)
+            if isinstance(value, int) and not isinstance(value, bool) and value != 0:
+                return False
+        return True
+
+    @staticmethod
+    def _patch_targets(patch: str) -> tuple[list[str], list[str]]:
+        created: list[str] = []
+        modified: list[str] = []
+
+        def append_unique(paths: list[str], path: str) -> None:
+            if path and path not in paths:
+                paths.append(path)
+
+        def normalize_path(raw: str) -> str:
+            path = raw.split("\t", 1)[0].strip()
+            if path == "/dev/null":
+                return ""
+            if path.startswith(("a/", "b/")):
+                path = path[2:]
+            return path
+
+        lines = patch.splitlines()
+        for line in lines:
+            if line.startswith("*** Add File: "):
+                append_unique(created, line.removeprefix("*** Add File: ").strip())
+            elif line.startswith(("*** Update File: ", "*** Delete File: ")):
+                append_unique(modified, line.split(": ", 1)[1].strip())
+
+        for index, line in enumerate(lines[:-1]):
+            next_line = lines[index + 1]
+            if not line.startswith("--- ") or not next_line.startswith("+++ "):
+                continue
+            old_path = normalize_path(line[4:])
+            new_path = normalize_path(next_line[4:])
+            if not old_path:
+                append_unique(created, new_path)
+            else:
+                append_unique(modified, new_path or old_path)
+
+        return created, [path for path in modified if path not in created]
+
+    @classmethod
+    def _mutation_targets(
+        cls,
+        fn: str,
+        args: Dict[str, Any],
+    ) -> tuple[list[str], list[str]]:
+        path = args.get("path") or args.get("file_path") or args.get("file_name")
+        direct_path = str(path) if isinstance(path, str) and path else ""
+        if fn in {"create_file", "create_file_from_block", "write_file", "write_text"}:
+            return ([direct_path] if direct_path else []), []
+        if fn == "apply_search_replace":
+            if not direct_path:
+                return [], []
+            if not str(args.get("search") or "").strip():
+                return [direct_path], []
+            return [], [direct_path]
+        if fn in {"apply_unified_patch", "patch"}:
+            patch = args.get("patch") or args.get("patchText") or args.get("input")
+            if isinstance(patch, str):
+                return cls._patch_targets(patch)
+        return [], []
+
+    @staticmethod
+    def _append_context_paths(context: Dict[str, Any], key: str, paths: list[str]) -> None:
+        files = context.get(key)
+        if not isinstance(files, list):
+            files = []
+            context[key] = files
+        for path in paths:
+            if path not in files:
+                files.append(path)
+
+    def _record_operation(self, tool_call: Dict[str, Any], result: Dict[str, Any]) -> None:
         fn = str(tool_call.get("function") or "")
         args = self._parse_arguments(tool_call.get("arguments"))
         op = {"function": fn, "timestamp": time.time()}
@@ -259,17 +340,34 @@ class EnhancedToolExecutor:
         if fn in {"read_file", "read_text"}:
             path = args.get("path")
             if isinstance(path, str) and path:
-                files = self._sequence_context.get("files_read_this_session")
-                if not isinstance(files, list):
-                    files = []
-                    self._sequence_context["files_read_this_session"] = files
-                if path not in files:
-                    files.append(path)
+                self._append_context_paths(
+                    self._sequence_context,
+                    "files_read_this_session",
+                    [path],
+                )
                 last_read = self._sequence_context.get("files_last_read_at")
                 if not isinstance(last_read, dict):
                     last_read = {}
                     self._sequence_context["files_last_read_at"] = last_read
                 last_read[path] = op["timestamp"]
+
+        if not self._tool_result_succeeded(result):
+            return
+
+        created, modified = self._mutation_targets(fn, args)
+        if not created and not modified:
+            return
+        self._append_context_paths(
+            self._sequence_context,
+            "files_created_this_session",
+            created,
+        )
+        self._append_context_paths(
+            self._sequence_context,
+            "files_modified_this_session",
+            modified,
+        )
+        op["files_affected"] = [*created, *modified]
 
     async def _execute_raw_tool_call(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
         fn = str(tool_call.get("function") or "")

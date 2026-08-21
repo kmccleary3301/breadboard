@@ -490,7 +490,7 @@ class DevSandboxV2:
                 args.append(str(patch_path))
                 res = self._run_git(args, timeout=30)
                 if res.returncode != 0 and "--3way" in args:
-                    fallback_args = [arg for arg in args if arg != "--3way"]
+                    fallback_args = [arg for arg in args if arg not in {"--3way", "--index"}]
                     fallback = self._run_git(fallback_args, timeout=30)
                     if fallback.returncode == 0:
                         res = fallback

@@ -77,6 +77,17 @@ def _tool_defs():
         ),
         ToolDefinition(
             type_id="diff",
+            name="apply_search_replace",
+            description="Apply an Aider SEARCH/REPLACE block.",
+            parameters=[
+                ToolParameter(name="file_name", type="string"),
+                ToolParameter(name="search", type="string"),
+                ToolParameter(name="replace", type="string"),
+            ],
+            blocking=True,
+        ),
+        ToolDefinition(
+            type_id="diff",
             name="patch",
             description="Apply an OpenCode patch block.",
             parameters=[ToolParameter(name="patchText", type="string")],

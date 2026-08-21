@@ -116,8 +116,16 @@ def test_git_apply_and_diff(ray_cluster, tmp_path):
     ray.get(sb.write_text.remote("foo.txt", "staged divergence\n"))
     ray.get(sb.vcs.remote({"action": "add"}))
     ray.get(sb.write_text.remote("foo.txt", "hello\n"))
-    apply_res = ray.get(sb.vcs.remote({"action": "apply_patch", "params": {"patch": diff_text, "three_way": True}}))
+    apply_res = ray.get(
+        sb.vcs.remote(
+            {
+                "action": "apply_patch",
+                "params": {"patch": diff_text, "three_way": True, "index": True},
+            }
+        )
+    )
     assert apply_res["ok"], apply_res
+    assert ray.get(sb.read_text.remote("foo.txt"))["content"] == "hello world\n"
     status = ray.get(sb.vcs.remote({"action": "status"}))
     assert status["ok"]
 

@@ -49,6 +49,8 @@ from tool_calling.config_schema import (
 
 from tool_calling.dialects.openai_function_calling import OpenAIFunctionCallingDialect
 from tool_calling.dialects.unified_diff import UnifiedDiffDialect
+from tool_calling.aider_diff import AiderDiffDialect
+from tool_calling.core import ToolDefinition
 from tool_calling.dialects.anthropic_xml import AnthropicXMLDialect
 from tool_calling.dialects.json_block import JSONBlockDialect
 from tool_calling.dialects.yaml_command import YAMLCommandDialect
@@ -168,6 +170,74 @@ class TestDialectParsing(unittest.TestCase):
                 "*** Begin Patch\n*** Update File: test.py\n@@\n-old\n+new\n*** End Patch"
             ),
             [],
+        )
+
+    def test_unified_diff_allows_patch_sentinel_as_file_content(self):
+        dialect = UnifiedDiffDialect()
+        content = """
+```diff
+--- a/notes.txt
++++ b/notes.txt
+@@ -1 +1,2 @@
+ existing
++*** Begin Patch
+```
+"""
+
+        parsed = dialect.parse_tool_calls(content)
+
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0].function, "apply_unified_patch")
+
+    def test_aider_requires_search_replace_tool(self):
+        dialect = AiderDiffDialect()
+        content = "\n".join(
+            [
+                "notes.txt",
+                "<" * 7 + " SEARCH",
+                "old",
+                "=" * 7,
+                "new",
+                ">" * 7 + " REPLACE",
+            ]
+        )
+        patch_tool = ToolDefinition(name="patch", description="", type_id="diff")
+
+        self.assertEqual(dialect.parse_calls(content, [patch_tool]), [])
+
+    def test_aider_parses_every_file_block(self):
+        dialect = AiderDiffDialect()
+        content = "\n".join(
+            [
+                "one.py",
+                "<" * 7 + " SEARCH",
+                "old one",
+                "=" * 7,
+                "new one",
+                ">" * 7 + " REPLACE",
+                "",
+                "two.py",
+                "<" * 7 + " SEARCH",
+                "old two",
+                "=" * 7,
+                "new two",
+                ">" * 7 + " REPLACE",
+            ]
+        )
+        search_replace_tool = ToolDefinition(
+            name="apply_search_replace",
+            description="",
+            type_id="diff",
+        )
+
+        parsed = dialect.parse_calls(content, [search_replace_tool])
+
+        self.assertEqual(
+            [(call.arguments["file_name"], call.arguments["search"], call.arguments["replace"]) for call in parsed],
+            [
+                ("one.py", "old one", "new one"),
+                ("two.py", "old two", "new two"),
+            ],
         )
     
     def test_anthropic_xml_parsing(self):

@@ -67,7 +67,7 @@ class NoRedundantCreationRule(ValidationRule):
             return None
             
         function = tool_call.get("function", "")
-        if function not in ["create_file", "create_file_from_block", "write_file"]:
+        if function not in ["create_file", "create_file_from_block", "write_file", "write_text"]:
             return None
         
         # Extract target file path
