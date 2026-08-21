@@ -615,8 +615,6 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
 
     @app.on_event("startup")
     async def _ensure_ray_initialized() -> None:
-        if os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1":
-            return
         strict_required = os.environ.get("BREADBOARD_RAY_INIT_REQUIRED", "").lower() in {"1", "true", "yes"}
         try:
             import ray  # type: ignore
