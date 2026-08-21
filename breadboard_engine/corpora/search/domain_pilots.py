@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Sequence
 
-from .examples import (
+from breadboard_engine.corpora.search.examples import (
     build_dag_v4_codetree_v2_packet,
     build_dag_v4_team_of_thoughts_packet,
     build_dag_v4_tot_v2_packet,

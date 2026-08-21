@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Sequence
 
-from .deployment_readiness import (
+from breadboard_engine.corpora.search.deployment_readiness import (
     build_search_atp_boundary_control_v2_packet,
     build_search_atp_boundary_control_v2_payload,
     build_search_atp_deployment_readiness_packet,
@@ -23,7 +23,7 @@ from .deployment_readiness import (
     build_search_rl_consumer_expansion_packet,
     build_search_rl_consumer_expansion_payload,
 )
-from .atp_production import (
+from breadboard_engine.corpora.search.atp_production import (
     build_search_atp_bundle_publication_packet_wrapper,
     build_search_atp_bundle_publication_payload,
     build_search_atp_consumer_handoff_stabilization_packet_wrapper,
@@ -35,7 +35,7 @@ from .atp_production import (
     build_search_atp_stage_b_closeout_packet_wrapper,
     build_search_atp_stage_b_closeout_payload,
 )
-from .consumerization import (
+from breadboard_engine.corpora.search.consumerization import (
     build_search_stage_c_closeout_packet_wrapper,
     build_search_stage_c_closeout_payload,
     build_search_stage_c_consumer_convergence_packet_wrapper,
@@ -49,7 +49,7 @@ from .consumerization import (
     build_search_stage_c_rl_consumerization_packet_wrapper,
     build_search_stage_c_rl_consumerization_payload,
 )
-from .cross_execution import (
+from breadboard_engine.corpora.search.cross_execution import (
     build_search_cross_execution_harness_comparison_packet_wrapper,
     build_search_cross_execution_harness_comparison_payload,
     build_search_cross_execution_matrix_packet_wrapper,
@@ -71,7 +71,7 @@ from .cross_execution import (
     build_search_cross_execution_next_locus_packet_wrapper,
     build_search_cross_execution_next_locus_payload,
 )
-from .live_execution import (
+from breadboard_engine.search.live_execution import (
     build_search_live_harness_command_matrix_packet_wrapper,
     build_search_live_harness_command_matrix_payload,
     build_search_live_harness_smoke_packet_wrapper,
@@ -85,7 +85,7 @@ from .live_execution import (
     build_search_live_closeout_packet_wrapper,
     build_search_live_closeout_payload,
 )
-from .live_widening import (
+from breadboard_engine.search.live_widening import (
     build_search_live_widening_matrix_packet_wrapper,
     build_search_live_widening_matrix_payload,
     build_search_live_widening_consumer_convergence_packet_wrapper,
@@ -93,7 +93,7 @@ from .live_widening import (
     build_search_live_widening_closeout_packet_wrapper,
     build_search_live_widening_closeout_payload,
 )
-from .live_expansion import (
+from breadboard_engine.search.live_expansion import (
     build_search_live_expansion_matrix_packet_wrapper,
     build_search_live_expansion_matrix_payload,
     build_search_live_expansion_divergence_ledger_packet_wrapper,
@@ -105,7 +105,7 @@ from .live_expansion import (
     build_search_live_expansion_closeout_packet_wrapper,
     build_search_live_expansion_closeout_payload,
 )
-from .live_stress import (
+from breadboard_engine.search.live_stress import (
     build_search_live_stress_matrix_packet_wrapper,
     build_search_live_stress_matrix_payload,
     build_search_live_stress_divergence_ledger_packet_wrapper,
@@ -117,7 +117,7 @@ from .live_stress import (
     build_search_live_stress_closeout_packet_wrapper,
     build_search_live_stress_closeout_payload,
 )
-from .offline_convergence import (
+from breadboard_engine.corpora.search.offline_convergence import (
     build_search_offline_convergence_matrix_packet_wrapper,
     build_search_offline_convergence_matrix_payload,
     build_search_offline_convergence_divergence_ledger_packet_wrapper,
@@ -127,7 +127,7 @@ from .offline_convergence import (
     build_search_offline_convergence_closeout_packet_wrapper,
     build_search_offline_convergence_closeout_payload,
 )
-from .offline_stochasticity import (
+from breadboard_engine.corpora.search.offline_stochasticity import (
     build_search_offline_stochasticity_ordering_matrix_packet_wrapper,
     build_search_offline_stochasticity_ordering_matrix_payload,
     build_search_offline_stochasticity_repeated_run_ledger_packet_wrapper,
@@ -153,7 +153,7 @@ from .offline_stochasticity import (
     build_search_offline_stochasticity_scoring_jitter_closeout_packet_wrapper,
     build_search_offline_stochasticity_scoring_jitter_closeout_payload,
 )
-from .offline_objective_regime import (
+from breadboard_engine.search.offline_objective_regime import (
     build_search_offline_objective_regime_budget_conservative_closeout_packet_wrapper,
     build_search_offline_objective_regime_budget_conservative_closeout_payload,
     build_search_offline_objective_regime_budget_conservative_divergence_ledger_packet_wrapper,
@@ -191,13 +191,13 @@ from .offline_objective_regime import (
     build_search_offline_objective_regime_replay_parity_first_matrix_packet_wrapper,
     build_search_offline_objective_regime_replay_parity_first_matrix_payload,
 )
-from .domain_pilots import (
+from breadboard_engine.corpora.search.domain_pilots import (
     build_search_atp_domain_pilot,
     build_search_atp_domain_pilot_payload,
     build_search_repair_loop_domain_pilot,
     build_search_repair_loop_domain_pilot_payload,
 )
-from .examples import (
+from breadboard_engine.corpora.search.examples import (
     build_dag_replication_v1_got_sorting_packet,
     build_dag_replication_v1_got_sorting_packet_payload,
     build_dag_replication_v1_tot_game24_packet,
@@ -213,12 +213,12 @@ from .examples import (
     build_dag_v4_team_of_thoughts_packet,
     build_dag_v4_team_of_thoughts_packet_payload,
 )
-from .inspection import (
+from breadboard_engine.search.inspection import (
     build_search_assessment_chain_view,
     build_search_lineage_view,
     build_search_replay_export_summary,
 )
-from .platform_publication import (
+from breadboard_engine.corpora.search.platform_publication import (
     build_search_platform_command_bundle_packet,
     build_search_platform_command_bundle_payload,
     build_search_platform_contract_publication_packet,
@@ -232,7 +232,7 @@ from .platform_publication import (
     build_search_platform_validator_packet_payload,
     build_search_platform_validator_packet_wrapper,
 )
-from .research_controls import (
+from breadboard_engine.corpora.search.research_controls import (
     build_search_general_agent_control_packet,
     build_search_general_agent_control_packet_payload,
     build_search_tool_planning_tree_control_packet,

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict
-from .build_cache import search_build_entry
+from breadboard_engine.corpora.search.build_cache import search_build_entry
 
-from .offline_convergence import (
+from breadboard_engine.corpora.search.offline_convergence import (
     build_search_offline_convergence_closeout_packet,
     build_search_offline_convergence_comparison_probe_packet,
     build_search_offline_convergence_divergence_ledger_packet,

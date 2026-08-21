@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Sequence
 
-from .domain_pilots import (
+from breadboard_engine.corpora.search.domain_pilots import (
     build_search_atp_domain_pilot,
     build_search_repair_loop_domain_pilot,
 )
-from .deployment_readiness import build_search_ctrees_boundary_canary
-from .examples import build_dag_v4_tot_v2_packet
+from breadboard_engine.corpora.search.deployment_readiness import build_search_ctrees_boundary_canary
+from breadboard_engine.corpora.search.examples import build_dag_v4_tot_v2_packet
 
 
 def _copy_mapping(value: Mapping[str, Any] | None) -> Dict[str, Any]:

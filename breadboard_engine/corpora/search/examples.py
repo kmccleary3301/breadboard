@@ -19,10 +19,10 @@ from breadboard_engine.optimize import (
     build_paired_candidate_comparison,
 )
 
-from .assessment import SearchAssessmentRegistry, build_default_search_assessment_registry
-from .compaction import SearchCompactionRegistry, build_default_search_compaction_registry
-from .export import build_search_offline_dataset, export_search_trajectory
-from .fidelity import (
+from breadboard_engine.search.assessment import SearchAssessmentRegistry, build_default_search_assessment_registry
+from breadboard_engine.search.compaction import SearchCompactionRegistry, build_default_search_compaction_registry
+from breadboard_engine.search.export import build_search_offline_dataset, export_search_trajectory
+from breadboard_engine.search.fidelity import (
     AssessmentLineagePacket,
     BaselineComparisonPacket,
     BenchmarkControlPacket,
@@ -38,7 +38,7 @@ from .fidelity import (
     build_default_fidelity_scorecard,
     compute_fidelity_metrics,
 )
-from .runtime import (
+from breadboard_engine.search.runtime import (
     AggregationProposal,
     AssessmentGateConfig,
     BarrieredRoundScheduler,
@@ -47,7 +47,7 @@ from .runtime import (
     MessagePassingSchedulerConfig,
     run_barriered_assessment_gate,
 )
-from .schema import (
+from breadboard_engine.search.schema import (
     SearchBranchState,
     SearchAssessment,
     SearchCandidate,

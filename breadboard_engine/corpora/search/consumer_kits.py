@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
-from .examples import (
+from breadboard_engine.corpora.search.examples import (
     build_dag_v4_optimize_consumer_packet,
     build_dag_v4_rl_consumer_packet,
 )
@@ -230,7 +230,7 @@ def _build_consumer_rows(packet: Mapping[str, Any]) -> tuple[SearchConsumerProof
 
 
 def build_search_optimize_handoff_kit() -> SearchOptimizeHandoffKit:
-    from ..optimize import (
+    from breadboard_engine.corpora.optimize import (
         build_next_frontier_dag_to_optimize_composition_packet,
         build_next_frontier_optimize_final_closeout_packet,
     )
@@ -253,7 +253,7 @@ def build_search_optimize_handoff_kit() -> SearchOptimizeHandoffKit:
 
 
 def build_search_optimize_comparison_kit() -> SearchOptimizeComparisonKit:
-    from ..optimize import (
+    from breadboard_engine.corpora.optimize import (
         build_next_frontier_dag_to_optimize_composition_packet,
         build_next_frontier_optimize_final_closeout_packet,
         build_next_frontier_optimize_second_cohort_packet,
@@ -279,7 +279,7 @@ def build_search_optimize_comparison_kit() -> SearchOptimizeComparisonKit:
 
 
 def build_search_rl_handoff_kit() -> SearchRLHandoffKit:
-    from ..rl import (
+    from breadboard_engine.corpora.rl import (
         build_next_frontier_dag_to_rl_composition_packet,
         build_next_frontier_rl_final_closeout_packet,
     )
@@ -301,7 +301,7 @@ def build_search_rl_handoff_kit() -> SearchRLHandoffKit:
 
 
 def build_search_rl_replay_parity_kit() -> SearchRLReplayParityKit:
-    from ..rl import (
+    from breadboard_engine.corpora.rl import (
         build_next_frontier_dag_to_rl_composition_packet,
         build_next_frontier_rl_final_closeout_packet,
         build_next_frontier_rl_replay_live_parity_packet,
@@ -328,11 +328,11 @@ def build_search_rl_replay_parity_kit() -> SearchRLReplayParityKit:
 
 
 def build_search_consumer_seam_diagnostic() -> SearchConsumerSeamDiagnostic:
-    from ..optimize import (
+    from breadboard_engine.corpora.optimize import (
         build_next_frontier_dag_to_optimize_composition_packet,
         build_next_frontier_optimize_final_closeout_packet,
     )
-    from ..rl import (
+    from breadboard_engine.corpora.rl import (
         build_next_frontier_dag_to_rl_composition_packet,
         build_next_frontier_rl_final_closeout_packet,
     )

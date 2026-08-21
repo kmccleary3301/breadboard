@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from .atp_production import build_search_atp_stage_b_closeout_packet
-from .consumerization import (
+from breadboard_engine.corpora.search.atp_production import build_search_atp_stage_b_closeout_packet
+from breadboard_engine.corpora.search.consumerization import (
     build_search_stage_c_closeout_packet,
     build_search_stage_c_consumer_convergence_packet,
     build_search_stage_c_optimize_consumerization_packet,
@@ -319,7 +319,7 @@ def build_search_cross_execution_matrix_packet() -> SearchCrossExecutionMatrixPa
         build_next_frontier_optimize_cohort_packet,
         build_next_frontier_optimize_live_experiment_cell,
     )
-    from breadboard_engine.rl import (
+    from breadboard_engine.corpora.rl import (
         build_next_frontier_rl_replay_live_parity_packet,
         build_next_frontier_rl_trainer_facing_export_packet,
     )

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List, Mapping, Sequence
-from .build_cache import search_build_request
+from breadboard_engine.corpora.search.build_cache import search_build_request
 
-from .study import SearchStudyRegistry, build_default_search_study_registry, run_search_study
+from breadboard_engine.corpora.search.study import SearchStudyRegistry, build_default_search_study_registry, run_search_study
 
 
 @dataclass(frozen=True)

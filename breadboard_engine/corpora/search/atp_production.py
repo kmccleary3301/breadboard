@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from .deployment_readiness import (
+from breadboard_engine.corpora.search.deployment_readiness import (
     build_search_atp_boundary_control_v2,
     build_search_atp_deployment_readiness_kit,
     build_search_atp_operator_triage_kit,

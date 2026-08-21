@@ -2,27 +2,34 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from ..longrun.checkpoint import build_longrun_checkpoint_metadata_record
-from ..search import (
+from breadboard_engine.corpora.search import (
     build_branch_execute_verify_reference_recipe,
     build_dag_replication_v1_codetree_packet,
     build_dag_replication_v1_got_sorting_packet,
     build_dag_replication_v1_moa_layered_packet,
     build_dag_replication_v1_tot_game24_packet,
 )
-from .conformance import (
+from breadboard_engine.longrun.checkpoint import build_longrun_checkpoint_metadata_record
+from breadboard_engine.rl.conformance import (
     build_adapter_probe_report,
     build_export_conformance_packet,
     build_export_conformance_parity_view,
 )
-from .fidelity import (
+from breadboard_engine.rl.export import (
+    build_dataset_export_unit_core_view,
+    export_reference_unit_bundle,
+    export_rl_transition_segment_unit,
+    export_sft_distillation_unit,
+    export_verifier_example_unit,
+)
+from breadboard_engine.rl.fidelity import (
     build_compaction_fidelity_report,
     build_delayed_evaluation_fidelity_report,
     build_evaluation_pack_manifest,
     build_export_manifest,
     build_export_manifest_parity_view,
 )
-from .graph import (
+from breadboard_engine.rl.graph import (
     build_credit_frame_from_trajectory_graph,
     build_trajectory_graph_core_parity_view,
     build_compaction_manifests_from_search_run,
@@ -33,14 +40,7 @@ from .graph import (
     project_replay_payload_to_trajectory_graph,
     project_search_run_to_trajectory_graph,
 )
-from .export import (
-    build_dataset_export_unit_core_view,
-    export_reference_unit_bundle,
-    export_rl_transition_segment_unit,
-    export_sft_distillation_unit,
-    export_verifier_example_unit,
-)
-from .schema import (
+from breadboard_engine.rl.schema import (
     AdapterCapabilities,
     AdapterProbeReport,
     CreditFrame,

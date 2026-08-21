@@ -3,14 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable
 
-from .consumerization import (
+from breadboard_engine.corpora.search.consumerization import (
     build_search_stage_c_closeout_packet,
     build_search_stage_c_consumer_convergence_packet,
     build_search_stage_c_optimize_consumerization_packet,
     build_search_stage_c_rl_consumerization_packet,
 )
-from .cross_execution import SearchExecutionBudgetCell
-from .examples import (
+from breadboard_engine.corpora.search.cross_execution import SearchExecutionBudgetCell
+from breadboard_engine.corpora.search.examples import (
     build_dag_v4_bavt_packet,
     build_dag_v4_codetree_v2_packet,
     build_dag_v4_dci_packet,

@@ -72,11 +72,14 @@ These are not kernel replacements. They are typed subsystems layered over kernel
   - evaluation/objective/search-space/family structures
   - promotion and transfer/generalization evidence
 - `breadboard_engine.search`
-  - DAG-shaped search runtime and assessment-bearing search truth
-  - paper-fidelity helper layer for RSA, PaCoRe, and related study packets
+  - DAG-shaped live search runtime and assessment-bearing search truth
+- `breadboard_engine.corpora.search`
+  - explicit opt-in corpus of search study, example, and deployment builders
 - `breadboard_engine.rl`
   - graph-native RL overlay
   - replay/live parity, dataset export units, fidelity/conformance manifests, and adapter probe surfaces
+- `breadboard_engine.corpora.rl`
+  - explicit opt-in corpus of RL example and next-frontier packet builders
 
 ### 4. Research-heavy orchestration layers
 

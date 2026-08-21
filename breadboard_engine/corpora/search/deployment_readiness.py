@@ -3,14 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
-from .consumer_kits import (
+from breadboard_engine.corpora.search.consumer_kits import (
     build_search_consumer_seam_diagnostic,
     build_search_optimize_comparison_kit,
     build_search_optimize_handoff_kit,
     build_search_rl_handoff_kit,
     build_search_rl_replay_parity_kit,
 )
-from .domain_pilots import (
+from breadboard_engine.corpora.search.domain_pilots import (
     SearchDomainBoundaryControlPacket,
     SearchDomainPilotPacket,
     build_search_atp_boundary_control_packet,
@@ -375,7 +375,7 @@ def build_search_cross_system_handoff_contract() -> SearchCrossSystemHandoffCont
 
 
 def build_search_cross_system_artifact_integrity_packet() -> SearchCrossSystemArtifactIntegrityPacket:
-    from .study import run_search_study
+    from breadboard_engine.corpora.search.study import run_search_study
 
     contract = build_search_cross_system_handoff_contract()
     atp_example = build_search_atp_domain_pilot()
@@ -446,7 +446,7 @@ def build_search_cross_system_artifact_integrity_packet() -> SearchCrossSystemAr
 
 
 def build_search_atp_operator_triage_kit() -> SearchATPOperatorTriageKit:
-    from .operator_views import build_search_operator_screen
+    from breadboard_engine.corpora.search.operator_views import build_search_operator_screen
 
     example = build_search_atp_domain_pilot()
     pilot = example["pilot_packet"]
@@ -808,7 +808,7 @@ def build_search_atp_boundary_control_v2_payload() -> Dict[str, object]:
 
 
 def build_search_atp_operator_triage_packet() -> Dict[str, object]:
-    from .operator_views import build_search_operator_screen
+    from breadboard_engine.corpora.search.operator_views import build_search_operator_screen
 
     kit = build_search_atp_operator_triage_kit()
     screen = build_search_operator_screen("dag_v5_atp_domain_pilot", mode="spec")

@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Mapping, Sequence
 
-from .kits import SearchStudyKit, build_search_study_kit
-from .study import (
+from breadboard_engine.corpora.search.kits import SearchStudyKit, build_search_study_kit
+from breadboard_engine.corpora.search.study import (
     SearchStudyRegistry,
     SearchStudyRunResult,
     compare_search_study_runs,

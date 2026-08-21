@@ -18,7 +18,7 @@ _ACTIVE_CACHE: ContextVar[dict[Callable[[], object], object] | None] = ContextVa
 )
 _INSTALL_LOCK = RLock()
 _WRAPPERS: dict[Callable[[], object], Callable[[], object]] = {}
-_MODULE_PREFIXES = ("breadboard_engine.search", "breadboard_engine.rl")
+_MODULE_PREFIXES = ("breadboard_engine.corpora.search", "breadboard_engine.corpora.rl")
 
 
 def _memoized_builder(builder: Callable[[], _T]) -> Callable[[], _T]:
@@ -89,10 +89,10 @@ def search_build_request() -> Iterator[None]:
     from current process inputs.
     """
 
-    # Search consumers import RL builders lazily from the package root. Load
-    # that export surface before installing wrappers so the first request and
+    # Search corpus consumers import RL corpus builders lazily. Load that
+    # explicit surface before installing wrappers so the first request and
     # later requests share the same canonical function identities.
-    importlib.import_module("breadboard_engine.rl")
+    importlib.import_module("breadboard_engine.corpora.rl")
     _install_loaded_builder_wrappers()
     if _ACTIVE_CACHE.get() is not None:
         yield

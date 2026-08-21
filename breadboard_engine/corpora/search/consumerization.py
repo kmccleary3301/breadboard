@@ -3,18 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable
 
-from .atp_production import (
+from breadboard_engine.corpora.search.atp_production import (
     build_search_atp_consumer_handoff_stabilization_packet,
     build_search_atp_stage_b_closeout_packet,
 )
-from .consumer_kits import (
+from breadboard_engine.corpora.search.consumer_kits import (
     build_search_consumer_seam_diagnostic,
     build_search_optimize_comparison_kit,
     build_search_optimize_handoff_kit,
     build_search_rl_handoff_kit,
     build_search_rl_replay_parity_kit,
 )
-from .deployment_readiness import build_search_repair_loop_deployment_readiness_kit
+from breadboard_engine.corpora.search.deployment_readiness import build_search_repair_loop_deployment_readiness_kit
 
 
 def _sorted_unique(values: Iterable[Any]) -> tuple[str, ...]:
