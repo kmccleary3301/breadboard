@@ -5,6 +5,7 @@ material is held by the SQLite store and is issued narrowly to provider
 routing; credential listings and audit records contain metadata only.
 """
 
+import os
 import queue
 import secrets
 import threading
@@ -17,6 +18,53 @@ from breadboard_engine.security import redaction
 from .store import SQLiteCredentialStore
 from .catalog import get_provider_catalog_entry, provider_catalog
 from .oauth import OAuthFlowAdapter, OAuthFlowError, OAuthTransport
+
+
+_CREDENTIAL_ENV_MARKERS = (
+    "API_KEY",
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "CREDENTIAL",
+)
+_CREDENTIAL_ENV_SUFFIXES = ("AUTH_HEADERS_JSON", "AUTH_BASE_URL")
+
+
+def _is_credential_environment_name(name: str) -> bool:
+    normalized = str(name).strip().upper().replace("-", "_")
+    return redaction.is_secret_key(name) or any(
+        marker in normalized for marker in _CREDENTIAL_ENV_MARKERS
+    ) or normalized.endswith(_CREDENTIAL_ENV_SUFFIXES)
+
+
+def project_child_environment(
+    overrides: Mapping[str, Any] | None = None,
+) -> dict[str, str]:
+    """Project a worker environment without credential-shaped variables.
+
+    Ray workers inherit the driver's environment before applying
+    ``runtime_env.env_vars``.  Build the projection from the complete parent
+    environment so an unlisted provider cannot bypass the boundary, then
+    overlay explicitly allowed worker variables.  Credential-shaped
+    overrides are retained only as empty values so the Ray setup hook can
+    clear inherited names.
+    """
+    projected = {
+        name: value
+        for name, value in os.environ.items()
+        if not _is_credential_environment_name(name)
+    }
+    for name, value in (overrides or {}).items():
+        key = str(name)
+        projected[key] = "" if _is_credential_environment_name(key) else str(value)
+    return projected
+
+
+def scrub_child_environment() -> None:
+    """Remove credential-shaped names from the current worker process."""
+    for name in tuple(os.environ):
+        if _is_credential_environment_name(name):
+            os.environ.pop(name, None)
 
 
 @dataclass(frozen=True)
@@ -558,11 +606,16 @@ def start_lease_capability_channel(
     actor_options = {
         "num_cpus": 0,
         "runtime_env": {
-            "env_vars": {
-                "BREADBOARD_CREDENTIAL_STORE_PATH": "",
-                "BREADBOARD_CREDENTIAL_DB": "",
-                "BREADBOARD_STATE_DIR": worker_state_dir,
-            }
+            "env_vars": project_child_environment(
+                {
+                    "BREADBOARD_CREDENTIAL_STORE_PATH": "",
+                    "BREADBOARD_CREDENTIAL_DB": "",
+                    "BREADBOARD_STATE_DIR": worker_state_dir,
+                }
+            ),
+            "worker_process_setup_hook": (
+                "breadboard_engine.provider_broker.broker.scrub_child_environment"
+            ),
         },
     }
     request_queue = Queue(maxsize=8, actor_options=actor_options)

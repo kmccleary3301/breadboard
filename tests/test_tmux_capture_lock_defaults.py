@@ -11,9 +11,6 @@ def _repo_root() -> Path:
 
 def _load_module(module_name: str, rel_path: str):
     module_path = _repo_root() / rel_path
-    scripts_dir = str((_repo_root() / "scripts").resolve())
-    if scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -37,10 +34,10 @@ def test_run_scenario_default_render_profile_is_locked():
     finally:
         sys.argv = old_argv
 
-    assert config.render_profile == "phase4_locked_v2"
-    assert config.capture_mode == "fullpane"
+    assert config.render_profile == "phase4_locked_v5"
+    assert config.capture_mode == "pane"
     assert config.fullpane_start_markers == ("BreadBoard v", "No conversation yet")
-    assert str(config.out_root).endswith("/breadboard_repo/docs_tmp/tmux_captures/scenarios")
+    assert Path(config.out_root).resolve() == _repo_root().parent / "docs_tmp" / "tmux_captures" / "scenarios"
     assert config.settle_ms == 140
     assert config.settle_attempts == 5
     assert config.session_prefix_guard == "breadboard_test_"
@@ -97,7 +94,7 @@ def test_tmux_capture_poll_default_out_root_is_repo_local_docs_tmp():
         config = poller.parse_args()
     finally:
         sys.argv = old_argv
-    assert str(config.out_root).endswith("/breadboard_repo/docs_tmp/tmux_captures")
+    assert Path(config.out_root).resolve() == _repo_root() / "docs_tmp" / "tmux_captures"
 
 
 def test_phase4_start_script_defaults_are_locked():

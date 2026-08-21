@@ -9,6 +9,7 @@ file deltas so each scenario run has one consolidated artifact folder.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import re
 import subprocess
@@ -16,14 +17,27 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
-from tmux_capture_time import run_timestamp
-from tmux_capture_render_profile import (
-    DEFAULT_RENDER_PROFILE_ID,
-    SUPPORTED_RENDER_PROFILES,
-    resolve_render_profile,
-)
+
+def _load_sibling(module_name: str) -> ModuleType:
+    module_path = Path(__file__).resolve().with_name(f"{module_name}.py")
+    spec = importlib.util.spec_from_file_location(f"_tmux_capture_{module_name}", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load tmux capture sibling module: {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_capture_time = _load_sibling("tmux_capture_time")
+_capture_render_profile = _load_sibling("tmux_capture_render_profile")
+run_timestamp = _capture_time.run_timestamp
+DEFAULT_RENDER_PROFILE_ID = _capture_render_profile.DEFAULT_RENDER_PROFILE_ID
+SUPPORTED_RENDER_PROFILES = _capture_render_profile.SUPPORTED_RENDER_PROFILES
+resolve_render_profile = _capture_render_profile.resolve_render_profile
 
 ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 DEFAULT_FATAL_CAPTURE_TOKENS: tuple[str, ...] = (

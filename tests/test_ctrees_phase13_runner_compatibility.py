@@ -33,7 +33,8 @@ def test_exec_raw_shell_command_alias_uses_run_shell_and_timeout_ms() -> None:
     )
 
     assert out["exit"] == 0
-    assert seen["command"] == "cd /tmp/src && pwd"
+    expected_workdir = (Path("/tmp") / "src").resolve()
+    assert seen["command"] == f"cd {expected_workdir} && pwd"
     assert seen["timeout"] == 3
 
 

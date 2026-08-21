@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
@@ -115,8 +116,10 @@ def execute_phase11_benchmark_cell(
 
     env = os.environ.copy()
     env.update(dict(command_payload.get("env") or {}))
+    execution_cmd = list(command_payload["cmd"])
+    execution_cmd[0] = sys.executable
     completed = subprocess.run(
-        list(command_payload["cmd"]),
+        execution_cmd,
         cwd=str(request.repo_root),
         env=env,
         capture_output=True,

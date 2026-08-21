@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -71,7 +72,7 @@ def test_validate_ink_manifest_accepts_canonical(tmp_path: Path) -> None:
     script = Path(__file__).resolve().parents[1] / "scripts" / "validate_ink_references_manifest.py"
     proc = subprocess.run(
         [
-            "python",
+            sys.executable,
             str(script),
             "--manifest-json",
             str(manifest_json),
@@ -91,7 +92,7 @@ def test_validate_ink_manifest_rejects_bad_sha(tmp_path: Path) -> None:
     script = Path(__file__).resolve().parents[1] / "scripts" / "validate_ink_references_manifest.py"
     proc = subprocess.run(
         [
-            "python",
+            sys.executable,
             str(script),
             "--manifest-json",
             str(manifest_json),

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -20,7 +21,7 @@ def test_surface_coverage_audit_script_ok(tmp_path: Path) -> None:
     summary_path = tmp_path / "run_summary.json"
     summary_path.write_text(json.dumps(run_summary), encoding="utf-8")
     result = subprocess.run(
-        ["python", "scripts/phase11_surface_coverage_audit.py", "--summary", str(summary_path)],
+        [sys.executable, "scripts/phase11_surface_coverage_audit.py", "--summary", str(summary_path)],
         cwd=Path(__file__).resolve().parents[1],
         check=False,
         capture_output=True,

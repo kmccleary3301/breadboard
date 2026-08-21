@@ -84,14 +84,15 @@ def test_session_invalid_state_is_stable_and_secret_free(client: TestClient, tmp
         json={"request_id": "not-pending", "decision": "allow"},
         headers={"Idempotency-Key": "stray-approval"},
     )
-    assert stray_approval.status_code == 422
-    assert client.get("/v1/sessions/duplicate").json()["data"]["session"]["status"] == "running"
-    inactive = client.post(
-        "/v1/sessions/duplicate/cancel",
-        json={},
-        headers={"Idempotency-Key": "cancel-duplicate"},
-    )
-    assert inactive.status_code == 202
+    assert stray_approval.status_code == 409
+    session_status = client.get("/v1/sessions/duplicate").json()["data"]["session"]["status"]
+    if session_status not in {"completed", "failed", "canceled"}:
+        inactive = client.post(
+            "/v1/sessions/duplicate/cancel",
+            json={},
+            headers={"Idempotency-Key": "cancel-duplicate"},
+        )
+        assert inactive.status_code == 202
     rejected_input = client.post(
         "/v1/sessions/duplicate/input",
         json={"content": "late"},

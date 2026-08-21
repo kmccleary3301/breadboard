@@ -2,7 +2,7 @@ from breadboard_engine.compilation.tool_prompt_synth import ToolPromptSynthesisE
 
 
 def test_tpsl_pythonic_render_system_full():
-    engine = ToolPromptSynthesisEngine(root="implementations/tool_prompt_synthesis")
+    engine = ToolPromptSynthesisEngine()
     tools = [
         {
             "name": "run_shell",
@@ -13,17 +13,17 @@ def test_tpsl_pythonic_render_system_full():
             ],
         }
     ]
-    text, template_id = engine.render(
+    text, metadata = engine.render(
         "pythonic",
         "system_full",
         tools,
-        template_map={
+        templates={
             "system_full": "implementations/tool_prompt_synthesis/pythonic/system_full.j2.md",
         },
     )
-    assert "def run_shell(" in text
+    assert "## run_shell" in text
     assert "Run a shell command" in text
-    assert ":" in template_id
+    assert metadata["template_id"] == "implementations/tool_prompt_synthesis/pythonic/system_full.j2.md"
 
 
 

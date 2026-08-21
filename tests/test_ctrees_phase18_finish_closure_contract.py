@@ -1698,23 +1698,57 @@ def test_execute_agent_calls_rejects_unbounded_smoke_after_internal_retry_prompt
     assert validation_error["unbounded_smoke_test"] is True
 
 
-def test_agent_executor_bypasses_enhanced_executor_for_patch_primitives() -> None:
+def test_agent_executor_bypasses_enhanced_executor_for_patch_primitives(tmp_path: Path) -> None:
     from breadboard_engine.execution.agent_executor import AgentToolExecutor
+    from breadboard_engine.execution.enhanced_executor import EnhancedToolExecutor
 
-    executor = AgentToolExecutor({}, "/tmp")
+    config = {
+        "workspace": str(tmp_path),
+        "enhanced_tools": {
+            "validation": {
+                "enabled": True,
+                "rules": ["read_before_edit"],
+                "rule_config": {"read_before_edit": {"mode": "error"}},
+            }
+        },
+    }
+    executor = AgentToolExecutor(config, str(tmp_path))
+    enhanced = EnhancedToolExecutor(sandbox=object(), config=config)
+    executor.set_enhanced_executor(enhanced)
+    calls = []
 
-    class FailingEnhancedExecutor:
-        async def execute_tool_call(self, _tool_call, _exec_func):
-            return {"ok": False, "stderr": "error: unrecognized input"}
+    blocked_patch = """*** Begin Patch
+*** Update File: existing.py
+@@
+-old
++new
+*** End Patch
+"""
+    blocked = executor.execute_tool_call(
+        {"function": "apply_unified_patch", "arguments": {"patch": blocked_patch}},
+        lambda call: calls.append(call) or {"ok": True},
+    )
+    assert blocked["validation_failure"] is True
+    assert calls == []
 
-    executor.set_enhanced_executor(FailingEnhancedExecutor())
-
+    patch = """*** Begin Patch
+*** Add File: created.py
++print("created")
+*** End Patch
+"""
+    tool_call = {"function": "apply_unified_patch", "arguments": {"patch": patch}}
     result = executor.execute_tool_call(
-        {"function": "apply_patch", "arguments": {"input": "*** Begin Patch\n*** End Patch\n"}},
-        lambda _tool_call: {"ok": True, "manual_fallback": True},
+        tool_call,
+        lambda call: calls.append(call) or {"ok": True},
     )
 
-    assert result == {"ok": True, "manual_fallback": True}
+    assert result == {"ok": True}
+    assert calls == [tool_call]
+    assert enhanced.get_validation_summary()["validation_enabled"] is True
+    context = enhanced.get_workspace_context()
+    assert context["files_created_this_session"] == ["created.py"]
+    assert context["files_modified_this_session"] == []
+    assert context["recent_operations"][-1]["files_affected"] == ["created.py"]
 
 
 def test_post_receipt_forced_closure_names_successful_verification_commands(tmp_path: Path) -> None:

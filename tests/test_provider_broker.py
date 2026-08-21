@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import queue
 import subprocess
 import sys
@@ -11,6 +10,7 @@ from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialSt
 from breadboard_engine.provider_broker.broker import (
     LeaseCapabilityChannel,
     LeaseCapabilityServer,
+    project_child_environment,
 )
 
 
@@ -181,10 +181,13 @@ def test_lease_capability_channel_is_bound_and_has_no_broker_authority(tmp_path)
 def test_session_start_child_inherits_no_credential_environment(tmp_path):
     broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
     broker.putApiKey({"provider_id": "openai", "account_label": "child", "api_key": "sk-child-secret"})
-    child_env = os.environ.copy()
-    for key in ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY"):
-        child_env.pop(key, None)
-    child_env["BREADBOARD_CREDENTIAL_STORE_PATH"] = str(tmp_path / "credentials.sqlite3")
+    child_env = project_child_environment(
+        {
+            "BREADBOARD_CREDENTIAL_STORE_PATH": "",
+            "BREADBOARD_CREDENTIAL_DB": "",
+            "BREADBOARD_STATE_DIR": str(tmp_path),
+        }
+    )
     result = subprocess.run(
         [
             sys.executable,

@@ -314,6 +314,19 @@ def test_ray_child_receives_only_confined_lease_capability_and_releases_it(
     assert env_vars["BREADBOARD_CREDENTIAL_STORE_PATH"] == ""
     assert env_vars["BREADBOARD_CREDENTIAL_DB"] == ""
     assert env_vars["BREADBOARD_STATE_DIR"] == str(worker_state_dir)
+    assert captured["options"]["runtime_env"]["worker_process_setup_hook"] == (
+        "breadboard_engine.provider_broker.broker.scrub_child_environment"
+    )
+    assert all(
+        key not in env_vars
+        for key in (
+            "OPENAI_API_KEY",
+            "OPENROUTER_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "BREADBOARD_OPENAI_AUTH_BASE_URL",
+            "BREADBOARD_OPENAI_AUTH_HEADERS_JSON",
+        )
+    )
     assert captured["remote_kwargs"]["provider_lease_channel"] is channel
     assert broker.calls == [
         (

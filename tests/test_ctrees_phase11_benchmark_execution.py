@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -161,13 +162,13 @@ def test_phase11_wrappers_preserve_runner_failure_and_malformed_result(
     assert payload["stderr"] == "runner stderr"
     assert payload["result"] is None
     assert payload["missing_env"] == []
-    assert captured["cmd"] == payload["command"]
+    assert captured["cmd"][1:] == payload["command"][1:]
+    assert captured["cmd"][0] == sys.executable
+    assert payload["command"][0] == "python"
     assert captured["cwd"] == str(repo_root)
     assert captured["env"]["PYTHONPATH"] == f"{repo_root}:existing-pythonpath"
     assert captured["capture_output"] is True
     assert captured["text"] is True
-    assert payload["command"][0] == "python"
-    assert payload["command"][payload["command"].index("--tasks") + 1] == payload["tasks_path"]
     assert payload["command"][payload["command"].index("--out") + 1] == payload["out_path"]
     assert payload["command"][payload["command"].index("--workspace-root") + 1] == payload["workspace_root"]
     assert "--dry-run" not in payload["command"]

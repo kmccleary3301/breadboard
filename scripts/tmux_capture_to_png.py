@@ -24,41 +24,54 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 from typing import Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 from wcwidth import wcwidth
+
 try:
     from fontTools.ttLib import TTFont
 except Exception:  # pragma: no cover - optional dependency
     TTFont = None
-from tmux_capture_render_profile import (
-    DEFAULT_RENDER_PROFILE_ID,
-    LEGACY_PROFILE_ID,
-    SUPPORTED_RENDER_PROFILES,
-    append_profile_cli_args,
-    assert_render_profile_lock,
-    profile_lock_manifest,
-    resolve_render_profile,
-)
-from render_parity_diagnostics import (
-    build_row_parity_summary,
-    summarize_row_occupancy_from_paths,
-)
 
+
+def _load_sibling(module_name: str) -> ModuleType:
+    module_path = Path(__file__).resolve().with_name(f"{module_name}.py")
+    spec = importlib.util.spec_from_file_location(f"_tmux_capture_{module_name}", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load tmux capture sibling module: {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+_capture_render_profile = _load_sibling("tmux_capture_render_profile")
+_render_parity_diagnostics = _load_sibling("render_parity_diagnostics")
+DEFAULT_RENDER_PROFILE_ID = _capture_render_profile.DEFAULT_RENDER_PROFILE_ID
+LEGACY_PROFILE_ID = _capture_render_profile.LEGACY_PROFILE_ID
+SUPPORTED_RENDER_PROFILES = _capture_render_profile.SUPPORTED_RENDER_PROFILES
+append_profile_cli_args = _capture_render_profile.append_profile_cli_args
+assert_render_profile_lock = _capture_render_profile.assert_render_profile_lock
+profile_lock_manifest = _capture_render_profile.profile_lock_manifest
+resolve_render_profile = _capture_render_profile.resolve_render_profile
+build_row_parity_summary = _render_parity_diagnostics.build_row_parity_summary
+summarize_row_occupancy_from_paths = _render_parity_diagnostics.summarize_row_occupancy_from_paths
 
 DEFAULT_FG = (241, 245, 249)
 DEFAULT_BG = (31, 36, 48)
 VS_CODE_LIKE_RENDER_PROFILES = {"phase4_locked_v5"}
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 SYMBOL_FALLBACK_CHAIN_BY_PROFILE: dict[str, list[str]] = {
     "phase4_locked_v5": [
         "renderer_assets/fonts/Segoe UI Symbol.ttf",
@@ -378,34 +391,16 @@ OSC_END = "\x1b\\"
 
 FONT_CANDIDATES = [
     {
-        "regular": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-        "bold": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
-        "italic": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Oblique.ttf",
-        "bold_italic": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-BoldOblique.ttf",
+        "regular": "renderer_assets/fonts/Consolas-Regular.ttf",
+        "bold": "renderer_assets/fonts/Consolas-Bold.ttf",
+        "italic": "renderer_assets/fonts/Consolas-Italic.ttf",
+        "bold_italic": "renderer_assets/fonts/Consolas Bold Italic.ttf",
     },
     {
-        "regular": "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
-        "bold": "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
-        "italic": "/usr/share/fonts/truetype/liberation/LiberationMono-Italic.ttf",
-        "bold_italic": "/usr/share/fonts/truetype/liberation/LiberationMono-BoldItalic.ttf",
-    },
-    {
-        "regular": "/usr/share/fonts/truetype/ubuntu/UbuntuMono-R.ttf",
-        "bold": "/usr/share/fonts/truetype/ubuntu/UbuntuMono-B.ttf",
-        "italic": "/usr/share/fonts/truetype/ubuntu/UbuntuMono-RI.ttf",
-        "bold_italic": "/usr/share/fonts/truetype/ubuntu/UbuntuMono-BI.ttf",
-    },
-    {
-        "regular": "/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf",
-        "bold": "/usr/share/fonts/truetype/noto/NotoSansMono-Bold.ttf",
-        "italic": "/usr/share/fonts/truetype/noto/NotoSansMono-Italic.ttf",
-        "bold_italic": "/usr/share/fonts/truetype/noto/NotoSansMono-BoldItalic.ttf",
-    },
-    {
-        "regular": "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
-        "bold": "/usr/share/fonts/truetype/freefont/FreeMonoBold.ttf",
-        "italic": "/usr/share/fonts/truetype/freefont/FreeMonoOblique.ttf",
-        "bold_italic": "/usr/share/fonts/truetype/freefont/FreeMonoBoldOblique.ttf",
+        "regular": "renderer_assets/fonts/DejaVuSansMono.ttf",
+        "bold": "renderer_assets/fonts/DejaVuSansMono-Bold.ttf",
+        "italic": "renderer_assets/fonts/DejaVuSansMono-Oblique.ttf",
+        "bold_italic": "renderer_assets/fonts/DejaVuSansMono-BoldOblique.ttf",
     },
 ]
 
@@ -435,11 +430,21 @@ def argv_contains_flag(argv: list[str], flag: str) -> bool:
     return any(arg == flag or arg.startswith(f"{flag}=") for arg in argv)
 
 
+def _resolve_asset_candidate(raw: str) -> Path:
+    path = Path(str(raw)).expanduser()
+    if path.is_absolute():
+        return path
+    checkout_path = (_REPO_ROOT / path).resolve()
+    if checkout_path.is_file():
+        return checkout_path
+    return path
+
+
 def resolve_first_existing_path(candidates: list[str]) -> str:
     for raw in candidates:
-        p = Path(str(raw)).expanduser()
-        if p.exists() and p.is_file():
-            return str(p)
+        path = _resolve_asset_candidate(raw)
+        if path.is_file():
+            return str(path)
     return ""
 
 
@@ -447,14 +452,15 @@ def resolve_existing_paths(candidates: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for raw in candidates:
-        p = Path(str(raw)).expanduser()
-        key = str(p)
+        path = _resolve_asset_candidate(raw)
+        key = str(path)
         if key in seen:
             continue
         seen.add(key)
-        if p.exists() and p.is_file():
-            out.append(str(p))
+        if path.is_file():
+            out.append(str(path))
     return out
+
 
 
 def resolve_symbol_fallback_candidates(render_profile: str) -> list[str]:
@@ -1514,25 +1520,25 @@ def resolve_font_paths(
     italic: str,
     bold_italic: str,
 ) -> dict:
+    overrides = {
+        "regular": regular,
+        "bold": bold,
+        "italic": italic,
+        "bold_italic": bold_italic,
+    }
     if regular:
-        base = {
-            "regular": regular,
-            "bold": bold,
-            "italic": italic,
-            "bold_italic": bold_italic,
-        }
+        base = overrides
     else:
         base = {}
         for cand in FONT_CANDIDATES:
-            if Path(cand["regular"]).exists():
+            if _resolve_asset_candidate(cand["regular"]).is_file():
                 base = cand
                 break
     resolved = {}
     for key in ("regular", "bold", "italic", "bold_italic"):
-        override = {"regular": regular, "bold": bold, "italic": italic, "bold_italic": bold_italic}[key]
-        candidate = base.get(key)
-        chosen = override or candidate or ""
-        resolved[key] = chosen if chosen and Path(chosen).exists() else ""
+        chosen = overrides[key] or base.get(key, "")
+        path = _resolve_asset_candidate(chosen) if chosen else Path("")
+        resolved[key] = str(path) if path.is_file() else ""
     return resolved
 
 

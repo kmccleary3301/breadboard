@@ -51,6 +51,7 @@ from .provider.runtime import (
 from .provider import ReplayRuntime
 from .provider.capability_probe import ProviderCapabilityProbeRunner
 from .state.session_state import SessionState
+from .runtime.context import get_current_session_state
 from .state.completion_detector import CompletionDetector
 from .messaging.message_formatter import MessageFormatter
 from .messaging.markdown_logger import MarkdownLogger
@@ -909,7 +910,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             self._rlm_project_task_event(payload)
         except Exception:
             pass
-        session_state = getattr(self, "_active_session_state", None)
+        session_state = getattr(self, "_active_session_state", None) or get_current_session_state()
         if session_state is None:
             return
         try:
@@ -1455,6 +1456,55 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             or _extract_session_id_from_expected(expected_output, expected_metadata)
             or str(uuid.uuid4())
         )
+        event_base = {
+            "task_id": session_id,
+            "sessionId": session_id,
+            "subagent_type": subagent_type,
+            "description": description,
+        }
+        if task_context:
+            event_base.update(task_context)
+        self._emit_task_event({**event_base, "kind": "subagent_spawned", "status": "running"})
+        streaming_cfg = task_cfg.get("streaming") or {}
+        forward_assistant_messages = bool(
+            isinstance(streaming_cfg, dict) and streaming_cfg.get("forward_assistant_messages")
+        )
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("role") != "assistant":
+                continue
+            for part in entry.get("parts") or []:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "tool":
+                    meta = part.get("meta") or {}
+                    state = (meta.get("state") or {}) if isinstance(meta, dict) else {}
+                    self._emit_task_event(
+                        {
+                            **event_base,
+                            "kind": "tool_call",
+                            "tool_call_id": part.get("id"),
+                            "tool": part.get("tool"),
+                            "input": state.get("input"),
+                            "status": state.get("status"),
+                            "output": state.get("output"),
+                        }
+                    )
+                elif part.get("type") == "text" and forward_assistant_messages:
+                    text = part.get("text")
+                    if text:
+                        self._emit_task_event(
+                            {
+                                **event_base,
+                                "kind": "assistant_message",
+                                "message_id": entry.get("message_id"),
+                                "part_id": part.get("id"),
+                                "content": str(text),
+                            }
+                        )
+        completed_event = {**event_base, "kind": "subagent_completed", "status": "completed"}
+        if output_text:
+            completed_event["output_excerpt"] = output_text[:400]
+        self._emit_task_event(completed_event)
         return {
             "title": description,
             "output": output_text,

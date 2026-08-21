@@ -99,10 +99,11 @@ def test_task_tool_emits_streaming_events(tmp_path: Path) -> None:
     assert out.get("output") == "TASK COMPLETE"
 
     task_events = [payload for (etype, payload) in events if etype == "task_event"]
-    assert any(evt.get("kind") == "started" for evt in task_events)
-    assert any(evt.get("kind") == "completed" for evt in task_events)
-    assert any(evt.get("kind") == "tool_call" for evt in task_events)
-    assert not any(evt.get("kind") == "assistant_message" for evt in task_events)
+    assert [event.get("kind") for event in task_events] == [
+        "subagent_spawned",
+        "tool_call",
+        "subagent_completed",
+    ]
 
 
 def test_task_tool_can_forward_subagent_assistant_messages_when_enabled(tmp_path: Path) -> None:
@@ -176,5 +177,9 @@ def test_task_tool_can_forward_subagent_assistant_messages_when_enabled(tmp_path
         )
 
     task_events = [payload for (etype, payload) in events if etype == "task_event"]
-    assert any(evt.get("kind") == "assistant_message" for evt in task_events)
+    assert [event.get("kind") for event in task_events] == [
+        "subagent_spawned",
+        "assistant_message",
+        "subagent_completed",
+    ]
 

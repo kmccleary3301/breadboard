@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping
 
 
-PROTECTED_NAMES = {"/", str(Path.home()), "/tmp", "/var", "/usr", "/bin", "/etc"}
+PROTECTED_ROOTS = frozenset(Path(name).resolve() for name in ("/", Path.home(), "/tmp", "/var", "/usr", "/bin", "/etc"))
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ class WorkspaceBridgeResult:
 
 def _reject_protected(path: Path, *, field_name: str) -> Path:
     resolved = path.resolve()
-    if str(resolved) in PROTECTED_NAMES:
+    if resolved in PROTECTED_ROOTS:
         raise ValueError(f"{field_name} points at a protected root: {resolved}")
     if len(resolved.parts) < 3:
         raise ValueError(f"{field_name} is too broad to use safely: {resolved}")

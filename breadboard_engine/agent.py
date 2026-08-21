@@ -363,12 +363,19 @@ class AgenticCoder:
                     ray_mod,
                     worker_state_dir=self._provider_worker_state_dir,
                 )
+                from .provider_broker.broker import project_child_environment
+
                 runtime_env = {
-                    "env_vars": {
-                        "BREADBOARD_CREDENTIAL_STORE_PATH": "",
-                        "BREADBOARD_CREDENTIAL_DB": "",
-                        "BREADBOARD_STATE_DIR": self._provider_worker_state_dir,
-                    }
+                    "env_vars": project_child_environment(
+                        {
+                            "BREADBOARD_CREDENTIAL_STORE_PATH": "",
+                            "BREADBOARD_CREDENTIAL_DB": "",
+                            "BREADBOARD_STATE_DIR": self._provider_worker_state_dir,
+                        }
+                    ),
+                    "worker_process_setup_hook": (
+                        "breadboard_engine.provider_broker.broker.scrub_child_environment"
+                    ),
                 }
                 self.agent = OpenAIConductor.options(runtime_env=runtime_env).remote(
                     workspace=self.workspace_dir,

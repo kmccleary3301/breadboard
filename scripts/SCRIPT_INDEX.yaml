@@ -2009,6 +2009,11 @@ entries:
     owner: kmccleary3301
     callers: [.github/workflows/longrun-phase1-gate.yml, .github/workflows/longrun-phase2-strict.yml, .github/workflows/longrun-phase2-warn.yml, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, tests/test_validate_longrun_phase2_warn_artifacts.py]
     expiry: none (durable tooling)
+  - path: scripts/validate_ns_final_scorecard.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
   - path: scripts/validate_phase4_claude_parity.py
     class: live-wired
     owner: kmccleary3301

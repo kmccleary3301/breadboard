@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -27,7 +28,7 @@ def test_phase11_validation_bundle(tmp_path: Path) -> None:
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
     result = subprocess.run(
         [
-            "python",
+            sys.executable,
             "scripts/phase11_validation_bundle.py",
             "--tasks",
             str(tasks_path),
