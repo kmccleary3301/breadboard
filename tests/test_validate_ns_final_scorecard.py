@@ -175,7 +175,7 @@ def _write_ready_fixture(tmp_path: Path) -> dict[str, Any]:
                 "assigned_dimension": "fixture",
                 "claim": item["claim"],
                 "seam": item["seam"],
-                "evidence_card_id": f"{item['id']}:fixture",
+                "evidence_card_id": validator._canonical_sha256(item["evidence_card"]),
                 "artifact_identity": item["evidence_card"]["artifact_identity"],
                 "falsification_method": "fixture review",
                 "scope_checked": item["id"],
@@ -492,6 +492,30 @@ def test_aud2_requires_complete_semantic_item_checks(tmp_path: Path) -> None:
     fixture = _write_ready_fixture(tmp_path)
     review = fixture["ledger"]["reviews"][0]
     review["item_checks"] = [{"item_id": item_id} for item_id in review["checked_item_ids"]]
+
+    report = _validate(fixture)
+
+    assert report["ready"] is False
+    assert "AUD-2 must be an exact-candidate independent review covering every scored item" in report["blockers"]
+
+def test_aud2_rejects_presence_only_semantic_fields_even_when_output_rebinds(
+    tmp_path: Path,
+) -> None:
+    fixture = _write_ready_fixture(tmp_path)
+    review = fixture["ledger"]["reviews"][0]
+    first_check = review["item_checks"][0]
+    first_check["assigned_dimension"] = None
+    first_check["evidence_card_id"] = "arbitrary"
+    first_check["falsification_method"] = ""
+    first_check["scope_checked"] = None
+    output_path = tmp_path / review["reviewer_output_ref"]
+    output = json.loads(output_path.read_text(encoding="utf-8"))
+    output["item_checks_identity"] = validator._aud2_checks_identity(review["item_checks"])
+    _write_json(output_path, output)
+    new_identity = _sha256(output_path)
+    review["reviewer_output_identity"] = new_identity
+    for check in review["item_checks"]:
+        check["falsification_observation_identity"] = new_identity
 
     report = _validate(fixture)
 

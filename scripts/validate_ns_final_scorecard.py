@@ -532,9 +532,15 @@ def _aud2_is_complete(
             if (
                 check.get("claim") != item.get("claim")
                 or check.get("seam") != item.get("seam")
+                or check.get("evidence_card_id") != _canonical_sha256(card)
                 or check.get("artifact_identity") != card.get("artifact_identity")
+                or check.get("scope_checked") != card.get("declared_scope")
                 or check.get("test_double_status") != card.get("test_double_status")
                 or check.get("verdict") != "approved"
+                or not isinstance(check.get("assigned_dimension"), str)
+                or not check.get("assigned_dimension")
+                or not isinstance(check.get("falsification_method"), str)
+                or not check.get("falsification_method")
                 or not isinstance(check.get("observed_result"), str)
                 or not check.get("observed_result")
                 or not _identity_matches_ref(
