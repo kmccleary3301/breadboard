@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from breadboard_engine.compilation.v2_loader import load_agent_config
 
 
 def test_v2_loader_rejects_invalid_long_running_policy_profile(tmp_path, monkeypatch) -> None:

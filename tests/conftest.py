@@ -15,6 +15,10 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 PROJ = os.path.abspath(os.path.join(ROOT, os.pardir))
 if PROJ not in sys.path:
     sys.path.insert(0, PROJ)
+if ROOT not in sys.path:
+    # tests/ itself: several suites import sibling helper modules top-level
+    # (e.g. atp_hilbert_fixture_utils) despite tests/ being a package.
+    sys.path.insert(1, ROOT)
 
 # Note: keep project root on sys.path so tests can import the `breadboard` package.
 

@@ -88,7 +88,7 @@ def test_contract_tier_schema_and_product_spine_consumers_validate() -> None:
             [
                 {
                     "kind": "runtime_emission",
-                    "path": "agentic_coder_prototype/api/cli_bridge/runtime_emission.py",
+                    "path": "breadboard_engine/api/cli_bridge/runtime_emission.py",
                 }
             ],
         ),

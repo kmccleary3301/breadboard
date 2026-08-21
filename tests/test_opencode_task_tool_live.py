@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 
 
 def test_task_tool_live_nested_subagent_with_replay(tmp_path: Path) -> None:

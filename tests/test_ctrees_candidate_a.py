@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.candidate_a import build_candidate_a_plan
-from agentic_coder_prototype.ctrees.evaluation_baselines import build_deterministic_reranker_plan
-from agentic_coder_prototype.ctrees.holdout_generalization_pack import build_phase10_base_scenarios
+from breadboard_engine.ctrees.candidate_a import build_candidate_a_plan
+from breadboard_engine.ctrees.evaluation_baselines import build_deterministic_reranker_plan
+from breadboard_engine.ctrees.holdout_generalization_pack import build_phase10_base_scenarios
 
 
 def _scenario_by_id(base_scenario_id: str):

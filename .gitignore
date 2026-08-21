@@ -3,10 +3,10 @@ docs_tmp/
 docs_local/
 exports/
 logging/
-!agentic_coder_prototype/logging/
-!agentic_coder_prototype/logging/**
-!agentic_coder_prototype/logging/
-!agentic_coder_prototype/logging/**
+!breadboard_engine/logging/
+!breadboard_engine/logging/**
+!breadboard_engine/logging/
+!breadboard_engine/logging/**
 agent_ws_*/
 agent_ws/
 agent_ws*/

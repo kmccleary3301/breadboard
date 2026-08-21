@@ -4,7 +4,7 @@ import shutil
 import pytest
 import ray
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 
 
 @pytest.mark.slow

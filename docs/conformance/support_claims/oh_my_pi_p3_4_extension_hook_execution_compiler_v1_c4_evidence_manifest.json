@@ -8,39 +8,39 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:e32bae48d42b11073de8959f5d26b99978681f0783984167f9e5b8d94a328b70"
+      "sha256": "sha256:6922cd87c6e430cd89f5ec567ee5f78143d5a4c3206af200968d007a188cd5a6"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json#sha256:e32bae48d42b11073de8959f5d26b99978681f0783984167f9e5b8d94a328b70",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json#sha256:6922cd87c6e430cd89f5ec567ee5f78143d5a4c3206af200968d007a188cd5a6",
         "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/compiled_records.json#sha256:b31a99a52d6e7fd33fd3171a05ee01243ca855277bf6c8e65a2d61811448f185"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:13b049eaa17247ecaf65f178e0d2360c8558e38ab6d520b0f2659d3cb6f6d565"
+      "sha256": "sha256:95668d874392740c2bbb4241053477ad459dea6d6c5e1759acb159d7d05d6ff5"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json#sha256:e32bae48d42b11073de8959f5d26b99978681f0783984167f9e5b8d94a328b70",
-        "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json#sha256:13b049eaa17247ecaf65f178e0d2360c8558e38ab6d520b0f2659d3cb6f6d565",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json#sha256:6922cd87c6e430cd89f5ec567ee5f78143d5a4c3206af200968d007a188cd5a6",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json#sha256:95668d874392740c2bbb4241053477ad459dea6d6c5e1759acb159d7d05d6ff5",
         "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/compiled_records.json#sha256:b31a99a52d6e7fd33fd3171a05ee01243ca855277bf6c8e65a2d61811448f185"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:ffffa2c0de96ea56d3a8572efd5de039fdf0c759d6e8214631c4646f00735ecc"
+      "sha256": "sha256:998d57bfe66c9d58566b963599ac8fcce195d1e26845b5b437c82a4b9f2de768"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:b5eee66fd45fd39f655f0dff32e10fda7a037aa608bd5c894f012d26181eef43"
+      "sha256": "sha256:0a2d6e4c518c26d6fd68b072cd646440fc471aedf778bbe80ce5032dfdf49cbf"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json#sha256:ffffa2c0de96ea56d3a8572efd5de039fdf0c759d6e8214631c4646f00735ecc"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json#sha256:998d57bfe66c9d58566b963599ac8fcce195d1e26845b5b437c82a4b9f2de768"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:b5276bbb873043e64f2f5cdba737b7cd697cbc7fb1166ccdbda6d6cbcbc50fce"
+      "sha256": "sha256:e83697598d3505ff506eb8251df972f6e72eac8023ad71f834c1498fc5f7ea98"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/secret_scan_report.json",
@@ -65,7 +65,7 @@
     {
       "path": "agent_configs/misc/oh_my_pi_p3_4_extension_hook_execution_compiler_v1.yaml",
       "role": "agent_config",
-      "sha256": "sha256:72307018ee5f8b2557c339558aca0a5e561e622a9c322186805c28eefc06d43d"
+      "sha256": "sha256:7bb426d15300329fc17b9cafa7339ec4178c061afc7ecaf5c631f064a8221d1c"
     },
     {
       "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",

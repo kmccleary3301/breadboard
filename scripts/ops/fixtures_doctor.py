@@ -20,7 +20,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from agentic_coder_prototype.parity_manifest import DEFAULT_MANIFEST, load_parity_scenarios
+from breadboard_engine.parity_manifest import DEFAULT_MANIFEST, load_parity_scenarios
 
 
 def _parse_args() -> argparse.Namespace:

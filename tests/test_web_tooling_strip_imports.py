@@ -4,10 +4,10 @@ import pytest
 
 
 def test_web_tooling_imports_and_basic_construction() -> None:
-    from agentic_coder_prototype.web import ScrapeOptions, WebScraper
-    from agentic_coder_prototype.web.crawler import CrawlRequest
-    from agentic_coder_prototype.web.frontier import MemoryFrontier, RedisFrontierConfig
-    from agentic_coder_prototype.web.providers import ScrapeDoClient, SerperClient
+    from breadboard_engine.web import ScrapeOptions, WebScraper
+    from breadboard_engine.web.crawler import CrawlRequest
+    from breadboard_engine.web.frontier import MemoryFrontier, RedisFrontierConfig
+    from breadboard_engine.web.providers import ScrapeDoClient, SerperClient
 
     _ = ScrapeOptions()
     _ = CrawlRequest(url="https://example.com")
@@ -19,7 +19,7 @@ def test_web_tooling_imports_and_basic_construction() -> None:
 
 @pytest.mark.asyncio
 async def test_serper_fails_fast_without_key() -> None:
-    from agentic_coder_prototype.web.providers import ProviderError, SerperClient, SerperSearchRequest
+    from breadboard_engine.web.providers import ProviderError, SerperClient, SerperSearchRequest
 
     client = SerperClient(api_key=None)
     with pytest.raises(ProviderError):
@@ -28,7 +28,7 @@ async def test_serper_fails_fast_without_key() -> None:
 
 @pytest.mark.asyncio
 async def test_scrapedo_fails_fast_without_key() -> None:
-    from agentic_coder_prototype.web.providers import ProviderError, ScrapeDoClient, ScrapeDoRequest
+    from breadboard_engine.web.providers import ProviderError, ScrapeDoClient, ScrapeDoRequest
 
     client = ScrapeDoClient(api_key=None)
     with pytest.raises(ProviderError):

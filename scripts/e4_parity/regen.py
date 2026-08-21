@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.e4_parity import regenerate_evidence as regen  # noqa: E402
-from scripts.e4_parity.validators.hash_utils import sha256_file, sha256_json  # noqa: E402
+from scripts.e4_parity.validators.hash_utils import sha256_bytes, sha256_file, sha256_json  # noqa: E402
 
 FAILURE_CLASSES = (
     "pin_stale",
@@ -42,6 +42,15 @@ def __getattr__(name: str) -> Any:
 def _sha256_path(path: Path) -> str:
     return sha256_file(path)
 
+
+def _snapshot_sha256_path(path: Path) -> str:
+    payload = path.read_bytes()
+    for prefix, marker in (
+        (str(ROOT.resolve()).encode(), b"<repo-root>"),
+        (str(ROOT.parent.resolve()).encode(), b"<workspace-root>"),
+    ):
+        payload = payload.replace(prefix, marker)
+    return sha256_bytes(payload)
 
 def _display_path(path: Path) -> str:
     resolved = path.resolve()
@@ -89,10 +98,9 @@ def _watch_set() -> list[Path]:
             _add_watch_path(paths, base / pattern)
     return sorted(paths, key=_display_path)
 
-
 def _snapshot_watch_set() -> dict[str, Any]:
     entries = [
-        {"path": _display_path(path), "sha256": _sha256_path(path)}
+        {"path": _display_path(path), "sha256": _snapshot_sha256_path(path)}
         for path in _watch_set()
     ]
     return {
@@ -249,6 +257,8 @@ def _fixed_point(args: argparse.Namespace) -> int:
             "watch_set_size": 0,
             "first_pass_snapshot_sha256": "sha256:" + ("0" * 64),
             "second_pass_snapshot_sha256": "sha256:" + ("0" * 64),
+            "first_pass_watch_set": [],
+            "second_pass_watch_set": [],
             "byte_identical": False,
             "changed_paths": [],
             "first_exit_code": 2,
@@ -274,6 +284,8 @@ def _fixed_point(args: argparse.Namespace) -> int:
         "watch_set_size": second_snapshot["watch_set_size"],
         "first_pass_snapshot_sha256": first_snapshot["snapshot_sha256"],
         "second_pass_snapshot_sha256": second_snapshot["snapshot_sha256"],
+        "first_pass_watch_set": first_snapshot["entries"],
+        "second_pass_watch_set": second_snapshot["entries"],
         "byte_identical": byte_identical,
         "changed_paths": changed,
         "first_exit_code": first_code,

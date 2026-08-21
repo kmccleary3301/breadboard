@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.holdout_generalization_pack import build_phase10_base_scenarios
-from agentic_coder_prototype.ctrees.policy import build_retrieval_substrate
-from agentic_coder_prototype.ctrees.selector_features import build_selector_feature_table
+from breadboard_engine.ctrees.holdout_generalization_pack import build_phase10_base_scenarios
+from breadboard_engine.ctrees.policy import build_retrieval_substrate
+from breadboard_engine.ctrees.selector_features import build_selector_feature_table
 
 
 def _scenario_by_id(base_scenario_id: str):

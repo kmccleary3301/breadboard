@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from agentic_coder_prototype.ctrees.phase16_provider_wire_audit import summarize_provider_wire_log
-from agentic_coder_prototype.logging.provider_dump import ProviderDumpLogger
+from breadboard_engine.ctrees.phase16_provider_wire_audit import summarize_provider_wire_log
+from breadboard_engine.logging.provider_dump import ProviderDumpLogger
 
 
 def test_provider_wire_audit_reads_required_tool_choice_and_tool_names(tmp_path) -> None:

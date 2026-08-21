@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.messaging.markdown_logger import MarkdownLogger
-from agentic_coder_prototype.orchestration.orchestrator import MultiAgentOrchestrator
-from agentic_coder_prototype.orchestration.schema import TeamConfig
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.messaging.markdown_logger import MarkdownLogger
+from breadboard_engine.orchestration.orchestrator import MultiAgentOrchestrator
+from breadboard_engine.orchestration.schema import TeamConfig
+from breadboard_engine.state.session_state import SessionState
 
 
 def _make_conductor(*, model_visible_topics: list[str]) -> OpenAIConductor:

@@ -1,3 +1,3 @@
-from agentic_coder_prototype.dialects.json_block import JSONBlockDialect  # shim
+from breadboard_engine.dialects.json_block import JSONBlockDialect  # shim
 
 

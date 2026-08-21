@@ -30,13 +30,13 @@ The tool contract family should answer:
 
 Primary owners and related surfaces:
 
-- `agentic_coder_prototype/tool_calling/ir.py`
-- `agentic_coder_prototype/compilation/tool_yaml_loader.py`
-- `agentic_coder_prototype/compilation/tool_prompt_synth.py`
-- `agentic_coder_prototype/conductor/prompt_planner.py`
+- `breadboard_engine/tool_calling/ir.py`
+- `breadboard_engine/compilation/tool_yaml_loader.py`
+- `breadboard_engine/compilation/tool_prompt_synth.py`
+- `breadboard_engine/conductor/prompt_planner.py`
 - provider/runtime integration paths
-- dialect adapters under `agentic_coder_prototype/dialects/`
-- MCP tooling surfaces under `agentic_coder_prototype/mcp/tooling.py`
+- dialect adapters under `breadboard_engine/dialects/`
+- MCP tooling surfaces under `breadboard_engine/mcp/tooling.py`
 - executor surfaces implied by tests and runtime modules
 
 ---

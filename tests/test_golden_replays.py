@@ -11,13 +11,13 @@ from typing import Sequence, Set
 
 import pytest
 
-from agentic_coder_prototype.parity import (
+from breadboard_engine.parity import (
     EquivalenceLevel,
     build_expected_run_ir,
     build_run_ir_from_run_dir,
     compare_run_ir,
 )
-from agentic_coder_prototype.parity_manifest import ParityScenario, load_parity_scenarios
+from breadboard_engine.parity_manifest import ParityScenario, load_parity_scenarios
 
 ROOT = Path(__file__).resolve().parents[1]
 REPLAY_SCRIPT = ROOT / "scripts/replay_opencode_session.py"

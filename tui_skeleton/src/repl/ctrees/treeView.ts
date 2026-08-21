@@ -1,4 +1,4 @@
-import type { CTreeTreeNode, CTreeTreeResponse } from "../../api/types.js"
+import type { CTreeTreeNode, CTreeTreeResponse } from "@breadboard/sdk"
 
 export type CTreeTreeRow = {
   readonly id: string

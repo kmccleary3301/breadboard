@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.conductor_loop import build_ctree_runtime_payload, build_rlm_summary
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.conductor_loop import build_ctree_runtime_payload, build_rlm_summary
+from breadboard_engine.state.session_state import SessionState
 
 
 def test_build_rlm_summary_from_provider_metadata() -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentic_coder_prototype.skills.registry import (
+from breadboard_engine.skills.registry import (
     apply_skill_selection,
     build_skill_catalog,
     load_skills,

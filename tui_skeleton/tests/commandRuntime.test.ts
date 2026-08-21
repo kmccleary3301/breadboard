@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ApiError } from "../src/api/client.js"
+import { ApiError } from "@breadboard/sdk"
 import {
   formatApiCommandError,
   formatApiFailure,

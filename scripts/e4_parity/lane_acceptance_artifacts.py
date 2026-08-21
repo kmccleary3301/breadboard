@@ -16,9 +16,9 @@ WORKSPACE = ROOT.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agentic_coder_prototype.conformance.c4_chain import validate_c4_chain  # noqa: E402
-from agentic_coder_prototype.compilation.primitive_records import canonical_record_bytes, sha256_ref  # noqa: E402
-from agentic_coder_prototype.conformance.catalog_binding import catalog_segment_hash, reusable_catalog_revision  # noqa: E402
+from breadboard_engine.conformance.c4_chain import validate_c4_chain  # noqa: E402
+from breadboard_engine.compilation.primitive_records import canonical_record_bytes, sha256_ref  # noqa: E402
+from breadboard_engine.conformance.catalog_binding import catalog_segment_hash, reusable_catalog_revision  # noqa: E402
 from scripts.e4_parity.lane_runtime import sha256_file  # noqa: E402
 from scripts.e4_parity.self_capture_determinism import deterministic_self_capture_context  # noqa: E402
 from scripts.e4_parity.validators.registries import schema_generation_default  # noqa: E402
@@ -301,8 +301,8 @@ def emit_self_runtime_records(
 ) -> list[str]:
     """Promote runtime records captured from a real AgenticCoder run, not a synthetic soak."""
 
-    from agentic_coder_prototype.agent import AgenticCoder
-    from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
+    from breadboard_engine.agent import AgenticCoder
+    from breadboard_engine.compilation.primitive_records import finalize_record, get_spec
     from scripts.replay_session_from_records import (
         _append_transcript_item,
         _iter_jsonl,

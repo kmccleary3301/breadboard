@@ -13,8 +13,8 @@ import shutil
 import os
 from pathlib import Path
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.conductor_context import ConductorContext
+from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.conductor_context import ConductorContext
 
 ConductorClass = OpenAIConductor.__ray_metadata__.modified_class
 

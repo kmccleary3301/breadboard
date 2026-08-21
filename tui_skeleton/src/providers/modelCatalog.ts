@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { ApiClient, ApiError } from "../api/internalClient.js"
-import type { ModelCatalogEntry } from "../api/types.js"
+import { ApiError } from "@breadboard/sdk"
+import { CliProviders } from "./cliProviders.js"
+import type { ModelCatalogEntry } from "@breadboard/sdk"
 import { DEFAULT_MODEL_ID } from "../config/appConfig.js"
 
 export interface ProviderModel {
@@ -138,7 +139,7 @@ const normalizeEngineEntry = (entry: ModelCatalogEntry): ProviderModel | null =>
 const fetchEngineCatalog = async (configPath: string): Promise<ModelCatalogPayload | null> => {
   if (!configPath || !configPath.trim()) return null
   try {
-    const response = await ApiClient.getModelCatalog(configPath)
+    const response = await CliProviders.sdk.api().getModelCatalog(configPath)
     const models = response.models
       .map(normalizeEngineEntry)
       .filter((entry): entry is ProviderModel => entry !== null)

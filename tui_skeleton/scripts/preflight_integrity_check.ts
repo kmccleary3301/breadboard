@@ -23,7 +23,7 @@ if (snapshot) {
   mkdirSync(outputDir, { recursive: true })
   const stamp = new Date().toISOString().replace(/[:.]/g, "-")
   const archivePath = path.join(outputDir, `breadboard_preflight_snapshot_${stamp}.tar.gz`)
-  const entries = ["tui_skeleton", "agentic_coder_prototype", "agent_configs", "config"].filter((entry) =>
+  const entries = ["tui_skeleton", "breadboard_engine", "agent_configs", "config"].filter((entry) =>
     existsSync(path.join(repoRoot, entry)),
   )
   execFileSync("tar", ["-czf", archivePath, ...entries], { cwd: repoRoot, stdio: "inherit" })

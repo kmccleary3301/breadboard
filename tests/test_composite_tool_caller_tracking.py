@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agentic_coder_prototype.core.core import ToolCallParsed
-from agentic_coder_prototype.execution.composite import CompositeToolCaller
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.core.core import ToolCallParsed
+from breadboard_engine.execution.composite import CompositeToolCaller
+from breadboard_engine.state.session_state import SessionState
 
 
 def test_composite_tool_caller_tracks_text_tool_calls_and_todo_seed() -> None:

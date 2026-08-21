@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.graph_neighborhood_canary import evaluate_graph_neighborhood_canary
+from breadboard_engine.ctrees.graph_neighborhood_canary import evaluate_graph_neighborhood_canary
 
 
 def test_ctree_graph_neighborhood_canary_improves_over_direct_graph_baseline() -> None:

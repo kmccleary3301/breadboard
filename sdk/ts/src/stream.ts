@@ -1,167 +1,244 @@
-import { createParser, type ParsedEvent, type ReconnectInterval, type EventSourceParseCallback } from "eventsource-parser"
+import { createParser, type EventSourceParseCallback, type ParsedEvent, type ReconnectInterval } from "eventsource-parser"
+import { ApiError, type BreadboardClientConfig } from "./client.js"
 import type { SessionEvent } from "./types.js"
-import { ApiError } from "./client.js"
 
-export interface StreamConfig {
-  readonly baseUrl: string
-  readonly authToken?: string
-}
+export interface StreamConfig extends BreadboardClientConfig {}
 
 export interface EventStreamOptions {
   readonly signal?: AbortSignal
   readonly query?: Record<string, string | number | boolean>
   readonly config: StreamConfig
   readonly lastEventId?: string
+  readonly onOpen?: () => void
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+export interface EventStreamHandlers {
+  readonly onEvent: (event: SessionEvent) => void
+  readonly onOpen?: () => void
+  readonly onError?: (error: Event | Error) => void
+}
+
+export interface OpenEventStreamOptions extends EventStreamOptions {
+  readonly eventTypes?: readonly string[]
+  readonly initialRetryMs?: number
+  readonly maxRetryMs?: number
+}
+
+export interface EventStreamHandle {
+  close(): void
+}
+
+const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-const readString = (value: unknown): string | null =>
-  typeof value === "string" && value.trim().length > 0 ? value : null
+const stringValue = (value: unknown): string | null =>
+  typeof value === "string" && value.trim() ? value : null
 
-const readNumber = (value: unknown): number | null =>
+const numberValue = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null
 
-const normalizeEvent = (
+const normalize = (
   raw: unknown,
-  sessionIdFallback: string,
+  sessionId: string,
   fallbackId: string | null,
-  syntheticId: () => string,
+  nextId: () => string,
 ): SessionEvent | null => {
-  if (!isRecord(raw)) return null
-  const type = readString(raw.type) ?? readString(raw.event) ?? readString(raw.kind)
+  if (!record(raw)) return null
+  const type = stringValue(raw.type) ?? stringValue(raw.event) ?? stringValue(raw.kind)
   if (!type) return null
-  const sessionId = readString(raw.session_id) ?? readString(raw.sessionId) ?? sessionIdFallback
-  const payload = raw.payload ?? raw.data ?? raw.message ?? raw.body ?? {}
-  const timestampRaw = readNumber(raw.timestamp) ?? readNumber(raw.time) ?? readNumber(raw.ts)
-  const timestampMsRaw = readNumber(raw.timestamp_ms) ?? readNumber(raw.timestampMs) ?? readNumber(raw.ts_ms)
-  const timestampFallback = Date.now()
-  const timestampValue = timestampRaw ?? timestampMsRaw ?? timestampFallback
-  const timestampMs = timestampMsRaw ?? (timestampValue > 10_000_000_000 ? timestampValue : Math.round(timestampValue * 1000))
-  const id = readString(raw.id) ?? readString(raw.event_id) ?? readString(raw.eventId) ?? fallbackId ?? syntheticId()
-  const turn = readNumber(raw.turn) ?? readNumber(raw.turn_id) ?? readNumber(raw.turnId) ?? null
-  const seq = readNumber(raw.seq) ?? undefined
-  const runId = readString(raw.run_id) ?? readString(raw.runId)
-  const threadId = readString(raw.thread_id) ?? readString(raw.threadId)
-  const turnId =
-    readString(raw.turn_id) ??
-    readString(raw.turnId) ??
-    (typeof raw.turn_id === "number" ? raw.turn_id : undefined) ??
-    (typeof raw.turnId === "number" ? raw.turnId : undefined)
+  const timestamp = numberValue(raw.timestamp) ?? numberValue(raw.time) ?? numberValue(raw.ts) ?? Date.now()
+  const timestampMs =
+    numberValue(raw.timestamp_ms) ??
+    numberValue(raw.timestampMs) ??
+    numberValue(raw.ts_ms) ??
+    (timestamp > 10_000_000_000 ? timestamp : Math.round(timestamp * 1000))
   return {
-    id,
+    id:
+      stringValue(raw.id) ??
+      stringValue(raw.event_id) ??
+      stringValue(raw.eventId) ??
+      fallbackId ??
+      nextId(),
     type: type as SessionEvent["type"],
-    session_id: sessionId,
-    turn,
+    session_id: stringValue(raw.session_id) ?? stringValue(raw.sessionId) ?? sessionId,
+    turn: numberValue(raw.turn) ?? numberValue(raw.turn_id) ?? numberValue(raw.turnId),
     timestamp: timestampMs,
     timestamp_ms: timestampMs,
-    seq: seq ?? undefined,
-    run_id: runId ?? null,
-    thread_id: threadId ?? null,
-    turn_id: turnId ?? null,
-    payload: payload as SessionEvent["payload"],
+    seq: numberValue(raw.seq) ?? undefined,
+    v: numberValue(raw.v) ?? undefined,
+    schema_rev: stringValue(raw.schema_rev) ?? stringValue(raw.schemaRev),
+    run_id: stringValue(raw.run_id) ?? stringValue(raw.runId),
+    thread_id: stringValue(raw.thread_id) ?? stringValue(raw.threadId),
+    turn_id:
+      stringValue(raw.turn_id) ??
+      stringValue(raw.turnId) ??
+      (typeof raw.turn_id === "number" ? raw.turn_id : undefined) ??
+      (typeof raw.turnId === "number" ? raw.turnId : undefined),
+    span_id: stringValue(raw.span_id) ?? stringValue(raw.spanId),
+    parent_span_id: stringValue(raw.parent_span_id) ?? stringValue(raw.parentSpanId),
+    actor: record(raw.actor) ? raw.actor : null,
+    visibility: stringValue(raw.visibility),
+    tags: Array.isArray(raw.tags)
+      ? raw.tags.filter((tag): tag is string => typeof tag === "string")
+      : null,
+    payload: (raw.payload ?? raw.data ?? raw.message ?? raw.body ?? {}) as SessionEvent["payload"],
   }
+}
+
+const streamUrl = (
+  sessionId: string,
+  config: StreamConfig,
+  query: Record<string, string | number | boolean>,
+  lastEventId?: string,
+): URL => {
+  const url = new URL(
+    `v1/sessions/${encodeURIComponent(sessionId)}/events`,
+    config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`,
+  )
+  if (!("schema" in query) && !("v" in query)) query.schema = config.streamSchema ?? 2
+  if (!("include_legacy" in query)) query.include_legacy = config.streamIncludeLegacy ?? false
+  if (!("replay" in query) && !lastEventId) query.replay = true
+  for (const [key, value] of Object.entries(query)) url.searchParams.set(key, String(value))
+  if (lastEventId) url.searchParams.set("from_id", lastEventId)
+  return url
+}
+
+const resolveToken = async (config: StreamConfig, signal?: AbortSignal): Promise<string | undefined> => {
+  if (signal?.aborted) return undefined
+  const token = typeof config.authToken === "function" ? await config.authToken() : config.authToken
+  return signal?.aborted ? undefined : token
 }
 
 export const streamSessionEvents = async function* (
   sessionId: string,
   options: EventStreamOptions,
 ): AsyncGenerator<SessionEvent, void, void> {
-  const { config } = options
-  const url = new URL(
-    `/v1/sessions/${encodeURIComponent(sessionId)}/events`,
-    config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`,
-  )
-  if (options.query) {
-    for (const [key, value] of Object.entries(options.query)) {
-      url.searchParams.set(key, String(value))
-    }
-  }
+  if (options.signal?.aborted) return
   const controller = new AbortController()
-  const signal = options.signal
-  const abortHandler = signal ? () => controller.abort() : undefined
-  if (signal) {
-    signal.addEventListener("abort", abortHandler as EventListener, { once: true })
-  }
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      ...(config.authToken ? { Authorization: `Bearer ${config.authToken}` } : {}),
-      ...(options.lastEventId ? { "Last-Event-ID": options.lastEventId } : {}),
-    },
-    signal: controller.signal,
-  })
-  if (!response.ok) {
-    const text = await response.text().catch(() => "")
-    throw new ApiError(`Streaming request failed with status ${response.status}`, response.status, text)
-  }
-  if (!response.body) {
-    throw new Error("Streaming response provided no body")
-  }
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  const buffer: SessionEvent[] = []
-  let syntheticIdCounter = 0
-  const nextSyntheticId = () => `synthetic-${syntheticIdCounter++}`
-  const parser = createParser(
-    ((event: ParsedEvent | ReconnectInterval) => {
-      if (event.type === "event" && "data" in event && event.data) {
-        try {
-          const raw = JSON.parse(event.data) as unknown
-          const normalized = normalizeEvent(raw, sessionId, event.id ?? null, nextSyntheticId)
-          if (normalized) buffer.push(normalized)
-        } catch {
-          // ignore malformed event
-        }
-      }
-    }) as EventSourceParseCallback,
-  )
-
-  const readWithAbort = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
-    if (!signal) {
-      return reader.read()
-    }
-    if (signal.aborted) {
-      return { done: true, value: undefined }
-    }
-    return await new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
-      const onAbort = () => resolve({ done: true, value: undefined })
-      signal.addEventListener("abort", onAbort, { once: true })
-      reader
-        .read()
-        .then((result) => resolve(result))
-        .catch((error) => reject(error))
-        .finally(() => {
-          signal.removeEventListener("abort", onAbort)
-        })
-    })
-  }
-
+  const abort = () => controller.abort()
+  options.signal?.addEventListener("abort", abort, { once: true })
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   try {
-    while (true) {
-      const { value, done } = await readWithAbort()
-      if (done || signal?.aborted) {
-        parser.reset()
-        break
+    const token = await resolveToken(options.config, options.signal)
+    if (options.signal?.aborted) return
+    const response = await fetch(
+      streamUrl(sessionId, options.config, { ...(options.query ?? {}) }, options.lastEventId),
+      {
+        method: "GET",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(options.lastEventId ? { "Last-Event-ID": options.lastEventId } : {}),
+        },
+        signal: controller.signal,
+      },
+    )
+    if (!response.ok) {
+      throw new ApiError(
+        `Streaming request failed with status ${response.status}`,
+        response.status,
+        await response.text().catch(() => ""),
+      )
+    }
+    if (!response.body) throw new Error("Streaming response provided no body")
+    options.onOpen?.()
+
+    reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    const buffer: SessionEvent[] = []
+    let counter = 0
+    const parser = createParser(((event: ParsedEvent | ReconnectInterval) => {
+      if (event.type !== "event" || !("data" in event) || !event.data) return
+      try {
+        const parsed = normalize(
+          JSON.parse(event.data),
+          sessionId,
+          event.id ?? null,
+          () => `synthetic-${counter++}`,
+        )
+        if (parsed) buffer.push(parsed)
+      } catch {
+        // Malformed events are ignored; the next canonical event remains usable.
       }
-      if (value) {
-        parser.feed(decoder.decode(value, { stream: true }))
-        while (buffer.length > 0) {
-          const next = buffer.shift()
-          if (next) yield next
-        }
+    }) as EventSourceParseCallback)
+
+    while (!options.signal?.aborted) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (!value) continue
+      parser.feed(decoder.decode(value, { stream: true }))
+      while (buffer.length > 0) {
+        const event = buffer.shift()
+        if (event) yield event
       }
     }
+    parser.reset()
   } finally {
-    reader.releaseLock()
-    if (response.body) {
-      await response.body.cancel().catch(() => undefined)
+    if (reader) {
+      await reader.cancel().catch(() => undefined)
+      reader.releaseLock()
     }
-    if (signal) {
-      signal.removeEventListener("abort", abortHandler as EventListener)
-    }
+    options.signal?.removeEventListener("abort", abort)
   }
 }
 
+export const openEventStream = (
+  sessionId: string,
+  handlers: EventStreamHandlers,
+  options: OpenEventStreamOptions,
+): EventStreamHandle => {
+  let closed = false
+  let controller: AbortController | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let retry = options.initialRetryMs ?? 500
+  const maxRetry = options.maxRetryMs ?? 10_000
+  let lastEventId = options.lastEventId
+
+  const scheduleReconnect = (): void => {
+    if (closed || options.signal?.aborted) return
+    timer = setTimeout(() => void connect(), retry)
+    retry = Math.min(maxRetry, Math.max(retry * 2, retry + 1))
+  }
+
+  const connect = async (): Promise<void> => {
+    if (closed || options.signal?.aborted) return
+    const attemptController = new AbortController()
+    controller = attemptController
+    try {
+      for await (const event of streamSessionEvents(sessionId, {
+        config: options.config,
+        query: options.query,
+        lastEventId,
+        signal: attemptController.signal,
+        onOpen: () => {
+          retry = options.initialRetryMs ?? 500
+          handlers.onOpen?.()
+        },
+      })) {
+        if (closed) return
+        lastEventId = event.id
+        handlers.onEvent(event)
+      }
+    } catch (error) {
+      if (!closed && !attemptController.signal.aborted) {
+        handlers.onError?.(error instanceof Error ? error : new Error("Event stream failed"))
+      }
+    } finally {
+      if (controller === attemptController) controller = undefined
+    }
+    scheduleReconnect()
+  }
+
+  const close = (): void => {
+    closed = true
+    clearTimeout(timer)
+    timer = undefined
+    controller?.abort()
+    controller = undefined
+    options.signal?.removeEventListener("abort", close)
+  }
+
+  options.signal?.addEventListener("abort", close, { once: true })
+  if (!options.signal?.aborted) void connect()
+  else close()
+  return { close }
+}

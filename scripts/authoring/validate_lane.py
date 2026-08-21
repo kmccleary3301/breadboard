@@ -12,8 +12,8 @@ import yaml
 from jsonschema import Draft202012Validator
 
 try:
-    from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
-    from agentic_coder_prototype.conformance.c4_chain import validate_c4_chain
+    from breadboard_engine.compilation.primitive_records import finalize_record, get_spec
+    from breadboard_engine.conformance.c4_chain import validate_c4_chain
     from scripts.e4_parity import generate_lane_inventory
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, LaneDefValidationError, load_lane_def
     from scripts.e4_parity.lane_inventory_utils import DEFAULT_INVENTORY_PATH, load_inventory
@@ -21,8 +21,8 @@ try:
     from scripts.e4_parity.validators.registries import RegistryValidationError, assert_registered
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
-    from agentic_coder_prototype.conformance.c4_chain import validate_c4_chain
+    from breadboard_engine.compilation.primitive_records import finalize_record, get_spec
+    from breadboard_engine.conformance.c4_chain import validate_c4_chain
     from scripts.e4_parity import generate_lane_inventory
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, LaneDefValidationError, load_lane_def
     from scripts.e4_parity.lane_inventory_utils import DEFAULT_INVENTORY_PATH, load_inventory

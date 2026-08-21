@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.replay import resolve_todo_placeholders
+from breadboard_engine.replay import resolve_todo_placeholders
 
 
 def test_resolve_todo_placeholders_with_snapshot(tmp_path: Path) -> None:

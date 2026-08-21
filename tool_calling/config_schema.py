@@ -1,4 +1,4 @@
-from agentic_coder_prototype.core.config_schema import (
+from breadboard_engine.core.config_schema import (
 	ConfigurationManager,
 	FormatConfig,
 	ABTestConfig,

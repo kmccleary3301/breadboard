@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH, catalog_segment_hash
+from breadboard_engine.conformance.catalog_binding import CATALOG_PATH, catalog_segment_hash
 from scripts.e4_parity import regenerate_evidence
 from scripts.e4_parity.lane_acceptance_artifacts import build_lane_from_definition
 from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from agentic_coder_prototype.compilation.primitive_records import canonical_record_bytes, sha256_ref
+from breadboard_engine.compilation.primitive_records import canonical_record_bytes, sha256_ref
 from scripts.e4_parity.path_refs import resolve_declared_reference
 
 ROOT = Path(__file__).resolve().parents[2]

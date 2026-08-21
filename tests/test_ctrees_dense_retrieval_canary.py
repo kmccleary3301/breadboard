@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.dense_retrieval_canary import evaluate_dense_retrieval_canary
+from breadboard_engine.ctrees.dense_retrieval_canary import evaluate_dense_retrieval_canary
 
 
 def test_ctree_dense_retrieval_canary_improves_over_helper_only_baseline() -> None:

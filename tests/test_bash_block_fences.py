@@ -1,7 +1,7 @@
 """BashBlockDialect accepts markdown shell fences alongside <BASH> blocks."""
 
-from agentic_coder_prototype.core.core import ToolDefinition
-from agentic_coder_prototype.dialects.bash_block import BashBlockDialect
+from breadboard_engine.core.core import ToolDefinition
+from breadboard_engine.dialects.bash_block import BashBlockDialect
 
 
 def _tools():

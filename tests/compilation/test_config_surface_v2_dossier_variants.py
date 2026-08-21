@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation import v2_loader
+from breadboard_engine.compilation import v2_loader
 
 ROOT = Path(__file__).resolve().parents[2]
 DOSSIER_ONLY_TOP_LEVEL = {"profile", "tool_packs", "tool_bindings", "terminal_sessions"}

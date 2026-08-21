@@ -1,7 +1,7 @@
 import { Command, Options } from "@effect/cli"
 import { Console, Effect, Option } from "effect"
 import { forgetSession } from "../cache/sessionCache.js"
-import type { SessionSummary } from "../api/types.js"
+import type { SessionSummary } from "@breadboard/sdk"
 import { listCachedSessions, rememberSession, loadSessionCache } from "../cache/sessionCache.js"
 import { getCliApi, reportApiCommandErrorEffect } from "./commandRuntime.js"
 import { normalizeTableJsonOutputMode } from "./commandOutput.js"

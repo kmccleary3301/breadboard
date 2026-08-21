@@ -6,19 +6,19 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest, SessionStatus
-from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord, SessionRegistry
-from agentic_coder_prototype.api.cli_bridge.runtime_emission import emit_session_start_records
-from agentic_coder_prototype.api.cli_bridge.service import SessionService
-from agentic_coder_prototype.api.cli_bridge.session_runner import SessionRunner
-from agentic_coder_prototype.compilation.effective_operation_policy import (
+from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
+from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+from breadboard_engine.api.cli_bridge.runtime_emission import emit_session_start_records
+from breadboard_engine.api.cli_bridge.service import SessionService
+from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+from breadboard_engine.compilation.effective_operation_policy import (
     comparable_policy_pack_projection,
     compile_effective_operation_policy,
     policy_pack_for_config_authority,
     policy_pack_from_effective_record,
 )
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.permissions.policy_pack import PolicyPack
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.permissions.policy_pack import PolicyPack
 
 
 FIXTURE_CONFIGS = [
@@ -173,8 +173,8 @@ async def test_policy_authority_unset_keeps_emission_off(monkeypatch: pytest.Mon
     monkeypatch.delenv("BREADBOARD_EMIT_PRIMITIVES", raising=False)
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "runtime_records"))
 
-    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.schedule_start", lambda _runner: None)
-    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.authorize_start", lambda _runner: None)
+    monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.SessionRunner.schedule_start", lambda _runner: None)
+    monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.SessionRunner.authorize_start", lambda _runner: None)
     service = SessionService(SessionRegistry())
 
     response = await service.create_session(

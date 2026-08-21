@@ -1,4 +1,4 @@
-from agentic_coder_prototype.compilation.tool_prompt_synth import ToolPromptSynthesisEngine
+from breadboard_engine.compilation.tool_prompt_synth import ToolPromptSynthesisEngine
 
 
 def test_tpsl_pythonic_render_system_full():

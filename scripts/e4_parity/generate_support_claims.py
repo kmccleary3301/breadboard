@@ -19,8 +19,8 @@ try:
     from scripts.e4_parity.validators import hash_utils as _hash_utils
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from validators import hash_utils as _hash_utils
-from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
-from agentic_coder_prototype.conformance.catalog_binding import (
+from breadboard_engine.compilation.primitive_records import finalize_record, get_spec
+from breadboard_engine.conformance.catalog_binding import (
     CATALOG_PATH as CATALOG_BINDING_PATH,
     catalog_segment_hash,
     reusable_catalog_revision,

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.evaluation_baselines import build_deterministic_reranker_plan
-from agentic_coder_prototype.ctrees.microprobes import build_false_neighbor_store, build_graph_neighborhood_store
-from agentic_coder_prototype.ctrees.policy import build_rehydration_plan
+from breadboard_engine.ctrees.evaluation_baselines import build_deterministic_reranker_plan
+from breadboard_engine.ctrees.microprobes import build_false_neighbor_store, build_graph_neighborhood_store
+from breadboard_engine.ctrees.policy import build_rehydration_plan
 
 
 def test_ctree_deterministic_reranker_prunes_structural_spillover() -> None:

@@ -14,14 +14,7 @@ test("candidate product methods preserve canonical result envelopes and routes",
     return new Response(JSON.stringify(result), { headers: { "content-type": "application/json" } })
   }
   const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
-  assert.deepEqual(Object.keys(client).sort(), [
-    "approveSession", "artifactsSession", "cancelSession", "createHarness", "describeSystem",
-    "eventsSession", "explainHarness", "getArtifact", "getHarness", "getHarnessLock",
-    "getIntegration", "getSession", "healthSystem", "listArtifact", "listHarness",
-    "listIntegration", "listSession", "lockHarness", "probeIntegration", "resumeSession",
-    "schemasSystem", "sendInputSession", "startSession", "updateHarness", "validateHarness",
-    "verifyArtifact",
-  ].sort())
+  for (const name of ["describeSystem", "healthSystem", "schemasSystem", "createHarness", "listHarness", "getHarness", "updateHarness", "validateHarness", "explainHarness", "lockHarness", "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact", "getArtifact", "verifyArtifact", "startSession", "listSession", "getSession", "sendInputSession", "approveSession", "resumeSession", "cancelSession", "artifactsSession", "eventsSession"]) assert.equal(typeof client[name], "function")
   assert.equal(typeof client.eventsSession, "function")
   const calls = [
     () => client.describeSystem(), () => client.healthSystem(), () => client.schemasSystem(),
@@ -52,4 +45,36 @@ test("candidate product methods preserve canonical result envelopes and routes",
     ["GET", "/v1/sessions/session-1/artifacts"],
   ])
   assert.deepEqual(requests.filter((row) => row[2]).map((row) => row[2]), ["probe-key", "start-key", "input-key", "approval-key", "resume-key", "cancel-key"])
+})
+
+
+test("broker and model-role methods use canonical typed routes", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const requests = []
+  const response = { provider_id: "openai", account_id: "bbacct_test", credential_id: "bbcred_test", status: "active" }
+  globalThis.fetch = async (input, init) => {
+    requests.push([init?.method, new URL(String(input)).pathname, JSON.parse(init?.body ?? "null")])
+    return new Response(JSON.stringify(response), { headers: { "content-type": "application/json" } })
+  }
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+  for (const name of ["listProviders", "listCredentials", "beginLogin", "getLogin", "completeLogin", "cancelLogin", "putApiKey", "logout", "revoke", "resolveModelRoles"]) assert.equal(typeof client[name], "function")
+  await client.listProviders()
+  await client.listCredentials("openai")
+  await client.beginLogin({ provider_id: "openai" })
+  await client.getLogin("bblogin_test")
+  await client.completeLogin({ login_session_id: "bblogin_test", state: "state" })
+  await client.cancelLogin("bblogin_test")
+  await client.putApiKey("openai", "main", { api_key: "sk-sdk-canary" })
+  await client.logout("bbacct_test")
+  await client.revoke("bbcred_test")
+  await client.resolveModelRoles({ model_roles: { schema_version: "bb.model_roles.v1" } })
+  assert.deepEqual(requests.map(([method, path]) => [method, path]), [
+    ["GET", "/v1/auth/providers"], ["GET", "/v1/auth/credentials"],
+    ["POST", "/v1/auth/login-sessions"], ["GET", "/v1/auth/login-sessions/bblogin_test"],
+    ["POST", "/v1/auth/login-sessions/bblogin_test/complete"], ["DELETE", "/v1/auth/login-sessions/bblogin_test"],
+    ["PUT", "/v1/auth/credentials/openai/main/api-key"], ["DELETE", "/v1/auth/credentials/bbacct_test"],
+    ["POST", "/v1/auth/credentials/bbcred_test/revoke"], ["POST", "/v1/model-roles/resolve"],
+  ])
+  assert.equal(requests[6][2].api_key, "sk-sdk-canary")
 })

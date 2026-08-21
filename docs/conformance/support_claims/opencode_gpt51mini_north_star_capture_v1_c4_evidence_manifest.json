@@ -46,7 +46,7 @@
     {
       "path": "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:02d9e27985e7977f6855edee521ace9e84f48d561ce88e1bed60f887b2454cf5"
+      "sha256": "sha256:a55b4e892ec137397cf11b1390918c6ca7eddbdb883951334392aee0f70bd390"
     },
     {
       "derived_from": [
@@ -71,7 +71,7 @@
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
+      "sha256": "sha256:4e9492562ccd1e8af2a95a3f1c0ee07465b5753c4d4d6c1c33534602aa5eeae3"
     }
   ],
   "claim_id": "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",

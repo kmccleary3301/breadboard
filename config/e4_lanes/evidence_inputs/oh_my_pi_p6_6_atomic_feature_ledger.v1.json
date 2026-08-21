@@ -7,8 +7,8 @@
   "plan_ref": "docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_MASTER_PLAN.md:317-323",
   "reference_resolution": {
     "policy": "Every unresolved historical source/fixture reference has an explicit justified tombstone; the P6.6 claim consumes only tracked, lock-pinned inputs.",
-    "resolved_reference_count": 324,
-    "tombstone_count": 170
+    "resolved_reference_count": 291,
+    "tombstone_count": 203
   },
   "reference_tombstones": [
     {
@@ -1200,6 +1200,237 @@
       "field": "source_refs",
       "reason": "Historical workspace source is outside the tracked checkout or absent at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
       "reference": "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/snapcompact/src/snapcompact.ts"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_7fdb5e54163f8491",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_66aa65167fe1a23e",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_58c32354547a6f30",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1.yaml#sha256:5708fef16bf0fb7b9e4ad09f6121c1f4c84b156e1543653f16b3a5d4c8a1102f"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_a34b5b7f40983398",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_8_projection_broker_adapter_v1.yaml#sha256:c0a2df72a80d705c4b2fdbfd19ce510c78710e45524585a33e22f831c802d40d"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_e82097c722ea3de6",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_e15856161865ccf0",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_2448ef276993987f",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_2448ef276993987f",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_3_capability_registry_compiler_v1.yaml#sha256:596bc2f58566f92d9dbd8eaab4801992310e506bf97508d9e853acb401d83ea7"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_e4e2626cb830cd71",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_286eace25512641c",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_286eace25512641c",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_3_capability_registry_compiler_v1.yaml#sha256:596bc2f58566f92d9dbd8eaab4801992310e506bf97508d9e853acb401d83ea7"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_27b8b717b944aa62",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_27b8b717b944aa62",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_3_capability_registry_compiler_v1.yaml#sha256:596bc2f58566f92d9dbd8eaab4801992310e506bf97508d9e853acb401d83ea7"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_53e7527a5b7c988d",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1.yaml#sha256:5708fef16bf0fb7b9e4ad09f6121c1f4c84b156e1543653f16b3a5d4c8a1102f"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_64292b3d983dd2dd",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_302e54b3816b0735",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_302e54b3816b0735",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_3_capability_registry_compiler_v1.yaml#sha256:596bc2f58566f92d9dbd8eaab4801992310e506bf97508d9e853acb401d83ea7"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_3542060273091f14",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_3_capability_registry_compiler_v1.yaml#sha256:596bc2f58566f92d9dbd8eaab4801992310e506bf97508d9e853acb401d83ea7"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_5f7c4d31065a8be2",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_4_extension_hook_execution_compiler_v1.yaml#sha256:72307018ee5f8b2557c339558aca0a5e561e622a9c322186805c28eefc06d43d"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_084fa143dd5a617e",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_4_extension_hook_execution_compiler_v1.yaml#sha256:72307018ee5f8b2557c339558aca0a5e561e622a9c322186805c28eefc06d43d"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_04f2743eb9972b05",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_8_projection_broker_adapter_v1.yaml#sha256:c0a2df72a80d705c4b2fdbfd19ce510c78710e45524585a33e22f831c802d40d"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_c12f3d18614e2f37",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1.yaml#sha256:5708fef16bf0fb7b9e4ad09f6121c1f4c84b156e1543653f16b3a5d4c8a1102f"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_d9a108e03ba8b129",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1.yaml#sha256:5708fef16bf0fb7b9e4ad09f6121c1f4c84b156e1543653f16b3a5d4c8a1102f"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_327528ad47f2ed45",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_327528ad47f2ed45",
+      "field": "source_refs",
+      "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
+      "reference": "source:agent_configs/misc/oh_my_pi_p3_5_resource_blob_compiler_v1.yaml#sha256:3c791f8ec67f6ddffd53f30bc13fd3e9642c2a67ccc6e0eb54f2030547301be6"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_b3bcb7697f3ea258",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/compilation/effective_config_graph.py"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_0234bfa2b266f538",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_5123d3276f9ca468",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_a8c1754af302f290",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_b650fa627d57aa92",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_bc11e30da175b4a9",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_dcc5055b78969aba",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+    },
+    {
+      "disposition": "historical_provenance_only",
+      "feature_id": "feat_e9ae27a72149301b",
+      "field": "source_refs",
+      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
+      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
     }
   ],
   "row_count": 98,

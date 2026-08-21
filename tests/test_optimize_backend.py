@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_coder_prototype.optimize import (
+from breadboard_engine.optimize import (
     CandidateBundle,
     CandidateChange,
     MaterializedCandidate,
@@ -27,8 +27,8 @@ from agentic_coder_prototype.optimize import (
     run_single_locus_greedy_backend,
     validate_bounded_candidate,
 )
-from agentic_coder_prototype.optimize.backend import StagedOptimizer, StagedOptimizerRequest, run_staged_optimizer
-from agentic_coder_prototype.optimize.examples import build_staged_backend_comparison_example
+from breadboard_engine.optimize.backend import StagedOptimizer, StagedOptimizerRequest, run_staged_optimizer
+from breadboard_engine.optimize.examples import build_staged_backend_comparison_example
 
 
 def test_backend_example_round_trip() -> None:

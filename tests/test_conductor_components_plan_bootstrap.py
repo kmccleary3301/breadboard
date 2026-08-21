@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional
 
-from agentic_coder_prototype.conductor_components import maybe_run_plan_bootstrap
+from breadboard_engine.conductor_components import maybe_run_plan_bootstrap
 
 
 class _StubSessionState:

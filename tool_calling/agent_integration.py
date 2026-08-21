@@ -1,4 +1,4 @@
-from agentic_coder_prototype.integration.agent_integration import (
+from breadboard_engine.integration.agent_integration import (
 	EnhancedAgentToolManager,
 	create_enhanced_agent_integration,
 	benchmark_formats,

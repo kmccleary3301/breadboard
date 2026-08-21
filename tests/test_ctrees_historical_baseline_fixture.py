@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.historical_baseline_fixture import load_prompt_centric_historical_fixture
+from breadboard_engine.ctrees.historical_baseline_fixture import load_prompt_centric_historical_fixture
 
 
 def test_ctree_historical_prompt_centric_fixture_is_frozen_and_present() -> None:

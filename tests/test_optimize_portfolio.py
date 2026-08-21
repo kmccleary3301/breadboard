@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.optimize import (
+from breadboard_engine.optimize import (
     CandidateBundle,
     CandidateChange,
     CandidatePortfolio,

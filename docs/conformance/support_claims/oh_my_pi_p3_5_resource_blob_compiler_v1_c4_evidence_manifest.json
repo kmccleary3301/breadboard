@@ -8,39 +8,39 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:6a776b03bf1290f5940045d2170e56516bd1f5775a694f0398a5f2e96fe825aa"
+      "sha256": "sha256:82dd86da499dfaf6d214172d5a6c45b2681d49518eedf3df7e453b19ee60c153"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:6a776b03bf1290f5940045d2170e56516bd1f5775a694f0398a5f2e96fe825aa",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:82dd86da499dfaf6d214172d5a6c45b2681d49518eedf3df7e453b19ee60c153",
         "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/compiled_records.json#sha256:55cf5a6101bb2f77f84433b30c3c56758d01234e56687c9ca12fc20c5583e5d9"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:2d8c2bbda80e1130ed3114dc1aada5ac45f1de341c12f6987c715e0dd1c0ca42"
+      "sha256": "sha256:e168e3e2ad3bf09d9d086c789d740d7737485b98f998ee4e85c70f78c73f344b"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:6a776b03bf1290f5940045d2170e56516bd1f5775a694f0398a5f2e96fe825aa",
-        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json#sha256:2d8c2bbda80e1130ed3114dc1aada5ac45f1de341c12f6987c715e0dd1c0ca42",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:82dd86da499dfaf6d214172d5a6c45b2681d49518eedf3df7e453b19ee60c153",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json#sha256:e168e3e2ad3bf09d9d086c789d740d7737485b98f998ee4e85c70f78c73f344b",
         "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/compiled_records.json#sha256:55cf5a6101bb2f77f84433b30c3c56758d01234e56687c9ca12fc20c5583e5d9"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:9772186b764d95426926eedb725561605f4ff78e350249c0ab097efc9322df60"
+      "sha256": "sha256:356d828422d63905fb759a56ee304fd435b9d7ca4ea5b1176fd55787a43e80b6"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:6d5fbf96a19010cd92ca5f46ac5849eaa18f32761d83d62a88659f3225f996ef"
+      "sha256": "sha256:14fd2a6c648da7e243d2e1b6d2bb72bc601849b9015f208169152f901b3c6179"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json#sha256:9772186b764d95426926eedb725561605f4ff78e350249c0ab097efc9322df60"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json#sha256:356d828422d63905fb759a56ee304fd435b9d7ca4ea5b1176fd55787a43e80b6"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:c264346f7f9b07df12aa5ac71876c62527e9819788d6b749eb46c6d84a7ba9df"
+      "sha256": "sha256:f5de4e4b8fb5d7c6bc9fc66075c26d28b5167bccec31fdeb026dcd9e07f93604"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/secret_scan_report.json",
@@ -65,7 +65,7 @@
     {
       "path": "agent_configs/misc/oh_my_pi_p3_5_resource_blob_compiler_v1.yaml",
       "role": "agent_config",
-      "sha256": "sha256:3c791f8ec67f6ddffd53f30bc13fd3e9642c2a67ccc6e0eb54f2030547301be6"
+      "sha256": "sha256:00232e46d76b1a5085f33e24a8100eb4321022011154d6986a0f61011e50369b"
     },
     {
       "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",

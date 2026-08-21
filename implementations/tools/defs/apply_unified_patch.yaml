@@ -3,7 +3,7 @@ name: apply_unified_patch
 description: Apply a unified-diff patch (edits/additions/deletions) to files
 type_id: python
 binding:
-  module: agentic_coder_prototype.tools.patch
+  module: breadboard_engine.tools.patch
   callable: apply_unified_patch
 aliases:
   - apply_patch

@@ -33,7 +33,7 @@ import type { SlashCommandInfo, SlashSuggestion } from "../../../slashCommands.j
 import { ASCII_HEADER } from "../../../viewUtils.js"
 import { STATUS_VERBS } from "../../../designSystem.js"
 import { type KeyHandler } from "../../../hooks/useKeyRouter.js"
-import type { SessionFileInfo, SessionFileContent, CTreeTreeNode, CTreeTreeResponse } from "../../../../api/types.js"
+import type { SessionFileInfo, SessionFileContent, CTreeTreeNode, CTreeTreeResponse } from "@breadboard/sdk"
 import { loadFileMentionConfig, type FileMentionMode } from "../../../fileMentions.js"
 import { loadFilePickerConfig, loadFilePickerResources, type FilePickerMode, type FilePickerResource } from "../../../filePicker.js"
 import { loadKeymapConfig } from "../../../keymap.js"

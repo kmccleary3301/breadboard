@@ -48,19 +48,19 @@ def _active_reference_hits(repo_root: Path, needles: tuple[str, ...]) -> list[st
 
 
 def test_ctrees_package_imports_after_h4_quarantine() -> None:
-    ctrees = importlib.import_module("agentic_coder_prototype.ctrees")
+    ctrees = importlib.import_module("breadboard_engine.ctrees")
 
-    assert ctrees.__name__ == "agentic_coder_prototype.ctrees"
+    assert ctrees.__name__ == "breadboard_engine.ctrees"
 
 
 def test_h4_quarantined_dead_modules_are_not_on_ctrees_import_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
     for module_name in ("finish_closure_scoring", "runtime_trace_schema"):
-        active_path = repo_root / "agentic_coder_prototype" / "ctrees" / f"{module_name}.py"
+        active_path = repo_root / "breadboard_engine" / "ctrees" / f"{module_name}.py"
         quarantine_path = (
             repo_root
-            / "agentic_coder_prototype"
+            / "breadboard_engine"
             / "legacy"
             / "ctrees"
             / f"{module_name}.py"
@@ -68,7 +68,7 @@ def test_h4_quarantined_dead_modules_are_not_on_ctrees_import_surface() -> None:
 
         assert (
             importlib.util.find_spec(
-                f"agentic_coder_prototype.ctrees.{module_name}"
+                f"breadboard_engine.ctrees.{module_name}"
             )
             is None
         )
@@ -83,11 +83,11 @@ def test_h4_quarantined_dead_modules_have_no_active_string_references() -> None:
     assert _active_reference_hits(
         repo_root,
         (
-            "agentic_coder_prototype.ctrees.finish_closure_scoring",
-            "agentic_coder_prototype/ctrees/finish_closure_scoring.py",
+            "breadboard_engine.ctrees.finish_closure_scoring",
+            "breadboard_engine/ctrees/finish_closure_scoring.py",
             "ctrees/finish_closure_scoring.py",
-            "agentic_coder_prototype.ctrees.runtime_trace_schema",
-            "agentic_coder_prototype/ctrees/runtime_trace_schema.py",
+            "breadboard_engine.ctrees.runtime_trace_schema",
+            "breadboard_engine/ctrees/runtime_trace_schema.py",
             "ctrees/runtime_trace_schema.py",
         ),
     ) == []

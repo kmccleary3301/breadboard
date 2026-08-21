@@ -6,10 +6,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 
-from agentic_coder_prototype.provider_routing import ProviderDescriptor
-from agentic_coder_prototype.provider_runtime import ProviderMessage, ProviderResult, ProviderRuntimeError
+from breadboard_engine.provider_routing import ProviderDescriptor
+from breadboard_engine.provider_runtime import ProviderMessage, ProviderResult, ProviderRuntimeError
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 
 
 def _make_conductor(config: dict, workspace: Path) -> OpenAIConductor:
@@ -85,8 +85,8 @@ class _StubRegistry:
 def _install_stub_provider(monkeypatch: Any, handler: Any) -> _StubRegistry:
     router = _StubRouter()
     registry = _StubRegistry(handler)
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.provider_router", router)
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.provider_registry", registry)
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_router", router)
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_registry", registry)
     return registry
 
 
@@ -571,8 +571,8 @@ def test_rlm_provider_execution_preserves_missing_key_errors_for_single_and_batc
     router = _StubRouter()
     registry = _StubRegistry(lambda _messages: None)
     monkeypatch.setattr(router, "create_client_config", lambda _model: {"api_key": None})
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.provider_router", router)
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.provider_registry", registry)
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_router", router)
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_registry", registry)
     cfg = {
         "features": {
             "rlm": {
@@ -635,8 +635,8 @@ def test_llm_batch_timeout_retry_uses_post_invoke_elapsed_for_completed_attempt(
         return 2, 0.0
 
     _install_stub_provider(monkeypatch, _handler)
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.time.time", lambda: clock["now"])
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.extract_usage_metrics", _extract_usage_metrics)
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.time.time", lambda: clock["now"])
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.extract_usage_metrics", _extract_usage_metrics)
     cfg = {
         "features": {
             "rlm": {

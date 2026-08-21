@@ -27,12 +27,12 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from agentic_coder_prototype.parity import (
+from breadboard_engine.parity import (
     build_expected_run_ir,
     build_run_ir_from_run_dir,
     compare_run_ir,
 )
-from agentic_coder_prototype.parity_manifest import load_parity_scenarios
+from breadboard_engine.parity_manifest import load_parity_scenarios
 from safe_delete import safe_rmtree
 
 REPLAY_SCRIPT = ROOT_DIR / "scripts" / "replay_opencode_session.py"
@@ -462,7 +462,7 @@ def _run_cli_guard_scenario(scenario, *, workspace: Path, result_dir: Path) -> D
     server_cmd = [
         sys.executable,
         "-m",
-        "agentic_coder_prototype.api.cli_bridge.server",
+        "breadboard_engine.api.cli_bridge.server",
     ]
     server_proc = None
     before = _collect_logging_dirs(logging_root)

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.hooks.manager import build_hook_manager
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.hooks.manager import build_hook_manager
+from breadboard_engine.state.session_state import SessionState
 
 
 def _session(config_path: str) -> tuple[object, SessionState]:

@@ -4,11 +4,11 @@ import importlib
 import warnings
 from pathlib import Path
 
-from agentic_coder_prototype.run_logging import LoggerV2Manager
-from agentic_coder_prototype.run_logging.api_recorder import APIRequestRecorder
-from agentic_coder_prototype.run_logging.prompt_logger import PromptArtifactLogger
-from agentic_coder_prototype.run_logging.request_recorder import StructuredRequestRecorder
-from agentic_coder_prototype.logging_v2 import LoggerV2Manager as CompatLoggerV2Manager
+from breadboard_engine.run_logging import LoggerV2Manager
+from breadboard_engine.run_logging.api_recorder import APIRequestRecorder
+from breadboard_engine.run_logging.prompt_logger import PromptArtifactLogger
+from breadboard_engine.run_logging.request_recorder import StructuredRequestRecorder
+from breadboard_engine.logging_v2 import LoggerV2Manager as CompatLoggerV2Manager
 
 
 def test_logger_v2_creates_run_tree(tmp_path):
@@ -74,9 +74,9 @@ def test_logging_v2_compatibility_import_alias():
 def test_logging_v2_wrapper_emits_deprecation_warning():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", DeprecationWarning)
-        package = importlib.import_module("agentic_coder_prototype.logging_v2")
-        submodule = importlib.import_module("agentic_coder_prototype.logging_v2.workspace_manifest")
+        package = importlib.import_module("breadboard_engine.logging_v2")
+        submodule = importlib.import_module("breadboard_engine.logging_v2.workspace_manifest")
         importlib.reload(package)
         importlib.reload(submodule)
     messages = [str(item.message) for item in caught if item.category is DeprecationWarning]
-    assert any("agentic_coder_prototype.logging_v2" in message for message in messages)
+    assert any("breadboard_engine.logging_v2" in message for message in messages)

@@ -31,7 +31,7 @@
       "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
       "scripts/e4_parity/adapters/oh_my_pi_projection_packet.py",
       "scripts/e4_parity/adapters/oh_my_pi_p6_6_work_item_projection.py",
-      "agentic_coder_prototype/compilation/primitive_records.py",
+      "breadboard_engine/compilation/primitive_records.py",
       "contracts/kernel/schemas/bb.work_item.v1.schema.json"
     ],
     "workspace_template": null,

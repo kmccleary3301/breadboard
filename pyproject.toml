@@ -18,7 +18,7 @@ py-modules = ["adaptive_iter"]
 include-package-data = false
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent_configs*", "agentic_coder_prototype*", "breadboard*", "config*", "conformance*", "contracts*", "docs", "docs.conformance", "implementations*", "scripts*"]
+include = ["agent_configs*", "agentic_coder_prototype", "breadboard_engine*", "breadboard*", "config*", "conformance*", "contracts*", "docs", "docs.conformance", "implementations*", "scripts*"]
 exclude = ["breadboard_ext*", "docs.conformance.evidence_snapshots*", "docs_tmp*"]
 namespaces = true
 

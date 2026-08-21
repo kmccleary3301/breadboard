@@ -9,12 +9,12 @@ from breadboard.sandbox_factory import SandboxFactory
 from breadboard.sandbox_virtualized import SandboxFactory as LegacySandboxFactory
 from breadboard.sandbox_v2 import DevSandboxV2 as LegacyDevSandboxV2
 
-from agentic_coder_prototype.orchestration.agent_session import OpenCodeAgent
-from agentic_coder_prototype.agent_session import OpenCodeAgent as LegacyOpenCodeAgent
-from agentic_coder_prototype.tool_calling.ir import ToolCallIR
-from agentic_coder_prototype.tool_call_ir import ToolCallIR as LegacyToolCallIR
-from agentic_coder_prototype.provider.runtime import provider_registry
-import agentic_coder_prototype.provider_runtime as legacy_provider_runtime
+from breadboard_engine.orchestration.agent_session import OpenCodeAgent
+from breadboard_engine.agent_session import OpenCodeAgent as LegacyOpenCodeAgent
+from breadboard_engine.tool_calling.ir import ToolCallIR
+from breadboard_engine.tool_call_ir import ToolCallIR as LegacyToolCallIR
+from breadboard_engine.provider.runtime import provider_registry
+import breadboard_engine.provider_runtime as legacy_provider_runtime
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

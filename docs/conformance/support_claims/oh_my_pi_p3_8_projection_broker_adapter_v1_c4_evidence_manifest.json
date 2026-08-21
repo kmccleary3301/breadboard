@@ -8,39 +8,39 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:ae861c31078fef3b862ccf641ae3e3930dafb4023b854f9702b5b5846e2c7c98"
+      "sha256": "sha256:dc5b9206507ad0c13eb67aa6b9cf8e73de71ce09f9b8d864a01d8dbbc64b9042"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:ae861c31078fef3b862ccf641ae3e3930dafb4023b854f9702b5b5846e2c7c98",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:dc5b9206507ad0c13eb67aa6b9cf8e73de71ce09f9b8d864a01d8dbbc64b9042",
         "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/compiled_records.json#sha256:f4937dc781e178f6b6af004e8be94be62002ee22ba2455c12e217ab30a4ef8ec"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:3408d24a3b7581ca5bc78d7145ef7202650d6804906230c425000e5ca4900da5"
+      "sha256": "sha256:1323008c13b21b3e6e938b0985da25f451255fa78f0630df806ae0f736b1600e"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:ae861c31078fef3b862ccf641ae3e3930dafb4023b854f9702b5b5846e2c7c98",
-        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json#sha256:3408d24a3b7581ca5bc78d7145ef7202650d6804906230c425000e5ca4900da5",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:dc5b9206507ad0c13eb67aa6b9cf8e73de71ce09f9b8d864a01d8dbbc64b9042",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json#sha256:1323008c13b21b3e6e938b0985da25f451255fa78f0630df806ae0f736b1600e",
         "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/compiled_records.json#sha256:f4937dc781e178f6b6af004e8be94be62002ee22ba2455c12e217ab30a4ef8ec"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:09118d45c07d126ea0299f7bb132239e928bdfdf9c085eaf11504d953c1fa7c0"
+      "sha256": "sha256:d2baf071d905ec5808d99c9c4f03ce2daaa9925fd5e71b064d1da8c231be6574"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:bb891326f1df019bab9c214d921935625e9fcc0d98605d99a2043809bf89f45e"
+      "sha256": "sha256:197326e3241ffcb78133380041a4156590ec8ab51d635f351b9d62983bff495a"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json#sha256:09118d45c07d126ea0299f7bb132239e928bdfdf9c085eaf11504d953c1fa7c0"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json#sha256:d2baf071d905ec5808d99c9c4f03ce2daaa9925fd5e71b064d1da8c231be6574"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:839e941ee148eedeea879a037a4414f35bbc81d5c03cc1822a018b15472a5047"
+      "sha256": "sha256:9bfb9ec451b7f932b6c53e75ed974bddbb0b8898a2ecd9ca5c714ce389506c68"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/secret_scan_report.json",
@@ -65,7 +65,7 @@
     {
       "path": "agent_configs/misc/oh_my_pi_p3_8_projection_broker_adapter_v1.yaml",
       "role": "agent_config",
-      "sha256": "sha256:c0a2df72a80d705c4b2fdbfd19ce510c78710e45524585a33e22f831c802d40d"
+      "sha256": "sha256:4379c661337a5c1d52382712109be056225d9e58507c2ea20e2ef7fc4b8ac7c6"
     },
     {
       "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",

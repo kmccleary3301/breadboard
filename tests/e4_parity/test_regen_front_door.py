@@ -137,16 +137,16 @@ def test_e4_battery_workflow_compares_two_independent_clean_checkouts() -> None:
         "--expected-non-target-claims 8 "
         "--json artifacts/conformance/e4_regen_fixed_point_${{ matrix.pass }}.json"
     )
+    assert clean_commands["Materialize fixed-point watch-set entries"].startswith("jq ")
     upload = next(
         step
         for step in clean_job["steps"]
         if step.get("uses") == "actions/upload-artifact@v4"
     )
-    assert upload["with"] == {
-        "name": "e4-fixed-point-${{ matrix.pass }}",
-        "path": "artifacts/conformance/e4_regen_fixed_point_${{ matrix.pass }}.json",
-        "if-no-files-found": "error",
-    }
+    assert upload["with"]["name"] == "e4-fixed-point-${{ matrix.pass }}"
+    assert "e4_regen_fixed_point_${{ matrix.pass }}.json" in upload["with"]["path"]
+    assert "e4_watch_set_${{ matrix.pass }}.json" in upload["with"]["path"]
+    assert upload["with"]["if-no-files-found"] == "error"
     assert compare_job["needs"] == "fixed-point-clean-checkout"
     compare_commands = {
         step["name"]: step["run"]
@@ -477,6 +477,11 @@ def test_fixed_point_runs_pipeline_twice_and_ignores_undeclared_writes(
     assert payload["watch_set_size"] == 2  # declared output plus score authority
     assert payload["byte_identical"] is True
     assert payload["changed_paths"] == []
+    assert payload["first_pass_watch_set"] == payload["second_pass_watch_set"]
+    assert [entry["path"] for entry in payload["first_pass_watch_set"]] == sorted(
+        entry["path"] for entry in payload["first_pass_watch_set"]
+    )
+    assert all(set(entry) == {"path", "sha256"} for entry in payload["first_pass_watch_set"])
     assert (
         payload["first_pass_snapshot_sha256"] == payload["second_pass_snapshot_sha256"]
     )

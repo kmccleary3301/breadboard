@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.compilation import v2_loader
-from agentic_coder_prototype.compilation.tool_registry import guardrail_names_for, load_tool_registry
+from breadboard_engine.compilation import v2_loader
+from breadboard_engine.compilation.tool_registry import guardrail_names_for, load_tool_registry
 
 ROOT = Path(__file__).resolve().parents[2]
 

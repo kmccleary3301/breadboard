@@ -1,8 +1,8 @@
 from __future__ import annotations
 from pathlib import Path
 from fastapi.testclient import TestClient
-from agentic_coder_prototype.api.cli_bridge.app import create_app
-from agentic_coder_prototype.api.public import integration as api_integration
+from breadboard_engine.api.cli_bridge.app import create_app
+from breadboard_engine.api.public import integration as api_integration
 from breadboard.product.integrations.catalog import IntegrationCatalog, IntegrationDescriptor, ProbeReport
 class _Adapter:
     descriptor = IntegrationDescriptor(

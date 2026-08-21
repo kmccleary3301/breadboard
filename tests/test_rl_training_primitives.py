@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.rl import (
+from breadboard_engine.rl import (
     AdapterCapabilities,
     AdapterProbeReport,
     CompactionManifest,
@@ -76,14 +76,14 @@ from agentic_coder_prototype.rl import (
     build_next_frontier_rl_final_closeout_packet,
     build_next_frontier_rl_final_closeout_packet_payload,
 )
-from agentic_coder_prototype.search import SearchRun
+from breadboard_engine.search import SearchRun
 
 
 def test_rl_v1_boundary_audit_packet_reconciles_existing_surfaces() -> None:
     packet = build_rl_v1_boundary_audit_packet()
     payload = build_rl_v1_boundary_audit_packet_payload()
 
-    assert packet["namespace_plan"]["overlay_package"] == "agentic_coder_prototype.rl"
+    assert packet["namespace_plan"]["overlay_package"] == "breadboard_engine.rl"
     assert packet["namespace_plan"]["rl_owns_search_semantics"] is False
     assert any(item["surface"].endswith("search/export.py::SearchTrajectoryExport") for item in packet["superseded_or_reframed_surfaces"])
     assert any(item["surface"].endswith("optimize/trajectory_ir.py") for item in packet["superseded_or_reframed_surfaces"])

@@ -5,15 +5,15 @@ from unittest.mock import Mock
 
 import pytest
 
-from agentic_coder_prototype.provider import ProviderInvoker
-from agentic_coder_prototype.provider_runtime import (
+from breadboard_engine.provider import ProviderInvoker
+from breadboard_engine.provider_runtime import (
     ProviderMessage,
     ProviderResult,
     ProviderRuntimeContext,
     ProviderRuntimeError,
 )
-from agentic_coder_prototype.state.session_state import SessionState
-from agentic_coder_prototype.messaging.markdown_logger import MarkdownLogger
+from breadboard_engine.state.session_state import SessionState
+from breadboard_engine.messaging.markdown_logger import MarkdownLogger
 
 
 def _make_invoker(retry_with_fallback):
@@ -180,3 +180,49 @@ def test_provider_invoker_records_provider_exchange_request_and_response():
     assert response_record["response"]["metadata"]["provider_family"] == "mock"
     assert response_record["response"]["metadata"]["runtime_id"] == "mock_chat"
     assert response_record["response"]["metadata"]["message_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("error", "records_route_failure"),
+    [
+        (ProviderRuntimeError("local sdk defect", kind="adapter"), False),
+        (
+            ProviderRuntimeError(
+                "stream failed after output", kind="provider", output_emitted=True
+            ),
+            True,
+        ),
+    ],
+)
+def test_provider_invoker_does_not_fallback_when_stream_replay_is_unsafe(
+    error, records_route_failure
+):
+    runtime = _mk_runtime()
+    runtime.invoke.side_effect = error
+    retry_with_fallback = Mock(return_value=_provider_result("must not be used"))
+    invoker = _make_invoker(retry_with_fallback)
+    invoker.route_health.is_circuit_open.return_value = False
+    session_state = _session_state()
+
+    with pytest.raises(ProviderRuntimeError) as exc_info:
+        invoker.invoke(
+            runtime=runtime,
+            client=object(),
+            model="openrouter/deepseek/deepseek-v4-flash-0731",
+            send_messages=[],
+            tools_schema=None,
+            stream_responses=True,
+            runtime_context=ProviderRuntimeContext(
+                session_state=session_state, agent_config={}
+            ),
+            session_state=session_state,
+            markdown_logger=_markdown_logger(),
+            turn_index=1,
+            route_id="openrouter/deepseek/deepseek-v4-flash-0731",
+        )
+
+    assert exc_info.value is error
+    runtime.invoke.assert_called_once()
+    retry_with_fallback.assert_not_called()
+    assert invoker.route_health.record_failure.called is records_route_failure
+    assert session_state.get_provider_metadata("streaming_disabled") is None

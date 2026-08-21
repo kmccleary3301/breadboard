@@ -112,12 +112,12 @@ Guardrail-specific records may later deserve their own contract family, but for 
 
 The current Python ownership is spread across:
 
-- `agentic_coder_prototype/permission_broker.py`
-- `agentic_coder_prototype/guardrail_orchestrator.py`
-- `agentic_coder_prototype/guardrail_coordinator.py`
-- `agentic_coder_prototype/guardrails/*`
-- `agentic_coder_prototype/policy_pack.py`
-- `agentic_coder_prototype/state/session_state.py`
+- `breadboard_engine/permission_broker.py`
+- `breadboard_engine/guardrail_orchestrator.py`
+- `breadboard_engine/guardrail_coordinator.py`
+- `breadboard_engine/guardrails/*`
+- `breadboard_engine/policy_pack.py`
+- `breadboard_engine/state/session_state.py`
 - session runner permission rehydration paths
 
 This is another place where documentation is ahead of a fully explicit shared runtime boundary.

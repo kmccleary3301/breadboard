@@ -1,0 +1,14 @@
+{
+ "class_ref.pkl": {
+  "sha256": "sha256:a7fb6d27add51b39ae22ad6f2f26d06268b44dc25960721e85d3a8949cfbab04",
+  "type": "builtins.type"
+ },
+ "function_ref.pkl": {
+  "sha256": "sha256:aeb615a8da736d07cf7b438609ef085e4c814448b23721c08e1b7a35278e576b",
+  "type": "builtins.function"
+ },
+ "redaction_problem.pkl": {
+  "sha256": "sha256:ec25325135723cee6b4a3a8f9e6f77b0fb7920ad5392bc8903190652042948fb",
+  "type": "agentic_coder_prototype.security.redaction.RedactionProblem"
+ }
+}

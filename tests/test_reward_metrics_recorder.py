@@ -2,15 +2,15 @@ import sqlite3
 import pytest
 from types import SimpleNamespace
 
-from agentic_coder_prototype.monitoring.reward_metrics import (
+from breadboard_engine.monitoring.reward_metrics import (
     DEFAULT_REWARD_METRIC_NAMES,
     RewardMetricsRecorder,
     RewardMetricsSQLiteWriter,
     _sanitize_metric_name,
 )
-from agentic_coder_prototype.state.session_state import SessionState
-from agentic_coder_prototype.provider.metrics import ProviderMetricsCollector
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from breadboard_engine.state.session_state import SessionState
+from breadboard_engine.provider.metrics import ProviderMetricsCollector
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 from scripts.ops.export_provider_metrics import aggregate
 
 

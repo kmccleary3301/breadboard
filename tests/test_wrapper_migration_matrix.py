@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.agent_session import OpenCodeAgent as legacy_open_code_agent
-from agentic_coder_prototype.conductor.prompt_planner import ToolPromptPlanner
-from agentic_coder_prototype.orchestration.agent_session import OpenCodeAgent
-from agentic_coder_prototype.provider.runtime import provider_registry
-from agentic_coder_prototype.tool_call_ir import ToolCallIR as legacy_tool_call_ir
-from agentic_coder_prototype.tool_calling.catalog import build_tool_catalog_specs
-from agentic_coder_prototype.tool_calling.ir import ToolCallIR
-from agentic_coder_prototype.tool_prompt_planner import (
+from breadboard_engine.agent_session import OpenCodeAgent as legacy_open_code_agent
+from breadboard_engine.conductor.prompt_planner import ToolPromptPlanner
+from breadboard_engine.orchestration.agent_session import OpenCodeAgent
+from breadboard_engine.provider.runtime import provider_registry
+from breadboard_engine.tool_call_ir import ToolCallIR as legacy_tool_call_ir
+from breadboard_engine.tool_calling.catalog import build_tool_catalog_specs
+from breadboard_engine.tool_calling.ir import ToolCallIR
+from breadboard_engine.tool_prompt_planner import (
     ToolPromptPlanner as legacy_tool_prompt_planner,
 )
-from agentic_coder_prototype.tools import build_tool_catalog_specs as legacy_build_tool_catalog_specs
-import agentic_coder_prototype.provider_runtime as legacy_provider_runtime
+from breadboard_engine.tools import build_tool_catalog_specs as legacy_build_tool_catalog_specs
+import breadboard_engine.provider_runtime as legacy_provider_runtime
 
 
 def test_root_tool_call_paths_alias_canonical_symbols() -> None:

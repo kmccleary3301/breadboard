@@ -8,7 +8,7 @@ from typing import Any, Mapping
 import yaml
 from jsonschema import Draft202012Validator, RefResolver
 
-from agentic_coder_prototype.conformance.catalog_binding import (
+from breadboard_engine.conformance.catalog_binding import (
     CATALOG_PATH as CATALOG_BINDING_PATH,
     catalog_segment_hash,
     reusable_catalog_revision,
@@ -27,7 +27,7 @@ SOURCE_FREEZE_PATH = ROOT / "config/e4_lanes/evidence_inputs/oh_my_pi_main_53567
 SOURCE_L1_CAPTURE_PATH = ROOT / "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json"
 SOURCE_L1_PROBE_PATH = ROOT / "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json"
 SOURCE_L1_SETUP_PATH = ROOT / "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json"
-HELPER_MODULE_PATH = ROOT / "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+HELPER_MODULE_PATH = ROOT / "breadboard_engine/compilation/helper_runtime_primitives.py"
 
 SECRET_PATTERNS = [
     re.compile(r"sk-[A-Za-z0-9]{20,}"),

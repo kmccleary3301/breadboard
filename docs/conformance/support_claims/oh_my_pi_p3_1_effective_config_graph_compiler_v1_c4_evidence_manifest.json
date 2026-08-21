@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:8eab0b692ce1827d31d64f19e9441b19016c1ad2bd2fccfca60d16be647b85a0"
+      "sha256": "sha256:5a45bd26198162b9b6d976f588ec14031a9e2ae06b60da0fb7c7b0f5e8fbc885"
     },
     {
       "derived_from": [
@@ -50,7 +50,7 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json",
       "role": "validator_output",
-      "sha256": "sha256:e713e7576fb5ee24c6e8e82d28e630dd5bcc5855ed932da26ab0e3b180c37637"
+      "sha256": "sha256:f7b187006698730ebe06786e52c562b9f5d2346f8bbcee9fe21ad1173b7dbe6f"
     },
     {
       "path": "artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/effective_config_graph.v1.json",

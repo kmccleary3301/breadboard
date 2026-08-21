@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.optimize import (
+from breadboard_engine.optimize import (
     BenchmarkRunManifest,
     CandidateComparisonResult,
     MutationProposal,
@@ -9,7 +9,7 @@ from agentic_coder_prototype.optimize import (
     ReflectionDecision,
     TransferCohortManifest,
 )
-from agentic_coder_prototype.search import (
+from breadboard_engine.search import (
     AssessmentLineagePacket,
     BaselineComparisonPacket,
     BenchmarkControlPacket,
@@ -704,7 +704,7 @@ def test_build_search_repair_loop_domain_pilot_stays_workspace_local_and_bounded
     assert pilot.friction_locus == "patching_and_workspace_local_only"
     assert pilot.kernel_change_required is False
     assert pilot.ontology_blending_detected is False
-    assert "agentic_coder_prototype/conductor/patching.py" in pilot.adapter_surface_refs
+    assert "breadboard_engine/conductor/patching.py" in pilot.adapter_surface_refs
     assert "artifacts/search/search.replication_v1.codetree_patch/final.json" in pilot.expected_artifact_refs
 
     result = run_search_study("dag_v5_repair_loop_domain_pilot", mode="debug")
@@ -798,7 +798,7 @@ def test_build_search_atp_deployment_readiness_kit_keeps_atp_tranche_adapter_loc
     assert "bundle_manifest_identity" in kit.readiness_checks
     assert "cross_system_validation_visibility" in kit.deferred_checks
     assert "artifacts/benchmarks/hilbert_comparison_packs_v2" in kit.expected_artifact_roots
-    assert "agentic_coder_prototype/api/cli_bridge/atp_router.py" in kit.adapter_surface_refs
+    assert "breadboard_engine/api/cli_bridge/atp_router.py" in kit.adapter_surface_refs
     assert kit.kernel_change_required is False
     assert kit.final_decision == "continue_atp_deployment_without_kernel_review"
 
@@ -1371,7 +1371,7 @@ def test_build_search_repair_loop_deployment_readiness_kit_stays_workspace_local
     assert kit.boundary_control_id == "search.domain.repair_loop.boundary_control.v1"
     assert "workspace_snapshot_boundary_explicit" in kit.readiness_checks
     assert "artifacts/search/search.replication_v1.codetree_patch" in kit.expected_artifact_roots
-    assert "agentic_coder_prototype/conductor/patching.py" in kit.adapter_surface_refs
+    assert "breadboard_engine/conductor/patching.py" in kit.adapter_surface_refs
     assert kit.kernel_change_required is False
     assert kit.final_decision == "continue_repair_loop_deployment_without_kernel_review"
 
@@ -1439,7 +1439,7 @@ def test_build_search_ctrees_boundary_canary_keeps_ctrees_as_boundary_only_and_s
     assert canary.source_domain == "atp_repair_optimize_rl_boundary"
     assert "dag_v6_atp_deployment_readiness" in canary.source_study_keys
     assert "dag_v6_repair_loop_deployment_readiness" in canary.source_study_keys
-    assert "agentic_coder_prototype/ctrees/branch_receipt_contract.py" in canary.ctree_surface_refs
+    assert "breadboard_engine/ctrees/branch_receipt_contract.py" in canary.ctree_surface_refs
     assert "docs/contracts/cli_bridge/schemas/session_event_payload_ctree_snapshot.schema.json" in canary.ctree_contract_refs
     assert "ctree_finish_closure_semantics_in_dag_kernel" in canary.forbidden_imports
     assert canary.kernel_change_required is False

@@ -1,4 +1,4 @@
-import type { SessionEvent } from "../../api/types.js"
+import type { SessionEvent } from "@breadboard/sdk"
 import { BRAND_COLORS, SEMANTIC_COLORS } from "../../repl/designSystem.js"
 import { stripAnsi } from "../../repl/stringUtils.js"
 import type { RuntimeBehaviorFlags } from "../../repl/types.js"

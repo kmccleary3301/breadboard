@@ -237,8 +237,8 @@ For people trying to work with ATP today, the following surfaces matter most.
 
 ### Bridge/API surfaces
 
-- [agentic_coder_prototype/api/cli_bridge/atp_router.py](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/atp_router.py)
-- [agentic_coder_prototype/api/cli_bridge/atp_diagnostics.py](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/atp_diagnostics.py)
+- [breadboard_engine/api/cli_bridge/atp_router.py](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_integration_main_20260326/breadboard_engine/api/cli_bridge/atp_router.py)
+- [breadboard_engine/api/cli_bridge/atp_diagnostics.py](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_integration_main_20260326/breadboard_engine/api/cli_bridge/atp_diagnostics.py)
 
 ### ATP/Hilbert scripts
 

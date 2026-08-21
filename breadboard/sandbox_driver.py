@@ -38,7 +38,7 @@ def create_sandbox(spec: SandboxLaunchSpec) -> ray.actor.ActorHandle:
     """Create a sandbox actor handle for the requested driver.
 
     This function intentionally returns a Ray actor handle (not a local proxy).
-    Local-mode wrapping is handled by the caller (see agentic_coder_prototype.utils.local_ray).
+    Local-mode wrapping is handled by the caller (see breadboard_engine.utils.local_ray).
     """
 
     driver = (spec.driver or "process").strip().lower()

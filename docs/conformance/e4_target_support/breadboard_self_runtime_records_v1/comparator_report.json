@@ -152,9 +152,9 @@
   "failed": 0,
   "generated_at_utc": "2026-07-07T03:00:00Z",
   "input_hashes": {
-    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json": "sha256:c397766970071ff7bb297bf0050f1e52494c5449ba31962f9da792d2814e1e1e",
-    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json": "sha256:53dec2ef86d2d52053476032664b47f83ce131c316b6bab9fc71413416fbf9d7",
-    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json": "sha256:a92e477911247ed0818827dcaf27cbd18ec3ac630976fa369020b55afb58c972"
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json": "sha256:edb461b27c55c26363e9b3c0fdf3e55a673328ca5f99fb2392f498b9a338f4da",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json": "sha256:2806ecba6149afaa7ea3e1bd4e5e4225d86a44c50eef831a8effdf608673df17",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json": "sha256:f34dabaa89bf4f7e0bba61b2fb7c436a224d947073018b215379df5f994e70ca"
   },
   "lane_id": "breadboard_self_runtime_records_v1",
   "passed": 6,

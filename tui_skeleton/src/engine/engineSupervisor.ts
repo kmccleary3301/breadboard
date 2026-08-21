@@ -339,7 +339,7 @@ const resolveEngineRoot = (): string | null => {
     const moduleDir = path.dirname(fileURLToPath(import.meta.url))
     let current = path.resolve(moduleDir)
     for (;;) {
-      const candidate = path.join(current, "agentic_coder_prototype")
+      const candidate = path.join(current, "breadboard_engine")
       if (fs.existsSync(candidate)) return current
       const parent = path.dirname(current)
       if (parent === current) break
@@ -370,7 +370,7 @@ const resolveEngineCommand = async (): Promise<{ command: string; args: string[]
     const python = process.env.BREADBOARD_ENGINE_PYTHON?.trim() || "python"
     return {
       command: python,
-      args: ["-m", "agentic_coder_prototype.api.cli_bridge.server"],
+      args: ["-m", "breadboard_engine.api.cli_bridge.server"],
       cwd: engineRoot,
     }
   }
@@ -378,7 +378,7 @@ const resolveEngineCommand = async (): Promise<{ command: string; args: string[]
   const cwd = engineRoot ?? process.cwd()
   return {
     command: python,
-    args: ["-m", "agentic_coder_prototype.api.cli_bridge.server"],
+    args: ["-m", "breadboard_engine.api.cli_bridge.server"],
     cwd,
   }
 }

@@ -104,7 +104,7 @@ const startExternalBridge = async (options: { logPath: string }): Promise<{ base
     const port = await pickEphemeralPort(host)
     const baseUrl = `http://${host}:${port}`
 
-    const child = spawn(python, ["-m", "agentic_coder_prototype.api.cli_bridge.server"], {
+    const child = spawn(python, ["-m", "breadboard_engine.api.cli_bridge.server"], {
       cwd: root,
       env: {
         ...process.env,

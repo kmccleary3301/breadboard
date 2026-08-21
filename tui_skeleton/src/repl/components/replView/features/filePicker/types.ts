@@ -1,6 +1,6 @@
 import type { FilePickerResource } from "../../../../filePicker.js"
 import type { FileMentionMode } from "../../../../fileMentions.js"
-import type { SessionFileInfo } from "../../../../../api/types.js"
+import type { SessionFileInfo } from "@breadboard/sdk"
 
 export interface FilePickerState {
   readonly status: "hidden" | "loading" | "ready" | "error"

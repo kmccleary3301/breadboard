@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agentic_coder_prototype.runtime.kernel_emitter import JsonlKernelEmitter, primitive_emission_mode
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.runtime.kernel_emitter import JsonlKernelEmitter, primitive_emission_mode
+from breadboard_engine.state.session_state import SessionState
 
 LIVE_PROVIDER_ENV_VARS = (
     "OPENAI_API_KEY",

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-from agentic_coder_prototype.optimize.trajectory_ir import build_stub_episode
+from breadboard_engine.optimize.trajectory_ir import build_stub_episode
 
 
 def _load_json(path: Path) -> Dict[str, Any]:

@@ -9,8 +9,8 @@ PYTHONPATH=. .venv/bin/python - <<'PY'
 import json
 from pathlib import Path
 
-from agentic_coder_prototype.compilation.effective_config_graph import compile_effective_config_graph
-from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
+from breadboard_engine.compilation.effective_config_graph import compile_effective_config_graph
+from breadboard_engine.compilation.primitive_records import finalize_record, get_spec
 
 example = json.loads(Path('contracts/kernel/examples/capability_registry_minimal.json').read_text())
 example.pop('schema_version')
@@ -57,7 +57,7 @@ bb.capability_registry.v1 bb.effective_config_graph.v1 sha256:e2c14e9d1eb8510c5b
 ## Command 2
 
 ```bash
-PYTHONPATH=. .venv/bin/python -m uvicorn agentic_coder_prototype.api.cli_bridge.app:create_app --factory --host 127.0.0.1 --port 18764 >/tmp/e4-consumption-api.log 2>&1 &
+PYTHONPATH=. .venv/bin/python -m uvicorn breadboard_engine.api.cli_bridge.app:create_app --factory --host 127.0.0.1 --port 18764 >/tmp/e4-consumption-api.log 2>&1 &
 server_pid=$!
 trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 for attempt in 1 2 3 4 5; do

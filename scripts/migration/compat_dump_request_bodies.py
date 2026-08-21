@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agentic_coder_prototype.compat.request_body_contract import (  # noqa: E402
+from breadboard_engine.compat.request_body_contract import (  # noqa: E402
     capture_request_body,
     default_request_body_cases,
     serialize_request,

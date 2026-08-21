@@ -48,12 +48,12 @@ def _active_reference_hits(repo_root: Path, needles: tuple[str, ...]) -> list[st
 
 
 def test_logging_v2_package_and_canonical_provider_logger_import() -> None:
-    logging_v2 = importlib.import_module("agentic_coder_prototype.logging_v2")
+    logging_v2 = importlib.import_module("breadboard_engine.logging_v2")
     canonical = importlib.import_module(
-        "agentic_coder_prototype.run_logging.provider_native_logger"
+        "breadboard_engine.run_logging.provider_native_logger"
     )
 
-    assert logging_v2.__name__ == "agentic_coder_prototype.logging_v2"
+    assert logging_v2.__name__ == "breadboard_engine.logging_v2"
     assert hasattr(canonical, "ProviderNativeLogger")
 
 
@@ -61,13 +61,13 @@ def test_h2_quarantined_logging_v2_provider_wrapper_is_not_importable() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     active_path = (
         repo_root
-        / "agentic_coder_prototype"
+        / "breadboard_engine"
         / "logging_v2"
         / "provider_native_logger.py"
     )
     quarantine_path = (
         repo_root
-        / "agentic_coder_prototype"
+        / "breadboard_engine"
         / "legacy"
         / "logging_v2"
         / "provider_native_logger.py"
@@ -75,7 +75,7 @@ def test_h2_quarantined_logging_v2_provider_wrapper_is_not_importable() -> None:
 
     assert (
         importlib.util.find_spec(
-            "agentic_coder_prototype.logging_v2.provider_native_logger"
+            "breadboard_engine.logging_v2.provider_native_logger"
         )
         is None
     )
@@ -89,8 +89,8 @@ def test_h2_quarantined_provider_wrapper_has_no_active_string_references() -> No
     assert _active_reference_hits(
         repo_root,
         (
-            "agentic_coder_prototype.logging_v2.provider_native_logger",
-            "agentic_coder_prototype/logging_v2/provider_native_logger.py",
+            "breadboard_engine.logging_v2.provider_native_logger",
+            "breadboard_engine/logging_v2/provider_native_logger.py",
             "logging_v2/provider_native_logger.py",
         ),
     ) == []

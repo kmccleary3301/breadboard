@@ -7,8 +7,8 @@ from typing import Any, Mapping
 
 import pytest
 
-from agentic_coder_prototype.compilation.primitive_records import canonical_record_bytes, sha256_ref
-from agentic_coder_prototype.conformance.catalog_binding import catalog_segments, classify_entry, stable_entries_hash
+from breadboard_engine.compilation.primitive_records import canonical_record_bytes, sha256_ref
+from breadboard_engine.conformance.catalog_binding import catalog_segments, classify_entry, stable_entries_hash
 from scripts.e4_parity import build_artifact_catalog as builder
 from tests.e4_parity.test_build_artifact_catalog import (
     GENERATED_AT,

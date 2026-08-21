@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.downstream_task_pack import (
+from breadboard_engine.ctrees.downstream_task_pack import (
     build_phase11_downstream_benchmark_tasks,
     build_phase11_downstream_pilot_tasks,
     build_phase11_model_axis_matrix,

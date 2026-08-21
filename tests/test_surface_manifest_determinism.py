@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.surface import build_surface_manifest
+from breadboard_engine.surface import build_surface_manifest
 
 
 def _find_surface(manifest: dict, name: str) -> dict:

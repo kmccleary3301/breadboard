@@ -5,8 +5,8 @@ from typing import Any, Callable
 
 import pytest
 
-from agentic_coder_prototype.compilation import helper_runtime_primitives as helper
-from agentic_coder_prototype.compilation.primitive_records import PrimitiveCompileError
+from breadboard_engine.compilation import helper_runtime_primitives as helper
+from breadboard_engine.compilation.primitive_records import PrimitiveCompileError
 from scripts.e4_parity.fixtures import p3_lane_fixtures
 
 GENERATED_AT = "2026-07-03T07:30:00Z"

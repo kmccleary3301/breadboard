@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_coder_prototype.optimize import (
+from breadboard_engine.optimize import (
     BackendComparisonResult,
     BenchmarkRunManifest,
     BenchmarkRunResult,
@@ -41,7 +41,7 @@ from agentic_coder_prototype.optimize import (
     build_tool_guidance_benchmark_example,
     build_tool_guidance_benchmark_example_payload,
 )
-from agentic_coder_prototype.optimize.examples import (
+from breadboard_engine.optimize.examples import (
     build_staged_backend_comparison_example,
     build_staged_backend_comparison_example_payload,
 )

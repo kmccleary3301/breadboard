@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
-from agentic_coder_prototype.streaming_policy import StreamingPolicy
+from breadboard_engine.streaming_policy import StreamingPolicy
 
 
 class DummyMetrics:

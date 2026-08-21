@@ -92,7 +92,7 @@ def load_literal_baseline(path: Path) -> set[tuple[str, str]]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Resolve and lint BreadBoard evidence roots.")
-    parser.add_argument("paths", nargs="*", default=["scripts", "agentic_coder_prototype", "tests"], help="Files or directories to scan")
+    parser.add_argument("paths", nargs="*", default=["scripts", "breadboard_engine", "tests"], help="Files or directories to scan")
     parser.add_argument("--root", default=None, help="Evidence root to resolve; relative paths resolve from workspace root")
     parser.add_argument("--baseline", default="", help="Optional JSON baseline of accepted docs_tmp literals")
     parser.add_argument("--json-out", default="", help="Optional JSON report path")

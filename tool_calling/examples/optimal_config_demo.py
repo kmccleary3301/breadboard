@@ -25,7 +25,7 @@ from tool_calling.config_schema import ConfigurationManager
 
 def load_optimal_config():
     """Load the optimal agent test configuration."""
-    config_path = PROJECT_ROOT / "agentic_coder_prototype" / "compilation" / "agent_test_config.json"
+    config_path = PROJECT_ROOT / "breadboard_engine" / "compilation" / "agent_test_config.json"
     
     with open(config_path) as f:
         return json.load(f)

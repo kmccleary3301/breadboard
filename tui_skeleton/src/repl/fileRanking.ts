@@ -1,4 +1,4 @@
-import type { SessionFileInfo } from "../api/types.js"
+import type { SessionFileInfo } from "@breadboard/sdk"
 
 export const scoreFuzzyMatch = (candidate: string, query: string): number | null => {
   const needle = query.trim().toLowerCase()

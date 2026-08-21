@@ -214,7 +214,7 @@ This ledger tracks the first implementation tranche for the quantified gap regis
    2. Added explicit negative-path coverage in `tests/test_validate_conformance_artifacts.py`.
 67. Runtime tool transition enforcement depth increased:
    1. `breadboard/tool_transition_runtime.py` now emits deterministic transition telemetry (`events`, `event_count`) and machine-readable reject codes (`invalid_transition_edge`, `unknown_target_state`, `terminal_state_transition`, etc.).
-   2. `agentic_coder_prototype/agent_session.py` now propagates `transition_trace` for tool results and transition failures.
+   2. `breadboard_engine/agent_session.py` now propagates `transition_trace` for tool results and transition failures.
    3. `CT-TOOL-005` now validates a legal/illegal edge matrix fixture via `check_tool_policy_semantics.py --mode runtime_transition_matrix`.
 68. Session conflict + safe-reload runtime lane added:
    1. `breadboard/session_conflict_runtime.py` implements runtime conflict taxonomy, conflict-id uniqueness, and safe-reload decision semantics.
@@ -230,7 +230,7 @@ This ledger tracks the first implementation tranche for the quantified gap regis
 71. Wave A CI trigger/test-lane blind-spot closure:
    1. `conformance-wave-a-gate.yml` now watches runtime conflict/session files:
       - `breadboard/session_conflict_runtime.py`
-      - `agentic_coder_prototype/state/session_state.py`
+      - `breadboard_engine/state/session_state.py`
       - `tests/test_session_conflict_runtime.py`
       - `tests/test_session_state_events.py`
    2. Wave A CI unit test list now executes:

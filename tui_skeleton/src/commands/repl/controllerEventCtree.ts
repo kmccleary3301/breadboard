@@ -1,5 +1,5 @@
-import { ApiError } from "../../api/internalClient.js"
-import type { CTreeTreeResponse, CTreeTreeSource, CTreeTreeStage } from "../../api/types.js"
+import { ApiError } from "@breadboard/sdk"
+import type { CTreeTreeResponse, CTreeTreeSource, CTreeTreeStage } from "@breadboard/sdk"
 import { formatErrorPayload } from "./controllerUtils.js"
 
 export async function refreshCtreeTree(this: any, options?: {

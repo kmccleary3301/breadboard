@@ -96,9 +96,9 @@ def _build_payload(include_advanced: bool) -> dict:
         {"step": "onboarding_contract", "command": "make onboarding-contract"},
         {
             "step": "engine_run",
-            "command": "./.venv/bin/python -m agentic_coder_prototype.api.cli_bridge.server"
+            "command": "./.venv/bin/python -m breadboard_engine.api.cli_bridge.server"
             if "/" in venv_python
-            else f"{venv_python} -m agentic_coder_prototype.api.cli_bridge.server",
+            else f"{venv_python} -m breadboard_engine.api.cli_bridge.server",
         },
         {"step": "python_sdk_hello", "command": "python scripts/dev/python_sdk_hello.py"},
         {"step": "ts_sdk_hello", "command": "node scripts/dev/ts_sdk_hello.mjs"},

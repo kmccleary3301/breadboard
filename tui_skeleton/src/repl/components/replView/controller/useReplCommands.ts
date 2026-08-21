@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { SessionFileInfo } from "../../../../api/types.js"
+import type { SessionFileInfo } from "@breadboard/sdk"
 import { SLASH_COMMANDS, type SlashCommandInfo, type SlashSuggestion } from "../../../slashCommands.js"
 import {
   findNearestSlashCommands,

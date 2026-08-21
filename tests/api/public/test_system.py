@@ -4,10 +4,11 @@ import os
 from pathlib import Path
 from fastapi.testclient import TestClient
 import pytest
-from agentic_coder_prototype.api.cli_bridge.app import create_app
+from breadboard_engine.api.cli_bridge.app import create_app
 from breadboard.product.cli import system as system_operations
-from agentic_coder_prototype.api.public import models as public_models
+from breadboard_engine.api.public import models as public_models
 def _client(monkeypatch, workspace: Path, *, e4_flag: str = "0") -> TestClient:
+    monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(workspace))
     monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", e4_flag)
     monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
@@ -23,8 +24,9 @@ def test_candidate_family_routes_are_mounted_exactly_once(monkeypatch, tmp_path:
         for operation in methods.values()
         if isinstance(operation, dict) and "operationId" in operation
     ]
-    assert len(observed) == len(set(observed)) == 26
-    assert set(observed) == expected
+    product_operations = [operation_id for operation_id in observed if operation_id in expected]
+    assert len(product_operations) == len(set(product_operations)) == len(expected)
+    assert set(product_operations) == expected
 def test_product_routes_are_enabled_by_default_and_can_be_disabled(monkeypatch) -> None:
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
     monkeypatch.delenv("BREADBOARD_ENABLE_PUBLIC_API", raising=False)

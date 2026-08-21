@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from breadboard_engine.compilation.v2_loader import load_agent_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

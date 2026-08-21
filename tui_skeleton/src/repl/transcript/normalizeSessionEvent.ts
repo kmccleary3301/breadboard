@@ -1,4 +1,4 @@
-import type { SessionEvent } from "../../api/types.js"
+import type { SessionEvent } from "@breadboard/sdk"
 import type { NormalizedEvent } from "./normalizedEvent.js"
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
@@ -90,8 +90,8 @@ export const normalizeSessionEvent = (event: SessionEvent): NormalizedEvent | nu
       actor: { kind: "tool" },
       toolCallId: extractString(payload, ["tool_call_id", "toolCallId", "call_id", "callId", "id"]),
       toolName: extractString(payload, ["tool_name", "tool", "name", "command"]),
-      argsText: extractString(payload, ["args_text", "args"]),
-      textDelta: extractString(payload, ["args_text_delta", "delta", "text"]),
+      argsText: extractString(payload, ["arguments", "args_text", "args"]),
+      textDelta: extractString(payload, ["arguments_delta", "args_text_delta", "delta", "text"]),
     }
   }
   if (event.type === "tool.result" || event.type === "tool_result") {

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.canary import evaluate_recovery_family_canary
+from breadboard_engine.ctrees.canary import evaluate_recovery_family_canary
 
 
 def test_ctree_recovery_family_canary_all_scenarios_pass() -> None:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 
 
 def _make_conductor(config: dict) -> OpenAIConductor:

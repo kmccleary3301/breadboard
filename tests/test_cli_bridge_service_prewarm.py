@@ -3,15 +3,15 @@ from types import SimpleNamespace; from pathlib import Path; import asyncio, has
 from fastapi import HTTPException
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import events as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
-from agentic_coder_prototype.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
-from agentic_coder_prototype.api.cli_bridge.events import EventType; from agentic_coder_prototype.api.cli_bridge.service import SessionService
-from agentic_coder_prototype.api.cli_bridge.session_runner import MAX_ATTACHMENT_BYTES
-from agentic_coder_prototype.api.cli_bridge.runtime_emission import _tool_names
-from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides; from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from breadboard_engine.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
+from breadboard_engine.api.cli_bridge.events import EventType; from breadboard_engine.api.cli_bridge.service import SessionService
+from breadboard_engine.api.cli_bridge.session_runner import MAX_ATTACHMENT_BYTES
+from breadboard_engine.api.cli_bridge.runtime_emission import _tool_names
+from breadboard_engine.auth.enforcer import apply_dotted_overrides; from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 CONFIG = "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml"
-RUNNER = "agentic_coder_prototype.api.cli_bridge.session_runner.SessionRunner."
-SERVICE = "agentic_coder_prototype.api.cli_bridge.service."
+RUNNER = "breadboard_engine.api.cli_bridge.session_runner.SessionRunner."
+SERVICE = "breadboard_engine.api.cli_bridge.service."
 class _Failing:
     def append(self, _event) -> None: raise OSError("sink unavailable")  # type: ignore[no-untyped-def]
     def put_nowait(self, _item) -> None: raise RuntimeError("broker unavailable")  # type: ignore[no-untyped-def]
@@ -42,6 +42,12 @@ async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch
         assert [item["name"] for item in work] == ["work_item_created", "work_item_lease_acquired", "work_item_attempt_started", "work_item_snapshot"] and [item["record"].get("kind") for item in work] == ["work_item.created", "lease.acquired", "attempt.started", None] and work[-1]["schema_version"] == "bb.work_item.v2"
         assert work[-1]["record"]["title"] == title and record.product_session.events[0].payload["task_hash"] == "sha256:" + hashlib.sha256(title.encode()).hexdigest() and record.runner.request.task == "" and record.runner._input_queue.empty()
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.STOPPED and type(record.product_session).restore(record.product_session.events).read_model.status == "canceled"; await _stop(record)
+@pytest.mark.asyncio
+async def test_session_summary_projects_effective_model(monkeypatch, tmp_path) -> None:
+    service, response, record = await _create(monkeypatch, tmp_path)
+    assert record.to_summary().model == record.runner.current_runtime_config()["providers"]["default_model"]
+    await service.stop_session(response.session_id)
+    await _stop(record)
 @pytest.mark.asyncio
 async def test_product_session_projects_bridge_status_and_exact_supplied_lock(monkeypatch, tmp_path) -> None:
     supplied_lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "b" * 64})
@@ -94,7 +100,7 @@ async def test_session_service_authorizes_runner_after_prewarm(monkeypatch, tmp_
 
 @pytest.mark.asyncio
 async def test_effective_lock_is_exact_and_secret_free(monkeypatch, tmp_path) -> None:
-    from agentic_coder_prototype.auth.store import DEFAULT_PROVIDER_AUTH_STORE; auth = SimpleNamespace(api_key="forbidden-key", base_url="https://secret.invalid", headers={"X-Secret": "forbidden-header"}); monkeypatch.setattr(DEFAULT_PROVIDER_AUTH_STORE, "get", lambda _: auth); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records"))
+    from breadboard_engine.auth.store import DEFAULT_PROVIDER_AUTH_STORE; auth = SimpleNamespace(api_key="forbidden-key", base_url="https://secret.invalid", headers={"X-Secret": "forbidden-header"}); monkeypatch.setattr(DEFAULT_PROVIDER_AUTH_STORE, "get", lambda _: auth); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records"))
     workspace = str((tmp_path / "workspace").resolve()); service, response, record = await _create(monkeypatch, tmp_path, workspace=workspace, metadata={"model": "test-runtime-model"}, overrides={"provider_auth_runtime.openai.api_key": auth.api_key})
     config = record.runner.current_runtime_config(); original_lock = service._runtime_lock(response.session_id, config, CONFIG); graph = json.loads(Path(record.metadata["runtime_records"]["effective_config_graph"]).read_text(encoding="utf-8")); assert graph == original_lock.as_dict() and graph["graph_hash"] == record.product_session.read_model.effective_lock_hash
     config["nested"] = {"provider_auth_runtime": {"token": "nested-secret"}, "provider_auth_runtime.token": "dotted-secret", "safe": True}; lock = service._runtime_lock(response.session_id, config, CONFIG); values = {row["path"]: row["value"] for row in lock["effective_values"]}
@@ -106,7 +112,7 @@ async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_p
     with pytest.raises(OSError, match="sink unavailable"): await service.send_input(response.session_id, SessionInputRequest(content="next"))
     assert record.runner._input_queue.empty(); assert [event.kind for event in record.product_session.events] == ["session.started"]
     record.product_session._sink = sink; record.runner._rehydrate_pending_permissions("permission_request", {"request_id": "perm-1", "category": "shell"}); record.runner._permission_queue = _Failing(); persisted = []
-    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.session_runner.upsert_permission_rule", lambda *_args, **_kwargs: persisted.append(True) or True); request = SessionCommandRequest(command="permission_decision", payload={"request_id": "perm-1", "decision": "always", "rule": "*.sh"})
+    monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_runner.upsert_permission_rule", lambda *_args, **_kwargs: persisted.append(True) or True); request = SessionCommandRequest(command="permission_decision", payload={"request_id": "perm-1", "decision": "always", "rule": "*.sh"})
     with pytest.raises(HTTPException) as error: await service.execute_command(response.session_id, request)
     assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["approval.resolved", "session.failed"]; assert record.status.value == "failed"
     assert persisted == [True] and record.metadata["permission_rules"][0]["rule"] == "*.sh"
