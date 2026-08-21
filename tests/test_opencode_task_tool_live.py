@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 
 
-def test_task_tool_live_nested_subagent_with_replay(tmp_path: Path) -> None:
+def test_task_tool_live_nested_subagent_with_replay(tmp_path: Path, monkeypatch) -> None:
     replay_session = tmp_path / "child_replay.json"
     replay_session.write_text(
         json.dumps(
@@ -70,7 +69,7 @@ def test_task_tool_live_nested_subagent_with_replay(tmp_path: Path) -> None:
         },
     }
 
-    os.environ.setdefault("MOCK_API_KEY", "kc_test_key")
+    monkeypatch.setenv("MOCK_API_KEY", "kc_test_key")
 
     conductor_cls = OpenAIConductor.__ray_metadata__.modified_class
     conductor = conductor_cls(workspace=str(workspace), config=config, local_mode=True)
