@@ -4583,7 +4583,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 return self._ray_get(self.sandbox.write_text.remote(target, replace_text))
             return self._ray_get(self.sandbox.edit_replace.remote(target, search_text, replace_text, 1))
         if normalized == "apply_unified_patch":
-            patch_source_text = str(args.get("patch") or args.get("input") or "")
+            patch_source_text = str(args.get("patch") or args.get("patchText") or args.get("input") or "")
             if self._patch_touches_private_workspace(patch_source_text): return {"error": "private workspace storage is unavailable to model tools"}
             patch_text = patch_source_text
             if (

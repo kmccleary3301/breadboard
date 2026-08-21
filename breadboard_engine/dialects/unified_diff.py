@@ -37,6 +37,9 @@ class UnifiedDiffDialect(EnhancedBaseDialect):
     def parse_tool_calls(self, content: str) -> List[ParsedToolCall]:
         if not content:
             return []
+        if "*** Begin Patch" in content:
+            return []
+
 
         diff_blocks = re.findall(r"```diff\s*\n(.*?)\n```", content, re.DOTALL | re.IGNORECASE)
         candidate_patches = diff_blocks or [content]
@@ -50,7 +53,7 @@ class UnifiedDiffDialect(EnhancedBaseDialect):
             hunks = re.findall(r"@@.*?(?=\n@@|\Z)", normalized, re.DOTALL)
             parsed.append(
                 ParsedToolCall(
-                    function="apply_diff",
+                    function="apply_unified_patch",
                     arguments={
                         "patch": normalized,
                         "hunks": hunks or [normalized],

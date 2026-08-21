@@ -28,7 +28,7 @@ class DevSandboxV2:
 
     def __init__(self, image: str, session_id: str = "", workspace: str = "", lsp_actor: Any = None) -> None:
         self.image = image
-        self.session_id = session_id
+        self.session_id = session_id or f"sandbox-{uuid.uuid4().hex}"
         self.workspace = str(workspace)
         self.lsp_actor = lsp_actor
 
@@ -376,6 +376,9 @@ class DevSandboxV2:
         content = ""
         if p.exists():
             content = p.read_text(encoding=encoding, errors="replace")
+        replacements = content.count(old_string) if old_string else 0
+        if count and count > 0:
+            replacements = min(replacements, count)
         if count and count > 0:
             updated = content.replace(old_string, new_string, count)
         else:
@@ -386,7 +389,7 @@ class DevSandboxV2:
         except Exception as exc:
             return {"ok": False, "path": abs_path, "error": str(exc)}
         self._touch_lsp(abs_path)
-        return {"ok": True, "path": abs_path}
+        return {"ok": True, "path": abs_path, "replacements": replacements}
 
     def multiedit(self, edits: List[Dict[str, Any]], encoding: str = "utf-8") -> Dict[str, Any]:
         """Apply multiple edits in sequence.
@@ -486,6 +489,11 @@ class DevSandboxV2:
                     args.append("--reject")
                 args.append(str(patch_path))
                 res = self._run_git(args, timeout=30)
+                if res.returncode != 0 and "--3way" in args:
+                    fallback_args = [arg for arg in args if arg != "--3way"]
+                    fallback = self._run_git(fallback_args, timeout=30)
+                    if fallback.returncode == 0:
+                        res = fallback
                 try:
                     patch_path.unlink(missing_ok=True)  # type: ignore[arg-type]
                 except Exception:

@@ -816,25 +816,38 @@ def _maybe_auto_verify_make_after_write_receipts(
     else:
         return False
     session_state.set_provider_metadata("auto_verify_make_after_write_receipts_successful_writes", successful_writes)
-    execution_args = subprocess_args
-    execution_timeout = 120.0
+    execution_plan = [(subprocess_args, 120.0)]
     requested_timeout = re.match(r"timeout\s+([0-9]+(?:\.[0-9]+)?)s?\s+", smoke_command)
     if requested_timeout and shutil.which("timeout") is None:
-        execution_args = [
-            "bash",
-            "-lc",
-            verify_command.replace(smoke_command, "bash smoke_test.sh"),
-        ]
-        execution_timeout = min(execution_timeout, float(requested_timeout.group(1)))
+        prefix, separator, suffix = verify_command.partition(smoke_command)
+        if not separator or suffix:
+            return False
+        prefix = prefix.strip()
+        if prefix.endswith("&&"):
+            prefix = prefix[:-2].rstrip()
+        execution_plan = []
+        if prefix:
+            execution_plan.append((["bash", "-lc", prefix], 120.0))
+        execution_plan.append(
+            (
+                ["bash", "-lc", "bash smoke_test.sh"],
+                float(requested_timeout.group(1)),
+            )
+        )
+    completed_steps: list[dict[str, Any]] = []
     started = time.monotonic()
-    completed = _run_subprocess_capture_with_group_timeout(
-        execution_args,
-        cwd=str(workspace),
-        timeout=execution_timeout,
-    )
-    exit_code = int(completed.get("exit") or 0)
-    stdout = str(completed.get("stdout") or "")
-    stderr = str(completed.get("stderr") or "")
+    for execution_args, execution_timeout in execution_plan:
+        completed = _run_subprocess_capture_with_group_timeout(
+            execution_args,
+            cwd=str(workspace),
+            timeout=execution_timeout,
+        )
+        completed_steps.append(completed)
+        if int(completed.get("exit") or 0) != 0:
+            break
+    exit_code = int(completed_steps[-1].get("exit") or 0)
+    stdout = "".join(str(step.get("stdout") or "") for step in completed_steps)
+    stderr = "".join(str(step.get("stderr") or "") for step in completed_steps)
     success = exit_code == 0
     elapsed_ms = int((time.monotonic() - started) * 1000)
     result_payload = {

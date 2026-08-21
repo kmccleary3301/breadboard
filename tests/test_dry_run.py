@@ -140,8 +140,8 @@ def test_dry_run_exec(tmp_path: Path):
                     chunks.append(f"{p.function}: {out}")
 
         # Validate mirror effects in tmp workspace
-        assert (tmp_path / "README.md").exists()
-        assert (tmp_path / "notes" / "hello.txt").exists()
+        assert (tmp_path / "README.md").exists(), transcript
+        assert (tmp_path / "notes" / "hello.txt").exists(), transcript
 
     finally:
         ray.shutdown()

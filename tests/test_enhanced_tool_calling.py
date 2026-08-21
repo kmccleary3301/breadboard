@@ -161,8 +161,14 @@ class TestDialectParsing(unittest.TestCase):
         
         parsed = dialect.parse_tool_calls(content)
         self.assertEqual(len(parsed), 1)
-        self.assertEqual(parsed[0].function, "apply_diff")
+        self.assertEqual(parsed[0].function, "apply_unified_patch")
         self.assertIn("hunks", parsed[0].arguments)
+        self.assertEqual(
+            dialect.parse_tool_calls(
+                "*** Begin Patch\n*** Update File: test.py\n@@\n-old\n+new\n*** End Patch"
+            ),
+            [],
+        )
     
     def test_anthropic_xml_parsing(self):
         """Test Anthropic XML dialect parsing."""

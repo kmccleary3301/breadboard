@@ -24,7 +24,11 @@ class LSPClusterManager:
         self.broken_servers: set = set()
         self.health_check_interval = 30  # seconds
         
-    def deploy_lsp_cluster(self, workspace_roots: List[str]) -> Dict[str, Any]:
+    def deploy_lsp_cluster(
+        self,
+        workspace_roots: List[str],
+        languages: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """Deploy LSP servers across the Ray cluster"""
         deployment_status = {
             "deployed_languages": [],
@@ -33,7 +37,14 @@ class LSPClusterManager:
             "workspace_roots": workspace_roots
         }
         
-        for language_id, config in LSP_SERVER_CONFIGS.items():
+        configured_languages = (
+            [language_id for language_id in languages if language_id in LSP_SERVER_CONFIGS]
+            if languages is not None
+            else list(LSP_SERVER_CONFIGS)
+        )
+
+        for language_id in configured_languages:
+            config = LSP_SERVER_CONFIGS[language_id]
             try:
                 # Create multiple replicas for each language
                 replicas = []
@@ -307,7 +318,15 @@ def deploy_lsp_system(config: Dict[str, Any], workspace_roots: List[str]) -> LSP
     )
     
     # Deploy the cluster
-    deployment_status = cluster_manager.deploy_lsp_cluster(workspace_roots)
+    languages_config = config.get("languages", {})
+    enabled = languages_config.get("enabled") if isinstance(languages_config, dict) else None
+    disabled = set(languages_config.get("disabled") or []) if isinstance(languages_config, dict) else set()
+    languages = (
+        [str(language_id) for language_id in enabled if str(language_id) not in disabled]
+        if isinstance(enabled, list)
+        else [language_id for language_id in LSP_SERVER_CONFIGS if language_id not in disabled]
+    )
+    deployment_status = cluster_manager.deploy_lsp_cluster(workspace_roots, languages)
     
     print(f"Deployment complete:")
     print(f"  - Successfully deployed: {', '.join(deployment_status['deployed_languages'])}")

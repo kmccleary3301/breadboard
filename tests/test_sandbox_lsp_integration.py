@@ -601,7 +601,7 @@ def function_{i}():
         
         result = ray.get(enhanced_sandbox.write_text.remote("large_file.py", large_content))
         assert isinstance(result, dict)
-        assert result.get("size", 0) > 10000  # Should be reasonably large
+        assert result.get("bytes", 0) > 10000  # Should be reasonably large
         
         # LSP operations should still work
         symbols = ray.get(enhanced_sandbox.lsp_document_symbols.remote("large_file.py"))

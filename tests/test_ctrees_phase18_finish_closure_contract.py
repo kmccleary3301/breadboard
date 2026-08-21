@@ -828,7 +828,7 @@ def test_auto_verification_runs_node_check_and_smoke_without_makefile(tmp_path: 
     )
 
 
-def test_auto_verification_preserves_requested_timeout_smoke_command(tmp_path: Path) -> None:
+def test_auto_verification_preserves_requested_timeout_smoke_command(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "Makefile").write_text(
         "all:\n\t@echo build-ok\nclean:\n\t@true\n",
         encoding="utf-8",
@@ -836,6 +836,20 @@ def test_auto_verification_preserves_requested_timeout_smoke_command(tmp_path: P
     smoke_script = tmp_path / "smoke_test.sh"
     smoke_script.write_text("#!/usr/bin/env bash\nset -euo pipefail\necho smoke-ok\n", encoding="utf-8")
     smoke_script.chmod(0o755)
+    calls = []
+
+    def run_step(args, *, cwd, timeout):  # type: ignore[no-untyped-def]
+        calls.append((args, cwd, timeout))
+        return {"exit": 0, "stdout": "", "stderr": ""}
+
+    monkeypatch.setattr(
+        "breadboard_engine.conductor.implementation_receipts.shutil.which",
+        lambda _name: None,
+    )
+    monkeypatch.setattr(
+        "breadboard_engine.conductor.implementation_receipts._run_subprocess_capture_with_group_timeout",
+        run_step,
+    )
     session_state = SessionState(str(tmp_path), None, {})
     session_state.add_message(
         {
@@ -878,6 +892,10 @@ def test_auto_verification_preserves_requested_timeout_smoke_command(tmp_path: P
         for turn_payload in session_state.turn_tool_usage.values()
         for tool in turn_payload.get("tools", [])
     )
+    assert calls == [
+        (["bash", "-lc", "make clean all"], str(tmp_path.resolve()), 120.0),
+        (["bash", "-lc", "bash smoke_test.sh"], str(tmp_path.resolve()), 20.0),
+    ]
 
 
 def test_group_timeout_kills_daemon_like_grandchild(tmp_path: Path) -> None:

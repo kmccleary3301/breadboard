@@ -442,7 +442,7 @@ class TestDeploymentIntegration:
         # Cleanup
         cluster_manager.shutdown_all()
     
-    def test_deploy_with_multiple_workspaces(self, ray_cluster, tmp_path):
+    def test_deploy_with_multiple_workspaces(self, tmp_path, monkeypatch):
         """Test deployment with multiple workspace roots"""
         # Create multiple workspaces
         workspaces = []
@@ -452,6 +452,14 @@ class TestDeploymentIntegration:
             (workspace / "test.py").write_text(f"def function_{i}(): pass")
             workspaces.append(str(workspace))
         
+        deployed = []
+
+        def deploy_server(_manager, language_id, workspace_root, replica_id):
+            deployed.append((language_id, workspace_root, replica_id))
+            return object()
+
+        monkeypatch.setattr(LSPClusterManager, "_deploy_single_server", deploy_server)
+
         config = LSPDeploymentConfig.create_development_config()
         config["languages"]["enabled"] = ["python"]
         
@@ -459,6 +467,10 @@ class TestDeploymentIntegration:
         cluster_manager = deploy_lsp_system(config, workspaces)
         
         assert isinstance(cluster_manager, LSPClusterManager)
+        assert deployed == [
+            ("python", workspace_root, 0)
+            for workspace_root in workspaces
+        ]
         
         # Cleanup
         cluster_manager.shutdown_all()

@@ -1,18 +1,23 @@
-import ray
 import pytest
 
 from breadboard_engine.execution.enhanced_executor import EnhancedToolExecutor
-from breadboard.sandbox import DevSandboxV2
 
 
-@pytest.fixture(scope="module")
-def ray_cluster():
-    ray.init()
-    yield
-    ray.shutdown()
+class RecordingSandbox:
+    def __init__(self) -> None:
+        self.patches: list[str] = []
+        self.writes: dict[str, str] = {}
 
+    def apply_patch(self, patch: str) -> dict[str, bool]:
+        self.patches.append(patch)
+        return {"ok": True}
 
-def test_udiff_dev_null_normalization(ray_cluster, tmp_path):
+    def write_text(self, path: str, content: str) -> dict[str, bool]:
+        self.writes[path] = content
+        return {"ok": True}
+
+@pytest.mark.asyncio
+async def test_udiff_dev_null_normalization(tmp_path):
     cfg = {
         "workspace": str(tmp_path),
         "tools": {
@@ -23,19 +28,22 @@ def test_udiff_dev_null_normalization(ray_cluster, tmp_path):
             }
         }
     }
-    sb = DevSandboxV2.options(name="sb-cfp").remote(image="python-dev:latest", workspace=str(tmp_path))
-    exe = EnhancedToolExecutor(sb, cfg)
+    sandbox = RecordingSandbox()
+    exe = EnhancedToolExecutor(sandbox, cfg)
     patch = """--- a/new.py
 +++ b/new.py
 @@ -0,0 +1,1 @@
 +print(1)
 """
-    # Invoke internal helper directly
-    normalized = exe._normalize_udiff_add_headers(patch)
-    assert "--- /dev/null" in normalized
+    result = await exe.execute_tool_call(
+        {"function": "apply_unified_patch", "arguments": {"patch": patch}}
+    )
+    assert result == {"ok": True}
+    assert sandbox.patches and "--- /dev/null" in sandbox.patches[0]
 
 
-def test_aider_prefer_write_on_create(ray_cluster, tmp_path):
+@pytest.mark.asyncio
+async def test_aider_prefer_write_on_create(tmp_path):
     cfg = {
         "workspace": str(tmp_path),
         "tools": {
@@ -46,13 +54,10 @@ def test_aider_prefer_write_on_create(ray_cluster, tmp_path):
             }
         }
     }
-    sb = DevSandboxV2.options(name="sb-cfp2").remote(image="python-dev:latest", workspace=str(tmp_path))
-    exe = EnhancedToolExecutor(sb, cfg)
+    sandbox = RecordingSandbox()
+    exe = EnhancedToolExecutor(sandbox, cfg)
     tool_call = {"function": "apply_search_replace", "arguments": {"file_name": "x.txt", "search": "", "replace": "hello"}}
 
-    # Use the async path via event loop
-    import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    out = loop.run_until_complete(exe.execute_tool_call(tool_call))
-    assert isinstance(out, dict)
+    out = await exe.execute_tool_call(tool_call)
+    assert out == {"ok": True}
+    assert sandbox.writes == {"x.txt": "hello"}

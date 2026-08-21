@@ -1,19 +1,15 @@
 <!-- ASSISTANT -->
 *** Begin Patch
 *** Add File: README.md
-@@
 +# Dry Run Workspace
 +This workspace is created by the dry-run harness.
-@@
 *** End Patch
 <!-- END -->
 
 <!-- ASSISTANT -->
 *** Begin Patch
 *** Add File: notes/hello.txt
-@@
 +hello world
-@@
 *** End Patch
 <!-- END -->
 
