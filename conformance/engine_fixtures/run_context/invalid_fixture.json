@@ -1,0 +1,27 @@
+{
+  "comparator_class": "normalized-trace-equal",
+  "contract": "bb.run_context.v1",
+  "fixture_family": "run_context",
+  "fixture_id": "run_context_invalid_missing_session_id",
+  "invalid_reason": "Removes required reference_output field 'session_id' from bb.run_context.v1.",
+  "reference_output": {
+    "active_mode": "interactive",
+    "delegated_services": [],
+    "engine_family": "python_reference",
+    "engine_ref": "working-tree",
+    "execution_mode": "foreground",
+    "feature_flags": {
+      "todos": true
+    },
+    "metadata": {
+      "source": "python_reference"
+    },
+    "request_id": "req-ref-1",
+    "resolved_model": "openai/gpt-5.2",
+    "resolved_provider_route": "primary",
+    "schema_version": "bb.run_context.v1",
+    "workspace_root": "/tmp/ws"
+  },
+  "source_fixture": "run_context/reference_fixture.json",
+  "support_tier": "reference-engine"
+}

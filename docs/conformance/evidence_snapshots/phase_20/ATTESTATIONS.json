@@ -1,0 +1,50 @@
+{
+  "schema": "bb.evidence_attestations.v1",
+  "note": "Verbatim reviewer attestations received via IRC, transcribed by orchestrator. reviewer.json files marked 'orchestrator-materialized' are transcriptions from agent yields/IRC, not reviewer-authored bytes. Authoritative full reviewer outputs: agent://ReviewSP1, agent://ReviewSP3, agent://ReviewSP4, agent://ReviewSP5, agent://ReviewSP7.",
+  "attestations": [
+    {
+      "from": "ReviewSP5",
+      "date": "2026-07-11",
+      "verbatim": "APPROVED: verdict is bound jointly to SP5 code SHA 650c7daa01751e2c35aa1f7f0b2cf79bf96b6687 and reviewed implementer evidence SHA-256 3e886b377948b20995bc85e74027ce98b2e86cd42d5cd8759e1090474beef96a, preserved for integration at 542f43f1."
+    },
+    {
+      "from": "ReviewSP1",
+      "date": "2026-07-11",
+      "verbatim": "CONFIRMED: the reviewed `docs_tmp/phase_20/evidence/SP1/implementer.json` hashes to `e7eea63b7194a13da6d3d06842ee8020b55954655e0c4739ae27a4d8178402a1`, exactly matching the AM23a manifest digest at integration commit d225b137."
+    },
+    {
+      "from": "ReviewSP4",
+      "date": "2026-07-11",
+      "verbatim": "Confirmed against the originals in sp4_wt. implementer.json SHA-256 = 175ebff1fddf458519badd2cf5a11d1c7196c79fa6e0d1c298a4bffd2aaed6a2; reviewer.json SHA-256 = 2bb789df2328cfe50cfaf5c90d8983ce711535109ac15b13a3f30ebaa6cb9a88. Both exactly match the AM23a snapshot values; manifest entries may be marked reviewer-confirmed."
+    },
+    {
+      "from": "ReviewSP3",
+      "date": "2026-07-11",
+      "verbatim": "Re-verdict: APPROVED at exact head aea51859b49401bec344631fb3af13cc093ad096. Reviewed implementer.json SHA-256 7ce332812c1433012e06ab59167aa37f0c5c7a09461e947c346202a52202c53e. Prior blockers resolved: generated registry/index canonical for all 3 schemas; amended pagination list exactly equals catalog comparator estate (21 vs 21, empty set differences); ledger PIN_STALE independently recorded with F5/post-F5 rebind owner. Delta from 0fc11917 is only README.md + generated index.ts/registry.ts; clean tree. Independent rerun: 18/18 conventions+2 focused API passed; full API exactly 9 failed/32 passed. Could not rerun TS generator because tsx dependency absent (`npm exec --no -- tsx --version` canceled missing package); static generated output and recorded two-pass hashes checked. Residual generated-artifact CI production remains nonblocking integration risk."
+    },
+    {
+      "from": "ReviewSP2",
+      "date": "2026-07-11",
+      "verbatim_excerpt": "APPROVED at the requested immutable head [4210f02e...]; reviewed evidence .../SP2/implementer.json with SHA-256 5215b003d2901175a33cf067d7a8d921d1b6f8f869a1344c447e4439545d0c56; sideband_fix_ok/classification_passthrough_ok/regen_rollback_ok/no_scope_creep/deferred_items_legit all true. Full yield: agent://ReviewSP2"
+    },
+    {
+      "from": "ReviewF5",
+      "date": "2026-07-11",
+      "verbatim_excerpt": "Approved F5 at exact head 0def21d547ac65ee6e9d0ec042fb54171cbda5ff; implementer evidence docs_tmp/phase_20/evidence/F5/implementer.json sha256:d3834e2fb90491e51969226243f8d2764a009fef2b8e1b9476ce21cce685bc8f; ledger tracked blob b3ceb260... commit-byte digest 908cd376...; 312 resolved/182 exact tombstones; five-stage/C4/49-test gates independently green. Full yield: agent://ReviewF5"
+    },
+    {
+      "packet": "SP2b",
+      "reviewer": "ReviewSP2b (loop-reviewer)",
+      "verbatim_irc": "Re-review at exact ffceba6b9aef3fb90f85b56202647fc6899943ac: APPROVED. Index object IDs are retained and regular/symlink content is materialized via cat-file, eliminating both prior blockers. New deleted-checkout, directory-shadow, and parent-symlink regressions pin the fixes. Independent focused suite: 48 passed, 4 warnings in 5.54s. Cumulative diff remains confined to the two packet files.",
+      "message_id": "152be8fd6741dec4",
+      "recorded_by": "orchestrating agent, 2026-07-11"
+    },
+    {
+      "packet": "SP6",
+      "reviewer": "ReviewSP6 (loop-reviewer)",
+      "message_id": "152c14472b41def0",
+      "verbatim_irc_headline": "FINAL SP6 REVIEW - artifact fe1778cc7e27287bc884b7c18cbec4733fa0e483; verdict=APPROVED under acceptance_adjudication.json; battery_family_ok=true; candidate_boundary_ok=true; generated_rebinds_ok=true; freeze_provenance_ok=true; no_test_weakening=true; confidence=0.98.",
+      "recorded_by": "orchestrating agent, 2026-07-11"
+    }
+  ]
+}

@@ -1,0 +1,2407 @@
+{
+  "schema_version": "bb.rs_progress.v1",
+  "campaign": "phase_20_right_shape",
+  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
+  "points_total": 1000,
+  "points_done": 885,
+  "conditional_total": 250,
+  "conditional_done": 0,
+  "updated_at_utc": "2026-07-11T07:04:32Z",
+  "items": [
+    {
+      "id": "A1",
+      "ws": "A",
+      "title": "ts client /v1 prefix",
+      "weight": 15,
+      "status": "done",
+      "deps": [],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A1/implementer.json",
+          "bound_sha": "2e583f20b210"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "2e583f20b210"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsA",
+          "lens": "anti_scope+static",
+          "verdict": "pass",
+          "sha": "2e583f20b210"
+        },
+        {
+          "agent": "VerifyWsAExec",
+          "lens": "gate_execution",
+          "verdict": "pass",
+          "sha": "11fa4e88e2f9730d94a27a7b0b9d76871a0252d8"
+        }
+      ]
+    },
+    {
+      "id": "A2",
+      "ws": "A",
+      "title": "ts readSessionFile files/content",
+      "weight": 5,
+      "status": "done",
+      "deps": [
+        "A1"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A2/implementer.json",
+          "bound_sha": "f5c6b80ab7ef"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "f5c6b80ab7ef"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsA",
+          "lens": "anti_scope+static",
+          "verdict": "pass",
+          "sha": "f5c6b80ab7ef"
+        },
+        {
+          "agent": "VerifyWsAExec",
+          "lens": "gate_execution",
+          "verdict": "pass",
+          "sha": "11fa4e88e2f9730d94a27a7b0b9d76871a0252d8"
+        }
+      ]
+    },
+    {
+      "id": "A3",
+      "ws": "A",
+      "title": "ts SSE URL /v1",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "A1"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A3/implementer.json",
+          "bound_sha": "f4a0628ae06f"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "f4a0628ae06f"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsA",
+          "lens": "anti_scope+static",
+          "verdict": "pass",
+          "sha": "f4a0628ae06f"
+        },
+        {
+          "agent": "VerifyWsAExec",
+          "lens": "gate_execution",
+          "verdict": "pass",
+          "sha": "11fa4e88e2f9730d94a27a7b0b9d76871a0252d8"
+        }
+      ]
+    },
+    {
+      "id": "A4",
+      "ws": "A",
+      "title": "py client /v1 prefix incl multipart+stream",
+      "weight": 15,
+      "status": "done",
+      "deps": [],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A4/implementer.json",
+          "bound_sha": "9700d1086d2c"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "9700d1086d2c"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsA",
+          "lens": "anti_scope+static",
+          "verdict": "pass",
+          "sha": "9700d1086d2c"
+        },
+        {
+          "agent": "VerifyWsAExec",
+          "lens": "gate_execution",
+          "verdict": "pass",
+          "sha": "11fa4e88e2f9730d94a27a7b0b9d76871a0252d8"
+        }
+      ]
+    },
+    {
+      "id": "A5",
+      "ws": "A",
+      "title": "py read_session_file files/content",
+      "weight": 5,
+      "status": "done",
+      "deps": [
+        "A4"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A5/implementer.json",
+          "bound_sha": "11fa4e88e2f9"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "11fa4e88e2f9"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsA",
+          "lens": "anti_scope+static",
+          "verdict": "pass",
+          "sha": "11fa4e88e2f9"
+        },
+        {
+          "agent": "VerifyWsAExec",
+          "lens": "gate_execution",
+          "verdict": "pass",
+          "sha": "11fa4e88e2f9730d94a27a7b0b9d76871a0252d8"
+        }
+      ]
+    },
+    {
+      "id": "A6",
+      "ws": "A",
+      "title": "SDK tests/fixtures assert exact /v1 URLs",
+      "weight": 15,
+      "status": "done",
+      "deps": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A6/implementer.json",
+          "bound_sha": "d1de5acb2a6b"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "61c9716c88a8"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsA6",
+          "lens": "gates+anti_scope",
+          "verdict": "pass",
+          "sha": "61c9716c88a8",
+          "note": "evidence check amended PASS; patch-id binds original to cherry-picked tree"
+        }
+      ]
+    },
+    {
+      "id": "A7",
+      "ws": "A",
+      "title": "default-server README-flow smoke (both SDKs)",
+      "weight": 15,
+      "status": "done",
+      "deps": [
+        "A6"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A7/implementer.json",
+          "bound_sha": "a61b89823042"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "3ed7c0f27ed3"
+        }
+      ],
+      "notes": "AM6 widening: readSessionRecords/read_session_records only; verifier confirmed no other surface change.",
+      "verifiers": [
+        {
+          "agent": "VerifyWsA6",
+          "lens": "gates+anti_scope",
+          "verdict": "pass",
+          "sha": "3ed7c0f27ed3",
+          "note": "evidence check amended PASS; patch-id binds original to cherry-picked tree"
+        }
+      ]
+    },
+    {
+      "id": "A8",
+      "ws": "A",
+      "title": "verifier packet incl base-SHA repro",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "A7"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "ref": "docs_tmp/phase_20/evidence/A8/verifier.json",
+          "sha": ""
+        },
+        {
+          "kind": "commit",
+          "ref": "d64e0f00",
+          "sha": "d64e0f00"
+        },
+        {
+          "kind": "commit",
+          "ref": "3b8d862f",
+          "sha": "3b8d862f"
+        }
+      ],
+      "notes": "verifier packet PASS @ d64e0f00 (agent://VerifyA8Packet): all A1-A7 gates green (TS typecheck/unit/smokes, py SDK 19p, default-server smokes both SDKs, OpenAPI artifact check); base 3b8d862f repro: both SDK README flows 404 on POST /sessions; evidence docs_tmp/phase_20/evidence/A8/verifier.json",
+      "verifiers": [
+        {
+          "agent": "VerifyA8Packet",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/A8/verifier.json (verdict pass @ d64e0f00; A1-A7 gates + base-SHA 404 repro both SDKs)"
+        }
+      ]
+    },
+    {
+      "id": "B1",
+      "ws": "B",
+      "title": "commit FREEZE_POLICY.md verbatim",
+      "weight": 15,
+      "status": "done",
+      "deps": [],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "p20/verify-wsB B1",
+          "sha": "d0e60df3"
+        },
+        {
+          "kind": "doc",
+          "ref": "../docs_tmp/phase_20/evidence/B1/implementer.json",
+          "sha": "de76cf2b"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsB(reviewer)",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "verdict bound to de76cf2b4c003535bc5e4a7b7e96df1a7e86b235; 4.10 byte-identical; clean gate 0; 2 negatives reproduced red; baseline exact (148 schema ids, 14 sdk pkgs, 21 lanes, 2 kinds)"
+        }
+      ]
+    },
+    {
+      "id": "B2",
+      "ws": "B",
+      "title": "freeze gate script + CI wiring",
+      "weight": 20,
+      "status": "done",
+      "deps": [
+        "B1"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "p20/verify-wsB B2",
+          "sha": "de76cf2b"
+        },
+        {
+          "kind": "doc",
+          "ref": "../docs_tmp/phase_20/evidence/B2/implementer.json",
+          "sha": "de76cf2b"
+        },
+        {
+          "kind": "verifier_verdict",
+          "ref": "irc msg 152ad7d3ddd473de",
+          "verdict": "pass",
+          "detail": "VerifyWsB2b extension PASS bound to 006df3742155d99a1f706e36300fcaf6a0fefeff: scope=test file only; patch-id d281f91f vs HEAD match 966d31fbbdb444e135b6072d9a2e95516733fc18; venv pytest 6 passed hermetic (tmp_path git repos); status empty pre/post; clean gate PASS. Post-merge @ 9508beee: touched-path diff EMPTY, freeze gate rerun exit 0, gate suite rerun 6 passed."
+        }
+      ],
+      "notes": "Implementer ran all 4 negative tests red; verifier independently reproduced 2 (new $id, lane kind edit). AM3: 'wire into product-spine' clause owned by D1 (see SPEC_AMENDMENTS.md#amendment-3); D1's verifier must confirm the freeze step in ci.yml. REOPENED: post-merge integration smoke @ 0d127901 exit=1 - script inventories untracked node_modules package.json files (product_defect); fix routed to implementer; tracked-files-only + new negative test required; re-verify pending. FIXED+re-verified: inventories tracked-files-only from single git ls-files snapshot; baseline unchanged; integration smoke green post-merge. | B2a follow-up (AM10 part-2 revised): per-occurrence tightening allowlist implemented + remedy diagnostic; verified pass @ 6d0e63af by VerifyWsB2a (strict FAIL->fix->targeted reverify PASS); no point change | B2b: allowlist entries hash-pinned {packet, sha256}, malformed=exit 2, empty by default; hermetic regression suite committed (6 tests); verified pass @ 006df374 by VerifyWsB2b | B2c: class-tagged entries {packet, sha256, class, ref}; legacy two-field=tightening; evolution requires ref; suite 10 tests; verified pass @ a18bb3b9 (irc 152ade5a76d47493); post-merge gate+suite rerun green | B2d: evolution refs grammar+existence validated against tracked plan/amendments; suite 14 tests; verified pass @ 9f6c4bfb (irc 152ae147ebd474be); post-merge reruns green",
+      "verifiers": [
+        {
+          "agent": "VerifyWsB(reviewer)",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "verdict bound to de76cf2b4c003535bc5e4a7b7e96df1a7e86b235; 4.10 byte-identical; clean gate 0; 2 negatives reproduced red; baseline exact (148 schema ids, 14 sdk pkgs, 21 lanes, 2 kinds)"
+        },
+        {
+          "agent": "ReverifyWsB2",
+          "lens": "gate_execution+static",
+          "verdict": "pass",
+          "sha": "67b32ab64146f4942aa1cca908f4ae6991a0b739"
+        }
+      ]
+    },
+    {
+      "id": "B3",
+      "ws": "B",
+      "title": "bd epic + child issues",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "B1"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "ref": "docs_tmp/phase_20/evidence/B3C2/verifier.json",
+          "sha": ""
+        }
+      ],
+      "notes": "epic bb-c6n (children bb-c6n.1..13 = WS-A..WS-M) pre-existing, confirmed via bd ready/show; duplicate bb-tri closed; ws closures recorded per-workstream with accepting merge SHAs",
+      "verifiers": [
+        {
+          "agent": "VerifyB3C2",
+          "lens": "anti_scope",
+          "verdict": "fail",
+          "verdict_ref": "docs_tmp/phase_20/evidence/B3C2/verifier.json (RED: B2 merge-SHA citation error; corrected via bd comments CORRECTION/CORRECTION-2 + ledger; round-2 re-verify pending)"
+        },
+        {
+          "agent": "VerifyB3Round2",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/B3C2/verifier_round2.json (round-2 pass @ de28fc6d: corrections verified, true merge SHAs 919e5b4e/c6935c85/b5805ab3/47b0e636 first-parent confirmed)"
+        }
+      ]
+    },
+    {
+      "id": "C1",
+      "ws": "C",
+      "title": "commit DIRECTION_CHARTER.md verbatim",
+      "weight": 15,
+      "status": "done",
+      "deps": [],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "p20/verify-wsC C1",
+          "sha": "971cc0d9"
+        },
+        {
+          "kind": "doc",
+          "ref": "../docs_tmp/phase_20/evidence/C1/implementer.json",
+          "sha": "b2f143ac"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsC(reviewer)",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "verdict bound to b2f143ac6d3d4ab08901134c65cc57daa1944fa0; anti-scope clean"
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "ws": "C",
+      "title": "thesis numbers from J-evidence",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "C1",
+        "J1"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "ref": "docs_tmp/phase_20/evidence/C4/verifier.json",
+          "sha": ""
+        }
+      ],
+      "notes": "C2 decision: thesis numbers CONFIRMED unchanged from J1 predeclared budgets (FLAGSHIP_DEMO_PROTOCOL.md: manifest <=150 canonical lines, adapter <=300 counted lines, 8h agent-time = one working day); charter placeholders RESOLVED to unbracketed 150/300 in this commit (C2's permitted delta); J4 later replaces with MEASURED values per charter self-text",
+      "verifiers": [
+        {
+          "agent": "VerifyC4Charter",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/C4/verifier.json (rebound verdict incl. C2 unbracketed thesis numbers @ 99fd1152)"
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "ws": "C",
+      "title": "INDEX.md + README links",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "C1"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "p20/verify-wsC C3",
+          "sha": "b2f143ac"
+        },
+        {
+          "kind": "doc",
+          "ref": "../docs_tmp/phase_20/evidence/C3/implementer.json",
+          "sha": "b2f143ac"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsC(reviewer)",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "verdict bound to b2f143ac6d3d4ab08901134c65cc57daa1944fa0; anti-scope clean"
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "ws": "C",
+      "title": "charter verifier",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "C1",
+        "C2",
+        "C3",
+        "E3"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "ref": "docs_tmp/phase_20/evidence/C4/verifier.json",
+          "sha": ""
+        },
+        {
+          "kind": "commit",
+          "ref": "99fd1152",
+          "sha": "99fd1152"
+        }
+      ],
+      "notes": "verifier PASS amended + rebound to 99fd1152 (post-C2 charter): byte-exact to \u00a74.7 modulo authorized 150/300 substitutions matching J1 budgets; links live; boundary contradiction sweep clean (3 allowlisted historical); evidence docs_tmp/phase_20/evidence/C4/verifier.json",
+      "verifiers": [
+        {
+          "agent": "VerifyC4Charter",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/C4/verifier.json (PASS rebound to 99fd1152)"
+        }
+      ]
+    },
+    {
+      "id": "D1",
+      "ws": "D",
+      "title": "product-spine CI job",
+      "weight": 30,
+      "status": "todo",
+      "deps": [],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/D1/implementer.json",
+          "bound_sha": "6a9869f0911e"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "c11add8c1a11"
+        }
+      ],
+      "notes": "AM3: D1 ACCEPT explicitly includes ci.yml product-spine running scripts/check_phase20_freeze.py; verifier confirms the step exists and passes. [pending_integration] CI wiring merged+verified; green product-spine run URL requires a pushed PR run; 4 red product-command groups are PRE-EXISTING (exec-verified identical at base 82411af2); AM3 freeze wiring in place. | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes | \u00a71.5 classification: product_defect (pre-existing spine-member failures: E4 API surface 10F/31P first fail-fast member; compilation 175F normalized set; validation collection exit 2; CLI export 1F). Flip condition: spine members green -> PR-triggered green run URLs bind, required-check re-activation per D5 evidence | AM23 REOPEN (2026-07-11, \u00a7217): reclassified product_defect and reopened for the fix-packet route. Gate evidence: docs_tmp/phase_20/evidence/M1/d1_dual_sha_repro_v2.json (exact-identity repro at base+head), docs_tmp/phase_20/evidence/M1/spine_reds_taxonomy.json (13 causes), docs_tmp/phase_20/evidence/M1/api_regression_attribution.json (1 head-only API failure = campaign F1 acef713e, owned by SP3). Packets: SP1-SP7 (owning: product-spine job green).",
+      "verifiers": [
+        {
+          "agent": "VerifyWsDStatic",
+          "lens": "anti_scope+static",
+          "verdict": "pass",
+          "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+        },
+        {
+          "agent": "VerifyWsDExec",
+          "lens": "gate_execution",
+          "verdict": "pass",
+          "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+        }
+      ],
+      "classification": "product_defect"
+    },
+    {
+      "id": "D2",
+      "ws": "D",
+      "title": "e4-battery nightly workflow",
+      "weight": 20,
+      "status": "todo",
+      "deps": [
+        "D1"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/D2/implementer.json",
+          "bound_sha": "af3b24580a45"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "c11add8c1a11"
+        }
+      ],
+      "notes": "[pending_integration] Nightly battery wiring merged+verified; green dispatch URL pending integration; battery/fixed-point reds are PRE-EXISTING (exec-verified). | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes | \u00a71.5 classification: product_defect (pre-existing spine-member failures: E4 API surface 10F/31P first fail-fast member; compilation 175F normalized set; validation collection exit 2; CLI export 1F). Flip condition: spine members green -> PR-triggered green run URLs bind, required-check re-activation per D5 evidence | AM23 REOPEN (2026-07-11, \u00a7217): reclassified product_defect and reopened for the fix-packet route. Gate evidence: docs_tmp/phase_20/evidence/M1/d1_dual_sha_repro_v2.json (exact-identity repro at base+head), docs_tmp/phase_20/evidence/M1/spine_reds_taxonomy.json (13 causes), docs_tmp/phase_20/evidence/M1/api_regression_attribution.json (1 head-only API failure = campaign F1 acef713e, owned by SP3). Packets: SP2/SP6/SP7 (battery + fixed-point).",
+      "verifiers": [
+        {
+          "agent": "VerifyWsDStatic",
+          "lens": "anti_scope+static",
+          "verdict": "pass",
+          "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+        },
+        {
+          "agent": "VerifyWsDExec",
+          "lens": "gate_execution",
+          "verdict": "pass",
+          "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+        }
+      ],
+      "classification": "product_defect"
+    },
+    {
+      "id": "D3",
+      "ws": "D",
+      "title": "touched-path triggers",
+      "weight": 15,
+      "status": "todo",
+      "deps": [
+        "D1"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/D3/implementer.json",
+          "bound_sha": "8424d4623954"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "c11add8c1a11"
+        }
+      ],
+      "notes": "[pending_integration] Path filters + job graph merged+verified; D3 acceptance closes with one green PR-triggered E4-battery run on a matched-path PR (run evidence pending integration). Required-status-check activation is NOT a D3 obligation \u2014 it belongs to D5 per AM3/\u00a76.3 (needs GitHub Administration write permission; gh api PUT command recorded in D3 evidence; activation or signed human waiver owned by D5). No enforcement claimed. Reclassified per Wave2DerailAudit finding 1 (was: blocked_missing_repo_admin_credentials). | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes | \u00a71.5 classification: product_defect (pre-existing spine-member failures: E4 API surface 10F/31P first fail-fast member; compilation 175F normalized set; validation collection exit 2; CLI export 1F). Flip condition: spine members green -> PR-triggered green run URLs bind, required-check re-activation per D5 evidence | AM23 REOPEN (2026-07-11, \u00a7217): reclassified product_defect and reopened for the fix-packet route. Gate evidence: docs_tmp/phase_20/evidence/M1/d1_dual_sha_repro_v2.json (exact-identity repro at base+head), docs_tmp/phase_20/evidence/M1/spine_reds_taxonomy.json (13 causes), docs_tmp/phase_20/evidence/M1/api_regression_attribution.json (1 head-only API failure = campaign F1 acef713e, owned by SP3). Packets: SP-series (nightly battery).",
+      "verifiers": [
+        {
+          "agent": "VerifyWsDStatic",
+          "lens": "anti_scope+static",
+          "verdict": "pass",
+          "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+        },
+        {
+          "agent": "VerifyWsDExec",
+          "lens": "gate_execution",
+          "verdict": "pass",
+          "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+        }
+      ],
+      "classification": "product_defect"
+    },
+    {
+      "id": "D4",
+      "ws": "D",
+      "title": "canonical exporter everywhere in ci.yml",
+      "weight": 15,
+      "status": "done",
+      "deps": [
+        "D1"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/D4/implementer.json",
+          "bound_sha": "9b4c486773fb"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "c11add8c1a11"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsDStatic",
+          "lens": "anti_scope+static",
+          "verdict": "pass",
+          "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+        },
+        {
+          "agent": "VerifyWsDExec",
+          "lens": "gate_execution",
+          "verdict": "pass",
+          "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+        }
+      ]
+    },
+    {
+      "id": "D5",
+      "ws": "D",
+      "title": "SDK smokes in spine; <=10min",
+      "weight": 15,
+      "status": "todo",
+      "deps": [
+        "A7",
+        "D1"
+      ],
+      "evidence": [],
+      "notes": "executable scope COMPLETE and dual-verified (static PASS @ a46a8d1a; exec amended PASS run 29139694598: both smokes green in real CI, runtime 44s <=10min, no new reds vs PR #28 comparator); required-check activation evidenced verbatim then rolled back (main restored to unprotected - leaving a known-red required check would block all merges); ACCEPT clause \"job green\" unmet SOLELY due to pre-existing baseline spine member (E4 API surface 10F/31P, fail-fast). Workflow commit merged @ head. Unblock: fix pre-existing spine members (same blocker family as D1-D3) | AM23 REOPEN (2026-07-11, \u00a7217): reclassified product_defect and reopened for the fix-packet route. Gate evidence: docs_tmp/phase_20/evidence/M1/d1_dual_sha_repro_v2.json (exact-identity repro at base+head), docs_tmp/phase_20/evidence/M1/spine_reds_taxonomy.json (13 causes), docs_tmp/phase_20/evidence/M1/api_regression_attribution.json (1 head-only API failure = campaign F1 acef713e, owned by SP3). Packets: post-packet PR smokes rerun.",
+      "verifiers": [],
+      "classification": "product_defect"
+    },
+    {
+      "id": "E1",
+      "ws": "E",
+      "title": "tier registry schema+file committed",
+      "weight": 25,
+      "status": "done",
+      "deps": [
+        "B1"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/E1/implementer.json",
+          "bound_sha": "5297124121f8"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "071dc1c98d7c"
+        }
+      ],
+      "notes": "RED @ 2f54eea1 (verify): tier invariant runs outside git ls-files snapshot; consumer check uses Path.exists() \u2014 untracked consumer satisfies invariant (product_defect); fix routed. done after red->fix->pass: E1fix 1e62e36d/071dc1c9 derives tier invariant from tracked snapshot; untracked consumer rejected.",
+      "verifiers": [
+        {
+          "agent": "VerifyWsFStatic",
+          "lens": "anti_scope+static",
+          "verdict": "fail->superseded",
+          "sha": "2f54eea1aaa9"
+        },
+        {
+          "agent": "VerifyWsFExec",
+          "lens": "gate_execution",
+          "verdict": "fail->superseded",
+          "sha": "2f54eea1aaa9"
+        },
+        {
+          "agent": "ReverifyWsF",
+          "lens": "gate_execution+static",
+          "verdict": "pass",
+          "sha": "071dc1c98d7c853a4c6051fa67d304fa38f1f8b4",
+          "patch_id_bound": true
+        }
+      ]
+    },
+    {
+      "id": "E2",
+      "ws": "E",
+      "title": "adversarial consumer audit",
+      "weight": 30,
+      "status": "done",
+      "deps": [
+        "E1"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "84a71cd1b11018d482a4a22145b3d78d28dc2288"
+        },
+        {
+          "kind": "verifier",
+          "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
+          "verdict": "pass"
+        },
+        {
+          "kind": "evidence_file",
+          "ref": "../docs_tmp/phase_20/evidence/E2/implementer.json",
+          "sha256": "4ca441a744902ddee09ee219f6abd2a35ead2f15681d38ca4f0747fff7b2a41e"
+        }
+      ],
+      "notes": "plan-text grounding: \u00a71.4 L79 defines evidence dir as ../docs_tmp/phase_20/evidence/ with final refs copied into ledger; audit transcript verified there by VerifyWsE2Static (amended verdict), bound to source commit 84a71cd1 whose patch-id matches pick 26f3ffba | reopened by E6 round1, resolved @ bc52b1ba merged a61868eb; commit scope audited (registry + generated census/TS + tier test only)",
+      "verifiers": [
+        {
+          "agent": "VerifyE2ReopenStatic",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/E2/verifier_reopen_static.json (pass, bound bc52b1ba, merged-head a61868eb)"
+        },
+        {
+          "agent": "VerifyWsE2Exec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsE2Exec per_item[E2]=pass @ 5a5d22ed (tiers/freeze/pytest/verify:generated green; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsE2Static",
+          "lens": "anti_scope",
+          "verdict": "fail",
+          "verdict_ref": "agent://VerifyWsE2Static per_item[E2]=fail (missing adversarial audit transcript) - superseded by E2 reopen cycle + VerifyE2ReopenStatic pass"
+        }
+      ]
+    },
+    {
+      "id": "E3",
+      "ws": "E",
+      "title": "packs.v1.json language fix",
+      "weight": 15,
+      "status": "done",
+      "deps": [
+        "E1"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "3ed77584974be8f2566f45e060383f11166fcc54"
+        },
+        {
+          "kind": "verifier",
+          "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
+          "verdict": "pass"
+        },
+        {
+          "kind": "evidence_file",
+          "ref": "../docs_tmp/phase_20/evidence/E3/implementer.json",
+          "sha256": "42cc6615f798535be9985b33ad8405ee34bfe1fc4dcee0acdafdb3d469e7eb68"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsE2Static",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsE2Static per_item[E3]=pass @ 5a5d22ed (patch-ids + registry census; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsE2Exec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsE2Exec per_item[E3]=pass @ 5a5d22ed (inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "E4",
+      "ws": "E",
+      "title": "schemas README tier column",
+      "weight": 5,
+      "status": "done",
+      "deps": [
+        "E3"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "599549591bf91b5e071583719fa48986b2ceb157"
+        },
+        {
+          "kind": "verifier",
+          "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
+          "verdict": "pass"
+        },
+        {
+          "kind": "evidence_file",
+          "ref": "../docs_tmp/phase_20/evidence/E4/implementer.json",
+          "sha256": "cbdd886ab67f77639674e46800546a8d882f66811ea06774048fd3fe3f1a36c4"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsE2Static",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsE2Static per_item[E4]=pass @ 5a5d22ed (patch-ids + registry census; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsE2Exec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsE2Exec per_item[E4]=pass @ 5a5d22ed (inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "E5",
+      "ws": "E",
+      "title": "consumer links verified 100% spine tiers",
+      "weight": 20,
+      "status": "done",
+      "deps": [
+        "E1",
+        "E2"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "4b2467d3ce48db602d5fafb1be0219cee674742b"
+        },
+        {
+          "kind": "verifier",
+          "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
+          "verdict": "pass"
+        },
+        {
+          "kind": "evidence_file",
+          "ref": "../docs_tmp/phase_20/evidence/E5/implementer.json",
+          "sha256": "f6cbf63c882c588827b4719572e5aff6a983517d80cf4b715ee718a9a1dec90a"
+        },
+        {
+          "kind": "evidence_file",
+          "ref": "../docs_tmp/phase_20/evidence/E5/verifier.json",
+          "sha256": "6f39c01924bd7f17ad87588f1edd88d0343af353ef9c59ab035b67913bb4e3cf"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "WsE2Retier.E5ConsumerVerifier",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/E5/verifier.json (pass @ 4b2467d3; 19/19 kept-tier consumer rows verified, unresolved=[])"
+        }
+      ]
+    },
+    {
+      "id": "E6",
+      "ws": "E",
+      "title": "workstream skeptic zero unresolved",
+      "weight": 20,
+      "status": "done",
+      "deps": [
+        "E1",
+        "E2",
+        "E3",
+        "E4",
+        "E5"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "d64e0f00",
+          "sha": "d64e0f00"
+        },
+        {
+          "kind": "commit",
+          "ref": "bc52b1ba",
+          "sha": "bc52b1ba"
+        }
+      ],
+      "notes": "round1 skeptic RED @ d64e0f00 (3 upheld: work_item, context_resource_pack, contract_tiers) -> E2 reopened @ bc52b1ba (2 frozen, 1 retiered to evidence) -> round2 skeptic PASS @ bc52b1ba: 16 keeps attacked all refuted (denominator 19->16: 2 frozen + 1 moved out of attacked tiers), reopen audit pass, unresolved 0; evidence E6/skeptic.json + skeptic_round2.json + E2/reopen_implementer.json",
+      "verifiers": [
+        {
+          "agent": "WsE6Skeptic2",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/E6/skeptic_round2.json (round-2: 0 unresolved refutations at bc52b1ba)"
+        }
+      ]
+    },
+    {
+      "id": "F1",
+      "ws": "F",
+      "title": "lane_manifest schema committed verbatim",
+      "weight": 20,
+      "status": "done",
+      "deps": [
+        "B1",
+        "C1"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/F1/implementer.json",
+          "bound_sha": "a5ef522c7f2c"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "071dc1c98d7c"
+        }
+      ],
+      "notes": "RED @ acef713e (verify): AM7 digest rejection in load_lane_manifest() but validate_lane() entry calls load_lane_def() \u2014 schema error masks digest rejection (product_defect); fix routed. done after red->fix->pass: F1fix c692e015/772f638f wires digest rejection into validate_lane entry; AM7 negative now yields digest error pre-schema.",
+      "verifiers": [
+        {
+          "agent": "VerifyWsFStatic",
+          "lens": "anti_scope+static",
+          "verdict": "fail->superseded",
+          "sha": "acef713ec90a"
+        },
+        {
+          "agent": "VerifyWsFExec",
+          "lens": "gate_execution",
+          "verdict": "fail->superseded",
+          "sha": "acef713ec90a"
+        },
+        {
+          "agent": "ReverifyWsF",
+          "lens": "gate_execution+static",
+          "verdict": "pass",
+          "sha": "071dc1c98d7c853a4c6051fa67d304fa38f1f8b4",
+          "patch_id_bound": true
+        }
+      ]
+    },
+    {
+      "id": "F2",
+      "ws": "F",
+      "title": "lane_lock schema committed verbatim",
+      "weight": 20,
+      "status": "done",
+      "deps": [
+        "F1"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/F2/implementer.json",
+          "bound_sha": "7c7007d7fca0"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "071dc1c98d7c"
+        }
+      ],
+      "notes": "Exec lens PASS @ d494b90e; merge blocked pending F1/E1 fixes (same packet). exec+static+reverify green; B2 battery preserved.",
+      "verifiers": [
+        {
+          "agent": "VerifyWsFStatic",
+          "lens": "anti_scope+static",
+          "verdict": "fail->superseded",
+          "sha": "d494b90ec446"
+        },
+        {
+          "agent": "VerifyWsFExec",
+          "lens": "gate_execution",
+          "verdict": "pass",
+          "sha": "d494b90ec446"
+        },
+        {
+          "agent": "ReverifyWsF",
+          "lens": "gate_execution+static",
+          "verdict": "pass",
+          "sha": "071dc1c98d7c853a4c6051fa67d304fa38f1f8b4",
+          "patch_id_bound": true
+        }
+      ]
+    },
+    {
+      "id": "F3",
+      "ws": "F",
+      "title": "compile_lane_lock deterministic compiler+sidecar",
+      "weight": 35,
+      "status": "done",
+      "deps": [
+        "F1",
+        "F2"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "81d51422",
+          "sha": "81d51422"
+        },
+        {
+          "kind": "commit",
+          "ref": "8e1f3f03",
+          "sha": "8e1f3f03"
+        },
+        {
+          "kind": "commit",
+          "ref": "8847a6b0",
+          "sha": "8847a6b0"
+        }
+      ],
+      "notes": "round-3 dual PASS @ 81d51422 (patch-id 8e1f3f03) | round-6 dual PASS (VerifyWsF6Static agent://VerifyWsF6Static @ 8847a6b0 + VerifyWsF6Exec agent://VerifyWsF6Exec @ eee87ed7); workspace-free subset merged; sources 7baf05d0",
+      "verifiers": [
+        {
+          "agent": "VerifyWsF6Static",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsF6Static per_item[F3]=pass @ head 8847a6b0 (patch-ids bound; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsF6Exec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsF6Exec per_item[F3] @ head eee87ed7 (boundary worktree batteries green; inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "F4",
+      "ws": "F",
+      "title": "P6.6 pilot manifest+lock round-trip equality",
+      "weight": 35,
+      "status": "done",
+      "deps": [
+        "F3"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "3f8e3faf",
+          "sha": "3f8e3faf"
+        },
+        {
+          "kind": "commit",
+          "ref": "81d51422",
+          "sha": "81d51422"
+        }
+      ],
+      "notes": "RED @ verify-wsF2 3f8e3faf (VerifyWsF2Static): declared zip input under gitignored docs_tmp/ + outside-worktree resolution climb violates AM15/AM11a; fix routed to WsF3Compiler2 (track zip at config/e4_lanes/source_freezes/, repin lock, remove climb fallback + negative test) | exec lens FAIL @ 3f8e3faf (VerifyWsF2Exec): runtime-binding test file never committed (pytest exit 4); bb.e4.lane_manifest.v1 drift w/o allowlist pin (freeze exit 1); F3/F6 gates green; fixed-point base-repro shows F5(b) stale-pin claim NOT reproduced at base | round-3 @ verify-wsF2c 81d51422: static PASS (R1-R4 closed: zip tracked, no-fallback+negative test, pin same-commit valid B2c/B2d w/ AM8 authorization, boundaries self-contained); exec FAIL solely on fresh-checkout FileNotFoundError (derived dir assumed) \u2014 materialization-ownership fix routed | round-6 dual PASS (VerifyWsF6Static agent://VerifyWsF6Static @ 8847a6b0 + VerifyWsF6Exec agent://VerifyWsF6Exec @ eee87ed7); workspace-free subset merged; sources adab754f+2d82b7a8",
+      "verifiers": [
+        {
+          "agent": "VerifyWsF6Static",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsF6Static per_item[F4]=pass @ head 8847a6b0 (patch-ids bound; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsF6Exec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsF6Exec per_item[F4] @ head eee87ed7 (boundary worktree batteries green; inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "F5",
+      "ws": "F",
+      "title": "parity+churn proof (run, fixed-point, locality)",
+      "weight": 25,
+      "status": "todo",
+      "deps": [
+        "F4"
+      ],
+      "evidence": [],
+      "notes": "round-3: static FAIL \u2014 legacy payload blocks not retired (descriptor unchanged); full-flow claim stage red on moving external phase-15 atomic-ledger digest + regen fixed-point exit 1 (byte_identical, same signature at base per exec lens = env/pre-existing, honest classification). Retirement routed; env gates stay classified w/ prerequisite: refreshed/repinned phase-15 external evidence | parked at wsF3 e805b053 (verified-not-merged); classification blocked_env: (a) external phase-15 evidence actively mutating (5 distinct ledger hashes observed), (b) AM19 activation prerequisite (explicit BB_WORKSPACE_ROOT impl in H run_lane + F c4/readiness) before workspace refs consumed, (c) normalize split-brain (F writes ROOT/docs_tmp, H reads workspace) fixed by AM19 round. Prerequisites: AM19 impl + refreshed/repinned phase-15 evidence | AM23 REOPEN (2026-07-11, \u00a7217): blocked_env reclassified product_defect - the 'external mutable ledger' is seed_atomic_feature_ledger ambient-merge + ref-refresh state, not an unavailable external (docs_tmp/phase_20/evidence/M1/f5_seed_digest_resolution.json, docs_tmp/phase_20/evidence/M1/f5_seed_row_diff_detail.json, docs_tmp/phase_20/evidence/M1/f5_unblock_feasibility.json: fresh detached flow exit 1 [RC1]; five-stage exit 0 ONLY after provisioning two clean-checkout prerequisites [RC2]; fixed-point exit 1 both passes; seed mechanism established, exact pinned bytes unresolved, live seed 17/20 changed refs non-resolving at head). Scope: AM19 namespace resolver activation + tracked ledger input with 100% ref resolution at packet head (or justified tombstones) + clean-checkout prerequisites; rebase e805b053.",
+      "verifiers": [],
+      "classification": "product_defect"
+    },
+    {
+      "id": "F6",
+      "ws": "F",
+      "title": "refresh writes lock only; manifest untouchable",
+      "weight": 15,
+      "status": "done",
+      "deps": [
+        "F5"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "81d51422",
+          "sha": "81d51422"
+        },
+        {
+          "kind": "commit",
+          "ref": "8847a6b0",
+          "sha": "8847a6b0"
+        },
+        {
+          "kind": "commit",
+          "ref": "eee87ed7",
+          "sha": "eee87ed7"
+        }
+      ],
+      "notes": "round-3 dual PASS @ 81d51422 (promotion byte-identity at F6/F4/head boundaries) | round-6 dual PASS (VerifyWsF6Static agent://VerifyWsF6Static @ 8847a6b0 + VerifyWsF6Exec agent://VerifyWsF6Exec @ eee87ed7); workspace-free subset merged; sources c44966e3",
+      "verifiers": [
+        {
+          "agent": "VerifyWsF6Static",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsF6Static per_item[F6]=pass @ head 8847a6b0 (patch-ids bound; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsF6Exec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsF6Exec per_item[F6] @ head eee87ed7 (boundary worktree batteries green; inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "G1",
+      "ws": "G",
+      "title": "root pyproject + bbh skeleton",
+      "weight": 20,
+      "status": "done",
+      "deps": [],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "p20/verify-wsG G1",
+          "sha": "0f09c736"
+        },
+        {
+          "kind": "doc",
+          "ref": "../docs_tmp/phase_20/evidence/G1/implementer.json",
+          "sha": "0f09c736"
+        },
+        {
+          "kind": "command",
+          "ref": "fresh-venv AM2 bootstrap: pip>=21.3 upgrade + editable install 1.49s + 8 leaves shown + stub exit 2",
+          "sha": "0f09c736"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsG(reviewer)",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "verdict bound to 0f09c736c767a9e13485d544a0def7d401805e0a; anti-scope clean; stdlib-only imports confirmed"
+        }
+      ]
+    },
+    {
+      "id": "G2",
+      "ws": "G",
+      "title": "harness init/validate/explain + lane init/validate",
+      "weight": 30,
+      "status": "done",
+      "deps": [
+        "G1"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "ab4c9e96",
+          "sha": "ab4c9e96"
+        },
+        {
+          "kind": "commit",
+          "ref": "cb7f93fe",
+          "sha": "cb7f93fe"
+        },
+        {
+          "kind": "commit",
+          "ref": "9934acce",
+          "sha": "9934acce"
+        }
+      ],
+      "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item cb7f93fe; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
+      "verifiers": [
+        {
+          "agent": "VerifyWsGExec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsGExec per_item[G2]=pass @ ab4c9e96 (incl. fresh-clone full-command log artifact://16201; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsGStatic",
+          "lens": "anti_scope",
+          "verdict": "fail",
+          "verdict_ref": "agent://VerifyWsGStatic per_item[G2]=red (boundary self-containment: cited packaging test added later in-chain at c00c6f48; exec lens runs it green at head; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyG2StaticR2",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/G2/verifier_static_round2.json (round-2 pass @ de28fc6d: boundary self-containment with in-chain remedy c00c6f48; supersedes round-1 static RED on this check)"
+        }
+      ]
+    },
+    {
+      "id": "G3",
+      "ws": "G",
+      "title": "bbh harness run --server/--local",
+      "weight": 25,
+      "status": "done",
+      "deps": [
+        "G1",
+        "A7"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "ab4c9e96",
+          "sha": "ab4c9e96"
+        },
+        {
+          "kind": "commit",
+          "ref": "b9566134",
+          "sha": "b9566134"
+        },
+        {
+          "kind": "commit",
+          "ref": "9934acce",
+          "sha": "9934acce"
+        }
+      ],
+      "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item b9566134; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
+      "verifiers": [
+        {
+          "agent": "VerifyWsGExec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsGExec per_item[G3]=pass @ ab4c9e96 (incl. fresh-clone full-command log artifact://16201; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsGStatic",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsGStatic per_item[G3]=pass @ ab4c9e96 (inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "G4",
+      "ws": "G",
+      "title": "bbh lane lock/capture",
+      "weight": 15,
+      "status": "done",
+      "deps": [
+        "G1",
+        "F3"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "ab4c9e96",
+          "sha": "ab4c9e96"
+        },
+        {
+          "kind": "commit",
+          "ref": "6b7fe7fe",
+          "sha": "6b7fe7fe"
+        },
+        {
+          "kind": "commit",
+          "ref": "9934acce",
+          "sha": "9934acce"
+        }
+      ],
+      "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item 6b7fe7fe; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
+      "verifiers": [
+        {
+          "agent": "VerifyWsGExec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsGExec per_item[G4]=pass @ ab4c9e96 (incl. fresh-clone full-command log artifact://16201; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsGStatic",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsGStatic per_item[G4]=pass @ ab4c9e96 (inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "G5",
+      "ws": "G",
+      "title": "docs front-door rewrite",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "G2",
+        "G3",
+        "G4"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "ab4c9e96",
+          "sha": "ab4c9e96"
+        },
+        {
+          "kind": "commit",
+          "ref": "123242f4",
+          "sha": "123242f4"
+        },
+        {
+          "kind": "commit",
+          "ref": "9934acce",
+          "sha": "9934acce"
+        }
+      ],
+      "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item 123242f4; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
+      "verifiers": [
+        {
+          "agent": "VerifyWsGExec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsGExec per_item[G5]=pass @ ab4c9e96 (incl. fresh-clone full-command log artifact://16201; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsGStatic",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsGStatic per_item[G5]=pass @ ab4c9e96 (inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "G6",
+      "ws": "G",
+      "title": "verifier E2E transcript",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "G5"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "ab4c9e96",
+          "sha": "ab4c9e96"
+        },
+        {
+          "kind": "commit",
+          "ref": "9934acce",
+          "sha": "9934acce"
+        }
+      ],
+      "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item ab4c9e96; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
+      "verifiers": [
+        {
+          "agent": "VerifyWsGExec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsGExec per_item[G6]=pass @ ab4c9e96 (incl. fresh-clone full-command log artifact://16201; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsGStatic",
+          "lens": "anti_scope",
+          "verdict": "fail",
+          "verdict_ref": "agent://VerifyWsGStatic per_item[G6]=red (evidence freshness: full transcript bound to sibling 44df2bd; CLOSED by VerifyWsGExec fresh-clone full-command log at ab4c9e96; inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "H1",
+      "ws": "H",
+      "title": "StageReport + check_stage_report in run_lane",
+      "weight": 30,
+      "status": "done",
+      "deps": [],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/H1/implementer.json",
+          "bound_sha": "182a57039c76"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "182a57039c76"
+        }
+      ],
+      "notes": "Battery red is the intended fail-closed signal; root causes are the three AM5 spec gaps (owners: H3, WS-F, H3). Honesty rule machine-enforced via check_stage_report wired at run_lane per-stage path.",
+      "verifiers": [
+        {
+          "agent": "VerifyWsHExec",
+          "lens": "gate_execution",
+          "verdict": "pass",
+          "sha": "182a57039c768ddd612911e33c535d38e03f27cc"
+        },
+        {
+          "agent": "VerifyWsHStatic",
+          "lens": "anti_scope+static",
+          "verdict": "pass",
+          "sha": "182a57039c768ddd612911e33c535d38e03f27cc"
+        }
+      ]
+    },
+    {
+      "id": "H2",
+      "ws": "H",
+      "title": "normalize executes translator",
+      "weight": 25,
+      "status": "done",
+      "deps": [
+        "H1"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "815827a2",
+          "sha": "815827a2"
+        },
+        {
+          "kind": "commit",
+          "ref": "03ca3d8c",
+          "sha": "03ca3d8c"
+        }
+      ],
+      "notes": "final 815827a2 picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
+      "verifiers": [
+        {
+          "agent": "VerifyWsH2Static2",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsH2Static2 per_item[H2]=pass @ 03ca3d8c (patch-id equivalent, schema deltas authorized; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsH2Exec2",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsH2Exec2 per_item[H2]=PASS @ 03ca3d8c (suites green incl. freeze red/green; inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "H3",
+      "ws": "H",
+      "title": "Replay honesty: replay.mode 'stored' declared explicitly in every lane source ('executed' deferred; loader rejects it with deferral error)",
+      "weight": 20,
+      "status": "done",
+      "deps": [
+        "H1"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "60357e42",
+          "sha": "60357e42"
+        },
+        {
+          "kind": "commit",
+          "ref": "03ca3d8c",
+          "sha": "03ca3d8c"
+        }
+      ],
+      "notes": "final 60357e42 picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
+      "verifiers": [
+        {
+          "agent": "VerifyWsH2Static2",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsH2Static2 per_item[H3]=pass @ 03ca3d8c (patch-id equivalent, schema deltas authorized; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsH2Exec2",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsH2Exec2 per_item[H3]=PASS @ 03ca3d8c (suites green incl. freeze red/green; inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "H4",
+      "ws": "H",
+      "title": "compare invokes comparator; claim consumes report",
+      "weight": 25,
+      "status": "done",
+      "deps": [
+        "H1"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "b08b6db2",
+          "sha": "b08b6db2"
+        },
+        {
+          "kind": "commit",
+          "ref": "03ca3d8c",
+          "sha": "03ca3d8c"
+        }
+      ],
+      "notes": "final b08b6db2 picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
+      "verifiers": [
+        {
+          "agent": "VerifyWsH2Static2",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsH2Static2 per_item[H4]=pass @ 03ca3d8c (patch-id equivalent, schema deltas authorized; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsH2Exec2",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsH2Exec2 per_item[H4]=PASS @ 03ca3d8c (suites green incl. freeze red/green; inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "H5",
+      "ws": "H",
+      "title": "21 lane sources declare stage modes; validate_lane enforces",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "H1",
+        "H2",
+        "H3",
+        "H4"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "11ac780b",
+          "sha": "11ac780b"
+        },
+        {
+          "kind": "commit",
+          "ref": "03ca3d8c",
+          "sha": "03ca3d8c"
+        }
+      ],
+      "notes": "final 11ac780b picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
+      "verifiers": [
+        {
+          "agent": "VerifyWsH2Static2",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsH2Static2 per_item[H5]=pass @ 03ca3d8c (patch-id equivalent, schema deltas authorized; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsH2Exec2",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsH2Exec2 per_item[H5]=PASS @ 03ca3d8c (suites green incl. freeze red/green; inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "H6",
+      "ws": "H",
+      "title": "verifier incl base-SHA silent-skip repro",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "H5"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "60a3862a",
+          "sha": "60a3862a"
+        },
+        {
+          "kind": "commit",
+          "ref": "03ca3d8c",
+          "sha": "03ca3d8c"
+        }
+      ],
+      "notes": "final 60a3862a picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
+      "verifiers": [
+        {
+          "agent": "VerifyWsH2Static2",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsH2Static2 per_item[H6]=pass @ 03ca3d8c (patch-id equivalent, schema deltas authorized; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsH2Exec2",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsH2Exec2 per_item[H6]=PASS @ 03ca3d8c (suites green incl. freeze red/green; inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "I1",
+      "ws": "I",
+      "title": "VALIDATION_GAP_MATRIX.md committed",
+      "weight": 25,
+      "status": "done",
+      "deps": [],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "p20/verify-wsI I1 + L21 fix",
+          "sha": "83686333"
+        },
+        {
+          "kind": "doc",
+          "ref": "../docs_tmp/phase_20/evidence/I1/implementer.json",
+          "sha": "83686333"
+        }
+      ],
+      "notes": "First verdict RED (product_defect: L21 pointer format); fixed by implementer follow-up commit; re-verified PASS.",
+      "verifiers": [
+        {
+          "agent": "VerifyWsI(reviewer)",
+          "lens": "correctness",
+          "verdict": "fail",
+          "verdict_ref": "RED @ e5a66bcf: L21 brace shorthand not RFC 6901 (recorded honestly)"
+        },
+        {
+          "agent": "ReverifyWsI(reviewer)",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "verdict bound to 8368633323f0f24631a9a2aebe7427fc2dbb20c3; 9 pointers resolve; rows 25+8; anti-scope clean"
+        }
+      ]
+    },
+    {
+      "id": "I2",
+      "ws": "I",
+      "title": "schema-first constraint additions",
+      "weight": 15,
+      "status": "done",
+      "deps": [
+        "I1"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "a5ee24c9501d0818d2e170d42718f5e5fdd210ec"
+        },
+        {
+          "kind": "verifier",
+          "ref": "VerifyWsIStatic+VerifyWsIExec @ a80dcfcb17c60dbccdd0912a7b87ee18b8189c58",
+          "verdict": "pass"
+        },
+        {
+          "kind": "evidence_file",
+          "ref": "../docs_tmp/phase_20/evidence/I2/implementer.json",
+          "sha256": "45355bb39b7ba3dbaa8fc89ab4ec9af5f31160d6c2c614e9bfd875c4606ff38b"
+        }
+      ],
+      "notes": " | allowlist swap f3d48e02: hash-pinned {I2, fbb7d149...}; I4 evidence-only (empty diff by design), corpus parity rerun bound to a80dcfcb (base 27deb570), several cases strictly-better-typed pointers | exec checks 6-7 confirmed full-output: tests/compilation AM10 normalized delta base=175 head=175 sets_equal=true head_only=0; final status clean at a80dcfcb",
+      "verifiers": [
+        {
+          "agent": "VerifyWsIStatic",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsIStatic per_item[I2]=pass @ a80dcfcb (patch-id + allowlist pins; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsIExec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsIExec @ a80dcfcb (152 schema-first tests, freeze red/green, corpus parity, AM10 delta equal; inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "I3",
+      "ws": "I",
+      "title": "consolidation; guarded tests green unmodified",
+      "weight": 20,
+      "status": "done",
+      "deps": [
+        "I2"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "c91aeaab1078b87494c00246d841267346037b1c"
+        },
+        {
+          "kind": "verifier",
+          "ref": "VerifyWsIStatic+VerifyWsIExec @ a80dcfcb17c60dbccdd0912a7b87ee18b8189c58",
+          "verdict": "pass"
+        },
+        {
+          "kind": "evidence_file",
+          "ref": "../docs_tmp/phase_20/evidence/I3/implementer.json",
+          "sha256": "62b3dc14cdd7499eaee86aa7e133d7e26d0567e5073a666b6a361d8ff0f4bbd1"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsIStatic",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsIStatic per_item[I3]=pass @ a80dcfcb (patch-id + allowlist pins; inspected 2026-07-11)"
+        },
+        {
+          "agent": "VerifyWsIExec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsIExec @ a80dcfcb (152 schema-first tests, freeze red/green, corpus parity, AM10 delta equal; inspected 2026-07-11)"
+        }
+      ]
+    },
+    {
+      "id": "I4",
+      "ws": "I",
+      "title": "verifier fixture-corpus behavior diff",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "I3"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "ffb3d3945e167930deaa6ef7ad3fdd0f83e83a18"
+        },
+        {
+          "kind": "verifier",
+          "ref": "VerifyWsIStatic+VerifyWsIExec @ a80dcfcb17c60dbccdd0912a7b87ee18b8189c58",
+          "verdict": "pass"
+        },
+        {
+          "kind": "evidence_file",
+          "ref": "../docs_tmp/phase_20/evidence/I4/implementer.json",
+          "sha256": "baad0e41a25e1f2b6d3057e6f065212daa433fdcdc10c6698f5ef975984ec548"
+        },
+        {
+          "kind": "evidence_file",
+          "ref": "../docs_tmp/phase_20/evidence/I4/verifier.json",
+          "sha256": "9e23723ae0603003e6780e00f8f0750968221f8931be1f7698d2c8302c1e3cb4"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsIStatic",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsIStatic per_item[I4]=pass (evidence binding verified)"
+        },
+        {
+          "agent": "VerifyWsIExec",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "agent://VerifyWsIExec per_item[5_I4_corpus_parity]=pass (12-case corpus, both entrypoints)"
+        }
+      ]
+    },
+    {
+      "id": "J1",
+      "ws": "J",
+      "title": "FLAGSHIP_DEMO_PROTOCOL.md predeclared",
+      "weight": 20,
+      "status": "done",
+      "deps": [
+        "C1"
+      ],
+      "evidence": [
+        {
+          "kind": "implementer_report",
+          "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/J1/implementer.json",
+          "bound_sha": "2140039975d6"
+        },
+        {
+          "kind": "verifier_verdicts",
+          "ref": "ledger.verifiers[]",
+          "bound_sha": "2140039975d6"
+        }
+      ],
+      "notes": "",
+      "verifiers": [
+        {
+          "agent": "VerifyWsJ",
+          "lens": "anti_scope+static",
+          "verdict": "pass",
+          "sha": "2140039975d6bfc8b3c96331d35e6f0407cf94e1"
+        }
+      ]
+    },
+    {
+      "id": "J2",
+      "ws": "J",
+      "title": "Flagship demo: outsider protocol executed honestly and completely (budget/functional pass-fail recorded as gate G-J, not in this item)",
+      "weight": 40,
+      "status": "done",
+      "deps": [
+        "J1",
+        "G6",
+        "A8",
+        "H5"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "ref": "docs_tmp/phase_20/j2_run/",
+          "sha": ""
+        },
+        {
+          "kind": "commit",
+          "ref": "3b413aff",
+          "sha": "3b413aff"
+        }
+      ],
+      "notes": "executed HONESTLY AND COMPLETELY @ 3b413aff (all 8 stages attempted, timings + materials log kept, zero outsider violations); provisional G-J FAIL: unavailable bbh capability (adapter registration/claim/reverify absent from front door); budgets PASSED: manifest 103/150 (max line 101), adapter 182/300, 0.14h/8h; model input recorded per AM21/AM21a; evidence docs_tmp/phase_20/j2_run/ (immutable) + J3 integrity/budget recount; execution+measurement integrity confirmed by J3RootCause (independent) | credential hygiene: single-var env file deleted post-run; full-key-value scan over j2_run+evidence = 0 hits; rotation recommended to user | CORRECTION (J5-TIME-001): protocol-canonical elapsed is 525s whole-second wall (0.15h at 2dp; precise 524.62s = 0.1457h) first timed access -> final claim-reverify attempt; the 0.139712h figure in j2_result.json is the staged-duration sum (immutable outsider record, superseded for budget arithmetic).",
+      "verifiers": [
+        {
+          "agent": "VerifyJ5Demo",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/J5/verifier.json (j2_execution_verdict pass: honest+complete; gates/counts/materials reproduced)"
+        },
+        {
+          "agent": "VerifyJ2AntiScope",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/J2/verifier_anti_scope.json (pass @ 2f8e2e5a: 80/80 accesses allowed, bounded profile exact, no assertion relaxation, wheel SHA + model input frozen)"
+        }
+      ]
+    },
+    {
+      "id": "J3",
+      "ws": "J",
+      "title": "retro + fix packets",
+      "weight": 20,
+      "status": "done",
+      "deps": [
+        "J2"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "ref": "docs_tmp/phase_20/evidence/J3/root_cause.json",
+          "sha": ""
+        }
+      ],
+      "notes": "root-cause classification @ evidence/J3/root_cause.json: all 5 failures protocol_gap_predeclared_unbuildable, outsider correct throughout; retro @ evidence/J3/retro.md; gaps TICKETED as follow-up bd issues (AM22a: outside campaign ledger) - satisfies ACCEPT \"fixes merged or ticketed with bd ids\" | Independent verifier round-1 RED (retro: schema friction absent + stale routing) -> retro corrected -> round-2 PASS",
+      "verifiers": [
+        {
+          "agent": "VerifyJ3Packet",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/J3/verifier_round2.json (round-1 RED retro_doc -> retro corrected (schema friction + AM22a routing + 0.15h) -> round-2 PASS)"
+        }
+      ]
+    },
+    {
+      "id": "J4",
+      "ws": "J",
+      "title": "charter carries measured numbers",
+      "weight": 25,
+      "status": "done",
+      "deps": [
+        "J2"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "ref": "docs_tmp/phase_20/evidence/J5/verifier_round2.json",
+          "sha": ""
+        }
+      ],
+      "notes": "charter measured-reality statement (censored failure measurement phrasing: run failed at 0.14h, critical path incomplete; completed authoring stages within line budgets) + protocol measurement appendix; gaps named as backlog bb-72h/bb-9c8/bb-ys7; commit above | J5 round-1 RED (J5-TIME-001 timing basis, J5-J4-001 wrong failed-condition ids 2-5,8,9 -> 2-5,7 with 8,9 pass) fixed at this commit; J5 round-2 rerun follows.",
+      "verifiers": [
+        {
+          "agent": "VerifyJ5Demo",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/J5/verifier_round2.json (J4-accuracy duty PASS after correction commit 3461037f)"
+        }
+      ]
+    },
+    {
+      "id": "J5",
+      "ws": "J",
+      "title": "demo verifier + outsider-rule audit",
+      "weight": 15,
+      "status": "done",
+      "deps": [
+        "J2",
+        "J3",
+        "J4"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "ref": "docs_tmp/phase_20/evidence/J5/verifier.json",
+          "sha": ""
+        },
+        {
+          "kind": "commit",
+          "ref": "3461037f",
+          "sha": "3461037f"
+        },
+        {
+          "kind": "commit",
+          "ref": "3b413aff",
+          "sha": "3b413aff"
+        }
+      ],
+      "notes": "J5 round-1 RED (2 blocking: J5-TIME-001, J5-J4-001) -> J4 corrected @ 3461037f -> round-2 PASS. J2 execution PASS separate from G-J FAIL. Gates rerun at 3b413aff (validate 0, lock exit-3 exact, claim/reverify absent exit-2), counts 103/101/182 reproduced, materials 80/80 clean, secret scan 0/46198 files. Evidence: docs_tmp/phase_20/evidence/J5/verifier.json + verifier_round2.json",
+      "verifiers": [
+        {
+          "agent": "VerifyJ5Demo",
+          "lens": "correctness",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/J5/verifier_round2.json (round-2 PASS @ 3461037f; round-1 verifier.json RED routed J5-TIME-001/J5-J4-001)"
+        }
+      ]
+    },
+    {
+      "id": "K1",
+      "ws": "K",
+      "title": "Gate G-K decision doc + countersign",
+      "weight": 20,
+      "status": "done",
+      "deps": [
+        "F6",
+        "H6",
+        "J4",
+        "J5"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "ref": "docs_tmp/phase_20/evidence/K1L1/countersign.json",
+          "sha": ""
+        },
+        {
+          "kind": "commit",
+          "ref": "eb80578c",
+          "sha": "eb80578c"
+        },
+        {
+          "kind": "commit",
+          "ref": "d7700678",
+          "sha": "d7700678"
+        }
+      ],
+      "notes": "G-K decided FAIL (conditions 1,3,4 unmet); GATE_K_DECISION.md @ eb80578c; countersigned yes (docs_tmp/phase_20/evidence/K1L1/countersign.json sha256 d7700678...); K2-K4 stay na_gated",
+      "verifiers": [
+        {
+          "agent": "CountersignKL",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/K1L1/countersign.json (countersign yes; sha256 d7700678da8e...)"
+        }
+      ]
+    },
+    {
+      "id": "L1",
+      "ws": "L",
+      "title": "Gate G-L decision doc + countersign",
+      "weight": 10,
+      "status": "done",
+      "deps": [
+        "K1"
+      ],
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "eb80578c",
+          "sha": "eb80578c"
+        }
+      ],
+      "notes": "G-L decided FAIL/defer (plan-expected); GATE_L_DECISION.md @ eb80578c; countersigned yes (same evidence file); L2-L3 stay na_gated",
+      "verifiers": [
+        {
+          "agent": "CountersignKL",
+          "lens": "anti_scope",
+          "verdict": "pass",
+          "verdict_ref": "docs_tmp/phase_20/evidence/K1L1/countersign.json (countersign yes)"
+        }
+      ]
+    },
+    {
+      "id": "K2",
+      "ws": "K",
+      "title": "migrate remaining 20 lanes to manifest+lock (5x4 batches)",
+      "weight": 100,
+      "status": "na_gated",
+      "deps": [
+        "K1"
+      ],
+      "evidence": [],
+      "notes": "conditional track; unlocks only on gate PASS",
+      "verifiers": []
+    },
+    {
+      "id": "K3",
+      "ws": "K",
+      "title": "retire legacy lane_def loader + legacy refresh mode",
+      "weight": 30,
+      "status": "na_gated",
+      "deps": [
+        "K1"
+      ],
+      "evidence": [],
+      "notes": "conditional track; unlocks only on gate PASS",
+      "verifiers": []
+    },
+    {
+      "id": "K4",
+      "ws": "K",
+      "title": "global pin-graph acyclicity audit",
+      "weight": 20,
+      "status": "na_gated",
+      "deps": [
+        "K1"
+      ],
+      "evidence": [],
+      "notes": "conditional track; unlocks only on gate PASS",
+      "verifiers": []
+    },
+    {
+      "id": "L2",
+      "ws": "L",
+      "title": "extract evidence core to libs/evidence_core",
+      "weight": 70,
+      "status": "na_gated",
+      "deps": [
+        "L1"
+      ],
+      "evidence": [],
+      "notes": "conditional track; unlocks only on gate PASS",
+      "verifiers": []
+    },
+    {
+      "id": "L3",
+      "ws": "L",
+      "title": "migrate scripts onto evidence core",
+      "weight": 30,
+      "status": "na_gated",
+      "deps": [
+        "L1"
+      ],
+      "evidence": [],
+      "notes": "conditional track; unlocks only on gate PASS",
+      "verifiers": []
+    },
+    {
+      "id": "M1",
+      "ws": "M",
+      "title": "Campaign closeout: bd closure, dolt push, final derailment audit, SPEC_AMENDMENTS finalization, final completeness critic",
+      "weight": 10,
+      "status": "todo",
+      "deps": [
+        "A8",
+        "B3",
+        "C4",
+        "D5",
+        "E5",
+        "F6",
+        "G6",
+        "H6",
+        "I4",
+        "J5",
+        "K1",
+        "L1"
+      ],
+      "evidence": [],
+      "verifiers": [],
+      "notes": ""
+    }
+  ],
+  "gates": [
+    {
+      "id": "G-D",
+      "status": "pending",
+      "decision_ref": "pending: AM23 reopen in flight (SP1-SP7); decide after integrated spine+battery green"
+    },
+    {
+      "id": "G-F",
+      "status": "pending",
+      "decision_ref": "pending: AM23 reopen in flight (F5 packet); decide after F5 gates + fixed-point green"
+    },
+    {
+      "id": "G-J",
+      "status": "fail",
+      "decision_ref": "docs_tmp/phase_20/j2_run/j2_result.json (gj fail) + J3 root_cause.json + J5 verifier_round2.json; AM22a no-rerun"
+    },
+    {
+      "id": "G-K",
+      "status": "fail",
+      "decision_ref": "docs/plans/phase_20_right_shape/GATE_K_DECISION.md @ eb80578c; countersign docs_tmp/phase_20/evidence/K1L1/countersign.json"
+    },
+    {
+      "id": "G-L",
+      "status": "fail",
+      "decision_ref": "docs/plans/phase_20_right_shape/GATE_L_DECISION.md @ eb80578c; countersign docs_tmp/phase_20/evidence/K1L1/countersign.json"
+    }
+  ],
+  "amendments": [
+    {
+      "id": "AM1",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "shared immutable interpreter for packet worktrees",
+      "owner": "campaign-wide",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM2",
+      "date": "2026-07-10",
+      "classification": "gate_wrong",
+      "what": "G1 fresh-venv bootstrap requires pip>=21.3",
+      "owner": "G-items",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM3",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "B2 wiring clause owned by D1; D1 acceptance extended",
+      "owner": "D1",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM4",
+      "date": "2026-07-10",
+      "classification": "gate_wrong",
+      "what": "bootstrap installs requirements.txt before editable package",
+      "owner": "G6 gate + any fresh-venv gate",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM5",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "H1-surfaced gaps: replay mode (H3), lane kind table (WS-F), directory digests (H3)",
+      "owner": "H3, WS-F",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM6",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "minimal records-read op authorized in both SDKs for A7",
+      "owner": "A7",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM7",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "validate_lane.py whole-doc sha256: rejection is normative; non_target_accounting five-stage tuple, H2 adds table row",
+      "owner": "WS-F F1; H2",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM8",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "manifest intent extension + acceptance shape for lossless P6.6 parity; mappings documented in compiler; machine-owned to lock/sidecar",
+      "owner": "F4",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM9",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "canonical directory-tree digest (sorted canonical-JSON preimage of path/sha256/bytes); single F4-owned helper; H3 consumes",
+      "owner": "F4; H3",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM9a",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "tree-digest domain: root-relative paths, bytewise order, canonical JSON, fail-closed symlinks/special/undecodable, realpath confinement, no exclusions",
+      "owner": "F4; H3",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM10",
+      "date": "2026-07-10",
+      "classification": "gate_wrong",
+      "what": "I2 gate -> guarding suites + schema-first suite + compilation no-regression (identity+outcome set, pinned base); part 2 REVISED: policy promise restored, tightening allowlist mechanism to be implemented in freeze gate (product_defect, owner WsBFreeze)",
+      "owner": "I2 (gate); WsBFreeze (allowlist mechanism)",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM11",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "pilot source-freeze input = tracked zip (file digest); normalizer maps archive ref to legacy dir string; zip/dir equivalence recorded as unverified limitation; other dirs stay on tree digest",
+      "owner": "F4",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM11a",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "supersedes AM11 limitation: runtime consumes deterministic extraction of pinned zip; lock records zip sha256 + extraction tree digest; --check re-verifies; legacy dir string used only as declared parity mapping",
+      "owner": "F4",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM12",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "shared dependency commit class: standalone artifact commit, owner item commit excludes those paths, consumers pick exact SHA, integration verifies patch-id/tree identity on shared paths",
+      "owner": "orchestrator+WsF3Compiler",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM13",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "F5(a) additionally depends on H2-H4; resolved by sequencing (WS-H merges first, wsF3 rebases), never whole-packet picks; lock_sha256 propagation authorized in F5 scope | helper 7462a803 landed as integration node (patch-id 648f71a0, scope 2 files, suite green) BEFORE H/F packets; both rebase onto it | helper node independently verified PASS by VerifyHelperNode @ d18dc1a6 (patch-id 648f71a0; 12 adversarial AM9/AM9a cases incl. symlink/FIFO/socket/device/unreadable/undecodable/escape all fail closed; byte-identity at b7251d23 proven)",
+      "owner": "F5+orchestrator",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM14",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "P6.6 sidecar payload_templates/substitutions promoted one-time into a manifest-referenced authored source file; compile derives sidecar from it; byte-parity proof at migration; no reverse-derivation generator",
+      "owner": "F6",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM15",
+      "date": "2026-07-10",
+      "classification": "product_defect+spec_gap",
+      "what": "universal rule: every declared manifest input resolves on clean checkout (tracked or declared deterministic derivation); F4 pilot manifest declares untracked node_gate artifact as input - fix + relock; G6 blocked honestly",
+      "owner": "F4",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM14a",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "sidecar-source retirement gates: consumer inventory, schema validation, digest pin, semantic parity, reproducible extractor",
+      "owner": "F6",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM16",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "manifest inputs restricted to clean-checkout sources; sidecar derives runtime payloads; parity-only legacy capture.inputs mapping; --check stays strict",
+      "owner": "F4+F6",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM17",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "lane_def v1/v2 mode/artifacts stage-honesty evolution authorized as tightening-with-extension; same-commit allowlist pins required; full lane census must validate; pure widenings stay unauthorized",
+      "owner": "WS-H",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM17a",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "supersedes AM17 mechanism: class-tagged allowlist entries (B2c) with ref for plan_mandated_evolution; necessity grounded in verbatim H2/H3/\u00a74.1 plan text; migration matrix + full census required",
+      "owner": "WsBFreeze(B2c)+WS-H",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM17b",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "artifacts delta disposition: required/minItems/string by derivation necessity; uniqueItems + relative pattern convention-entailed (\u00a74.4 repo-relative refs); all explicitly authorized",
+      "owner": "WS-H",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM17b-r",
+      "date": "2026-07-10",
+      "classification": "spec_gap",
+      "what": "withdraws AM17b convention clause: uniqueItems + relative pattern REVERTED from H packet, proposed as separate future packet; minItems/required/string stay by derivation necessity",
+      "owner": "WS-H",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM18",
+      "what": "lane subprocess interpreter resolution (sys.executable + validated BB_LANE_PYTHON) + run_lane input isolation (ancestor search removed)",
+      "owner": "WsH2Stages2",
+      "commits": [
+        "92791f23",
+        "b233ea21"
+      ],
+      "verified": [
+        "agent://VerifyAm18Static",
+        "agent://VerifyAm18Exec"
+      ],
+      "classification": "product_defect (clean-checkout runtime) + spec_gap (interpreter rule)"
+    },
+    {
+      "id": "AM19",
+      "note": "explicit BB_WORKSPACE_ROOT contract for workspace evidence refs (f841c1cf)"
+    },
+    {
+      "id": "AM19a",
+      "note": "AM19 deferred-activation boundary (a9e6d777)"
+    },
+    {
+      "id": "AM20",
+      "note": "honest python floor >=3.10; bootstrap interpreter selection (abfc5a86)"
+    },
+    {
+      "id": "AM20a",
+      "note": "floor decision grounding: no declared floor, 1 pre-campaign match stmt in 970 files (8f44bb9d)"
+    },
+    {
+      "id": "AM21",
+      "note": "J2 model-input substitution: gpt-5.6-luna via OpenRouter, pre-run (49a30edb)"
+    },
+    {
+      "id": "AM21a",
+      "note": "J2 effort disposition: provider default; low not exposable by pinned target; user-authorized (567dc6d2)"
+    },
+    {
+      "id": "AM22",
+      "date": "2026-07-11",
+      "classification": "spec_gap",
+      "what": "J2 protocol-gap fix packets authorized (J3-G7/G8/G9)",
+      "owner": "campaign-wide",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM22a",
+      "date": "2026-07-11",
+      "classification": "supersession",
+      "what": "AM22 fix-packet/rerun authorization withdrawn; G-J FAIL recorded; backlog issues outside campaign",
+      "owner": "campaign-wide",
+      "recorded_by": "orchestrator"
+    },
+    {
+      "id": "AM23",
+      "date": "2026-07-11",
+      "classification": "product_defect",
+      "what": "\u00a7217 post-finalization reopen of D1/D2/D3/D5+F5; SP1-SP7 + F5 completion authorized with per-packet independent review",
+      "owner": "campaign-wide",
+      "recorded_by": "orchestrator"
+    }
+  ],
+  "notes": [
+    {
+      "at": "2026-07-10T20:55:31Z",
+      "note": "Session bootstrap: branch e4/workspace-restore-20260708 @ 3b8d862f, tree clean. bd epic bb-c6n, children {\"A\": \"bb-c6n.1\", \"B\": \"bb-c6n.2\", \"C\": \"bb-c6n.3\", \"D\": \"bb-c6n.4\", \"E\": \"bb-c6n.5\", \"F\": \"bb-c6n.6\", \"G\": \"bb-c6n.7\", \"H\": \"bb-c6n.8\", \"I\": \"bb-c6n.9\", \"J\": \"bb-c6n.10\", \"K\": \"bb-c6n.11\", \"L\": \"bb-c6n.12\", \"M\": \"bb-c6n.13\"}. Wave 1 launched: A1-A5, B1-B2, C1+C3, G1, H1, I1."
+    },
+    {
+      "at": "2026-07-10T20:56:55Z",
+      "note": "AM1 recorded: shared interpreter /Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/.venv/bin/python, requirements sha256:9f19031842d0d2c2..., python: Python 3.11.15"
+    },
+    {
+      "id": "bd_tracking",
+      "note": "bd epic bb-c6n; children: .1 WS-A .2 WS-B .3 WS-C .4 WS-D .5 WS-E .6 WS-F .7 WS-G .8 WS-H .9 WS-I .10 WS-J .11 WS-K .12 WS-L .13 WS-M; closures cite accepting merge SHAs"
+    }
+  ],
+  "wave_boundaries": [
+    {
+      "wave": 2,
+      "closed_at_utc": "2026-07-10T21:49:31Z",
+      "head": "27deb570b7d7ac11a872dca90e628cfbe28c71b1",
+      "semantics": "packet implementations verified+merged only. NOT acceptance-complete: D1/D2/D3 green run URLs pending integration (push at this boundary starts PR runs; D3 needs a matched-path PR battery run). Required-check activation (admin credentials or waiver) is a D5 obligation, distinct from D3. Acceptance closure owned by D5 and K1. No points awarded for D1-D3."
+    }
+  ]
+}

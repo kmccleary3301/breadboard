@@ -1,0 +1,437 @@
+{
+  "config_id": "pi_p5_l2_extension_session_residual_v1",
+  "errors": [],
+  "exit_status": "passed",
+  "generated_at_utc": "2026-07-03T10:45:00Z",
+  "input_hashes": {
+    "agent_configs/misc/pi_p5_l2_extension_session_residual_v1.yaml": "sha256:756fdbcab340647580f6cf4a090ea566420e58387c61a83c3d7e9302987c35b1",
+    "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json": "sha256:96f3fa209d0adf13d1a49590534b1946575d531cc8b046227d1c091c431a2fde",
+    "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json": "sha256:185b925ae0bbfa60e43eb3394b11c58e063541b8591f8b475f94ab10896646a0"
+  },
+  "lane_id": "pi_p5_l2_extension_session_residual",
+  "normalized_records": {
+    "extension_hook_execution_provider": {
+      "duration_ms": 0,
+      "effects": [
+        {
+          "effect_id": "pi_p5_l2_extension_session_residual_provider_payload_patch",
+          "effect_ref": "pi.provider_payload:residualHook",
+          "effect_type": "tool_surface_patch",
+          "status": "applied"
+        }
+      ],
+      "event": {
+        "emitted_at": "2026-07-03T10:45:00Z",
+        "event_id": "pi_p5_l2_extension_session_residual_before_provider_request",
+        "event_ref": "pi.extension_event:before_provider_request",
+        "event_type": "before_provider_request",
+        "resource_refs": [
+          "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/pi_p5_residual_target_probe.mjs"
+        ]
+      },
+      "execution_id": "pi_p5_l2_extension_session_residual_before_provider_request_exec",
+      "hook_id": "pi_p5_l2_extension_session_residual_extension_before_provider_request",
+      "hook_type": "pre_model",
+      "model_provider_visibility": {
+        "model_render_ref": "pi.extension:before_provider_request",
+        "model_visible": true,
+        "provider_exchange_ref": null,
+        "provider_visible": false
+      },
+      "schema_version": "bb.extension_hook_execution.v1",
+      "started_at": "2026-07-03T10:45:00Z",
+      "status": "completed"
+    },
+    "extension_hook_execution_session": {
+      "duration_ms": 0,
+      "effects": [
+        {
+          "effect_id": "pi_p5_l2_extension_session_residual_resume_allowed",
+          "effect_ref": "pi.session_before_switch:cancel=false",
+          "effect_type": "signal",
+          "status": "applied"
+        },
+        {
+          "effect_id": "pi_p5_l2_extension_session_residual_fork_restore_policy",
+          "effect_ref": "pi.session_before_fork:skipConversationRestore=true",
+          "effect_type": "signal",
+          "status": "applied"
+        },
+        {
+          "effect_id": "pi_p5_l2_extension_session_residual_compaction_override",
+          "effect_ref": "bb.memory_compaction_plan.v1:pi_p5_l2_extension_session_residual_memory_compaction_plan",
+          "effect_type": "resource_access",
+          "status": "applied"
+        },
+        {
+          "effect_id": "pi_p5_l2_extension_session_residual_tree_summary",
+          "effect_ref": "pi.session_before_tree:summary",
+          "effect_type": "log",
+          "status": "applied"
+        }
+      ],
+      "event": {
+        "emitted_at": "2026-07-03T10:45:00Z",
+        "event_id": "pi_p5_l2_extension_session_residual_session_lifecycle",
+        "event_ref": "pi.extension_event:session_lifecycle",
+        "event_type": "session_before_switch/session_before_fork/session_before_compact/session_before_tree",
+        "resource_refs": [
+          "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+          "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+          "pi.session_file:2026-07-08T19-03-10-538Z_cc0762b2-d7cc-4189-8b8e-8e2acb0cb043.jsonl"
+        ]
+      },
+      "execution_id": "pi_p5_l2_extension_session_residual_session_lifecycle_exec",
+      "hook_id": "pi_p5_l2_extension_session_residual_extension_session_hooks",
+      "hook_type": "policy",
+      "model_provider_visibility": {
+        "model_render_ref": "pi.extension:session_lifecycle",
+        "model_visible": true,
+        "provider_exchange_ref": null,
+        "provider_visible": false
+      },
+      "schema_version": "bb.extension_hook_execution.v1",
+      "started_at": "2026-07-03T10:45:00Z",
+      "status": "completed"
+    },
+    "memory_compaction_plan": {
+      "backend_contributions": [
+        {
+          "contribution_id": "pi_session_manager",
+          "contributor_id": "pi.core.session-manager",
+          "contributor_kind": "host",
+          "hash": "sha256:b09bb98fa226cb9a20fbc116dc04c6210747fa38aacf8a50b53828bf56161472",
+          "input_refs": [
+            "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl"
+          ],
+          "output_refs": [
+            "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl#d577a010"
+          ],
+          "visibility": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": false
+          }
+        }
+      ],
+      "elided_refs": [
+        {
+          "reason": "Older branch content summarized by compaction entry.",
+          "ref": "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl#tail",
+          "ref_id": "pre_compaction_tail",
+          "replacement_ref": "bb.memory_compaction_plan.v1:pi_p5_l2_extension_session_residual_memory_compaction_plan#summary",
+          "token_estimate": 1032,
+          "visibility": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": false
+          }
+        }
+      ],
+      "generated_refs": [
+        {
+          "artifact_ref": "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl#d577a010",
+          "hash": "sha256:b09bb98fa226cb9a20fbc116dc04c6210747fa38aacf8a50b53828bf56161472",
+          "produced_by": "pi-session-manager.appendCompaction",
+          "ref_id": "compaction_summary",
+          "ref_kind": "summary"
+        }
+      ],
+      "hashes": {
+        "algorithm": "sha256",
+        "compacted_hash": "sha256:b09bb98fa226cb9a20fbc116dc04c6210747fa38aacf8a50b53828bf56161472",
+        "plan_hash": "sha256:8664fa7699e4a0a22be4a6874518183aa0849c1fa234eafb22e84b7ee025ede5",
+        "source_hash": "sha256:0ae9eab27fe553209275140361ca7e6d69bdbdc4a9a27eb895dcaf015529a6cc"
+      },
+      "model_visible_insertions": [
+        {
+          "content_hash": "sha256:b09bb98fa226cb9a20fbc116dc04c6210747fa38aacf8a50b53828bf56161472",
+          "content_ref": "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl#d577a010",
+          "insertion_id": "compaction_summary_message",
+          "position": "prefix",
+          "token_estimate": 5
+        }
+      ],
+      "plan_id": "pi_p5_l2_extension_session_residual_memory_compaction_plan",
+      "preserved_refs": [
+        {
+          "hash": "sha256:0ae9eab27fe553209275140361ca7e6d69bdbdc4a9a27eb895dcaf015529a6cc",
+          "reason": "Pi compaction keeps the first referenced entry id.",
+          "ref": "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl#2fbcd9de",
+          "ref_id": "first_kept",
+          "ref_kind": "transcript_segment",
+          "visibility": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": false
+          }
+        }
+      ],
+      "schema_version": "bb.memory_compaction_plan.v1",
+      "status": "applied",
+      "token_budget": {
+        "before_tokens": 4242,
+        "max_input_tokens": 900,
+        "model_context_window": 1000,
+        "reserved_output_tokens": 100,
+        "target_after_tokens": 3210
+      },
+      "transcript_refs": [
+        {
+          "end_seq": 4,
+          "hash": "sha256:0ae9eab27fe553209275140361ca7e6d69bdbdc4a9a27eb895dcaf015529a6cc",
+          "ref": "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+          "start_seq": 0,
+          "transcript_id": "3949f694-c323-4334-8913-261c3da7a8e8",
+          "visibility": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": false
+          }
+        }
+      ],
+      "trigger": {
+        "kind": "manual",
+        "observed_tokens": 4242,
+        "reason": "Extension session_before_compact returned a provider-free compaction result.",
+        "source_ref": "pi.extension_event:session_before_compact",
+        "threshold_tokens": 3210
+      }
+    },
+    "transcript_continuation_patch": {
+      "appended_messages": [
+        {
+          "role": "compactionSummary",
+          "summary": "extension compact summary",
+          "timestamp": 1783537390539,
+          "tokensBefore": 4242
+        }
+      ],
+      "appended_tool_events": [
+        {
+          "event": "before_provider_request",
+          "payload": {
+            "hasPayload": true
+          }
+        },
+        {
+          "event": "context",
+          "payload": {
+            "messages": 1
+          }
+        },
+        {
+          "event": "before_agent_start",
+          "payload": {
+            "prompt": "prompt residual",
+            "systemPrompt": "system prompt"
+          }
+        },
+        {
+          "event": "tool_call",
+          "payload": {
+            "toolName": "read"
+          }
+        },
+        {
+          "event": "tool_call",
+          "payload": {
+            "toolName": "write"
+          }
+        },
+        {
+          "event": "tool_result",
+          "payload": {
+            "isError": false,
+            "toolName": "read"
+          }
+        },
+        {
+          "event": "user_bash",
+          "payload": {
+            "command": "echo residual",
+            "excludeFromContext": false
+          }
+        },
+        {
+          "event": "resources_discover",
+          "payload": {
+            "cwd": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/fixture_workspace/project",
+            "reason": "startup"
+          }
+        },
+        {
+          "event": "session_before_switch",
+          "payload": {
+            "reason": "resume",
+            "targetSessionFile": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl"
+          }
+        },
+        {
+          "event": "session_before_fork",
+          "payload": {
+            "entryId": "db29e409"
+          }
+        },
+        {
+          "event": "session_before_compact",
+          "payload": {
+            "branchEntries": 0,
+            "customInstructions": "compact residual"
+          }
+        },
+        {
+          "event": "session_compact",
+          "payload": {
+            "compactionEntryType": "compaction",
+            "fromExtension": true
+          }
+        },
+        {
+          "event": "session_before_tree",
+          "payload": {
+            "targetId": "2fbcd9de",
+            "userWantsSummary": true
+          }
+        },
+        {
+          "event": "session_tree",
+          "payload": {
+            "fromExtension": true,
+            "newLeafId": "2fbcd9de",
+            "oldLeafId": "d577a010"
+          }
+        }
+      ],
+      "compaction_markers": [
+        {
+          "entry_id": "d577a010",
+          "fromHook": true,
+          "summary": "extension compact summary"
+        }
+      ],
+      "lineage_updates": [
+        {
+          "kind": "resume",
+          "ref": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-536Z_eecf53b6-77b5-4f35-9998-c81a2e10306a.jsonl"
+        },
+        {
+          "kind": "fork",
+          "parentSession": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+          "ref": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/forked/2026-07-08T19-03-10-538Z_cc0762b2-d7cc-4189-8b8e-8e2acb0cb043.jsonl"
+        },
+        {
+          "kind": "branch",
+          "parentSession": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-536Z_eecf53b6-77b5-4f35-9998-c81a2e10306a.jsonl",
+          "ref": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl"
+        }
+      ],
+      "lossiness_flags": [
+        "compaction_summary_replaces_elided_branch_tail"
+      ],
+      "patch_id": "pi_p5_l2_extension_session_residual_resume_fork_patch",
+      "post_state_digest": "sha256:0a7b9e920dd8e8a938afbf278ca96c0be5feffc4ec9689a8604fff5540a0364c",
+      "pre_state_ref": "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+      "schema_version": "bb.transcript_continuation_patch.v1"
+    },
+    "work_item_session_resume_fork": {
+      "assignee": {
+        "actor_id": "pi-session-manager",
+        "actor_kind": "agent"
+      },
+      "cancellation_policy": {
+        "cancellable_by": [
+          {
+            "actor_id": "pi-user",
+            "actor_kind": "user"
+          }
+        ],
+        "mode": "cooperative",
+        "on_cancel": "checkpoint_then_stop",
+        "propagate_to_children": false
+      },
+      "delegation": {
+        "delegated_by": {
+          "actor_id": "pi-target-probe",
+          "actor_kind": "user"
+        },
+        "delegation_ref": null,
+        "parent_task_id": null,
+        "parent_work_item_id": null
+      },
+      "identity": {
+        "correlation_id": "20260703_pi_p5_l2_extension_session_residual_capture",
+        "distributed_task_id": null,
+        "subagent_id": null,
+        "task_id": "3949f694-c323-4334-8913-261c3da7a8e8",
+        "task_kind": "workflow"
+      },
+      "input_artifact_refs": [
+        {
+          "artifact_kind": "transcript",
+          "ref": "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+          "visibility": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": false
+          }
+        }
+      ],
+      "output_artifact_refs": [
+        {
+          "artifact_kind": "checkpoint",
+          "ref": "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+          "visibility": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": false
+          }
+        },
+        {
+          "artifact_kind": "checkpoint",
+          "ref": "pi.session_file:2026-07-08T19-03-10-538Z_cc0762b2-d7cc-4189-8b8e-8e2acb0cb043.jsonl",
+          "visibility": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": false
+          }
+        }
+      ],
+      "owner": {
+        "actor_id": "pi-session-manager",
+        "actor_kind": "agent"
+      },
+      "resume_policy": {
+        "mode": "checkpoint",
+        "requires_approval": false,
+        "resume_from_ref": "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+        "wake_refs": [
+          "pi.session_before_switch:resume"
+        ]
+      },
+      "schema_version": "bb.work_item.v1",
+      "state": {
+        "checkpoint_ref": "pi.session_file:2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+        "entered_at": "2026-07-03T10:45:00Z",
+        "reason": "Pi SessionManager continued recent session, reopened branched session, and forked session file provider-free.",
+        "status": "completed"
+      },
+      "visibility": {
+        "host_visible": true,
+        "model_visible": true,
+        "provider_visible": false
+      },
+      "work_item_id": "pi_p5_l2_extension_session_residual_session_resume_fork_work"
+    }
+  },
+  "p5_items": [
+    "P5.2-residual",
+    "P5.3-residual",
+    "P5.5",
+    "P5.6"
+  ],
+  "replay_summary": "BreadBoard replay maps Pi residual extension hooks plus session resume/fork/compaction observations to hook execution, work item, memory compaction, and transcript continuation records.",
+  "run_id": "20260703_pi_p5_l2_extension_session_residual_capture",
+  "schema_version": "bb.e4.bb_replay_result.v1",
+  "warnings": []
+}

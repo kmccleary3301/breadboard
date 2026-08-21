@@ -1,0 +1,48 @@
+{
+  "acceptance_rationale": "P3.6 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/raw_capture_manifest.json#sha256:3c319b5c6307ab15b53260eecab67e86f33ae2c6d62d980b488fb9f2b5a130e2",
+  "claim_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json#sha256:bef2dea2badd286500c4f82e7abaa28bc42e2284a555ab7c84ec269b3da558db",
+  "config_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json",
+  "exclusions": [
+    "No broad Oh-My-Pi, OMP, Pi, provider-parity, UI, final-readiness, or target-customization support claim is made from this P3.6 helper/runtime lane.",
+    "No score is claimed for P5 Pi lanes or P8 final readiness from this P3 helper/runtime evidence.",
+    "No provider-authenticated, danger-full-access, network, browser, MCP, or model-inference behavior is claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_6_protocol_provider_policy_compiler_v1#sha256:bc6accb385d0d8be769c2957ea73dc292cc333cfd43a0a42012d14b0a37cdefa",
+  "generated_at_utc": "2026-07-03T07:30:00Z",
+  "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_0234bfa2b266f538#sha256:bd6418baaff97853d5985c7570806c59cbea93592d93dde5a9f5c7ec496d4e2c"
+  ],
+  "level": "P3.6",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/parity_results.json#sha256:ed47e75fbbf49a6b51b43aa2c014a1922c24deb7362b78d220e75e0e9e1cabd5",
+  "phase": "P3",
+  "points": 15,
+  "provider_model": "no-provider",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/bb_replay_result.json#sha256:e02024c641cad14e2bff6c72e59a7b795bcbaff039c185f781dc5853057c9dd7",
+  "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v1",
+  "scope": {
+    "config_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
+    "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+    "p3_item": "P3.6",
+    "phase": "P3",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "sandbox_mode": "read-only",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/secret_scan_report.json#sha256:46f7667669c1b6aa4935a84014781b80a93dd795950e46fcb68b9f01ae7618f7",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "BreadBoard P3.6 protocol/provider/policy compiler support is accepted only for local static protocol, provider-route, and operation-policy records in the named helper/runtime fixture.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "tool_id": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_protocol_provider_policy_bundle",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/prevalidation_report.json#sha256:f29ea64acc8b7dfad355bd7f1c829047fdf6fd689177c17c18163b3ab0c5ad68"
+  ]
+}

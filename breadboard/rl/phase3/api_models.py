@@ -87,6 +87,7 @@ class RLProjectionEventModel(BaseModel):
 
 
 class RLStreamEventModel(RLProjectionEventModel):
+
     sequence: int
     run_id: str
     event_type: str

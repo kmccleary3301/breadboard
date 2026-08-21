@@ -2,6 +2,16 @@ id: list_dir
 name: list_dir
 description: List files in a directory; supports optional depth for tree view
 type_id: python
+binding:
+  module: agentic_coder_prototype.tools.files
+  callable: list_dir
+aliases:
+  - list
+classification:
+  blocking: false
+  readonly: true
+  guardrail_class: read
+  guardrail_sets: [list]
 manipulations:
   - file.list
 syntax_formats_supported: [native_function_calling, json_block]

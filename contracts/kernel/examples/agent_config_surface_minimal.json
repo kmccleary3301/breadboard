@@ -1,0 +1,25 @@
+{
+  "loop": {
+    "sequence": [
+      "default"
+    ]
+  },
+  "modes": {
+    "default": {
+      "model": "test-model"
+    }
+  },
+  "providers": {
+    "default_model": "test-model",
+    "models": [
+      {
+        "adapter": "mock",
+        "id": "test-model"
+      }
+    ]
+  },
+  "version": 2,
+  "workspace": {
+    "root": "."
+  }
+}

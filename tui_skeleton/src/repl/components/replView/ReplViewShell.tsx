@@ -9,19 +9,12 @@ import { SceneOwnedRuntimeShellHost } from "./SceneOwnedRuntimeShellHost.js"
 import { TranscriptViewer } from "../TranscriptViewer.js"
 import { writeRenderTimelineDebugRecord } from "./controller/qcDebugLog.js"
 import type { ReplViewController } from "./controller/useReplViewController.js"
-import { createAltBufferSession } from "./altBufferSession.js"
+import { createAltBufferSession, type AltBufferSession } from "./altBufferSession.js"
+import { parseBooleanEnv } from "../../../utils/envBoolean.js"
 import { resolveStdoutRowDiagnostics } from "../../inkScrollbackStdout.js"
 import { useTerminalSize } from "../../hooks/useTerminalSize.js"
 import type { LiveShellOwnershipMode, LiveShellRendererHost, LiveShellSceneStrategy } from "../../../config/frontendMode.js"
 
-const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (value == null) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return fallback
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
 
 const traceShellDiagnostic = (event: Record<string, unknown>) => {
   const target = process.env.BREADBOARD_TUI_KEY_TRACE_FILE
@@ -252,13 +245,13 @@ export const ReplViewShell: React.FC<{ controller: ReplViewController }> = ({ co
     conversationCount,
   } = controller
   const transientOverlayOpen = modalStack.length > 0 && scrollbackMode && !transcriptViewerOpen
-  const altBufferViewerEnabled = useMemo(() => parseBoolEnv(process.env.BREADBOARD_TUI_ALT_BUFFER_VIEWER, false), [])
+  const altBufferViewerEnabled = useMemo(() => parseBooleanEnv(process.env.BREADBOARD_TUI_ALT_BUFFER_VIEWER, false), [])
   const transientOverlayAltBufferEnabled = useMemo(
-    () => parseBoolEnv(process.env.BREADBOARD_TUI_PRESERVED_SCROLLBACK_OVERLAY_ALT_BUFFER, false),
+    () => parseBooleanEnv(process.env.BREADBOARD_TUI_PRESERVED_SCROLLBACK_OVERLAY_ALT_BUFFER, false),
     [],
   )
   const resetOnResizeEnabled = useMemo(
-    () => parseBoolEnv(process.env.BREADBOARD_TUI_SCROLLBACK_RESET_ON_RESIZE, false),
+    () => parseBooleanEnv(process.env.BREADBOARD_TUI_SCROLLBACK_RESET_ON_RESIZE, false),
     [],
   )
   const altBufferSessionEnabled = useMemo(
@@ -284,7 +277,7 @@ export const ReplViewShell: React.FC<{ controller: ReplViewController }> = ({ co
       }),
     [altBufferViewerEnabled, transcriptViewerOpen, transientOverlayOpen, transientOverlayAltBufferEnabled, liveShellOwnershipMode, liveShellRendererHost],
   )
-  const altBufferSessionRef = useRef<ReturnType<typeof createAltBufferSession> | null>(null)
+  const altBufferSessionRef = useRef<AltBufferSession | null>(null)
   const previousSizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const managedViewportRowsRef = useRef(0)
   const previousManagedViewportResetKeyRef = useRef<string | null>(null)

@@ -1,0 +1,17 @@
+{
+  "schema_version": "bb.session_transcript.v2",
+  "session_id": "session-1",
+  "items": [
+    {
+      "kind": "message.assistant",
+      "visibility": {
+        "model_visible": true,
+        "provider_visible": true,
+        "host_visible": true,
+        "redaction_state": "none"
+      },
+      "content": "Hello.",
+      "content_schema_version": null
+    }
+  ]
+}

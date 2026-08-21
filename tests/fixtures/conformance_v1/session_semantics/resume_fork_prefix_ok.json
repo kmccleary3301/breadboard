@@ -1,0 +1,33 @@
+{
+  "base_turns": [
+    "a",
+    "b",
+    "c"
+  ],
+  "expected_output": {
+    "base_duplicate_count": 0,
+    "error_count": 0,
+    "fork_duplicate_count": 0,
+    "fork_tail_count": 2,
+    "fork_turns": 5,
+    "prefix_length": 3,
+    "resume_duplicate_count": 0,
+    "resume_tail_count": 2,
+    "resume_turns": 5,
+    "tail_overlap_count": 0
+  },
+  "fork_turns_list": [
+    "a",
+    "b",
+    "c",
+    "f",
+    "g"
+  ],
+  "resume_turns_list": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e"
+  ]
+}

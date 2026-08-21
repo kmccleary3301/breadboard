@@ -1,0 +1,52 @@
+{
+  "comparator_class": "normalized-trace-equal",
+  "contract": "bb.provider_exchange.v1",
+  "fixture_family": "provider_exchange",
+  "fixture_id": "provider_exchange_invalid_missing_exchange_id",
+  "invalid_reason": "Removes required reference_output field 'exchange_id' from bb.provider_exchange.v1.",
+  "reference_output": {
+    "request": {
+      "message_count": 1,
+      "metadata": {
+        "message_roles": [
+          "user"
+        ],
+        "route_selected": true,
+        "stream_requested": false,
+        "tool_names": [
+          "bash"
+        ],
+        "transport": "provider_runtime.invoke"
+      },
+      "model": "openai/gpt-5.2",
+      "provider_family": "openai",
+      "route_id": "primary",
+      "runtime_id": "responses_api",
+      "stream": false,
+      "tool_count": 1
+    },
+    "response": {
+      "evidence_refs": [],
+      "finish_reasons": [
+        "stop"
+      ],
+      "message_count": 1,
+      "metadata": {
+        "finish_reason_count": 1,
+        "latency_ms": 10,
+        "message_count": 1,
+        "provider_family": "openai",
+        "route_id": "primary",
+        "runtime_id": "responses_api",
+        "stream_requested": false
+      },
+      "usage": {
+        "input_tokens": 3,
+        "output_tokens": 2
+      }
+    },
+    "schema_version": "bb.provider_exchange.v1"
+  },
+  "source_fixture": "provider_exchange/reference_fixture.json",
+  "support_tier": "reference-engine"
+}

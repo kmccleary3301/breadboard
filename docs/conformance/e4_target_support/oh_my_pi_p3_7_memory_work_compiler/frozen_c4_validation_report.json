@@ -1,0 +1,47 @@
+{
+  "accepted": true,
+  "catalog_binding_pending": [],
+  "claimed_scope": {
+    "config_id": "oh_my_pi_p3_7_memory_work_compiler_v1",
+    "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+    "p3_item": "P3.7",
+    "phase": "P3",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "comparator_rerun": {
+    "assertion_count": 4,
+    "comparator_class": "deterministic_replay",
+    "comparator_id": "oh_my_pi_stored_report_replay",
+    "missing_assertion_ids": [],
+    "ok": true,
+    "registry": "breadboard_repo_integration_main_20260326/conformance/comparators/registry.json",
+    "status_mismatch_ids": [],
+    "unexpected_assertion_ids": [],
+    "value_mismatch_ids": []
+  },
+  "config_id": "oh_my_pi_p3_7_memory_work_compiler_v1",
+  "error_count": 0,
+  "errors": [],
+  "evidence_manifest": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_evidence_manifest.json",
+  "gate_errors": [],
+  "hashes": {
+    "evidence_manifest": "sha256:255519f1c99681e490c0459c21362a0ba38fb63640953bd6c515eca3df835ca2",
+    "freeze_manifest": "sha256:5eb46e9bb2601b71aef89b50e8a8f7816f8174585d7fd9a92767037374e361e7",
+    "freeze_manifest_row": "sha256:f931b518016ae1c13d2d1389ec59595b79b79e6360a979e310605421c407c9c6",
+    "support_claim": "sha256:9bc13276d9c8c8739649b6c660e15049e8fea979344ca0952ac388da1477021b"
+  },
+  "ok": true,
+  "pin_stale_count": 0,
+  "refs": {
+    "evidence_manifest": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_evidence_manifest.json",
+    "freeze_manifest": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_target_freeze_manifest.yaml",
+    "support_claim": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json"
+  },
+  "schema_version": "bb.e4.c4_chain_validation_report.v1",
+  "semantic_count": 0,
+  "support_claim": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json"
+}

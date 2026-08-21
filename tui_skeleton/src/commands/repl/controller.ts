@@ -39,8 +39,8 @@ import type {
   RewindMenuState,
   CheckpointSummary,
 } from "../../repl/types.js"
-import { ApiError } from "../../api/client.js"
-import type { ReadSessionFileOptions } from "../../api/client.js"
+import { ApiError } from "../../api/internalClient.js"
+import type { ReadSessionFileOptions } from "../../api/internalClient.js"
 import type {
   SessionEvent,
   SessionFileInfo,
@@ -469,6 +469,12 @@ export class ReplSessionController extends EventEmitter {
 
     if (emit && changed) {
       this.emitChange()
+    }
+  }
+
+  private markTodoScopesStale(): void {
+    for (const key of Object.keys(this.todoScopeStaleByKey)) {
+      this.todoScopeStaleByKey[key] = true
     }
   }
 

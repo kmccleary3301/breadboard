@@ -1,0 +1,36 @@
+{
+  "accepted": false,
+  "capture_ref": "docs_tmp/example_capture.json#sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "claim_id": "example",
+  "comparator_ref": "docs_tmp/example_comparator.json#sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "config_id": "example",
+  "evidence_manifest_ref": "docs_tmp/example_manifest.json#sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "exclusions": [
+    "example exclusion"
+  ],
+  "freeze_ref": "docs_tmp/example_freeze.json#sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "generated_at_utc": "example",
+  "lane_id": "example",
+  "ledger_row_refs": [
+    "docs_tmp/example_ledger.json#feat_example#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "provider_model": "example_model",
+  "replay_ref": "docs_tmp/example_replay.json#sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "run_id": "example_run",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v1",
+  "scope": {
+    "config_id": "example",
+    "lane_id": "example",
+    "provider_model": "example",
+    "run_id": "example",
+    "sandbox_mode": "example",
+    "target_version": "example"
+  },
+  "summary": "Minimal example support claim",
+  "target_family": "example_target",
+  "target_version": "example_target_v1",
+  "validation_refs": [
+    "docs_tmp/example_validation.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  ]
+}

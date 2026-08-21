@@ -1,3 +1,5 @@
+import importlib
+from pathlib import Path
 from types import SimpleNamespace
 
 from agentic_coder_prototype.guardrails import build_guardrail_manager
@@ -23,6 +25,15 @@ def make_manager(overrides=None):
     if overrides:
         config["guardrails"]["overrides"] = overrides
     return build_guardrail_manager(config)
+
+
+def test_guardrails_import_uses_canonical_package_not_removed_alias_module():
+    package = importlib.import_module("agentic_coder_prototype.guardrails")
+    repo_root = Path(__file__).resolve().parents[1]
+
+    assert package.__file__ is not None
+    assert Path(package.__file__).name == "__init__.py"
+    assert not (repo_root / "agentic_coder_prototype" / "guardrails.py").exists()
 
 
 def test_guardrail_manager_loads_workspace_guard():

@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.lane_validation_report.v1.schema.json",
+  "title": "BreadBoard E4 lane validation report V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "lane_id",
+    "lane_def_path",
+    "generated_at_utc",
+    "checks",
+    "ok"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.lane_validation_report.v1"
+    },
+    "lane_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "lane_def_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "prefixItems": [
+        {"$ref": "#/$defs/lane_def_schema_valid_check"},
+        {"$ref": "#/$defs/adapter_registered_check"},
+        {"$ref": "#/$defs/translator_registered_check"},
+        {"$ref": "#/$defs/comparator_registered_check"},
+        {"$ref": "#/$defs/capture_inputs_exist_check"},
+        {"$ref": "#/$defs/artifacts_root_valid_check"},
+        {"$ref": "#/$defs/inventory_row_consistent_check"},
+        {"$ref": "#/$defs/assertion_ids_unique_check"},
+        {"$ref": "#/$defs/claim_scope_complete_check"},
+        {"$ref": "#/$defs/reverify_command_executable_check"},
+        {"$ref": "#/$defs/accepted_artifact_hashes_fresh_check"},
+        {"$ref": "#/$defs/metadata_non_normative_check"}
+      ],
+      "items": false
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "then": {
+        "properties": {
+          "checks": {
+            "not": {
+              "contains": {
+                "properties": {
+                  "status": {
+                    "const": "failed"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": false
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "then": {
+        "properties": {
+          "checks": {
+            "contains": {
+              "properties": {
+                "status": {
+                  "const": "failed"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "check_status": {
+      "enum": [
+        "passed",
+        "failed",
+        "skipped"
+      ]
+    },
+    "check_detail": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lane_def_schema_valid_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "lane_def_schema_valid"}}
+    },
+    "adapter_registered_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "adapter_registered"}}
+    },
+    "translator_registered_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "translator_registered"}}
+    },
+    "comparator_registered_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "comparator_registered"}}
+    },
+    "capture_inputs_exist_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "capture_inputs_exist"}}
+    },
+    "artifacts_root_valid_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "artifacts_root_valid"}}
+    },
+    "inventory_row_consistent_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "inventory_row_consistent"}}
+    },
+    "assertion_ids_unique_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "assertion_ids_unique"}}
+    },
+    "claim_scope_complete_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "claim_scope_complete"}}
+    },
+    "reverify_command_executable_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "reverify_command_executable"}}
+    },
+    "accepted_artifact_hashes_fresh_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "accepted_artifact_hashes_fresh"}}
+    },
+    "metadata_non_normative_check": {
+      "$ref": "#/$defs/check_base",
+      "properties": {"check_id": {"const": "metadata_non_normative"}}
+    },
+    "check_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "check_id",
+        "status",
+        "detail"
+      ],
+      "properties": {
+        "check_id": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/check_status"
+        },
+        "detail": {
+          "$ref": "#/$defs/check_detail"
+        }
+      }
+    }
+  }
+}

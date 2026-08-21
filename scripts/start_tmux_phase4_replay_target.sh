@@ -208,7 +208,7 @@ if ! "${tmux_base[@]}" has-session -t "$session" &>/dev/null; then
   exit 4
 fi
 
-echo "Started tmux session '$session' ($cols×$rows) on port $port."
+echo "Started tmux session '$session' (${cols}×${rows}) on port $port."
 if [[ -n "$tmux_socket" ]]; then
   echo "tmux socket: $tmux_socket"
 fi

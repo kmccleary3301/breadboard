@@ -1,0 +1,288 @@
+---
+schema_version: bb.north_star_recovery.loop_spec.v2
+loop_id: north-star-recovery
+status: revised_pending_review
+title: North-Star Recovery Outcome Loop
+owner: human
+promotion_owner: supervisor
+repo_root: .
+base_ref: origin/main
+
+mission:
+  goal: >-
+    Ship one installed lock-first BreadBoard product journey across CLI, API,
+    Python SDK, TypeScript SDK, and TUI; make replay durable and safe; keep E4
+    internal; and publish one reverifiable exact-scope claim from a named real
+    provider run.
+  success:
+    - one_default_26_operation_product_surface
+    - e4_internal_and_off_by_default
+    - installed_lock_first_journey_across_ordinary_clients
+    - restart_safe_durable_session_and_artifact_readback
+    - deterministic_replay_with_safe_cancellation_and_publication
+    - representative_e4_capture_replay_compare_claim_reverify
+    - named_real_provider_conformance
+    - one_exact_scope_reverifiable_claim
+    - compatibility_callers_migrated_or_owned_for_removal
+  non_goals:
+    - cumulative_readiness_score
+    - universal_provider_or_harness_parity
+    - proof_of_proof_infrastructure
+    - duplicated_git_ci_or_package_ledgers
+    - mandatory_exhaustive_lane_or_target_matrix
+    - broad_runtime_or_sandbox_rewrite
+    - automatic_merge_release_or_claim_publication
+
+required_artifacts:
+  architecture: docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md
+  execution: docs/plans/north_star_recovery/EXECUTION_PLAN.md
+  worker_contracts: docs/plans/north_star_recovery/WORKER_CONTRACTS.md
+  state_view: docs/plans/north_star_recovery/STATE.json
+  goal_prompt: docs/plans/north_star_recovery/GOAL_PROMPT.txt
+
+source_authority:
+  order:
+    - current_merged_source_and_authored_contracts
+    - observed_behavior_at_current_source
+    - named_external_run_when_claim_is_external
+    - immutable_publication_boundary_artifact
+    - tracker_and_generated_state_for_coordination
+  rules:
+    state_is_not_authored_authority: true
+    hashes_prove_identity_not_behavior: true
+    scorecards_never_certify_readiness: true
+    historical_artifacts_are_immutable: true
+    exact_scope_claims_only: true
+
+tracks:
+  outcome:
+    blocking: true
+    packets: [S0, P1, P2A, P2B, P2C, R1, R2, R3, E1, I1, X1, C1]
+  assurance:
+    blocking: false
+    packets: [A1]
+    selection_requires:
+      - named_claim_or_product_promise
+      - plausible_material_risk
+      - independent_observation_at_the_owning_seam
+
+packet_graph:
+  S0: []
+  P1: [S0]
+  P2A: [P1]
+  P2B: [P1]
+  P2C: [P2A, P2B]
+  R1: [P1]
+  R2: [R1]
+  R3: [R1]
+  E1: [R2, R3, P2B]
+  I1: [P2C]
+  X1: [E1, R3]
+  C1: [I1, X1]
+  A1: [C1]
+
+packet_contract:
+  required:
+    - key
+    - outcome
+    - dependencies
+    - allowed_scope
+    - non_goals
+    - material_risk
+    - checks
+    - approvals
+  report_required:
+    - packet
+    - base
+    - head
+    - behavior
+    - checks
+    - open_risks
+    - decision
+  report_optional:
+    - external_identity
+    - stable_raw_artifact_ref
+  prohibited_report_requirements:
+    - hashes_for_mutable_source_files
+    - duplicated_full_logs
+    - aggregate_green_counters
+    - self_computed_readiness_scores
+    - reviewer_or_event_cardinality_proofs
+
+proof_ladder:
+  rungs:
+    - static
+    - focused
+    - boundary
+    - installed
+    - external
+  rules:
+    climb_only_for_named_claim_or_risk: true
+    lower_rung_local_failure_skips_external_run: true
+    broad_suite_cannot_replace_boundary_smoke: true
+    external_failure_does_not_erase_local_product_fact: true
+
+parallelism:
+  max_subagents: 4
+  max_isolated_writers: 2
+  one_writer_per_packet: true
+  require_disjoint_paths_and_dependencies: true
+  shared_checkout_writers: 0
+
+budgets:
+  implementation_attempts_max: 2
+  review_rounds_max: 2
+  unexplained_ci_reruns_max: 1
+  external_attempts_default_max: 1
+  packet_wall_clock_default: 4h
+  scope_expansion_requires_human: true
+  reset_requires_new_information: true
+
+states:
+  - ready
+  - reproducing
+  - implementing
+  - focused_verification
+  - review
+  - integration
+  - boundary_verification
+  - blocked_external
+  - blocked_budget
+  - repair
+  - done
+  - abandoned
+
+transitions:
+  - from: ready
+    event: start
+    to: reproducing
+  - from: reproducing
+    event: behavior_observed
+    to: implementing
+  - from: reproducing
+    event: external_preflight_missing
+    to: blocked_external
+  - from: implementing
+    event: focused_change_complete
+    to: focused_verification
+  - from: focused_verification
+    event: checks_failed
+    to: repair
+  - from: focused_verification
+    event: checks_passed_review_required
+    to: review
+  - from: focused_verification
+    event: checks_passed_review_not_required
+    to: integration
+  - from: review
+    event: actionable_p0_p2
+    to: repair
+  - from: review
+    event: approved
+    to: integration
+  - from: repair
+    event: attempt_available
+    to: implementing
+  - from: repair
+    event: attempt_exhausted
+    to: blocked_budget
+  - from: integration
+    event: integrated_candidate_ready
+    to: boundary_verification
+  - from: boundary_verification
+    event: behavior_passed
+    to: done
+  - from: boundary_verification
+    event: product_or_contract_red
+    to: repair
+  - from: blocked_external
+    event: external_preflight_satisfied
+    to: reproducing
+
+invalidation:
+  source_change:
+    invalidates:
+      - diff_bound_review
+      - focused_results_touching_changed_behavior
+      - integrated_candidate_results
+    does_not_invalidate:
+      - unrelated_external_fact
+      - historical_result_at_its_original_identity
+  environment_change:
+    invalidates:
+      - results_whose_claim_names_that_environment
+  claim_input_change:
+    invalidates:
+      - comparison_and_claim_reverification_for_that_input
+  rules:
+    do_not_rebuild_unaffected_evidence: true
+    do_not_refresh_state_before_every_spawn: true
+
+review_policy:
+  required_for:
+    - public_catalog_schema_or_default_change
+    - isolation_secret_filesystem_network_capability_or_approval_change
+    - authoritative_publication_change
+    - compatibility_deletion
+    - final_integration
+    - published_support_claim
+  ordinary_lenses: [specification_correctness]
+  security_lens_when_security_boundary_changes: true
+  final_security_lens: true
+  blocking_severities: [P0, P1, P2]
+  p3_is_nonblocking: true
+  implementer_cannot_self_approve: true
+
+human_gates:
+  - merge
+  - release
+  - close_or_supersede_issue_or_pr
+  - public_catalog_schema_or_default_change
+  - isolation_secret_filesystem_network_capability_or_approval_change
+  - authoritative_publication_change
+  - external_provider_or_target_spend
+  - claim_publication
+  - accept_known_p0_p2
+  - expand_scope_or_budget
+
+external_preflight:
+  required:
+    - credentials
+    - endpoint_or_target
+    - provider_model_or_runtime_identity
+    - bounded_spend_or_resource_envelope
+    - cleanup_authority
+  missing_effect: block_external_packet_only
+  fake_substitution_forbidden: true
+
+state_view:
+  path: docs/plans/north_star_recovery/STATE.json
+  generated: true
+  refresh_on:
+    - packet_done
+    - approved_merge
+    - campaign_handoff
+  stale_field_blocks_only_dependent_decision: true
+  preserve_authority_conflicts: true
+  may_not_certify_readiness: true
+
+completion:
+  require:
+    - all_outcome_packets_done
+    - relevant_ci_green
+    - one_broad_compatibility_run_green
+    - generated_clients_current
+    - required_reviews_have_no_unresolved_p0_p1
+    - exact_scope_claim_reverifies
+    - human_merge_or_release_approval
+  do_not_require:
+    - assurance_packet_done_when_no_named_risk_or_claim
+    - aggregate_score
+    - fixed_review_count
+    - exhaustive_provider_target_or_lane_matrix
+  report:
+    - product_readiness
+    - active_exact_scope_claims
+    - compatibility_removal_status
+    - external_limitations
+    - nonblocking_assurance_followups

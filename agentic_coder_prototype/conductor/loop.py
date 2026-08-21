@@ -422,6 +422,10 @@ def run_main_loop(
                             session_state.emit_ctree_snapshot(ctree_runtime_payload)
                         except Exception:
                             pass
+                        try:
+                            session_state.emit_session_transcript_snapshot(reason="compaction_boundary")
+                        except Exception:
+                            pass
                 except Exception:
                     pass
                 surface_snapshot = build_surface_snapshot(self, session_state, prompt_summary=None)

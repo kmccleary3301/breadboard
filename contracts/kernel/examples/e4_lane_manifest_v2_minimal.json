@@ -1,0 +1,15 @@
+{
+  "schema_version": "bb.e4.lane_manifest.v2",
+  "lane_id": "candidate_lane",
+  "status": "draft",
+  "execute": ["capture"],
+  "reuse": ["compare"],
+  "references": {
+    "harness": "refs/harness-0123456789abcdef.json",
+    "target": "refs/target-0123456789abcdef.json",
+    "adapter": "refs/adapter-0123456789abcdef.json",
+    "source": "refs/source-0123456789abcdef.json",
+    "comparator": "refs/comparator-0123456789abcdef.json",
+    "policy": "refs/policy-0123456789abcdef.json"
+  }
+}

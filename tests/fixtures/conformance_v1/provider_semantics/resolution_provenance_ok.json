@@ -1,0 +1,24 @@
+{
+  "cases": [
+    {
+      "expected_provenance": "p0",
+      "observed_provenance": "p0"
+    },
+    {
+      "expected_provenance": "p1",
+      "observed_provenance": "p1"
+    },
+    {
+      "expected_provenance": "p2",
+      "observed_provenance": "p2"
+    },
+    {
+      "expected_provenance": "p3",
+      "observed_provenance": "p3"
+    },
+    {
+      "expected_provenance": "p4",
+      "observed_provenance": "p4"
+    }
+  ]
+}

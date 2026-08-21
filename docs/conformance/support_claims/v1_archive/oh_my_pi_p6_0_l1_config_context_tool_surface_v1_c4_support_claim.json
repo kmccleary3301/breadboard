@@ -1,0 +1,36 @@
+{
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json#sha256:a5819fd983019702e0c5808e018a716fe98f51766e2b95cd3a986df5e5906b98",
+  "claim_id": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/comparator_report.json#sha256:fc4e84e687838b9b6eb15d9feb2ba3dce8bb25285a9e14ce584df0f9c7e8fefd",
+  "config_id": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json",
+  "exclusions": [
+    "No broad Oh-My-Pi or OMP support claim is made from this micro-lane.",
+    "No Pi, OpenCode, Claude, Codex, browser, provider parity, UI parity, or general P6/P7 support claim is made.",
+    "No write-enabled, provider-authenticated, danger-full-access, MCP, memory, or task/agent-routing support claim is made."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l1_config_context_tool_surface_v1#sha256:c6d96da67797f42b274f51fd6eb0cb7ad09ef06873083316667dee09a860c50d",
+  "generated_at_utc": "2026-07-02T23:06:29Z",
+  "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_24c075bc2a24cae0#sha256:cb362fa0e5e2bafc605ad34d3ea29c66169bf167b593416635264b74cb112a2c"
+  ],
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/parity_results.json#sha256:0c6dc5fcb57543c9cc2b17eae5ef9f5f32773a97ea23c63314691f63f84fe6a4",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/bb_replay_result.json#sha256:3f3291decc890f0e96f1515f9a43faf14eb9d94cd03b5ddffa405a7456289ef2",
+  "schema_version": "bb.e4.support_claim.v1",
+  "scope": {
+    "config_id": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
+    "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "sandbox_mode": "read-only",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/secret_scan_report.json#sha256:d1e73455492a1c6d2eab8557116c84e325022b56b2f56d996202d665e96d00b6",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "Oh-My-Pi 16.2.13 provider-free CLI config/context/tool-surface support is accepted only for the named P6.0-L1 lane, run, config, target version, and read-only sandbox scope.",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/prevalidation_report.json#sha256:dbb62cbb5af25c575ae189ed7239751497831aa28af75d5917a381e8fb2d5a2f"
+  ]
+}

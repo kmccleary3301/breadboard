@@ -1,0 +1,26 @@
+{
+  "schema_version": "bb.e4.comparator_registry.v1",
+  "registry_id": "e4_comparator_registry_example",
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "comparators": [
+    {
+      "comparator_id": "example_hash_only_legacy",
+      "entrypoint": {
+        "module": "conformance.comparators.legacy_hash_only",
+        "callable": "compare"
+      },
+      "lane_ids": [
+        "example_lane_v1"
+      ],
+      "comparator_class": "hash_only_legacy",
+      "input_roles": [
+        "comparator"
+      ],
+      "report_schema_version": "bb.e4.comparator_report.v1",
+      "metadata": {
+        "reason": "Legacy target-side comparator report is stored as an artifact; no local runnable comparator is asserted.",
+        "dated_at_utc": "2026-07-03T00:00:00Z"
+      }
+    }
+  ]
+}

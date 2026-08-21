@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from agentic_coder_prototype.compilation.tool_registry import registry_from_config
 
 
 def test_v2_loader_extends_and_validation(tmp_path, monkeypatch):
@@ -52,10 +53,30 @@ long_running:
     os.chdir(tmp_path)
     conf = load_agent_config(str(child))
     assert conf["version"] == 2
-    assert conf["tools"]["defs_dir"].endswith("implementations/tools/defs")
+    assert conf["tools"]["registry"]["paths"] == ["implementations/tools/defs"]
     assert conf["long_running"]["enabled"] is True
     assert conf["long_running"]["reset_policy"] == "fresh"
     assert conf["long_running"]["episode"]["max_steps_override"] == 5
+
+
+@pytest.mark.parametrize(
+    ("config_relpath", "expected_tool"),
+    (
+        ("agent_configs/codex_0-107-0_e4_3-6-2026.yaml", "shell_command"),
+        ("agent_configs/misc/claude_code_haiku45_c_fs_v2.yaml", "Bash"),
+    ),
+)
+def test_v2_loader_resolves_tool_registry_from_config_location(
+    config_relpath, expected_tool, tmp_path, monkeypatch
+):
+    config_path = Path(__file__).resolve().parents[1] / config_relpath
+    monkeypatch.setenv("AGENT_SCHEMA_V2_ENABLED", "1")
+    monkeypatch.chdir(tmp_path)
+
+    conf = load_agent_config(str(config_path))
+
+    assert "defs_dir" not in conf["tools"]
+    assert registry_from_config(conf).tools_by_name[expected_tool].id
 
 
 def test_v2_loader_preserves_tool_binding_and_terminal_sections(tmp_path, monkeypatch):

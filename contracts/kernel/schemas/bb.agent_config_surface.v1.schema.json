@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v1.schema.json",
+  "title": "BreadBoard Agent Config YAML Surface V1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "workspace", "providers", "modes", "loop"],
+  "properties": {
+    "version": {"const": 2},
+    "workspace": {"type": "object", "additionalProperties": true},
+    "providers": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["default_model", "models"],
+      "properties": {
+        "default_model": {"type": "string", "minLength": 1},
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["id", "adapter"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "adapter": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    "modes": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": true},
+        {"type": "array", "items": {"type": "object", "additionalProperties": true}}
+      ]
+    },
+    "loop": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["sequence"],
+      "properties": {
+        "sequence": {"type": "array", "minItems": 1}
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "rlm": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "budget": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "max_depth": {"type": "integer", "minimum": 0},
+                "max_subcalls": {"type": "integer", "minimum": 0},
+                "max_total_tokens": {"type": "integer", "minimum": 0},
+                "max_wallclock_seconds": {"type": "integer", "minimum": 0},
+                "max_total_cost_usd": {"type": "number", "minimum": 0},
+                "per_branch": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "max_subcalls": {"type": "integer", "minimum": 0},
+                    "max_total_tokens": {"type": "integer", "minimum": 0},
+                    "max_total_cost_usd": {"type": "number", "minimum": 0}
+                  }
+                }
+              }
+            },
+            "blob_store": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "max_total_bytes": {"type": "integer", "minimum": 0},
+                "max_blob_bytes": {"type": "integer", "minimum": 0},
+                "mvi_excerpt_bytes": {"type": "integer", "minimum": 0}
+              }
+            }
+          }
+        }
+      }
+    },
+    "long_running": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "policy_profile": {"enum": ["conservative", "balanced", "aggressive"]},
+        "reset_policy": {"enum": ["fresh", "compact", "continue"]},
+        "verification": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "tiers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "commands": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+                  "hard_fail": {"type": "boolean"}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

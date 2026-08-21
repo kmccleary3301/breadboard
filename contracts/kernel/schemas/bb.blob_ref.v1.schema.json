@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.blob_ref.v1.schema.json",
+  "title": "BreadBoard blob reference V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "blob_id",
+    "digest",
+    "media_type",
+    "size_bytes",
+    "storage",
+    "retention",
+    "sidecars"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.blob_ref.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "blob_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the blob.",
+      "examples": [
+        "blob_example"
+      ]
+    },
+    "digest": {
+      "$ref": "#/$defs/digest",
+      "description": "Digest record for this primitive."
+    },
+    "media_type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Media type value for this primitive."
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Size bytes value for this primitive."
+    },
+    "storage": {
+      "$ref": "#/$defs/storage",
+      "description": "Storage record for this primitive."
+    },
+    "retention": {
+      "$ref": "#/$defs/retention",
+      "description": "Retention record for this primitive."
+    },
+    "sidecars": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/sidecar",
+        "description": "One entry in sidecars."
+      },
+      "description": "Ordered sidecars entries."
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "value"
+      ],
+      "properties": {
+        "algorithm": {
+          "enum": [
+            "sha256",
+            "sha384",
+            "sha512"
+          ],
+          "description": "Allowed algorithm value."
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64,128}$",
+          "description": "Value value for this primitive."
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storage_class",
+        "uri",
+        "resolver_id",
+        "encrypted_at_rest"
+      ],
+      "properties": {
+        "storage_class": {
+          "enum": [
+            "inline",
+            "content_addressed",
+            "workspace",
+            "remote_object",
+            "external"
+          ],
+          "description": "Allowed storage class value."
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "URI for the uri.",
+          "examples": [
+            "file:///workspace/example.txt"
+          ]
+        },
+        "resolver_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Stable identifier for the resolver.",
+          "examples": [
+            "resolver_example"
+          ]
+        },
+        "encrypted_at_rest": {
+          "type": "boolean",
+          "description": "Encrypted at rest value for this primitive."
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "expires_at",
+        "legal_hold"
+      ],
+      "properties": {
+        "policy": {
+          "enum": [
+            "ephemeral",
+            "session",
+            "project",
+            "pinned",
+            "external"
+          ],
+          "description": "Allowed policy value."
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "UTC timestamp for the expires at event.",
+          "examples": [
+            "2026-07-04T00:00:00Z"
+          ]
+        },
+        "legal_hold": {
+          "type": "boolean",
+          "description": "Legal hold value for this primitive."
+        }
+      }
+    },
+    "sidecar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sidecar_id",
+        "kind",
+        "digest",
+        "media_type",
+        "size_bytes",
+        "uri"
+      ],
+      "properties": {
+        "sidecar_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the sidecar.",
+          "examples": [
+            "sidecar_example"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Kind value for this primitive."
+        },
+        "digest": {
+          "$ref": "#/$defs/digest",
+          "description": "Digest record for this primitive."
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Media type value for this primitive."
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Size bytes value for this primitive."
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "URI for the uri.",
+          "examples": [
+            "file:///workspace/example.txt"
+          ]
+        }
+      }
+    }
+  }
+}

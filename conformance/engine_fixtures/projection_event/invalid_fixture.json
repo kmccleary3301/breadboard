@@ -1,0 +1,48 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.projection_event.v1",
+  "fixture_family": "projection_event",
+  "fixture_id": "projection_event_invalid_required_contract",
+  "notes": "Invalid projection_event fixture proving schema rejection.",
+  "reference_output": {
+    "kernel_truth": true,
+    "projection_event_id": "projection_event_minimal",
+    "projection_payload_ref": {
+      "hash": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "media_type": "application/json",
+      "redaction_state": "summarized",
+      "ref": "bb.resource_ref.v1:projection_payload_001"
+    },
+    "projection_surface": {
+      "audience": "model",
+      "path": "/messages/3/content",
+      "surface_id": "surface_model_context",
+      "surface_kind": "model_context"
+    },
+    "schema_version": "bb.projection_event.v1",
+    "source": {
+      "source_hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "source_kernel_event_ref": "bb.kernel_event.v1:event_001",
+      "source_refs": [
+        "bb.tool_execution_outcome.v1:call_001"
+      ]
+    },
+    "status_frames": [
+      {
+        "emitted_at": "2026-03-08T00:00:00Z",
+        "frame_id": "projection_frame_001",
+        "message_ref": "bb.tool_model_render.v1:render_001",
+        "seq": 0,
+        "status": "projected",
+        "visible_to_host": true,
+        "visible_to_model": true
+      }
+    ],
+    "visibility": {
+      "host_visible": true,
+      "model_visible": true,
+      "provider_visible": true
+    }
+  },
+  "support_tier": "draft-shape"
+}

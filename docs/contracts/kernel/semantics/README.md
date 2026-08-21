@@ -35,6 +35,7 @@ Each dossier should answer:
 18. `projection_adapter_boundaries_v1.md`
 19. `terminal_sessions_v1.md`
 20. `tool_bindings_and_effective_surfaces_v1.md`
+21. `capability_registry_mutation_semantics_v1.md`
 
 ---
 
@@ -114,6 +115,11 @@ The first V3 tranche now adds:
 - `workspace_layer_v1.md`
 - `host_kit_v1.md`
 - `ai_sdk_transport_adapter_v1.md`
+
+
+The E4 structural-hardening tranche now adds:
+
+- `capability_registry_mutation_semantics_v1.md`
 
 ## Status snapshot
 

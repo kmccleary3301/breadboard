@@ -1,0 +1,13 @@
+{
+  "episodes_run": 1,
+  "expected": {
+    "actual_episodes_run": 1,
+    "actual_stop_reason": "total_tokens_budget_reached",
+    "actual_total_tokens_used": 120
+  },
+  "schema_version": "bb.ct.longrun.global_token_budget_stop.fixture.v1",
+  "stop_reason": "total_tokens_budget_reached",
+  "usage": {
+    "total_tokens_used": 120
+  }
+}

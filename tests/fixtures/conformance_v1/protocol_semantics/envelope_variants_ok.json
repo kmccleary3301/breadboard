@@ -1,0 +1,227 @@
+{
+  "required_variants": [
+    "kernel_event_variant_01",
+    "kernel_event_variant_02",
+    "kernel_event_variant_03",
+    "kernel_event_variant_04",
+    "kernel_event_variant_05",
+    "kernel_event_variant_06",
+    "kernel_event_variant_07",
+    "kernel_event_variant_08",
+    "kernel_event_variant_09",
+    "kernel_event_variant_10",
+    "kernel_event_variant_11",
+    "kernel_event_variant_12",
+    "kernel_event_variant_13",
+    "kernel_event_variant_14",
+    "kernel_event_variant_15",
+    "kernel_event_variant_16",
+    "kernel_event_variant_17",
+    "kernel_event_variant_18",
+    "kernel_event_variant_19",
+    "kernel_event_variant_20"
+  ],
+  "schema_version": "bb.ct.protocol.envelope_variants.fixture.v1",
+  "variants": [
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_01",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_02",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_03",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_04",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_05",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_06",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_07",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_08",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_09",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_10",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_11",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_12",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_13",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_14",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_15",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_16",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_17",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_18",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_19",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "fields": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "payload"
+      ],
+      "name": "kernel_event_variant_20",
+      "schema_version": "bb.kernel_event.v1"
+    }
+  ]
+}

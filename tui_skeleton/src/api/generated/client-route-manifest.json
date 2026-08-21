@@ -1,0 +1,110 @@
+{
+  "schema_version": "bb.tui_api_client_routes.v1",
+  "generated_from": "docs/contracts/cli_bridge/openapi.json + src/api/client.ts wrapper surface",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/v1/artifacts"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/{}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/artifacts/{}/verify"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/harness-locks/{}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/harnesses"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/harnesses"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/harnesses/{}"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/harnesses/{}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/harnesses/{}/explain"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/harnesses/{}/lock"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/harnesses/{}/validate"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/integrations"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/integrations/{}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/integrations/{}/probe"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/schemas"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions/{}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/sessions/{}/approve"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions/{}/artifacts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/sessions/{}/cancel"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions/{}/events"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/sessions/{}/input"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/sessions/{}/resume"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/system"
+    }
+  ]
+}

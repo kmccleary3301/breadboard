@@ -1,0 +1,53 @@
+{
+  "acceptance_rationale": "The governed claim is limited to exact gallery stdout projections for read success, bash error, and report_tool_issue success. The packet contains raw command reports, replay normalization into bb.projection_event.v1 with kernel_truth=false, comparator pass, parity result, packet-local secret scan, validator-output hash, and ledger-row freshness.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:164a4586494a042acf11db83936ab8ad47defa158f3d3cc36e0a3aab9fbefe81",
+  "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:91ebd75a3fdbfcd2fa78e425ac40dbef1d330099276965e26529066427f2f04e",
+  "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+  "exclusions": [
+    "No broad Oh-My-Pi or OMP support claim is made from this micro-lane.",
+    "No Pi, Opencode, OpenCode, Codex, Claude, provider-parity, memory, task/agent-routing, browser automation, screenshot, or general P6/P7 support claim is made.",
+    "No write-enabled, provider-authenticated, or danger-full-access sandbox behavior is claimed.",
+    "No claim is made for provider endpoints, web search execution, external SaaS APIs, model inference, or live transcript/session behavior.",
+    "No kernel-truth state mutation is claimed; the BreadBoard primitive records host-visible projection events with kernel_truth=false.",
+    "No memory backend, compaction, Hindsight, Mnemopi, task, job, or subagent semantics are claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l6_tui_projection_v1#sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0",
+  "generated_at_utc": "2026-07-04T10:57:54Z",
+  "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_55bf4adc8ee7717b#sha256:2f45f4c7ff837e298c747e238a10fd0c1136389a32b13e4557f2bcb7b0e0846b"
+  ],
+  "level": "P6.0-L6",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json#sha256:5bc7f87f0d0464ac5ab74675157625a88e458aef8fe25f540fa6fa61dc407598",
+  "phase": "P6",
+  "points": 20,
+  "provider_model": "no-provider",
+  "raw_source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:a470ef7a14da96f8381ea10ac272eb68ff44bc15ceb516a20f43e4e414d8f855",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json#sha256:fb59e298b72a2cdd86e37b5c9e62058b8dcfb5492f6bacf9f5d4d0a79863ad26",
+  "run_id": "20260702_oh_my_pi_p6_0_l6_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v1",
+  "scope": {
+    "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+    "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+    "plain": true,
+    "projection_boundary": "host-visible projection-only; kernel_truth=false",
+    "provider_model": "no-provider",
+    "run_id": "20260702_oh_my_pi_p6_0_l6_capture",
+    "sandbox_mode": "read-only",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+    "terminal_width": 100
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json#sha256:10d5dc0c166d84550f231c67d40a1553925d178f3aafcea7a3bea3ee479c5767",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "Oh-My-Pi 16.2.13 provider-free `omp gallery --plain` host TUI/tool-surface projection is accepted only for the named P6.0-L6 lane, run, config, target version, fixed terminal width, selected renderer lifecycle states, and read-only projection-only scope.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "tool_id": "oh_my_pi_p6_0_l6_tui_projection",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json#sha256:c8c48e4caaea3f3e9d1b6d788e0159bdd49494f4a6bc758c22269309c63629ce"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "config_path": "agent_configs/example.yaml",
+  "config_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "diagnostics": [],
+  "explanation_id": "example-config-explanation",
+  "fields": [
+    {
+      "classification": "operational",
+      "consumer_ref": "agentic_coder_prototype.compilation.v2_loader",
+      "path": "providers.default_model",
+      "source_layer": "inline"
+    }
+  ],
+  "generated_at_utc": "2026-07-09T00:00:00Z",
+  "ok": true,
+  "resolved_summary": {
+    "extends_chain": [],
+    "mode_ids": [
+      "default"
+    ],
+    "prompt_files": [
+      "agent_configs/prompts/system.md"
+    ],
+    "provider_default_model": "openai/example",
+    "tool_count": 1
+  },
+  "schema_version": "bb.config_explanation.v1",
+  "surface_schema_version": "bb.agent_config_surface.v1"
+}

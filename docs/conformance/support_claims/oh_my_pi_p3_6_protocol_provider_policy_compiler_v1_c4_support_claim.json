@@ -1,0 +1,124 @@
+{
+  "acceptance_rationale": "P3.6 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/raw_capture_manifest.json#sha256:25890e81ab15eb4f70fa8e8e282895a71df6e2e8b6d8f0e0bc6f4423bdf24e7c",
+  "catalog_binding": {
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 17,
+    "segment_hash": "sha256:99bd5699dbbac26d7ef2dafe11b895751a67234ddb47cd54911f9baae5889088",
+    "segment_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+    "shared_segment_hash": "sha256:68f713e106b021a5a01aa372a484c13bf2136638a9013a1fe77bf08d5c75f654"
+  },
+  "claim_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "command_network_policy_schema_validation_passed",
+        "comparator_assertion_ids": [
+          "schema_validation_passed"
+        ],
+        "description": "schema validation passed"
+      },
+      {
+        "behavior_id": "command_network_policy_primary_primitive_present",
+        "comparator_assertion_ids": [
+          "primary_primitive_present"
+        ],
+        "description": "primary primitive present"
+      },
+      {
+        "behavior_id": "command_network_policy_fallback_selected_index",
+        "comparator_assertion_ids": [
+          "fallback_selected_index"
+        ],
+        "description": "fallback selected index"
+      },
+      {
+        "behavior_id": "command_network_policy_policy_feeds_route",
+        "comparator_assertion_ids": [
+          "policy_feeds_route"
+        ],
+        "description": "policy feeds route"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json#sha256:0579d31e4453807c6a63d99f9da701654dee31fd164acbb1aec227ecab02bb48",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "final_readiness",
+      "mcp",
+      "model_inference",
+      "network",
+      "provider_authenticated",
+      "ui_parity"
+    ],
+    "excluded_families": [
+      "all_other_families",
+      "pi"
+    ]
+  },
+  "exclusions": [
+    "No broad Oh-My-Pi, OMP, Pi, provider-parity, UI, final-readiness, or target-customization support claim is made from this P3.6 helper/runtime lane.",
+    "No score is claimed for P5 Pi lanes or P8 final readiness from this P3 helper/runtime evidence.",
+    "No provider-authenticated, danger-full-access, network, browser, MCP, or model-inference behavior is claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_6_protocol_provider_policy_compiler_v1#sha256:1e66b792acfc50102e685354f44f4e87fb5a5f111ff4937bde93eec6873efc28",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "non_target_accounting",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_0234bfa2b266f538#sha256:a4dcc1ba6f392e65a7c2f30d33d75015482510d2ed67601ba8892116517347c3"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v4",
+    "legacy_scope": {
+      "p3_item": "P3.6",
+      "phase": "P3"
+    },
+    "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/parity_results.json#sha256:6a71d2c922cdcdb87722301a626e6757b864c1fa86c02dc7aa9f3f5c5d6505c0",
+  "phase_label": "P3",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/bb_replay_result.json#sha256:fd9e28b43dae49b8fb7766f1b2429e0d008c2637f7b0197d748286786a5c3156",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p36_protocol_provider_policy_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "schema_version": "bb.e4.support_claim.v4",
+  "scope": {
+    "config_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
+    "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/secret_scan_report.json#sha256:46f7667669c1b6aa4935a84014781b80a93dd795950e46fcb68b9f01ae7618f7",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "BreadBoard P3.6 protocol/provider/policy compiler support is accepted only for local static protocol, provider-route, and operation-policy records in the named helper/runtime fixture.",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/prevalidation_report.json#sha256:f29ea64acc8b7dfad355bd7f1c829047fdf6fd689177c17c18163b3ab0c5ad68"
+  ]
+}

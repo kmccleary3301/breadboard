@@ -1,0 +1,24 @@
+{
+  "comparator_class": "normalized-trace-equal",
+  "contract": "bb.permission.v1",
+  "fixture_family": "permission",
+  "fixture_id": "permission_invalid_missing_request_id",
+  "invalid_reason": "Removes required reference_output field 'request_id' from bb.permission.v1.",
+  "reference_output": {
+    "audit_refs": [],
+    "category": "shell",
+    "decision": "always",
+    "decision_source": "user_prompt",
+    "metadata": {
+      "summary": "npm install pkg",
+      "tool": "bash"
+    },
+    "pattern": "npm install *",
+    "reason": "reference fixture",
+    "requires_host_interaction": true,
+    "schema_version": "bb.permission.v1",
+    "scope": "workspace"
+  },
+  "source_fixture": "permission/reference_fixture.json",
+  "support_tier": "reference-engine"
+}

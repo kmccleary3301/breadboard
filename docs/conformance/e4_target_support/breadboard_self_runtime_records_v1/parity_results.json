@@ -1,0 +1,7 @@
+{
+  "assertion_count": 6,
+  "generated_at_utc": "2026-07-07T03:00:00Z",
+  "lane_id": "breadboard_self_runtime_records_v1",
+  "ok": true,
+  "schema_version": "bb.e4.parity_results.v1"
+}

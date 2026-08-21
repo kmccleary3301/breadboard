@@ -1,0 +1,33 @@
+{
+  "artifacts_root": "artifacts/e4/example_lane",
+  "capture": {
+    "inputs": [],
+    "strategy": "runtime_records"
+  },
+  "claim": {
+    "exclusions": [],
+    "scope": {
+      "behaviors": [
+        "example_behavior"
+      ]
+    }
+  },
+  "compare": {
+    "comparator": "exact"
+  },
+  "config_id": "example_lane",
+  "kind": "probe",
+  "lane_id": "example_lane",
+  "normalize": {
+    "mode": "identity"
+  },
+  "replay": {
+    "comparator_class": "exact",
+    "mode": "stored"
+  },
+  "schema_version": "bb.e4.lane_manifest.v1",
+  "target": {
+    "family": "example_target",
+    "version": "1"
+  }
+}

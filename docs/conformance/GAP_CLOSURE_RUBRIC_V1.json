@@ -172,7 +172,7 @@
       "priority_cluster": "P2",
       "priority_score": 3.9,
       "requires_live_evidence": true,
-      "required_ct_ids": "CT-EXT-005/006/012/014",
+      "required_ct_ids": "CT-EXT-005;CT-EXT-006;CT-EXT-012;CT-EXT-014",
       "required_live_ct_ids": "CT-EXT-006;CT-EXT-012;CT-EXT-014",
       "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
     },
@@ -289,7 +289,7 @@
       "priority_cluster": "P2",
       "priority_score": 3.85,
       "requires_live_evidence": true,
-      "required_ct_ids": "CT-PROTO-005/006/007/010/011/014/015/016 + CT-TOOL/SESSION/PROJ/PROVIDER checker lanes",
+      "required_ct_ids": "CT-PROTO-005;CT-PROTO-006;CT-PROTO-007;CT-PROTO-010;CT-PROTO-011;CT-PROTO-014;CT-PROTO-015;CT-PROTO-016",
       "required_live_ct_ids": "CT-PROTO-010;CT-PROTO-011;CT-PROTO-014;CT-PROTO-015;CT-PROTO-016",
       "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
     }

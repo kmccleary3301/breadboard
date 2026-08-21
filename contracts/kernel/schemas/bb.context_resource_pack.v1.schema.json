@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.context_resource_pack.v1.schema.json",
+  "title": "BreadBoard context resource pack",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "pack_id",
+    "sources",
+    "render_order",
+    "render_plan_hash",
+    "model_visibility",
+    "host_visibility"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.context_resource_pack.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "pack_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the pack.",
+      "examples": [
+        "pack_example"
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/source",
+        "description": "One entry in sources."
+      },
+      "description": "Ordered sources entries."
+    },
+    "render_order": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in render order."
+      },
+      "description": "Ordered render order entries."
+    },
+    "render_plan_hash": {
+      "$ref": "#/$defs/sha256_hash",
+      "description": "SHA-256 digest for the render plan hash.",
+      "examples": [
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "model_visibility": {
+      "$ref": "#/$defs/model_visibility",
+      "description": "Model visibility record for this primitive."
+    },
+    "host_visibility": {
+      "$ref": "#/$defs/host_visibility",
+      "description": "Host visibility record for this primitive."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "source_id",
+        "source_kind",
+        "uri",
+        "content_hash",
+        "order",
+        "model_visible",
+        "host_visible"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the source.",
+          "examples": [
+            "source_example"
+          ]
+        },
+        "source_kind": {
+          "enum": [
+            "system-prompt",
+            "developer-instruction",
+            "user-input",
+            "project-file",
+            "workspace-state",
+            "memory",
+            "tool-output",
+            "mcp-resource",
+            "policy",
+            "config"
+          ],
+          "description": "Allowed source kind value."
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "URI for the uri.",
+          "examples": [
+            "file:///workspace/example.txt"
+          ]
+        },
+        "content_hash": {
+          "$ref": "#/$defs/sha256_hash",
+          "description": "SHA-256 digest for the content hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Numeric value for an order."
+        },
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "host_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a host visible state."
+        }
+      },
+      "additionalProperties": false
+    },
+    "model_visibility": {
+      "type": "object",
+      "required": [
+        "visible_source_ids",
+        "redacted_source_ids"
+      ],
+      "properties": {
+        "visible_source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in visible source ids.",
+            "examples": [
+              [
+                "visible_source_example"
+              ]
+            ]
+          },
+          "description": "Stable identifiers for the visible source entries.",
+          "examples": [
+            [
+              "visible_source_example"
+            ]
+          ]
+        },
+        "redacted_source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in redacted source ids.",
+            "examples": [
+              [
+                "redacted_source_example"
+              ]
+            ]
+          },
+          "description": "Stable identifiers for the redacted source entries.",
+          "examples": [
+            [
+              "redacted_source_example"
+            ]
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "host_visibility": {
+      "type": "object",
+      "required": [
+        "visible_source_ids",
+        "hidden_source_ids"
+      ],
+      "properties": {
+        "visible_source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in visible source ids.",
+            "examples": [
+              [
+                "visible_source_example"
+              ]
+            ]
+          },
+          "description": "Stable identifiers for the visible source entries.",
+          "examples": [
+            [
+              "visible_source_example"
+            ]
+          ]
+        },
+        "hidden_source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in hidden source ids.",
+            "examples": [
+              [
+                "hidden_source_example"
+              ]
+            ]
+          },
+          "description": "Stable identifiers for the hidden source entries.",
+          "examples": [
+            [
+              "hidden_source_example"
+            ]
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

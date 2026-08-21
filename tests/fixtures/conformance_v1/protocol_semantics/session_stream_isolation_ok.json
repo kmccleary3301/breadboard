@@ -1,0 +1,111 @@
+{
+  "events": [
+    {
+      "cursor": 1,
+      "kind": "status",
+      "origin_session_id": "sess_fixture",
+      "session_id": "sess_fixture",
+      "stream_id": "primary",
+      "type": "session.stream.open"
+    },
+    {
+      "cursor": 2,
+      "kind": "delta",
+      "origin_session_id": "sess_fixture",
+      "session_id": "sess_fixture",
+      "stream_id": "primary",
+      "type": "session.stream.delta"
+    },
+    {
+      "cursor": 3,
+      "kind": "delta",
+      "origin_session_id": "sess_fixture",
+      "session_id": "sess_fixture",
+      "stream_id": "primary",
+      "type": "session.stream.delta"
+    },
+    {
+      "cursor": 4,
+      "kind": "delta",
+      "origin_session_id": "sess_fixture",
+      "session_id": "sess_fixture",
+      "stream_id": "primary",
+      "type": "session.stream.delta"
+    },
+    {
+      "cursor": 5,
+      "kind": "delta",
+      "origin_session_id": "sess_fixture",
+      "session_id": "sess_fixture",
+      "stream_id": "primary",
+      "type": "session.stream.delta"
+    },
+    {
+      "cursor": 6,
+      "kind": "delta",
+      "origin_session_id": "sess_fixture",
+      "session_id": "sess_fixture",
+      "stream_id": "primary",
+      "type": "session.stream.delta"
+    },
+    {
+      "cursor": 7,
+      "kind": "delta",
+      "origin_session_id": "sess_fixture",
+      "session_id": "sess_fixture",
+      "stream_id": "primary",
+      "type": "session.stream.delta"
+    },
+    {
+      "cursor": 8,
+      "kind": "delta",
+      "origin_session_id": "sess_fixture",
+      "session_id": "sess_fixture",
+      "stream_id": "primary",
+      "type": "session.stream.delta"
+    },
+    {
+      "cursor": 9,
+      "kind": "delta",
+      "origin_session_id": "sess_fixture",
+      "session_id": "sess_fixture",
+      "stream_id": "primary",
+      "type": "session.stream.delta"
+    },
+    {
+      "cursor": 10,
+      "kind": "done",
+      "origin_session_id": "sess_fixture",
+      "session_id": "sess_fixture",
+      "stream_id": "primary",
+      "type": "session.stream.close"
+    }
+  ],
+  "expected": {
+    "allowed_kinds": [
+      "status",
+      "delta",
+      "thinking",
+      "done",
+      "error"
+    ],
+    "max_cursor_step": 1,
+    "max_unique_sessions": 1,
+    "max_unique_streams": 1,
+    "min_event_count": 10,
+    "required_event_type_counts": {
+      "session.stream.delta": 8
+    },
+    "required_event_types": [
+      "session.stream.open",
+      "session.stream.close"
+    ],
+    "session_id": "sess_fixture",
+    "stream_id": "primary",
+    "terminal_kinds": [
+      "done",
+      "error"
+    ]
+  },
+  "schema_version": "protocol_session_stream_isolation_v1"
+}

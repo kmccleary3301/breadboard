@@ -1,4 +1,5 @@
 import type { RuntimeBehaviorFlags } from "../../repl/types.js"
+import { parseOptionalBooleanEnv } from "../../utils/envBoolean.js"
 
 export interface SubagentUiPolicy {
   readonly v2Enabled: boolean
@@ -13,17 +14,6 @@ export interface SubagentUiPolicy {
   readonly toastErrorTtlMs: number
 }
 
-const BOOL_TRUE = new Set(["1", "true", "yes", "on"])
-const BOOL_FALSE = new Set(["0", "false", "no", "off"])
-
-const parseBoolEnv = (value: string | undefined): boolean | null => {
-  if (value == null) return null
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return null
-  if (BOOL_TRUE.has(normalized)) return true
-  if (BOOL_FALSE.has(normalized)) return false
-  return null
-}
 
 const parseBoundedIntEnv = (value: string | undefined, fallback: number, min: number, max: number): number => {
   if (!value?.trim()) return fallback
@@ -39,7 +29,7 @@ export const resolveSubagentUiPolicy = (
   env: NodeJS.ProcessEnv = process.env,
 ): SubagentUiPolicy => {
   const v2Enabled = flags.subagentWorkGraphEnabled
-  const toolRailOverride = parseBoolEnv(env.BREADBOARD_SUBAGENTS_TASK_EVENTS_TOOL_RAIL)
+  const toolRailOverride = parseOptionalBooleanEnv(env.BREADBOARD_SUBAGENTS_TASK_EVENTS_TOOL_RAIL)
   const routeTaskEventsToToolRail = toolRailOverride ?? !v2Enabled
   const toastsEnabled = flags.subagentToastsEnabled
 

@@ -1,0 +1,31 @@
+{
+  "argv": [
+    "npx",
+    "-y",
+    "@oh-my-pi/pi-coding-agent@16.2.13",
+    "--version"
+  ],
+  "cwd": "breadboard_repo_integration_main_20260326",
+  "description": "Record the exact npm package runner version used for P6.6 capture.",
+  "ended_at_utc": "2026-07-03T02:54:02Z",
+  "env_summary": {
+    "CI": "1",
+    "COLUMNS": "100",
+    "NO_COLOR": "1",
+    "breadboard_prefixed_env_keys_present": [],
+    "present_provider_env_keys": [],
+    "provider_env_present": false
+  },
+  "exit_code": 0,
+  "generated_at_utc": "2026-07-03T02:54:01Z",
+  "name": "omp_version_capture",
+  "report_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.command_report.json",
+  "schema_version": "bb.e4.command_report.v1",
+  "session_dir": null,
+  "started_at_utc": "2026-07-03T02:54:01Z",
+  "stderr_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.stderr.txt",
+  "stderr_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stdout_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.stdout.txt",
+  "stdout_sha256": "sha256:76fbc537e289fa5f2befe8a3581a5cae08f76f34100a2da01655cf96a1cb36f7",
+  "target_cwd": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_fixture_workspace"
+}

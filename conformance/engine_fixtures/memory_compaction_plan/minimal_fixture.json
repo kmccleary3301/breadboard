@@ -1,0 +1,107 @@
+{
+  "fixture_family": "memory_compaction_plan",
+  "fixture_id": "memory_compaction_plan_minimal",
+  "comparator_class": "shape-equal",
+  "support_tier": "draft-shape",
+  "contract": "bb.memory_compaction_plan.v1",
+  "reference_output": {
+    "schema_version": "bb.memory_compaction_plan.v1",
+    "plan_id": "memory_plan_minimal",
+    "transcript_refs": [
+      {
+        "transcript_id": "transcript_001",
+        "ref": "bb.session_transcript.v1:transcript_001#turns:0-12",
+        "start_seq": 0,
+        "end_seq": 12,
+        "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "visibility": {
+          "model_visible": true,
+          "provider_visible": true,
+          "host_visible": true
+        }
+      }
+    ],
+    "trigger": {
+      "kind": "token_budget_pressure",
+      "source_ref": "bb.kernel_event.v1:event_token_budget_001",
+      "reason": "Projected context use exceeded the configured input budget.",
+      "observed_tokens": 126000,
+      "threshold_tokens": 120000
+    },
+    "token_budget": {
+      "model_context_window": 128000,
+      "max_input_tokens": 120000,
+      "reserved_output_tokens": 8000,
+      "before_tokens": 126000,
+      "target_after_tokens": 64000
+    },
+    "preserved_refs": [
+      {
+        "ref_id": "preserve_system_directive",
+        "ref_kind": "policy",
+        "ref": "bb.session_transcript.v1:transcript_001#turn:0",
+        "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "reason": "System directives remain authoritative after compaction.",
+        "visibility": {
+          "model_visible": true,
+          "provider_visible": true,
+          "host_visible": true
+        }
+      }
+    ],
+    "elided_refs": [
+      {
+        "ref_id": "elide_terminal_noise",
+        "ref": "bb.session_transcript.v1:transcript_001#turns:4-8",
+        "reason": "Verbose terminal output is represented by the generated summary.",
+        "token_estimate": 42000,
+        "replacement_ref": "bb.resource_ref.v1:summary_terminal_noise",
+        "visibility": {
+          "model_visible": false,
+          "provider_visible": false,
+          "host_visible": true
+        }
+      }
+    ],
+    "generated_refs": [
+      {
+        "ref_id": "generated_summary_001",
+        "ref_kind": "summary",
+        "artifact_ref": "bb.resource_ref.v1:summary_terminal_noise",
+        "hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "produced_by": "compactor.local"
+      }
+    ],
+    "model_visible_insertions": [
+      {
+        "insertion_id": "insert_summary_001",
+        "position": "system_context",
+        "content_ref": "bb.resource_ref.v1:summary_terminal_noise",
+        "content_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "token_estimate": 1200
+      }
+    ],
+    "backend_contributions": [
+      {
+        "contribution_id": "backend_compactor_001",
+        "contributor_kind": "compactor",
+        "contributor_id": "compactor.local",
+        "input_refs": ["bb.session_transcript.v1:transcript_001#turns:4-8"],
+        "output_refs": ["bb.resource_ref.v1:summary_terminal_noise"],
+        "visibility": {
+          "model_visible": false,
+          "provider_visible": false,
+          "host_visible": true
+        },
+        "hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    ],
+    "hashes": {
+      "algorithm": "sha256",
+      "source_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "plan_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "compacted_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "status": "draft"
+  }
+}

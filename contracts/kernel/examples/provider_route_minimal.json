@@ -1,0 +1,63 @@
+{
+  "schema_version": "bb.provider_route.v1",
+  "route_id": "route_primary_openai_gpt5",
+  "selector": {
+    "selector_id": "selector_default_chat",
+    "model_selector": "gpt-5",
+    "provider_selector": "openai",
+    "source": "config",
+    "model_visible": true,
+    "provider_visible": false
+  },
+  "role": "primary",
+  "thinking": {
+    "enabled": true,
+    "budget_ref": "budget://thinking/default",
+    "effort": "medium",
+    "model_visible": false,
+    "provider_visible": true
+  },
+  "route_suffix": "/v1/responses",
+  "resolved": {
+    "provider_id": "provider_openai_primary",
+    "provider_family": "openai",
+    "runtime_id": "openai_responses",
+    "model": "gpt-5",
+    "model_revision": null
+  },
+  "base_url_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "auth_method_ref": "auth-method://openai/api-key-default",
+  "fallback_chain": [
+    {
+      "fallback_index": 0,
+      "route_ref": "route_primary_openai_gpt5",
+      "provider_id": "provider_openai_primary",
+      "model": "gpt-5",
+      "eligible": true,
+      "reason": "selected"
+    },
+    {
+      "fallback_index": 1,
+      "route_ref": "route_fallback_anthropic_sonnet",
+      "provider_id": "provider_anthropic_secondary",
+      "model": "claude-sonnet-4-5",
+      "eligible": true,
+      "reason": "capacity_fallback"
+    }
+  ],
+  "selected_fallback_index": 0,
+  "service_tier": "default",
+  "cost_usage_refs": {
+    "estimate_ref": "usage-estimate://route_primary_openai_gpt5",
+    "usage_ref": "usage://exchange_px_001",
+    "billing_scope_ref": "billing-scope://workspace-default"
+  },
+  "provider_exchange_refs": ["provider_exchange:px_001"],
+  "visibility": {
+    "model_visible_fields": ["selector.model_selector", "role", "service_tier"],
+    "provider_visible_fields": ["resolved.model", "thinking.effort", "route_suffix"],
+    "host_only_fields": ["base_url_hash", "auth_method_ref"],
+    "redacted_fields": ["auth_material"]
+  },
+  "evidence_refs": ["evidence://routing/primary-selection"]
+}

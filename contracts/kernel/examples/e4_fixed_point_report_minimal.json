@@ -1,0 +1,30 @@
+{
+  "schema_version": "bb.e4.fixed_point_report.v1",
+  "report_id": "e4_regen_fixed_point",
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "watch_set_size": 0,
+  "first_pass_snapshot_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "second_pass_snapshot_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "byte_identical": true,
+  "changed_paths": [],
+  "score_authority": {
+    "source_ref": "docs_tmp/phase_16/BB_ER_PROGRESS.json#totals",
+    "source_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "source_observed": {
+      "points_total": 1000,
+      "points_done": 1000,
+      "points_blocked": 0
+    },
+    "expected": {
+      "points": 1000,
+      "target_claims": 10,
+      "non_target_claims": 8
+    },
+    "observed": {
+      "points": 1000,
+      "target_claims": 10,
+      "non_target_claims": 8
+    },
+    "ok": true
+  }
+}

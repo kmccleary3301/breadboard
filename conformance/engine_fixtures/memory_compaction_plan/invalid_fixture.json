@@ -1,0 +1,99 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.memory_compaction_plan.v1",
+  "fixture_family": "memory_compaction_plan",
+  "fixture_id": "memory_compaction_plan_invalid_required_contract",
+  "notes": "Invalid memory_compaction_plan fixture proving schema rejection.",
+  "reference_output": {
+    "backend_contributions": [
+      {
+        "contribution_id": "backend_compactor_001",
+        "contributor_id": "compactor.local",
+        "contributor_kind": "compactor",
+        "hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "input_refs": [
+          "bb.session_transcript.v1:transcript_001#turns:4-8"
+        ],
+        "output_refs": [
+          "bb.resource_ref.v1:summary_terminal_noise"
+        ],
+        "visibility": {
+          "host_visible": true,
+          "model_visible": false,
+          "provider_visible": false
+        }
+      }
+    ],
+    "elided_refs": [
+      {
+        "reason": "Verbose terminal output is represented by the generated summary.",
+        "ref": "bb.session_transcript.v1:transcript_001#turns:4-8",
+        "ref_id": "elide_terminal_noise",
+        "replacement_ref": "bb.resource_ref.v1:summary_terminal_noise",
+        "token_estimate": 42000,
+        "visibility": {
+          "host_visible": true,
+          "model_visible": false,
+          "provider_visible": false
+        }
+      }
+    ],
+    "generated_refs": [
+      {
+        "artifact_ref": "bb.resource_ref.v1:summary_terminal_noise",
+        "hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "produced_by": "compactor.local",
+        "ref_id": "generated_summary_001",
+        "ref_kind": "summary"
+      }
+    ],
+    "hashes": {
+      "algorithm": "sha256",
+      "compacted_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "plan_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "source_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    "model_visible_insertions": [
+      {
+        "content_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "content_ref": "bb.resource_ref.v1:summary_terminal_noise",
+        "insertion_id": "insert_summary_001",
+        "position": "system_context",
+        "token_estimate": 1200
+      }
+    ],
+    "plan_id": "memory_plan_minimal",
+    "preserved_refs": [
+      {
+        "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "reason": "System directives remain authoritative after compaction.",
+        "ref": "bb.session_transcript.v1:transcript_001#turn:0",
+        "ref_id": "preserve_system_directive",
+        "ref_kind": "policy",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "schema_version": "bb.memory_compaction_plan.v1",
+    "status": "draft",
+    "token_budget": {
+      "before_tokens": 126000,
+      "max_input_tokens": 120000,
+      "model_context_window": 128000,
+      "reserved_output_tokens": 8000,
+      "target_after_tokens": 64000
+    },
+    "transcript_refs": [],
+    "trigger": {
+      "kind": "token_budget_pressure",
+      "observed_tokens": 126000,
+      "reason": "Projected context use exceeded the configured input budget.",
+      "source_ref": "bb.kernel_event.v1:event_token_budget_001",
+      "threshold_tokens": 120000
+    }
+  },
+  "support_tier": "draft-shape"
+}

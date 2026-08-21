@@ -1,0 +1,7 @@
+You are producing a canonical Oh-My-Pi P6.6 task/job/subagent target capture. Keep actions local. Do not read secrets. Do not call external URLs from tools. Do not write outside the current working directory.
+
+Required actions:
+1. Use the task/subagent capability exactly once to run one joined child/subagent. The child assignment is: Return the string P6_6_JOINED_CHILD_OK and do not use tools.
+2. Start one harmless local background bash job that prints P6_6_BACKGROUND_JOB_OK after a short wait. If a second harmless long-running local job can be started and cancelled, start it and cancel it through the job/list/poll/cancel capability.
+3. Use job/list/poll to observe the completed background job and any cancelled job.
+4. At the end, output one concise JSON object on one line prefixed with P6_6_CAPTURE_JSON=. Include joined_subagent_observed, background_job_observed, cancel_observed, tool_names_used, provider_model_visible_to_target, and notes.

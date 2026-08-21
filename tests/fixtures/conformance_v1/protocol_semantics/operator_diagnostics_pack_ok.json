@@ -1,0 +1,78 @@
+{
+  "events": [
+    {
+      "source": "session",
+      "status": "running"
+    },
+    {
+      "error": {
+        "code": "bb.tool.timeout",
+        "retryable": true
+      },
+      "source": "tool",
+      "status": "failed"
+    },
+    {
+      "error": {
+        "code": "bb.provider.rate_limit",
+        "retryable": true
+      },
+      "source": "provider",
+      "status": "degraded"
+    },
+    {
+      "error": {
+        "code": "bb.stream.cursor_gap",
+        "retryable": true
+      },
+      "source": "projection",
+      "status": "degraded"
+    },
+    {
+      "source": "session",
+      "status": "completed"
+    }
+  ],
+  "expected": {
+    "allowed_error_prefixes": [
+      "bb.tool.",
+      "bb.provider.",
+      "bb.stream.",
+      "bb.session.",
+      "bb.approval.",
+      "bb.ext."
+    ],
+    "allowed_sources": [
+      "session",
+      "tool",
+      "provider",
+      "projection",
+      "approval",
+      "extension",
+      "recursion"
+    ],
+    "allowed_statuses": [
+      "running",
+      "completed",
+      "failed",
+      "degraded",
+      "cancelled"
+    ],
+    "required_error_sources": [
+      "tool",
+      "provider",
+      "projection"
+    ],
+    "required_sources": [
+      "session",
+      "tool",
+      "provider",
+      "projection"
+    ],
+    "statuses_require_error": [
+      "failed",
+      "degraded"
+    ]
+  },
+  "schema_version": "protocol_runtime_operator_diagnostics_live_v1"
+}

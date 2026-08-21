@@ -1,0 +1,60 @@
+{
+  "acceptance_rationale": "The packet uses a fresh canonical capture with an explicit npx @oh-my-pi/pi-coding-agent@16.2.13 runner, lane-local cwd, and lane-local session dirs. The replay emits bb.work_item.v1 records for joined and detached subagents plus background/cancel work items; the comparator rejects job-manager-only evidence and records provider/API transport as capture machinery, not provider-parity support.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json#sha256:ca0d4934750a22cfa64d3cfd17593431bccce6a2b36f115d6ca1e7db5ae42900",
+  "claim_id": "oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:b48f63b8c05beef57c25670d212635ae51c74f611154d44fc79f83df5c5cf234",
+  "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+  "exclusions": [
+    "No broad Oh-My-Pi or OMP support claim is made from this micro-lane.",
+    "No job-manager-only, job manager only, list-only, poll-only, or cancel-only evidence is sufficient for this P6.6 claim.",
+    "No Pi target, P3 helper/runtime, P5 Pi lineage, P8 final-readiness, browser, screenshot, memory, compaction, TUI projection, or general P6/P7 support claim is made.",
+    "No provider parity, provider endpoint correctness, model quality, web search, external SaaS API, or credential behavior is claimed; provider/API/model events are present only because the target capture is provider-authenticated.",
+    "No write-enabled or danger-full-access sandbox behavior is claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_6_task_job_subagent_v1#sha256:3fb7286e5cecc187d1039eb7358155eaaea92e0d13779e46085af710ccf7252a",
+  "generated_at_utc": "2026-07-04T10:57:56Z",
+  "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_397dab44f9f126c3#sha256:e87d8d28d9104c1dba02900d4ed05a3b66659407d1063811686582f3ccdc886d"
+  ],
+  "level": "P6.6",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json#sha256:052f3f1bbf4b5d1272ad3677049f9d957f8c2ca28f13d3ec711de913e97d3a41",
+  "phase": "P6",
+  "points": 20,
+  "provider_model": "anthropic/claude-haiku-4-5",
+  "raw_source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:c163b9e72ab65429dd8366571387917ed67bc21c23a606b6a9405db2899d1966",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json#sha256:3a39e3231e66cf382c65b57e1f9071dc14613a4b7b40b0cc691e98a15b219028",
+  "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v1",
+  "scope": {
+    "background_job_observed": true,
+    "cancel_observed": true,
+    "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+    "detached_subagent_target_capture": true,
+    "fetch_event_count": 2,
+    "job_manager_only_evidence": false,
+    "joined_subagent_target_capture": true,
+    "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+    "network_observed": true,
+    "provider_authenticated_capture": true,
+    "provider_dispatch_observed": true,
+    "provider_model": "anthropic/claude-haiku-4-5",
+    "provider_parity_claimed": false,
+    "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+    "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json#sha256:3af5a939306130d94c9fe637a2f3c8782a9d40bbf15d71f85a1171a9c7fb22c5",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "Oh-My-Pi 16.2.13 P6.6 task/job/subagent support is accepted for the named provider-authenticated capture only: joined subagent completion, detached subagent lifecycle, background job observation, and cancellation projected into bb.work_item.v1 records.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "tool_id": "oh_my_pi_p6_6_task_job_subagent",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json#sha256:f8f45e122388c9fffd16287efbd746a6499ebaaa9e3c53e8aa42705e30456926"
+  ]
+}

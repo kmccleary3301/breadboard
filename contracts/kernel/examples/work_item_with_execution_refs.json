@@ -1,0 +1,91 @@
+{
+  "schema_version": "bb.work_item.v1",
+  "work_item_id": "work_item_with_execution_refs",
+  "identity": {
+    "task_id": "task_execution_refs",
+    "task_kind": "subagent",
+    "subagent_id": "agent_execution_refs",
+    "distributed_task_id": "distributed_task_execution_refs",
+    "correlation_id": "correlation_execution_refs"
+  },
+  "delegation": {
+    "parent_work_item_id": "work_item_parent",
+    "parent_task_id": "task_parent",
+    "delegated_by": {
+      "actor_kind": "agent",
+      "actor_id": "agent_parent"
+    },
+    "delegation_ref": "bb.distributed_task_descriptor.v1:distributed_task_execution_refs"
+  },
+  "state": {
+    "status": "running",
+    "entered_at": "2026-03-08T00:00:00Z",
+    "reason": "Worker accepted delegated execution-ref schema work.",
+    "checkpoint_ref": null
+  },
+  "owner": {
+    "actor_kind": "agent",
+    "actor_id": "agent_parent"
+  },
+  "assignee": {
+    "actor_kind": "subagent",
+    "actor_id": "agent_execution_refs"
+  },
+  "input_artifact_refs": [
+    {
+      "ref": "bb.resource_ref.v1:assignment_payload",
+      "artifact_kind": "prompt",
+      "visibility": {
+        "model_visible": true,
+        "provider_visible": true,
+        "host_visible": true
+      }
+    }
+  ],
+  "output_artifact_refs": [
+    {
+      "ref": "bb.resource_ref.v1:work_result",
+      "artifact_kind": "report",
+      "visibility": {
+        "model_visible": true,
+        "provider_visible": false,
+        "host_visible": true
+      }
+    }
+  ],
+  "cancellation_policy": {
+    "mode": "cooperative",
+    "cancellable_by": [
+      {
+        "actor_kind": "agent",
+        "actor_id": "agent_parent"
+      }
+    ],
+    "propagate_to_children": true,
+    "on_cancel": "checkpoint_then_stop"
+  },
+  "resume_policy": {
+    "mode": "checkpoint",
+    "resume_from_ref": "bb.checkpoint_metadata.v1:checkpoint_execution_refs",
+    "requires_approval": false,
+    "wake_refs": [
+      "bb.wake_subscription.v1:wake_work_item_execution_refs"
+    ]
+  },
+  "visibility": {
+    "model_visible": true,
+    "provider_visible": false,
+    "host_visible": true
+  },
+  "provider_route_ref": "bb.provider_route.v1:route_execution_refs",
+  "operation_policy_ref": "bb.effective_operation_policy.v1:policy_execution_refs",
+  "budget": {
+    "token_budget": 4096,
+    "cost_budget_usd": 1.25,
+    "wall_time_seconds": 900
+  },
+  "isolation": "sandbox",
+  "metadata": {
+    "example": "work-item execution refs"
+  }
+}

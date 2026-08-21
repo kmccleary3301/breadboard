@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v2.schema.json",
+  "title": "BreadBoard E4 candidate lane manifest V2",
+  "description": "Author-owned inactive candidate intent; machine-owned digests live in bb.e4.lane_lock.v2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "lane_id", "status", "execute", "reuse", "references"],
+  "properties": {
+    "schema_version": {"const": "bb.e4.lane_manifest.v2"},
+    "lane_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*$"},
+    "status": {"enum": ["draft", "candidate"]},
+    "execute": {"type": "array", "uniqueItems": true, "items": {"enum": ["capture", "normalize", "replay", "compare", "claim"]}},
+    "reuse": {"type": "array", "uniqueItems": true, "items": {"enum": ["capture", "normalize", "replay", "compare", "claim"]}},
+    "references": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["harness", "target", "adapter", "source", "comparator", "policy"],
+      "properties": {
+        "harness": {"$ref": "#/$defs/relative_path"},
+        "target": {"$ref": "#/$defs/relative_path"},
+        "adapter": {"$ref": "#/$defs/relative_path"},
+        "source": {"$ref": "#/$defs/relative_path"},
+        "comparator": {"$ref": "#/$defs/relative_path"},
+        "policy": {"$ref": "#/$defs/relative_path"}
+      }
+    },
+    "metadata": {"type": "object", "additionalProperties": true}
+  },
+  "not": {
+    "properties": {"execute": {"type": "array", "maxItems": 0}, "reuse": {"type": "array", "maxItems": 0}},
+    "required": ["execute", "reuse"]
+  },
+  "allOf": [
+    {"not": {"properties": {"execute": {"type": "array", "contains": {"const": "capture"}}, "reuse": {"type": "array", "contains": {"const": "capture"}}}}},
+    {"not": {"properties": {"execute": {"type": "array", "contains": {"const": "normalize"}}, "reuse": {"type": "array", "contains": {"const": "normalize"}}}}},
+    {"not": {"properties": {"execute": {"type": "array", "contains": {"const": "replay"}}, "reuse": {"type": "array", "contains": {"const": "replay"}}}}},
+    {"not": {"properties": {"execute": {"type": "array", "contains": {"const": "compare"}}, "reuse": {"type": "array", "contains": {"const": "compare"}}}}},
+    {"not": {"properties": {"execute": {"type": "array", "contains": {"const": "claim"}}, "reuse": {"type": "array", "contains": {"const": "claim"}}}}}
+  ],
+  "$defs": {
+    "relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!.*(?:^|/)(?:\\.|\\.\\.|head|latest|main|master|trunk|develop|dev|working|workspace)(?:/|$))(?:[a-z0-9._-]+/)*[a-z0-9._-]+$"
+    }
+  }
+}

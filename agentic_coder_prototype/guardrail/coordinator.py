@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from ..compilation.tool_registry import guardrail_names_for
+
 
 class GuardrailCoordinator:
     """Encapsulates guard preflight checks for workspace/todo policies."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config or {}
-
+        self._guardrail_names = {
+            name: guardrail_names_for(self.config, name)
+            for name in ("list", "read", "bash", "edit", "todo")
+        }
     # Public helpers -----------------------------------------------------
 
     def todo_config(self) -> Dict[str, Any]:
@@ -108,29 +113,11 @@ class GuardrailCoordinator:
         initialized = bool(session_state.get_provider_metadata("workspace_context_initialized"))
         pending_read = bool(session_state.get_provider_metadata("workspace_pending_read"))
 
-        list_tools = {"list", "list_dir"}
-        read_tools = {"read", "read_file"}
-        bash_tools = {"bash", "run_shell", "shell_command"}
-        edit_tools = {
-            "patch",
-            "write",
-            "create_file",
-            "create_file_from_block",
-            "apply_unified_patch",
-            "apply_search_replace",
-        }
-        todo_tools = {
-            "todowrite",
-            "todo.write_board",
-            "todo.create",
-            "todo.update",
-            "todo.list",
-            "todo.note",
-            "todo.complete",
-            "todo.cancel",
-            "todo.reorder",
-            "todo.attach",
-        }
+        list_tools = self._guardrail_names["list"]
+        read_tools = self._guardrail_names["read"]
+        bash_tools = self._guardrail_names["bash"]
+        edit_tools = self._guardrail_names["edit"]
+        todo_tools = self._guardrail_names["todo"]
 
         def _mark_initialized() -> None:
             session_state.set_provider_metadata("workspace_context_required", False)
@@ -196,18 +183,7 @@ class GuardrailCoordinator:
         if not guard_cfg["limit_todo_without_progress"]:
             return None
         fn = (getattr(parsed_call, "function", "") or "").lower()
-        todo_tools = {
-            "todowrite",
-            "todo.write_board",
-            "todo.create",
-            "todo.update",
-            "todo.list",
-            "todo.note",
-            "todo.complete",
-            "todo.cancel",
-            "todo.reorder",
-            "todo.attach",
-        }
+        todo_tools = self._guardrail_names["todo"]
         if fn not in todo_tools:
             return None
         if not session_state.get_provider_metadata("plan_mode_disabled"):

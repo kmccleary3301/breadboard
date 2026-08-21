@@ -1,0 +1,674 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json",
+  "title": "BreadBoard memory compaction plan V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "plan_id",
+    "transcript_refs",
+    "trigger",
+    "token_budget",
+    "preserved_refs",
+    "elided_refs",
+    "generated_refs",
+    "model_visible_insertions",
+    "backend_contributions",
+    "hashes",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.memory_compaction_plan.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "plan_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the plan.",
+      "examples": [
+        "plan_example"
+      ]
+    },
+    "transcript_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/transcript_ref",
+        "description": "One entry in transcript refs.",
+        "examples": [
+          [
+            "docs/conformance/transcript.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the transcript entries.",
+      "examples": [
+        [
+          "docs/conformance/transcript.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "trigger": {
+      "$ref": "#/$defs/trigger",
+      "description": "Trigger record for this primitive."
+    },
+    "token_budget": {
+      "$ref": "#/$defs/token_budget",
+      "description": "Numeric value for a token budget."
+    },
+    "preserved_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/preserved_ref",
+        "description": "One entry in preserved refs.",
+        "examples": [
+          [
+            "docs/conformance/preserved.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the preserved entries.",
+      "examples": [
+        [
+          "docs/conformance/preserved.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "elided_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/elided_ref",
+        "description": "One entry in elided refs.",
+        "examples": [
+          [
+            "docs/conformance/elided.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the elided entries.",
+      "examples": [
+        [
+          "docs/conformance/elided.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "generated_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/generated_ref",
+        "description": "One entry in generated refs.",
+        "examples": [
+          [
+            "docs/conformance/generated.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the generated entries.",
+      "examples": [
+        [
+          "docs/conformance/generated.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "model_visible_insertions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/model_visible_insertion",
+        "description": "One entry in model visible insertions."
+      },
+      "description": "Ordered model visible insertions entries."
+    },
+    "backend_contributions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/backend_contribution",
+        "description": "One entry in backend contributions."
+      },
+      "description": "Ordered backend contributions entries."
+    },
+    "hashes": {
+      "$ref": "#/$defs/hashes",
+      "description": "Hashes record for this primitive."
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "applied",
+        "superseded",
+        "rejected",
+        "failed"
+      ],
+      "description": "Allowed status value."
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "$defs": {
+    "sha256_hash": {
+      "type": "string",
+      "pattern": "^sha256:[A-Fa-f0-9]{64}$"
+    },
+    "nullable_hash": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sha256_hash"
+        }
+      ]
+    },
+    "visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_visible",
+        "provider_visible",
+        "host_visible"
+      ],
+      "properties": {
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "provider_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a provider visible state."
+        },
+        "host_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a host visible state."
+        }
+      }
+    },
+    "transcript_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transcript_id",
+        "ref",
+        "start_seq",
+        "end_seq",
+        "hash",
+        "visibility"
+      ],
+      "properties": {
+        "transcript_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the transcript.",
+          "examples": [
+            "transcript_example"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the ref.",
+          "examples": [
+            "docs/conformance/ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "start_seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Start seq value for this primitive."
+        },
+        "end_seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "End seq value for this primitive."
+        },
+        "hash": {
+          "$ref": "#/$defs/sha256_hash",
+          "description": "SHA-256 digest for the hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "visibility": {
+          "$ref": "#/$defs/visibility",
+          "description": "Visibility record for this primitive."
+        }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source_ref",
+        "reason",
+        "observed_tokens",
+        "threshold_tokens"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "token_budget_pressure",
+            "manual",
+            "checkpoint",
+            "retention_policy",
+            "resume",
+            "backend_policy"
+          ],
+          "description": "Allowed kind value."
+        },
+        "source_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the source.",
+          "examples": [
+            "docs/conformance/source_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reason value for this primitive."
+        },
+        "observed_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Observed tokens value for this primitive."
+        },
+        "threshold_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Threshold tokens value for this primitive."
+        }
+      }
+    },
+    "token_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_context_window",
+        "max_input_tokens",
+        "reserved_output_tokens",
+        "before_tokens",
+        "target_after_tokens"
+      ],
+      "properties": {
+        "model_context_window": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Model context window value for this primitive."
+        },
+        "max_input_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Max input tokens value for this primitive."
+        },
+        "reserved_output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Reserved output tokens value for this primitive."
+        },
+        "before_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Before tokens value for this primitive."
+        },
+        "target_after_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Target after tokens value for this primitive."
+        }
+      }
+    },
+    "preserved_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref_id",
+        "ref_kind",
+        "ref",
+        "hash",
+        "reason",
+        "visibility"
+      ],
+      "properties": {
+        "ref_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the ref.",
+          "examples": [
+            "ref_example"
+          ]
+        },
+        "ref_kind": {
+          "enum": [
+            "transcript_segment",
+            "artifact",
+            "resource",
+            "tool_call",
+            "decision",
+            "policy",
+            "memory"
+          ],
+          "description": "Allowed ref kind value.",
+          "examples": [
+            "transcript_segment"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the ref.",
+          "examples": [
+            "docs/conformance/ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "hash": {
+          "$ref": "#/$defs/sha256_hash",
+          "description": "SHA-256 digest for the hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reason value for this primitive."
+        },
+        "visibility": {
+          "$ref": "#/$defs/visibility",
+          "description": "Visibility record for this primitive."
+        }
+      }
+    },
+    "elided_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref_id",
+        "ref",
+        "reason",
+        "token_estimate",
+        "replacement_ref",
+        "visibility"
+      ],
+      "properties": {
+        "ref_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the ref.",
+          "examples": [
+            "ref_example"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the ref.",
+          "examples": [
+            "docs/conformance/ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reason value for this primitive."
+        },
+        "token_estimate": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Token estimate value for this primitive."
+        },
+        "replacement_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the replacement.",
+          "examples": [
+            "docs/conformance/replacement_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "visibility": {
+          "$ref": "#/$defs/visibility",
+          "description": "Visibility record for this primitive."
+        }
+      }
+    },
+    "generated_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref_id",
+        "ref_kind",
+        "artifact_ref",
+        "hash",
+        "produced_by"
+      ],
+      "properties": {
+        "ref_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the ref.",
+          "examples": [
+            "ref_example"
+          ]
+        },
+        "ref_kind": {
+          "enum": [
+            "summary",
+            "index",
+            "checksum",
+            "model_visible_insertion",
+            "backend_note"
+          ],
+          "description": "Allowed ref kind value.",
+          "examples": [
+            "summary"
+          ]
+        },
+        "artifact_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the artifact.",
+          "examples": [
+            "docs/conformance/artifact_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "hash": {
+          "$ref": "#/$defs/sha256_hash",
+          "description": "SHA-256 digest for the hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "produced_by": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Produced by value for this primitive."
+        }
+      }
+    },
+    "model_visible_insertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "insertion_id",
+        "position",
+        "content_ref",
+        "content_hash",
+        "token_estimate"
+      ],
+      "properties": {
+        "insertion_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the insertion.",
+          "examples": [
+            "insertion_example"
+          ]
+        },
+        "position": {
+          "enum": [
+            "prefix",
+            "between_turns",
+            "suffix",
+            "system_context"
+          ],
+          "description": "Allowed position value."
+        },
+        "content_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the content.",
+          "examples": [
+            "docs/conformance/content_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "content_hash": {
+          "$ref": "#/$defs/sha256_hash",
+          "description": "SHA-256 digest for the content hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "token_estimate": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Token estimate value for this primitive."
+        }
+      }
+    },
+    "backend_contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contribution_id",
+        "contributor_kind",
+        "contributor_id",
+        "input_refs",
+        "output_refs",
+        "visibility",
+        "hash"
+      ],
+      "properties": {
+        "contribution_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the contribution.",
+          "examples": [
+            "contribution_example"
+          ]
+        },
+        "contributor_kind": {
+          "enum": [
+            "host",
+            "provider",
+            "tool",
+            "policy",
+            "cache",
+            "compactor"
+          ],
+          "description": "Allowed contributor kind value."
+        },
+        "contributor_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the contributor.",
+          "examples": [
+            "contributor_example"
+          ]
+        },
+        "input_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in input refs.",
+            "examples": [
+              [
+                "docs/conformance/input.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the input entries.",
+          "examples": [
+            [
+              "docs/conformance/input.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        },
+        "output_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in output refs.",
+            "examples": [
+              [
+                "docs/conformance/output.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the output entries.",
+          "examples": [
+            [
+              "docs/conformance/output.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        },
+        "visibility": {
+          "$ref": "#/$defs/visibility",
+          "description": "Visibility record for this primitive."
+        },
+        "hash": {
+          "$ref": "#/$defs/sha256_hash",
+          "description": "SHA-256 digest for the hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    },
+    "hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "source_hash",
+        "plan_hash",
+        "compacted_hash"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256",
+          "description": "Algorithm value for this primitive."
+        },
+        "source_hash": {
+          "$ref": "#/$defs/sha256_hash",
+          "description": "SHA-256 digest for the source hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "plan_hash": {
+          "$ref": "#/$defs/sha256_hash",
+          "description": "SHA-256 digest for the plan hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "compacted_hash": {
+          "$ref": "#/$defs/nullable_hash",
+          "description": "SHA-256 digest for the compacted hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    }
+  }
+}

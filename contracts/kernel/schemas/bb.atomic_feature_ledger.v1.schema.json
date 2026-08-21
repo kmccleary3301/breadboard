@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.atomic_feature_ledger.v1.schema.json",
+  "title": "BreadBoard atomic feature ledger row",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "feature_id",
+    "dedupe_key",
+    "target",
+    "family",
+    "claim_type",
+    "evidence_tier",
+    "source_refs",
+    "model_visible",
+    "stateful",
+    "breadboard_mapping",
+    "gap_kind",
+    "fixture_refs",
+    "e4_row_ref",
+    "promotion_state"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.atomic_feature_ledger.v1"
+    },
+    "feature_id": {
+      "type": "string",
+      "pattern": "^feat_[a-z0-9][a-z0-9_./-]*$",
+      "minLength": 6
+    },
+    "dedupe_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_./-]*$",
+      "minLength": 5
+    },
+    "target": {
+      "enum": [
+        "pi",
+        "omp",
+        "claude",
+        "codex",
+        "opencode",
+        "oh_my_opencode",
+        "breadboard"
+      ]
+    },
+    "family": {
+      "enum": [
+        "config",
+        "context",
+        "tool",
+        "capability",
+        "extension",
+        "provider",
+        "session",
+        "memory",
+        "resource",
+        "mcp",
+        "task",
+        "policy",
+        "projection",
+        "side_effect",
+        "product",
+        "governance"
+      ]
+    },
+    "claim_type": {
+      "enum": [
+        "docs",
+        "config",
+        "schema",
+        "source",
+        "test",
+        "capture",
+        "replay",
+        "manifest",
+        "runtime_behavior",
+        "model_visible_surface",
+        "host_projection",
+        "persistent_kernel_truth",
+        "product_policy",
+        "registry_discovery"
+      ]
+    },
+    "evidence_tier": {
+      "enum": [
+        "C0",
+        "C1",
+        "C2",
+        "C3",
+        "C4"
+      ]
+    },
+    "source_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      }
+    },
+    "model_visible": {
+      "type": "boolean"
+    },
+    "stateful": {
+      "type": "boolean"
+    },
+    "breadboard_mapping": {
+      "type": "object",
+      "required": [
+        "primitive",
+        "support"
+      ],
+      "properties": {
+        "primitive": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "support": {
+          "enum": [
+            "supported",
+            "partial",
+            "missing",
+            "not_appropriate",
+            "projection_only",
+            "config_only"
+          ]
+        },
+        "truth_scope": {
+          "enum": [
+            "target_projection",
+            "kernel_truth",
+            "not_applicable"
+          ]
+        },
+        "negative_ledger_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "gap_kind": {
+      "enum": [
+        "none",
+        "conceptual",
+        "schema",
+        "implementation",
+        "evidence",
+        "docs",
+        "docs_terminology"
+      ]
+    },
+    "fixture_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      }
+    },
+    "e4_row_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 256
+    },
+    "promotion_state": {
+      "enum": [
+        "draft",
+        "candidate",
+        "blocked",
+        "ready",
+        "promoted",
+        "rejected",
+        "deferred"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "evidence_tier": {
+            "enum": [
+              "C2",
+              "C3",
+              "C4"
+            ]
+          }
+        },
+        "required": [
+          "evidence_tier"
+        ]
+      },
+      "then": {
+        "properties": {
+          "source_refs": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "evidence_tier": {
+            "const": "C4"
+          }
+        },
+        "required": [
+          "evidence_tier"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fixture_refs": {
+            "allOf": [
+              {
+                "contains": {
+                  "pattern": "^freeze:"
+                }
+              },
+              {
+                "contains": {
+                  "pattern": "^capture:"
+                }
+              },
+              {
+                "contains": {
+                  "pattern": "^replay:"
+                }
+              },
+              {
+                "contains": {
+                  "pattern": "^comparator:"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

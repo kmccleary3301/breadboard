@@ -1,0 +1,130 @@
+{
+  "schema_version": "bb.e4.target_coverage.v1",
+  "target_family": "opencode",
+  "frozen_target_versions": [
+    "opencode-frozen-target-pending"
+  ],
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "rows": [
+    {
+      "behavior_family": "config_graph",
+      "behavior_id": "opencode_config_graph",
+      "description": "No accepted D3 target-support row mapped for opencode config_graph.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "context_pack",
+      "behavior_id": "opencode_context_pack",
+      "description": "No accepted D3 target-support row mapped for opencode context_pack.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "capability_surface",
+      "behavior_id": "opencode_capability_surface",
+      "description": "No accepted D3 target-support row mapped for opencode capability_surface.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "tool_execution",
+      "behavior_id": "opencode_tool_execution",
+      "description": "No accepted D3 target-support row mapped for opencode tool_execution.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "command_network_policy",
+      "behavior_id": "opencode_command_network_policy",
+      "description": "No accepted D3 target-support row mapped for opencode command_network_policy.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "protocol_sessions",
+      "behavior_id": "opencode_protocol_sessions",
+      "description": "No accepted D3 target-support row mapped for opencode protocol_sessions.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "resource_access",
+      "behavior_id": "opencode_resource_access",
+      "description": "No accepted D3 target-support row mapped for opencode resource_access.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "provider_routing",
+      "behavior_id": "opencode_provider_routing",
+      "description": "No accepted D3 target-support row mapped for opencode provider_routing.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "memory_compaction",
+      "behavior_id": "opencode_memory_compaction",
+      "description": "No accepted D3 target-support row mapped for opencode memory_compaction.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "work_items",
+      "behavior_id": "opencode_work_items",
+      "description": "No accepted D3 target-support row mapped for opencode work_items.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "side_effects",
+      "behavior_id": "opencode_side_effects",
+      "description": "No accepted D3 target-support row mapped for opencode side_effects.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "projection_ui",
+      "behavior_id": "opencode_projection_ui",
+      "description": "No accepted D3 target-support row mapped for opencode projection_ui.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "session_persistence",
+      "behavior_id": "opencode_session_persistence",
+      "description": "No accepted D3 target-support row mapped for opencode session_persistence.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "replay_capture",
+      "behavior_id": "opencode_replay_capture",
+      "description": "No accepted D3 target-support row mapped for opencode replay_capture.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "other",
+      "behavior_id": "opencode_other",
+      "description": "No accepted D3 target-support row mapped for opencode other.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "assignee": {
+    "actor_id": "session_runner",
+    "actor_kind": "agent"
+  },
+  "budget": null,
+  "cancellation_policy": {
+    "cancellable_by": [
+      {
+        "actor_id": "cli_bridge.session_service",
+        "actor_kind": "service"
+      }
+    ],
+    "mode": "cooperative",
+    "on_cancel": "checkpoint_then_stop",
+    "propagate_to_children": true
+  },
+  "delegation": {
+    "delegated_by": {
+      "actor_id": "cli_bridge.session_service",
+      "actor_kind": "service"
+    },
+    "delegation_ref": null,
+    "parent_task_id": null,
+    "parent_work_item_id": null
+  },
+  "identity": {
+    "correlation_id": "runtime_emission_c3_session",
+    "distributed_task_id": null,
+    "subagent_id": null,
+    "task_id": "runtime_emission_c3_session",
+    "task_kind": "task"
+  },
+  "input_artifact_refs": [],
+  "isolation": null,
+  "metadata": {
+    "runtime_source": "cli_bridge",
+    "session_id": "runtime_emission_c3_session"
+  },
+  "operation_policy_ref": null,
+  "output_artifact_refs": [],
+  "owner": {
+    "actor_id": "cli_bridge.session_service",
+    "actor_kind": "service"
+  },
+  "provider_route_ref": null,
+  "resume_policy": {
+    "mode": "manual",
+    "requires_approval": false,
+    "resume_from_ref": null,
+    "wake_refs": []
+  },
+  "schema_version": "bb.work_item.v1",
+  "state": {
+    "checkpoint_ref": null,
+    "entered_at": "2026-07-04T00:00:00Z",
+    "reason": "runner start requested",
+    "status": "running"
+  },
+  "visibility": {
+    "host_visible": true,
+    "model_visible": false,
+    "provider_visible": false
+  },
+  "work_item_id": "runtime_emission_c3_session.running"
+}

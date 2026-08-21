@@ -1,0 +1,414 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/schemas/bb.e4.target_probe_report.v1.schema.json",
+  "title": "bb.e4.target_probe_report.v1",
+  "description": "Minimal reusable target probe report contract for E4 scaffold and capture lanes. This contract records probe observations only; it is not a support claim and carries no accepted-score fields.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "target_family",
+    "config_id",
+    "lane_id",
+    "run_id",
+    "target_version",
+    "provider_model",
+    "sandbox_mode",
+    "promotion_state",
+    "capture_scope",
+    "source_refs",
+    "environment",
+    "observations",
+    "surface_observations",
+    "checks",
+    "artifacts",
+    "summary",
+    "errors",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.target_probe_report.v1"
+    },
+    "target_family": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "minLength": 2,
+      "maxLength": 80
+    },
+    "config_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "lane_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "target_version": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.+-]*$",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "provider_model": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]*$",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "sandbox_mode": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "minLength": 2,
+      "maxLength": 80
+    },
+    "promotion_state": {
+      "enum": [
+        "scaffold_only",
+        "capture_candidate",
+        "captured"
+      ]
+    },
+    "capture_scope": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "source_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source_ref"
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "cwd"
+      ],
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "agent_dir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "provider_secrets_present": {
+          "type": "boolean"
+        },
+        "selected_settings": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "observations": {
+      "type": "object",
+      "required": [
+        "provider_dispatch_observed",
+        "network_observed"
+      ],
+      "properties": {
+        "provider_dispatch_observed": {
+          "type": "boolean"
+        },
+        "network_observed": {
+          "type": "boolean"
+        },
+        "fetch_events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "surface_observations": {
+      "type": "object",
+      "properties": {
+        "context_files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "prompt_templates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "slash_commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "builtin_tools": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "custom_commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "custom_tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "hooks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "tool_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "raw_observations": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact_ref"
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "all_expected_passed",
+        "failed",
+        "warned"
+      ],
+      "properties": {
+        "all_expected_passed": {
+          "type": "boolean"
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warned": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "source_ref": {
+      "type": "object",
+      "required": [
+        "path",
+        "role"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "role": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifact_ref": {
+      "type": "object",
+      "required": [
+        "role",
+        "path"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "check": {
+      "type": "object",
+      "required": [
+        "name",
+        "status"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_.-]*$",
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "warned",
+            "not_applicable"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "provider_model": {
+            "const": "no-provider"
+          }
+        },
+        "required": [
+          "provider_model"
+        ]
+      },
+      "then": {
+        "properties": {
+          "observations": {
+            "properties": {
+              "provider_dispatch_observed": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": {
+              "all_expected_passed": {
+                "const": true
+              }
+            },
+            "required": [
+              "all_expected_passed"
+            ]
+          }
+        },
+        "required": [
+          "summary"
+        ]
+      },
+      "then": {
+        "properties": {
+          "summary": {
+            "properties": {
+              "failed": {
+                "const": 0
+              }
+            }
+          },
+          "errors": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

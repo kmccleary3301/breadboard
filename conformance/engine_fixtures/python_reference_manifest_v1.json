@@ -882,6 +882,193 @@
         "coordination/delegated_verification_fail_fixture.json"
       ],
       "notes": "Delegated verification fail lane proving verifier-carried failure evidence can lead to explicit checkpoint directive truth without inventing a new primitive."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "atomic_feature_ledger_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "atomic_feature_ledger/minimal_fixture.json"
+      ],
+      "notes": "Minimal atomic feature ledger governance row shape and promotion validation fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "effective_config_graph_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "effective_config_graph/minimal_fixture.json"
+      ],
+      "notes": "Minimal effective config graph draft-shape fixture covering source layers, effective values, merge policy, visibility, env gates, graph hash, and migrations."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "config_mutation_record_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "config_mutation_record/minimal_fixture.json"
+      ],
+      "notes": "Minimal config mutation record draft-shape fixture covering write authority, before/after graph hashes, produced paths, removed paths, and per-path hash deltas."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "context_resource_pack_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "context_resource_pack/minimal_fixture.json"
+      ],
+      "notes": "Minimal context resource pack draft-shape fixture covering source kinds, render order, render-plan hash, model visibility, and host visibility."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "capability_registry_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "capability_registry/minimal_fixture.json"
+      ],
+      "notes": "Minimal capability registry shape covering typed capability discovery and exposure distinctions."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "capability_registry_mutation",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "capability_registry/mutation_fixture.json"
+      ],
+      "notes": "Capability registry mutation-log shape covering snapshot basis, hook discovery, custom-tool registration, conflict rejection, and custom-command override semantics."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "extension_hook_execution_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "extension_hook_execution/minimal_fixture.json"
+      ],
+      "notes": "Minimal extension hook execution shape covering event references, effects, status, duration, and model/provider visibility."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "resource_ref_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "resource_ref/minimal_fixture.json"
+      ],
+      "notes": "Minimal resource reference shape covering URI decomposition, resolver scope, visibility, immutability, retention, and containment."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "resource_access_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "resource_access/minimal_fixture.json"
+      ],
+      "notes": "Minimal resource access shape covering operation status, content hash, blob refs, truncation, redaction, and approval."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "blob_ref_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "blob_ref/minimal_fixture.json"
+      ],
+      "notes": "Minimal blob reference shape covering digest, media type, size, storage, retention, and sidecars."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "work_item_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "work_item/minimal_fixture.json"
+      ],
+      "notes": "Minimal work item shape covering identity, delegation, cancellation, resume, ownership, visibility, and long-run/workflow task kinds."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "provider_route_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "provider_route/minimal_fixture.json"
+      ],
+      "notes": "Minimal provider route shape covering selector, provider family, route suffix, auth reference, fallback chain, service tier, and visibility boundaries."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "external_protocol_session_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "external_protocol_session/minimal_fixture.json"
+      ],
+      "notes": "Minimal external protocol session shape covering endpoint hash, credential reference, scopes, bindings, visibility, transcript refs, and protocol evidence."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "effective_operation_policy_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "effective_operation_policy/minimal_fixture.json"
+      ],
+      "notes": "Minimal effective operation policy shape covering command, file, network, redaction, and enforcement evidence refs."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "side_effect_broker_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "side_effect_broker/minimal_fixture.json"
+      ],
+      "notes": "Minimal side effect broker shape covering requested resource write, idempotency, policy refs, placement, before/after refs, status, and visibility impact."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "projection_event_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "projection_event/minimal_fixture.json"
+      ],
+      "notes": "Minimal projection event shape covering source event, projection surface, payload ref, status frames, visibility, and explicit non-kernel-truth guard."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "memory_compaction_plan_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "memory_compaction_plan/minimal_fixture.json"
+      ],
+      "notes": "Minimal memory compaction plan shape covering transcript range, budget trigger, preserved and dropped refs, hashes, visibility, and contributor metadata."
     }
   ]
 }

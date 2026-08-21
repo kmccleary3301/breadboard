@@ -1,5 +1,5 @@
 import { Console, Effect } from "effect"
-import { ApiError } from "../api/client.js"
+import { ApiError } from "../api/internalClient.js"
 import { CliProviders } from "../providers/cliProviders.js"
 
 const errorMessage = (error: unknown): string => {

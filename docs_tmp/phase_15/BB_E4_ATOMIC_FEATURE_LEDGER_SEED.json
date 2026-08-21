@@ -1,0 +1,2619 @@
+{
+  "plan_ref": "docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_MASTER_PLAN.md:317-323",
+  "row_count": 98,
+  "rows": [
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.capability_registry.v1",
+        "support": "partial",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "breadboard/capability/runtime_session_capability_registry_c3/runtime_behavior/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C3",
+      "family": "capability",
+      "feature_id": "feat_7fdb5e54163f8491",
+      "fixture_refs": [
+        "runtime_fixture:conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/capability_registry.json"
+      ],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "candidate",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+      ],
+      "stateful": true,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial"
+      },
+      "claim_type": "manifest",
+      "dedupe_key": "breadboard/config/e4_target_freeze_manifest/manifest/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_478375f6517dcc00",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_c6312f6fb3c7bc85"
+      ],
+      "stateful": true,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "breadboard/config/runtime_session_effective_config_graph_c3/runtime_behavior/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C3",
+      "family": "config",
+      "feature_id": "feat_66aa65167fe1a23e",
+      "fixture_refs": [
+        "runtime_fixture:conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/effective_config_graph.json"
+      ],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "candidate",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+      ],
+      "stateful": true,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.memory_compaction_plan.v1",
+        "support": "missing"
+      },
+      "claim_type": "schema",
+      "dedupe_key": "breadboard/memory/memory_compaction_contract/schema/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "memory",
+      "feature_id": "feat_0b610b1b0eec0751",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_b8adc4e6c33c1859",
+        "source_index:src_fb115ad99d382df5",
+        "source_index:src_9ce57afa45bff20e"
+      ],
+      "stateful": true,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_operation_policy.v1",
+        "support": "missing"
+      },
+      "claim_type": "schema",
+      "dedupe_key": "breadboard/policy/effective_operation_policy_contract/schema/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "policy",
+      "feature_id": "feat_58c32354547a6f30",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_cb0b10bd858dd479",
+        "source_index:src_c035d51daea056f1",
+        "source_index:src_e342210f4c443131"
+      ],
+      "stateful": true,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.projection_event.v1",
+        "support": "partial"
+      },
+      "claim_type": "schema",
+      "dedupe_key": "breadboard/projection/terminal_tui_projection_event/schema/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "projection",
+      "feature_id": "feat_a34b5b7f40983398",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_a8d97b5bcb3d7863",
+        "source_index:src_2cfe8347a145280c",
+        "source_index:src_da2e184860b6a6bd"
+      ],
+      "stateful": true,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.resource_ref.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "breadboard/resource/internal_artifact_resource_refs/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "resource",
+      "feature_id": "feat_53aa82ab8debc0c9",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_da485559507aca1f",
+        "source_index:src_c86dc09c4890430e",
+        "source_index:src_f7f2e27f275f6cf3"
+      ],
+      "stateful": true,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.kernel_event.v2",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "capture",
+      "dedupe_key": "breadboard/session/north_star_breadboard_runtime_records_self_capture/capture/model_yes/stateful_yes",
+      "e4_row_ref": "breadboard_self_runtime_records_v1",
+      "evidence_tier": "C4",
+      "family": "session",
+      "feature_id": "feat_e7bfda921c4e30ed",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#breadboard_self_runtime_records_v1#sha256:0012ab5d22f6d66e293487126246d97207fd0f47759c78d4a7b58df4ae8c3987",
+        "capture:docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json#sha256:1fc80918a10c6332a70d5c18f82cdecef466b8e7e4fbea7bd19f210c16a29fb1",
+        "replay:docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json#sha256:8befe2bb74f12f234743c70a1bf21dd6ec4cc6e6ac37ce8abedf3c12a97842d1",
+        "comparator:docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json#sha256:70c75b4aaeaac3531eccd55377e87d52851729b99b78bcebab979da3b2f731af",
+        "support_claim:docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.external_protocol_session.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "breadboard/session/static_mcp_tooling_tapes/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "session",
+      "feature_id": "feat_e9f758ff862fe964",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_60e20d4e76036ffc"
+      ],
+      "stateful": true,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.work_item.v1",
+        "support": "partial",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "breadboard/task/runtime_session_work_item_lifecycle_c3/runtime_behavior/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C3",
+      "family": "task",
+      "feature_id": "feat_e82097c722ea3de6",
+      "fixture_refs": [
+        "runtime_fixture:conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/work_item_queued.json",
+        "runtime_fixture:conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/work_item_running.json"
+      ],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "candidate",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+      ],
+      "stateful": true,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.work_item.v1",
+        "support": "partial"
+      },
+      "claim_type": "schema",
+      "dedupe_key": "breadboard/task/subagent_background_work_item/schema/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "task",
+      "feature_id": "feat_1ba85b068ed2e26a",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_dbb47d3715a98f8f",
+        "source_index:src_572b7afdaa357200",
+        "source_index:src_664a4698833582b4"
+      ],
+      "stateful": true,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_tool_surface.v1",
+        "support": "partial",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "breadboard/tool/runtime_session_effective_tool_surface_c3/runtime_behavior/model_yes/stateful_no",
+      "e4_row_ref": null,
+      "evidence_tier": "C3",
+      "family": "tool",
+      "feature_id": "feat_e15856161865ccf0",
+      "fixture_refs": [
+        "runtime_fixture:conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/effective_tool_surface.json"
+      ],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "candidate",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+      ],
+      "stateful": false,
+      "target": "breadboard"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial"
+      },
+      "claim_type": "config",
+      "dedupe_key": "claude/config/settings_safe_mode_lockdown/config/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_82e6c9562bbfe2df",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_a8cebea277782aa9",
+        "source_index:src_a84af61b235b5d7c",
+        "source_index:src_998e96b0520701e1"
+      ],
+      "stateful": true,
+      "target": "claude"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.context_resource_pack.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "claude/context/claude_md_context/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "context",
+      "feature_id": "feat_b14f5075976337b8",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_a8cebea277782aa9",
+        "source_index:src_a84af61b235b5d7c",
+        "source_index:src_998e96b0520701e1"
+      ],
+      "stateful": true,
+      "target": "claude"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.provider_route.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "claude/provider/sdk_provider_route/docs/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "provider",
+      "feature_id": "feat_486a9131357b3160",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_a8cebea277782aa9",
+        "source_index:src_a84af61b235b5d7c",
+        "source_index:src_998e96b0520701e1"
+      ],
+      "stateful": true,
+      "target": "claude"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.external_protocol_session.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "claude/session/mcp_server_config/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "session",
+      "feature_id": "feat_58da5c04d9a39c7e",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_a8cebea277782aa9",
+        "source_index:src_a84af61b235b5d7c",
+        "source_index:src_998e96b0520701e1"
+      ],
+      "stateful": true,
+      "target": "claude"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.replay_session.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "capture",
+      "dedupe_key": "claude/session/north_star_claude_code_package_capture/capture/model_yes/stateful_yes",
+      "e4_row_ref": "claude_code_haiku45_north_star_capture_v1",
+      "evidence_tier": "C4",
+      "family": "session",
+      "feature_id": "feat_d5be8aa4451edbac",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#claude_code_haiku45_north_star_capture_v1#sha256:a73b7e12fcadadd15ad5e61af3ee0533adc9b95260c3f44181ca07bf8634a233",
+        "capture:docs/conformance/e4_target_support/claude_code_north_star_capture_v1/raw_capture_manifest.json#sha256:87dc1d20a9f2e7383a3bb7704355db752a752b778cdfd9d3750fbb67faaa4e2d",
+        "replay:docs/conformance/e4_target_support/claude_code_north_star_capture_v1/bb_replay_result.json#sha256:2da5c0f256288aef689c180d5fa8350871bda124b453a99908157ff7468e41b8",
+        "comparator:docs/conformance/e4_target_support/claude_code_north_star_capture_v1/comparator_report.json#sha256:3d7a34380586b99aa284d1b83ff52e6ca759ca9b6a7847af66aeb9df2bb1689b",
+        "support_claim:docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "claude"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "codex/config/config_toml_agents_overlay_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_c45d45596ee01b1e",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_52b9b645d72937f0",
+        "source_index:src_70a046b9513995ea",
+        "source_index:src_6c732772312d512d"
+      ],
+      "stateful": true,
+      "target": "codex"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial"
+      },
+      "claim_type": "config",
+      "dedupe_key": "codex/config/config_toml_and_agents/config/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_bbda4f92a1b4a617",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_2afa44cee1525829",
+        "source_index:src_52b9b645d72937f0",
+        "source_index:src_70a046b9513995ea"
+      ],
+      "stateful": true,
+      "target": "codex"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_operation_policy.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "codex/policy/sandbox_approval_matrix_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "policy",
+      "feature_id": "feat_83faacf17230b40b",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_52b9b645d72937f0",
+        "source_index:src_70a046b9513995ea",
+        "source_index:src_6c732772312d512d"
+      ],
+      "stateful": true,
+      "target": "codex"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_operation_policy.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "codex/policy/sandbox_approval_policy/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "policy",
+      "feature_id": "feat_6782f40731dde921",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_52b9b645d72937f0",
+        "source_index:src_70a046b9513995ea",
+        "source_index:src_6c732772312d512d"
+      ],
+      "stateful": true,
+      "target": "codex"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.projection_event.v1",
+        "support": "missing"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "codex/projection/slash_app_tui_projection/docs/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "projection",
+      "feature_id": "feat_58ec5d5c9fb8fc55",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_88bdca7e3353f976",
+        "source_index:src_52b9b645d72937f0",
+        "source_index:src_70a046b9513995ea"
+      ],
+      "stateful": true,
+      "target": "codex"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.projection_event.v1",
+        "support": "missing",
+        "truth_scope": "target_projection"
+      },
+      "claim_type": "host_projection",
+      "dedupe_key": "codex/projection/tui_slash_command_projection_quirk/host_projection/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "projection",
+      "feature_id": "feat_c7af2198e588899d",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_52b9b645d72937f0",
+        "source_index:src_35a0436ac3cdfb44",
+        "source_index:src_70a046b9513995ea"
+      ],
+      "stateful": true,
+      "target": "codex"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.replay_session.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "replay",
+      "dedupe_key": "codex/session/codex_cli_gpt55_capture_probe_replay/replay/model_yes/stateful_yes",
+      "e4_row_ref": "codex_cli_gpt55_e4_capture_probe_v1",
+      "evidence_tier": "C4",
+      "family": "session",
+      "feature_id": "feat_79951d1fdd8a3937",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#codex_cli_gpt55_e4_capture_probe_v1#sha256:ae98e65717d03a2d451e65db2b7c7693f77d9786686f8370b888ac52e41c6085",
+        "capture:docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/raw_capture_manifest.json#sha256:c22cddc606d25a4e4720d812bf8b162e802240b1859c9ab735fde872926b90eb",
+        "replay:docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/bb_replay_result.json#sha256:457d9c20d86c4e071e537fb9eb2e492f92e5aeb4f0701971e1ffcc54e936658f",
+        "comparator:docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/comparator_report.json#sha256:c408077792bcdc8cdd7277dc603e4bc800cd17239f7ddf8d6261157a8b941d29",
+        "support_claim:docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
+        "parity_results:docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/parity_results.jsonl#sha256:a87a2ed2f94233db521b2b198cfd7fef6056161622d19750e643bf17ede8a6d1",
+        "secret_scan_report:docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/secret_scan_report.json#sha256:02ce7bff97694bd2571c2b3161ae049742e9be8290463f26891c3685a4c61ebf",
+        "validator_output:docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/c4_validation_report.json#sha256:8e794527c8d964c138ea80e93bdf5d230f7bc66863f0a39a37e38dfec014398c"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "codex"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.external_protocol_session.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "codex/session/mcp_plugin_config/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "session",
+      "feature_id": "feat_00bdbcc4204ffd6f",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_52b9b645d72937f0",
+        "source_index:src_70a046b9513995ea",
+        "source_index:src_6c732772312d512d"
+      ],
+      "stateful": true,
+      "target": "codex"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.work_item.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "codex/task/goal_mode_longrun_objective/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "task",
+      "feature_id": "feat_d6bf5885b4726409",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_0a961b0726c4132e",
+        "source_index:src_2afa44cee1525829",
+        "source_index:src_52b9b645d72937f0"
+      ],
+      "stateful": true,
+      "target": "codex"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial"
+      },
+      "claim_type": "config",
+      "dedupe_key": "oh_my_opencode/config/harness_pack_config/config/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_9b4a751a699695f3",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_55c24a06ee5804e7",
+        "source_index:src_2afa44cee1525829",
+        "source_index:src_c4dc1ae30d98c283"
+      ],
+      "stateful": true,
+      "target": "oh_my_opencode"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.context_resource_pack.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "oh_my_opencode/context/system_prompt_policy_context/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "context",
+      "feature_id": "feat_a635e23f83e24617",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_0f2ff69d10be237f",
+        "source_index:src_55c24a06ee5804e7",
+        "source_index:src_2afa44cee1525829"
+      ],
+      "stateful": true,
+      "target": "oh_my_opencode"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.side_effect_broker.v1",
+        "support": "missing"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "oh_my_opencode/product/opencode_automation_side_effects/docs/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "product",
+      "feature_id": "feat_1aef0e46fb62f33b",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_55c24a06ee5804e7",
+        "source_index:src_2afa44cee1525829",
+        "source_index:src_c4dc1ae30d98c283"
+      ],
+      "stateful": true,
+      "target": "oh_my_opencode"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.capability_registry.v1",
+        "support": "partial"
+      },
+      "claim_type": "registry_discovery",
+      "dedupe_key": "omp/capability/disabled_extension_id_filter_quirk/registry_discovery/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "capability",
+      "feature_id": "feat_03c64aeb50a62331",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/capability/index.ts:222-253"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.capability_registry.v1",
+        "support": "partial"
+      },
+      "claim_type": "registry_discovery",
+      "dedupe_key": "omp/capability/provider_priority_dedupe_shadowing_quirk/registry_discovery/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "capability",
+      "feature_id": "feat_8ae97ef2bd684e58",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/capability/index.ts:149-190"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/config/native_config_yml_settings_json_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_972c6fe9b273f7c2",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/discovery/builtin.ts:817-866",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/config/settings-schema.ts:3765-3838"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "capture",
+      "dedupe_key": "omp/config/oh_my_pi_p6_0_l1_read_only_config_graph/capture/model_yes/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
+      "evidence_tier": "C4",
+      "family": "config",
+      "feature_id": "feat_5f2288119ae693bd",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l1_config_context_tool_surface_v1#sha256:c6d96da67797f42b274f51fd6eb0cb7ad09ef06873083316667dee09a860c50d",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json#sha256:a5819fd983019702e0c5808e018a716fe98f51766e2b95cd3a986df5e5906b98",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/bb_replay_result.json#sha256:3f3291decc890f0e96f1515f9a43faf14eb9d94cd03b5ddffa405a7456289ef2",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/comparator_report.json#sha256:fc4e84e687838b9b6eb15d9feb2ba3dce8bb25285a9e14ce584df0f9c7e8fefd",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/parity_results.json#sha256:0c6dc5fcb57543c9cc2b17eae5ef9f5f32773a97ea23c63314691f63f84fe6a4",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/secret_scan_report.json#sha256:d1e73455492a1c6d2eab8557116c84e325022b56b2f56d996202d665e96d00b6",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/prevalidation_report.json#sha256:dbb62cbb5af25c575ae189ed7239751497831aa28af75d5917a381e8fb2d5a2f"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial"
+      },
+      "claim_type": "config",
+      "dedupe_key": "omp/config/profile_and_target_config/config/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_2448ef276993987f",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_f65617ecd493ee4f",
+        "source_index:src_93fd051988d07afa",
+        "source_index:src_0e1555d15f32f33f"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial"
+      },
+      "claim_type": "config",
+      "dedupe_key": "omp/config/tool_discovery_mcp_settings_quirk/config/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_b21f22ba4520a20c",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/config/settings-schema.ts:3765-3838"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.context_resource_pack.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/context/agents_md_nearest_project_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "context",
+      "feature_id": "feat_ead35b9aaa92627b",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/discovery/builtin.ts:867-934"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.context_resource_pack.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "capture",
+      "dedupe_key": "omp/context/oh_my_pi_p6_0_l1_context_pack_system_prompt/capture/model_yes/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
+      "evidence_tier": "C4",
+      "family": "context",
+      "feature_id": "feat_b4f538c876354370",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l1_config_context_tool_surface_v1#sha256:c6d96da67797f42b274f51fd6eb0cb7ad09ef06873083316667dee09a860c50d",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json#sha256:a5819fd983019702e0c5808e018a716fe98f51766e2b95cd3a986df5e5906b98",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/bb_replay_result.json#sha256:3f3291decc890f0e96f1515f9a43faf14eb9d94cd03b5ddffa405a7456289ef2",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/comparator_report.json#sha256:fc4e84e687838b9b6eb15d9feb2ba3dce8bb25285a9e14ce584df0f9c7e8fefd",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/parity_results.json#sha256:0c6dc5fcb57543c9cc2b17eae5ef9f5f32773a97ea23c63314691f63f84fe6a4",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/secret_scan_report.json#sha256:d1e73455492a1c6d2eab8557116c84e325022b56b2f56d996202d665e96d00b6",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/prevalidation_report.json#sha256:dbb62cbb5af25c575ae189ed7239751497831aa28af75d5917a381e8fb2d5a2f"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.context_resource_pack.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/context/system_md_rules_skills_commands_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "context",
+      "feature_id": "feat_c3176a71a615dd4a",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/discovery/builtin.ts:231-447"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_manifest.v1",
+        "support": "missing"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/extension/custom_tool_loader_wrapper_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "extension",
+      "feature_id": "feat_5db7b9864178048b",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/discovery/builtin.ts:725-817"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_manifest.v1",
+        "support": "missing"
+      },
+      "claim_type": "manifest",
+      "dedupe_key": "omp/extension/extension_manifest_module_settings_quirk/manifest/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "extension",
+      "feature_id": "feat_76c88b89c26a7c47",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/discovery/builtin.ts:449-604"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_hook_execution.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/extension/hook_key_type_tool_name_grammar_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "extension",
+      "feature_id": "feat_7d5c43e4cca2ad0d",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/capability/hook.ts:1-40"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_hook_execution.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "capture",
+      "dedupe_key": "omp/extension/oh_my_pi_p6_0_l2_custom_command_tool_hook_execution/capture/model_yes/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_0_l2_tool_execution_v1",
+      "evidence_tier": "C4",
+      "family": "extension",
+      "feature_id": "feat_df43d724dcc52d71",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l2_tool_execution_v1#sha256:ab8d9820d4d68a9b0567568a10a1e3d0f88844f194c4c947a5173ca0cf61901d",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json#sha256:541c8fa785cf5d8e48b9619755fd201e95df956c14e91e43479b358309bcbf67",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/bb_replay_result.json#sha256:3461b6a831c014511370cd321a9cfcfdb4d4fde72495b2d37463a7fdbe5be88d",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/comparator_report.json#sha256:75cef22187aec0a95aa98a383c5c1754af99fd5b3a9d44ef4a9f35fc93e0208c",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/parity_results.json#sha256:f88837fa163d4d82ba1fa66e047012aee8090ddefbf48e4f32c3ab2f13905289",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/secret_scan_report.json#sha256:9b7acf436cff49b94783bb241aa0cdd8a871a779968029b943dcf0c55792d6c6",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/prevalidation_report.json#sha256:451572bedadc9e37bc6b59de72908d02cf1df2bdc743cb2b02a6a7bb81dacc7a"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_hook_execution.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "capture",
+      "dedupe_key": "omp/extension/oh_my_pi_p6_0_l3_hook_command_execution/capture/model_yes/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_0_l3_command_network_hook_v1",
+      "evidence_tier": "C4",
+      "family": "extension",
+      "feature_id": "feat_9042234d6a8792c6",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l3_command_network_hook_v1#sha256:174e576085fc185b2c8e78b3f934a9aa6469bd96c011e892cf654cfb559853e7",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw_capture_manifest.json#sha256:bddbcf8b317dd599b55c3d84f9c6fea16c1443c366fa74e3ce26e150122f22a5",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/bb_replay_result.json#sha256:edb29da6dfc858a72b8acd3faf86ae20366d2c1385db885e3e81899fe5789800",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/comparator_report.json#sha256:954f4ef6112d537917384c257a6cb146266409f1c285c2606c5ef1698528ca54",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/parity_results.json#sha256:9cbc75f9be478221d3c9ca8db9d67ab60c95eb47335dd0dee2e038ceb2a63b67",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/secret_scan_report.json#sha256:77db9c0c1d61b7837f9b188b25114fd2cb17ffae317aadd57097d7de9a2f1e15",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/prevalidation_report.json#sha256:936143afb98bb1b5a21481d3fa46f4c3393a5b3dfe8106aadf668f4043991559"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.external_protocol_session.v1",
+        "support": "partial"
+      },
+      "claim_type": "config",
+      "dedupe_key": "omp/mcp/project_user_mcp_discovery_mode_quirk/config/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "mcp",
+      "feature_id": "feat_cfb14716ff3ed7f8",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/discovery/builtin.ts:100-229",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/config/settings-schema.ts:3791-3838"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.external_protocol_session.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/mcp/stdio_http_transport_pairing_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "mcp",
+      "feature_id": "feat_a0d9667a49ec0d7b",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/capability/mcp.ts:1-74"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_operation_policy.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "capture",
+      "dedupe_key": "omp/policy/oh_my_pi_p6_0_l3_hook_gated_network_shaped_bash_block/capture/model_yes/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_0_l3_command_network_hook_v1",
+      "evidence_tier": "C4",
+      "family": "policy",
+      "feature_id": "feat_33a6210bdc129f5b",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l3_command_network_hook_v1#sha256:174e576085fc185b2c8e78b3f934a9aa6469bd96c011e892cf654cfb559853e7",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw_capture_manifest.json#sha256:bddbcf8b317dd599b55c3d84f9c6fea16c1443c366fa74e3ce26e150122f22a5",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/bb_replay_result.json#sha256:edb29da6dfc858a72b8acd3faf86ae20366d2c1385db885e3e81899fe5789800",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/comparator_report.json#sha256:954f4ef6112d537917384c257a6cb146266409f1c285c2606c5ef1698528ca54",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/parity_results.json#sha256:9cbc75f9be478221d3c9ca8db9d67ab60c95eb47335dd0dee2e038ceb2a63b67",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/secret_scan_report.json#sha256:77db9c0c1d61b7837f9b188b25114fd2cb17ffae317aadd57097d7de9a2f1e15",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/prevalidation_report.json#sha256:936143afb98bb1b5a21481d3fa46f4c3393a5b3dfe8106aadf668f4043991559"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.side_effect_broker.v1",
+        "support": "missing"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "omp/product/browser_github_tts_image_side_effects/docs/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "product",
+      "feature_id": "feat_e4e2626cb830cd71",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_60e20d4e76036ffc",
+        "source_index:src_f65617ecd493ee4f",
+        "source_index:src_93fd051988d07afa"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_manifest.v1",
+        "support": "missing"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/product/custom_tools_hooks/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "product",
+      "feature_id": "feat_286eace25512641c",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_f65617ecd493ee4f",
+        "source_index:src_93fd051988d07afa",
+        "source_index:src_0e1555d15f32f33f"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.resource_access.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/resource/artifact_dirs_subagent_dedupe_quirk/source/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "resource",
+      "feature_id": "feat_831c3ad2042deb79",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/internal-urls/registry-helpers.ts:1-35"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.resource_access.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/resource/artifact_protocol_session_resolution_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "resource",
+      "feature_id": "feat_61cde93000108912",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/internal-urls/artifact-protocol.ts:17-104"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.resource_ref.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/resource/internal_url_artifact_read/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "resource",
+      "feature_id": "feat_27b8b717b944aa62",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_f65617ecd493ee4f",
+        "source_index:src_93fd051988d07afa",
+        "source_index:src_0e1555d15f32f33f"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.resource_ref.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/resource/internal_url_scheme_registry_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "resource",
+      "feature_id": "feat_099412907166ad07",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/internal-urls/router.ts:18-101"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.external_protocol_session.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/session/mcp_server_discovery/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "session",
+      "feature_id": "feat_53e7527a5b7c988d",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_e342210f4c443131",
+        "source_index:src_60e20d4e76036ffc",
+        "source_index:src_f65617ecd493ee4f"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.external_protocol_session.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "capture",
+      "dedupe_key": "omp/session/oh_my_pi_p6_0_l4_mcp_browser_resource_session/capture/model_yes/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_0_l4_mcp_browser_resource_v1",
+      "evidence_tier": "C4",
+      "family": "session",
+      "feature_id": "feat_cca28b225f4e6aeb",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l4_mcp_browser_resource_v1#sha256:56a0a8d01d96df777c70e8938066a54ea5aab26c7bba132665c72c1eebad8d10",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw_capture_manifest.json#sha256:6a1b4bd8293aeaa910dc010dec6d9f5e91cf55456ca2f17b2f05714f878eca87",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/bb_replay_result.json#sha256:7821101f52dece47e28cae604cc9a3c20c824bf18e8c415e9ff0f23cc5ada8ec",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/comparator_report.json#sha256:8a3020309dbe445f96a5409ea10c97395f7bf8948180d21be92699429acbb491",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/parity_results.json#sha256:4a6fce33c13e929c4dfe314a0d808382d688562e884fa9e87e6e7a91e007ed3e",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/secret_scan_report.json#sha256:816a7fd42eb826ce0f15224e8ec3334b38a44b272a9f67d141aa11c10f5913e5",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/prevalidation_report.json#sha256:a48462e6b6e97379e95fa53fd37c9afda7c3b31aa2bcdda302480c4cf6a8511d"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.work_item.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/task/job_tool_poll_cancel_list_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "task",
+      "feature_id": "feat_4dd08ed201b36a70",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/tools/job.ts:25-110"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.work_item.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/task/owner_scoped_async_job_registry_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "task",
+      "feature_id": "feat_aff72be1cb3081a7",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/async/job-manager.ts:9-123"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.work_item.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "omp/task/tasks_jobs_background/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "task",
+      "feature_id": "feat_64292b3d983dd2dd",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_dbb47d3715a98f8f",
+        "source_index:src_f65617ecd493ee4f",
+        "source_index:src_93fd051988d07afa"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_tool_surface.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "capture",
+      "dedupe_key": "omp/tool/oh_my_pi_p6_0_l1_builtin_tool_surface/capture/model_yes/stateful_no",
+      "e4_row_ref": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
+      "evidence_tier": "C4",
+      "family": "tool",
+      "feature_id": "feat_24c075bc2a24cae0",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l1_config_context_tool_surface_v1#sha256:c6d96da67797f42b274f51fd6eb0cb7ad09ef06873083316667dee09a860c50d",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json#sha256:a5819fd983019702e0c5808e018a716fe98f51766e2b95cd3a986df5e5906b98",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/bb_replay_result.json#sha256:3f3291decc890f0e96f1515f9a43faf14eb9d94cd03b5ddffa405a7456289ef2",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/comparator_report.json#sha256:fc4e84e687838b9b6eb15d9feb2ba3dce8bb25285a9e14ce584df0f9c7e8fefd",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/parity_results.json#sha256:0c6dc5fcb57543c9cc2b17eae5ef9f5f32773a97ea23c63314691f63f84fe6a4",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/secret_scan_report.json#sha256:d1e73455492a1c6d2eab8557116c84e325022b56b2f56d996202d665e96d00b6",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/prevalidation_report.json#sha256:dbb62cbb5af25c575ae189ed7239751497831aa28af75d5917a381e8fb2d5a2f"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": false,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.tool_execution_outcome.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "capture",
+      "dedupe_key": "omp/tool/oh_my_pi_p6_0_l2_local_tool_execution/capture/model_yes/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_0_l2_tool_execution_v1",
+      "evidence_tier": "C4",
+      "family": "tool",
+      "feature_id": "feat_b0d3b6e55812d206",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l2_tool_execution_v1#sha256:ab8d9820d4d68a9b0567568a10a1e3d0f88844f194c4c947a5173ca0cf61901d",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json#sha256:541c8fa785cf5d8e48b9619755fd201e95df956c14e91e43479b358309bcbf67",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/bb_replay_result.json#sha256:3461b6a831c014511370cd321a9cfcfdb4d4fde72495b2d37463a7fdbe5be88d",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/comparator_report.json#sha256:75cef22187aec0a95aa98a383c5c1754af99fd5b3a9d44ef4a9f35fc93e0208c",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/parity_results.json#sha256:f88837fa163d4d82ba1fa66e047012aee8090ddefbf48e4f32c3ab2f13905289",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/secret_scan_report.json#sha256:9b7acf436cff49b94783bb241aa0cdd8a871a779968029b943dcf0c55792d6c6",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/prevalidation_report.json#sha256:451572bedadc9e37bc6b59de72908d02cf1df2bdc743cb2b02a6a7bb81dacc7a"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.capability_registry.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "omp/tool/skills_commands_builtin_discovery/source/model_yes/stateful_no",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "tool",
+      "feature_id": "feat_302e54b3816b0735",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_f65617ecd493ee4f",
+        "source_index:src_93fd051988d07afa",
+        "source_index:src_0e1555d15f32f33f"
+      ],
+      "stateful": false,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial"
+      },
+      "claim_type": "config",
+      "dedupe_key": "opencode/config/opencode_config/config/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_a725c52ebf288d68",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_70a046b9513995ea",
+        "source_index:src_6c732772312d512d",
+        "source_index:src_e949a237bc3bb5cc"
+      ],
+      "stateful": true,
+      "target": "opencode"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_operation_policy.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "opencode/policy/permissions_policy/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "policy",
+      "feature_id": "feat_8529ee0f1323a5bb",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_70a046b9513995ea",
+        "source_index:src_6c732772312d512d",
+        "source_index:src_e949a237bc3bb5cc"
+      ],
+      "stateful": true,
+      "target": "opencode"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.provider_route.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "opencode/provider/provider_config/docs/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "provider",
+      "feature_id": "feat_72485f7cf39bedea",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_70a046b9513995ea",
+        "source_index:src_6c732772312d512d",
+        "source_index:src_e949a237bc3bb5cc"
+      ],
+      "stateful": true,
+      "target": "opencode"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.external_protocol_session.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "opencode/session/mcp_server_config/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "session",
+      "feature_id": "feat_de27fca23d674816",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_70a046b9513995ea",
+        "source_index:src_6c732772312d512d",
+        "source_index:src_e949a237bc3bb5cc"
+      ],
+      "stateful": true,
+      "target": "opencode"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.replay_session.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "capture",
+      "dedupe_key": "opencode/session/north_star_opencode_package_capture/capture/model_yes/stateful_yes",
+      "e4_row_ref": "opencode_gpt51mini_north_star_capture_v1",
+      "evidence_tier": "C4",
+      "family": "session",
+      "feature_id": "feat_48d391c67faf0adf",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#opencode_gpt51mini_north_star_capture_v1#sha256:01983e5e42c4effb785306c0361812d96d0a91761f9f82a9f35165fb930607c9",
+        "capture:docs/conformance/e4_target_support/opencode_north_star_capture_v1/raw_capture_manifest.json",
+        "replay:docs/conformance/e4_target_support/opencode_north_star_capture_v1/bb_replay_result.json",
+        "comparator:docs/conformance/e4_target_support/opencode_north_star_capture_v1/comparator_report.json",
+        "support_claim:docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "opencode"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.capability_registry.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "opencode/tool/agents_commands_skills/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "tool",
+      "feature_id": "feat_b6068bbfdb67965b",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_55c24a06ee5804e7",
+        "source_index:src_2afa44cee1525829",
+        "source_index:src_0ee808597c9f5e94"
+      ],
+      "stateful": true,
+      "target": "opencode"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.capability_registry.v1",
+        "support": "partial"
+      },
+      "claim_type": "registry_discovery",
+      "dedupe_key": "pi/capability/tool_registry_filtering_quirk/registry_discovery/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "capability",
+      "feature_id": "feat_3542060273091f14",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_0e1555d15f32f33f",
+        "source_index:src_f47fec881c4c1f94",
+        "source_index:src_1c48deeb8ff1eaa6"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial"
+      },
+      "claim_type": "config",
+      "dedupe_key": "pi/config/settings_global_project_merge/config/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_5ee81cd8dbcc65d1",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_983d9a623cbc2aef",
+        "source_index:src_79ccb28e76447e18",
+        "source_index:src_ca12356f0cb08e37"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.config_mutation_record.v1",
+        "support": "missing"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "pi/config/settings_migration_writeback_quirk/runtime_behavior/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_f90ddd62cb052a0f",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_1a46a786a55b4c9c",
+        "source_index:src_492516a38a524958",
+        "source_index:src_9044f76fe38dd6d6"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "pi/config/settings_scope_precedence_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "config",
+      "feature_id": "feat_0fb9a8eb74b9414c",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_284841d00482cc42",
+        "source_index:src_9044f76fe38dd6d6",
+        "source_index:src_6d4d6674c9cdf298"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.context_resource_pack.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "pi/context/agents_rules_context_pack/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "context",
+      "feature_id": "feat_6edae71edccda136",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_55c24a06ee5804e7",
+        "source_index:src_2afa44cee1525829",
+        "source_index:src_0ee808597c9f5e94"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.context_resource_pack.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "pi/context/nearest_agents_rules_resolution_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "context",
+      "feature_id": "feat_e4f9fdd8d09c38ba",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_284841d00482cc42",
+        "source_index:src_55c24a06ee5804e7",
+        "source_index:src_2afa44cee1525829"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_hook_execution.v1",
+        "support": "missing"
+      },
+      "claim_type": "source",
+      "dedupe_key": "pi/extension/extension_hook_phase_order_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "extension",
+      "feature_id": "feat_5f7c4d31065a8be2",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_ada1f3cc6145e3b8",
+        "source_index:src_4f70c546f1184abe",
+        "source_index:src_cc2dcd7228141d01"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.memory_compaction_plan.v1",
+        "support": "missing"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "pi/memory/compaction_override_cancel/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "memory",
+      "feature_id": "feat_9c03364a51731d42",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_b8adc4e6c33c1859",
+        "source_index:src_fb115ad99d382df5",
+        "source_index:src_9ce57afa45bff20e"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_operation_policy.v1",
+        "support": "missing"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "pi/policy/vouch_permissions_policy/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "policy",
+      "feature_id": "feat_934a78a2a694b630",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_284841d00482cc42",
+        "source_index:src_77ca862b00a1801c",
+        "source_index:src_a3c6287b8bb0a03a"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_hook_execution.v1",
+        "support": "missing"
+      },
+      "claim_type": "manifest",
+      "dedupe_key": "pi/product/extension_hook_tool_call_block/manifest/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "product",
+      "feature_id": "feat_084fa143dd5a617e",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_ada1f3cc6145e3b8",
+        "source_index:src_4f70c546f1184abe",
+        "source_index:src_cc2dcd7228141d01"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.side_effect_broker.v1",
+        "support": "missing"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "pi/product/github_side_effect_vouch/docs/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "product",
+      "feature_id": "feat_7222abeeffc6f7c6",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_f9b37ce9e2f432db",
+        "source_index:src_9226f0096c6bc885",
+        "source_index:src_9044f76fe38dd6d6"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.projection_event.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "pi/projection/chat_projection_frames/docs/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "projection",
+      "feature_id": "feat_04f2743eb9972b05",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_da2e184860b6a6bd",
+        "source_index:src_35a0436ac3cdfb44",
+        "source_index:src_2cfe8347a145280c"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.provider_route.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "pi/provider/provider_pre_request_transform/docs/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "provider",
+      "feature_id": "feat_c12f3d18614e2f37",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_e342210f4c443131",
+        "source_index:src_36e8904d263102fe",
+        "source_index:src_03a6bd598bed8a6a"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.provider_route.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "pi/provider/provider_route_transform_quirk/source/model_no/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "provider",
+      "feature_id": "feat_d9a108e03ba8b129",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": false,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_e342210f4c443131",
+        "source_index:src_36e8904d263102fe",
+        "source_index:src_03a6bd598bed8a6a"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.resource_access.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "pi/resource/resource_loader_internal_urls/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "resource",
+      "feature_id": "feat_327528ad47f2ed45",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_93fd051988d07afa",
+        "source_index:src_a312259c71700578",
+        "source_index:src_60e20d4e76036ffc"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.session_transcript.v1",
+        "support": "partial"
+      },
+      "claim_type": "source",
+      "dedupe_key": "pi/session/session_tree_lineage_quirk/source/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "session",
+      "feature_id": "feat_89eb5e1a029051cd",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_d84c624e730e7256",
+        "source_index:src_9044f76fe38dd6d6",
+        "source_index:src_6d4d6674c9cdf298"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.work_item.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "pi/task/subagent_job_lifecycle/docs/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "task",
+      "feature_id": "feat_2a32a07d7841332b",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_dbb47d3715a98f8f",
+        "source_index:src_664a4698833582b4",
+        "source_index:src_0a961b0726c4132e"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.capability_registry.v1",
+        "support": "partial"
+      },
+      "claim_type": "docs",
+      "dedupe_key": "pi/tool/skills_and_commands_tool_surface/docs/model_yes/stateful_no",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "tool",
+      "feature_id": "feat_6254f658179bf9b3",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_4a11b4d02d13273f",
+        "source_index:src_9020cf6ff9b38fe2",
+        "source_index:src_de8e8d4c10090e01"
+      ],
+      "stateful": false,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.tool_execution_outcome.v1",
+        "support": "partial"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "pi/tool/tool_execution_outcome_quirk/runtime_behavior/model_yes/stateful_yes",
+      "e4_row_ref": null,
+      "evidence_tier": "C1",
+      "family": "tool",
+      "feature_id": "feat_4e89ff088efe6170",
+      "fixture_refs": [],
+      "gap_kind": "evidence",
+      "model_visible": true,
+      "promotion_state": "draft",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source_index:src_507e00c538c6a3c6",
+        "source_index:src_ab06cb4872bf6213",
+        "source_index:src_97ef12fe893feab6"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/p3_1_effective_config_graph_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "config",
+      "feature_id": "feat_b3bcb7697f3ea258",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_1_effective_config_graph_compiler_v1#sha256:bce4ded7ac594c144b751cde193078b8b4db984389e7edc41adfa34243c205e7",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/raw_capture_manifest.json#sha256:f2337df471cdcc6c2e0eb1adc0e58c4fdee1dee3bac2d0c921d68220622781d2",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json#sha256:856a9f246f9521923a87b1aafb529bd7984223ebfe03501d59c64d5e694e9deb",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json#sha256:fb2919daf8c21854656c1a126034776be8ed1f8e3c5a7007ba1ab557362b0fea",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/parity_results.json#sha256:65d3ec051fc45895f11a15c11c272e775c0b55d03400aa2a824d8d84fe4e774e",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/secret_scan_report.json#sha256:aeac0490c01ebff2a6ccc224235479075dfa5f2ebe79d2829312c4bb0880c359",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json#sha256:6db84d52bd5ba5b48116a3b2383e01bc2fd59772f5cda89ecd64afa0ba16d874"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/effective_config_graph.py",
+        "source:tests/compilation/test_effective_config_graph.py",
+        "source:scripts/e4_parity/build_primitive_projection.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.provider_route.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_6_protocol_provider_policy_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "provider",
+      "feature_id": "feat_0234bfa2b266f538",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_6_protocol_provider_policy_compiler_v1#sha256:bc6accb385d0d8be769c2957ea73dc292cc333cfd43a0a42012d14b0a37cdefa",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/raw_capture_manifest.json#sha256:3c319b5c6307ab15b53260eecab67e86f33ae2c6d62d980b488fb9f2b5a130e2",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/bb_replay_result.json#sha256:e02024c641cad14e2bff6c72e59a7b795bcbaff039c185f781dc5853057c9dd7",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json#sha256:625cac6ad2a2550d1d930acedad035d7b2cea2ba3b8f413a630b23f95c23741b",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/parity_results.json#sha256:ed47e75fbbf49a6b51b43aa2c014a1922c24deb7362b78d220e75e0e9e1cabd5",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/secret_scan_report.json#sha256:46f7667669c1b6aa4935a84014781b80a93dd795950e46fcb68b9f01ae7618f7",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/prevalidation_report.json#sha256:f29ea64acc8b7dfad355bd7f1c829047fdf6fd689177c17c18163b3ab0c5ad68"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.capability_registry.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_3_capability_registry_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_3_capability_registry_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "capability",
+      "feature_id": "feat_5123d3276f9ca468",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_3_capability_registry_compiler_v1#sha256:ba2cbee50de9672220d2aea86cfe011bcf5bcf9df4fb484eee5e4a018a2b5d00",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/raw_capture_manifest.json#sha256:a6571aac4acdd0833fda62f2c58c9888974b2d39689f2590454d7c39e41efe5a",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/bb_replay_result.json#sha256:eb5ac608cbb27fcd40a47e7a1dbeec468dbd3c91180badc9723a2a545f35d3dd",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/comparator_report.json#sha256:8c505e256a5ecf141ff54a569e50b4f99c5491ed3e98ba67ef5dcbabd38af5f0",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/parity_results.json#sha256:3f98988e78b6948670fe436175aa17faa278c900a0197074fe52e143702f6d2c",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/secret_scan_report.json#sha256:ab2c30f9a886b6252b57209e703233b5be5789fbeaad9e9c6ecc9295394a1d9d",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/prevalidation_report.json#sha256:f9eb88daee6a1da0eb36a4c0c349a9483c1ec0edecc3c3c7d3af0e2b2c302a94"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.side_effect_broker.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_8_projection_broker_adapter/c4",
+      "e4_row_ref": "oh_my_pi_p3_8_projection_broker_adapter_v1",
+      "evidence_tier": "C4",
+      "family": "side_effect",
+      "feature_id": "feat_a8c1754af302f290",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_8_projection_broker_adapter_v1#sha256:47986b7c5a0718fa8121263fc1ba090d9cf62987e79d0a42da6a21ba4c0ce210",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json#sha256:56239d6a57b2554b97604639b9f6cca0df3d7fcfef1a60990f0f5522638c2f2b",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json#sha256:c3027b2bd2d0e4b385d9e7becde47e5314cff4beb59d480a26f50bb183771bfb",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/parity_results.json#sha256:6019ccc0fea6c378b9bb17368041eba3daa403d7a14f361f518963771088bc17",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/secret_scan_report.json#sha256:db5d08564722e9f50ad031144f223ca248a08f46c923f6afdf64372d8e3d85da",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/prevalidation_report.json#sha256:d8fade10acd59cd7041327d4af8087a65856e4dd8675c1119182db9a195a3dc4"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.work_item.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_7_memory_work_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_7_memory_work_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "task",
+      "feature_id": "feat_b650fa627d57aa92",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_7_memory_work_compiler_v1#sha256:eb8e4807da21d37e88280deb188f533d5e789e66196246e7c7417347c486dac5",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json#sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json#sha256:b555a3ec55ff55e5b2dd0ce3636146535961aadcd68d64f94c723ff5756ccf03",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/secret_scan_report.json#sha256:2173d93d68a7a1d6348c3f99b44fdca88f67129d51da94942f3e36f2de04ba57",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/prevalidation_report.json#sha256:1eee90f7fc5558e828a0864f53795bfc2cd71c83a449298f92c6f3aa78d031f4"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.resource_access.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_5_resource_blob_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_5_resource_blob_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "resource",
+      "feature_id": "feat_bc11e30da175b4a9",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_5_resource_blob_compiler_v1#sha256:f52f66f627901b2346016eb31bc59a6923db9fe9fb5027de218dede954ed671e",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:cadae9c57e73639c5c858a99203403aacad2d51d45b630b6060aa3c1041ac9e4",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json#sha256:9ae9735552e51660fd4216409844f2deb9889ac90ebbdfa700a09e9375878a3a",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json#sha256:d67157252a9660a84c872d7b7090ce22a67a1bbfc90e27f46e52151870c74307",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json#sha256:cd1b55559023ea9c852dc5982c7014f546cbcd83f66dd18e1f8e09604c2cdf6e",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/secret_scan_report.json#sha256:d8e69f732d9350eabde879d14a2779f028a190c10becb5573ce732749f69d7af",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/prevalidation_report.json#sha256:545a5de5517dc64b8aabf5641048719b1f70e3414835bf482fda7b8f38b0d2f5"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_hook_execution.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_4_extension_hook_execution_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_4_extension_hook_execution_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "extension",
+      "feature_id": "feat_dcc5055b78969aba",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_4_extension_hook_execution_compiler_v1#sha256:6589db3e7a400dc23ca550d2f35fbf57e21ae5b7a4676299a72731383d0721e2",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json#sha256:58d2385505e26f65ea5c4a2c2e839adeafb68bc150a8991ff1046adc2e1da51b",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json#sha256:9c9bd8648a4b57722632657414272e54ae1ef03349a63f945709bf52f9bda138",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json#sha256:2cae5e176aad70f56514a9c1d6a613ae31827afd836db4e2335fc6307904037e",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json#sha256:3b8068b3c28612b649964f89bac982b1277c2a2c9398b22fcd7a3a15c3b4a5c1",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/secret_scan_report.json#sha256:04eb087e99a9fda3b4e77554041aff07e5985dd7097c1271d7d7d9cb45be8460",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/prevalidation_report.json#sha256:8967b53d8c8d867bab6a2ff96a8de776017872d66f9a90935978a91f7ac979e4"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.context_resource_pack.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_2_context_resource_pack_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_2_context_resource_pack_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "context",
+      "feature_id": "feat_e9ae27a72149301b",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_2_context_resource_pack_compiler_v1#sha256:714a8588ed5968a1fb5499819674f4a6e3382d7fdc4e2f7761132ac33acdaba8",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:302c57fde6e34feee3a81c1165df8dbaf40614dbb2e2016e6ff24ae0ee8a5715",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json#sha256:0c808af1ba7e021e869fd7825a20599510f884b5bd71cde7a84f777fcd48121f",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:dc69b9e5a07588cc131b0b36599d3489ba0faaf1e9131ea3d6f38e8b64e5ae72",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json#sha256:3f1664f39e845e895c2d3618838200c64fa5bb2bbd3894aa1b33f1f093a357e7",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/secret_scan_report.json#sha256:2b67f284c84f11e2d589be24b7ecf248a96a55588795ee985ca37e8ba4ee9b5c",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/prevalidation_report.json#sha256:71763ce363824a6203828cfc54117d996412b2fcf367ac354845af907aa93227"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.memory_compaction_plan.v1",
+        "support": "supported",
+        "truth_scope": "target_projection"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/memory/oh_my_pi_p6_0_l5_memory_compaction/snapcompact/model_no/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+      "evidence_tier": "C4",
+      "family": "memory",
+      "feature_id": "feat_oh_my_pi_p6_0_l5_memory_compaction",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l5_memory_compaction_v1#sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json#sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json#sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json#sha256:b9f071bce9de37c6e4c5757f3bef9626cfbbf0604ad3e05b1accc81d28266744",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json#sha256:28bbf8b3a8568de2686d79eafcc9b9a19e62606b1e760c6b7303a7fcb70775a5",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json#sha256:f411b5aa07191977b030e5fca8bed218e376fa01aba713f74d346e30a36234d4",
+        "memory_compaction_plan:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json#sha256:3fa381caa95d07c9933ae8b52c502ed6500c316a5ab224b7e7a5b925777340b5",
+        "transcript_continuation_patch:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:ea0db3ed825e805f800f6144d18288073b3c89ba034f2e3fee23ef5bf1e2d2b4",
+        "target_probe:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json#sha256:bcc10fc3fc6b2a24114f0b802b164e273071f7595f25992df591a2167259e396"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/docs/compaction.md",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/agent/src/compaction/compaction.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/snapcompact/src/snapcompact.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/tools/memory-retain.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/tools/memory-recall.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/tools/memory-reflect.ts"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.projection_event.v1",
+        "support": "supported",
+        "truth_scope": "target_projection"
+      },
+      "claim_type": "host_projection",
+      "dedupe_key": "omp/projection/oh_my_pi_p6_0_l6_tui_projection_gallery_stdout/host_projection/model_no/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_0_l6_tui_projection_v1",
+      "evidence_tier": "C4",
+      "family": "projection",
+      "feature_id": "feat_55bf4adc8ee7717b",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l6_tui_projection_v1#sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json#sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json#sha256:c149862882958eee37afd2b5cb0019801e91cb341e93067cc092c4559fa23249",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json#sha256:62028333e50cabe000e668f921e8b5c6f449bf207159c16ca61e2aae67dc796b",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json#sha256:60a7df3ae350c15cbd9f9eede2247ce78627634346465154c34781e625679ec1",
+        "projection_events:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c"
+      ],
+      "gap_kind": "none",
+      "model_visible": false,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/cli/gallery-cli.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/modes/components/tool-execution.ts"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.work_item.v1",
+        "support": "supported",
+        "truth_scope": "target_projection"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/task/oh_my_pi_p6_6_task_job_subagent/joined_detached_lifecycle/provider_authenticated/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_6_task_job_subagent_v1",
+      "evidence_tier": "C4",
+      "family": "task",
+      "feature_id": "feat_397dab44f9f126c3",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_6_task_job_subagent_v1#sha256:3fb7286e5cecc187d1039eb7358155eaaea92e0d13779e46085af710ccf7252a",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json#sha256:1ff42afbb9c0ae7dd8744e84eba935187cd3510940a012336d541306c78e68dc",
+        "joined_subagent_target_capture:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+        "detached_subagent_target_capture:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+        "work_item_ref:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_items.json#sha256:0f93c80969b6c9b1c586470b50bafc14e77d284c249e208e6050d8f54483fc7f",
+        "work_item_replay:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_item_replay.json#sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json#sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9",
+        "task_job_subagent_comparator:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json#sha256:b361ad6d45bb7a1e977b6565cdf8600ec997a5dbd3e3f67b40889472179c0816",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json#sha256:66da20e9a02a36e84fe35a7a95c0d21ae11adcd3d4580ac007c3166e5b09f228",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json#sha256:85fb9f760f7d2d85f01d0cb7f26cc6312e244108603bf2ab2763b2540e8e642f",
+        "target_probe:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+        "target_setup_report:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_setup_and_capture_report.json#sha256:0e056c9ac056b008a2123a6add336d7e77ddf5be0a5c63d5372c57f004db2364"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/async/job-manager.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/agent/task-tool.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/agent/subagent.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/tools/task.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/tools/job.ts"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1 + bb.context_resource_pack.v1 + bb.capability_registry.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "pi/p5/pi_p5_l1_cli_config_context_tool_surface/c4",
+      "e4_row_ref": "pi_p5_l1_cli_config_context_tool_surface_v1",
+      "evidence_tier": "C4",
+      "family": "config",
+      "feature_id": "feat_2f47f564bacc6202",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#pi_p5_l1_cli_config_context_tool_surface_v1#sha256:54a9d3ddd9e90fb341fbe412ab0656f366eba27ca3fe818ae6c7b0e6b346817b",
+        "capture:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json#sha256:3798ed26b35cd0ae9008a62fbf703c2d3ef6ccef2242a7e7ca4e7007b0c6edcb",
+        "replay:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/bb_replay_result.json#sha256:6061c36783aadb6e5ccb5ec046050ad36c83165eb8da4ca9ab8d26a2e1442ae5",
+        "comparator:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json#sha256:05315be8132f8b17c123eb085f6a4274bdb291ed0a121e82999011e3e11f4131",
+        "support_claim:docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/parity_results.json#sha256:51f51f6f19b8b642d646b6537990b668762fe59a42ef8ca68670b3562ed238bb",
+        "secret_scan_report:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/secret_scan_report.json#sha256:3e0b2f97143bed23a8b459b51648638c96be15107dc69a47c8b04f5f52ad4432",
+        "validator_output:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/prevalidation_report.json#sha256:183cd0cdbf0cc6944e4fb3dc47c60b186c9aff0e8763cb1b8a63e89a3e446d3b"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
+        "source:docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
+        "source:docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_hook_execution.v1 + bb.work_item.v1 + bb.memory_compaction_plan.v1 + bb.transcript_continuation_patch.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "pi/p5/pi_p5_l2_extension_session_residual/c4",
+      "e4_row_ref": "pi_p5_l2_extension_session_residual_v1",
+      "evidence_tier": "C4",
+      "family": "extension",
+      "feature_id": "feat_38725eb172b28cb1",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#pi_p5_l2_extension_session_residual_v1#sha256:34b38f0eb690e8940d6b8c6bd8cf623c795f9239fab75343f1aea3b46bdc1d6f",
+        "capture:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec",
+        "replay:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json#sha256:567453e99e01d51ecc61dfe08ec7f003b9b638d8f7cbb885dce27fb8a2200c6f",
+        "comparator:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json#sha256:f98a5bd4f933ebe336393af9004c662df2d256260893af92eec9b97511c9d043",
+        "support_claim:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json#sha256:346b3bf965105867ecab099e0b154f8388cdc83c027853716e1b59c81dbd9e21",
+        "secret_scan_report:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/secret_scan_report.json#sha256:f033e4e2b70364f8b0c178252c862a98d91aa7d9e08a4c56375e4ea448ac42d7",
+        "validator_output:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/prevalidation_report.json#sha256:049cbe20737a74146df0e5e0b0fad6be80daf2f6810a6d498c98dee08ee62ca9"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
+        "source:docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
+        "source:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "pi"
+    }
+  ],
+  "schema_version": "bb.atomic_feature_ledger.v1",
+  "source_index_ref": "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json"
+}

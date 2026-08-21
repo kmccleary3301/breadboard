@@ -1,0 +1,20 @@
+schema_version: bb.e4.pi_p5_lane_config.v1
+config_id: pi_p5_l2_extension_session_residual_v1
+lane_id: pi_p5_l2_extension_session_residual
+phase: P5
+p5_items:
+- P5.2-residual
+- P5.3-residual
+- P5.5
+- P5.6
+target_family: pi
+target_version: '@mariozechner/pi-coding-agent@0.57.1'
+provider_model: no-provider
+sandbox_mode: read-only-no-secret
+claim_scope: No-secret Pi residual capture for extension hook registration/execution and session resume/fork/tree/compaction
+  behavior, including extension-discovered context resources.
+exclusions:
+- provider-authenticated inference
+- network behavior
+- UI rendering
+- broad Pi customization outside observed extension/session APIs

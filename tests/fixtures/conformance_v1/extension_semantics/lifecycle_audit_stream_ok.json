@@ -1,0 +1,13 @@
+{
+  "events": [
+    {
+      "event_type": "extension.install.requested"
+    },
+    {
+      "event_type": "extension.approval.decided"
+    },
+    {
+      "event_type": "extension.install.completed"
+    }
+  ]
+}

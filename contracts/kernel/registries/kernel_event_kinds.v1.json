@@ -1,0 +1,390 @@
+{
+  "schema_version": "bb.registry.v1",
+  "registry_id": "kernel_event_kinds",
+  "entries": [
+    {
+      "id": "assistant_message",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for message.assistant.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "message.assistant",
+        "actor": "engine",
+        "visibility": "model",
+        "payload_schema_version": "bb.payload.message.assistant.v1"
+      }
+    },
+    {
+      "id": "user_message",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for message.user.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "message.user",
+        "actor": "human",
+        "visibility": "model",
+        "payload_schema_version": "bb.payload.message.user.v1"
+      }
+    },
+    {
+      "id": "provider_response",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for provider.exchange.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "provider.exchange",
+        "actor": "provider",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.provider.exchange.v1"
+      }
+    },
+    {
+      "id": "tool_call",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for tool.called.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "tool.called",
+        "actor": "engine",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.tool.called.v1"
+      }
+    },
+    {
+      "id": "tool_result",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for tool.completed.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "tool.completed",
+        "actor": "tool",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.tool.completed.v1"
+      }
+    },
+    {
+      "id": "permission_request",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for permission.requested.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "permission.requested",
+        "actor": "service",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.permission.requested.v1"
+      }
+    },
+    {
+      "id": "permission_response",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for permission.decided.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "permission.decided",
+        "actor": "service",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.permission.decided.v1"
+      }
+    },
+    {
+      "id": "task_event",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for task.progress.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "task.progress",
+        "actor": "subagent",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.task.progress.v1"
+      }
+    },
+    {
+      "id": "turn_start",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for turn.started.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "turn.started",
+        "actor": "engine",
+        "visibility": "audit",
+        "payload_schema_version": "bb.payload.turn.started.v1"
+      }
+    },
+    {
+      "id": "guardrail_event",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for warning.guardrail.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "warning.guardrail",
+        "actor": "service",
+        "visibility": "audit",
+        "payload_schema_version": "bb.payload.warning.guardrail.v1"
+      }
+    },
+    {
+      "id": "lifecycle_event",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for run.lifecycle.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "run.lifecycle",
+        "actor": "engine",
+        "visibility": "audit",
+        "payload_schema_version": "bb.payload.run.lifecycle.v1"
+      }
+    },
+    {
+      "id": "ctree_node",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for compaction.ctree_node.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "compaction.ctree_node",
+        "actor": "service",
+        "visibility": "audit",
+        "payload_schema_version": "bb.payload.compaction.ctree_node.v1"
+      }
+    },
+    {
+      "id": "todo_event",
+      "status": "active",
+      "description": "Projection-only runtime event kind for projection.todo_snapshot; not a kernel truth surface.",
+      "metadata": {
+        "classification": "projection_only",
+        "projection_family": "projection.todo_snapshot",
+        "actor": "service",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.projection.todo_snapshot.v1"
+      }
+    },
+    {
+      "id": "ctree_snapshot",
+      "status": "active",
+      "description": "Projection-only runtime event kind for projection.ctree_snapshot; not a kernel truth surface.",
+      "metadata": {
+        "classification": "projection_only",
+        "projection_family": "projection.ctree_snapshot",
+        "actor": "service",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.projection.ctree_snapshot.v1"
+      }
+    },
+    {
+      "id": "stream.gap",
+      "status": "active",
+      "description": "CLI bridge stream-only event kind stream.gap.",
+      "metadata": {
+        "classification": "stream_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "assistant.message.start",
+      "status": "active",
+      "description": "CLI bridge stream-only event kind assistant.message.start.",
+      "metadata": {
+        "classification": "stream_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "assistant.message.delta",
+      "status": "active",
+      "description": "CLI bridge stream-only event kind assistant.message.delta.",
+      "metadata": {
+        "classification": "stream_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "assistant.message.end",
+      "status": "active",
+      "description": "CLI bridge stream-only event kind assistant.message.end.",
+      "metadata": {
+        "classification": "stream_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "assistant.reasoning.delta",
+      "status": "active",
+      "description": "CLI bridge stream-only event kind assistant.reasoning.delta.",
+      "metadata": {
+        "classification": "stream_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "assistant.thought_summary.delta",
+      "status": "active",
+      "description": "CLI bridge stream-only event kind assistant.thought_summary.delta.",
+      "metadata": {
+        "classification": "stream_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "assistant_delta",
+      "status": "active",
+      "description": "CLI bridge stream-only event kind assistant_delta.",
+      "metadata": {
+        "classification": "stream_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "conversation.compaction.start",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind conversation.compaction.start; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "conversation.compaction.end",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind conversation.compaction.end; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "checkpoint_list",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind checkpoint_list; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "checkpoint_restored",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind checkpoint_restored; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "skills_catalog",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind skills_catalog; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "skills_selection",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind skills_selection; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "warning",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind warning; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "reward_update",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind reward_update; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "limits_update",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind limits_update; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "completion",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind completion; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "log_link",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind log_link; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "error",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind error; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "run_finished",
+      "status": "active",
+      "description": "Host-facing lifecycle/control event kind run_finished; not a kernel truth surface.",
+      "metadata": {
+        "classification": "host_only_bridge",
+        "kernel_truth": false
+      }
+    },
+    {
+      "id": "coordination_signal",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for coordination.signal.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "coordination.signal",
+        "actor": "engine",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.coordination.signal.v1"
+      }
+    },
+    {
+      "id": "coordination_review_verdict",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for coordination.review_verdict.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "coordination.review_verdict",
+        "actor": "engine",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.coordination.review_verdict.v1"
+      }
+    },
+    {
+      "id": "coordination_directive",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for coordination.directive.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "coordination.directive",
+        "actor": "engine",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.coordination.directive.v1"
+      }
+    }
+  ]
+}

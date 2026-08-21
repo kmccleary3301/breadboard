@@ -16,6 +16,7 @@ class SQLiteRLRunStore:
         self.path: str | Path = database if database == ":memory:" else Path(database)
         if isinstance(self.path, Path):
             self.path.parent.mkdir(parents=True, exist_ok=True)
+
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._init_schema()

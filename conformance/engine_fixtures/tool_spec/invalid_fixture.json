@@ -1,0 +1,40 @@
+{
+  "comparator_class": "normalized-trace-equal",
+  "contract": "bb.tool_spec.v1",
+  "fixture_family": "tool_spec",
+  "fixture_id": "tool_spec_invalid_missing_schemaVersion",
+  "invalid_reason": "Removes required reference_output field 'schemaVersion' from bb.tool_spec.v1.",
+  "reference_output": {
+    "aliases": [
+      "bash"
+    ],
+    "approvalPolicy": {
+      "mode": "prompt"
+    },
+    "capabilityTags": [
+      "shell"
+    ],
+    "description": "Execute a shell command in the workspace.",
+    "inputSchema": {
+      "properties": {
+        "command": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    },
+    "name": "run_shell",
+    "outputSchema": {
+      "type": "object"
+    },
+    "visibility": {
+      "host": true,
+      "model": true
+    }
+  },
+  "source_fixture": "tool_spec/reference_fixture.json",
+  "support_tier": "reference-engine"
+}

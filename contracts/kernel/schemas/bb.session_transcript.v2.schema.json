@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.session_transcript.v2.schema.json",
+  "title": "BreadBoard Session Transcript V2",
+  "type": "object",
+  "$comment": "Supersedes bb.session_transcript.v1. v1 is frozen for accepted evidence. Migration map: docs/contracts/CONTRACT_CONVENTIONS.md#v1-to-v2-runtime-records.",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "items"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.session_transcript.v2"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_cursor": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "visibility",
+          "content",
+          "content_schema_version"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)*$"
+          },
+          "visibility": {
+            "$ref": "bb.kernel.common.v1.schema.json#/$defs/visibility"
+          },
+          "content": true,
+          "content_schema_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "call_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "event_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "enum": [
+                  "live",
+                  "replay",
+                  "import",
+                  "compaction",
+                  "fixture"
+                ]
+              },
+              "source_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              }
+            }
+          },
+          "metadata": {
+            "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+          }
+        }
+      }
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+    }
+  }
+}

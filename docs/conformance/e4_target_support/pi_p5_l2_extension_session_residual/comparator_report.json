@@ -1,0 +1,337 @@
+{
+  "assertions": [
+    {
+      "expected": "0.57.1",
+      "name": "package_version",
+      "observed": "0.57.1",
+      "status": "passed"
+    },
+    {
+      "expected": 1,
+      "name": "extension_loaded_once",
+      "observed": 1,
+      "status": "passed"
+    },
+    {
+      "expected": [],
+      "name": "extension_load_errors",
+      "observed": [],
+      "status": "passed"
+    },
+    {
+      "expected": [
+        "residual_tool"
+      ],
+      "name": "extension_registered_tool",
+      "observed": [
+        "residual_tool"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected": [
+        "residual-command"
+      ],
+      "name": "extension_registered_command",
+      "observed": [
+        "residual-command"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected": [
+        {
+          "default": true,
+          "name": "residual-flag",
+          "type": "boolean"
+        }
+      ],
+      "name": "extension_registered_flag",
+      "observed": [
+        {
+          "default": true,
+          "name": "residual-flag",
+          "type": "boolean"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "expected": [
+        "before_agent_start",
+        "before_provider_request",
+        "context",
+        "resources_discover",
+        "session_before_compact",
+        "session_before_fork",
+        "session_before_switch",
+        "session_before_tree",
+        "session_compact",
+        "session_tree",
+        "tool_call",
+        "tool_result",
+        "user_bash"
+      ],
+      "name": "extension_event_coverage",
+      "observed": [
+        "before_agent_start",
+        "before_provider_request",
+        "context",
+        "resources_discover",
+        "session_before_compact",
+        "session_before_fork",
+        "session_before_switch",
+        "session_before_tree",
+        "session_compact",
+        "session_tree",
+        "tool_call",
+        "tool_result",
+        "user_bash"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected": true,
+      "name": "provider_payload_patched",
+      "observed": true,
+      "status": "passed"
+    },
+    {
+      "expected": 2,
+      "name": "context_hook_appended_message",
+      "observed": 2,
+      "status": "passed"
+    },
+    {
+      "expected": {
+        "block": true,
+        "reason": "residual write blocked"
+      },
+      "name": "tool_write_blocked",
+      "observed": {
+        "block": true,
+        "reason": "residual write blocked"
+      },
+      "status": "passed"
+    },
+    {
+      "expected": {
+        "cancel": false
+      },
+      "name": "session_switch_resume_allowed",
+      "observed": {
+        "cancel": false
+      },
+      "status": "passed"
+    },
+    {
+      "expected": {
+        "cancel": false,
+        "skipConversationRestore": true
+      },
+      "name": "session_fork_policy",
+      "observed": {
+        "cancel": false,
+        "skipConversationRestore": true
+      },
+      "status": "passed"
+    },
+    {
+      "expected": "extension compact summary",
+      "name": "session_compaction_hook_result",
+      "observed": "extension compact summary",
+      "status": "passed"
+    },
+    {
+      "expected": "tree summary from extension",
+      "name": "session_tree_hook_summary",
+      "observed": "tree summary from extension",
+      "status": "passed"
+    },
+    {
+      "expected": true,
+      "name": "session_file_has_compaction",
+      "observed": true,
+      "status": "passed"
+    },
+    {
+      "expected": true,
+      "name": "branched_session_parent_ref",
+      "observed": true,
+      "status": "passed"
+    },
+    {
+      "expected": true,
+      "name": "forked_session_parent",
+      "observed": true,
+      "status": "passed"
+    },
+    {
+      "expected": true,
+      "name": "continue_recent_returns_valid_session_file",
+      "observed": true,
+      "status": "passed"
+    },
+    {
+      "expected": true,
+      "name": "reopened_session_id_matches_branch",
+      "observed": true,
+      "status": "passed"
+    },
+    {
+      "expected": "checkpoint",
+      "name": "work_item_schema_replay",
+      "observed": "checkpoint",
+      "status": "passed"
+    },
+    {
+      "expected": "applied",
+      "name": "memory_plan_schema_replay",
+      "observed": "applied",
+      "status": "passed"
+    },
+    {
+      "expected": "sha256:0a7b9e920dd8e8a938afbf278ca96c0be5feffc4ec9689a8604fff5540a0364c",
+      "name": "patch_schema_replay",
+      "observed": "sha256:0a7b9e920dd8e8a938afbf278ca96c0be5feffc4ec9689a8604fff5540a0364c",
+      "status": "passed"
+    },
+    {
+      "expected": {
+        "ANTHROPIC_API_KEY": false,
+        "GEMINI_API_KEY": false,
+        "OPENAI_API_KEY": false,
+        "PI_OFFLINE": "1"
+      },
+      "name": "no_provider_secrets",
+      "observed": {
+        "ANTHROPIC_API_KEY": false,
+        "GEMINI_API_KEY": false,
+        "OPENAI_API_KEY": false,
+        "PI_OFFLINE": "1"
+      },
+      "status": "passed"
+    }
+  ],
+  "config_id": "pi_p5_l2_extension_session_residual_v1",
+  "details": [
+    {
+      "name": "package_version",
+      "status": "passed"
+    },
+    {
+      "name": "extension_loaded_once",
+      "status": "passed"
+    },
+    {
+      "name": "extension_load_errors",
+      "status": "passed"
+    },
+    {
+      "name": "extension_registered_tool",
+      "status": "passed"
+    },
+    {
+      "name": "extension_registered_command",
+      "status": "passed"
+    },
+    {
+      "name": "extension_registered_flag",
+      "status": "passed"
+    },
+    {
+      "name": "extension_event_coverage",
+      "status": "passed"
+    },
+    {
+      "name": "provider_payload_patched",
+      "status": "passed"
+    },
+    {
+      "name": "context_hook_appended_message",
+      "status": "passed"
+    },
+    {
+      "name": "tool_write_blocked",
+      "status": "passed"
+    },
+    {
+      "name": "session_switch_resume_allowed",
+      "status": "passed"
+    },
+    {
+      "name": "session_fork_policy",
+      "status": "passed"
+    },
+    {
+      "name": "session_compaction_hook_result",
+      "status": "passed"
+    },
+    {
+      "name": "session_tree_hook_summary",
+      "status": "passed"
+    },
+    {
+      "name": "session_file_has_compaction",
+      "status": "passed"
+    },
+    {
+      "name": "branched_session_parent_ref",
+      "status": "passed"
+    },
+    {
+      "name": "forked_session_parent",
+      "status": "passed"
+    },
+    {
+      "name": "continue_recent_returns_valid_session_file",
+      "status": "passed"
+    },
+    {
+      "name": "reopened_session_id_matches_branch",
+      "status": "passed"
+    },
+    {
+      "name": "work_item_schema_replay",
+      "status": "passed"
+    },
+    {
+      "name": "memory_plan_schema_replay",
+      "status": "passed"
+    },
+    {
+      "name": "patch_schema_replay",
+      "status": "passed"
+    },
+    {
+      "name": "no_provider_secrets",
+      "status": "passed"
+    }
+  ],
+  "failed": 0,
+  "input_hashes": {
+    "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json": "sha256:567453e99e01d51ecc61dfe08ec7f003b9b638d8f7cbb885dce27fb8a2200c6f",
+    "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json": "sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec",
+    "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json": "sha256:96f3fa209d0adf13d1a49590534b1946575d531cc8b046227d1c091c431a2fde"
+  },
+  "lane_id": "pi_p5_l2_extension_session_residual",
+  "run_id": "20260703_pi_p5_l2_extension_session_residual_capture",
+  "schema_version": "bb.e4.comparator_report.v1",
+  "scope": {
+    "config_id": "pi_p5_l2_extension_session_residual_v1",
+    "lane_id": "pi_p5_l2_extension_session_residual",
+    "p5_items": [
+      "P5.2-residual",
+      "P5.3-residual",
+      "P5.5",
+      "P5.6"
+    ],
+    "phase": "P5",
+    "provider_model": "no-provider",
+    "run_id": "20260703_pi_p5_l2_extension_session_residual_capture",
+    "sandbox_mode": "read-only-no-secret",
+    "target_family": "pi",
+    "target_version": "@mariozechner/pi-coding-agent@0.57.1"
+  },
+  "warned": 0
+}

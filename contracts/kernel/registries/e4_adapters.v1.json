@@ -1,0 +1,158 @@
+{
+  "entries": [
+    {
+      "description": "Pass-through E4 translator for already-normalized capture and replay artifacts.",
+      "id": "identity",
+      "metadata": {
+        "config_keys": [],
+        "impl": "scripts.e4_parity.adapters.identity:translate",
+        "kind": "translator"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Comparator id used by North Star stored-report replay lanes.",
+      "id": "north_star_stored_report_replay",
+      "metadata": {
+        "config_keys": [
+          "assertions"
+        ],
+        "impl": "scripts.e4_parity.adapters.stored_report:compare",
+        "kind": "comparator"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Comparator id used by Codex stored-report replay lanes.",
+      "id": "codex_stored_report_replay",
+      "metadata": {
+        "config_keys": [
+          "assertions"
+        ],
+        "impl": "scripts.e4_parity.adapters.stored_report:compare",
+        "kind": "comparator"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Comparator id used by Oh My Pi stored-report replay lanes.",
+      "id": "oh_my_pi_stored_report_replay",
+      "metadata": {
+        "config_keys": [
+          "assertions"
+        ],
+        "impl": "scripts.e4_parity.adapters.stored_report:compare",
+        "kind": "comparator"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Comparator id used by Pi P5 stored-report replay lanes.",
+      "id": "pi_stored_report_replay",
+      "metadata": {
+        "config_keys": [
+          "assertions"
+        ],
+        "impl": "scripts.e4_parity.adapters.stored_report:compare",
+        "kind": "comparator"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Semantic replay comparator id used by data-defined E4 replay lanes.",
+      "id": "semantic_replay_v1",
+      "metadata": {
+        "config_keys": [
+          "assertions"
+        ],
+        "impl": "scripts.e4_parity.adapters.semantic_replay:compare",
+        "kind": "comparator"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Capture adapter id for lane-definition-driven North Star package captures.",
+      "id": "north_star_package_capture",
+      "metadata": {
+        "config_keys": [
+          "inputs",
+          "workspace_template"
+        ],
+        "impl": "scripts.e4_parity.adapters.package_capture:capture",
+        "kind": "capture_adapter"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Capture adapter for lane definitions whose accepted artifacts are built by scripts.e4_parity.lane_acceptance_artifacts.",
+      "id": "lane_definition_build",
+      "metadata": {
+        "config_keys": [
+          "inputs",
+          "workspace_template"
+        ],
+        "impl": "scripts.e4_parity.adapters.lane_definition_build:capture",
+        "kind": "capture_adapter"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Scratch capture adapter that materializes already accepted governed artifacts byte-for-byte after validating their canonical C4 chain.",
+      "id": "accepted_artifact_materialize",
+      "metadata": {
+        "config_keys": [
+          "inputs",
+          "workspace_template"
+        ],
+        "impl": "scripts.e4_parity.adapters.accepted_artifact_materialize:capture",
+        "kind": "capture_adapter"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Capture adapter for Oh-My-Pi compiler-derived support lanes built from declared raw inputs and record builders.",
+      "id": "oh_my_pi_compiler_capture",
+      "metadata": {
+        "config_keys": [
+          "inputs",
+          "record_builders",
+          "roles",
+          "workspace_template"
+        ],
+        "impl": "scripts.e4_parity.adapters.oh_my_pi_compiler_capture:capture",
+        "kind": "capture_adapter"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Capture adapter for Pi P5 L1 CLI/config/context/tool-surface evidence from the frozen Pi archive.",
+      "id": "pi_p5_l1_capture",
+      "metadata": {
+        "config_keys": [
+          "inputs",
+          "source_archive",
+          "workspace_template"
+        ],
+        "impl": "scripts.e4_parity.adapters.pi_p5_l1_capture:capture",
+        "kind": "capture_adapter"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Capture adapter for Pi P5 L2 extension/session residual evidence from the frozen Pi archive.",
+      "id": "pi_p5_l2_capture",
+      "metadata": {
+        "config_keys": [
+          "inputs",
+          "source_archive",
+          "workspace_template"
+        ],
+        "impl": "scripts.e4_parity.adapters.pi_p5_l2_capture:capture",
+        "kind": "capture_adapter"
+      },
+      "status": "active"
+    }
+  ],
+  "registry_id": "e4_adapters",
+  "schema_version": "bb.registry.v1"
+}

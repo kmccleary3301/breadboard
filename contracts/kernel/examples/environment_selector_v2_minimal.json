@@ -1,0 +1,6 @@
+{
+  "schema_version": "bb.environment_selector.v2",
+  "selector_id": "env.cuda_dev",
+  "profile_ids": ["cuda-dev"],
+  "features": ["gpu", "cuda", "nsys"]
+}

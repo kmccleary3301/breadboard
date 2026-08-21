@@ -186,8 +186,6 @@ def _validate_verifier_live_contract(verifier_metrics: Mapping[str, Any]) -> lis
         errors.append("verifier_token_missing")
     return errors
 
-
-
 def validate_scheduler_metrics_readiness(scheduler_metrics: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
     if not _has_metric_value(scheduler_metrics, "scheduler_control"):
@@ -236,6 +234,7 @@ def _validate_live_semantics(
     if isinstance(scheduler_control, Mapping) and endpoint_is_local(str(scheduler_control.get("endpoint") or "")):
         errors.append("scheduler_control_endpoint_local")
     errors.extend(validate_scheduler_metrics_readiness(scheduler_metrics))
+
 
 
 def build_live_observability_report(

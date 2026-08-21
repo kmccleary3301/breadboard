@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v1.schema.json",
+  "title": "BreadBoard E4 C4 support claim",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "claim_id",
+    "config_id",
+    "lane_id",
+    "scope",
+    "accepted",
+    "exclusions",
+    "freeze_ref",
+    "capture_ref",
+    "replay_ref",
+    "comparator_ref",
+    "evidence_manifest_ref",
+    "ledger_row_refs",
+    "validation_refs",
+    "generated_at_utc"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.support_claim.v1"
+    },
+    "claim_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "config_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lane_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accepted": {
+      "type": "boolean"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "acceptance_rationale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_family": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sandbox_mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tool_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "level": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phase": {
+      "type": "string",
+      "minLength": 1
+    },
+    "points": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "config_id",
+        "lane_id",
+        "run_id",
+        "target_version",
+        "provider_model",
+        "sandbox_mode"
+      ],
+      "properties": {
+        "config_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lane_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sandbox_mode": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "exclusions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "freeze_ref": {
+      "type": "string",
+      "pattern": "#sha256:[0-9a-f]{64}$"
+    },
+    "capture_ref": {
+      "type": "string",
+      "pattern": "#sha256:[0-9a-f]{64}$"
+    },
+    "raw_source_ref": {
+      "type": "string",
+      "pattern": "#sha256:[0-9a-f]{64}$"
+    },
+    "source_freeze_ref": {
+      "type": "string",
+      "pattern": "#sha256:[0-9a-f]{64}$"
+    },
+    "replay_ref": {
+      "type": "string",
+      "pattern": "#sha256:[0-9a-f]{64}$"
+    },
+    "comparator_ref": {
+      "type": "string",
+      "pattern": "#sha256:[0-9a-f]{64}$"
+    },
+    "parity_results_ref": {
+      "type": "string",
+      "pattern": "#sha256:[0-9a-f]{64}$"
+    },
+    "secret_scan_ref": {
+      "type": "string",
+      "pattern": "#sha256:[0-9a-f]{64}$"
+    },
+    "evidence_manifest_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ledger_row_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "#[^#]+#sha256:[0-9a-f]{64}$"
+      }
+    },
+    "validation_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "#sha256:[0-9a-f]{64}$"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "accepted": {
+            "const": true
+          }
+        },
+        "required": [
+          "accepted"
+        ]
+      },
+      "then": {
+        "required": [
+          "ledger_row_refs",
+          "validation_refs",
+          "exclusions"
+        ],
+        "properties": {
+          "ledger_row_refs": {
+            "minItems": 1
+          },
+          "validation_refs": {
+            "minItems": 1
+          },
+          "exclusions": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}

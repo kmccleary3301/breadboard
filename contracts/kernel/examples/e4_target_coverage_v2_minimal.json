@@ -1,0 +1,17 @@
+{
+  "schema_version": "bb.e4.target_coverage.v2",
+  "target_family": "oh_my_pi",
+  "frozen_target_versions": [
+    "@oh-my-pi/pi-coding-agent@example"
+  ],
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "rows": [
+    {
+      "behavior_family": "config_graph",
+      "behavior_id": "oh_my_pi_config_graph_unclaimed",
+      "description": "No accepted v2 C4 claim currently covers config_graph for oh_my_pi.",
+      "status": "out_of_scope",
+      "claim_refs": []
+    }
+  ]
+}

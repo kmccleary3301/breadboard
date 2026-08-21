@@ -3,7 +3,10 @@ import { Box, Text } from "ink"
 import type { TranscriptItem } from "../../../transcriptModel.js"
 import { buildCommandResultEntry, COMMAND_RESULT_LIMIT } from "./commandResults.js"
 import type { StaticFeedItem } from "../types.js"
+import { parseBooleanEnv } from "../../../../utils/envBoolean.js"
 import { writeScrollbackFeedDebugRecord } from "../controller/qcDebugLog.js"
+
+const LANDING_ALWAYS = parseBooleanEnv(process.env.BREADBOARD_TUI_LANDING_ALWAYS, true)
 
 interface ScrollbackFeedOptions {
   readonly enabled: boolean

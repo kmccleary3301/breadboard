@@ -1,0 +1,48 @@
+{
+  "acceptance_rationale": "P3.1 helper/runtime effective config graph compiler is accepted only for the named Oh-My-Pi raw target run and generated bb.effective_config_graph.v1 projection; it is backed by compiler unit tests and a live C4 chain validator.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/raw_capture_manifest.json#sha256:f2337df471cdcc6c2e0eb1adc0e58c4fdee1dee3bac2d0c921d68220622781d2",
+  "claim_id": "oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json#sha256:107bae3ae1da7949c961ba561c96b2b69237f06da72025d844cfe86d85144f08",
+  "config_id": "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
+  "exclusions": [
+    "No broad Oh-My-Pi, OMP, Pi, provider-parity, tool-surface, task/job, memory, UI, or final-readiness support claim is made from this P3.1 micro-lane.",
+    "No score is claimed for P3.2-P3.8 helper/runtime lanes, P5 Pi lanes, or P8 final readiness.",
+    "No write-enabled, provider-authenticated, danger-full-access, network, browser, MCP, or model-inference behavior is claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_1_effective_config_graph_compiler_v1#sha256:bce4ded7ac594c144b751cde193078b8b4db984389e7edc41adfa34243c205e7",
+  "generated_at_utc": "2026-07-03T07:30:00Z",
+  "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_b3bcb7697f3ea258#sha256:350cb4cb64ab3b649cf8b1a14057162f0245aba99ee71b40e3bc6b468ab0b0c1"
+  ],
+  "level": "P3.1",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/parity_results.json#sha256:65d3ec051fc45895f11a15c11c272e775c0b55d03400aa2a824d8d84fe4e774e",
+  "phase": "P3",
+  "points": 25,
+  "provider_model": "no-provider",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json#sha256:856a9f246f9521923a87b1aafb529bd7984223ebfe03501d59c64d5e694e9deb",
+  "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v1",
+  "scope": {
+    "config_id": "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
+    "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+    "p3_item": "P3.1",
+    "phase": "P3",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "sandbox_mode": "read-only",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/secret_scan_report.json#sha256:aeac0490c01ebff2a6ccc224235479075dfa5f2ebe79d2829312c4bb0880c359",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "BreadBoard P3.1 effective config graph compiler support is accepted for the named Oh-My-Pi target capture and generated bb.effective_config_graph.v1 record only.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "tool_id": "agentic_coder_prototype.compilation.effective_config_graph.compile_effective_config_graph",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json#sha256:19808501710be06285127c686deb7c2ab42bdb596f38c74bc4ea639571cc44b3"
+  ]
+}

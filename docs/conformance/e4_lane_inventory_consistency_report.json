@@ -1,0 +1,8 @@
+{
+  "canonical_lane_count": 21,
+  "errors": [],
+  "generated_at_utc": "2026-07-07T00:25:00Z",
+  "generated_lane_count": 21,
+  "ok": true,
+  "schema_version": "bb.e4.lane_inventory_consistency_report.v1"
+}

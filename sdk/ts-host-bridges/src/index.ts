@@ -18,12 +18,14 @@ import type {
   ExecutionCapabilityV1,
   ExecutionPlacementV1,
   KernelEventV1,
+  KernelEventV2,
   ProviderExchangeV1,
   RunRequestV1,
   SandboxRequestV1,
   SandboxResultV1,
   SessionTranscriptV1,
   SessionTranscriptV1Item,
+  SessionTranscriptV2,
   UnsupportedCaseV1,
 } from "@breadboard/kernel-contracts"
 import {
@@ -163,7 +165,7 @@ export type OpenClawBridgeInvocation =
       unsupportedFields: string[]
       providerTurn?: ProviderTextTurnResult
       driverTurn?: DriverMediatedToolTurnResult
-      transcriptPostState?: SessionTranscriptV1
+      transcriptPostState?: SessionTranscriptV2
       unsupportedCase?: UnsupportedCaseV1
     }
   | {
@@ -176,7 +178,10 @@ export type OpenClawBridgeInvocation =
 export interface OpenClawHostKitOptions {
   readonly nativeFallback?: OpenClawNativeFallback
   readonly executeBreadboard?: OpenClawBreadboardExecutor
-  readonly existingTranscript?: SessionTranscriptV1 | Array<Record<string, unknown> | SessionTranscriptV1Item>
+  readonly existingTranscript?:
+    | SessionTranscriptV1
+    | SessionTranscriptV2
+    | Array<Record<string, unknown> | SessionTranscriptV1Item | SessionTranscriptV2["items"][number]>
   readonly toolSlice?: OpenClawToolSliceOptions
 }
 
@@ -408,11 +413,14 @@ export function buildOpenClawProviderExchange(
 
 async function emitKernelEventsToOpenClawCallbacks(
   params: OpenClawEmbeddedRunParams,
-  events: KernelEventV1[],
+  events: readonly (KernelEventV1 | KernelEventV2)[],
 ): Promise<void> {
   let assistantStarted = false
   for (const event of events) {
-    if (event.kind === "assistant_message" && event.visibility === "model") {
+    const modelVisible = typeof event.visibility === "string"
+      ? event.visibility === "model"
+      : event.visibility.model_visible
+    if (event.kind === "assistant_message" && modelVisible) {
       if (!assistantStarted) {
         assistantStarted = true
         await params.onAssistantMessageStart?.()
@@ -520,7 +528,10 @@ export async function runOpenClawEmbeddedViaBreadboard(
   options: {
     executeBreadboard?: OpenClawBreadboardExecutor
     nativeFallback?: OpenClawNativeFallback
-    existingTranscript?: SessionTranscriptV1 | Array<Record<string, unknown> | SessionTranscriptV1Item>
+    existingTranscript?:
+      | SessionTranscriptV1
+      | SessionTranscriptV2
+      | Array<Record<string, unknown> | SessionTranscriptV1Item | SessionTranscriptV2["items"][number]>
     toolSlice?: OpenClawToolSliceOptions
   } = {},
 ): Promise<OpenClawBridgeInvocation> {

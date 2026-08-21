@@ -1,0 +1,456 @@
+{
+  "effective_values": [
+    {
+      "env_gate_ids": [],
+      "path": "completion.confidence_threshold",
+      "source_layer_id": "request.config",
+      "value": 0.7,
+      "value_kind": "number",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "completion.natural_finish.idle_turn_limit",
+      "source_layer_id": "request.config",
+      "value": 1,
+      "value_kind": "number",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "completion.natural_finish.no_tool_turns_threshold",
+      "source_layer_id": "request.config",
+      "value": 1,
+      "value_kind": "number",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "completion.primary",
+      "source_layer_id": "request.config",
+      "value": "hybrid",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "completion.provider_signals",
+      "source_layer_id": "request.config",
+      "value": true,
+      "value_kind": "boolean",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "completion.text_sentinels",
+      "source_layer_id": "request.config",
+      "value": [
+        "TASK COMPLETE",
+        "PROOF COMPLETE"
+      ],
+      "value_kind": "array",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "features.plan",
+      "source_layer_id": "request.config",
+      "value": false,
+      "value_kind": "boolean",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "features.todos.enabled",
+      "source_layer_id": "request.config",
+      "value": false,
+      "value_kind": "boolean",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "loop.plan_turn_limit",
+      "source_layer_id": "request.config",
+      "value": 0,
+      "value_kind": "number",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "loop.sequence",
+      "source_layer_id": "request.config",
+      "value": [
+        {
+          "mode": "build"
+        }
+      ],
+      "value_kind": "array",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "loop.turn_strategy.allow_multiple_per_turn",
+      "source_layer_id": "request.config",
+      "value": false,
+      "value_kind": "boolean",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "loop.turn_strategy.flow",
+      "source_layer_id": "request.config",
+      "value": "assistant_continuation",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "loop.turn_strategy.relay",
+      "source_layer_id": "request.config",
+      "value": "tool_role",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "max_steps",
+      "source_layer_id": "request.metadata",
+      "value": null,
+      "value_kind": "null",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "modes",
+      "source_layer_id": "request.config",
+      "value": [
+        {
+          "name": "plan",
+          "prompt": "@pack(base).plan",
+          "tools_disabled": [],
+          "tools_enabled": [
+            "shell_command"
+          ]
+        },
+        {
+          "name": "build",
+          "prompt": "@pack(base).builder",
+          "tools_disabled": [],
+          "tools_enabled": [
+            "shell_command"
+          ]
+        },
+        {
+          "name": "compact",
+          "prompt": "@pack(base).compact",
+          "tools_enabled": []
+        }
+      ],
+      "value_kind": "array",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "profile.name",
+      "source_layer_id": "request.config",
+      "value": "atp-hilbert-like-gpt54-v1",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "prompts.injection.per_turn_order",
+      "source_layer_id": "request.config",
+      "value": [],
+      "value_kind": "array",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "prompts.injection.system_order",
+      "source_layer_id": "request.config",
+      "value": [
+        "@pack(base).system"
+      ],
+      "value_kind": "array",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "prompts.packs.base.builder",
+      "source_layer_id": "request.config",
+      "value": "../config/e4_targets/atp_hilbert_like/2026-03-09/prompts/system.md",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "prompts.packs.base.compact",
+      "source_layer_id": "request.config",
+      "value": "../config/e4_targets/atp_hilbert_like/2026-03-09/prompts/system.md",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "prompts.packs.base.plan",
+      "source_layer_id": "request.config",
+      "value": "../config/e4_targets/atp_hilbert_like/2026-03-09/prompts/system.md",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "prompts.packs.base.system",
+      "source_layer_id": "request.config",
+      "value": "../config/e4_targets/atp_hilbert_like/2026-03-09/prompts/system.md",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "prompts.tool_prompt_mode",
+      "source_layer_id": "request.config",
+      "value": "system_compiled_and_persistent_per_turn",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "prompts.tool_prompt_synthesis.enabled",
+      "source_layer_id": "request.config",
+      "value": false,
+      "value_kind": "boolean",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "provider_tools.api_variant",
+      "source_layer_id": "request.config",
+      "value": "responses",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "provider_tools.suppress_prompts",
+      "source_layer_id": "request.config",
+      "value": false,
+      "value_kind": "boolean",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "provider_tools.use_native",
+      "source_layer_id": "request.config",
+      "value": true,
+      "value_kind": "boolean",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "providers.default_model",
+      "source_layer_id": "request.config",
+      "value": "openrouter/openai/gpt-5.4",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "providers.models",
+      "source_layer_id": "request.config",
+      "value": [
+        {
+          "adapter": "openai",
+          "id": "openrouter/openai/gpt-5.4",
+          "params": {
+            "parallel_tools": false,
+            "temperature": 0.1
+          },
+          "routing": {
+            "fallback_models": []
+          }
+        }
+      ],
+      "value_kind": "array",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "providers.routing.disable_native_tools_on_probe_failure",
+      "source_layer_id": "request.config",
+      "value": true,
+      "value_kind": "boolean",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "providers.routing.disable_stream_on_probe_failure",
+      "source_layer_id": "request.config",
+      "value": true,
+      "value_kind": "boolean",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "tools.defs_dir",
+      "source_layer_id": "request.config",
+      "value": "../implementations/tools/defs",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "tools.mark_task_complete",
+      "source_layer_id": "request.config",
+      "value": false,
+      "value_kind": "boolean",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "tools.registry.include",
+      "source_layer_id": "request.config",
+      "value": [
+        "shell_command"
+      ],
+      "value_kind": "array",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "tools.registry.paths",
+      "source_layer_id": "request.config",
+      "value": [
+        "../implementations/tools/defs"
+      ],
+      "value_kind": "array",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "turn_strategy.allow_multiple_per_turn",
+      "source_layer_id": "request.config",
+      "value": false,
+      "value_kind": "boolean",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "turn_strategy.flow",
+      "source_layer_id": "request.config",
+      "value": "assistant_continuation",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "turn_strategy.relay",
+      "source_layer_id": "request.config",
+      "value": "tool_role",
+      "value_kind": "string",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "version",
+      "source_layer_id": "request.config",
+      "value": 2,
+      "value_kind": "number",
+      "visibility": "model-visible"
+    },
+    {
+      "env_gate_ids": [],
+      "path": "workspace",
+      "source_layer_id": "request.metadata",
+      "value": null,
+      "value_kind": "null",
+      "visibility": "model-visible"
+    }
+  ],
+  "env_gates": [],
+  "graph_hash": "sha256:7e2c21de23829a270b47a011bbc274d278fcf8897574f8181925579be31abc28",
+  "graph_id": "runtime_emission_c3_session_effective_config_graph",
+  "merge_policy": {
+    "conflict_resolution": "highest-precedence",
+    "policy_id": "precedence_order_deep_merge",
+    "strategy": "deep-merge"
+  },
+  "migrations": [
+    {
+      "applied": true,
+      "from_version": null,
+      "migration_id": "initial-bb-effective-config-graph-v1",
+      "to_version": "bb.effective_config_graph.v1"
+    }
+  ],
+  "schema_version": "bb.effective_config_graph.v1",
+  "source_layers": [
+    {
+      "host_visible": true,
+      "layer_hash": "sha256:2bd506591d2042a2d058ae31552b7f0be1a5ee0d8696bea155120b436c6bfb8f",
+      "layer_id": "request.config",
+      "model_visible": true,
+      "precedence": 0,
+      "scope": "session",
+      "source_kind": "project",
+      "source_ref": "/Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/agent_configs/atp_hilbert_like_gpt54_v1.yaml"
+    },
+    {
+      "host_visible": true,
+      "layer_hash": "sha256:396ed03586d8ad0ce7f21180414690951695d0bac513e12988dec71f3e942e8c",
+      "layer_id": "request.metadata",
+      "model_visible": true,
+      "precedence": 10,
+      "scope": "session",
+      "source_kind": "runtime",
+      "source_ref": "runtime://sessions/runtime_emission_c3_session/metadata"
+    }
+  ],
+  "visibility": {
+    "host_only_paths": [],
+    "model_visible_paths": [
+      "completion.confidence_threshold",
+      "completion.natural_finish.idle_turn_limit",
+      "completion.natural_finish.no_tool_turns_threshold",
+      "completion.primary",
+      "completion.provider_signals",
+      "completion.text_sentinels",
+      "features.plan",
+      "features.todos.enabled",
+      "loop.plan_turn_limit",
+      "loop.sequence",
+      "loop.turn_strategy.allow_multiple_per_turn",
+      "loop.turn_strategy.flow",
+      "loop.turn_strategy.relay",
+      "max_steps",
+      "modes",
+      "profile.name",
+      "prompts.injection.per_turn_order",
+      "prompts.injection.system_order",
+      "prompts.packs.base.builder",
+      "prompts.packs.base.compact",
+      "prompts.packs.base.plan",
+      "prompts.packs.base.system",
+      "prompts.tool_prompt_mode",
+      "prompts.tool_prompt_synthesis.enabled",
+      "provider_tools.api_variant",
+      "provider_tools.suppress_prompts",
+      "provider_tools.use_native",
+      "providers.default_model",
+      "providers.models",
+      "providers.routing.disable_native_tools_on_probe_failure",
+      "providers.routing.disable_stream_on_probe_failure",
+      "tools.defs_dir",
+      "tools.mark_task_complete",
+      "tools.registry.include",
+      "tools.registry.paths",
+      "turn_strategy.allow_multiple_per_turn",
+      "turn_strategy.flow",
+      "turn_strategy.relay",
+      "version",
+      "workspace"
+    ],
+    "redacted_paths": []
+  }
+}

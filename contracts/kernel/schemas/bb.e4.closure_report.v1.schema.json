@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.closure_report.v1.schema.json",
+  "title": "BreadBoard E4 closure report V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at_utc",
+    "sections",
+    "errors",
+    "gate_errors",
+    "pin_stale_count",
+    "semantic_count",
+    "error_count",
+    "ok"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.closure_report.v1"
+    },
+    "generated_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "sections": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "score": {
+          "$ref": "#/$defs/section_report"
+        },
+        "readiness": {
+          "$ref": "#/$defs/section_report"
+        }
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "gate_errors": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "pin_stale_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "semantic_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "error_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+    }
+  },
+  "$defs": {
+    "section_report": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "ok",
+        "errors",
+        "gate_errors",
+        "pin_stale_count",
+        "semantic_count",
+        "error_count"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "gate_errors": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "pin_stale_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "semantic_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

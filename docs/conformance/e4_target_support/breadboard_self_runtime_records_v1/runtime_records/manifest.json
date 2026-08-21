@@ -1,0 +1,11 @@
+{
+  "counts_by_schema": {
+    "bb.kernel_event.v2": 24,
+    "bb.session_transcript.v2": 1
+  },
+  "quarantine_count": 0,
+  "run_id": "run",
+  "session_id": "session",
+  "session_transcript_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "started_at_utc": "2026-07-07T03:00:00Z"
+}

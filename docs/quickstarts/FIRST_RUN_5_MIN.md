@@ -44,11 +44,10 @@ Subsequent runs are incremental—Python and Node installs are skipped when lock
 python scripts/dev/first_time_doctor.py --strict
 ```
 
-Via CLI (if your build includes first-time doctor flags):
+Verify the installed product catalog:
 
 ```bash
-breadboard doctor --first-time
-breadboard doctor --first-time --first-time-profile engine
+breadboard --json system describe
 ```
 
 Engine-only fallback (always available):
@@ -59,49 +58,46 @@ python scripts/dev/first_time_doctor.py --profile engine --strict
 
 ---
 
-## 3. Quick CLI check
+## 3. Create and run a harness
 
 ```bash
-breadboard doctor --config agent_configs/misc/opencode_mock_c_fs.yaml
-breadboard run --config agent_configs/misc/opencode_mock_c_fs.yaml "Reply exactly with: OK"
+breadboard harness create --out ./harness
+breadboard harness validate ./harness/minimal_harness.v2.yaml
+breadboard harness lock ./harness/minimal_harness.v2.yaml \
+  --out ./harness/minimal_harness.lock.json
+breadboard harness run ./harness/minimal_harness.v2.yaml \
+  --lock ./harness/minimal_harness.lock.json \
+  --local \
+  --task "Reply exactly with: OK"
 ```
 
 ---
 
-## 4. Launch the interactive TUI
+## 4. Start the product API
+
+
+Start a local product API in one shell:
 
 ```bash
-breadboard ui --config agent_configs/misc/opencode_mock_c_fs.yaml
+./.venv/bin/python -m agentic_coder_prototype.api.cli_bridge.server
+```
+
+Verify its catalog-backed system endpoint:
+
+```bash
+curl http://127.0.0.1:9099/v1/system
 ```
 
 ---
 
 ## 5. Verify SDK paths
 
-Start a local engine in one shell:
+The repository SDK smoke runs the same lock-first session lifecycle through the
+Python and TypeScript installed clients:
 
 ```bash
-./.venv/bin/python -m agentic_coder_prototype.api.cli_bridge.server
-```
-
-In another shell:
-
-```bash
-python scripts/dev/python_sdk_hello.py
-node scripts/dev/ts_sdk_hello.mjs
-```
-
-Or one-command (starts a temporary local engine, then tears it down):
-
-```bash
-make sdk-hello-live
-make onboarding-contract
-```
-
-Engine-only variant:
-
-```bash
-bash scripts/dev/sdk_hello_live_smoke.sh --no-ts
+python -m pytest tests/test_sdk_v1_default_server_smoke.py -q
+(cd sdk/ts && npm test)
 ```
 
 ---

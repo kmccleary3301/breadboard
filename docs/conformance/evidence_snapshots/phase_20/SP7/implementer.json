@@ -1,0 +1,165 @@
+{
+  "packet": "SP7",
+  "issue": "bb-c6b",
+  "branch": "p20/sp7",
+  "head_sha": "6107d12bcb4561e4e55b4307e8d57775d7c2c5bd",
+  "base_sha": "ba1a1cf7",
+  "generated_at_utc": "2026-07-11T00:00:00Z",
+  "root_causes": [
+    {
+      "id": "ER-PROGRESS-STALE-PINS",
+      "classification": "stale external evidence pins",
+      "finding": "Phase-16 progress items J.1, J.2, and J.3 each pinned evidence[1], the same CLI bridge service artifact, at sha256:c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1 while the legitimate current artifact is sha256:aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf. Arithmetic remained semantically valid at 1000/1000 with semantic_count=0."
+    }
+  ],
+  "files_changed": [
+    "docs_tmp/phase_16/BB_ER_PROGRESS.json",
+    "docs_tmp/phase_20/evidence/SP7/implementer.json"
+  ],
+  "before_at_base": {
+    "base_sha": "ba1a1cf7",
+    "command": "PYTHONPATH=/Users/kylemccleary/projects/breadboard/sp7_wt /Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/.venv/bin/python -m pytest -q tests/e4_parity/test_check_er_progress.py::test_live_bb_er_progress_passes_checker",
+    "exit": 1,
+    "failed_test_ids": [
+      "tests/e4_parity/test_check_er_progress.py::test_live_bb_er_progress_passes_checker"
+    ],
+    "counts": {
+      "failed": 1,
+      "passed": 0
+    },
+    "tail": "FAILED tests/e4_parity/test_check_er_progress.py::test_live_bb_er_progress_passes_checker - assert False is True; pytest: 1 failed in 0.13s",
+    "root_cause_snapshot": {
+      "target_pin_stale_count": 3,
+      "labels": [
+        "J.1.evidence[1]",
+        "J.2.evidence[1]",
+        "J.3.evidence[1]"
+      ],
+      "old_sha256": "sha256:c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1",
+      "new_sha256": "sha256:aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf",
+      "points_done": 1000,
+      "points_total": 1000,
+      "semantic_count": 0,
+      "source": "docs_tmp/phase_20/evidence/M1/spine_reds_taxonomy.json#ER-PROGRESS-STALE-PINS"
+    },
+    "concurrent_external_state_note": "A detailed checker report captured immediately before the edit also contained J.5.evidence[0] as a fourth ambient stale pin. That divergence was not present in the packet taxonomy and is not part of SP7's three-pin root cause; it is classified and deferred below."
+  },
+  "artifact_change_verification": {
+    "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py",
+    "old_sha256": "sha256:c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1",
+    "new_sha256": "sha256:aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf",
+    "old_bytes_provenance": "git show 1fc25b19:agentic_coder_prototype/api/cli_bridge/service.py | shasum -a 256 reproduced c066c7ce98ed...",
+    "new_bytes_provenance": "shasum -a 256 agentic_coder_prototype/api/cli_bridge/service.py at ba1a1cf7 reproduced aff3c4ed9cd1...",
+    "change_commit": "fc9e1f3e626c38f188d82f2993cea9b08798e934",
+    "change_justification": "The merge of github/main intentionally retained both branches' behavior. Relative to first parent 1fc25b19, service.py gained 44 lines: provider runtime imports, a request-scoped prewarm call in create_session, and guarded Codex app-server prewarming for non-interactive/oneshot/interactive/repl CLI sessions. The existing J.1-J.3 primitive-emission imports and create-session emission path remained intact. The merge commit records focused CLI bridge/session verification, so the byte change is legitimate source evolution rather than accidental evidence corruption."
+  },
+  "update_mechanism": {
+    "kind": "existing audited cross-phase progress refresh precedent",
+    "precedent": "docs_tmp/phase_19/item_evidence/G1_cross_phase_pin_refresh.json#progress_files.phase16",
+    "precedent_revision_transition": "63 -> 64",
+    "applied_revision_transition": "65 -> 66",
+    "details": "Parsed the existing JSON, asserted revision 65 and exactly one matching service.py evidence entry at evidence[1] for each of J.1/J.2/J.3 with the expected old digest, replaced exactly those three digests, appended an auditable amendment containing actor/date, old/new pairs, labels, path, justification, and precedent, then serialized with the ledger's established indent=2/sort_keys/newline shape. No updater tool or checker behavior was added or changed.",
+    "updated_labels": [
+      "J.1.evidence[1]",
+      "J.2.evidence[1]",
+      "J.3.evidence[1]"
+    ],
+    "ledger_sha256_before_reconstructed": "sha256:2909c2cac08c9b80771d9b61806c028c713b0565d564412b003f5d5de9e4bea5",
+    "ledger_sha256_before_provenance": "Reconstructed exactly from revision 66 by removing the SP7 terminal amendment, restoring the three recorded old hashes, revision=65, and generated_at_utc=2026-07-10T03:18:31Z; no pre-edit whole-file digest was observed.",
+    "ledger_sha256_after": "sha256:7326de02316625b7464c758975721680f755c072adfe64f04189ffac1b64b5d4"
+  },
+  "after_at_head": {
+    "head_sha": "6107d12bcb4561e4e55b4307e8d57775d7c2c5bd",
+    "pytest_command": "PYTHONPATH=/Users/kylemccleary/projects/breadboard/sp7_wt /Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/.venv/bin/python -m pytest -q tests/e4_parity/test_check_er_progress.py::test_live_bb_er_progress_passes_checker",
+    "pytest_exit": 1,
+    "failed_test_ids": [
+      "tests/e4_parity/test_check_er_progress.py::test_live_bb_er_progress_passes_checker"
+    ],
+    "counts": {
+      "failed": 1,
+      "passed": 0
+    },
+    "pytest_tail": "FAILED tests/e4_parity/test_check_er_progress.py::test_live_bb_er_progress_passes_checker - assert False is True; pytest: 1 failed in 0.07s",
+    "checker_command": "PYTHONPATH=/Users/kylemccleary/projects/breadboard/sp7_wt /Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/.venv/bin/python scripts/e4_parity/check_er_progress.py --progress /Users/kylemccleary/projects/breadboard/docs_tmp/phase_16/BB_ER_PROGRESS.json --workspace-root /Users/kylemccleary/projects/breadboard --json-out /tmp/sp7_after_report.json",
+    "checker_exit": 3,
+    "amended_acceptance_result": {
+      "pin_stale_count": 1,
+      "semantic_count": 0,
+      "points_done": 1000,
+      "points_total": 1000,
+      "remaining_label": "J.5.evidence[0]",
+      "sp7_labels_remaining": [],
+      "result": "PASS: exactly one non-SP7 stale pin remains, as explicitly amended by Main."
+    }
+  },
+  "deferred_j5": {
+    "label": "J.5.evidence[0]",
+    "pinned_sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1",
+    "current_ambient_sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803",
+    "classification": "PIN_STALE deferred; current ambient state must not be blessed",
+    "cause": "The seed generator merge-writes non-seed rows from the current ambient workspace, so output bytes depend on accumulated ambient state. The pinned historical bytes are unavailable. The original divergence cause is undetermined: a pre-diagnostic live digest 63d2d184 already differed from a001fe69; diagnostics only produced the latest ab3c4753 rewrite.",
+    "integrity_finding": "The live ab3c4753 seed is currently untrustworthy: 17 changed provenance refs do not resolve at head. Rebinding J.5 to it would bless corrupt state.",
+    "routing": "Dependent follow-up from the integrated SHA after PacketF5 lands a canonical tracked ledger artifact; use this packet's audited precedent and checker, then require the focused test to pass fully.",
+    "evidence": "docs_tmp/phase_20/evidence/M1/f5_seed_digest_resolution.json"
+  },
+  "commands": [
+    {
+      "cmd": "git show 1fc25b19:agentic_coder_prototype/api/cli_bridge/service.py | shasum -a 256",
+      "exit": 0,
+      "tail": "c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1  -"
+    },
+    {
+      "cmd": "shasum -a 256 agentic_coder_prototype/api/cli_bridge/service.py",
+      "exit": 0,
+      "tail": "aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf  agentic_coder_prototype/api/cli_bridge/service.py"
+    },
+    {
+      "cmd": "git diff 1fc25b19 fc9e1f3e -- agentic_coder_prototype/api/cli_bridge/service.py",
+      "exit": 0,
+      "tail": "service.py | 44 insertions; provider runtime prewarm added while primitive-emission path retained"
+    },
+    {
+      "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_check_er_progress.py::test_live_bb_er_progress_passes_checker",
+      "exit": 1,
+      "tail": "1 failed; only deferred J.5 PIN_STALE remains after SP7's three target pins were removed"
+    },
+    {
+      "cmd": "PYTHONPATH=$WT <venv-python> scripts/e4_parity/check_er_progress.py --progress <workspace>/docs_tmp/phase_16/BB_ER_PROGRESS.json --workspace-root <workspace> --json-out /tmp/sp7_after_report.json",
+      "exit": 3,
+      "tail": "pin_stale_count=1; semantic_count=0; points_done=1000; points_total=1000; sole label J.5.evidence[0]"
+    },
+    {
+      "cmd": "git status --porcelain",
+      "exit": 0,
+      "tail": ""
+    }
+  ],
+  "focused_results": {
+    "target_rebind_count": 3,
+    "target_labels_before": [
+      "J.1.evidence[1]",
+      "J.2.evidence[1]",
+      "J.3.evidence[1]"
+    ],
+    "target_labels_after": [],
+    "checker_semantics_unchanged": true,
+    "totals_unchanged": true,
+    "focused_pytest_fully_green": false,
+    "fully_green_deferred_until": "Integrated-SHA follow-up after PacketF5 canonical tracked ledger artifact lands"
+  },
+  "s03_check": {
+    "new_capability": false,
+    "lane_crud_api": false,
+    "sdk_e4_surface": false,
+    "typescript_repackaging": false,
+    "new_schema_family": false,
+    "scorecard_or_ledger_shape_change": false,
+    "parallel_framework": false,
+    "validation_weakened": false
+  },
+  "notes": [
+    "The Phase-16 progress ledger is intentionally external to the repository checkout and ignored by git; branch p20/sp7 contains an empty evidence-boundary commit while the audited ledger/evidence live under the shared docs_tmp workspace.",
+    "No source, test, schema, checker, or regeneration tooling was changed.",
+    "Reviewer must verify revision 66 before any dependent J.5 follow-up mutates the shared ledger."
+  ]
+}

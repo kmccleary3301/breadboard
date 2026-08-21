@@ -1,0 +1,14 @@
+{
+  "schema": "bb.evidence_snapshot.v1",
+  "authority": "AM23a durable-snapshot pattern",
+  "statement": "Byte-exact snapshots of M1 DAG-hermeticity evidence from the workspace evidence root; live files remain the working set.",
+  "source_root": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/M1",
+  "code_commit": "3f267b1898627152fddf178393fc101294c60653",
+  "generated_at_utc": "2026-07-11T23:35:00Z",
+  "files": {
+    "candidate_stale_pin_census.json": "sha256:2846eaf980ccba68688539d16aecf39ea00df129ba92c80dbc480f85615354e7",
+    "integration_fixed_point_gate.json": "sha256:220878d8cbe2c1c471e50693327bd57dbd36491d685b84f5286cb3f63223b693",
+    "dag_hermeticity_reviewer.json": "sha256:7e908aac0e9457e9e4e3a863ea81597207caad48f2bac6b0e503240c91ba5e5a",
+    "repro_candidate_capture.py": "sha256:2503cb3bfa262a94a2bd0596098640be5438eb94678cd256f17a71c7ddab1909"
+  }
+}

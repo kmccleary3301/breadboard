@@ -1,0 +1,131 @@
+{
+  "acceptance_rationale": "P3.5 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:6a776b03bf1290f5940045d2170e56516bd1f5775a694f0398a5f2e96fe825aa",
+  "catalog_binding": {
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 17,
+    "segment_hash": "sha256:cd5d77b6b10e0861c66f099da296290667ba618d76c52d5ef51746b8adba2735",
+    "segment_id": "oh_my_pi_p3_5_resource_blob_compiler",
+    "shared_segment_hash": "sha256:68f713e106b021a5a01aa372a484c13bf2136638a9013a1fe77bf08d5c75f654"
+  },
+  "claim_id": "oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "resource_access_schema_validation_passed",
+        "comparator_assertion_ids": [
+          "schema_validation_passed"
+        ],
+        "description": "schema validation passed"
+      },
+      {
+        "behavior_id": "resource_access_primary_primitive_present",
+        "comparator_assertion_ids": [
+          "primary_primitive_present"
+        ],
+        "description": "primary primitive present"
+      },
+      {
+        "behavior_id": "resource_access_resource_access_variants",
+        "comparator_assertion_ids": [
+          "resource_access_variants"
+        ],
+        "description": "resource access variants"
+      },
+      {
+        "behavior_id": "resource_access_truncation_and_redaction_recorded",
+        "comparator_assertion_ids": [
+          "truncation_and_redaction_recorded"
+        ],
+        "description": "truncation and redaction recorded"
+      },
+      {
+        "behavior_id": "resource_access_write_requires_approval",
+        "comparator_assertion_ids": [
+          "write_requires_approval"
+        ],
+        "description": "write requires approval"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json#sha256:9772186b764d95426926eedb725561605f4ff78e350249c0ab097efc9322df60",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "final_readiness",
+      "mcp",
+      "model_inference",
+      "network",
+      "provider_authenticated",
+      "ui_parity"
+    ],
+    "excluded_families": [
+      "all_other_families",
+      "pi"
+    ]
+  },
+  "exclusions": [
+    "No broad Oh-My-Pi, OMP, Pi, provider-parity, UI, final-readiness, or target-customization support claim is made from this P3.5 helper/runtime lane.",
+    "No score is claimed for P5 Pi lanes or P8 final readiness from this P3 helper/runtime evidence.",
+    "No provider-authenticated, danger-full-access, network, browser, MCP, or model-inference behavior is claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_5_resource_blob_compiler_v1#sha256:3149ad9ab817c7e545107b58499cfa6ce1d4116a304b7d4857c15d728e5ca753",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "non_target_accounting",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_bc11e30da175b4a9#sha256:54640ed315a31f5aa3fa9de0a4cfd179643776d5db7691043f2e95893ec7c41a"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v4",
+    "legacy_scope": {
+      "p3_item": "P3.5",
+      "phase": "P3"
+    },
+    "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json#sha256:c264346f7f9b07df12aa5ac71876c62527e9819788d6b749eb46c6d84a7ba9df",
+  "phase_label": "P3",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json#sha256:2d8c2bbda80e1130ed3114dc1aada5ac45f1de341c12f6987c715e0dd1c0ca42",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "oh_my_pi_p3_5_resource_blob_compiler_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p35_resource_blob_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "schema_version": "bb.e4.support_claim.v4",
+  "scope": {
+    "config_id": "oh_my_pi_p3_5_resource_blob_compiler_v1",
+    "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/secret_scan_report.json#sha256:d8e69f732d9350eabde879d14a2779f028a190c10becb5573ce732749f69d7af",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "BreadBoard P3.5 resource/blob compiler support is accepted only for local resource ref, access, blob, truncation, redaction, approval, and containment records in the named helper/runtime fixture.",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/prevalidation_report.json#sha256:545a5de5517dc64b8aabf5641048719b1f70e3414835bf482fda7b8f38b0d2f5"
+  ]
+}

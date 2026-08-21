@@ -1,0 +1,34 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.distributed_task_descriptor.v1",
+  "fixture_family": "distributed_task",
+  "fixture_id": "distributed_task_invalid_missing_task_id",
+  "invalid_reason": "Removes required reference_output field 'task_id' from bb.distributed_task_descriptor.v1.",
+  "reference_output": {
+    "artifact_refs": [],
+    "budget": {
+      "wall_seconds": 1800
+    },
+    "checkpoint_strategy": "episode_boundary",
+    "expected_output_contract": "bb.replay_session.v1",
+    "join_policy": "await_explicit",
+    "parent_task_id": "task:root:1",
+    "placement_preferences": [
+      "remote_worker",
+      "delegated_oci"
+    ],
+    "priority": 5,
+    "retry_policy": {
+      "backoff": "exponential",
+      "max_attempts": 3
+    },
+    "schema_version": "bb.distributed_task_descriptor.v1",
+    "task_kind": "background",
+    "wake_conditions": [
+      "timer",
+      "child_completion"
+    ]
+  },
+  "source_fixture": "distributed_task/reference_fixture.json",
+  "support_tier": "draft-semantic"
+}

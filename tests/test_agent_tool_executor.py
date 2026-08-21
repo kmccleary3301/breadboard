@@ -3,6 +3,8 @@ import types
 import time
 from collections import defaultdict
 from unittest import mock
+from pathlib import Path
+
 
 import pytest
 
@@ -15,6 +17,47 @@ from agentic_coder_prototype.execution.concurrency_validator import (
 
 def _make_call(function: str, **arguments):
     return types.SimpleNamespace(function=function, arguments=arguments)
+
+
+def _write_executor_tool_defs(defs_dir: Path) -> None:
+    defs_dir.mkdir()
+    (defs_dir / "read_file.yaml").write_text(
+        """id: read_file
+name: read_file
+type_id: python
+binding:
+  handler: read_handler
+  type_id: python
+aliases:
+  - peek
+classification:
+  guardrail_sets: [read]
+manipulations:
+  - file.read
+execution:
+  blocking: false
+""",
+        encoding="utf-8",
+    )
+    (defs_dir / "apply_unified_patch.yaml").write_text(
+        """id: apply_unified_patch
+name: apply_unified_patch
+type_id: python
+binding:
+  handler: patch_handler
+  type_id: python
+aliases:
+  - patch
+classification:
+  guardrail_sets: [edit]
+manipulations:
+  - diff.apply
+execution:
+  blocking: true
+""",
+        encoding="utf-8",
+    )
+
 
 
 def test_validate_concurrency_config_normalizes_lists():
@@ -195,6 +238,48 @@ def test_group_concurrency_limit_is_enforced_during_execution():
     assert max_seen[read_group] <= 3
     assert max_seen[list_group] <= 2
     assert plan["strategy"] == "nonblocking_concurrent"
+
+
+def test_agent_executor_uses_registry_aliases_and_nonblocking_defaults(tmp_path: Path) -> None:
+    """Without an explicit nonblocking list, registry metadata must make reads concurrent and patches blocking."""
+    defs_dir = tmp_path / "defs"
+    _write_executor_tool_defs(defs_dir)
+    executor = AgentToolExecutor(
+        {"tools": {"defs_dir": str(defs_dir)}},
+        workspace=str(tmp_path),
+    )
+
+    seen: list[str] = []
+
+    def exec_stub(call):
+        seen.append(call["function"])
+        return {"ok": True}
+
+    read_calls = [
+        _make_call("peek", path="first.txt"),
+        _make_call("read_file", path="second.txt"),
+    ]
+    executed, failed_at, error, plan = executor.execute_parsed_calls(read_calls, exec_stub)
+
+    assert error is None
+    assert failed_at == -1
+    assert len(executed) == 2
+    assert plan["strategy"] == "nonblocking_concurrent"
+    assert plan["max_workers"] == 2
+    assert seen.count("read_file") == 2
+
+    seen.clear()
+    patch_and_read = [
+        _make_call("peek", path="after.patch"),
+        _make_call("patch", patch="diff --git a/file b/file\n"),
+    ]
+    executed, failed_at, error, plan = executor.execute_parsed_calls(patch_and_read, exec_stub)
+
+    assert error is None
+    assert failed_at == -1
+    assert len(executed) == 2
+    assert plan["strategy"] == "sequential"
+    assert seen == ["apply_unified_patch", "read_file"]
 
 
 def test_alias_canonicalization_applied_before_execution():

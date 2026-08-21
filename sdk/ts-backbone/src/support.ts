@@ -5,6 +5,7 @@ import type {
   DirectiveV1,
   ExecutionCapabilityV1,
   KernelEventV1,
+  KernelEventV2,
   ReviewVerdictV1,
   RunRequestV1,
   SignalCodeV1,
@@ -132,7 +133,7 @@ function buildInterventionSnapshots(options: {
 
 export function buildCoordinationInspectionSnapshot(input: {
   snapshot?: CoordinationInspectionSnapshotV1 | null
-  events?: readonly KernelEventV1[]
+  events?: readonly (KernelEventV1 | KernelEventV2)[]
 } = {}): CoordinationInspectionSnapshotV1 {
   if (input.snapshot) {
     return cloneJsonLike(input.snapshot)

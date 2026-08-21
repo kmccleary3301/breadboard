@@ -76,3 +76,4 @@ def test_cli_bridge_default_run_store_uses_sqlite_memory_dsn(tmp_path, monkeypat
     assert bridge.get("/v1/rl/runs/run-1", params={"tenant_id": "tenant-a", "workspace_id": "ws"}).status_code == 200
     assert bridge.get("/rl/runs/run-1", params={"tenant_id": "tenant-a", "workspace_id": "ws"}).status_code == 200
     assert not (tmp_path / ":memory:").exists()
+

@@ -21,6 +21,10 @@ from ..provider.ir import (
 from ..orchestration.coordination import build_coordination_inspection_snapshot
 from ..todo.projection import project_store_snapshot_to_tui_envelope
 
+def _utc_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time()))
+
+
 CANONICAL_KERNEL_EVENT_TYPES: dict[str, dict[str, str]] = {
     "assistant_message": {"family": "message.assistant", "actor": "engine", "visibility": "transcript"},
     "user_message": {"family": "message.user", "actor": "human", "visibility": "transcript"},
@@ -87,15 +91,6 @@ def _is_internal_user_message(content: Any) -> bool:
     return stripped.startswith("<VALIDATION_ERROR>") or "<WORKSPACE_TOOL_REQUIRED>" in stripped
 
 
-def _attach_event_contract(payload: Dict[str, Any], event_record: Dict[str, Any]) -> Dict[str, Any]:
-    payload_out = dict(payload or {})
-    payload_out["_bb_event_contract"] = {
-        "classification": str(event_record.get("classification") or "legacy_unclassified"),
-        "family": str(event_record.get("family") or "legacy.unclassified"),
-        "actor": str(event_record.get("actor") or "engine"),
-        "visibility": str(event_record.get("visibility") or "audit"),
-    }
-    return payload_out
 
 
 class SessionState:
@@ -108,6 +103,8 @@ class SessionState:
         config: Optional[Dict[str, Any]] = None,
         *,
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
+        kernel_emitter: Optional[Any] = None,
+        clock: Optional[Callable[[], str]] = None,
     ):
         self.workspace = workspace
         self.image = image
@@ -151,6 +148,9 @@ class SessionState:
         self.lifecycle_events: List[Dict[str, Any]] = []
         self._event_seq = 0
         self._event_emitter = event_emitter
+        self._kernel_emitter = kernel_emitter
+        self._clock = clock or _utc_now
+        self._emitted_tool_declared_call_ids: set[str] = set()
         self._active_turn_index: Optional[int] = None
         self._turn_assistant_emitted = False
         self._turn_user_emitted = False
@@ -203,6 +203,54 @@ class SessionState:
             envelope["payload"].setdefault("seq", seq)
         return envelope
 
+    @staticmethod
+    def _kernel_actor_ref(actor: str) -> Dict[str, str]:
+        kind = {
+            "human": "user",
+            "engine": "agent",
+            "tool": "host",
+            "service": "service",
+            "system": "system",
+            "provider": "provider",
+        }.get(str(actor or "engine"), "agent")
+        return {"actor_kind": kind, "actor_id": str(actor or kind)}
+
+    @staticmethod
+    def _kernel_visibility_ref(visibility: str) -> Dict[str, bool]:
+        value = str(visibility or "host")
+        if value == "model":
+            return {"model_visible": True, "provider_visible": True, "host_visible": True}
+        if value == "audit":
+            return {"model_visible": False, "provider_visible": False, "host_visible": True}
+        return {"model_visible": False, "provider_visible": False, "host_visible": True}
+
+    def build_kernel_event_v2_record(
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        *,
+        turn: Optional[int] = None,
+        seq: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        meta = self.classify_runtime_event_type(event_type)
+        event_seq = int(seq or 0)
+        record: Dict[str, Any] = {
+            "schema_version": "bb.kernel_event.v2",
+            "event_id": f"{self.provider_metadata.get('session_id') or 'session'}:{event_seq}",
+            "run_id": str(self.provider_metadata.get("run_id") or self.provider_metadata.get("session_id") or "run"),
+            "session_id": str(self.provider_metadata.get("session_id") or "session"),
+            "seq": event_seq,
+            "occurred_at_utc": self._clock(),
+            "actor": self._kernel_actor_ref(str(meta.get("actor") or "engine")),
+            "visibility": self._kernel_visibility_ref(str(meta.get("visibility") or "host")),
+            "kind": str(meta.get("family") or "legacy.unclassified"),
+            "payload_schema_version": f"bb.payload.{meta.get('family') or 'legacy.unclassified'}.v1",
+            "payload": dict(payload or {}),
+        }
+        if turn is not None:
+            record["turn_id"] = f"turn:{turn}"
+        return record
+
     def classify_runtime_event_type(self, event_type: str) -> Dict[str, str]:
         """Classify a runtime event as canonical, projection-only, or legacy."""
         event_name = str(event_type or "")
@@ -245,7 +293,12 @@ class SessionState:
     def _emit_event(self, event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> Optional[int]:
         seq = self._next_event_seq()
         event_record = self.build_kernel_event_record(event_type, payload, turn=turn, seq=seq)
-        payload_out = _attach_event_contract(event_record["payload"], event_record)
+        payload_out = dict(event_record["payload"])
+        if self._kernel_emitter is not None:
+            self._kernel_emitter.emit(
+                "bb.kernel_event.v2",
+                self.build_kernel_event_v2_record(event_type, event_record["payload"], turn=turn, seq=seq),
+            )
         if not self._event_emitter:
             return seq
         try:
@@ -521,6 +574,124 @@ class SessionState:
     def derive_transcript_contract_items(self) -> List[Dict[str, Any]]:
         """Project the current transcript list into the shared contract item view."""
         return [self.build_transcript_contract_item(entry) for entry in self.transcript]
+
+    def _transcript_v2_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
+            "kind": str(item.get("kind") or "annotation"),
+            "visibility": self._kernel_visibility_ref(str(item.get("visibility") or "host")),
+            "content": item.get("content"),
+            "content_schema_version": item.get("content_schema_version") if isinstance(item.get("content_schema_version"), str) else None,
+        }
+        call_id = item.get("call_id", item.get("callId"))
+        if isinstance(call_id, str) and call_id:
+            result["call_id"] = call_id
+        seq = item.get("seq")
+        if isinstance(seq, int) and not isinstance(seq, bool):
+            result["seq"] = seq
+        return result
+
+    def emit_session_transcript_snapshot(self, reason: str = "session_end") -> None:
+        if self._kernel_emitter is None:
+            return
+        record: Dict[str, Any] = {
+            "schema_version": "bb.session_transcript.v2",
+            "session_id": str(self.provider_metadata.get("session_id") or "session"),
+            "items": [self._transcript_v2_item(item) for item in self.derive_transcript_contract_items()],
+            "metadata": {"reason": str(reason)},
+        }
+        run_id = self.provider_metadata.get("run_id")
+        if isinstance(run_id, str) and run_id:
+            record["run_id"] = run_id
+        if self._event_seq:
+            record["event_cursor"] = self._event_seq
+        self._kernel_emitter.emit("bb.session_transcript.v2", record)
+
+    def _tool_call_field(self, call: Any, *names: str, default: Any = None) -> Any:
+        for name in names:
+            if isinstance(call, dict) and name in call:
+                return call.get(name)
+            if hasattr(call, name):
+                return getattr(call, name)
+        return default
+
+    def _tool_call_record(self, call: Any, state: str) -> Dict[str, Any]:
+        call_id = self._tool_call_field(call, "id", "call_id", "tool_call_id", default="call")
+        tool_name = self._tool_call_field(call, "function", "name", "tool", default="tool")
+        args = self._tool_call_field(call, "arguments", "args", default={})
+        if not isinstance(args, dict):
+            args = {"value": args}
+        record: Dict[str, Any] = {
+            "schema_version": "bb.tool_call.v2",
+            "call_id": str(call_id),
+            "tool_name": str(tool_name),
+            "args": dict(args),
+            "state": str(state),
+            "requested_at_utc": self._clock(),
+            "actor": self._kernel_actor_ref("engine"),
+            "visibility": self._kernel_visibility_ref("host"),
+            "session_id": str(self.provider_metadata.get("session_id") or "session"),
+            "run_id": str(self.provider_metadata.get("run_id") or self.provider_metadata.get("session_id") or "run"),
+            "tool_spec_ref": f"tool:{tool_name}",
+        }
+        turn = self.get_provider_metadata("current_turn_index")
+        if isinstance(turn, int):
+            record["turn_id"] = f"turn:{turn}"
+        return record
+
+    def emit_tool_call_primitive(self, call: Any, state: str, result: Optional[Dict[str, Any]] = None) -> None:
+        if self._kernel_emitter is None:
+            return
+        call_id = str(self._tool_call_field(call, "id", "call_id", "tool_call_id", default="call"))
+        if str(state) == "declared":
+            if call_id in self._emitted_tool_declared_call_ids:
+                return
+            self._emitted_tool_declared_call_ids.add(call_id)
+        self._kernel_emitter.emit("bb.tool_call.v2", self._tool_call_record(call, state))
+
+    def emit_tool_outcome_primitives(self, call: Any, result: Dict[str, Any]) -> None:
+        if self._kernel_emitter is None:
+            return
+        call_id = str(self._tool_call_field(call, "id", "call_id", "tool_call_id", default="call"))
+        error_value = result.get("error") if isinstance(result, dict) else None
+        denied = bool(isinstance(result, dict) and result.get("denied"))
+        exit_code = result.get("exit_code") if isinstance(result, dict) else None
+        terminal_state = "denied" if denied else ("failed" if error_value or (isinstance(exit_code, int) and exit_code != 0) else "completed")
+        outcome: Dict[str, Any] = {
+            "schema_version": "bb.tool_execution_outcome.v2",
+            "call_id": call_id,
+            "terminal_state": terminal_state,
+            "completed_at_utc": self._clock(),
+            "result": result,
+            "visibility": self._kernel_visibility_ref("host"),
+        }
+        if error_value:
+            outcome["error"] = {"message": str(error_value)}
+        if isinstance(exit_code, int) and not isinstance(exit_code, bool):
+            stdout = result.get("stdout") if isinstance(result.get("stdout"), str) else ""
+            stderr = result.get("stderr") if isinstance(result.get("stderr"), str) else ""
+            outcome["usage"] = {
+                "exit_code": exit_code,
+                "stdout_bytes": len(stdout.encode("utf-8")),
+                "stderr_bytes": len(stderr.encode("utf-8")),
+            }
+        self._kernel_emitter.emit("bb.tool_execution_outcome.v2", outcome)
+        render_content = ""
+        if isinstance(result, dict):
+            if isinstance(result.get("stdout"), str) and result.get("stdout"):
+                render_content = result["stdout"]
+            elif error_value:
+                render_content = str(error_value)
+        if render_content:
+            self._kernel_emitter.emit(
+                "bb.tool_model_render.v2",
+                {
+                    "schema_version": "bb.tool_model_render.v2",
+                    "call_id": call_id,
+                    "parts": [{"part_kind": "error" if error_value else "text", "content": render_content}],
+                    "truncation": {"truncated": False},
+                    "visibility": self._kernel_visibility_ref("model" if not error_value else "host"),
+                },
+            )
 
     def build_task_record(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """

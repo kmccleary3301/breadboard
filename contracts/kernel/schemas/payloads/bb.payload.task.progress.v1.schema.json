@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.task.progress.v1.schema.json",
+  "title": "BreadBoard Kernel Event Payload task.progress V1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "subagent_type": {
+      "type": "string"
+    },
+    "parent_task_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lifecycle_status": {
+      "type": "string"
+    },
+    "ctree_node_id": {
+      "type": "string"
+    },
+    "ctree_snapshot": true,
+    "kind": {
+      "type": "string"
+    }
+  }
+}

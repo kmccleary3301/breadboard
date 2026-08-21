@@ -6,6 +6,7 @@ ray>=2.0.0
 pyyaml>=6.0.0
 jinja2>=3.1,<4  # Required by the production config compiler
 cryptography>=49.0.0,<50  # Ed25519 external proof verification
+
 python-lsp-server>=1.7.0
 python-lsp-jsonrpc>=1.0.0
 

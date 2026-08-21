@@ -1,0 +1,48 @@
+extends: base_v2.yaml
+
+profile:
+  name: oh-my-pi-p6-0-l2-tool-execution-v1
+
+providers:
+  default_model: no-provider
+  models: []
+
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+
+features:
+  plan: false
+  todos:
+    enabled: false
+
+prompts:
+  packs:
+    base:
+      system: docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/SYSTEM.md
+      plan: docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/SYSTEM.md
+      builder: docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/SYSTEM.md
+      compact: docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/SYSTEM.md
+      tools_catalog_full: docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/SYSTEM.md
+      tools_catalog_short: docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/SYSTEM.md
+  tool_prompt_synthesis:
+    enabled: false
+
+tools:
+  registry:
+    paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/tools
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/commands
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/hooks
+    include:
+      - read
+      - bash
+      - glob
+      - grep
+  aliases:
+    search: grep
+    find: glob
+
+concurrency:
+  at_most_one_of:
+    - bash

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "bb.terminal_cleanup_result.v1.schema.json",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.terminal_cleanup_result.v1.schema.json",
   "type": "object",
   "required": [
     "schema_version",
@@ -12,15 +12,27 @@
     "schema_version": {
       "const": "bb.terminal_cleanup_result.v1"
     },
-    "cleanup_id": {"type": "string"},
-    "scope": {"enum": ["single", "all", "filtered"]},
+    "cleanup_id": {
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "single",
+        "all",
+        "filtered"
+      ]
+    },
     "cleaned_session_ids": {
       "type": "array",
-      "items": {"type": "string"}
+      "items": {
+        "type": "string"
+      }
     },
     "failed_session_ids": {
       "type": "array",
-      "items": {"type": "string"}
+      "items": {
+        "type": "string"
+      }
     },
     "metadata": {
       "type": "object",

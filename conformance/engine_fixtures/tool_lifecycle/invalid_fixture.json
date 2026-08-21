@@ -1,0 +1,21 @@
+{
+  "comparator_class": "normalized-trace-equal",
+  "contract": "bb.tool_execution_outcome.v1",
+  "fixture_family": "tool_lifecycle",
+  "fixture_id": "tool_lifecycle_invalid_missing_schemaVersion",
+  "invalid_reason": "Removes required reference_output field 'schemaVersion' from bb.tool_execution_outcome.v1.",
+  "reference_output": {
+    "callId": "call-run-shell-1",
+    "metadata": {
+      "ok": true,
+      "tool": "run_shell"
+    },
+    "result": {
+      "exit_code": 0,
+      "stdout": "hi"
+    },
+    "terminalState": "completed"
+  },
+  "source_fixture": "tool_lifecycle/reference_execution_fixture.json",
+  "support_tier": "reference-engine"
+}

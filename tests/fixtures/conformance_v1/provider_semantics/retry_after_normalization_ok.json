@@ -1,0 +1,79 @@
+{
+  "cases": [
+    {
+      "headers": {
+        "retry-after": "0"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "1"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "2"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "3"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "4"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "5"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "6"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "7"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "8"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "9"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "10"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "11"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "12"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "13"
+      }
+    },
+    {
+      "headers": {
+        "retry-after": "14"
+      }
+    }
+  ]
+}

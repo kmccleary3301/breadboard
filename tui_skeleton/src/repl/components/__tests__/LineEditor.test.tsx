@@ -76,7 +76,8 @@ describe("LineEditor", () => {
     )
     await flush()
     stdin.write("\x16")
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(handleAttachment).toHaveBeenCalledWith(expect.objectContaining({ kind: "image", mime: "image/png", size: 68 }))
+    await vi.waitFor(() =>
+      expect(handleAttachment).toHaveBeenCalledWith(expect.objectContaining({ kind: "image", mime: "image/png", size: 68 })),
+    )
   })
 })

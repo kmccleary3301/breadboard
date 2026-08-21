@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.config_mutation_record.v1.schema.json",
+  "title": "BreadBoard config mutation record",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "mutation_id",
+    "config_graph_id",
+    "write_authority",
+    "mutation_type",
+    "before_hash",
+    "after_hash",
+    "produced_paths",
+    "removed_paths"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.config_mutation_record.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "mutation_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the mutation.",
+      "examples": [
+        "mutation_example"
+      ]
+    },
+    "config_graph_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the config graph.",
+      "examples": [
+        "config_graph_example"
+      ]
+    },
+    "write_authority": {
+      "$ref": "#/$defs/write_authority",
+      "description": "Write authority record for this primitive."
+    },
+    "mutation_type": {
+      "enum": [
+        "create",
+        "update",
+        "remove",
+        "migration",
+        "policy-apply"
+      ],
+      "description": "Allowed mutation type value."
+    },
+    "before_hash": {
+      "$ref": "#/$defs/nullable_hash",
+      "description": "SHA-256 digest for the before hash.",
+      "examples": [
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "after_hash": {
+      "$ref": "#/$defs/sha256_hash",
+      "description": "SHA-256 digest for the after hash.",
+      "examples": [
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "produced_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in produced paths."
+      },
+      "description": "Ordered produced paths entries."
+    },
+    "removed_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in removed paths."
+      },
+      "description": "Ordered removed paths entries."
+    },
+    "path_hashes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/path_hash_delta",
+        "description": "One entry in path hashes.",
+        "examples": [
+          {
+            "path_hashes": "example"
+          }
+        ]
+      },
+      "description": "Ordered path hashes entries.",
+      "examples": [
+        []
+      ]
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Reason value for this primitive."
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "nullable_hash": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sha256_hash"
+        }
+      ]
+    },
+    "write_authority": {
+      "type": "object",
+      "required": [
+        "actor_kind",
+        "actor_id",
+        "authority_scope"
+      ],
+      "properties": {
+        "actor_kind": {
+          "enum": [
+            "user",
+            "agent",
+            "policy",
+            "system",
+            "migration",
+            "tool"
+          ],
+          "description": "Allowed actor kind value."
+        },
+        "actor_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the actor.",
+          "examples": [
+            "actor_example"
+          ]
+        },
+        "authority_scope": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Authority scope value for this primitive."
+        },
+        "approved_by": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Approved by value for this primitive."
+        }
+      },
+      "additionalProperties": false
+    },
+    "path_hash_delta": {
+      "type": "object",
+      "required": [
+        "path",
+        "operation",
+        "before_hash",
+        "after_hash"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path value for the path.",
+          "examples": [
+            "docs/conformance/example.json"
+          ]
+        },
+        "operation": {
+          "enum": [
+            "produce",
+            "update",
+            "remove"
+          ],
+          "description": "Allowed operation value."
+        },
+        "before_hash": {
+          "$ref": "#/$defs/nullable_hash",
+          "description": "SHA-256 digest for the before hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "after_hash": {
+          "$ref": "#/$defs/nullable_hash",
+          "description": "SHA-256 digest for the after hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

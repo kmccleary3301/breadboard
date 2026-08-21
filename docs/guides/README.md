@@ -12,3 +12,4 @@ Guides should optimize for getting a real job done, not for exhaustive architect
 Start with:
 
 - [OPERATOR_SCRIPT_SURFACE.md](OPERATOR_SCRIPT_SURFACE.md)
+- [AUTHOR_AN_AGENT.md](AUTHOR_AN_AGENT.md)

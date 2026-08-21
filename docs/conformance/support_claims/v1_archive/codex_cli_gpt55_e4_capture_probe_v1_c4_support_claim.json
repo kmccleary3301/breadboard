@@ -1,0 +1,37 @@
+{
+  "acceptance_rationale": "The governed claim is limited to the exact config, lane, run, Codex CLI version, gpt-5.5 model, and read-only sandbox named in scope. The source packet has a clean secret scan, raw capture, replay normalization, comparator pass, parity result, and packet-local evidence manifest hashes.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/raw_capture_manifest.json#sha256:c22cddc606d25a4e4720d812bf8b162e802240b1859c9ab735fde872926b90eb",
+  "claim_id": "codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim",
+  "comparator_ref": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/comparator_report.json#sha256:f903cfd7017a930b14f0b255750f32924fd47a766fdd31fbce238a691c48f73f",
+  "config_id": "codex_cli_gpt55_e4_capture_probe_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
+  "exclusions": [
+    "No broad Codex CLI support claim is made from this micro-lane.",
+    "No OMP, Pi, OpenCode, Claude, browser, provider-parity, UI-parity, or general P7 support claim is made.",
+    "No claim is made for write-enabled or danger-full-access sandbox behavior."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#codex_cli_gpt55_e4_capture_probe_v1#sha256:ae98e65717d03a2d451e65db2b7c7693f77d9786686f8370b888ac52e41c6085",
+  "generated_at_utc": "2026-07-02T23:06:29Z",
+  "lane_id": "codex_cli_e4_capture_probe_v1",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_79951d1fdd8a3937#sha256:09a97c225e15ce309c92eb36d6bb9ed04d716cb7a9dfff44c98a31df920e3180"
+  ],
+  "parity_results_ref": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/parity_results.jsonl#sha256:a87a2ed2f94233db521b2b198cfd7fef6056161622d19750e643bf17ede8a6d1",
+  "raw_source_ref": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/raw_capture_manifest.json#sha256:63e4b572935bbbae03851b5471f283511aab216d21f778785e77edc26959a290",
+  "replay_ref": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/bb_replay_result.json#sha256:457d9c20d86c4e071e537fb9eb2e492f92e5aeb4f0701971e1ffcc54e936658f",
+  "schema_version": "bb.e4.support_claim.v1",
+  "scope": {
+    "config_id": "codex_cli_gpt55_e4_capture_probe_v1",
+    "lane_id": "codex_cli_e4_capture_probe_v1",
+    "provider_model": "gpt-5.5",
+    "run_id": "20260630_codex_gpt55_capture_probe",
+    "sandbox_mode": "read-only",
+    "target_version": "codex-cli 0.139.0"
+  },
+  "secret_scan_ref": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/secret_scan_report.json#sha256:02ce7bff97694bd2571c2b3161ae049742e9be8290463f26891c3685a4c61ebf",
+  "summary": "Codex CLI 0.139.0 with model gpt-5.5 produced one read-only raw target capture, a BreadBoard replay artifact, and a comparator pass for the capture-probe lane.",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/c4_validation_report.json#sha256:8e794527c8d964c138ea80e93bdf5d230f7bc66863f0a39a37e38dfec014398c"
+  ]
+}

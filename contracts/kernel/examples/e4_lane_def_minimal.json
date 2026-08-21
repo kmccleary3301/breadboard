@@ -1,0 +1,64 @@
+{
+  "schema_version": "bb.e4.lane_def.v1",
+  "lane_id": "example_lane_v1",
+  "config_id": "example_lane_v1",
+  "target_family": "codex",
+  "target_version": "0.107.0",
+  "package_ref": "config/e4_targets/codex/0.107.0",
+  "kind": "target_support",
+  "status": "planned",
+  "points": 10,
+  "capture": {
+    "strategy": "probe_argv",
+    "argv": [
+      "python",
+      "scripts/e4_parity/probes/example.py",
+      "--json-out",
+      "{out}/capture.json"
+    ],
+    "inputs": [],
+    "workspace_template": null
+  },
+  "normalize": {
+    "mode": "identity",
+    "translator": "identity",
+    "config": {}
+  },
+  "replay": {
+    "mode": "stored",
+    "artifacts": [
+      "docs/conformance/e4_target_support/example_lane_v1/bb_replay_result.json"
+    ],
+    "session": null,
+    "comparator_class": "semantic"
+  },
+  "compare": {
+    "comparator": "json_files",
+    "config": {
+      "assertions": [
+        {
+          "path": "ok",
+          "equals": true
+        }
+      ]
+    }
+  },
+  "claim": {
+    "scope": {
+      "behaviors": [
+        "tool_execution"
+      ],
+      "surfaces": [
+        "CLI tool surface"
+      ]
+    },
+    "exclusions": []
+  },
+  "ct": {
+    "description": "Example lane exact-scope C4 chain validation.",
+    "timeout_seconds": 180
+  },
+  "artifacts_root": "docs/conformance/e4_target_support/example_lane_v1",
+  "reverify_command": null,
+  "metadata": {}
+}

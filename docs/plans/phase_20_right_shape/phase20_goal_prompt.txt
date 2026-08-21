@@ -1,0 +1,23 @@
+GOAL: Execute the Phase 20 "Right Shape" campaign to full completion.
+
+You are GPT 5.6 on the Oh-My-Pi harness in ~/projects/breadboard, repo breadboard_repo_integration_main_20260326. Binding docs, priority order:
+1. docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md  (THE plan; its Section 0 wins all conflicts)
+2. docs/plans/phase_20_right_shape/BB_RS_PROGRESS.json   (the only scoreboard; 1000 core pts + 250 conditional)
+3. docs/plans/phase_20_right_shape/BB_DIRECTION_ASSESSMENT_20260710.md (why; Appendix A = verified facts)
+4. docs/plans/phase_20_right_shape/SCOUT_FACTS.json      (file-grounded facts the specs bind to)
+
+WHY (read plan Section 0.5 first; adopt it as your own thinking): We built a superb verification machine and mistook operating it for building the product. Words drifted from behavior: "minimal" = 61 schemas, 12 load-bearing; "stages" silently skip; "capture as config" = config + unbounded Python; lane defs = ~300 intent lines in ~7,000 machine lines; both SDKs 404 vs the default server; 62 test modules outside CI; campaigns kept redefining "done" (three identical assessments). WHAT WE ACTUALLY WANT: authoring that feels like the 66-line template; cloning = small manifest + bounded adapter + honest scoped claim; words == behavior everywhere; evidence serves the product at boundaries; an outsider succeeding is the only ungameable signal; intent lives in-repo, guarded.
+
+EXECUTE the Section 1.1 loop, never stopping between packets, until every Section 6 criterion holds. Non-negotiables:
+- Work Packet Protocol 1.2: implementer and verifier are DIFFERENT subagents; "done" requires a pass verdict bound to the head SHA; bug fixes reproduce on base SHA first. NEVER self-approve.
+- Delegate via your harness's subagent tools for the Section 1.3 roles: read-only scouts before unfamiliar files, adversarial skeptics before closing workstreams, 2 verifiers (different lenses) on >=30-pt packets.
+- Evidence: exact-scope only (file, SHA, command, output). Red gates recorded red. Scratch under ../docs_tmp/phase_20/ (sibling of the checkout, pre-created); durable artifacts only at plan-named paths.
+- Failure handling 1.5: classify product_defect/spec_gap/flake/env/gate_wrong; deviations only via docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md (exists, states 'none'); blocked items get classified and you MOVE ON to eligible work.
+- Anti-goals 0.3 are campaign failures: no lane CRUD API, no E4 in the public SDK, no TS repackaging, no schema families beyond the three in Section 4, no new scorecards/ledgers, no parallel implementations, no silent scope cuts.
+- Section 4 specs are authoritative: implement EXACTLY (lane_manifest/lane_lock/contract_tiers schemas, StageReport outcomes + check_stage_report, bbh CLI table, SDK /v1 map, charter + freeze verbatim texts). The three-layer rule is inviolable: manifest <- lock <- run/evidence, never reversed; locks carry zero volatile fields.
+- Derailment audit each workstream boundary (1.1 step 6); re-read Section 0 each phase boundary; update+commit the ledger every packet.
+- bd: create the epic + child issues (1.6); bd dolt push at each session end.
+
+DONE = all 12 Section 6 criteria verified by a final completeness critic (fresh subagent) with evidence refs: 1000/1000 core points with verifier verdicts; SDKs green vs default create_app() in CI; product-spine required + battery live; charter/freeze/tier registry committed with zero unconsumed "keep" schemas; P6.6 manifest+lock parity and churn locality; zero dishonest stage outcomes; gap matrix applied with guarded tests unmodified; bbh E2E verified; flagship demo measured into the charter; gate decisions countersigned; bd clean; SPEC_AMENDMENTS complete or "none". Conditional K2-K4/L2-L3 execute only on recorded gate PASS.
+
+If truly blocked (credential/human decision): record classification + exact prerequisite in the ledger; continue with eligible packets. Never fabricate, shrink scope silently, or stop while eligible work remains.

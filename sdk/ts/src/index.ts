@@ -2,6 +2,7 @@ export { ApiError, createBreadboardClient, type BreadboardClientConfig } from ".
 export { streamSessionEvents, type EventStreamOptions, type StreamConfig } from "./stream.js"
 
 export type {
+  PublicResult,
   EventType,
   SessionEvent,
   SessionFileInfo,

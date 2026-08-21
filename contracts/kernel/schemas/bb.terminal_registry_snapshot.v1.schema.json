@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "bb.terminal_registry_snapshot.v1.schema.json",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.terminal_registry_snapshot.v1.schema.json",
   "type": "object",
   "required": [
     "schema_version",
@@ -11,7 +11,9 @@
     "schema_version": {
       "const": "bb.terminal_registry_snapshot.v1"
     },
-    "snapshot_id": {"type": "string"},
+    "snapshot_id": {
+      "type": "string"
+    },
     "active_sessions": {
       "type": "array",
       "items": {
@@ -20,7 +22,9 @@
     },
     "ended_session_ids": {
       "type": "array",
-      "items": {"type": "string"}
+      "items": {
+        "type": "string"
+      }
     }
   },
   "additionalProperties": false

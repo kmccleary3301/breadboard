@@ -16,17 +16,18 @@ front doors, heavily commented, and should not rely on `extends`.
 
 Current packaged targets:
 
-- `config/e4_targets/codex/0.107.0/`
+- `config/e4_targets/codex/0.107.0/` — package snapshot for the GPT-5.1 Codex Mini lane family; newer Codex evidence keeps its own version label instead of renaming this directory.
 - `config/e4_targets/claude_code/2.1.63/`
 - `config/e4_targets/opencode/1.2.17/`
 - `config/e4_targets/oh_my_opencode/3.10.0/`
 
-Codex note:
+Codex version labels:
 
-- the public Codex dossier now includes dedicated exercised sync/async collaboration replay
-  fixtures under `docs/conformance/e4_recalibration_evidence/`
-- those fixtures were refreshed on 2026-03-06 against Codex CLI 0.110.0 and document the
-  current `spawn_agent` / `wait` event shape used by Codex collaboration flows
+- package snapshot: `config/e4_targets/codex/0.107.0/`
+- collaboration replay evidence: Codex CLI 0.110.0 fixtures under
+  `docs/conformance/e4_recalibration_evidence/codex_subagent_*_20260306_v0110/`
+- accepted C4 lane pin: Codex CLI 0.139.0 with model `gpt-5.5`, recorded in
+  `docs/conformance/e4_lane_inventory.json` and `config/e4_target_freeze_manifest.yaml`
 
 Design rules:
 

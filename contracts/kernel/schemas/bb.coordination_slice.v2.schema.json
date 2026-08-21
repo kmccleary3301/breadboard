@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_slice.v2.schema.json",
+  "title": "BreadBoard Coordination Slice V2",
+  "type": "object",
+  "$comment": "Supersedes bb.coordination_reference_slice.v1, bb.coordination_multi_worker_reference_slice.v1, bb.coordination_intervention_reference_slice.v1, bb.coordination_longrun_reference_slice.v1, and bb.coordination_delegated_verification_reference_slice.v1. v1 is frozen for accepted evidence. Migration map: docs/contracts/CONTRACT_CONVENTIONS.md#v1-to-v2-runtime-records.",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "slice_id",
+    "slice_kind",
+    "generated_at_utc",
+    "participants",
+    "records"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.coordination_slice.v2"
+    },
+    "slice_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "slice_kind": {
+      "enum": [
+        "reference",
+        "multi_worker",
+        "intervention",
+        "longrun",
+        "delegated_verification"
+      ]
+    },
+    "generated_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "participants": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "bb.kernel.common.v1.schema.json#/$defs/actor_ref"
+      }
+    },
+    "records": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "signals": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "bb.signal.v1.schema.json"
+          }
+        },
+        "review_verdicts": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "bb.review_verdict.v1.schema.json"
+          }
+        },
+        "directives": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "bb.directive.v1.schema.json"
+          }
+        },
+        "wake_subscriptions": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "bb.wake_subscription.v1.schema.json"
+          }
+        },
+        "tasks": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "bb.task.v1.schema.json"
+          }
+        },
+        "verification_results": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "bb.coordination_verification_result.v1.schema.json"
+          }
+        }
+      }
+    },
+    "record_refs": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/evidence_refs"
+    },
+    "narrative": {
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+    }
+  }
+}

@@ -1,0 +1,165 @@
+{
+  "samples": [
+    {
+      "payload": {
+        "id": "sample_01",
+        "seq": 1,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.1.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_02",
+        "seq": 2,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.2.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_03",
+        "seq": 3,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.3.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_04",
+        "seq": 4,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.4.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_05",
+        "seq": 5,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.5.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_06",
+        "seq": 6,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.6.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_07",
+        "seq": 7,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.7.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_08",
+        "seq": 8,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.8.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_09",
+        "seq": 9,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.9.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_10",
+        "seq": 10,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.10.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_11",
+        "seq": 11,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.11.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_12",
+        "seq": 12,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.12.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_13",
+        "seq": 13,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.13.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_14",
+        "seq": 14,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.14.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_15",
+        "seq": 15,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.15.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_16",
+        "seq": 16,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.16.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_17",
+        "seq": 17,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.17.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_18",
+        "seq": 18,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.18.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_19",
+        "seq": 19,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.19.v1"
+    },
+    {
+      "payload": {
+        "id": "sample_20",
+        "seq": 20,
+        "status": "ok"
+      },
+      "schema_version": "bb.protocol.sample.20.v1"
+    }
+  ],
+  "schema_version": "bb.ct.protocol.minimal_payload_samples.fixture.v1"
+}

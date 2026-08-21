@@ -1,0 +1,7 @@
+{
+  "docs": [
+    "README.md",
+    "docs/conformance/README.md",
+    "docs/contracts/kernel/semantics/README.md"
+  ]
+}

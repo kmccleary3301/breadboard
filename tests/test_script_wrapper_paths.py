@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -8,6 +9,30 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+LEGACY_SCRIPT_MODULES = {
+    "scripts.audit_e4_target_drift": "scripts.research.parity.audit_e4_target_drift",
+    "scripts.bless_golden": "scripts.release.bless_golden",
+    "scripts.check_e4_snapshot_coverage": "scripts.research.parity.check_e4_snapshot_coverage",
+    "scripts.cli_session_health": "scripts.ops.cli_session_health",
+    "scripts.compat_dump_request_bodies": "scripts.migration.compat_dump_request_bodies",
+    "scripts.export_cli_bridge_contracts": "scripts.release.export_cli_bridge_contracts",
+    "scripts.export_provider_metrics": "scripts.ops.export_provider_metrics",
+    "scripts.fixtures_doctor": "scripts.ops.fixtures_doctor",
+    "scripts.guardrail_metrics": "scripts.ops.guardrail_metrics",
+    "scripts.import_ir_to_events_jsonl": "scripts.migration.import_ir_to_events_jsonl",
+    "scripts.phase11_benchmark_runner_stub": "scripts.archive.phase11_benchmark_runner_stub",
+    "scripts.phase11_export_trajectory_stub": "scripts.archive.phase11_export_trajectory_stub",
+    "scripts.phase11_paired_eval_stub": "scripts.archive.phase11_paired_eval_stub",
+    "scripts.preflight_workspace_safety": "scripts.ops.preflight_workspace_safety",
+    "scripts.recover_missing_files_from_codex_outputs": "scripts.migration.recover_missing_files_from_codex_outputs",
+    "scripts.validate_kernel_contract_fixtures": "scripts.release.validate_kernel_contract_fixtures",
+}
+LEGACY_IMPORT_RE = re.compile(
+    r"^\s*(?:from\s+(?P<from>scripts\.[A-Za-z0-9_]+)\b|import\s+(?P<import>scripts\.[A-Za-z0-9_]+)\b)"
+)
+LEGACY_IMPORT_SCAN_ROOTS = ("breadboard", "scripts", "tests")
+
+
 
 
 @pytest.mark.parametrize(
@@ -92,3 +117,26 @@ def test_legacy_and_canonical_script_paths_stay_compatible(
         assert completed.returncode == 0, completed.stderr
         if expected_token is not None:
             assert expected_token.lower() in completed.stdout.lower()
+
+
+def test_repository_imports_canonical_script_modules_instead_of_legacy_shims() -> None:
+    offenders: list[str] = []
+    for root_name in LEGACY_IMPORT_SCAN_ROOTS:
+        for path in sorted((REPO_ROOT / root_name).rglob("*.py")):
+            if any(part in {".venv", "__pycache__"} for part in path.parts):
+                continue
+            text = path.read_text(encoding="utf-8")
+            for line_number, line in enumerate(text.splitlines(), start=1):
+                match = LEGACY_IMPORT_RE.match(line)
+                if not match:
+                    continue
+                legacy_module = match.group("from") or match.group("import")
+                canonical_module = LEGACY_SCRIPT_MODULES.get(legacy_module)
+                if canonical_module is None:
+                    continue
+                rel_path = path.relative_to(REPO_ROOT)
+                offenders.append(
+                    f"{rel_path}:{line_number} imports {legacy_module}; use {canonical_module}"
+                )
+
+    assert offenders == []

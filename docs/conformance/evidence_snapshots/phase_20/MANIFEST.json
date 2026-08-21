@@ -1,0 +1,116 @@
+{
+  "schema": "bb.evidence_snapshot.v1",
+  "authorized_by": "AM23a (SPEC_AMENDMENTS.md)",
+  "generated_at_utc": "2026-07-11",
+  "note": "Byte-exact snapshots of campaign evidence from the workspace evidence root (docs_tmp/phase_20/evidence/). Live workspace files remain the campaign working set; these tracked copies exist for durability and SHA-binding of reviewed evidence.",
+  "files": {
+    "SP1/implementer.json": {
+      "sha256": "e7eea63b7194a13da6d3d06842ee8020b55954655e0c4739ae27a4d8178402a1",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP1 2026-07-11 IRC: reviewed file hashes to e7eea63b..., exactly matching manifest digest at d225b137",
+      "reviewed_code_sha": "0775bbde"
+    },
+    "SP1/reviewer.json": {
+      "sha256": "0f6f9b1a83f52063524f475ecf9e79ad7d89f1a28a569ca082593a02fdc6aaa5",
+      "status": "orchestrator-materialized",
+      "detail": "from ReviewSP1 yield (agent://ReviewSP1)"
+    },
+    "SP3/implementer.json": {
+      "sha256": "7ce332812c1433012e06ab59167aa37f0c5c7a09461e947c346202a52202c53e",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP3 re-verdict 2026-07-11: reviewed sha 7ce33281... matches snapshot at d225b137"
+    },
+    "SP4/implementer.json": {
+      "sha256": "175ebff1fddf458519badd2cf5a11d1c7196c79fa6e0d1c298a4bffd2aaed6a2",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP4 2026-07-11 IRC: originals in sp4_wt hash-match snapshot values (see ATTESTATIONS.json)",
+      "reviewed_code_sha": "7e89d927"
+    },
+    "SP4/reviewer.json": {
+      "sha256": "2bb789df2328cfe50cfaf5c90d8983ce711535109ac15b13a3f30ebaa6cb9a88",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP4 2026-07-11 IRC: originals in sp4_wt hash-match snapshot values (see ATTESTATIONS.json)"
+    },
+    "SP5/implementer.json": {
+      "sha256": "3e886b377948b20995bc85e74027ce98b2e86cd42d5cd8759e1090474beef96a",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP5 2026-07-11 bound verdict jointly to code SHA 650c7daa and this sha256",
+      "reviewed_code_sha": "650c7daa"
+    },
+    "SP5/relocation_note.json": {
+      "sha256": "33258335f6d51df35a11b83cf074ba03c4e4cd2397d6d671683dcb0ee6faf4a3",
+      "status": "orchestrator-authored"
+    },
+    "SP5/reviewer.json": {
+      "sha256": "e9fdd431aa85b13b82b82b54bfd19c651f15b9846e19fd1db6ddef72abcbcd4f",
+      "status": "orchestrator-materialized",
+      "detail": "from ReviewSP5 yield + final IRC verdict"
+    },
+    "SP7/implementer.json": {
+      "sha256": "b7f7cb3522e48708fe9c98bf83830b03db87c23eefda9b15b56dd263c6565ab5",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP7 verdict artifact line names this file @sha256:b7f7cb35...",
+      "reviewed_code_sha": "07bc045b (snapshot commit, ReviewSP7R2 approved; audit copy byte-authenticated b7f7cb35...)"
+    },
+    "SP7/reviewer.json": {
+      "sha256": "623abbc9a0f085eaceab7545c0994364e2bd63b11cdba02a1ea0445387b06002",
+      "status": "orchestrator-materialized",
+      "detail": "transcription: original blocked verdict + ReviewSP7R2 approved verdict (agent://ReviewSP7R2)"
+    },
+    "SP3/reviewer.json": {
+      "sha256": "71a7b6609ba80b45ddb39bb9b4d262ebd3e3047459bab1c737582742f7478f21",
+      "status": "orchestrator-materialized",
+      "detail": "transcription from ReviewSP3 re-verdict IRC + agent://ReviewSP3"
+    },
+    "SP2/implementer.json": {
+      "sha256": "5215b003d2901175a33cf067d7a8d921d1b6f8f869a1344c447e4439545d0c56",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP2 verdict names this sha256",
+      "reviewed_code_sha": "4210f02e"
+    },
+    "SP2/reviewer.json": {
+      "sha256": "8c294d9228a45d22221764d9c9ed71687ccfb0e30e1f63690c5f998d73e7d2bf",
+      "status": "orchestrator-materialized",
+      "detail": "transcription from agent://ReviewSP2"
+    },
+    "F5/implementer.json": {
+      "sha256": "d3834e2fb90491e51969226243f8d2764a009fef2b8e1b9476ce21cce685bc8f",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewF5 verdict names this sha256",
+      "reviewed_code_sha": "0def21d5"
+    },
+    "F5/reviewer.json": {
+      "sha256": "b42567d8e61de8a5e3784ef0bd704741932095ae6e8ca9623c873e66184bae14",
+      "status": "orchestrator-materialized",
+      "detail": "transcription from agent://ReviewF5"
+    },
+    "SP2b/implementer.json": {
+      "sha256": "b6cfa6e6913769278631e36f8fadabbe1887780338303f54bf01cb2b5bbafdf7",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP2b re-verdict 2026-07-11 IRC [152be8fd6741dec4]: APPROVED binding ffceba6b exactly; independent focused suite 48 passed",
+      "reviewed_code_sha": "ffceba6b"
+    },
+    "SP2b/reviewer.json": {
+      "sha256": "3885ebb0a84dfec200e9f1ac7451e62e8388babe96b6d888351c3aa154b20507",
+      "status": "orchestrator-materialized",
+      "detail": "transcription of ReviewSP2b IRC verdict; transcript at history://ReviewSP2b"
+    },
+    "SP6/implementer.json": {
+      "sha256": "feb01145e5d70c4622d3686c35f60915c62ebdc8a119922462e36b1a3682e672",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP6 final IRC [152c14472b41def0] APPROVED binding fe1778cc; workspace evidence supersedes in-branch historical copies",
+      "reviewed_code_sha": "fe1778cc"
+    },
+    "SP6/reviewer.json": {
+      "sha256": "576a0d5661601a6b049509f9c626aec8b93e9d37463614b29a1f2a592942b841",
+      "status": "orchestrator-materialized",
+      "detail": "transcription of ReviewSP6 IRC verdict; transcript at history://ReviewSP6"
+    },
+    "SP6/acceptance_adjudication.json": {
+      "sha256": "971fd37e249ba28c861d5f371eebfb1b0242b963723ccb6aa1c28a2cbcdf3570",
+      "status": "orchestrator-authored",
+      "detail": "AM23b boundary adjudication governing the final review contract"
+    }
+  },
+  "attestations_file": "ATTESTATIONS.json"
+}

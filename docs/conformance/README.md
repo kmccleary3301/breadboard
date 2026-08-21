@@ -22,7 +22,7 @@ This directory hosts the executable conformance assets for BreadBoard's core con
 scripts/run_wave_a_conformance_bundle.sh artifacts/conformance
 ```
 
-This runs: schema gate + replay determinism gate + CT scenario runner + matrix sync.
+This runs the CT scenario runner and exact-ID matrix sync. Scenario commands whose checker scripts are not present are reported as `not_implemented`; P0-blocking and P1-blocking missing commands fail closed by default. `--fail-on-unimplemented-all` upgrades every missing command to a failing row, and `--legacy-planned-ok` is only for old dashboards that must preserve row status while allowing a partial suite exit code.
 
 ### Individual runners
 
@@ -36,6 +36,15 @@ python scripts/run_ct_scenarios.py \
   --fail-on-unimplemented-all \
   --json-out artifacts/conformance/ct_scenarios_result_v1.json \
   --rows-out artifacts/conformance/ct_scenarios_rows_v1.json
+```
+
+### P4 primitive/subsystem local fixture coverage
+
+```bash
+python scripts/check_kernel_primitive_ct.py \
+  --all-p4 \
+  --scenario-id CT-P4-ALL \
+  --json-out artifacts/conformance/node_gate/ct_p4_all.json
 ```
 
 ### E4 target freeze check
@@ -87,6 +96,7 @@ These are the helpers that selected CT-* rows call into:
 | `scripts/check_surface_manifest_semantics.py` | Surface-manifest determinism propagation from MCP snapshots |
 | `scripts/check_longrun_semantics.py` | Long-run recursion budget/profile/rollback semantics |
 | `scripts/check_protocol_semantics.py` | Protocol contract export, envelope variant, payload-sample, and runtime-translation semantics |
+| `scripts/check_kernel_primitive_ct.py` | P4 primitive/subsystem schema contract, valid fixture, invalid fixture, and manifest coverage |
 | `scripts/check_projection_contract_parity.mjs` | SDK vs sidebar projection contract parity |
 | `scripts/check_projection_contract_parity_opentui.mjs` | SDK vs OpenTUI slab adapter parity |
 | `bb_webapp/scripts/check_projection_contract_parity.ts` | SDK vs webapp projection contract parity |

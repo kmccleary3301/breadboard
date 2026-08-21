@@ -54,7 +54,6 @@ def test_cross_tenant_artifact_denied(tmp_path) -> None:
     raise AssertionError("tenant mismatch should fail")
 
 
-
 def test_live_service_rejects_invalid_terminal_state_transitions(tmp_path) -> None:
     service = LiveRLRunService(SQLiteRLRunStore(tmp_path / "runs.db"))
     service.submit(sub())
@@ -102,3 +101,4 @@ def test_live_service_rejects_non_positive_submission_resources(tmp_path, field:
     assert status.state == "rejected"
     assert status.accepted is False
     assert field in status.reason
+

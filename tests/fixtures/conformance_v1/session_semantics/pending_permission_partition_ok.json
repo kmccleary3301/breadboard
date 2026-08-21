@@ -1,0 +1,23 @@
+{
+  "expected_output": {
+    "cross_task_overlap_count": 0,
+    "duplicate_id_count": 0,
+    "error_count": 0,
+    "pending_total": 4,
+    "session_pending_count": 1,
+    "task_bucket_count": 2,
+    "unique_pending_count": 4
+  },
+  "session_pending": [
+    "s1"
+  ],
+  "task_buckets": {
+    "t1": [
+      "a",
+      "b"
+    ],
+    "t2": [
+      "c"
+    ]
+  }
+}

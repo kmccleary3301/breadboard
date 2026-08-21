@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.coordination.directive.v1.schema.json",
+  "title": "BreadBoard Kernel Event Payload coordination.directive V1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "directive_id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "payload": true
+  }
+}

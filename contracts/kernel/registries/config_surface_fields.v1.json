@@ -1,0 +1,282 @@
+{
+  "entries": [
+    {
+      "description": "Agent config surface field `schema_version` classified as operational for BB-AV authoring.",
+      "id": "schema_version",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.compilation.v2_loader",
+        "dossiers_using": 0,
+        "note": "Required discriminator for bb.agent_config_surface.v2; explain_agent_config strict mode treats it as runtime schema dispatch, not dossier prose.",
+        "source": "BB-AV F-tail minimal harness authoring gate"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `version` classified as operational for BB-AV authoring.",
+      "id": "version",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.compilation.v2_loader",
+        "dossiers_using": 4,
+        "note": "All four public E4 dossiers use version: codex breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:24, claude :22, opencode :22, oh_my_opencode :24.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `profile` classified as dossier only for BB-AV authoring.",
+      "id": "profile",
+      "metadata": {
+        "classification": "dossier_only",
+        "consumer": null,
+        "dossiers_using": 4,
+        "note": "Resolved by B1 consumer grep: public dossiers use profile, but no top-level agent-config runtime consumer for profile.name was found; generic profile hits are unrelated lane, skills, and optimize shapes.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `workspace` classified as operational for BB-AV authoring.",
+      "id": "workspace",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.agent",
+        "dossiers_using": 4,
+        "note": "All four public E4 dossiers use workspace: codex breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:28, claude :25, opencode :25, oh_my_opencode :27.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `providers` classified as operational for BB-AV authoring.",
+      "id": "providers",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.agent",
+        "dossiers_using": 4,
+        "note": "All four public E4 dossiers use providers: codex breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:40, claude :35, opencode :32, oh_my_opencode :34.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `provider_tools` classified as operational for BB-AV authoring.",
+      "id": "provider_tools",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.agent_llm_openai",
+        "dossiers_using": 4,
+        "note": "All four public E4 dossiers use provider_tools: codex breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:54, claude :54, opencode :69, oh_my_opencode :61.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `prompts` classified as operational for BB-AV authoring.",
+      "id": "prompts",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.compilation.system_prompt_compiler",
+        "dossiers_using": 4,
+        "note": "All four public E4 dossiers use prompts: codex breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:61, claude :120, opencode :44, oh_my_opencode :42.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `tools` classified as operational for BB-AV authoring.",
+      "id": "tools",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.compilation.tool_registry",
+        "dossiers_using": 4,
+        "note": "All four public E4 dossiers use tools: codex breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:79, claude :142, opencode :131, oh_my_opencode :109.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `tool_packs` classified as dossier only for BB-AV authoring.",
+      "id": "tool_packs",
+      "metadata": {
+        "classification": "dossier_only",
+        "consumer": null,
+        "dossiers_using": 1,
+        "note": "Resolved by curation and B1 consumer grep: preserved in dossiers but no top-level runtime consumer found.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `tool_bindings` classified as dossier only for BB-AV authoring.",
+      "id": "tool_bindings",
+      "metadata": {
+        "classification": "dossier_only",
+        "consumer": null,
+        "dossiers_using": 1,
+        "note": "Resolved by curation and B1 consumer grep: preserved in dossiers but no top-level runtime consumer found.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `terminal_sessions` classified as dossier only for BB-AV authoring.",
+      "id": "terminal_sessions",
+      "metadata": {
+        "classification": "dossier_only",
+        "consumer": null,
+        "dossiers_using": 1,
+        "note": "Resolved by curation and B1 consumer grep: preserved in dossiers but no top-level runtime consumer found.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `modes` classified as operational for BB-AV authoring.",
+      "id": "modes",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.agent_llm_openai",
+        "dossiers_using": 4,
+        "note": "All four public E4 dossiers use modes: codex breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:345, claude :191, opencode :119, oh_my_opencode :97.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `loop` classified as operational for BB-AV authoring.",
+      "id": "loop",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.agent_llm_openai",
+        "dossiers_using": 4,
+        "note": "All four public E4 dossiers use loop: codex breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:363, claude :223, opencode :98, oh_my_opencode :86.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `multi_agent` classified as operational for BB-AV authoring.",
+      "id": "multi_agent",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.agent_llm_openai",
+        "dossiers_using": 2,
+        "note": "Codex and oh_my_opencode use multi_agent: breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:415 and breadboard_repo_integration_main_20260326/agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml:309.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `long_running` classified as operational for BB-AV authoring.",
+      "id": "long_running",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.compilation.v2_loader",
+        "dossiers_using": 2,
+        "note": "Codex and claude use long_running: breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:506 and breadboard_repo_integration_main_20260326/agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml:245.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `features` classified as operational for BB-AV authoring.",
+      "id": "features",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.compilation.v2_loader",
+        "dossiers_using": 4,
+        "note": "All four public E4 dossiers use features: codex breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:542, claude :281, opencode :83, oh_my_opencode :73.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `completion` classified as operational for BB-AV authoring.",
+      "id": "completion",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.agent_llm_openai",
+        "dossiers_using": 4,
+        "note": "All four public E4 dossiers use completion: codex breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:551, claude :293, opencode :91, oh_my_opencode :80.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `concurrency` classified as operational for BB-AV authoring.",
+      "id": "concurrency",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.conductor.components",
+        "dossiers_using": 2,
+        "note": "Codex and claude use concurrency: breadboard_repo_integration_main_20260326/agent_configs/codex_0-107-0_e4_3-6-2026.yaml:567 and breadboard_repo_integration_main_20260326/agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml:311.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `replay` classified as operational for BB-AV authoring.",
+      "id": "replay",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.conductor.bootstrap",
+        "dossiers_using": 3,
+        "note": "Claude, opencode, and oh_my_opencode use replay: breadboard_repo_integration_main_20260326/agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml:340, breadboard_repo_integration_main_20260326/agent_configs/opencode_1-2-17_e4_3-6-2026.yaml:294, and breadboard_repo_integration_main_20260326/agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml:417.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `enhanced_tools` classified as operational for BB-AV authoring.",
+      "id": "enhanced_tools",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.conductor.components",
+        "dossiers_using": 2,
+        "note": "Opencode and oh_my_opencode use enhanced_tools: breadboard_repo_integration_main_20260326/agent_configs/opencode_1-2-17_e4_3-6-2026.yaml:150 and breadboard_repo_integration_main_20260326/agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml:169.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `guardrails` classified as operational for BB-AV authoring.",
+      "id": "guardrails",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.conductor.plan_bootstrapper",
+        "dossiers_using": 2,
+        "note": "Opencode and oh_my_opencode use top-level guardrails: breadboard_repo_integration_main_20260326/agent_configs/opencode_1-2-17_e4_3-6-2026.yaml:186 and breadboard_repo_integration_main_20260326/agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml:196.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `permissions` classified as operational for BB-AV authoring.",
+      "id": "permissions",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.conductor.bootstrap",
+        "dossiers_using": 2,
+        "note": "Opencode and oh_my_opencode use permissions: breadboard_repo_integration_main_20260326/agent_configs/opencode_1-2-17_e4_3-6-2026.yaml:225 and breadboard_repo_integration_main_20260326/agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml:233.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config surface field `turn_strategy` classified as operational for BB-AV authoring.",
+      "id": "turn_strategy",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "agentic_coder_prototype.conductor.execution",
+        "dossiers_using": 1,
+        "note": "Only oh_my_opencode uses top-level turn_strategy at breadboard_repo_integration_main_20260326/agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml:305.",
+        "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
+      },
+      "status": "active"
+    }
+  ],
+  "registry_id": "config_surface_fields",
+  "schema_version": "bb.registry.v1"
+}

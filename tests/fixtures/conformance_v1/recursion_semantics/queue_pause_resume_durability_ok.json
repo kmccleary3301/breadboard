@@ -1,0 +1,26 @@
+{
+  "expected": {
+    "actual_open_count": 1,
+    "actual_resumed_from_state": true,
+    "actual_run1_stop_reason": "max_episodes_reached",
+    "actual_run2_stop_reason": "episode_completed"
+  },
+  "queue": [
+    {
+      "id": "task_done",
+      "status": "closed"
+    },
+    {
+      "id": "task_open",
+      "status": "open"
+    }
+  ],
+  "run1": {
+    "stop_reason": "max_episodes_reached"
+  },
+  "run2": {
+    "resumed_from_state": true,
+    "stop_reason": "episode_completed"
+  },
+  "schema_version": "bb.ct.longrun.queue_pause_resume_durability.fixture.v1"
+}

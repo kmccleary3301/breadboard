@@ -1,0 +1,396 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v2.schema.json",
+  "title": "BreadBoard E4 C4 support claim V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "claim_id",
+    "config_id",
+    "lane_id",
+    "kind",
+    "accepted",
+    "summary",
+    "target_family",
+    "target_version",
+    "run_id",
+    "provider_model",
+    "sandbox_mode",
+    "scope",
+    "exclusions",
+    "exclusion_facets",
+    "claim_semantics",
+    "freeze_ref",
+    "capture_ref",
+    "replay_ref",
+    "comparator_ref",
+    "evidence_manifest_ref",
+    "ledger_row_refs",
+    "validation_refs",
+    "catalog_binding",
+    "reverify_command",
+    "generated_at_utc"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.support_claim.v2"
+    },
+    "claim_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "config_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "lane_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "kind": {
+      "enum": [
+        "target_support",
+        "non_target_accounting"
+      ]
+    },
+    "accepted": {
+      "type": "boolean"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "acceptance_rationale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phase_label": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Informational only. Never scoring."
+    },
+    "target_family": {
+      "enum": [
+        "pi",
+        "oh_my_pi",
+        "claude_code",
+        "codex",
+        "opencode",
+        "oh_my_opencode",
+        "breadboard",
+        "other"
+      ]
+    },
+    "target_family_other": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sandbox_mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "config_id",
+        "lane_id",
+        "run_id",
+        "target_version",
+        "provider_model",
+        "sandbox_mode"
+      ],
+      "properties": {
+        "config_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lane_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sandbox_mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extra": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+        }
+      }
+    },
+    "exclusions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "exclusion_facets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "excluded_families",
+        "excluded_behavior_classes"
+      ],
+      "properties": {
+        "excluded_families": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "pi",
+              "oh_my_pi",
+              "claude_code",
+              "codex",
+              "opencode",
+              "oh_my_opencode",
+              "breadboard",
+              "other",
+              "all_other_families"
+            ]
+          }
+        },
+        "excluded_lanes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "excluded_sandbox_modes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "excluded_provider_modes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "excluded_behavior_classes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "write_enabled",
+              "provider_authenticated",
+              "network",
+              "browser",
+              "mcp",
+              "model_inference",
+              "ui_parity",
+              "danger_full_access",
+              "final_readiness",
+              "broad_target_parity",
+              "other"
+            ]
+          }
+        }
+      },
+      "description": "Machine-readable negative scope. Prose 'exclusions' must be derivable from these facets; validators cross-check coverage."
+    },
+    "claim_semantics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asserted_behaviors"
+      ],
+      "properties": {
+        "asserted_behaviors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "behavior_id",
+              "description",
+              "comparator_assertion_ids"
+            ],
+            "properties": {
+              "behavior_id": {
+                "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
+              "comparator_assertion_ids": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "excluded_behaviors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "behavior_id",
+              "description"
+            ],
+            "properties": {
+              "behavior_id": {
+                "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      },
+      "description": "Every asserted behavior maps to comparator assertion ids that MUST exist with status=passed in the referenced comparator report. Enforced by validate_e4_c4_chain."
+    },
+    "freeze_ref": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/row_hash_ref"
+    },
+    "capture_ref": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/hash_ref"
+    },
+    "raw_source_ref": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/hash_ref"
+    },
+    "source_freeze_ref": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/hash_ref"
+    },
+    "replay_ref": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/hash_ref"
+    },
+    "comparator_ref": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/hash_ref"
+    },
+    "parity_results_ref": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/hash_ref"
+    },
+    "secret_scan_ref": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/hash_ref"
+    },
+    "evidence_manifest_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Repo-root-relative PATH of the evidence manifest — deliberately path-only, no content hash. The manifest embeds THIS claim's content hash (support_claim_ref), so mutual content-hash embedding would be a generation cycle (Law 4). Both content hashes are bound downstream by the node gate and by catalog_binding.catalog_hash, the stable-subset artifact-catalog digest."
+    },
+    "ledger_row_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "bb.kernel.common.v1.schema.json#/$defs/row_hash_ref"
+      }
+    },
+    "validation_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "bb.kernel.common.v1.schema.json#/$defs/hash_ref"
+      }
+    },
+    "catalog_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalog_path",
+        "catalog_revision",
+        "catalog_hash"
+      ],
+      "properties": {
+        "catalog_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "catalog_revision": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Revision of the catalog's role-keyed stable evidence subset; unchanged by claim-derived entry churn."
+        },
+        "catalog_hash": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256",
+          "description": "sha256_ref over canonical JSON bytes of artifact catalog entries classified stable by explicit lane-role-suffix and e4_static role-id rules. Whole-file catalog hashing is forbidden here because support claims are cataloged, forming a claim<->catalog hash cycle with no byte fixed point."
+        }
+      },
+      "description": "Binds the support claim to the artifact catalog path, revision, and role-keyed stable-subset digest. The digest excludes deliberately classified claim/gate downstream roles so the claim does not depend on bytes that themselves catalog the claim."
+    },
+    "reverify_command": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/argv_command"
+    },
+    "generated_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "accepted": {
+            "const": true
+          }
+        },
+        "required": [
+          "accepted"
+        ]
+      },
+      "then": {
+        "properties": {
+          "claim_semantics": {
+            "properties": {
+              "asserted_behaviors": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target_family": {
+            "const": "other"
+          }
+        },
+        "required": [
+          "target_family"
+        ]
+      },
+      "then": {
+        "required": [
+          "target_family_other"
+        ]
+      }
+    }
+  ]
+}

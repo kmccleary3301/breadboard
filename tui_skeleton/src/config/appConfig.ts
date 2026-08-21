@@ -3,6 +3,7 @@ import path from "node:path"
 import { promises as fs } from "node:fs"
 import { Effect, Layer, Context } from "effect"
 import { loadUserConfigSync } from "./userConfig.js"
+import { normalizeBaseUrl } from "./baseUrl.js"
 import { loadRepoDotenv } from "./runtimePaths.js"
 
 export interface AppConfig {
@@ -36,7 +37,7 @@ const resolveCachePath = (): string => {
 const computeConfig = (): AppConfig => {
   loadRepoDotenv()
   const userConfig = loadUserConfigSync()
-  const baseUrl = process.env.BREADBOARD_API_URL?.trim() || userConfig.baseUrl || DEFAULT_BASE_URL
+  const baseUrl = normalizeBaseUrl(process.env.BREADBOARD_API_URL?.trim() || userConfig.baseUrl || DEFAULT_BASE_URL)
   const authToken = process.env.BREADBOARD_API_TOKEN?.trim() || userConfig.authToken
   const remoteEnv = process.env.BREADBOARD_ENABLE_REMOTE_STREAM
   const remoteStreamDefault = remoteEnv === undefined ? true : remoteEnv === "1"

@@ -1,0 +1,14 @@
+{
+  "disabled_tools": [
+    "edit",
+    "write",
+    "apply_patch",
+    "delete_file"
+  ],
+  "required_disabled_tools": [
+    "edit",
+    "write",
+    "apply_patch"
+  ],
+  "schema_version": "bb.ct.tool.disabled_edit_mask.fixture.v1"
+}

@@ -1,0 +1,70 @@
+{
+  "schema_version": "bb.registry.v1",
+  "registry_id": "target_families",
+  "entries": [
+    {
+      "id": "pi",
+      "status": "active",
+      "description": "Pi CLI target family used by P5 parity/support evidence.",
+      "metadata": {
+        "source": "existing target_family enums"
+      }
+    },
+    {
+      "id": "oh_my_pi",
+      "status": "active",
+      "description": "Oh My Pi target family used by P3/P6 BreadBoard helper-runtime and harness evidence.",
+      "metadata": {
+        "source": "existing target_family enums"
+      }
+    },
+    {
+      "id": "claude_code",
+      "status": "active",
+      "description": "Claude Code target family used by E4 replay and calibration evidence.",
+      "metadata": {
+        "source": "existing target_family enums"
+      }
+    },
+    {
+      "id": "codex",
+      "status": "active",
+      "description": "Codex CLI target family used by E4 live/replay evidence.",
+      "metadata": {
+        "source": "existing target_family enums"
+      }
+    },
+    {
+      "id": "opencode",
+      "status": "active",
+      "description": "OpenCode target family used by E4 replay evidence.",
+      "metadata": {
+        "source": "existing target_family enums"
+      }
+    },
+    {
+      "id": "oh_my_opencode",
+      "status": "active",
+      "description": "Oh My OpenCode target family used by E4 target manifests and replay evidence.",
+      "metadata": {
+        "source": "existing target_family enums"
+      }
+    },
+    {
+      "id": "breadboard",
+      "status": "active",
+      "description": "BreadBoard-native target family used for in-repo helper-runtime support claims.",
+      "metadata": {
+        "source": "existing target_family enums"
+      }
+    },
+    {
+      "id": "other",
+      "status": "active",
+      "description": "Explicit escape-hatch target family that requires a paired target_family_other value in schemas that support it.",
+      "metadata": {
+        "source": "existing target_family enums"
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "plugins": [
+    {
+      "plugin_id": "hello-plugin"
+    }
+  ],
+  "snapshots": [
+    {
+      "id": "snapshot-1"
+    }
+  ]
+}

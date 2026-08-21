@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.phase11_benchmark_runner_stub import _seed_workspace_from_task
+from scripts.archive.phase11_benchmark_runner_stub import _seed_workspace_from_task
 
 
 def test_phase13_runner_dry_run_uses_runtime_payload(tmp_path: Path) -> None:

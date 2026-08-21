@@ -1,0 +1,47 @@
+{
+  "verdict": "blocked",
+  "reviewer": "ReviewSP7 (loop-reviewer), verdict retained by orchestrator (option-C override withdrawn)",
+  "packet": "SP7",
+  "artifact_binding": {
+    "packet_sha": "6107d12bcb4561e4e55b4307e8d57775d7c2c5bd (EMPTY commit, tree identical to ba1a1cf7)",
+    "external_ledger": "docs_tmp/phase_16/BB_ER_PROGRESS.json rev66 sha256:7326de02316625b7464c758975721680f755c072adfe64f04189ffac1b64b5d4",
+    "rev65_reconstructed": "sha256:2909c2cac08c9b80771d9b61806c028c713b0565d564412b003f5d5de9e4bea5",
+    "implementer_evidence": "docs_tmp/phase_20/evidence/SP7/implementer.json sha256:b7f7cb3522e48708fe9c98bf83830b03db87c23eefda9b15b56dd263c6565ab5"
+  },
+  "substantive_checks_pass": {
+    "repo_diff": "zero hunks - no out-of-scope repo change",
+    "checker": "sole J.5.evidence[0] PIN_STALE; semantic=0; 1000/1000; revision=66; exit 3 (focused pytest not fully green due to deferred J.5 - honest)",
+    "rebind_legitimacy": "old c066c7ce reproduced from git 1fc25b19; new aff3c4ed reproduced from fc9e1f3e and ba1a1cf7; fc9e1f3e = legitimate +44-line prewarm evolution",
+    "precedent_conformance": "phase-19 G1 shape mirrored, more explicit than precedent",
+    "j5_deferral": "correct; not rebound to untrustworthy live bytes"
+  },
+  "blocking_finding": {
+    "severity": "P1",
+    "category": "evidence-durability",
+    "claim": "Authoritative rev66 mutation + audit exist only in non-versioned live workspace; empty packet SHA cannot reproduce or authenticate the change; phase-19 precedent is the same fragile mechanism.",
+    "unblock_path": "AM23a: tracked non-authoritative snapshot commit on p20/sp7 (rev66 bytes + rev65 reconstruction + digests + audit copy) -> fresh independent review on that SHA.",
+    "status": "RESOLVED by AM23a snapshot commit 07bc045b, fresh verdict ReviewSP7R2"
+  },
+  "r2_verdict": {
+    "verdict": "approved",
+    "reviewer": "ReviewSP7R2 (loop-reviewer, orchestrator-spawned fresh reviewer)",
+    "snapshot_commit": "07bc045b866ebe914a302d53bae47850375e3347",
+    "digests_verified": {
+      "rev65": "2909c2ca...",
+      "rev66": "7326de02...",
+      "patch": "008f9502...",
+      "patch_reconstruction": "byte-exact -> 7326de02...",
+      "audit": "b7f7cb35...",
+      "checker": "1d7ebd67...",
+      "manifest": "c5ec548f..."
+    },
+    "checks": {
+      "diff_scope_ok": true,
+      "non_authority_labeling_ok": true,
+      "live_state_authenticated": true,
+      "am23a_present": true
+    },
+    "provenance": "orchestrator-materialized transcription; authoritative yield at agent://ReviewSP7R2",
+    "note": "Original BLOCKED verdict above retained as review history; durability finding resolved via AM23a tracked snapshot. PacketSP7's self-spawned FreshReviewSP7 PASS recorded as corroborating data only (implementer-commissioned, non-gating)."
+  }
+}

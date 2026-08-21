@@ -1,0 +1,15 @@
+{
+  "config": {
+    "long_running": {
+      "enabled": true,
+      "episode": {
+        "max_steps_override": 7
+      }
+    }
+  },
+  "default_max_steps": 12,
+  "expected": {
+    "actual": 7
+  },
+  "schema_version": "bb.ct.longrun.episode_max_steps_enabled_override.fixture.v1"
+}

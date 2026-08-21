@@ -1,0 +1,48 @@
+{
+  "directives": [
+    {
+      "directive_code": "example",
+      "directive_id": "example",
+      "schema_version": "bb.directive.v1",
+      "target_task_id": "example"
+    }
+  ],
+  "episodes_run": 0,
+  "events": [
+    {
+      "event_id": 1,
+      "payload": {},
+      "type": "example"
+    },
+    {
+      "event_id": 1,
+      "payload": {},
+      "type": "example"
+    },
+    {
+      "event_id": 1,
+      "payload": {},
+      "type": "example"
+    }
+  ],
+  "review_verdicts": [
+    {
+      "schema_version": "bb.review_verdict.v1",
+      "subject": {},
+      "verdict_code": "example",
+      "verdict_id": "example"
+    }
+  ],
+  "scenario_id": "example",
+  "schema_version": "bb.coordination_longrun_reference_slice.v1",
+  "signals": [
+    {
+      "code": "example",
+      "schema_version": "bb.signal.v1",
+      "signal_id": "example",
+      "status": "accepted",
+      "task_id": "example"
+    }
+  ],
+  "stop_reason": "example"
+}

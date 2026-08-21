@@ -1,0 +1,132 @@
+{
+  "schema": "bb.integration_gate_note.v1",
+  "gate": "canonical fixed-point regeneration (SP2 deferred integration step)",
+  "pre_run_integration_sha": "b84c759eee90",
+  "attempt_1": {
+    "command": ".venv/bin/python scripts/e4_parity/regen.py fixed-point --json /tmp/p20_integration_fixed_point.json",
+    "env": "no BB_WORKSPACE_ROOT",
+    "exit": 1,
+    "failure": "ReferenceResolutionError: BB_WORKSPACE_ROOT is required for workspace evidence references; checkout=.../breadboard_repo_integration_main_20260326",
+    "classification": "intentional F5/AM19 contract: workspace evidence references must be explicitly rooted, not ambient-resolved; fail-closed without the variable is the designed behavior (reviewed in ReviewF5 scope: run_lane/path_refs/readiness resolver consumers)"
+  },
+  "attempt_2": {
+    "command": ".venv/bin/python scripts/e4_parity/regen.py fixed-point --json /tmp/p20_integration_fixed_point.json",
+    "env": {
+      "BB_WORKSPACE_ROOT": "/Users/kylemccleary/projects/breadboard"
+    },
+    "status": "failed",
+    "exit": 1,
+    "wall_seconds": 140.5,
+    "failure": "shutil.Error in _prepare_candidate_root (regenerate_evidence.py:972): full-checkout copytree hit dangling symlink misc/codex_cli_runs/goldens/codex_cli_0.139.0_default_model/codex_cli_default_model_smoke/current and stale .venv_linux_import_20260618 entries",
+    "classification": "SP2 integration defect: candidate-root preparation not robust to real-checkout hazards (dangling symlinks, stale venvs); packet tests used synthetic trees. Rollback semantics held (no partial promotion observed - failure occurred before promotion)."
+  },
+  "hermeticity_qualification": "A pass with BB_WORKSPACE_ROOT set certifies the accepted-tree fixed point GIVEN the declared workspace root; references into that root are legitimate only where digest-pinned (F5 tracked ledger 908cd376 pattern) or tombstoned. Reviewer of the integration-generated commit must verify which workspace references the regen consumed and that each is pinned or justified.",
+  "attempt_3_plan": "PacketSP2 fix on p20/sp2b from b84c759e: symlinks-as-symlinks + explicit non-evidence ignore set + regression test; then rerun",
+  "post_failure_tree_check": {
+    "integration_tree_clean": true,
+    "porcelain": ""
+  },
+  "attempt_3": {
+    "command": ".venv/bin/python scripts/e4_parity/regen.py fixed-point --json docs_tmp/phase_20/evidence/M1/integration_fixed_point_rerun.json",
+    "env": {
+      "BB_WORKSPACE_ROOT": "/Users/kylemccleary/projects/breadboard"
+    },
+    "integration_sha": "d1a0b20c0aac (post SP2b merge; SP2b reviewed APPROVED @ ffceba6b)",
+    "exit": 1,
+    "wall_seconds": 230.3,
+    "determinism_result": "candidate-root defect RESOLVED: two full passes byte-identical (snapshot sha256:1ae94011b596bb27..., watch_set_size 1163, first/second exit both 1). The regen DAG is deterministic; failure is a persistent failing stage, not fixed-point divergence.",
+    "failing_stage": "north_star_proof_packets (run_lane --lane north-star --stage capture)",
+    "failure_family": "PIN_STALE in lane breadboard_self_runtime_records_v1: accepted support claims/evidence manifests pin historic bytes - atomic_feature_ledger pinned a001fe69 (the corrupt ambient-seed digest documented in f5_seed_digest_resolution.json), ledger_row_refs row hash mismatch for feat_e7bfda921c4e30ed (the exact sidecar-stale row F5 classified), plus self-capture pins (raw_capture_manifest, target_probe_output, runtime_records/*, replay, comparator) stale against fresh capture bytes. Pipeline itself rewrites docs_tmp/phase_15 seeds (ledger seed -> f218f14b, source index -> f96716b7) before the lane validates old pins.",
+    "classification": "pre-existing ambient-reseed consumer residual, product_defect family of F5 seed-digest mechanism: the north-star self-runtime lane still consumes/validates the ambient phase-15 seed and prior self-capture bytes instead of the F5 tracked canonical ledger (908cd376) route. Not introduced by SP2b (previous attempts never reached this stage). Ownership decision folded into the Wave-B/SP6 scope decision at post-Wave-A SHA per wave_b_hermeticity_diagnostic.required_followup."
+  },
+  "attempt_4": {
+    "command": "regen.py fixed-point (same as attempt_3)",
+    "integration_sha": "a131dc1b (post SP6 merge/snapshot)",
+    "exit": 1,
+    "failing_stage": "north_star_proof_packets, 3 PIN_STALE errors on runtime_records/records/bb.kernel_event.v2.jsonl (expected 4a4fe71c = accepted, got 33e2aa4a)",
+    "invalidated_by": "attempt_5 root-cause finding: the DAG subprocesses executed stale wsD5 code, not the merged SP6 fix"
+  },
+  "attempt_5_root_cause": {
+    "finding": "ENVIRONMENT DEFECT: shared integration .venv contained editable install breadboard_harness_cli-0.0.0 (installed 2026-07-10 20:35, M1 wsD5 static-verification era) whose meta-path finder mapped six top-level packages (scripts, breadboard, agentic_coder_prototype, breadboard_sdk, conformance, adaptive_iter) to the STALE worktree /Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/worktrees/wsD5. PathFinder misses these packages when PYTHONPATH is unset and sys.path[0] is scripts/e4_parity (direct script execution), so every regen-DAG subprocess imported wsD5 modules - SP6's candidate-validation fix and all post-wsD5 merged code NEVER EXECUTED inside the DAG. Reviewer/packet runs always set PYTHONPATH explicitly (PathFinder precedence), so packet evidence is unaffected.",
+    "proof": "direct run_lane invocation without PYTHONPATH crashed with traceback frames mixing integration run_lane.py with wsD5 lane_acceptance_artifacts.py (FileNotFoundError under wsD5); finder MAPPING captured verbatim before remediation.",
+    "blast_radius": "attempts 2-4 of this gate ran mixed wsD5 code and are invalidated as diagnostics of merged-code behavior (attempt_3 determinism result stands only as a property of the wsD5-code DAG). No accepted/promoted evidence affected: all promotion-grade packet evidence was produced under explicit PYTHONPATH and independently reviewed; the failing gate runs promoted nothing.",
+    "remediation": "pip install -e <integration checkout> --no-deps replaced the editable mapping (verified from neutral cwd: scripts/breadboard/agentic_coder_prototype resolve to breadboard_repo_integration_main_20260326). Stale wsD5 worktree left for closeout cleanup."
+  },
+  "attempt_5": {
+    "command": "regen.py fixed-point (post venv-repoint)",
+    "exit": 1,
+    "failing_stage": "north_star_proof_packets, same 3 PIN_STALE (got 33e2aa4a), inner capture returncode 1 in ~5.2s",
+    "report": "docs_tmp/phase_20/evidence/M1/integration_fixed_point_rerun3.json"
+  },
+  "attempt_5_diagnosis_refinement": {
+    "finding": "Second independent cause: STALE SCRATCH REUSE. tmp/e4_regen_capture/breadboard_self_runtime_records_v1 retained kernel-event bytes (sha256:33e2aa4a...) captured by the wsD5-contaminated code path; run_lane capture stage treats existing scratch as reusable (~5s validate-only pass) instead of re-executing (~12-14s fresh capture). After rm -rf tmp/e4_regen_capture AND the venv repoint, capture reproduces the accepted bytes (sha256:4a4fe71c...) both with and without PYTHONPATH, all three north-star lanes ok.",
+    "verification": "git blob == worktree == accepted (4a4fe71c) for bb.kernel_event.v2.jsonl at a131dc1b; no skip-worktree/attr filters; direct no-PYTHONPATH run post-cleanup: all lanes ok, scratch hash 4a4fe71c.",
+    "residual_defect_note": "run_lane scratch reuse lacks staleness invalidation - stale scratch can mask true capture state across code changes. Out of campaign scope (bb-n4e estate class); flagged for backlog."
+  },
+  "attempt_7": {
+    "command": "continue-on-failure candidate census (docs_tmp/phase_20/evidence/M1/repro_candidate_capture.py)",
+    "report": "docs_tmp/phase_20/evidence/M1/candidate_stale_pin_census.json",
+    "dag_fixes": [
+      "expanded_argv: substitute bare \"python\" (P6.6 reverify argv crashed candidate subprocess)",
+      "_seed_lane_support_estate: seed untracked accepted-capture estates wholesale (excl. target_home bulk)",
+      "_mirror_checkout_docs_tmp_to_workspace: hardlink checkout docs_tmp estate to candidate workspace root (adapter checkout-local + validator workspace-level conventions share one copy; symlinks fail post-resolve boundary checks in both directions)",
+      "catalog reads: codex_gpt55_capture_probe widened to directory seed"
+    ],
+    "result": {
+      "capture_generator_stages": "all pass (32 ok)",
+      "reverify_pass": [
+        "lane_def_reverify_codex_cli_e4_capture_probe_v1",
+        "lane_def_reverify_oh_my_pi_p6_0_l1_config_context_tool_surface",
+        "lane_def_reverify_oh_my_pi_p6_0_l2_tool_execution",
+        "lane_def_reverify_oh_my_pi_p6_0_l3_command_network_hook",
+        "lane_def_reverify_oh_my_pi_p6_0_l4_mcp_browser_resource",
+        "lane_def_reverify_oh_my_pi_p6_0_l5_memory_compaction",
+        "lane_def_reverify_oh_my_pi_p6_0_l6_tui_projection",
+        "lane_def_reverify_pi_p5_l1_cli_config_context_tool_surface",
+        "lane_def_reverify_pi_p5_l2_extension_session_residual"
+      ],
+      "reverify_fail": {
+        "lane_def_reverify_breadboard_self_runtime_records_v1": 3,
+        "lane_def_reverify_claude_code_north_star_capture_v1": 3,
+        "lane_def_reverify_oh_my_pi_p3_1_effective_config_graph_compiler": 3,
+        "lane_def_reverify_oh_my_pi_p3_2_context_resource_pack_compiler": 3,
+        "lane_def_reverify_oh_my_pi_p3_3_capability_registry_compiler": 3,
+        "lane_def_reverify_oh_my_pi_p3_4_extension_hook_execution_compiler": 3,
+        "lane_def_reverify_oh_my_pi_p3_5_resource_blob_compiler": 3,
+        "lane_def_reverify_oh_my_pi_p3_6_protocol_provider_policy_compiler": 3,
+        "lane_def_reverify_oh_my_pi_p3_7_memory_work_compiler": 3,
+        "lane_def_reverify_oh_my_pi_p3_8_projection_broker_adapter": 3,
+        "lane_def_reverify_oh_my_pi_p6_6_task_job_subagent": 4,
+        "lane_def_reverify_opencode_north_star_capture_v1": 3
+      },
+      "downstream_fail": {
+        "ct_scenarios": 1,
+        "sync_conformance_matrix": 1,
+        "final_readiness_packet": 1,
+        "validate_e4_closure": 4,
+        "validate_report_hash_freshness": 4
+      },
+      "stale_pin_rows": 97
+    },
+    "qualified_convergence": "DAG hermeticity defects are resolved: every capture/generator stage and 9/21 reverify chains pass in an isolated candidate. Remaining exit-3/4 blockers are tracked-evidence data debt, not DAG defects: (a) F5 sidecar-stale ledger rows (feat_e7bfda921c4e30ed self_runtime 10 pins; claude/opencode north-star row hashes) - bb-fm6 scope per f5_seed_digest_resolution packet_disposition; (b) P3.1-P3.8 + P6.6 stale claim pins and scope semantics - bb-n4e (AM23b out-of-campaign residual). ct_scenarios/matrix/readiness and closure validators fail strictly downstream of the same pins. The canonical fixed-point gate cannot emit a generated commit until bb-fm6/bb-n4e land; per AM23b these are out of campaign scope.",
+    "review": {
+      "reviewer": "ReviewDagFixes (task)",
+      "first_verdict": "changes_requested",
+      "findings_addressed": [
+        "mirror now recreates symlink children verbatim instead of os.link following them (regenerate_evidence.py _mirror)",
+        "reverify count corrected to 9/21 pass (12 data-debt failures)"
+      ]
+    }
+  },
+  "attempts": [
+    "attempt_1",
+    "attempt_2",
+    "attempt_3_plan",
+    "attempt_3",
+    "attempt_4",
+    "attempt_5_root_cause",
+    "attempt_5",
+    "attempt_5_diagnosis_refinement",
+    "attempt_7"
+  ]
+}

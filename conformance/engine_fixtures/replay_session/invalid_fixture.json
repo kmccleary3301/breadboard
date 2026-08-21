@@ -1,0 +1,39 @@
+{
+  "comparator_class": "normalized-trace-equal",
+  "contract": "bb.replay_session.v1",
+  "fixture_family": "replay_session",
+  "fixture_id": "replay_session_invalid_missing_scenario_id",
+  "invalid_reason": "Removes required reference_output field 'scenario_id' from bb.replay_session.v1.",
+  "reference_output": {
+    "comparator_class": "normalized-trace-equal",
+    "completion_summary": {
+      "completed": true,
+      "reason": "stop"
+    },
+    "evidence_refs": [
+      "provider_exchange/reference_fixture.json"
+    ],
+    "lane_id": "python-reference-semantic",
+    "messages": [
+      {
+        "content": "hello",
+        "role": "user"
+      },
+      {
+        "content": "hi",
+        "role": "assistant"
+      }
+    ],
+    "notes": "Reference replay session anchored to normalized provider exchange and transcript outputs.",
+    "schema_version": "bb.replay_session.v1",
+    "strictness": "semantic-reference",
+    "tool_results": [
+      {
+        "call_id": "call-run-shell-1",
+        "status": "completed"
+      }
+    ]
+  },
+  "source_fixture": "replay_session/reference_fixture.json",
+  "support_tier": "reference-engine"
+}

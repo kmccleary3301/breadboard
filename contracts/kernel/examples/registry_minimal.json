@@ -1,0 +1,12 @@
+{
+  "schema_version": "bb.registry.v1",
+  "registry_id": "example_registry",
+  "entries": [
+    {
+      "id": "example.identifier",
+      "status": "active",
+      "description": "Minimal registry entry used to validate bb.registry.v1 examples.",
+      "metadata": {}
+    }
+  ]
+}

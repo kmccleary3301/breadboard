@@ -23,7 +23,6 @@ from .execution.enhanced_executor import EnhancedToolExecutor
 from .compilation.tool_yaml_loader import load_yaml_tools
 from .compilation.provider_schema import build_openai_tools_schema_from_yaml, filter_tools_for_provider_native
 from .compilation.system_prompt_compiler import get_compiler
-from .compilation.enhanced_config_validator import EnhancedConfigValidator
 from .execution.sequential_executor import SequentialToolExecutor
 from .provider.routing import provider_router
 from .provider_adapters import provider_adapter_manager
@@ -149,15 +148,10 @@ class OpenAIConductor:
         except Exception:
             pass
 
-        # Initialize enhanced configuration validator
-        enhanced_tools_config = self.config.get("tools", {}).get("registry")
-        if enhanced_tools_config and os.path.exists("implementations/tools/enhanced_tools.yaml"):
-            try:
-                self.config_validator = EnhancedConfigValidator("implementations/tools/enhanced_tools.yaml")
-            except Exception:
-                self.config_validator = None
-        else:
-            self.config_validator = None
+        # The old enhanced-tools validator module was a recovery stub. Runtime
+        # validation now stays in the active executor/config paths, so legacy
+        # conductor instances do not attach a separate validator here.
+        self.config_validator = None
         
         # Initialize sequential executor for design decision implementation
         self.sequential_executor = None

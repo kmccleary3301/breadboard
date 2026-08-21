@@ -1,0 +1,27 @@
+{
+  "events": [
+    {
+      "code": "rate_limit",
+      "type": "provider_error"
+    },
+    {
+      "duration_ms": 250,
+      "type": "backoff"
+    },
+    {
+      "id": "retry_1",
+      "type": "subcall"
+    }
+  ],
+  "expected": {
+    "actual_backoff_count": 1,
+    "actual_provider_error_count": 1,
+    "actual_stop_reason": "total_subcalls_budget_reached",
+    "actual_total_subcalls_used": 2
+  },
+  "schema_version": "bb.ct.longrun.provider_coupled_budget_trace.fixture.v1",
+  "stop_reason": "total_subcalls_budget_reached",
+  "usage": {
+    "total_subcalls_used": 2
+  }
+}

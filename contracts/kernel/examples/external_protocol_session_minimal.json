@@ -1,0 +1,42 @@
+{
+  "schema_version": "bb.external_protocol_session.v1",
+  "session_id": "external_protocol_mcp_001",
+  "protocol": "mcp",
+  "endpoint_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "auth_scope": {
+    "scope_id": "scope_mcp_read_tools",
+    "method_ref": "auth-method://mcp/oauth-client",
+    "credential_ref": "secret://protocol/mcp/session-token",
+    "scopes": ["tools.read", "resources.read"],
+    "provider_visible": false
+  },
+  "session_window": {
+    "window_id": "window_mcp_001",
+    "started_at": "2026-06-27T00:00:00Z",
+    "expires_at": "2026-06-27T01:00:00Z",
+    "ttl_seconds": 3600,
+    "renewable": true
+  },
+  "bindings": [
+    {
+      "binding_id": "binding_mcp_search_tool",
+      "binding_kind": "tool",
+      "target_ref": "tool://mcp/search",
+      "model_visible": true,
+      "provider_visible": false
+    }
+  ],
+  "visibility": {
+    "model_visible": true,
+    "provider_visible": false,
+    "model_visible_refs": ["binding_mcp_search_tool"],
+    "provider_visible_refs": [],
+    "host_only_refs": ["auth_scope.credential_ref", "endpoint_hash"],
+    "redacted_refs": ["credential_material"]
+  },
+  "transcript_refs": ["transcript://external/mcp/session-001"],
+  "link_refs": ["link://external/mcp/search-result-001"],
+  "status": "active",
+  "errors": [],
+  "evidence_refs": ["evidence://protocol/mcp/session-opened"]
+}

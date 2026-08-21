@@ -79,7 +79,7 @@ This dossier does not require:
 
 The first-pass schema set should likely include:
 
-- `bb.environment_selector.v1`
+- `bb.environment_selector.v1` remains the frozen embedded selector dialect for `bb.tool_binding.v1`; `bb.environment_selector.v2` is the canonical standalone environment-selector record for new producers.
 - `bb.tool_binding.v1`
 - `bb.tool_support_claim.v1`
 - `bb.effective_tool_surface.v1`

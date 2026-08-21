@@ -1,0 +1,10 @@
+{
+  "comparator_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json#sha256:f98a5bd4f933ebe336393af9004c662df2d256260893af92eec9b97511c9d043",
+  "config_id": "pi_p5_l2_extension_session_residual_v1",
+  "failed": 0,
+  "generated_at_utc": "2026-07-03T10:45:00Z",
+  "lane_id": "pi_p5_l2_extension_session_residual",
+  "passed": true,
+  "schema_version": "bb.e4.parity_results.v1",
+  "warned": 0
+}

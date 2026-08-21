@@ -1,0 +1,208 @@
+{
+  "packet": "SP3",
+  "branch": "p20/sp3",
+  "head_sha": "aea51859b49401bec344631fb3af13cc093ad096",
+  "base_sha": "ba1a1cf7",
+  "root_causes": [
+    "SCHEMA-LIFECYCLE-INCOMPLETE",
+    "API-V4-CLAIM-ROUTER-DRIFT"
+  ],
+  "files_changed": [
+    "agentic_coder_prototype/api/e4/router.py",
+    "contracts/kernel/examples/contract_tiers_minimal.json",
+    "contracts/kernel/examples/e4_lane_lock_minimal.json",
+    "contracts/kernel/examples/e4_lane_manifest_minimal.json",
+    "contracts/kernel/examples/examples_manifest.json",
+    "contracts/kernel/packs.v1.json",
+    "contracts/kernel/registries/kernel_families.v1.json",
+    "contracts/kernel/registries/schema_lifecycle.v1.json",
+    "contracts/kernel/schemas/bb.contract_tiers.v1.schema.json",
+    "contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json",
+    "contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json",
+    "contracts/kernel/schemas/README.md",
+    "sdk/ts-kernel-contracts/src/generated/index.ts",
+    "sdk/ts-kernel-contracts/src/generated/registry.ts",
+    "tests/test_e4_api_surface.py"
+  ],
+  "before_at_base": {
+    "sha": "ba1a1cf7",
+    "command": "PYTHONPATH=/Users/kylemccleary/projects/breadboard/sp3_wt /Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/.venv/bin/python -m pytest -q tests/test_e4_api_surface.py",
+    "exit": 1,
+    "counts": {
+      "failed": 10,
+      "passed": 31,
+      "warnings": 83
+    },
+    "failed_test_ids": [
+      "tests/test_e4_api_surface.py::test_legacy_routes_default_off_removes_unversioned_aliases",
+      "tests/test_e4_api_surface.py::test_legacy_routes_flag_off_removes_unversioned_aliases[0]",
+      "tests/test_e4_api_surface.py::test_legacy_routes_flag_off_removes_unversioned_aliases[false]",
+      "tests/test_e4_api_surface.py::test_legacy_routes_flag_off_removes_unversioned_aliases[no]",
+      "tests/test_e4_api_surface.py::test_legacy_routes_flag_off_removes_unversioned_aliases[off]",
+      "tests/test_e4_api_surface.py::test_e4_health_schemas_and_lane_filters_read_accepted_inventory",
+      "tests/test_e4_api_surface.py::test_e4_lane_claim_catalog_ledger_and_records_resolve_real_artifacts",
+      "tests/test_e4_api_surface.py::test_e4_paginated_resources_report_pre_slice_total_and_return_requested_window",
+      "tests/test_e4_api_surface.py::test_e4_claim_reverify_runs_check_only_without_writing_probe_artifacts",
+      "tests/test_e4_api_surface.py::test_e4_claim_reverify_defaults_to_check_only_without_comparator_rerun"
+    ],
+    "tail": "pytest: 10 failed, 31 passed, 83 warnings in 5.14s"
+  },
+  "after_at_head": {
+    "sha": "aea51859b49401bec344631fb3af13cc093ad096",
+    "command": "PYTHONPATH=/Users/kylemccleary/projects/breadboard/sp3_wt /Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/.venv/bin/python -m pytest -q tests/test_e4_api_surface.py",
+    "exit": 1,
+    "counts": {
+      "failed": 9,
+      "passed": 32,
+      "warnings": 83
+    },
+    "resolved_test_ids": [
+      "tests/test_e4_api_surface.py::test_e4_health_schemas_and_lane_filters_read_accepted_inventory"
+    ],
+    "remaining_test_ids": [
+      "tests/test_e4_api_surface.py::test_legacy_routes_default_off_removes_unversioned_aliases",
+      "tests/test_e4_api_surface.py::test_legacy_routes_flag_off_removes_unversioned_aliases[0]",
+      "tests/test_e4_api_surface.py::test_legacy_routes_flag_off_removes_unversioned_aliases[false]",
+      "tests/test_e4_api_surface.py::test_legacy_routes_flag_off_removes_unversioned_aliases[no]",
+      "tests/test_e4_api_surface.py::test_legacy_routes_flag_off_removes_unversioned_aliases[off]",
+      "tests/test_e4_api_surface.py::test_e4_lane_claim_catalog_ledger_and_records_resolve_real_artifacts",
+      "tests/test_e4_api_surface.py::test_e4_paginated_resources_report_pre_slice_total_and_return_requested_window",
+      "tests/test_e4_api_surface.py::test_e4_claim_reverify_runs_check_only_without_writing_probe_artifacts",
+      "tests/test_e4_api_surface.py::test_e4_claim_reverify_defaults_to_check_only_without_comparator_rerun"
+    ],
+    "tail": "pytest: 9 failed, 32 passed, 83 warnings in 2.97s",
+    "dependency_note": "The isolated ba1a1cf7 packet branch lacks generated/promoted E4 lane evidence. Two record tests have zero comparator records, the write-safety reverify test fails before the router because its node-gate file is absent, and the default reverify now selects the correct v4 config_id but reports missing L4 evidence. These are integration-time regeneration residuals after SP2 repairs the REGEN-PROMOTION-PIN-CYCLE; they are not SP7 scope, because SP7 only rebinds ER-PROGRESS-STALE-PINS in docs_tmp/phase_16/BB_ER_PROGRESS.json. The five /status expectation failures remain untouched for SP4."
+  },
+  "commands": [
+    {
+      "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/test_e4_api_surface.py (base ba1a1cf7)",
+      "exit": 1,
+      "tail": "10 failed, 31 passed, 83 warnings; exact IDs recorded in before_at_base"
+    },
+    {
+      "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_contract_conventions.py",
+      "exit": 0,
+      "tail": "16 passed in 0.19s"
+    },
+    {
+      "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/test_e4_api_surface.py::test_e4_claim_reverify_uses_support_claim_source_path_when_filename_differs_from_claim_id",
+      "exit": 0,
+      "tail": "1 passed, 12 warnings in 0.97s"
+    },
+    {
+      "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/test_e4_api_surface.py::test_e4_health_schemas_and_lane_filters_read_accepted_inventory tests/test_e4_api_surface.py::test_e4_claim_reverify_uses_support_claim_source_path_when_filename_differs_from_claim_id",
+      "exit": 0,
+      "tail": "2 passed, 14 warnings in 0.78s"
+    },
+    {
+      "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/test_e4_api_surface.py (implementation head 0fc11917)",
+      "exit": 1,
+      "tail": "9 failed, 32 passed, 83 warnings; five SP4 status failures and four integration-time regeneration residuals remain"
+    },
+    {
+      "cmd": "npm run -s generate (first pass, existing sdk/ts-kernel-contracts generator)",
+      "exit": 0,
+      "tail": "generatedSchemas=94, generatedPacks=4; README sha256=78196117bd48b36d3be4a42a6ab58f92c8402ee29f04e589e14b45cb0276f066; index.ts sha256=39de3b15b7863eb6338691e84137fea8226851f749b62b2efca403c1067fcb18; registry.ts sha256=ce3369020982d9c815b892670a28292be4577542eb98db2b444b85de1aa0644c"
+    },
+    {
+      "cmd": "npm run -s generate (second deterministic pass, existing sdk/ts-kernel-contracts generator)",
+      "exit": 0,
+      "tail": "generatedSchemas=94, generatedPacks=4; all three output SHA-256 values byte-identical to first pass"
+    }
+  ],
+  "residual_accounting": [
+    {
+      "test_id": "tests/test_e4_api_surface.py::test_e4_lane_claim_catalog_ledger_and_records_resolve_real_artifacts",
+      "missing_artifact_paths": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/comparator_report.json"
+      ],
+      "claimed_producer_owner": "integration-time regeneration after SP2",
+      "justification": "The test filters comparator records to the accepted L4 lane, and the catalog declares this exact path while the ba1a1cf7 worktree does not contain it. scripts/e4_parity/oh_my_pi_p6_lane_projection.py builds the L4 comparator and lane_acceptance_artifacts.py dispatches that builder from run_lane. Taxonomy assigns SP2 the REGEN-PROMOTION-PIN-CYCLE and explicitly says its promotion/rebind write-set includes generated catalog bindings, claims, and evidence manifests. SP7 only owns phase_16 progress pins; F5 concerns P6.6 task/job artifacts, not P6.0-L4."
+    },
+    {
+      "test_id": "tests/test_e4_api_surface.py::test_e4_paginated_resources_report_pre_slice_total_and_return_requested_window",
+      "missing_artifact_paths": [
+        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json",
+        "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/comparator_report.json",
+        "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json",
+        "docs/conformance/e4_target_support/opencode_north_star_capture_v1/comparator_report.json",
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json",
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json"
+      ],
+      "claimed_producer_owner": "integration-time regeneration after SP2",
+      "justification": "The pagination case requires more than one catalog-backed bb.e4.comparator_report.v1 record. The catalog declares these 21 comparator-role paths and zero corresponding comparator payloads exist in this clean worktree. Taxonomy assigns the generated evidence promotion/rebind cycle to SP2 and requires the fixed-point command after packet integration. This is broader regeneration accounting, not SP7 phase_16 pin rebinding; the P6.6 entry also depends on F5's canonical artifact before the post-F5 integrated rebind."
+    },
+    {
+      "test_id": "tests/test_e4_api_surface.py::test_e4_claim_reverify_runs_check_only_without_writing_probe_artifacts",
+      "missing_artifact_paths": [
+        "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l4_c4_chain.json"
+      ],
+      "claimed_producer_owner": "integration-time regeneration after SP2",
+      "justification": "The test reads this exact file before making the API request and therefore fails before the SP3 router executes. scripts/e4_parity/oh_my_pi_p6_lane_projection.py:_node_gate constructs it and build_p6_lane writes it; lane_acceptance_artifacts.py invokes that producer through run_lane. SP2 owns the regeneration promotion cycle and the taxonomy requires fixed-point regeneration last. SP7 does not produce node-gate files, and F5 owns P6.6 rather than this P6.0-L4 lane."
+    },
+    {
+      "test_id": "tests/test_e4_api_surface.py::test_e4_claim_reverify_defaults_to_check_only_without_comparator_rerun",
+      "missing_artifact_paths": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/prevalidation_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw_capture_manifest.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/bb_replay_result.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/comparator_report.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/parity_results.json",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/secret_scan_report.json"
+      ],
+      "stale_artifact_pins": [
+        {
+          "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+          "expected": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1",
+          "observed": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803",
+          "claimed_producer_owner": "F5 canonical artifact plus post-F5 integrated rebind",
+          "evidence_ref": "docs_tmp/phase_20/evidence/M1/f5_seed_digest_resolution.json"
+        }
+      ],
+      "claimed_producer_owner": "integration-time regeneration after SP2",
+      "justification": "With SP3's v4 scope.config_id selected, validate_c4_chain reaches the correct freeze row and reports these exact missing L4 support artifacts rather than e4_configs.None. It also reports the separately recorded PIN_STALE ledger input; docs_tmp/phase_20/evidence/M1/f5_seed_digest_resolution.json establishes that F5 must produce the canonical ledger artifact, followed by integrated claim/evidence rebinding. scripts/e4_parity/oh_my_pi_p6_lane_projection.py builds the L4 evidence set under the lane_acceptance_artifacts/run_lane front door. Taxonomy assigns SP2 the promotion/rebind ordering defect and broad generated evidence write-set; SP7 remains limited to ER progress pins."
+    }
+  ],
+  "focused_results": {
+    "schema_lifecycle": {
+      "status": "passed",
+      "details": "All three authorized physical schemas now have canonical absolute IDs, exact pack membership, active family and lifecycle census rows, validating examples, and examples-manifest registrations. Convention suite: 16/16 passed; /v1/e4/schemas regression passed."
+    },
+    "v4_claim_router": {
+      "status": "passed",
+      "details": "The handler dispatches bb.e4.support_claim.v4 to scope.config_id, retains top-level config_id only for supported v1-v3 claims, rejects unsupported versions or empty config IDs, and passes the string unchanged to validate_c4_chain. The intercepted focused regression observed oh_my_pi_p6_0_l4_mcp_browser_resource_v1."
+    },
+    "full_api_suite": {
+      "status": "layered_prerequisites_remain",
+      "details": "SP3 reduced the isolated suite from 10 failures to 9 by resolving the directly runnable health-schemas regression. The second router behavior is proven by the focused intercepted test; real reverification remains blocked by integration-time regeneration of the exact P6.0-L4 evidence listed in residual_accounting."
+    }
+  },
+  "s03_check": {
+    "new_capability": false,
+    "lane_crud_or_api": false,
+    "sdk_e4_surface": false,
+    "typescript_repackaging": false,
+    "new_schema_family": false,
+    "scorecard_or_ledger_shape_change": false,
+    "parallel_framework": false,
+    "validation_weakened": false,
+    "absolute_path_rejection_weakened": false,
+    "freeze_gate_weakened": false
+  },
+  "notes": "The three registered families were already physically present and explicitly authorized by Phase 20 section 0.3; this packet completes their existing lifecycle and adds no fourth family. The existing TypeScript generator was run twice and produced byte-identical outputs, updating generated registry truth without TS repackaging. Worktree is clean at commit aea51859. Independent review is still required; implementer does not self-approve."
+}

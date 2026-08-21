@@ -1,0 +1,74 @@
+{
+  "commands": {
+    "module_probe": {
+      "argv": [
+        "npx",
+        "tsx",
+        "/Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/pi_p5_residual_target_probe.mjs"
+      ],
+      "command_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/module_probe.command.json#sha256:36c1f7e975aa0299fac55b1226acce64ae901e640303e79e161b8535c4cbfd59",
+      "exit_code": 0,
+      "stderr_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/module_probe.stderr.txt#sha256:1eccbf75a6ed019df08db35cee4f9f1cd9e571228be9d84255b7d9e578a1dfe1",
+      "stdout_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/module_probe.stdout.txt#sha256:8c3a988e88b1566502749ac66584de65d01bd1776e6f929f3c73e540c413ee30"
+    },
+    "node_version": {
+      "argv": [
+        "node",
+        "--version"
+      ],
+      "command_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/node_version.command.json#sha256:e335dc797f5104031bb7efc284b2e6ac411958e3f55622ffc5832cd864f0be17",
+      "exit_code": 0,
+      "stderr_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/node_version.stderr.txt#sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/node_version.stdout.txt#sha256:08f6347c6bc47b1f68fb3e5b85f789b6baabb1c94d2006983a485d4501048459"
+    },
+    "npm_ci": {
+      "argv": [
+        "npm",
+        "ci",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "command_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_ci.command.json#sha256:08bc97db4d19672f4792cbe4d1e2e73c8b61bc5e40d843a9ed7f5a216e9981ab",
+      "exit_code": 0,
+      "stderr_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_ci.stderr.txt#sha256:1bbfb7f1efe3c9f7addc97e9941ebc552392e7776485cd56ec61f12d8b56dbea",
+      "stdout_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_ci.stdout.txt#sha256:7ee42ae51e06b953ec9589e5b204f80ae009545f513dd88d1604f89280164f99"
+    },
+    "npm_version": {
+      "argv": [
+        "npm",
+        "--version"
+      ],
+      "command_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_version.command.json#sha256:b4e9874931c83e442018b782113d10189474dc68f6f8a47b059d6183a887c6d8",
+      "exit_code": 0,
+      "stderr_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_version.stderr.txt#sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_version.stdout.txt#sha256:041fb0a6f23ccf0102a18d4591e1bfa36eebc17d27d348727a5eee18806d1c3c"
+    }
+  },
+  "generated_at_utc": "2026-07-03T10:45:00Z",
+  "no_secret_environment": {
+    "AI_GATEWAY_API_KEY": false,
+    "ANTHROPIC_API_KEY": false,
+    "ANTHROPIC_OAUTH_TOKEN": false,
+    "CEREBRAS_API_KEY": false,
+    "COPILOT_GITHUB_TOKEN": false,
+    "GEMINI_API_KEY": false,
+    "GH_TOKEN": false,
+    "GITHUB_TOKEN": false,
+    "GROQ_API_KEY": false,
+    "MINIMAX_API_KEY": false,
+    "MISTRAL_API_KEY": false,
+    "OPENAI_API_KEY": false,
+    "OPENCODE_API_KEY": false,
+    "OPENROUTER_API_KEY": false,
+    "XAI_API_KEY": false,
+    "ZAI_API_KEY": false
+  },
+  "run_id": "20260703_pi_p5_l2_extension_session_residual_capture",
+  "sandbox_mode": "read-only-no-secret",
+  "schema_version": "pi.p5.residual.target_setup_and_capture_report.v1",
+  "source_archive_ref": "docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip#sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b",
+  "target_family": "pi",
+  "target_version": "@mariozechner/pi-coding-agent@0.57.1",
+  "tmp_root_redacted": "pi_p5_residual_capture_c2fhhh42"
+}

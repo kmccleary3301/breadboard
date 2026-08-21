@@ -1,0 +1,34 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.execution_capability.v1",
+  "fixture_family": "execution_capability",
+  "fixture_id": "execution_capability_invalid_missing_capability_id",
+  "invalid_reason": "Removes required reference_output field 'capability_id' from bb.execution_capability.v1.",
+  "reference_output": {
+    "allow_env_keys": [],
+    "allow_net_hosts": [
+      "remote.example.test"
+    ],
+    "allow_read_paths": [
+      "/tmp/workspace"
+    ],
+    "allow_run_programs": [
+      "python"
+    ],
+    "allow_write_paths": [
+      "/tmp/workspace"
+    ],
+    "evidence_mode": "audit_full",
+    "isolation_class": "remote_service",
+    "resource_budget": {
+      "cpu": "1",
+      "memory_mb": 512
+    },
+    "schema_version": "bb.execution_capability.v1",
+    "secret_mode": "ref_only",
+    "security_tier": "multi_tenant",
+    "tty_mode": "optional"
+  },
+  "source_fixture": "execution_capability/reference_fixture.json",
+  "support_tier": "draft-semantic"
+}

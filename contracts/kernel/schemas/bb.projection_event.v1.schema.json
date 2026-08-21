@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.projection_event.v1.schema.json",
+  "title": "BreadBoard projection event V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "projection_event_id",
+    "source",
+    "projection_surface",
+    "projection_payload_ref",
+    "status_frames",
+    "visibility",
+    "kernel_truth"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.projection_event.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "projection_event_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the projection event.",
+      "examples": [
+        "projection_event_example"
+      ]
+    },
+    "source": {
+      "$ref": "#/$defs/source",
+      "description": "Source record for this primitive."
+    },
+    "projection_surface": {
+      "$ref": "#/$defs/projection_surface",
+      "description": "Projection surface record for this primitive."
+    },
+    "projection_payload_ref": {
+      "$ref": "#/$defs/payload_ref",
+      "description": "Reference to the projection payload.",
+      "examples": [
+        "docs/conformance/projection_payload_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "status_frames": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/status_frame",
+        "description": "One entry in status frames."
+      },
+      "description": "Ordered status frames entries."
+    },
+    "visibility": {
+      "$ref": "#/$defs/visibility",
+      "description": "Visibility record for this primitive."
+    },
+    "kernel_truth": {
+      "const": false,
+      "description": "Kernel truth value for this primitive."
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_kernel_event_ref",
+        "source_refs",
+        "source_hash"
+      ],
+      "properties": {
+        "source_kernel_event_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the source kernel event.",
+          "examples": [
+            "docs/conformance/source_kernel_event_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in source refs.",
+            "examples": [
+              [
+                "docs/conformance/source.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the source entries.",
+          "examples": [
+            [
+              "docs/conformance/source.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        },
+        "source_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[A-Fa-f0-9]{64}$",
+          "description": "SHA-256 digest for the source hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    },
+    "projection_surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface_id",
+        "surface_kind",
+        "audience",
+        "path"
+      ],
+      "properties": {
+        "surface_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the surface.",
+          "examples": [
+            "surface_example"
+          ]
+        },
+        "surface_kind": {
+          "enum": [
+            "model_context",
+            "host_ui",
+            "provider_request",
+            "audit_log",
+            "status_stream",
+            "tool_surface"
+          ],
+          "description": "Allowed surface kind value."
+        },
+        "audience": {
+          "enum": [
+            "model",
+            "host",
+            "provider",
+            "audit"
+          ],
+          "description": "Allowed audience value."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path value for the path.",
+          "examples": [
+            "docs/conformance/example.json"
+          ]
+        }
+      }
+    },
+    "payload_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "media_type",
+        "hash",
+        "redaction_state"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the ref.",
+          "examples": [
+            "docs/conformance/ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Media type value for this primitive."
+        },
+        "hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[A-Fa-f0-9]{64}$",
+          "description": "SHA-256 digest for the hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "redaction_state": {
+          "enum": [
+            "none",
+            "redacted",
+            "summarized",
+            "elided"
+          ],
+          "description": "Allowed redaction state value."
+        }
+      }
+    },
+    "status_frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frame_id",
+        "seq",
+        "status",
+        "message_ref",
+        "emitted_at",
+        "visible_to_model",
+        "visible_to_host"
+      ],
+      "properties": {
+        "frame_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the frame.",
+          "examples": [
+            "frame_example"
+          ]
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Seq value for this primitive."
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "projected",
+            "suppressed",
+            "redacted",
+            "failed"
+          ],
+          "description": "Allowed status value."
+        },
+        "message_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the message.",
+          "examples": [
+            "docs/conformance/message_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "emitted_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC timestamp for the emitted at event.",
+          "examples": [
+            "2026-07-04T00:00:00Z"
+          ]
+        },
+        "visible_to_model": {
+          "type": "boolean",
+          "description": "Visible to model value for this primitive."
+        },
+        "visible_to_host": {
+          "type": "boolean",
+          "description": "Visible to host value for this primitive."
+        }
+      }
+    },
+    "visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_visible",
+        "host_visible",
+        "provider_visible"
+      ],
+      "properties": {
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "host_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a host visible state."
+        },
+        "provider_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a provider visible state."
+        }
+      }
+    }
+  }
+}

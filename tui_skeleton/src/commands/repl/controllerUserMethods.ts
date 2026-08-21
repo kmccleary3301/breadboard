@@ -1,5 +1,5 @@
-import type { ReadSessionFileOptions } from "../../api/client.js"
-import { ApiError } from "../../api/client.js"
+import type { ReadSessionFileOptions } from "../../api/internalClient.js"
+import { ApiError } from "../../api/internalClient.js"
 import type { SessionFileContent, SessionFileInfo, SessionSummary } from "../../api/types.js"
 import { promises as fs } from "node:fs"
 import path from "node:path"

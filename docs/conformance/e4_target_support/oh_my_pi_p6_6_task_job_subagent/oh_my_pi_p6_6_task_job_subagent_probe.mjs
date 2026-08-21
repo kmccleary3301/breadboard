@@ -1,0 +1,1 @@
+// P6.6 probe: preserved capture source derived from canonical JSONL captures; maintained as a preserved input of the oh_my_pi_p6_6_task_job_subagent adapter lane (scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py).

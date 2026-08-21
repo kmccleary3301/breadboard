@@ -42,6 +42,7 @@ local_engine_bundles/
 # Local caches and build artifacts
 **/node_modules/
 **/dist/
+*.egg-info/
 **/artifacts/
 **/artifacts/visual_baselines/
 **/.cache/

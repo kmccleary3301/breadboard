@@ -1,0 +1,26 @@
+{
+  "verdict": "approved",
+  "reviewed_sha": "aea51859b49401bec344631fb3af13cc093ad096",
+  "prior_verdict": "changes_requested @ 0fc11917 (P1 generated-registry drift; P1 residual accounting)",
+  "reviewer": "ReviewSP3 (loop-reviewer)",
+  "provenance": "orchestrator-materialized transcription; authoritative yields at agent://ReviewSP3 + verbatim IRC in ATTESTATIONS.json",
+  "evidence_binding": {
+    "implementer_json_sha256": "7ce332812c1433012e06ab59167aa37f0c5c7a09461e947c346202a52202c53e",
+    "note": "matches snapshot committed at d225b137"
+  },
+  "summary": "Generated registry/index canonical for all 3 schemas; pagination residual list exactly equals catalog comparator estate (21/21, empty set differences); ledger PIN_STALE independently recorded with F5/post-F5 rebind owner; delta from 0fc11917 only README + generated index.ts/registry.ts; independent rerun 18/18 conventions+focused, full API exactly 9F/32P.",
+  "findings": [
+    {
+      "severity": "P2",
+      "category": "toolchain",
+      "claim": "TS generator not independently rerun (tsx dependency absent in checkout); static generated output + recorded two-pass hashes verified instead.",
+      "status": "accepted"
+    },
+    {
+      "severity": "P2",
+      "category": "integration-accounting",
+      "claim": "Generated-artifact CI production remains nonblocking integration risk.",
+      "status": "accepted -> integration regen after SP2 + Wave-B hermeticity diagnostic"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "schema": "bb.pin_rebind_audit.v1",
+  "actor": "Main orchestrating agent, Phase 20 integration",
+  "generated_at_utc": "2026-07-11T09:50:00Z",
+  "authorization": "SP7 deferred_j5.routing (docs_tmp/phase_20/evidence/SP7/implementer.json) + AM23b (SPEC_AMENDMENTS.md)",
+  "revision_transitions": [
+    "66 -> 67 (J.5 rebind)",
+    "67 -> 68 (J.4 re-pins)"
+  ],
+  "ledger_sha256": {
+    "rev66_before": "sha256:7326de02316625b7464c758975721680f755c072adfe64f04189ffac1b64b5d4",
+    "rev67_after_j5": "sha256:272acb7668462e321af42a11b98f8cf3e93bffb9c8aca082ce2f9b609b924862",
+    "rev68_after_j4": "sha256:4438d3dc8685ed6854b3bb4a99dc9ae280b2e77066fe3a689ec18d5f3e3d8347",
+    "rev66_provenance": "matches SP7 update_mechanism.ledger_sha256_after exactly; rev66 bytes tracked at docs/conformance/evidence_snapshots/phase16_er_progress/BB_ER_PROGRESS.rev66.snapshot.json"
+  },
+  "mutations": [
+    {
+      "label": "J.5.evidence[0]",
+      "old": {
+        "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+        "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
+      },
+      "new": {
+        "path": "breadboard_repo_integration_main_20260326/config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
+        "sha256": "sha256:908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e"
+      },
+      "new_target_verification": "sha256 recomputed over workspace bytes AND git ls-tree at HEAD 1578bafa = blob b3ceb2605b7925354c277e9a33952b4e398bd2c1 (F5 canonical ledger, ReviewF5 APPROVED @ 0def21d5)"
+    },
+    {
+      "label": "J.4.evidence[0]",
+      "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
+      "old_sha256": "sha256:66a7f8a127fcd22905c1c0a4f428987d423f9c220d2a4a9abd85cd49a711754c",
+      "new_sha256": "sha256:4342d2f4df75c3d462dadd222f5bc38bc51ee005c80e25093dce3323d505c6ec",
+      "provenance": "old reproduced via git show ba1a1cf7:...; sole change commit 0fc11917 (SP3, re-reviewed APPROVED @ aea51859, merged 9b4cca88)"
+    },
+    {
+      "label": "J.4.evidence[1]",
+      "path": "breadboard_repo_integration_main_20260326/tests/test_e4_api_surface.py",
+      "old_sha256": "sha256:3b9910399f2cb3d7c9a16337cf2632053e84e8f4e4cf7c692571b4f6c5c7a8d7",
+      "new_sha256": "sha256:ebea22132bed4474377d1e67e29b020e0d45df2ffa0c6ecc678115710086046e",
+      "provenance": "old reproduced via git show ba1a1cf7:...; change commits 7e89d927 (SP4, reviewed APPROVED) + 0fc11917 (SP3)"
+    }
+  ],
+  "verification": {
+    "checker_command": ".venv/bin/python scripts/e4_parity/check_er_progress.py --progress docs_tmp/phase_16/BB_ER_PROGRESS.json --workspace-root /Users/kylemccleary/projects/breadboard --json-out /tmp/j5_rebind_report2.json",
+    "checker_exit": 0,
+    "pin_stale_count": 0,
+    "semantic_count": 0,
+    "points": "1000/1000",
+    "focused_test": "tests/e4_parity/test_check_er_progress.py::test_live_bb_er_progress_passes_checker",
+    "focused_test_result": "1 passed (exit 0) - passes FULLY as SP7 routing required"
+  }
+}

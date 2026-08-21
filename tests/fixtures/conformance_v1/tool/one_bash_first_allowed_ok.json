@@ -1,0 +1,10 @@
+{
+  "schema_version": "bb.ct.tool.one_bash_first_allowed.fixture.v1",
+  "tool_calls": [
+    {
+      "command": "python --version",
+      "decision": "allow",
+      "tool": "bash"
+    }
+  ]
+}

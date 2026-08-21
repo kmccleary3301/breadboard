@@ -1,0 +1,10 @@
+{
+  "globs": [
+    "docs/conformance/support_claims/**",
+    "artifacts/conformance/node_gate/**",
+    "docs/conformance/e4_artifact_catalog.json",
+    "artifacts/conformance/ct_scenarios_*.json",
+    "artifacts/conformance/CONFORMANCE_TEST_MATRIX_V1.synced.csv",
+    "artifacts/conformance/conformance_matrix_sync_summary_v1.*"
+  ]
+}

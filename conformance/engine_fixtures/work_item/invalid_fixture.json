@@ -1,0 +1,84 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.work_item.v1",
+  "fixture_family": "work_item",
+  "fixture_id": "work_item_invalid_required_contract",
+  "notes": "Invalid work_item fixture proving schema rejection.",
+  "reference_output": {
+    "cancellation_policy": {
+      "cancellable_by": [
+        {
+          "actor_id": "agent_parent",
+          "actor_kind": "agent"
+        }
+      ],
+      "mode": "cooperative",
+      "on_cancel": "checkpoint_then_stop",
+      "propagate_to_children": true
+    },
+    "delegation": {
+      "delegated_by": {
+        "actor_id": "agent_parent",
+        "actor_kind": "agent"
+      },
+      "delegation_ref": "bb.distributed_task_descriptor.v1:distributed_task_001",
+      "parent_task_id": "task_parent",
+      "parent_work_item_id": "work_item_parent"
+    },
+    "identity": {
+      "correlation_id": "correlation_001",
+      "distributed_task_id": "distributed_task_001",
+      "subagent_id": "agent_001",
+      "task_id": "task_001",
+      "task_kind": "subagent"
+    },
+    "input_artifact_refs": [
+      {
+        "artifact_kind": "prompt",
+        "ref": "bb.resource_ref.v1:assignment_payload",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "output_artifact_refs": [
+      {
+        "artifact_kind": "report",
+        "ref": "bb.resource_ref.v1:work_result",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": false
+        }
+      }
+    ],
+    "owner": {
+      "actor_id": "agent_parent",
+      "actor_kind": "agent"
+    },
+    "resume_policy": {
+      "mode": "checkpoint",
+      "requires_approval": false,
+      "resume_from_ref": null,
+      "wake_refs": [
+        "bb.wake_subscription.v1:wake_work_item_minimal"
+      ]
+    },
+    "schema_version": "bb.work_item.v1",
+    "state": {
+      "checkpoint_ref": null,
+      "entered_at": "2026-03-08T00:00:00Z",
+      "reason": "Worker accepted delegated schema work.",
+      "status": "running"
+    },
+    "visibility": {
+      "host_visible": true,
+      "model_visible": true,
+      "provider_visible": false
+    },
+    "work_item_id": "work_item_minimal"
+  },
+  "support_tier": "draft-shape"
+}

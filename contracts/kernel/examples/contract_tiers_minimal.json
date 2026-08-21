@@ -1,0 +1,13 @@
+{
+  "baseline_sha": "ba1a1cf7",
+  "entries": [],
+  "registry_id": "contract_tiers",
+  "schema_version": "bb.contract_tiers.v1",
+  "tiers": [
+    "runtime_protocol",
+    "config_algebra",
+    "host_protocol",
+    "evidence",
+    "frozen_legacy"
+  ]
+}

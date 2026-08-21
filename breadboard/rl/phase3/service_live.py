@@ -24,7 +24,6 @@ def _resource_floor_rejections(submission: RunSubmission) -> list[str]:
         rejections.append("requested_duration_seconds must be positive")
     return rejections
 
-
 class LiveRLRunService:
     def __init__(self, store: SQLiteRLRunStore | str | Path | None = None, *, caps: ResourceCaps = DEFAULT_CAPS, egress_policy: EgressPolicy = DEFAULT_EGRESS_POLICY):
         self.store = store if isinstance(store, SQLiteRLRunStore) else SQLiteRLRunStore(store or ":memory:")
@@ -78,6 +77,7 @@ class LiveRLRunService:
         status = self.store.status(run_id)
         if status.state not in ACTIVE_STATES:
             raise ValueError(f"run {run_id} cannot complete from state {status.state}")
+
         state = "succeeded" if succeeded else "failed"
         self.store.update_state(run_id, state=state, reason=reason)
         self.store.append_event(run_id, event_type="run.end", state=state, message=reason or state, target_run_id=status.target_run_id)

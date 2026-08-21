@@ -2,16 +2,15 @@ import {
   assertValid,
   type ExecutionCapabilityV1,
   type ExecutionPlacementV1,
-  type KernelEventV1,
+  type KernelEventV2,
   type ProviderExchangeV1,
   type RunRequestV1,
   type SandboxRequestV1,
   type SandboxResultV1,
-  type SessionTranscriptV1,
-  type SessionTranscriptV1Item,
-  type ToolCallV1,
-  type ToolExecutionOutcomeV1,
-  type ToolModelRenderV1,
+  type SessionTranscriptV2,
+  type ToolCallV2,
+  type ToolExecutionOutcomeV2,
+  type ToolModelRenderV2,
 } from "@breadboard/kernel-contracts"
 import {
   buildExecutionDriverUnsupportedCase,
@@ -56,11 +55,19 @@ function buildDriverMediatedToolOutcome(input: {
   sandboxResult: SandboxResultV1
   callId: string
   toolName: string
-}): ToolExecutionOutcomeV1 {
+  completedAtUtc: string
+}): ToolExecutionOutcomeV2 {
+  const terminalState =
+    input.sandboxResult.status === "completed"
+      ? "completed"
+      : input.sandboxResult.status === "timed_out"
+        ? "timed_out"
+        : "errored"
   const outcome: Record<string, unknown> = {
-    schemaVersion: "bb.tool_execution_outcome.v1",
-    callId: input.callId,
-    terminalState: input.sandboxResult.status === "completed" ? "completed" : "errored",
+    schema_version: "bb.tool_execution_outcome.v2",
+    call_id: input.callId,
+    terminal_state: terminalState,
+    completed_at_utc: input.completedAtUtc,
     result:
       input.sandboxResult.status === "completed"
         ? {
@@ -73,6 +80,7 @@ function buildDriverMediatedToolOutcome(input: {
             usage: input.sandboxResult.usage ?? null,
           }
         : null,
+    visibility: { model_visible: false, provider_visible: false, host_visible: true, redaction_state: "none" },
     metadata: {
       placement_id: input.sandboxResult.placement_id ?? null,
       sandbox_status: input.sandboxResult.status,
@@ -89,7 +97,7 @@ function buildDriverMediatedToolOutcome(input: {
       message: `${input.toolName} ended with status ${input.sandboxResult.status}`,
     }
   }
-  return assertValid<ToolExecutionOutcomeV1>("toolExecutionOutcome", outcome)
+  return assertValid<ToolExecutionOutcomeV2>("toolExecutionOutcomeV2", outcome)
 }
 
 function buildDriverMediatedToolRender(input: {
@@ -97,20 +105,20 @@ function buildDriverMediatedToolRender(input: {
   callId: string
   toolName: string
   command: string[]
-}): ToolModelRenderV1 {
+}): ToolModelRenderV2 {
   const preview =
     input.sandboxResult.status === "completed"
       ? `${input.toolName} completed via sandbox (${input.command.join(" ")})`
       : `${input.toolName} ${input.sandboxResult.status} via sandbox`
-  return assertValid<ToolModelRenderV1>("toolModelRender", {
-    schemaVersion: "bb.tool_model_render.v1",
-    callId: input.callId,
-    visibility: "model",
+  return assertValid<ToolModelRenderV2>("toolModelRenderV2", {
+    schema_version: "bb.tool_model_render.v2",
+    call_id: input.callId,
+    visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
     parts: [
       {
-        tool: input.toolName,
-        preview,
-        status: input.sandboxResult.status === "completed" ? "ok" : "error",
+        part_kind: input.sandboxResult.status === "completed" ? "text" : "error",
+        content: preview,
+        truncated: false,
       },
     ],
     metadata: {
@@ -259,20 +267,27 @@ export async function executeDriverMediatedToolTurn(
     }),
   )
   const callId = `${request.request_id}:tool:1`
-  const toolCall = assertValid<ToolCallV1>("toolCall", {
-    schemaVersion: "bb.tool_call.v1",
-    callId,
-    toolName: options.toolName,
+  const completedAtUtc = options.startedAt ?? new Date().toISOString()
+  const toolCallState: ToolCallV2["state"] =
+    sandboxResult.status === "completed" ? "completed" : sandboxResult.status === "timed_out" ? "timed_out" : "failed"
+  const toolCall = assertValid<ToolCallV2>("toolCallV2", {
+    schema_version: "bb.tool_call.v2",
+    call_id: callId,
+    tool_name: options.toolName,
     args: {
       command: options.command,
       image_ref: options.imageRef ?? null,
     },
-    state: sandboxResult.status === "completed" ? "completed" : "errored",
+    state: toolCallState,
+    requested_at_utc: completedAtUtc,
+    actor: { actor_kind: "host", actor_id: "breadboard.ts-kernel-core" },
+    visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
   })
   const toolOutcome = buildDriverMediatedToolOutcome({
     sandboxResult,
     callId,
     toolName: options.toolName,
+    completedAtUtc,
   })
   const toolRender = buildDriverMediatedToolRender({
     sandboxResult,
@@ -317,50 +332,56 @@ export function executeStaticTextTurn(
 ): StaticTextTurnResult {
   const request = assertValid<RunRequestV1>("runRequest", requestInput)
   const runContext = buildRunContextFromRequest(request, options)
-  const ts = options.startedAt ?? "2026-03-08T00:00:00Z"
-  const events: KernelEventV1[] = [
+  const occurredAtUtc = options.startedAt ?? "2026-03-08T00:00:00Z"
+  const events: KernelEventV2[] = [
     {
-      schemaVersion: "bb.kernel_event.v1",
-      eventId: buildKernelEventId(request.request_id, 1),
-      runId: request.request_id,
-      sessionId: runContext.session_id,
+      schema_version: "bb.kernel_event.v2",
+      event_id: buildKernelEventId(request.request_id, 1),
+      run_id: request.request_id,
+      session_id: runContext.session_id,
       seq: 1,
-      ts,
-      actor: "human",
-      visibility: "model",
+      occurred_at_utc: occurredAtUtc,
+      actor: { actor_kind: "user", actor_id: "user" },
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       kind: "user_message",
       payload: { text: request.task },
+      payload_schema_version: null,
     },
     {
-      schemaVersion: "bb.kernel_event.v1",
-      eventId: buildKernelEventId(request.request_id, 2),
-      runId: request.request_id,
-      sessionId: runContext.session_id,
+      schema_version: "bb.kernel_event.v2",
+      event_id: buildKernelEventId(request.request_id, 2),
+      run_id: request.request_id,
+      session_id: runContext.session_id,
       seq: 2,
-      ts,
-      actor: "engine",
-      visibility: "model",
+      occurred_at_utc: occurredAtUtc,
+      actor: { actor_kind: "agent", actor_id: runContext.engine_ref ?? runContext.engine_family },
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       kind: "assistant_message",
       payload: { text: options.assistantText },
+      payload_schema_version: null,
     },
   ]
-  const transcript: SessionTranscriptV1 = {
-    schemaVersion: "bb.session_transcript.v1",
-    sessionId: runContext.session_id,
-    runId: request.request_id,
-    eventCursor: 2,
+  const transcript: SessionTranscriptV2 = {
+    schema_version: "bb.session_transcript.v2",
+    session_id: runContext.session_id,
+    run_id: request.request_id,
+    event_cursor: 2,
     items: [
       {
         kind: "user_message",
-        visibility: "model",
+        visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
         content: { text: request.task },
-        provenance: { source: "ts_static_text_turn", eventId: events[0].eventId },
+        content_schema_version: null,
+        event_id: events[0].event_id,
+        provenance: { source: "live", source_ref: "ts_static_text_turn" },
       },
       {
         kind: "assistant_message",
-        visibility: "model",
+        visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
         content: { text: options.assistantText },
-        provenance: { source: "ts_static_text_turn", eventId: events[1].eventId },
+        content_schema_version: null,
+        event_id: events[1].event_id,
+        provenance: { source: "live", source_ref: "ts_static_text_turn" },
       },
     ],
     metadata: {
@@ -376,9 +397,9 @@ export function executeScriptedToolTurn(
   options: ScriptedToolTurnOptions,
 ): StaticTextTurnResult {
   const request = assertValid<RunRequestV1>("runRequest", requestInput)
-  const toolCall = assertValid<ToolCallV1>("toolCall", options.toolCall)
-  const toolOutcome = assertValid<ToolExecutionOutcomeV1>("toolExecutionOutcome", options.toolOutcome)
-  const toolRender = assertValid<ToolModelRenderV1>("toolModelRender", options.toolRender)
+  const toolCall = assertValid<ToolCallV2>("toolCallV2", options.toolCall)
+  const toolOutcome = assertValid<ToolExecutionOutcomeV2>("toolExecutionOutcomeV2", options.toolOutcome)
+  const toolRender = assertValid<ToolModelRenderV2>("toolModelRenderV2", options.toolRender)
   const runContext = buildRunContextFromRequest(request, {
     sessionId: options.sessionId,
     engineFamily: options.engineFamily,
@@ -388,109 +409,121 @@ export function executeScriptedToolTurn(
     executionMode: options.executionMode ?? "scripted_tool_turn",
     activeMode: options.activeMode,
   })
-  const ts = options.startedAt ?? "2026-03-08T00:00:00Z"
-  const events: KernelEventV1[] = [
+  const occurredAtUtc = options.startedAt ?? "2026-03-08T00:00:00Z"
+  const toolCallEventId = buildKernelEventId(request.request_id, 2)
+  const toolResultEventId = buildKernelEventId(request.request_id, 3)
+  const events: KernelEventV2[] = [
     {
-      schemaVersion: "bb.kernel_event.v1",
-      eventId: buildKernelEventId(request.request_id, 1),
-      runId: request.request_id,
-      sessionId: runContext.session_id,
+      schema_version: "bb.kernel_event.v2",
+      event_id: buildKernelEventId(request.request_id, 1),
+      run_id: request.request_id,
+      session_id: runContext.session_id,
       seq: 1,
-      ts,
-      actor: "human",
-      visibility: "model",
+      occurred_at_utc: occurredAtUtc,
+      actor: { actor_kind: "user", actor_id: "user" },
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       kind: "user_message",
       payload: { text: request.task },
+      payload_schema_version: null,
     },
     {
-      schemaVersion: "bb.kernel_event.v1",
-      eventId: buildKernelEventId(request.request_id, 2),
-      runId: request.request_id,
-      sessionId: runContext.session_id,
+      schema_version: "bb.kernel_event.v2",
+      event_id: toolCallEventId,
+      run_id: request.request_id,
+      session_id: runContext.session_id,
       seq: 2,
-      ts,
-      actor: "engine",
-      visibility: "host",
+      occurred_at_utc: occurredAtUtc,
+      actor: { actor_kind: "agent", actor_id: runContext.engine_ref ?? runContext.engine_family },
+      visibility: { model_visible: false, provider_visible: false, host_visible: true, redaction_state: "none" },
       kind: "tool_call",
       payload: {
-        callId: toolCall.callId,
-        toolName: toolCall.toolName,
+        callId: toolCall.call_id,
+        toolName: toolCall.tool_name,
         args: toolCall.args,
         state: toolCall.state,
         metadata: toolCall.metadata ?? {},
       },
-      taskId: toolCall.taskId,
-      callId: toolCall.callId,
+      payload_schema_version: null,
+      ...(toolCall.task_id ? { task_id: toolCall.task_id } : {}),
+      call_id: toolCall.call_id,
     },
     {
-      schemaVersion: "bb.kernel_event.v1",
-      eventId: buildKernelEventId(request.request_id, 3),
-      runId: request.request_id,
-      sessionId: runContext.session_id,
+      schema_version: "bb.kernel_event.v2",
+      event_id: toolResultEventId,
+      run_id: request.request_id,
+      session_id: runContext.session_id,
       seq: 3,
-      ts,
-      actor: "tool",
-      visibility: "host",
+      occurred_at_utc: occurredAtUtc,
+      actor: { actor_kind: "service", actor_id: toolCall.tool_name },
+      visibility: { model_visible: false, provider_visible: false, host_visible: true, redaction_state: "none" },
       kind: "tool_result",
       payload: {
-        callId: toolOutcome.callId,
-        terminalState: toolOutcome.terminalState,
+        callId: toolOutcome.call_id,
+        terminalState: toolOutcome.terminal_state,
         result: toolOutcome.result,
         error: toolOutcome.error,
         metadata: toolOutcome.metadata ?? {},
       },
-      taskId: toolCall.taskId,
-      callId: toolOutcome.callId,
-      causedBy: buildKernelEventId(request.request_id, 2),
+      payload_schema_version: null,
+      ...(toolCall.task_id ? { task_id: toolCall.task_id } : {}),
+      call_id: toolOutcome.call_id,
+      caused_by: toolCallEventId,
     },
   ]
-  const transcriptItems: SessionTranscriptV1Item[] = [
+  const transcriptItems: SessionTranscriptV2["items"] = [
     {
       kind: "user_message",
-      visibility: "model",
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       content: { text: request.task },
-      provenance: { source: "ts_scripted_tool_turn", eventId: events[0].eventId },
+      content_schema_version: null,
+      event_id: events[0].event_id,
+      provenance: { source: "live", source_ref: "ts_scripted_tool_turn" },
     },
     {
       kind: "tool_result",
-      visibility: toolRender.visibility ?? "model",
-      callId: toolRender.callId,
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
+      call_id: toolRender.call_id,
       content: { parts: toolRender.parts },
-      provenance: { source: "ts_scripted_tool_turn", eventId: events[2].eventId },
+      content_schema_version: null,
+      event_id: toolResultEventId,
+      provenance: { source: "live", source_ref: "ts_scripted_tool_turn" },
     },
   ]
   if (typeof options.assistantText === "string" && options.assistantText.length > 0) {
-    const assistantEvent: KernelEventV1 = {
-      schemaVersion: "bb.kernel_event.v1",
-      eventId: buildKernelEventId(request.request_id, 4),
-      runId: request.request_id,
-      sessionId: runContext.session_id,
+    const assistantEvent: KernelEventV2 = {
+      schema_version: "bb.kernel_event.v2",
+      event_id: buildKernelEventId(request.request_id, 4),
+      run_id: request.request_id,
+      session_id: runContext.session_id,
       seq: 4,
-      ts,
-      actor: "engine",
-      visibility: "model",
+      occurred_at_utc: occurredAtUtc,
+      actor: { actor_kind: "agent", actor_id: runContext.engine_ref ?? runContext.engine_family },
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       kind: "assistant_message",
       payload: { text: options.assistantText },
-      causedBy: buildKernelEventId(request.request_id, 3),
+      payload_schema_version: null,
+      caused_by: toolResultEventId,
     }
     events.push(assistantEvent)
     transcriptItems.push({
       kind: "assistant_message",
-      visibility: "model",
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       content: { text: options.assistantText },
-      provenance: { source: "ts_scripted_tool_turn", eventId: assistantEvent.eventId },
+      content_schema_version: null,
+      event_id: assistantEvent.event_id,
+      provenance: { source: "live", source_ref: "ts_scripted_tool_turn" },
     })
   }
-  const transcript: SessionTranscriptV1 = {
-    schemaVersion: "bb.session_transcript.v1",
-    sessionId: runContext.session_id,
-    runId: request.request_id,
-    eventCursor: events.length,
+  const transcript: SessionTranscriptV2 = {
+    schema_version: "bb.session_transcript.v2",
+    session_id: runContext.session_id,
+    run_id: request.request_id,
+    event_cursor: events.length,
     items: transcriptItems,
     metadata: {
       execution_mode: runContext.execution_mode,
       source: "ts-kernel-core",
-      tool_name: toolCall.toolName,
+      tool_name: toolCall.tool_name,
     },
   }
   return { runContext, events, transcript }
@@ -511,19 +544,19 @@ export function executeProviderTextTurn(
     executionMode: options.executionMode ?? "provider_text_turn",
     activeMode: options.activeMode,
   })
-  const ts = options.startedAt ?? "2026-03-08T00:00:00Z"
+  const occurredAtUtc = options.startedAt ?? "2026-03-08T00:00:00Z"
   const providerEventId = buildKernelEventId(request.request_id, 1)
   const assistantEventId = buildKernelEventId(request.request_id, 2)
-  const events: KernelEventV1[] = [
+  const events: KernelEventV2[] = [
     {
-      schemaVersion: "bb.kernel_event.v1",
-      eventId: providerEventId,
-      runId: request.request_id,
-      sessionId: runContext.session_id,
+      schema_version: "bb.kernel_event.v2",
+      event_id: providerEventId,
+      run_id: request.request_id,
+      session_id: runContext.session_id,
       seq: 1,
-      ts,
-      actor: "provider",
-      visibility: "host",
+      occurred_at_utc: occurredAtUtc,
+      actor: { actor_kind: "provider", actor_id: providerExchange.request.provider_family },
+      visibility: { model_visible: false, provider_visible: false, host_visible: true, redaction_state: "none" },
       kind: "provider_response",
       payload: {
         exchangeId: providerExchange.exchange_id,
@@ -533,48 +566,55 @@ export function executeProviderTextTurn(
         finishReasons: providerExchange.response.finish_reasons ?? [],
         metadata: providerExchange.response.metadata ?? {},
       },
+      payload_schema_version: null,
     },
     {
-      schemaVersion: "bb.kernel_event.v1",
-      eventId: assistantEventId,
-      runId: request.request_id,
-      sessionId: runContext.session_id,
+      schema_version: "bb.kernel_event.v2",
+      event_id: assistantEventId,
+      run_id: request.request_id,
+      session_id: runContext.session_id,
       seq: 2,
-      ts,
-      actor: "engine",
-      visibility: "model",
+      occurred_at_utc: occurredAtUtc,
+      actor: { actor_kind: "agent", actor_id: runContext.engine_ref ?? runContext.engine_family },
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       kind: "assistant_message",
       payload: { text: options.assistantText },
-      causedBy: providerEventId,
+      payload_schema_version: null,
+      caused_by: providerEventId,
     },
   ]
-  const transcript: SessionTranscriptV1 = {
-    schemaVersion: "bb.session_transcript.v1",
-    sessionId: runContext.session_id,
-    runId: request.request_id,
-    eventCursor: 2,
+  const transcript: SessionTranscriptV2 = {
+    schema_version: "bb.session_transcript.v2",
+    session_id: runContext.session_id,
+    run_id: request.request_id,
+    event_cursor: 2,
     items: [
       {
         kind: "user_message",
-        visibility: "model",
+        visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
         content: { text: request.task },
-        provenance: { source: "ts_provider_text_turn", kind: "request" },
+        content_schema_version: null,
+        provenance: { source: "live", source_ref: "ts_provider_text_turn:request" },
       },
       {
         kind: "provider_response",
-        visibility: "host",
+        visibility: { model_visible: false, provider_visible: false, host_visible: true, redaction_state: "none" },
         content: {
           exchangeId: providerExchange.exchange_id,
           finishReasons: providerExchange.response.finish_reasons ?? [],
           metadata: providerExchange.response.metadata ?? {},
         },
-        provenance: { source: "ts_provider_text_turn", eventId: providerEventId },
+        content_schema_version: null,
+        event_id: providerEventId,
+        provenance: { source: "live", source_ref: "ts_provider_text_turn" },
       },
       {
         kind: "assistant_message",
-        visibility: "model",
+        visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
         content: { text: options.assistantText },
-        provenance: { source: "ts_provider_text_turn", eventId: assistantEventId },
+        content_schema_version: null,
+        event_id: assistantEventId,
+        provenance: { source: "live", source_ref: "ts_provider_text_turn" },
       },
     ],
     metadata: {

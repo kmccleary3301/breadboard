@@ -1,0 +1,164 @@
+{
+  "assertions": [
+    {
+      "expected": {
+        "background_job_observed": true,
+        "cancel_observed": true,
+        "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+        "detached_subagent_target_capture": true,
+        "fetch_event_count": 2,
+        "job_manager_only_evidence": false,
+        "joined_subagent_target_capture": true,
+        "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+        "network_observed": true,
+        "provider_authenticated_capture": true,
+        "provider_dispatch_observed": true,
+        "provider_model": "anthropic/claude-haiku-4-5",
+        "provider_parity_claimed": false,
+        "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+        "sandbox_mode": "read-only",
+        "target_family": "oh_my_pi",
+        "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+      },
+      "name": "scope_matches_exact_claim",
+      "observed": {
+        "background_job_observed": true,
+        "cancel_observed": true,
+        "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+        "detached_subagent_target_capture": true,
+        "fetch_event_count": 2,
+        "job_manager_only_evidence": false,
+        "joined_subagent_target_capture": true,
+        "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+        "network_observed": true,
+        "provider_authenticated_capture": true,
+        "provider_dispatch_observed": true,
+        "provider_model": "anthropic/claude-haiku-4-5",
+        "provider_parity_claimed": false,
+        "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+        "sandbox_mode": "read-only",
+        "target_family": "oh_my_pi",
+        "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+      },
+      "status": "passed"
+    },
+    {
+      "expected": true,
+      "name": "commands_exit_zero",
+      "observed": true,
+      "status": "passed"
+    },
+    {
+      "expected": true,
+      "name": "breadboard_work_items_schema_valid",
+      "observed": true,
+      "status": "passed"
+    },
+    {
+      "expected": {
+        "capture_count": 1
+      },
+      "name": "target_joined_subagent_lifecycle_observed",
+      "observed": {
+        "capture_count": 1
+      },
+      "status": "passed"
+    },
+    {
+      "expected": {
+        "capture_count": 1
+      },
+      "name": "target_detached_subagent_lifecycle_observed",
+      "observed": {
+        "capture_count": 1
+      },
+      "status": "passed"
+    },
+    {
+      "expected": {
+        "background_job_count": 4
+      },
+      "name": "background_job_lifecycle_observed",
+      "observed": {
+        "background_job_count": 4
+      },
+      "status": "passed"
+    },
+    {
+      "expected": {
+        "cancel_observed": true,
+        "cancelled_work_item_count": 2
+      },
+      "name": "cancel_lifecycle_observed",
+      "observed": {
+        "cancel_observed": true,
+        "cancelled_work_item_count": 2
+      },
+      "status": "passed"
+    },
+    {
+      "expected": {
+        "job_manager_only_evidence": false
+      },
+      "name": "job_manager_only_evidence_rejected",
+      "observed": {
+        "job_manager_only_evidence": false
+      },
+      "status": "passed"
+    },
+    {
+      "expected": {
+        "network_observed": true,
+        "provider_authenticated_capture": true,
+        "provider_dispatch_observed": true,
+        "provider_parity_claimed": false
+      },
+      "name": "provider_network_scope_limited",
+      "observed": {
+        "network_observed": true,
+        "provider_authenticated_capture": true,
+        "provider_dispatch_observed": true,
+        "provider_parity_claimed": false
+      },
+      "status": "passed"
+    }
+  ],
+  "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+  "details": [
+    "Joined and detached subagent lifecycle evidence is required; job-manager-only list/poll/cancel evidence is rejected.",
+    "Provider/API/model transport may be present in the raw JSONL because the capture is provider-authenticated; no provider parity support is claimed."
+  ],
+  "failed": 0,
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "input_hashes": {
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json": "sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json": "sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json": "sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json": "sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_items.json": "sha256:0f93c80969b6c9b1c586470b50bafc14e77d284c249e208e6050d8f54483fc7f"
+  },
+  "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+  "passed": true,
+  "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+  "schema_version": "bb.e4.comparator_report.v1",
+  "scope": {
+    "background_job_observed": true,
+    "cancel_observed": true,
+    "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+    "detached_subagent_target_capture": true,
+    "fetch_event_count": 2,
+    "job_manager_only_evidence": false,
+    "joined_subagent_target_capture": true,
+    "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+    "network_observed": true,
+    "provider_authenticated_capture": true,
+    "provider_dispatch_observed": true,
+    "provider_model": "anthropic/claude-haiku-4-5",
+    "provider_parity_claimed": false,
+    "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+    "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "warned": 0
+}

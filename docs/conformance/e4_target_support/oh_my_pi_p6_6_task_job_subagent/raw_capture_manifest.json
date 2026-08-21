@@ -1,0 +1,212 @@
+{
+  "accepted_as_capture_ref": true,
+  "capture_class": "raw_target_capture",
+  "captured_artifacts": [
+    {
+      "bytes": 2435,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json",
+      "role": "joined_subagent_target_capture",
+      "sha256": "sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4"
+    },
+    {
+      "bytes": 2842,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json",
+      "role": "detached_subagent_target_capture",
+      "sha256": "sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540"
+    },
+    {
+      "bytes": 6076,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json",
+      "role": "target_probe_output",
+      "sha256": "sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e"
+    },
+    {
+      "bytes": 3561,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_setup_and_capture_report.json",
+      "role": "target_setup_report",
+      "sha256": "sha256:0e056c9ac056b008a2123a6add336d7e77ddf5be0a5c63d5372c57f004db2364"
+    }
+  ],
+  "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+  "lineage_rationale": "Canonical lane-local JSONL captures were re-run with an explicit npx @oh-my-pi/pi-coding-agent@16.2.13 runner, lane-local cwd, explicit session dirs for parent and child JSONL, and a setup report recording the runner/version. Scratch captures are not promotion evidence.",
+  "provider_authenticated_capture": true,
+  "provider_model": "anthropic/claude-haiku-4-5",
+  "provider_parity_claimed": false,
+  "raw_source_status": "canonical_raw_present",
+  "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.raw_capture_manifest.v1",
+  "scope": {
+    "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+    "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+    "provider_authenticated_capture": true,
+    "provider_model": "anthropic/claude-haiku-4-5",
+    "provider_parity_claimed": false,
+    "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+    "sandbox_mode": "read-only",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+    "work_item_boundary": "joined subagent, detached subagent, background job, and cancel lifecycle only"
+  },
+  "source_artifacts": [
+    {
+      "bytes": 0,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.stderr.txt",
+      "role": "raw_source",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 633721,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.stdout.txt",
+      "role": "raw_source",
+      "sha256": "sha256:7d6df6520a9bc8a58c68859c5d0dd2fd078a70bd2a2b2d9e4ba434a106af3204"
+    },
+    {
+      "bytes": 0,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.stderr.txt",
+      "role": "raw_source",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 599882,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.stdout.txt",
+      "role": "raw_source",
+      "sha256": "sha256:00d76d11fa1b28c2fbeda8f93b862e5128b7a5649882492b9533909aee3e4683"
+    },
+    {
+      "bytes": 0,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.stderr.txt",
+      "role": "raw_source",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 12,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.stdout.txt",
+      "role": "raw_source",
+      "sha256": "sha256:76fbc537e289fa5f2befe8a3581a5cae08f76f34100a2da01655cf96a1cb36f7"
+    },
+    {
+      "bytes": 2482,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.command_report.json",
+      "role": "raw_source",
+      "sha256": "sha256:531b4234516dc477e0345733bad0d5097f07d83a58f2696d3faef4df1ba92e33"
+    },
+    {
+      "bytes": 2478,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.command_report.json",
+      "role": "raw_source",
+      "sha256": "sha256:d5cff52f307cf3f62034943a429aa6657aab66975e688351742d59eaf16c9c25"
+    },
+    {
+      "bytes": 1535,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.command_report.json",
+      "role": "raw_source",
+      "sha256": "sha256:dbc04c2b58c547a234161c57d8c31d687f2557c84d4f53e4a8a527c7b9d9f095"
+    },
+    {
+      "bytes": 24770,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions/2026-07-03T02-54-03-035Z_019f25e5-c51b-7000-891c-332aa0524c91/LiveCoral.jsonl",
+      "role": "raw_source",
+      "sha256": "sha256:b3d792d612d8eefd182f849f9bd1bf641c9f53eab9244405a3bf51e7da62f004"
+    },
+    {
+      "bytes": 21645,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions/2026-07-03T02-54-03-035Z_019f25e5-c51b-7000-891c-332aa0524c91.jsonl",
+      "role": "raw_source",
+      "sha256": "sha256:08b147a68022adcbfd656316b164605b12f9cce6edb5436a0360d56ec7980083"
+    },
+    {
+      "bytes": 25560,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions/2026-07-03T02-54-26-641Z_019f25e6-2151-7000-997a-8c9c5018840a/P66DetachedChild.jsonl",
+      "role": "raw_source",
+      "sha256": "sha256:f010e7a0dbb3a2c53ffae506607c45c85ad507bbc97ee9a68f58786df89c04c3"
+    },
+    {
+      "bytes": 26375,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions/2026-07-03T02-54-26-641Z_019f25e6-2151-7000-997a-8c9c5018840a.jsonl",
+      "role": "raw_source",
+      "sha256": "sha256:5d9a5bb09fe6118a9933b387ae239f1bc3f637ce501fb6b83d15455206ae2f69"
+    },
+    {
+      "bytes": 956,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/p6_6_joined_prompt.txt",
+      "role": "raw_source",
+      "sha256": "sha256:cf8f0a05aa59cd1588a0b6619c18ddf6c2e5ad32ee96fdf36add070dceaef6ed"
+    },
+    {
+      "bytes": 1398,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/p6_6_detached_prompt.txt",
+      "role": "raw_source",
+      "sha256": "sha256:b0449cb7a7d522ce2313e12311af6fd13a9ff89731ebb74252fde0bb7c2f1214"
+    },
+    {
+      "bytes": 3561,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_setup_and_capture_report.json",
+      "role": "raw_source",
+      "sha256": "sha256:0e056c9ac056b008a2123a6add336d7e77ddf5be0a5c63d5372c57f004db2364"
+    },
+    {
+      "bytes": 2435,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json",
+      "role": "raw_source",
+      "sha256": "sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4"
+    },
+    {
+      "bytes": 2842,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json",
+      "role": "raw_source",
+      "sha256": "sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540"
+    },
+    {
+      "bytes": 6076,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json",
+      "role": "raw_source",
+      "sha256": "sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e"
+    },
+    {
+      "bytes": 222,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/oh_my_pi_p6_6_task_job_subagent_probe.mjs",
+      "role": "raw_source",
+      "sha256": "sha256:f1dc02928312b01a282766e8d8b6c7729a03fb970e1547a42096ca0e3fb56c4a"
+    },
+    {
+      "bytes": 1280,
+      "path": "agent_configs/misc/oh_my_pi_p6_6_task_job_subagent_v1.yaml",
+      "role": "raw_source",
+      "sha256": "sha256:1561b410d8d58e1c105222ae8c39bdef3e3c10ac1fa0eb74c547357f0ba99122"
+    },
+    {
+      "bytes": 178,
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_fixture_workspace/.omp/SYSTEM.md",
+      "role": "raw_source",
+      "sha256": "sha256:eaf864cd40331b49800a6b26bcb52877c411459dddeac743366eef02afa0002a"
+    }
+  ],
+  "source_hashes": {
+    "agent_configs/misc/oh_my_pi_p6_6_task_job_subagent_v1.yaml": "sha256:1561b410d8d58e1c105222ae8c39bdef3e3c10ac1fa0eb74c547357f0ba99122",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions/2026-07-03T02-54-26-641Z_019f25e6-2151-7000-997a-8c9c5018840a.jsonl": "sha256:5d9a5bb09fe6118a9933b387ae239f1bc3f637ce501fb6b83d15455206ae2f69",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions/2026-07-03T02-54-26-641Z_019f25e6-2151-7000-997a-8c9c5018840a/P66DetachedChild.jsonl": "sha256:f010e7a0dbb3a2c53ffae506607c45c85ad507bbc97ee9a68f58786df89c04c3",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json": "sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions/2026-07-03T02-54-03-035Z_019f25e5-c51b-7000-891c-332aa0524c91.jsonl": "sha256:08b147a68022adcbfd656316b164605b12f9cce6edb5436a0360d56ec7980083",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions/2026-07-03T02-54-03-035Z_019f25e5-c51b-7000-891c-332aa0524c91/LiveCoral.jsonl": "sha256:b3d792d612d8eefd182f849f9bd1bf641c9f53eab9244405a3bf51e7da62f004",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json": "sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/oh_my_pi_p6_6_task_job_subagent_probe.mjs": "sha256:f1dc02928312b01a282766e8d8b6c7729a03fb970e1547a42096ca0e3fb56c4a",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/p6_6_detached_prompt.txt": "sha256:b0449cb7a7d522ce2313e12311af6fd13a9ff89731ebb74252fde0bb7c2f1214",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/p6_6_joined_prompt.txt": "sha256:cf8f0a05aa59cd1588a0b6619c18ddf6c2e5ad32ee96fdf36add070dceaef6ed",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.command_report.json": "sha256:531b4234516dc477e0345733bad0d5097f07d83a58f2696d3faef4df1ba92e33",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.stderr.txt": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.stdout.txt": "sha256:7d6df6520a9bc8a58c68859c5d0dd2fd078a70bd2a2b2d9e4ba434a106af3204",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.command_report.json": "sha256:d5cff52f307cf3f62034943a429aa6657aab66975e688351742d59eaf16c9c25",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.stderr.txt": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.stdout.txt": "sha256:00d76d11fa1b28c2fbeda8f93b862e5128b7a5649882492b9533909aee3e4683",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.command_report.json": "sha256:dbc04c2b58c547a234161c57d8c31d687f2557c84d4f53e4a8a527c7b9d9f095",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.stderr.txt": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.stdout.txt": "sha256:76fbc537e289fa5f2befe8a3581a5cae08f76f34100a2da01655cf96a1cb36f7",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_fixture_workspace/.omp/SYSTEM.md": "sha256:eaf864cd40331b49800a6b26bcb52877c411459dddeac743366eef02afa0002a",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json": "sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_setup_and_capture_report.json": "sha256:0e056c9ac056b008a2123a6add336d7e77ddf5be0a5c63d5372c57f004db2364"
+  },
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+}

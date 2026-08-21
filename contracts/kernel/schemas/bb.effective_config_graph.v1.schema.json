@@ -1,0 +1,380 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json",
+  "title": "BreadBoard effective config graph",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "graph_id",
+    "source_layers",
+    "effective_values",
+    "merge_policy",
+    "visibility",
+    "env_gates",
+    "graph_hash",
+    "migrations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.effective_config_graph.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "graph_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the graph.",
+      "examples": [
+        "graph_example"
+      ]
+    },
+    "source_layers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/source_layer",
+        "description": "One entry in source layers."
+      },
+      "description": "Ordered source layers entries."
+    },
+    "effective_values": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/effective_value",
+        "description": "One entry in effective values."
+      },
+      "description": "Ordered effective values entries."
+    },
+    "merge_policy": {
+      "$ref": "#/$defs/merge_policy",
+      "description": "Merge policy record for this primitive."
+    },
+    "visibility": {
+      "$ref": "#/$defs/visibility",
+      "description": "Visibility record for this primitive."
+    },
+    "env_gates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/env_gate",
+        "description": "One entry in env gates."
+      },
+      "description": "Ordered env gates entries."
+    },
+    "graph_hash": {
+      "$ref": "#/$defs/sha256_hash",
+      "description": "SHA-256 digest for the graph hash.",
+      "examples": [
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "migrations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/migration",
+        "description": "One entry in migrations."
+      },
+      "description": "Ordered migrations entries."
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "visibility_class": {
+      "enum": [
+        "model-visible",
+        "host-only",
+        "redacted"
+      ]
+    },
+    "source_layer": {
+      "type": "object",
+      "required": [
+        "layer_id",
+        "source_kind",
+        "scope",
+        "precedence",
+        "source_ref",
+        "layer_hash",
+        "model_visible",
+        "host_visible"
+      ],
+      "properties": {
+        "layer_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the layer.",
+          "examples": [
+            "layer_example"
+          ]
+        },
+        "source_kind": {
+          "enum": [
+            "default",
+            "user",
+            "project",
+            "workspace",
+            "environment",
+            "cli",
+            "policy",
+            "runtime"
+          ],
+          "description": "Allowed source kind value."
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Scope value for this primitive."
+        },
+        "precedence": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Precedence value for this primitive."
+        },
+        "source_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the source.",
+          "examples": [
+            "docs/conformance/source_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "layer_hash": {
+          "$ref": "#/$defs/sha256_hash",
+          "description": "SHA-256 digest for the layer hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "host_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a host visible state."
+        }
+      },
+      "additionalProperties": false
+    },
+    "effective_value": {
+      "type": "object",
+      "required": [
+        "path",
+        "value_kind",
+        "value",
+        "source_layer_id",
+        "visibility",
+        "env_gate_ids"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path value for the path.",
+          "examples": [
+            "docs/conformance/example.json"
+          ]
+        },
+        "value_kind": {
+          "enum": [
+            "string",
+            "number",
+            "boolean",
+            "object",
+            "array",
+            "null",
+            "secret-ref"
+          ],
+          "description": "Allowed value kind value."
+        },
+        "value": true,
+        "source_layer_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the source layer.",
+          "examples": [
+            "source_layer_example"
+          ]
+        },
+        "visibility": {
+          "$ref": "#/$defs/visibility_class",
+          "description": "Visibility record for this primitive."
+        },
+        "env_gate_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in env gate ids.",
+            "examples": [
+              [
+                "env_gate_example"
+              ]
+            ]
+          },
+          "description": "Stable identifiers for the env gate entries.",
+          "examples": [
+            [
+              "env_gate_example"
+            ]
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "merge_policy": {
+      "type": "object",
+      "required": [
+        "policy_id",
+        "strategy",
+        "conflict_resolution"
+      ],
+      "properties": {
+        "policy_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the policy.",
+          "examples": [
+            "policy_example"
+          ]
+        },
+        "strategy": {
+          "enum": [
+            "precedence-order",
+            "deep-merge",
+            "replace",
+            "append-unique"
+          ],
+          "description": "Allowed strategy value."
+        },
+        "conflict_resolution": {
+          "enum": [
+            "highest-precedence",
+            "first-wins",
+            "last-wins",
+            "error"
+          ],
+          "description": "Allowed conflict resolution value."
+        }
+      },
+      "additionalProperties": false
+    },
+    "visibility": {
+      "type": "object",
+      "required": [
+        "model_visible_paths",
+        "host_only_paths",
+        "redacted_paths"
+      ],
+      "properties": {
+        "model_visible_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in model visible paths."
+          },
+          "description": "Ordered model visible paths entries."
+        },
+        "host_only_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in host only paths."
+          },
+          "description": "Ordered host only paths entries."
+        },
+        "redacted_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in redacted paths."
+          },
+          "description": "Ordered redacted paths entries."
+        }
+      },
+      "additionalProperties": false
+    },
+    "env_gate": {
+      "type": "object",
+      "required": [
+        "gate_id",
+        "env_name",
+        "required",
+        "satisfied"
+      ],
+      "properties": {
+        "gate_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the gate.",
+          "examples": [
+            "gate_example"
+          ]
+        },
+        "env_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Env name value for this primitive."
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Boolean flag for a required state."
+        },
+        "satisfied": {
+          "type": "boolean",
+          "description": "Satisfied value for this primitive."
+        }
+      },
+      "additionalProperties": false
+    },
+    "migration": {
+      "type": "object",
+      "required": [
+        "migration_id",
+        "from_version",
+        "to_version",
+        "applied"
+      ],
+      "properties": {
+        "migration_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the migration.",
+          "examples": [
+            "migration_example"
+          ]
+        },
+        "from_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "From version value for this primitive."
+        },
+        "to_version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "To version value for this primitive."
+        },
+        "applied": {
+          "type": "boolean",
+          "description": "Applied value for this primitive."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

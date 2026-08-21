@@ -1,0 +1,74 @@
+{
+  "fixture_family": "capability_registry",
+  "fixture_id": "capability_registry_minimal",
+  "support_tier": "draft-shape",
+  "supportTier": "draft-shape",
+  "comparator_class": "shape-equal",
+  "comparatorClass": "shape-equal",
+  "contract": "bb.capability_registry.v1",
+  "reference_output": {
+    "schema_version": "bb.capability_registry.v1",
+    "registry_id": "registry_session_001",
+    "generated_at": "2026-03-08T00:00:00Z",
+    "subject": {
+      "environment_id": "env_local_workspace",
+      "run_id": "run_001"
+    },
+    "capabilities": [
+      {
+        "capability_id": "cap_resource_workspace_read",
+        "capability_type": "resource_resolver",
+        "name": "Workspace file resolver",
+        "provider": {
+          "provider_id": "breadboard.host",
+          "version": "0.1.0"
+        },
+        "discovery": {
+          "state": "discovered",
+          "mode": "static_manifest",
+          "evidence_ref": "bb.resource_ref.v1:workspace_main",
+          "discovered_at": "2026-03-08T00:00:00Z"
+        },
+        "exposure": {
+          "state": "exposed",
+          "mode": "model_visible",
+          "model_visible": true,
+          "surface_refs": ["surface_default"],
+          "reason": "Workspace reads are available to the model through the active tool surface."
+        },
+        "scopes": ["workspace:read"],
+        "visibility": "model_visible",
+        "metadata": {
+          "resolver_id": "resolver_workspace"
+        }
+      },
+      {
+        "capability_id": "cap_hook_policy_review",
+        "capability_type": "extension_hook",
+        "name": "Policy review hook",
+        "provider": {
+          "provider_id": "breadboard.host",
+          "version": "0.1.0"
+        },
+        "discovery": {
+          "state": "discovered",
+          "mode": "host_advertised",
+          "evidence_ref": "bb.extension_hook_execution.v1:hook_policy_review",
+          "discovered_at": "2026-03-08T00:00:00Z"
+        },
+        "exposure": {
+          "state": "hidden",
+          "mode": "host_only",
+          "model_visible": false,
+          "surface_refs": [],
+          "reason": "The hook runs as host policy and is not directly callable by the model."
+        },
+        "scopes": ["policy:review"],
+        "visibility": "host_only",
+        "metadata": {
+          "hook_type": "policy"
+        }
+      }
+    ]
+  }
+}

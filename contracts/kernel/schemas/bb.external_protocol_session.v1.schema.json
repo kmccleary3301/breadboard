@@ -1,0 +1,457 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.external_protocol_session.v1.schema.json",
+  "title": "BreadBoard external protocol session V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "protocol",
+    "endpoint_hash",
+    "auth_scope",
+    "session_window",
+    "bindings",
+    "visibility",
+    "transcript_refs",
+    "link_refs",
+    "status",
+    "errors",
+    "evidence_refs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.external_protocol_session.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the session.",
+      "examples": [
+        "session_example"
+      ]
+    },
+    "protocol": {
+      "enum": [
+        "mcp",
+        "a2a",
+        "openapi",
+        "oauth",
+        "browser",
+        "sse",
+        "websocket",
+        "grpc",
+        "custom"
+      ],
+      "description": "Allowed protocol value."
+    },
+    "endpoint_hash": {
+      "$ref": "#/$defs/sha256_hash",
+      "description": "SHA-256 digest for the endpoint hash.",
+      "examples": [
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "auth_scope": {
+      "$ref": "#/$defs/auth_scope",
+      "description": "Auth scope record for this primitive."
+    },
+    "session_window": {
+      "$ref": "#/$defs/session_window",
+      "description": "Session window record for this primitive."
+    },
+    "bindings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/binding",
+        "description": "One entry in bindings."
+      },
+      "description": "Ordered bindings entries."
+    },
+    "visibility": {
+      "$ref": "#/$defs/visibility",
+      "description": "Visibility record for this primitive."
+    },
+    "transcript_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in transcript refs.",
+        "examples": [
+          [
+            "docs/conformance/transcript.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the transcript entries.",
+      "examples": [
+        [
+          "docs/conformance/transcript.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "link_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in link refs.",
+        "examples": [
+          [
+            "docs/conformance/link.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the link entries.",
+      "examples": [
+        [
+          "docs/conformance/link.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "status": {
+      "enum": [
+        "initializing",
+        "active",
+        "suspended",
+        "closed",
+        "failed"
+      ],
+      "description": "Allowed status value."
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/session_error",
+        "description": "One entry in errors."
+      },
+      "description": "Ordered errors entries."
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in evidence refs.",
+        "examples": [
+          [
+            "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the evidence entries.",
+      "examples": [
+        [
+          "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "$defs": {
+    "sha256_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "auth_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope_id",
+        "method_ref",
+        "credential_ref",
+        "scopes",
+        "provider_visible"
+      ],
+      "properties": {
+        "scope_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the scope.",
+          "examples": [
+            "scope_example"
+          ]
+        },
+        "method_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the method.",
+          "examples": [
+            "docs/conformance/method_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "credential_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the credential.",
+          "examples": [
+            "docs/conformance/credential_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in scopes."
+          },
+          "description": "Ordered scopes entries."
+        },
+        "provider_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a provider visible state."
+        }
+      }
+    },
+    "session_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "window_id",
+        "started_at",
+        "expires_at",
+        "ttl_seconds",
+        "renewable"
+      ],
+      "properties": {
+        "window_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the window.",
+          "examples": [
+            "window_example"
+          ]
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC timestamp for the started at event.",
+          "examples": [
+            "2026-07-04T00:00:00Z"
+          ]
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "UTC timestamp for the expires at event.",
+          "examples": [
+            "2026-07-04T00:00:00Z"
+          ]
+        },
+        "ttl_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Numeric value for a ttl seconds."
+        },
+        "renewable": {
+          "type": "boolean",
+          "description": "Renewable value for this primitive."
+        }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "binding_id",
+        "binding_kind",
+        "target_ref",
+        "model_visible",
+        "provider_visible"
+      ],
+      "properties": {
+        "binding_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the binding.",
+          "examples": [
+            "binding_example"
+          ]
+        },
+        "binding_kind": {
+          "enum": [
+            "tool",
+            "resource",
+            "prompt",
+            "event_stream",
+            "callback",
+            "capability"
+          ],
+          "description": "Allowed binding kind value."
+        },
+        "target_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the target.",
+          "examples": [
+            "docs/conformance/target_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "provider_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a provider visible state."
+        }
+      }
+    },
+    "visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_visible",
+        "provider_visible",
+        "model_visible_refs",
+        "provider_visible_refs",
+        "host_only_refs",
+        "redacted_refs"
+      ],
+      "properties": {
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "provider_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a provider visible state."
+        },
+        "model_visible_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in model visible refs.",
+            "examples": [
+              [
+                "docs/conformance/model_visible.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the model visible entries.",
+          "examples": [
+            [
+              "docs/conformance/model_visible.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        },
+        "provider_visible_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in provider visible refs.",
+            "examples": [
+              [
+                "docs/conformance/provider_visible.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the provider visible entries.",
+          "examples": [
+            [
+              "docs/conformance/provider_visible.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        },
+        "host_only_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in host only refs.",
+            "examples": [
+              [
+                "docs/conformance/host_only.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the host only entries.",
+          "examples": [
+            [
+              "docs/conformance/host_only.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        },
+        "redacted_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in redacted refs.",
+            "examples": [
+              [
+                "docs/conformance/redacted.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the redacted entries.",
+          "examples": [
+            [
+              "docs/conformance/redacted.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        }
+      }
+    },
+    "session_error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "error_id",
+        "code",
+        "message",
+        "retryable",
+        "evidence_ref"
+      ],
+      "properties": {
+        "error_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the error.",
+          "examples": [
+            "error_example"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Code value for this primitive."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Message value for this primitive."
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "Retryable value for this primitive."
+        },
+        "evidence_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the evidence.",
+          "examples": [
+            "docs/conformance/evidence_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    }
+  }
+}

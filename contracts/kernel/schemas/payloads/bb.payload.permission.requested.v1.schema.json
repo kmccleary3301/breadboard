@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.permission.requested.v1.schema.json",
+  "title": "BreadBoard Kernel Event Payload permission.requested V1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "pattern": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "rewindable": {
+      "type": "boolean"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "default_scope": {
+      "type": "string"
+    }
+  }
+}

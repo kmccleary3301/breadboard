@@ -1,0 +1,52 @@
+{
+  "accepted": true,
+  "catalog_binding_pending": [],
+  "claimed_scope": {
+    "config_id": "pi_p5_l2_extension_session_residual_v1",
+    "lane_id": "pi_p5_l2_extension_session_residual",
+    "p5_items": [
+      "P5.2-residual",
+      "P5.3-residual",
+      "P5.5",
+      "P5.6"
+    ],
+    "phase": "P5",
+    "provider_model": "no-provider",
+    "run_id": "20260703_pi_p5_l2_extension_session_residual_capture",
+    "sandbox_mode": "read-only-no-secret",
+    "target_family": "pi",
+    "target_version": "@mariozechner/pi-coding-agent@0.57.1"
+  },
+  "comparator_rerun": {
+    "assertion_count": 23,
+    "comparator_class": "deterministic_replay",
+    "comparator_id": "pi_stored_report_replay",
+    "missing_assertion_ids": [],
+    "ok": true,
+    "registry": "breadboard_repo_integration_main_20260326/conformance/comparators/registry.json",
+    "status_mismatch_ids": [],
+    "unexpected_assertion_ids": [],
+    "value_mismatch_ids": []
+  },
+  "config_id": "pi_p5_l2_extension_session_residual_v1",
+  "error_count": 0,
+  "errors": [],
+  "evidence_manifest": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_evidence_manifest.json",
+  "gate_errors": [],
+  "hashes": {
+    "evidence_manifest": "sha256:425f9f55c2a1b63576af8910e765259da134c06bec7922b5c65887a0ef990d8e",
+    "freeze_manifest": "sha256:bec77f0821ff03f790536a728229e6fb892be6eae11e1f5f294279f3042c8999",
+    "freeze_manifest_row": "sha256:368abb149bb533f7fc7396a4143e7a03f1cd18db1a7bde95d98c8bc556c245e3",
+    "support_claim": "sha256:93a2430cd5e07faadd537ff7c9e27c0fb065ff8a69f5e161b3b2d663211ed822"
+  },
+  "ok": true,
+  "pin_stale_count": 0,
+  "refs": {
+    "evidence_manifest": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_evidence_manifest.json",
+    "freeze_manifest": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_target_freeze_manifest.yaml",
+    "support_claim": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_support_claim.json"
+  },
+  "schema_version": "bb.e4.c4_chain_validation_report.v1",
+  "semantic_count": 0,
+  "support_claim": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_support_claim.json"
+}

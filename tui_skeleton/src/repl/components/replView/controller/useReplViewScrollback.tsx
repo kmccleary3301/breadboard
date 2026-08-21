@@ -38,9 +38,10 @@ import {
   reduceSubagentStripLifecycle,
   type SubagentStripSummary,
 } from "./subagentStrip.js"
+import { parseBooleanEnv } from "../../../../utils/envBoolean.js"
 import { buildCommittedGroups, computeScrollbackSurfaceModel } from "./scrollbackSurfaceModel.js"
 import { applyMainBufferFollowSnapshot, captureMainBufferFollowSnapshot, type MainBufferFollowSnapshot } from "./mainBufferFollow.js"
-import { buildManagedViewportResetKey, computeManagedBodyRows, shouldAppendHistoryLanding, shouldShowInlineSessionHeader } from "./scrollbackViewportPolicy.js"
+import { buildManagedViewportResetKey, computeManagedBodyRows, shouldShowInlineSessionHeader } from "./scrollbackViewportPolicy.js"
 import { resolveLandingLifecycle } from "./landingLifecycle.js"
 import { writeAppStartAnchorDebugRecord, writeManagedRegionBoundsDebugRecord, writeMarkdownMetricsDebugRecord, writeRenderTimelineDebugRecord, writeSurfaceModelDebugRecord, writeViewportResetDebugRecord } from "./qcDebugLog.js"
 import type { StaticFeedItem } from "../types.js"
@@ -62,13 +63,6 @@ const parseBoundedIntEnv = (value: string | undefined, fallback: number, min: nu
   return parsed
 }
 
-const parseBooleanEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (!value?.trim()) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
 
 const SUBAGENT_STRIP_IDLE_COOLDOWN_MS = parseBoundedIntEnv(
   process.env.BREADBOARD_SUBAGENTS_STRIP_IDLE_COOLDOWN_MS,

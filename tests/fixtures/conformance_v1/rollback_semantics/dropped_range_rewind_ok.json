@@ -1,0 +1,9 @@
+{
+  "dropped_ranges": [
+    {
+      "end": 4,
+      "start": 2
+    }
+  ],
+  "rewound_to": 1
+}

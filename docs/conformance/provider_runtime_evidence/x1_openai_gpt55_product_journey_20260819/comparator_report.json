@@ -1,0 +1,45 @@
+{
+  "assertions": {
+    "breadboard_normalized_stop": true,
+    "exact_response": true,
+    "installed_wheel_pinned": true,
+    "named_openai_model": true,
+    "native_runtime_reason_preserved": true,
+    "no_provider_tool_calls": true,
+    "persisted_event_count_bound": true,
+    "persisted_event_hash_bound": true,
+    "persisted_event_identity_bound": true,
+    "product_session_completed": true,
+    "provider_runtime_used": true,
+    "replay_identity_bound": true,
+    "replay_input_hash_bound": true,
+    "replay_matches_capture": true,
+    "restart_identity_bound": true,
+    "restart_reverification_passed": true
+  },
+  "binding": {
+    "harness_lock_hash": "sha256:6bd6410a5486fdb938b0b4173dbb00c6da60a77475e7369625b5a7b8c92e5c1b",
+    "persisted_event_log_sha256": "sha256:ae2a597b6c4a53316a9320a0e2537d2bc7fcf09dab168e190c65660275b18915",
+    "raw_capture_sha256": "sha256:835c5e56baabed1813d96df81011fbdb186320177a3aab946fc1b329cb2fafb6",
+    "session_id": "x1-openai-gpt55-secured-20260819-v2",
+    "task_hash": "sha256:8b058b1494f051a70ed87323977557682afd7c3d92314a8586759e05e6823593"
+  },
+  "expected": {
+    "response_text": "BREADBOARD_X1_PROVIDER_OK",
+    "status": "completed",
+    "tool_call_count": 0
+  },
+  "input_hashes": {
+    "raw_capture.json": "sha256:835c5e56baabed1813d96df81011fbdb186320177a3aab946fc1b329cb2fafb6",
+    "replay_report.json": "sha256:15866606bd35177dfa8f3955987b802c6c6b2a4809efc4e22979d39e0e427020",
+    "replay_session.json": "sha256:883eb2d3e1461fd2722f5031ae9fe180683691e91cb8e21f53746e2d72802a3e",
+    "restart_reverification.json": "sha256:7e0c39a0f7f3e747c3c20da6532d0344ad718d02e83ab1a57817ec211e84f5fa"
+  },
+  "observed": {
+    "response_text": "BREADBOARD_X1_PROVIDER_OK",
+    "status": "completed",
+    "tool_call_count": 0
+  },
+  "passed": true,
+  "schema_version": "bb.north_star.x1.comparator_report.v2"
+}

@@ -1,0 +1,79 @@
+{
+  "fixture_family": "effective_config_graph",
+  "fixture_id": "effective_config_graph_invalid_precedence",
+  "comparator_class": "shape-equal",
+  "support_tier": "draft-shape",
+  "contract": "bb.effective_config_graph.v1",
+  "invalid_reason": "source layer precedence must be non-negative",
+  "reference_output": {
+    "schema_version": "bb.effective_config_graph.v1",
+    "graph_id": "cfg_graph_invalid_precedence",
+    "source_layers": [
+      {
+        "layer_id": "defaults",
+        "source_kind": "default",
+        "scope": "global",
+        "precedence": -1,
+        "source_ref": "defaults://breadboard/kernel",
+        "layer_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "model_visible": true,
+        "host_visible": true
+      },
+      {
+        "layer_id": "workspace_project",
+        "source_kind": "workspace",
+        "scope": "workspace",
+        "precedence": 10,
+        "source_ref": "workspace://.breadboard/config.json",
+        "layer_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "model_visible": true,
+        "host_visible": true
+      }
+    ],
+    "effective_values": [
+      {
+        "path": "model.name",
+        "value_kind": "string",
+        "value": "gpt-5.5",
+        "source_layer_id": "workspace_project",
+        "visibility": "model-visible",
+        "env_gate_ids": []
+      },
+      {
+        "path": "providers.openai.api_key",
+        "value_kind": "secret-ref",
+        "value": "secret://env/OPENAI_API_KEY",
+        "source_layer_id": "workspace_project",
+        "visibility": "redacted",
+        "env_gate_ids": ["env.OPENAI_API_KEY"]
+      }
+    ],
+    "merge_policy": {
+      "policy_id": "workspace_over_defaults",
+      "strategy": "deep-merge",
+      "conflict_resolution": "highest-precedence"
+    },
+    "visibility": {
+      "model_visible_paths": ["model.name"],
+      "host_only_paths": [],
+      "redacted_paths": ["providers.openai.api_key"]
+    },
+    "env_gates": [
+      {
+        "gate_id": "env.OPENAI_API_KEY",
+        "env_name": "OPENAI_API_KEY",
+        "required": true,
+        "satisfied": true
+      }
+    ],
+    "graph_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "migrations": [
+      {
+        "migration_id": "initial-v1",
+        "from_version": null,
+        "to_version": "bb.effective_config_graph.v1",
+        "applied": true
+      }
+    ]
+  }
+}

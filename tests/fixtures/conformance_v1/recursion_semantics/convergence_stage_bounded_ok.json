@@ -1,0 +1,13 @@
+{
+  "expected": {
+    "actual_episodes_run": 2,
+    "actual_stop_reason": "no_progress_threshold_reached",
+    "convergence_bounded": true
+  },
+  "run": {
+    "convergence_bounded": true,
+    "episodes_run": 2,
+    "stop_reason": "no_progress_threshold_reached"
+  },
+  "schema_version": "bb.ct.longrun.convergence_stage_bounded.fixture.v1"
+}

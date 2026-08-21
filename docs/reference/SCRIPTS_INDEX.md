@@ -1,4 +1,6 @@
 # Scripts Index
+> Internal maintainer reference. These repository scripts are not part of the installed product CLI.
+
 
 This page is the stable reference for the current `scripts/` surface.
 

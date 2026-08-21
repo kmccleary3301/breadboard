@@ -1,0 +1,11 @@
+{
+  "expected": {
+    "actual_resumed_from_state": true,
+    "actual_runner_calls": 0,
+    "actual_stop_reason": "total_subcalls_budget_reached"
+  },
+  "resumed_from_state": true,
+  "runner_calls": 0,
+  "schema_version": "bb.ct.longrun.subcall_budget_resume_precheck.fixture.v1",
+  "stop_reason": "total_subcalls_budget_reached"
+}

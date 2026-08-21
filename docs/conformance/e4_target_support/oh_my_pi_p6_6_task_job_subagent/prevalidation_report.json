@@ -1,0 +1,48 @@
+{
+  "artifact_hashes": {
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json": "sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json": "sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json": "sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json": "sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json": "sha256:b361ad6d45bb7a1e977b6565cdf8600ec997a5dbd3e3f67b40889472179c0816",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json": "sha256:1ff42afbb9c0ae7dd8744e84eba935187cd3510940a012336d541306c78e68dc",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json": "sha256:66da20e9a02a36e84fe35a7a95c0d21ae11adcd3d4580ac007c3166e5b09f228",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json": "sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_setup_and_capture_report.json": "sha256:0e056c9ac056b008a2123a6add336d7e77ddf5be0a5c63d5372c57f004db2364"
+  },
+  "checks": {
+    "comparator_assertions_passed": true,
+    "provider_authenticated_boundary_declared": true,
+    "raw_capture_includes_detached_child_sessions": true,
+    "raw_capture_includes_joined_child_sessions": true,
+    "raw_capture_present": true,
+    "raw_provider_models_match_declared_scope": true,
+    "raw_run_ids_match_declared_scope": true,
+    "replay_passed": true,
+    "secret_scan_passed": true,
+    "setup_version_matches_target": true
+  },
+  "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+  "errors": [],
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+  "observed_provider_models": {
+    "detached_capture": "anthropic/claude-haiku-4-5",
+    "joined_capture": "anthropic/claude-haiku-4-5",
+    "raw_capture": "anthropic/claude-haiku-4-5",
+    "raw_capture_scope": "anthropic/claude-haiku-4-5",
+    "target_probe": "anthropic/claude-haiku-4-5",
+    "target_setup": "anthropic/claude-haiku-4-5"
+  },
+  "observed_run_ids": {
+    "detached_capture": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+    "joined_capture": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+    "raw_capture": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+    "raw_capture_scope": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+    "target_probe": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+    "target_setup": "20260703_oh_my_pi_p6_6_task_job_subagent_capture"
+  },
+  "ok": true,
+  "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+  "schema_version": "bb.e4.prevalidation_report.v1"
+}

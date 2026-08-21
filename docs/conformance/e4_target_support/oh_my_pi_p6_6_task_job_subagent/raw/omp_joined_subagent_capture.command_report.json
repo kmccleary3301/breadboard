@@ -1,0 +1,42 @@
+{
+  "argv": [
+    "npx",
+    "-y",
+    "@oh-my-pi/pi-coding-agent@16.2.13",
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "anthropic/claude-haiku-4-5",
+    "--config",
+    "/Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/agent_configs/misc/oh_my_pi_p6_6_task_job_subagent_v1.yaml",
+    "--session-dir",
+    "/Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions",
+    "--cwd",
+    "/Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_fixture_workspace",
+    "<prompt:breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/p6_6_joined_prompt.txt>"
+  ],
+  "cwd": "breadboard_repo_integration_main_20260326",
+  "description": "Provider-authenticated Oh-My-Pi P6.6 joined subagent plus background job/cancel capture.",
+  "ended_at_utc": "2026-07-03T02:54:25Z",
+  "env_summary": {
+    "CI": "1",
+    "COLUMNS": "100",
+    "NO_COLOR": "1",
+    "breadboard_prefixed_env_keys_present": [],
+    "present_provider_env_keys": [],
+    "provider_env_present": false
+  },
+  "exit_code": 0,
+  "generated_at_utc": "2026-07-03T02:54:01Z",
+  "name": "omp_joined_subagent_capture",
+  "report_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.command_report.json",
+  "schema_version": "bb.e4.command_report.v1",
+  "session_dir": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions",
+  "started_at_utc": "2026-07-03T02:54:02Z",
+  "stderr_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.stderr.txt",
+  "stderr_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stdout_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.stdout.txt",
+  "stdout_sha256": "sha256:00d76d11fa1b28c2fbeda8f93b862e5128b7a5649882492b9533909aee3e4683",
+  "target_cwd": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_fixture_workspace"
+}

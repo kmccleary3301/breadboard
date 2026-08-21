@@ -1,0 +1,132 @@
+{
+  "invalid_cases": [
+    {
+      "expected_code": "invalid_call_id",
+      "name": "invalid_call_id",
+      "operations": [
+        {
+          "call_id": "",
+          "op": "start"
+        }
+      ]
+    },
+    {
+      "expected_code": "duplicate_start",
+      "name": "duplicate_start",
+      "operations": [
+        {
+          "call_id": "dup",
+          "op": "start"
+        },
+        {
+          "call_id": "dup",
+          "op": "start"
+        }
+      ]
+    },
+    {
+      "expected_code": "unknown_target_state",
+      "name": "unknown_target_state",
+      "operations": [
+        {
+          "call_id": "target",
+          "op": "start"
+        },
+        {
+          "call_id": "target",
+          "op": "transition",
+          "to_state": "paused"
+        }
+      ]
+    },
+    {
+      "expected_code": "invalid_transition_edge",
+      "name": "invalid_transition_edge",
+      "operations": [
+        {
+          "call_id": "edge",
+          "op": "start"
+        },
+        {
+          "call_id": "edge",
+          "op": "transition",
+          "to_state": "completed"
+        }
+      ]
+    }
+  ],
+  "legal_paths": [
+    {
+      "name": "complete",
+      "operations": [
+        {
+          "call_id": "a",
+          "op": "start"
+        },
+        {
+          "call_id": "a",
+          "op": "transition",
+          "to_state": "running"
+        },
+        {
+          "call_id": "a",
+          "op": "transition",
+          "to_state": "completed"
+        }
+      ]
+    },
+    {
+      "name": "fail",
+      "operations": [
+        {
+          "call_id": "b",
+          "op": "start"
+        },
+        {
+          "call_id": "b",
+          "op": "transition",
+          "to_state": "running"
+        },
+        {
+          "call_id": "b",
+          "op": "transition",
+          "to_state": "failed"
+        }
+      ]
+    },
+    {
+      "name": "cancel_queued",
+      "operations": [
+        {
+          "call_id": "c",
+          "op": "start"
+        },
+        {
+          "call_id": "c",
+          "op": "transition",
+          "to_state": "cancelled"
+        }
+      ]
+    },
+    {
+      "name": "cancel_running",
+      "operations": [
+        {
+          "call_id": "d",
+          "op": "start"
+        },
+        {
+          "call_id": "d",
+          "op": "transition",
+          "to_state": "running"
+        },
+        {
+          "call_id": "d",
+          "op": "transition",
+          "to_state": "cancelled"
+        }
+      ]
+    }
+  ],
+  "schema_version": "bb.ct.tool.runtime_transition_matrix.fixture.v1"
+}

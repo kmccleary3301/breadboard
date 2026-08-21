@@ -1,0 +1,22 @@
+{
+  "schema_version": "bb.coordination_pack.v3",
+  "pack_id": "phase17_coordination_pack_minimal",
+  "generated_at_utc": "2026-07-07T01:35:00Z",
+  "producer": {
+    "actor_kind": "agent",
+    "actor_id": "phase17"
+  },
+  "source_dialects": [
+    "bb.coordination_slice.v2",
+    "bb.coordination_pack.v3"
+  ],
+  "records": {
+    "slices": []
+  },
+  "migration": {
+    "v1_acceptance": "read_only_accepted_evidence",
+    "v2_acceptance": "read_write",
+    "v3_write_mode": "preferred",
+    "deprecation_notice": "v1 coordination slice schemas remain accepted evidence inputs. New pack writers should emit bb.coordination_pack.v3."
+  }
+}

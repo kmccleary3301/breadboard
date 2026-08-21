@@ -9,6 +9,7 @@ import type {
   ThinkingMode,
 } from "../../repl/types.js"
 import { extractRawString, isRecord, parseNumberish } from "./controllerUtils.js"
+import { parseBooleanEnv } from "../../utils/envBoolean.js"
 
 const DEFAULT_MIN_DISPLAY_MS = 200
 const DEFAULT_STATUS_UPDATE_MS = 60
@@ -156,14 +157,6 @@ const LEGAL_TRANSITIONS: Record<ActivityPrimary, ReadonlyArray<ActivityPrimary>>
   error: ["error", "idle", "session", "run", "thinking", "responding", "reconnecting"],
 }
 
-const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (value == null) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return fallback
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
 
 const parseBoundedIntEnv = (
   value: string | undefined,
@@ -202,16 +195,16 @@ export interface ThinkingSignal {
 }
 
 export const resolveRuntimeBehaviorFlags = (env: NodeJS.ProcessEnv): RuntimeBehaviorFlags => ({
-  activityEnabled: parseBoolEnv(env.BREADBOARD_ACTIVITY_ENABLED, true),
-  lifecycleToastsEnabled: parseBoolEnv(env.BREADBOARD_ACTIVITY_LIFECYCLE_TOASTS, false),
-  thinkingEnabled: parseBoolEnv(env.BREADBOARD_THINKING_ENABLED, true),
-  thinkingPreviewEnabled: parseBoolEnv(env.BREADBOARD_THINKING_PREVIEW_ENABLED, true),
-  allowFullThinking: parseBoolEnv(env.BREADBOARD_THINKING_FULL_OPT_IN, false),
-  allowRawThinkingPeek: parseBoolEnv(env.BREADBOARD_THINKING_PEEK_RAW_ALLOWED, false),
-  inlineThinkingBlockEnabled: parseBoolEnv(env.BREADBOARD_THINKING_INLINE_COLLAPSIBLE, false),
-  markdownCoalescingEnabled: parseBoolEnv(env.BREADBOARD_MARKDOWN_COALESCING_ENABLED, true),
-  adaptiveMarkdownCadenceEnabled: parseBoolEnv(env.BREADBOARD_MARKDOWN_ADAPTIVE_CADENCE, true),
-  transitionDebug: parseBoolEnv(env.BREADBOARD_ACTIVITY_TRANSITION_DEBUG, false),
+  activityEnabled: parseBooleanEnv(env.BREADBOARD_ACTIVITY_ENABLED, true),
+  lifecycleToastsEnabled: parseBooleanEnv(env.BREADBOARD_ACTIVITY_LIFECYCLE_TOASTS, false),
+  thinkingEnabled: parseBooleanEnv(env.BREADBOARD_THINKING_ENABLED, true),
+  thinkingPreviewEnabled: parseBooleanEnv(env.BREADBOARD_THINKING_PREVIEW_ENABLED, true),
+  allowFullThinking: parseBooleanEnv(env.BREADBOARD_THINKING_FULL_OPT_IN, false),
+  allowRawThinkingPeek: parseBooleanEnv(env.BREADBOARD_THINKING_PEEK_RAW_ALLOWED, false),
+  inlineThinkingBlockEnabled: parseBooleanEnv(env.BREADBOARD_THINKING_INLINE_COLLAPSIBLE, false),
+  markdownCoalescingEnabled: parseBooleanEnv(env.BREADBOARD_MARKDOWN_COALESCING_ENABLED, true),
+  adaptiveMarkdownCadenceEnabled: parseBooleanEnv(env.BREADBOARD_MARKDOWN_ADAPTIVE_CADENCE, true),
+  transitionDebug: parseBooleanEnv(env.BREADBOARD_ACTIVITY_TRANSITION_DEBUG, false),
   minDisplayMs: parseBoundedIntEnv(env.BREADBOARD_ACTIVITY_MIN_DISPLAY_MS, DEFAULT_MIN_DISPLAY_MS, 0, 60_000),
   statusUpdateMs: parseBoundedIntEnv(env.BREADBOARD_STATUS_UPDATE_MS, DEFAULT_STATUS_UPDATE_MS, 0, 10_000),
   eventCoalesceMs: parseBoundedIntEnv(
@@ -258,11 +251,11 @@ export const resolveRuntimeBehaviorFlags = (env: NodeJS.ProcessEnv): RuntimeBeha
     1,
     10_000,
   ),
-  subagentWorkGraphEnabled: parseBoolEnv(env.BREADBOARD_SUBAGENTS_V2_ENABLED, false),
-  subagentStripEnabled: parseBoolEnv(env.BREADBOARD_SUBAGENTS_STRIP_ENABLED, false),
-  subagentToastsEnabled: parseBoolEnv(env.BREADBOARD_SUBAGENTS_TOASTS_ENABLED, false),
-  subagentTaskboardEnabled: parseBoolEnv(env.BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED, false),
-  subagentFocusEnabled: parseBoolEnv(env.BREADBOARD_SUBAGENTS_FOCUS_ENABLED, false),
+  subagentWorkGraphEnabled: parseBooleanEnv(env.BREADBOARD_SUBAGENTS_V2_ENABLED, false),
+  subagentStripEnabled: parseBooleanEnv(env.BREADBOARD_SUBAGENTS_STRIP_ENABLED, false),
+  subagentToastsEnabled: parseBooleanEnv(env.BREADBOARD_SUBAGENTS_TOASTS_ENABLED, false),
+  subagentTaskboardEnabled: parseBooleanEnv(env.BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED, false),
+  subagentFocusEnabled: parseBooleanEnv(env.BREADBOARD_SUBAGENTS_FOCUS_ENABLED, false),
   subagentCoalesceMs: parseBoundedIntEnv(
     env.BREADBOARD_SUBAGENTS_COALESCE_MS,
     DEFAULT_SUBAGENT_COALESCE_MS,

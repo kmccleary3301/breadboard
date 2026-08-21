@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.validate_kernel_contract_fixtures import _validate_manifest_and_fixtures
+from scripts.release.validate_kernel_contract_fixtures import _validate_manifest_and_fixtures
 
 
 def main() -> int:

@@ -1,0 +1,113 @@
+{
+  "basis_registry_ref": null,
+  "capabilities": [
+    {
+      "capability_id": "runtime.session_service",
+      "capability_type": "runtime",
+      "discovery": {
+        "discovered_at": "2026-07-04T00:00:00Z",
+        "evidence_ref": "runtime://session/start",
+        "mode": "runtime_probe",
+        "state": "discovered"
+      },
+      "exposure": {
+        "mode": "host_only",
+        "model_visible": false,
+        "reason": "First declaration wins for the effective registry.",
+        "state": "exposed",
+        "surface_refs": []
+      },
+      "metadata": {
+        "generated_at": "2026-07-04T00:00:00Z"
+      },
+      "name": "CLI bridge session service",
+      "provider": null,
+      "scopes": [],
+      "visibility": "host_only"
+    },
+    {
+      "capability_id": "tool.defs_dir_.._implementations_tools_defs",
+      "capability_type": "tool",
+      "discovery": {
+        "discovered_at": "2026-07-04T00:00:00Z",
+        "evidence_ref": "runtime://session/tool-list",
+        "mode": "runtime_probe",
+        "state": "discovered"
+      },
+      "exposure": {
+        "mode": "model_visible",
+        "model_visible": true,
+        "reason": "First declaration wins for the effective registry.",
+        "state": "exposed",
+        "surface_refs": [
+          "surface.runtime_session_start"
+        ]
+      },
+      "metadata": {},
+      "name": "defs_dir:../implementations/tools/defs",
+      "provider": null,
+      "scopes": [
+        "session_start"
+      ],
+      "visibility": "model_visible"
+    }
+  ],
+  "generated_at": "2026-07-04T00:00:00Z",
+  "mutation_log": [
+    {
+      "affected_capability_ids": [
+        "runtime.session_service"
+      ],
+      "after_ref": "bb.capability_registry.v1:runtime_emission_c3_session_capability_registry#runtime.session_service",
+      "basis_ref": null,
+      "before_ref": null,
+      "details": {
+        "disabled": false,
+        "shadowed": false
+      },
+      "mutation_id": "runtime_emission_c3_session_capability_registry_mutation_0",
+      "occurred_at": "2026-07-04T00:00:00Z",
+      "operation": "discover",
+      "outcome": "applied",
+      "phase": "discovery",
+      "reason": "discovered",
+      "source": {
+        "source_ref": "runtime://session/start",
+        "source_type": "runtime_probe"
+      },
+      "target_ref": "runtime.session_service",
+      "target_type": "runtime"
+    },
+    {
+      "affected_capability_ids": [
+        "tool.defs_dir_.._implementations_tools_defs"
+      ],
+      "after_ref": "bb.capability_registry.v1:runtime_emission_c3_session_capability_registry#tool.defs_dir_.._implementations_tools_defs",
+      "basis_ref": null,
+      "before_ref": null,
+      "details": {
+        "disabled": false,
+        "shadowed": false
+      },
+      "mutation_id": "runtime_emission_c3_session_capability_registry_mutation_1",
+      "occurred_at": "2026-07-04T00:00:00Z",
+      "operation": "discover",
+      "outcome": "applied",
+      "phase": "discovery",
+      "reason": "discovered",
+      "source": {
+        "source_ref": "runtime://session/tool-list",
+        "source_type": "runtime_probe"
+      },
+      "target_ref": "tool.defs_dir_.._implementations_tools_defs",
+      "target_type": "tool"
+    }
+  ],
+  "registry_id": "runtime_emission_c3_session_capability_registry",
+  "registry_revision": 1,
+  "schema_version": "bb.capability_registry.v1",
+  "subject": {
+    "environment_id": "cli_bridge_runtime",
+    "run_id": "runtime_emission_c3_session"
+  }
+}

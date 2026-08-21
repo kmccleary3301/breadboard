@@ -1,0 +1,17 @@
+{
+  "schema_version": "bb.e4.regen_failure_classification.v1",
+  "ok": true,
+  "failure_class": "pin_stale",
+  "failure_classes": [
+    "pin_stale",
+    "semantic",
+    "io_missing",
+    "schema_invalid",
+    "graph_invariant",
+    "comparator_failure",
+    "drift_unexplained"
+  ],
+  "log": "../docs_tmp/phase_19/item_evidence/example_failed_regen.json",
+  "stderr_tail": "[PIN_STALE] pinned hash mismatch",
+  "raw_stderr_tail": "[PIN_STALE] pinned hash mismatch"
+}

@@ -1,0 +1,65 @@
+# Required discriminator for the closed v2 config surface.
+schema_version: bb.agent_config_surface.v2
+# Required numeric surface version. Keep this at 2 for this template.
+version: 2
+# Required workspace block. The reference smoke uses a repo-relative sandbox root.
+workspace:
+  # Runtime code resolves this as the working directory root for the session.
+  root: .
+# Required provider block. The mock adapter keeps the template offline-safe.
+providers:
+  # Modes without an explicit model use this id.
+  default_model: mock/reference
+  # At least one model is required so routing has a concrete target.
+  models:
+    # Stable id used by providers.default_model above.
+    - id: mock/reference
+      # The mock runtime lets explain/boot smoke run without provider credentials.
+      adapter: mock_chat
+# Optional prompt pack. The mode prompt below points at this file.
+prompts:
+  # Packs group prompt files by role; base is the smallest useful pack.
+  packs:
+    # Base pack consumed by the single mode.
+    base:
+      # Config-relative file copied with every initialized harness bundle.
+      system: prompts/minimal_system.md
+# Optional tool registry. One registry path is enough for explain_agent_config to resolve tool names.
+tools:
+  # The v2 loader maps the first registry path to the current runtime defs_dir.
+  registry:
+    # Default repository tool definitions.
+    paths:
+      - implementations/tools/defs
+# Required mode list. One mode is enough to start a reference-engine session.
+modes:
+  # Mode name used by loop.sequence below.
+  - name: respond
+    # Prompt reference resolved by explain_agent_config.
+    prompt: "@pack(base).system"
+    # Keep the first template usable but small: read-only file inspection plus shell verification.
+    tools_enabled:
+      # Read file contents so the session can inspect the workspace.
+      - read_file
+      # Enumerate directories so the session can navigate without guessing paths.
+      - list_dir
+      # Run the verification command that produces the done marker below.
+      - run_shell
+# Required loop block. The sequence names the mode to run.
+loop:
+  # Single-step loop for a minimal task session.
+  sequence:
+    # Start and stay in the respond mode.
+    - mode: respond
+# Optional completion hints. They document how a smoke run can finish cleanly.
+completion:
+  # Text markers the operator can use when reviewing a transcript.
+  done_markers:
+    # Emitted by the smoke task's final shell check; reviewers grep for it.
+    - verification command passed
+  # Avoid long idle sessions in template smoke tests.
+  natural_finish:
+    # End after one turn with no progress; smoke sessions should be short.
+    idle_turn_limit: 1
+    # End after one turn without tool calls; a stalled mock session has nothing left to do.
+    no_tool_turns_threshold: 1

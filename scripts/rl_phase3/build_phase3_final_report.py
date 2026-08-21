@@ -77,7 +77,6 @@ def _require_ready_errors(report: Mapping[str, object]) -> list[str]:
         errors.append("core_raw_points_verified must equal core_raw_points_total for --require-ready")
     return errors
 
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--phase-dir", required=True, type=Path)
@@ -102,6 +101,7 @@ def main() -> int:
     output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n")
     print(json.dumps({"report": str(output), "validation_errors": errors, "readiness_errors": readiness_errors}, sort_keys=True))
     return 0 if not args.require_ready or (not errors and not readiness_errors) else 1
+
 
 
 if __name__ == "__main__":

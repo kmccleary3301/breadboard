@@ -564,6 +564,10 @@ class PermissionBroker:
             url = str(args.get("url") or "").strip()
             metadata = {"url": url, "function": function}
             return PermissionRequest(category="webfetch", pattern=url or function, metadata=metadata)
+        if function in {"read", "read_file"}:
+            uri = str(args.get("path") or "").strip()
+            if uri.startswith("attachment://"): return PermissionRequest(category="read", pattern=uri, metadata={"path": uri, "function": function})
+            return None
         if function in {
             "write",
             "write_file",

@@ -1,0 +1,27 @@
+{
+  "note": "Usage fixture for bb.kernel.common.v1 $defs; validation wraps each property in a schema during tests.",
+  "digest_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "nullable_digest_sha256": null,
+  "hash_ref": "docs/conformance/example.json#sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "row_hash_ref": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#example_feature#sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "identifier": "example_identifier_1",
+  "timestamp_utc": "2026-07-03T00:00:00Z",
+  "metadata": {
+    "source": "wave0",
+    "reviewed": true
+  },
+  "argv_command": {
+    "argv": [
+      "python",
+      "scripts/example.py",
+      "--check"
+    ],
+    "cwd": "."
+  },
+  "visibility": {
+    "model_visible": true,
+    "provider_visible": false,
+    "host_visible": true,
+    "redaction_state": "none"
+  }
+}

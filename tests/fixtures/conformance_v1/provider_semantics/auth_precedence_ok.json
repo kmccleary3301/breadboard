@@ -1,0 +1,25 @@
+{
+  "expected_output": {
+    "actual_selected": "oauth",
+    "available_count": 2
+  },
+  "methods": [
+    {
+      "available": true,
+      "type": "api_key"
+    },
+    {
+      "available": true,
+      "type": "oauth"
+    },
+    {
+      "available": false,
+      "type": "none"
+    }
+  ],
+  "precedence": [
+    "oauth",
+    "api_key",
+    "none"
+  ]
+}

@@ -3,6 +3,7 @@ Validation handling for tool calls and constraints
 """
 
 from typing import Any, Dict, List, Optional
+from agentic_coder_prototype.compilation.tool_registry import load_tool_registry
 
 
 class ValidationHandler:
@@ -10,6 +11,7 @@ class ValidationHandler:
     
     def __init__(self, config_validator=None):
         self.config_validator = config_validator
+        self._default_registry = load_tool_registry()
     
     def validate_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Validate tool calls against design decision constraints"""
@@ -37,9 +39,9 @@ class ValidationHandler:
         return None
     
     def check_bash_constraint(self, parsed_calls: List[Any], bash_executed: bool = False) -> tuple:
-        """Check bash constraint (only one bash command per turn)"""
-        bash_calls = [p for p in parsed_calls if p.function == "run_shell"]
-        
+        """Check bash constraint (only one shell-command tool per turn)"""
+        bash_names = self._default_registry.names_for_guardrail_set("bash")
+        bash_calls = [p for p in parsed_calls if p.function in bash_names]
         if len(bash_calls) > 1:
             return False, "Only one bash command allowed per turn (research constraint)"
         
@@ -63,12 +65,15 @@ class ValidationHandler:
         return {"valid": True}
     
     def get_nonblocking_tools(self, config: Dict[str, Any]) -> set:
-        """Get set of nonblocking tool names from configuration"""
+        """Get set of nonblocking tool names from configuration or the unified tool registry."""
         conc_cfg = config.get("concurrency", {})
-        return set(conc_cfg.get("nonblocking_tools", [])) or set([
-            'apply_unified_patch', 'apply_search_replace', 'create_file_from_block',
-            'read', 'read_file', 'glob', 'grep', 'list', 'list_dir', 'patch'
-        ])
+        explicit = conc_cfg.get("nonblocking_tools", [])
+        if explicit:
+            return set(explicit)
+        tools_cfg = config.get("tools", {}) or {}
+        aliases = {str(k): str(v) for k, v in (tools_cfg.get("aliases") or {}).items()}
+        registry = load_tool_registry(tools_cfg.get("defs_dir"), aliases=aliases)
+        return registry.nonblocking_names()
     
     def validate_concurrency_strategy(self, parsed_calls: List[Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Validate concurrency strategy for tool calls"""

@@ -1,4 +1,4 @@
-import { ApiError } from "../../api/client.js"
+import { ApiError } from "../../api/internalClient.js"
 import type { SessionEvent } from "../../api/types.js"
 import type { SessionFileInfo } from "../../api/types.js"
 import { BRAND_COLORS, resolveIcons } from "../../repl/designSystem.js"

@@ -1,0 +1,26 @@
+{
+  "comparator_class": "normalized-trace-equal",
+  "contract": "bb.task.v1",
+  "fixture_family": "task_subagent",
+  "fixture_id": "task_subagent_invalid_missing_task_id",
+  "invalid_reason": "Removes required reference_output field 'task_id' from bb.task.v1.",
+  "reference_output": {
+    "depth": 1,
+    "description": "Explore repository surface",
+    "kind": "subagent_spawned",
+    "metadata": {
+      "ctree_node_id": "ctree-ref-1",
+      "ctree_snapshot": {
+        "node_count": 1
+      }
+    },
+    "parent_task_id": null,
+    "schema_version": "bb.task.v1",
+    "session_id": "sess-child-ref-1",
+    "status": "running",
+    "task_type": "explore",
+    "visibility": "host"
+  },
+  "source_fixture": "task_subagent/reference_fixture.json",
+  "support_tier": "reference-engine"
+}

@@ -27,6 +27,7 @@ class EndpointProvider(Protocol):
     def register_routes(self, app: Any, get_service: Any) -> None: ...
 
 
+
 @dataclass(frozen=True)
 class ExtensionManifest:
     ext_id: str

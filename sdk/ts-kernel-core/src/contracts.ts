@@ -6,7 +6,7 @@ import {
   type ExecutionPlacementV1,
   type RunContextV1,
   type RunRequestV1,
-  type SessionTranscriptV1,
+  type SessionTranscriptV2,
   type TranscriptContinuationPatchV1,
   type UnsupportedCaseV1,
 } from "@breadboard/kernel-contracts"
@@ -92,7 +92,7 @@ export function buildExecutionPlacement(
 }
 
 export function buildTranscriptContinuationPatch(
-  transcript: SessionTranscriptV1,
+  transcript: SessionTranscriptV2,
   options: {
     patchId: string
     preservedPrefixItems: number
@@ -105,7 +105,7 @@ export function buildTranscriptContinuationPatch(
         ? "assistant"
         : item.kind === "user_message"
           ? "user"
-          : item.visibility === "model"
+          : item.visibility.model_visible
             ? "assistant"
             : "system",
     content: [item.content],
@@ -116,7 +116,7 @@ export function buildTranscriptContinuationPatch(
   return assertValid<TranscriptContinuationPatchV1>("transcriptContinuationPatch", {
     schema_version: "bb.transcript_continuation_patch.v1",
     patch_id: options.patchId,
-    pre_state_ref: `transcript://${transcript.sessionId}@prefix:${options.preservedPrefixItems}`,
+    pre_state_ref: `transcript://${transcript.session_id}@prefix:${options.preservedPrefixItems}`,
     appended_messages: appendedMessages,
     appended_tool_events: [],
     lineage_updates: [],

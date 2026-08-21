@@ -1,0 +1,2029 @@
+{
+ "generated": "2026-07-10",
+ "note": "Structured outputs of the 8 precision scouts backing BB_RS_MASTER_PLAN. Read-only input; re-verify stale-looking facts against the tree.",
+ "S1_sdk": {
+  "openapi_v1_paths": [
+   {
+    "method": "GET",
+    "path": "/v1/e4/catalog",
+    "operation_id": "get_catalog_v1_e4_catalog_get",
+    "summary": "Get Catalog"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/catalog/binding",
+    "operation_id": "get_catalog_binding_v1_e4_catalog_binding_get",
+    "summary": "Get Catalog Binding"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/claims",
+    "operation_id": "list_claims_v1_e4_claims_get",
+    "summary": "List Claims"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/claims/{claim_id}",
+    "operation_id": "get_claim_v1_e4_claims__claim_id__get",
+    "summary": "Get Claim"
+   },
+   {
+    "method": "POST",
+    "path": "/v1/e4/claims/{claim_id}/reverify",
+    "operation_id": "reverify_claim_v1_e4_claims__claim_id__reverify_post",
+    "summary": "Reverify Claim"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/coverage/{target_family}",
+    "operation_id": "get_coverage_v1_e4_coverage__target_family__get",
+    "summary": "Get Coverage"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/health",
+    "operation_id": "health_v1_e4_health_get",
+    "summary": "Health"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/lanes",
+    "operation_id": "list_lanes_v1_e4_lanes_get",
+    "summary": "List Lanes"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/lanes/{lane_id}",
+    "operation_id": "get_lane_v1_e4_lanes__lane_id__get",
+    "summary": "Get Lane"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/ledger/rows",
+    "operation_id": "get_ledger_rows_v1_e4_ledger_rows_get",
+    "summary": "Get Ledger Rows"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/records",
+    "operation_id": "get_records_v1_e4_records_get",
+    "summary": "Get Records"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/registries",
+    "operation_id": "list_registries_v1_e4_registries_get",
+    "summary": "List Registries"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/registries/{registry_id}",
+    "operation_id": "get_registry_v1_e4_registries__registry_id__get",
+    "summary": "Get Registry"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/schemas",
+    "operation_id": "list_schemas_v1_e4_schemas_get",
+    "summary": "List Schemas"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/e4/schemas/{schema_id}",
+    "operation_id": "get_schema_v1_e4_schemas__schema_id__get",
+    "summary": "Get Schema"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/features",
+    "operation_id": "feature_audit_v1_features_get",
+    "summary": "Feature Audit"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/models",
+    "operation_id": "list_models_v1_models_get",
+    "summary": "List Models"
+   },
+   {
+    "method": "POST",
+    "path": "/v1/provider-auth/attach",
+    "operation_id": "attach_provider_auth_v1_provider_auth_attach_post",
+    "summary": "Attach Provider Auth"
+   },
+   {
+    "method": "POST",
+    "path": "/v1/provider-auth/detach",
+    "operation_id": "detach_provider_auth_v1_provider_auth_detach_post",
+    "summary": "Detach Provider Auth"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/provider-auth/status",
+    "operation_id": "provider_auth_status_v1_provider_auth_status_get",
+    "summary": "Provider Auth Status"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/registries",
+    "operation_id": "list_registries_v1_registries_get",
+    "summary": "List Registries"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/registries/{registry_id}",
+    "operation_id": "get_registry_v1_registries__registry_id__get",
+    "summary": "Get Registry"
+   },
+   {
+    "method": "POST",
+    "path": "/v1/rl/runs",
+    "operation_id": "submit_run_v1_rl_runs_post",
+    "summary": "Submit Run"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/rl/runs/{run_id}",
+    "operation_id": "get_run_v1_rl_runs__run_id__get",
+    "summary": "Get Run"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/rl/runs/{run_id}/artifacts",
+    "operation_id": "list_artifacts_v1_rl_runs__run_id__artifacts_get",
+    "summary": "List Artifacts"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/rl/runs/{run_id}/audit",
+    "operation_id": "audit_run_v1_rl_runs__run_id__audit_get",
+    "summary": "Audit Run"
+   },
+   {
+    "method": "POST",
+    "path": "/v1/rl/runs/{run_id}/cancel",
+    "operation_id": "cancel_run_v1_rl_runs__run_id__cancel_post",
+    "summary": "Cancel Run"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/rl/runs/{run_id}/events",
+    "operation_id": "get_events_v1_rl_runs__run_id__events_get",
+    "summary": "Get Events"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/rl/runs/{run_id}/replay/{artifact_id}",
+    "operation_id": "replay_artifact_v1_rl_runs__run_id__replay__artifact_id__get",
+    "summary": "Replay Artifact"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/sessions",
+    "operation_id": "list_sessions_v1_sessions_get",
+    "summary": "List Sessions"
+   },
+   {
+    "method": "POST",
+    "path": "/v1/sessions",
+    "operation_id": "create_session_v1_sessions_post",
+    "summary": "Create Session"
+   },
+   {
+    "method": "DELETE",
+    "path": "/v1/sessions/{session_id}",
+    "operation_id": "delete_session_v1_sessions__session_id__delete",
+    "summary": "Delete Session"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}",
+    "operation_id": "get_session_v1_sessions__session_id__get",
+    "summary": "Get Session"
+   },
+   {
+    "method": "POST",
+    "path": "/v1/sessions/{session_id}/attachments",
+    "operation_id": "upload_attachments_v1_sessions__session_id__attachments_post",
+    "summary": "Upload Attachments"
+   },
+   {
+    "method": "POST",
+    "path": "/v1/sessions/{session_id}/command",
+    "operation_id": "post_command_v1_sessions__session_id__command_post",
+    "summary": "Post Command"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/ctrees",
+    "operation_id": "session_ctrees_v1_sessions__session_id__ctrees_get",
+    "summary": "Session Ctrees"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/download",
+    "operation_id": "download_artifact_v1_sessions__session_id__download_get",
+    "summary": "Download Artifact"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/events",
+    "operation_id": "stream_events_v1_sessions__session_id__events_get",
+    "summary": "Stream Events"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/files",
+    "operation_id": "list_session_files_v1_sessions__session_id__files_get",
+    "summary": "List Session Files"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/files/content",
+    "operation_id": "read_session_file_v1_sessions__session_id__files_content_get",
+    "summary": "Read Session File"
+   },
+   {
+    "method": "POST",
+    "path": "/v1/sessions/{session_id}/input",
+    "operation_id": "post_input_v1_sessions__session_id__input_post",
+    "summary": "Post Input"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/records",
+    "operation_id": "get_session_records_v1_sessions__session_id__records_get",
+    "summary": "Get Session Records"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/skills",
+    "operation_id": "session_skills_v1_sessions__session_id__skills_get",
+    "summary": "Session Skills"
+   },
+   {
+    "method": "GET",
+    "path": "/v1/status",
+    "operation_id": "engine_status_v1_status_get",
+    "summary": "Engine Status"
+   }
+  ],
+  "sdk_ts_calls": [
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 102,
+    "method": "GET",
+    "path_called": "/health",
+    "v1_equivalent": "none (health is intentionally unversioned; no /v1/health in checked-in contract)"
+   },
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 104,
+    "method": "POST",
+    "path_called": "/sessions",
+    "v1_equivalent": "/v1/sessions"
+   },
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 105,
+    "method": "GET",
+    "path_called": "/sessions",
+    "v1_equivalent": "/v1/sessions"
+   },
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 106,
+    "method": "GET",
+    "path_called": "/sessions/${sessionId}",
+    "v1_equivalent": "/v1/sessions/{session_id}"
+   },
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 108,
+    "method": "POST",
+    "path_called": "/sessions/${sessionId}/input",
+    "v1_equivalent": "/v1/sessions/{session_id}/input"
+   },
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 110,
+    "method": "POST",
+    "path_called": "/sessions/${sessionId}/command",
+    "v1_equivalent": "/v1/sessions/{session_id}/command"
+   },
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 111,
+    "method": "DELETE",
+    "path_called": "/sessions/${sessionId}",
+    "v1_equivalent": "/v1/sessions/{session_id}"
+   },
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 113,
+    "method": "GET",
+    "path_called": "/sessions/${sessionId}/files",
+    "v1_equivalent": "/v1/sessions/{session_id}/files"
+   },
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 117,
+    "method": "GET",
+    "path_called": "/sessions/${sessionId}/files",
+    "v1_equivalent": "/v1/sessions/{session_id}/files/content (not merely prefixing: endpoint suffix changes)"
+   },
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 127,
+    "method": "GET",
+    "path_called": "/models",
+    "v1_equivalent": "/v1/models"
+   },
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 128,
+    "method": "GET",
+    "path_called": "/sessions/${sessionId}/skills",
+    "v1_equivalent": "/v1/sessions/{session_id}/skills"
+   },
+   {
+    "file": "sdk/ts/src/client.ts",
+    "line": 129,
+    "method": "GET",
+    "path_called": "/sessions/${sessionId}/ctrees",
+    "v1_equivalent": "/v1/sessions/{session_id}/ctrees"
+   },
+   {
+    "file": "sdk/ts/src/stream.ts",
+    "line": 87,
+    "method": "GET",
+    "path_called": "/sessions/${sessionId}/events (constructed at line 73)",
+    "v1_equivalent": "/v1/sessions/{session_id}/events"
+   }
+  ],
+  "sdk_py_calls": [
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 83,
+    "method": "GET",
+    "path_called": "/health",
+    "v1_equivalent": "none (health is intentionally unversioned; no /v1/health)"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 112,
+    "method": "POST",
+    "path_called": "/sessions",
+    "v1_equivalent": "/v1/sessions"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 115,
+    "method": "GET",
+    "path_called": "/sessions",
+    "v1_equivalent": "/v1/sessions"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 118,
+    "method": "GET",
+    "path_called": "/sessions/{session_id}",
+    "v1_equivalent": "/v1/sessions/{session_id}"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 121,
+    "method": "DELETE",
+    "path_called": "/sessions/{session_id}",
+    "v1_equivalent": "/v1/sessions/{session_id}"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 127,
+    "method": "POST",
+    "path_called": "/sessions/{session_id}/input",
+    "v1_equivalent": "/v1/sessions/{session_id}/input"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 130,
+    "method": "POST",
+    "path_called": "/sessions/{session_id}/command",
+    "v1_equivalent": "/v1/sessions/{session_id}/command"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 133,
+    "method": "GET",
+    "path_called": "/models",
+    "v1_equivalent": "/v1/models"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 136,
+    "method": "GET",
+    "path_called": "/sessions/{session_id}/skills",
+    "v1_equivalent": "/v1/sessions/{session_id}/skills"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 139,
+    "method": "GET",
+    "path_called": "/sessions/{session_id}/ctrees",
+    "v1_equivalent": "/v1/sessions/{session_id}/ctrees"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 142,
+    "method": "GET",
+    "path_called": "/sessions/{session_id}/files",
+    "v1_equivalent": "/v1/sessions/{session_id}/files"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 161,
+    "method": "GET",
+    "path_called": "/sessions/{session_id}/files",
+    "v1_equivalent": "/v1/sessions/{session_id}/files/content (suffix changes)"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 164,
+    "method": "GET",
+    "path_called": "/sessions/{session_id}/download",
+    "v1_equivalent": "/v1/sessions/{session_id}/download"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 181,
+    "method": "POST",
+    "path_called": "/sessions/{session_id}/attachments",
+    "v1_equivalent": "/v1/sessions/{session_id}/attachments"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 209,
+    "method": "GET",
+    "path_called": "/sessions/{session_id}/events",
+    "v1_equivalent": "/v1/sessions/{session_id}/events"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 268,
+    "method": "POST",
+    "path_called": "/v1/provider-auth/attach",
+    "v1_equivalent": "/v1/provider-auth/attach (already correct)"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 271,
+    "method": "POST",
+    "path_called": "/v1/provider-auth/detach",
+    "v1_equivalent": "/v1/provider-auth/detach (already correct)"
+   },
+   {
+    "file": "breadboard_sdk/client.py",
+    "line": 274,
+    "method": "GET",
+    "path_called": "/v1/provider-auth/status",
+    "v1_equivalent": "/v1/provider-auth/status (already correct)"
+   }
+  ],
+  "dto_drift": [
+   "Both SDKs model POST input and POST command as returning void/None, but OpenAPI returns SessionInputResponse and SessionCommandResponse (HTTP 202); those response DTOs are absent from SDK type surfaces.",
+   "TypeScript postCommand accepts an unconstrained Record<string, unknown>; OpenAPI SessionCommandRequest requires string `command` and permits nullable optional object `payload`. Python constructs the correct shape but still discards the response.",
+   "TypeScript SessionCreateRequest optional nullable fields (`overrides`, `metadata`, `workspace`, `max_steps`, `permission_mode`) do not include `null`, although OpenAPI explicitly accepts null. Python accepts None at the method boundary but its TypedDict annotations likewise omit None for these keys.",
+   "TypeScript SessionCreateResponse and SessionSummary type `status` as arbitrary string; OpenAPI uses SessionStatus enum: starting|running|completed|failed|stopped.",
+   "Python declares SessionCreateResponse, SessionSummary, ModelCatalogResponse, SessionFileInfo, SessionFileContent and AttachmentUploadResponse with total=False, making OpenAPI-required fields optional to the type checker (for example create response session_id/status/created_at; summary session_id/status/created_at/last_activity_at; model catalog models; file info path/type; file content path/content; upload attachments).",
+   "TypeScript SessionFileContent marks `truncated` optional although OpenAPI supplies it with default false; Python total=False also makes it optional. OpenAPI permits total_bytes=null; TypeScript correctly permits undefined/null, while Python permits Optional but also omits the key.",
+   "AttachmentUploadResponse is only present in Python and is weakly typed as List[Dict[str, Any]]; OpenAPI has required `attachments` containing AttachmentHandle objects with required id, filename, size_bytes and nullable mime. TypeScript client exposes no attachment upload method/type.",
+   "The OpenAPI document has no SessionEvent component and incorrectly advertises the SSE 200 response under application/json with an empty schema. SDK SessionEvent/EventType types therefore cannot be validated against OpenAPI components; they describe the runtime event envelope rather than a generated contract.",
+   "SDK HealthResponse includes protocol_version/version/engine_version, but /health is an unversioned endpoint and its response is not represented by a named HealthResponse component in this checked-in OpenAPI. This is outside the /v1 DTO component surface.",
+   "The main shared response DTOs otherwise align structurally: ModelCatalogResponse, SkillCatalogResponse, CTreeSnapshotResponse, SessionFileInfo, and core SessionCreate/SessionSummary fields match OpenAPI names and scalar/object shapes, subject to requiredness/nullability issues above."
+  ],
+  "sse_notes": [
+   "Canonical endpoint: GET /v1/sessions/{session_id}/events. Query parameters are replay:boolean=false, limit:int|null, and from_id:string|null. Resume also accepts Last-Event-ID; the server maps that header to from_id.",
+   "Runtime content type is text/event-stream. Each event is serialized as `id: <seq-or-event_id>\\ndata: <JSON>\\n\\n`; there is no `event:` field. The JSON is the SessionEvent serialization. Server event IDs prefer numeric seq when present, otherwise event_id.",
+   "Runtime envelope fields represented by SDKs: id, type, session_id, turn, timestamp, payload, with optional timestamp_ms, seq, run_id, thread_id, turn_id. The server-side event object uses event_id/created_at internally and serializes a normalized dictionary before placing it in `data:`.",
+   "TypeScript uses eventsource-parser, reads SSE `id`, JSON-parses `data`, and normalizes aliases (`type|event|kind`, session_id|sessionId, payload|data|message|body, timestamp variants). Python only joins `data:` lines and JSON-parses them; it ignores SSE `id:` entirely. Therefore Python's last_event_id can be sent, but callers cannot reliably obtain the wire id unless the JSON envelope itself contains it.",
+   "Checked-in OpenAPI is stale/inexpressive for SSE: it declares application/json with schema `{}` rather than text/event-stream and has no SessionEvent component. Runtime app.py is authoritative for framing."
+  ],
+  "readme_flow_steps": [
+   "Start the default bridge server with `python -m agentic_coder_prototype.api.cli_bridge.server` (README lines 307-309), which invokes default create_app().",
+   "Python quickstart: instantiate BreadboardClient at http://127.0.0.1:9099; call create_session with config_path, task, stream=True; take session[\"session_id\"]; call stream_events with query schema=2,replay=True; print assistant_message payload.text; stop on completion (README lines 311-328).",
+   "TypeScript quickstart: createBreadboardClient with the same base URL; call createSession with config_path and task; pass session.session_id to streamSessionEvents; log each event.type; stop on completion (README lines 330-347).",
+   "The quickstarts therefore exercise POST session creation followed by GET SSE streaming in both SDKs. Against default create_app(), both currently target pruned legacy `/sessions...` routes and fail before completing the documented flow."
+  ],
+  "minimal_fix_list": [
+   "In sdk/ts/src/client.ts, prefix every versioned API call with `/v1`: sessions CRUD/input/command/files/skills/ctrees and models. Leave `/health` unchanged because health is intentionally unversioned.",
+   "In sdk/ts/src/client.ts, change readSessionFile specifically from `/sessions/${sessionId}/files` to `/v1/sessions/${sessionId}/files/content`; this is not handled by prefixing alone.",
+   "In sdk/ts/src/stream.ts, change the stream URL to `/v1/sessions/${sessionId}/events`.",
+   "In breadboard_sdk/client.py, prefix all currently legacy session/model calls, including the direct multipart attachment and direct streaming URLs, with `/v1`; leave `/health` and already-correct `/v1/provider-auth/*` unchanged.",
+   "In breadboard_sdk/client.py, change read_session_file specifically to `/v1/sessions/{session_id}/files/content`.",
+   "No server edit, compatibility shim, base-URL-wide `/v1` injection, DTO overhaul, or README flow change is required for the smallest functional repair. A global base URL prefix would incorrectly turn `/health` into nonexistent `/v1/health` and risks double-prefixing provider-auth calls.",
+   "For contract-correct return behavior (small and advisable but not necessary for the README create+stream flow), add SessionInputResponse and SessionCommandResponse types and return their decoded bodies instead of void/None. This is separable from the endpoint repair.",
+   "Update focused SDK tests/fixtures to assert the exact `/v1` URLs, especially `/files` versus `/files/content`, multipart attachments, SSE, unversioned `/health`, and already-versioned provider-auth paths. This is the minimum verification surface for the edits."
+  ]
+ },
+ "S2_lane_fields": {
+  "fields": [
+   {
+    "pointer": "/schema_version",
+    "classification": "machine_pin",
+    "rationale": "Fixed schema discriminator; the schema constrains it to the literal bb.e4.lane_def.v2 rather than expressing lane semantics."
+   },
+   {
+    "pointer": "/lane_id",
+    "classification": "author_intent",
+    "rationale": "Stable human-chosen identity of the lane and its artifact namespace."
+   },
+   {
+    "pointer": "/config_id",
+    "classification": "author_intent",
+    "rationale": "Human-chosen configuration identity; it may differ from lane_id (as in P6.6, where it has a _v1 suffix)."
+   },
+   {
+    "pointer": "/target_family",
+    "classification": "author_intent",
+    "rationale": "Declares which target the lane is intended to cover."
+   },
+   {
+    "pointer": "/target_version",
+    "classification": "machine_pin",
+    "rationale": "Pins the exact observed/tested target version. P6.6 uses @oh-my-pi/pi-coding-agent@16.2.13; the small self lane instead uses a descriptive runtime string, so the category is based on its contract role rather than uniform formatting."
+   },
+   {
+    "pointer": "/package_ref",
+    "classification": "evidence_binding",
+    "rationale": "Optional reference binding the lane to a package/source artifact. It is null in P6.6 and points to the phase-15 source index in the small lane."
+   },
+   {
+    "pointer": "/kind",
+    "classification": "author_intent",
+    "rationale": "Declares the lane's accounting purpose: target_support, non_target_accounting, or infrastructure."
+   },
+   {
+    "pointer": "/status",
+    "classification": "author_intent",
+    "rationale": "Lifecycle/disposition decision for the lane (for example accepted); although tooling validates transitions, this is the maintained declaration of intended status."
+   },
+   {
+    "pointer": "/points",
+    "classification": "author_intent",
+    "rationale": "Human scope/accounting weight, not derived evidence."
+   },
+   {
+    "pointer": "/capture",
+    "classification": "ambiguous",
+    "rationale": "Mixed ownership: capture method is authored, while its inputs bind evidence and generated capture configuration may contain pins."
+   },
+   {
+    "pointer": "/capture/strategy",
+    "classification": "author_intent",
+    "rationale": "Selects the intended acquisition mechanism (runtime_records in the small lane, adapter in P6.6)."
+   },
+   {
+    "pointer": "/capture/argv",
+    "classification": "author_intent",
+    "rationale": "Authored invocation when probe_argv-style capture needs one; null in both grounded examples."
+   },
+   {
+    "pointer": "/capture/inputs",
+    "classification": "evidence_binding",
+    "rationale": "Enumerates the concrete files/directories/scripts/claims consumed by capture."
+   },
+   {
+    "pointer": "/capture/workspace_template",
+    "classification": "author_intent",
+    "rationale": "Optional authored choice of capture workspace template."
+   },
+   {
+    "pointer": "/capture/adapter",
+    "classification": "author_intent",
+    "rationale": "Selects a registered capture adapter; required for adapter strategy and set to oh_my_pi_compiler_capture in P6.6."
+   },
+   {
+    "pointer": "/normalize",
+    "classification": "ambiguous",
+    "rationale": "The translator choice is authored, but normalize.config is free-form and in P6.6 contains the overwhelmingly machine-owned embedded projection packet."
+   },
+   {
+    "pointer": "/normalize/translator",
+    "classification": "author_intent",
+    "rationale": "Chooses the registered normalization implementation; both examples use identity."
+   },
+   {
+    "pointer": "/normalize/config",
+    "classification": "generated_payload",
+    "rationale": "Free-form adapter configuration. In the small lane it is empty; in P6.6 it embeds thousands of lines of captured payload templates, replay products, node-gate material, hashes, and substitution tables. The outer setup keys are authored, but the dominant content is generated."
+   },
+   {
+    "pointer": "/normalize/config/record_builders",
+    "classification": "author_intent",
+    "rationale": "Defines which source/projection produces which records and assigns source roles."
+   },
+   {
+    "pointer": "/normalize/config/projection_constants",
+    "classification": "author_intent",
+    "rationale": "Authored constants controlling the work-item projection, including parent identity and actor ownership."
+   },
+   {
+    "pointer": "/normalize/config/roles",
+    "classification": "evidence_binding",
+    "rationale": "Maps semantic packet roles to concrete repository artifact paths."
+   },
+   {
+    "pointer": "/normalize/config/packet_constants/required_records",
+    "classification": "author_intent",
+    "rationale": "Declares the required semantic record set for this lane."
+   },
+   {
+    "pointer": "/normalize/config/packet_constants/required_roles",
+    "classification": "author_intent",
+    "rationale": "Declares the packet roles that must exist."
+   },
+   {
+    "pointer": "/normalize/config/packet_constants/payload_templates",
+    "classification": "generated_payload",
+    "rationale": "Large embedded copies/projections of capture manifests, target observations, work items, replay output, comparator/support evidence, and node-gate results."
+   },
+   {
+    "pointer": "/normalize/config/packet_constants/substitutions",
+    "classification": "generated_payload",
+    "rationale": "Large mechanically assembled path/source/key tables describing how generated packet references are rebound."
+   },
+   {
+    "pointer": "/normalize/config/packet_constants/**/sha256",
+    "classification": "machine_pin",
+    "rationale": "Literal content digests bind embedded structures to exact bytes or freeze-manifest rows."
+   },
+   {
+    "pointer": "/normalize/config/packet_constants/**/bytes",
+    "classification": "machine_pin",
+    "rationale": "Literal artifact sizes are derived from files on disk and refreshed mechanically."
+   },
+   {
+    "pointer": "/normalize/config/packet_constants/**/ref",
+    "classification": "evidence_binding",
+    "rationale": "Path-plus-digest references bind projected records to exact evidence artifacts; the digest portion is a machine pin."
+   },
+   {
+    "pointer": "/normalize/config/packet_constants/**/source_hashes",
+    "classification": "machine_pin",
+    "rationale": "Path-to-sha256 maps are derived integrity pins."
+   },
+   {
+    "pointer": "/normalize/config/packet_constants/**/input_hashes",
+    "classification": "machine_pin",
+    "rationale": "Derived hashes of replay/projection inputs."
+   },
+   {
+    "pointer": "/normalize/config/packet_constants/**/catalog_binding",
+    "classification": "evidence_binding",
+    "rationale": "Binds generated evidence to a specific artifact catalog state; catalog_hash and catalog_revision inside it are machine pins."
+   },
+   {
+    "pointer": "/replay",
+    "classification": "author_intent",
+    "rationale": "Chooses replay semantics and optional session; both grounded lanes intentionally select semantic comparison with no fixed session."
+   },
+   {
+    "pointer": "/replay/session",
+    "classification": "evidence_binding",
+    "rationale": "When non-null it selects the concrete replay session; null in both examples."
+   },
+   {
+    "pointer": "/replay/comparator_class",
+    "classification": "author_intent",
+    "rationale": "Declares byte versus semantic replay equivalence."
+   },
+   {
+    "pointer": "/compare",
+    "classification": "author_intent",
+    "rationale": "Defines how success is judged."
+   },
+   {
+    "pointer": "/compare/comparator",
+    "classification": "author_intent",
+    "rationale": "Selects the registered comparator implementation."
+   },
+   {
+    "pointer": "/compare/config/assertions",
+    "classification": "author_intent",
+    "rationale": "Typed, machine-checkable statements of the behavior the author requires, not captured output."
+   },
+   {
+    "pointer": "/claim",
+    "classification": "author_intent",
+    "rationale": "Defines the exact scope the lane claims and explicitly excludes."
+   },
+   {
+    "pointer": "/claim/scope/behaviors",
+    "classification": "author_intent",
+    "rationale": "Human-declared supported behavior families."
+   },
+   {
+    "pointer": "/claim/scope/surfaces",
+    "classification": "author_intent",
+    "rationale": "Human-declared covered surfaces."
+   },
+   {
+    "pointer": "/claim/exclusions",
+    "classification": "author_intent",
+    "rationale": "Explicitly limits claim breadth; the small lane excludes broad target-family support."
+   },
+   {
+    "pointer": "/ct",
+    "classification": "author_intent",
+    "rationale": "Authored conformance-test identity, description, and execution timeout."
+   },
+   {
+    "pointer": "/ct/description",
+    "classification": "author_intent",
+    "rationale": "Human-readable intended test scope."
+   },
+   {
+    "pointer": "/ct/timeout_seconds",
+    "classification": "author_intent",
+    "rationale": "Operational test policy."
+   },
+   {
+    "pointer": "/ct/test_id",
+    "classification": "evidence_binding",
+    "rationale": "Binds the lane to a named conformance test, though the identifier itself is human assigned."
+   },
+   {
+    "pointer": "/artifacts_root",
+    "classification": "author_intent",
+    "rationale": "Chooses the lane's artifact namespace/output root."
+   },
+   {
+    "pointer": "/reverify_command",
+    "classification": "author_intent",
+    "rationale": "Maintained executable recipe for rechecking the claim."
+   },
+   {
+    "pointer": "/reverify_command/argv",
+    "classification": "author_intent",
+    "rationale": "Authored validator invocation, including claim/evidence/node-gate paths."
+   },
+   {
+    "pointer": "/reverify_command/cwd",
+    "classification": "author_intent",
+    "rationale": "Authored execution context."
+   },
+   {
+    "pointer": "/metadata",
+    "classification": "ambiguous",
+    "rationale": "Schema explicitly marks it non-normative L7 and forbids generators/validators from reading it. Its arbitrary human annotations can duplicate machine facts (P6.6 duplicates run_id/provider_model/sandbox_mode), so no single ownership class is reliable."
+   },
+   {
+    "pointer": "/run",
+    "classification": "evidence_binding",
+    "rationale": "Records the concrete capture execution identity/environment required for accepted or claimed lanes."
+   },
+   {
+    "pointer": "/run/run_id",
+    "classification": "evidence_binding",
+    "rationale": "Binds the accepted declaration to a particular run."
+   },
+   {
+    "pointer": "/run/provider_model",
+    "classification": "evidence_binding",
+    "rationale": "Records the model/provider used in the run; no-provider is still a concrete capture fact in the small self lane."
+   },
+   {
+    "pointer": "/run/sandbox_mode",
+    "classification": "evidence_binding",
+    "rationale": "Records the execution isolation mode under which evidence was captured."
+   },
+   {
+    "pointer": "/provenance",
+    "classification": "evidence_binding",
+    "rationale": "Validated source provenance required on accepted/claimed lanes (except permitted null self-lane cases)."
+   },
+   {
+    "pointer": "/provenance/upstream_repo",
+    "classification": "evidence_binding",
+    "rationale": "Identifies the source repository."
+   },
+   {
+    "pointer": "/provenance/upstream_commit",
+    "classification": "machine_pin",
+    "rationale": "Pins an exact source revision; P6.6 carries the full oh-my-pi commit while the local self lane uses 0000000."
+   },
+   {
+    "pointer": "/provenance/upstream_commit_date",
+    "classification": "machine_pin",
+    "rationale": "Pinned fact about the selected upstream revision."
+   },
+   {
+    "pointer": "/provenance/upstream_release_label",
+    "classification": "evidence_binding",
+    "rationale": "Human-readable release identity attached to the pinned source."
+   },
+   {
+    "pointer": "/provenance/source_paths",
+    "classification": "evidence_binding",
+    "rationale": "Enumerates the concrete source/evidence files supporting provenance."
+   },
+   {
+    "pointer": "/acceptance",
+    "classification": "author_intent",
+    "rationale": "Defines the maintained semantic acceptance contract. The schema notes that these are references to accepted-lane semantics, while executable typed assertions live under compare.config.assertions."
+   },
+   {
+    "pointer": "/acceptance/behavior_family",
+    "classification": "author_intent",
+    "rationale": "Names the intended behavior family."
+   },
+   {
+    "pointer": "/acceptance/semantic_key",
+    "classification": "author_intent",
+    "rationale": "Stable semantic identity for the acceptance contract."
+   },
+   {
+    "pointer": "/acceptance/target",
+    "classification": "author_intent",
+    "rationale": "Names the intended target of acceptance."
+   },
+   {
+    "pointer": "/acceptance/assertions",
+    "classification": "author_intent",
+    "rationale": "Human-readable IDs/descriptions referencing comparator assertion semantics; IDs are linkage keys but the list expresses the acceptance contract."
+   }
+  ],
+  "p66_stats": {
+   "total_lines": 7292,
+   "est_author_intent_lines": 300,
+   "est_machine_lines": 6992,
+   "biggest_blocks": [
+    "/normalize/config/packet_constants/payload_templates \u2014 approximately lines 146\u20135683 (~5,538 lines); embedded capture_ref, target_probe_output, target_setup_report, joined/detached captures, work items/replay, comparator/support material, node_gate, hashes, and other promoted packet payloads.",
+    "/normalize/config/packet_constants/substitutions \u2014 approximately lines 5684\u20137121 (~1,438 lines); generated path/source/key rebinding tables.",
+    "Within payload_templates, /node_gate starts at line 2845 and runs within the payload region to roughly line 5683, making it the largest named individual payload subsection (~2.8k lines).",
+    "Within payload_templates, /work_item_replay begins at line 1240 and occupies a large repeated normalized-record/replay block before later comparator/support/node-gate payloads.",
+    "Machine-owned integrity clusters include captured_artifacts/source_artifacts rows with bytes+sha256 (starting around line 150), source_hashes (around 332), input_hashes (around 1245), path#sha256 refs throughout, freeze-row pins, and catalog_binding.catalog_hash/catalog_revision (example around 2548)."
+   ]
+  },
+  "refresh_pin_targets": [
+   "Single-line JSON-style map entries whose key starts with the selected lane's artifact root, the lane's support-claim prefix, config/e4_target_freeze_manifest.yaml, or docs_tmp/phase_15/: rewrites the map value sha256 digest.",
+   "The special single-line map key freeze_manifest_row: rewrites its value to the selected config_id's freeze-manifest row hash.",
+   "Brace-delimited row dictionaries with a matching path: rewrites every sha256 field in that row to the resolved file's whole-file digest and every bytes field to the file's current size.",
+   "Brace-delimited rows whose path is config/e4_target_freeze_manifest.yaml: rewrites sha256 to the selected lane config_id's freeze-row hash, not the whole manifest digest; bytes is not rewritten in this special case.",
+   "Embedded <path>#sha256:<hex> references for existing repository files: rewrites the digest to the current whole-file sha256.",
+   "Embedded config/e4_target_freeze_manifest.yaml#<config_id>#sha256:<hex> references: rewrites the digest to that config_id's freeze-row hash.",
+   "Any JSON-style catalog_hash field matching the script's strict line regex: rewrites it to docs/conformance/e4_artifact_catalog.json integrity.stable_entries_hash.",
+   "Any JSON-style catalog_revision integer field matching the script's strict line regex: rewrites it to docs/conformance/e4_artifact_catalog.json revision."
+  ],
+  "notes": [
+   "The largest file was established from the directory listing: config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.yaml at 344.3 KB; the next largest lanes are about 78 KB. The file reader reports 7,292 lines.",
+   "Line ownership is necessarily an estimate because /normalize/config is schema-defined free-form and mixes a small authored setup shell with a very large generated packet. The estimate counts the roughly 6,976-line normalize block (lines 40\u20137122) as overwhelmingly machine-owned, while retaining about 300 lines for the descriptor shell, authored projection setup, compare/claim/CT/reverify/provenance/acceptance declarations, and minor structural lines.",
+   "Here, machine lines means generated payload plus literal pins and mechanically assembled evidence bindings. It is broader than only machine_pin classification; otherwise the thousands of generated payload and substitution lines would be misleadingly omitted.",
+   "The refresher is syntactic and scoped, not schema-pointer-aware. It only matches strict JSON-style quoted forms and configured prefixes, skips missing files, and may rewrite matching pin forms anywhere in the descriptor. Its configured prefixes are lane-specific docs/conformance/e4_target_support/<lane_id>/, docs/conformance/support_claims/<lane_id>_, config/e4_target_freeze_manifest.yaml, and docs_tmp/phase_15/.",
+   "The refresher also runs capture/promotion between refresh passes until stable (up to six iterations), so generated content may be regenerated by run_lane.py beyond the direct textual fields listed in refresh_pin_targets. The list above is exactly what refresh_pins_once itself rewrites."
+  ]
+ },
+ "S3_validation": {
+  "v2_loader_checks": [
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:148-157 (_validate_agent_config_surface)",
+    "check": "Runs Draft 2020-12 validation using the selected agent-config-surface schema, sorts violations deterministically by absolute path/message, and raises only the first violation.",
+    "schema_covered": "yes",
+    "cross_field": false,
+    "error_quality": "Strong: `_format_config_schema_error` emits an escaped JSON Pointer and the jsonschema message; required-property failures point at the missing property. Only the first of potentially many errors is reported."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:129-146 (_json_pointer, _format_config_schema_error)",
+    "check": "Formats schema failures and moves a `required` violation's pointer from the containing object to the missing key.",
+    "schema_covered": "yes",
+    "cross_field": false,
+    "error_quality": "Strong and stable: `agent config schema error at <pointer>: <detail>`. Missing-key extraction parses quoted text from jsonschema's English message, which is somewhat brittle."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:342-347 (_validate_v2)",
+    "check": "Requires top-level version, workspace, providers, modes, and loop.",
+    "schema_covered": "yes",
+    "cross_field": false,
+    "error_quality": "Clear section-specific legacy message, but unreachable in normal v2 flow because schema validation runs first and reports a pointer-based error."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:349-350",
+    "check": "Requires version to coerce through `int(...)` to 2.",
+    "schema_covered": "yes",
+    "cross_field": false,
+    "error_quality": "Clear but normally unreachable; schema has `const: 2`. Python coercion is broader than schema, and an unexpected conversion exception would not receive this message."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:352-354",
+    "check": "Requires providers.default_model to be truthy.",
+    "schema_covered": "yes",
+    "cross_field": false,
+    "error_quality": "Clear dotted path, normally unreachable; schema requires a non-empty string."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:355-357",
+    "check": "Requires providers.models to be a non-empty list.",
+    "schema_covered": "partial",
+    "cross_field": false,
+    "error_quality": "Clear dotted path, but normally schema validation handles wrong type. The schema requires `models` and array type but, from the inspected provider schema, does not visibly impose `minItems`; the Python non-empty rule may add a constraint."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:358-360",
+    "check": "Requires each provider model row to have truthy id and adapter.",
+    "schema_covered": "yes",
+    "cross_field": false,
+    "error_quality": "Understandable but imprecise: no failing array index/JSON Pointer. Normally unreachable because schema requires both fields and their strings are non-empty."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:362-364",
+    "check": "Requires loop.sequence to be truthy/non-empty.",
+    "schema_covered": "partial",
+    "cross_field": false,
+    "error_quality": "Clear dotted path. Schema requires sequence and array type, but the Python truthiness check additionally rejects an empty array if the schema has no `minItems`."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:366-380",
+    "check": "Requires features, features.rlm, and features.rlm.budget (when present) to be mappings; requires rlm.enabled to be boolean.",
+    "schema_covered": "yes",
+    "cross_field": false,
+    "error_quality": "Clear dotted paths and expected types; redundant/unreachable after schema-first validation."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:381-390",
+    "check": "For rlm budget max_depth, max_subcalls, max_total_tokens, and max_wallclock_seconds, coerces with int and requires non-negative.",
+    "schema_covered": "partial",
+    "cross_field": false,
+    "error_quality": "Excellent field-specific message, including non-negativity. Schema strictly requires integer >= 0; Python accepts coercible strings only in isolation, but schema rejects those first."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:391-398",
+    "check": "Coerces rlm budget max_total_cost_usd to float and requires >= 0.",
+    "schema_covered": "partial",
+    "cross_field": false,
+    "error_quality": "Clear field and bound. Schema covers numeric type but has no minimum, so the non-negative rule must remain unless moved into schema."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:399-428",
+    "check": "Requires budget.per_branch to be a mapping; coerces max_subcalls/max_total_tokens to non-negative integers and max_total_cost_usd to a non-negative float.",
+    "schema_covered": "partial",
+    "cross_field": false,
+    "error_quality": "Strong dotted-field messages. Object and integer checks are schema-covered; cost non-negativity is Python-only because schema lacks a minimum."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:429-444",
+    "check": "Requires blob_store mapping; max_total_bytes, max_blob_bytes, and mvi_excerpt_bytes must coerce to non-negative integers.",
+    "schema_covered": "yes",
+    "cross_field": false,
+    "error_quality": "Strong field-specific diagnostics, but redundant after schema validation, which specifies integer minimum 0."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:445-476",
+    "check": "Requires subcall mapping; max_completion_tokens and retries are non-negative integers; timeout_seconds is numeric >= 0.",
+    "schema_covered": "partial",
+    "cross_field": false,
+    "error_quality": "Strong dotted paths and bounds. Mapping/integer constraints are schema-covered; timeout numeric type is covered but its non-negative bound is not."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:477-541",
+    "check": "Requires scheduling and scheduling.batch mappings; mode enum sync/batch; batch enabled/fail_fast booleans; max_concurrency, max_concurrency_per_branch, retries non-negative integers; timeout_seconds numeric >= 0.",
+    "schema_covered": "partial",
+    "cross_field": false,
+    "error_quality": "Strong field-specific messages. All except timeout non-negativity are fully schema-covered; schema declares timeout as number without minimum."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:542-558",
+    "check": "Requires routing mapping; default_lane enum; long_context_prompt_chars and long_context_blob_refs non-negative integers.",
+    "schema_covered": "yes",
+    "cross_field": false,
+    "error_quality": "Strong and specific, but redundant after schema-first validation."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:560-576",
+    "check": "Requires long_running mapping; enabled boolean; policy_profile in conservative/balanced/aggressive after trim/lower; reset_policy in fresh/compact/continue.",
+    "schema_covered": "partial",
+    "cross_field": false,
+    "error_quality": "Clear. Mapping/enabled/reset_policy are schema-covered. `policy_profile` is not present in the inspected v2 schema's closed long_running properties, so schema currently rejects the property rather than expressing this enum; Python check is effectively unreachable for v2 documents."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:577-596",
+    "check": "Requires long_running.budgets mapping; total_tokens (falling back to max_total_tokens) non-negative integer; total_cost_usd (falling back to max_total_cost_usd) numeric >= 0.",
+    "schema_covered": "partial",
+    "cross_field": true,
+    "error_quality": "Good canonical-field messages, but aliases are collapsed in diagnostics. Integer type/minimum is covered. Cost numeric types are covered but non-negative bounds are absent. Fallback precedence across paired field names is a cross-field/alias-resolution behavior."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:597-608",
+    "check": "Requires episode mapping and max_steps_override to coerce to an integer > 0.",
+    "schema_covered": "yes",
+    "cross_field": false,
+    "error_quality": "Strong dotted path and bound; redundant because schema requires integer/null minimum 1."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:609-645",
+    "check": "Requires recovery mapping; backoff base/max numeric >= 0; disable_jitter boolean; no_progress_signature_repeats non-negative integer.",
+    "schema_covered": "partial",
+    "cross_field": false,
+    "error_quality": "Strong paths. Object, boolean, integer type/minimum and numeric types are covered; non-negative backoff bounds are Python-only because schema numbers lack minimum."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:646-672",
+    "check": "Requires observability/reviewer/resume mappings; validates their booleans, reviewer.mode == read_only, and resume.state_path string.",
+    "schema_covered": "yes",
+    "cross_field": false,
+    "error_quality": "Strong dotted paths. Schema is at least as strict (state_path also has minLength 1), so Python checks are redundant after schema validation."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:673-703",
+    "check": "Requires verification mapping and tiers list; each tier mapping; commands non-empty list; timeout numeric > 0; hard_fail boolean.",
+    "schema_covered": "partial",
+    "cross_field": false,
+    "error_quality": "Best legacy diagnostics include tier index, expected shape, and bound. Schema covers all types and required commands, but inspected schema does not show `minItems` for commands and does not bound timeout above zero, so those two Python constraints remain."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:177-219 (_resolve_extends)",
+    "check": "Resolves one or multiple extends paths recursively and merges bases before v2 validation.",
+    "schema_covered": "no",
+    "cross_field": true,
+    "error_quality": "Resolution errors generally retain filesystem/YAML context, but there is no explicit cycle check in this resolver; the sibling config-graph traversal supplies a clear cycle-chain message."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:242-257 (_append_config_graph_layers)",
+    "check": "Rejects cyclic extends chains by checking the resolved path against the ancestor tuple.",
+    "schema_covered": "no",
+    "cross_field": true,
+    "error_quality": "Excellent: reports the complete `path -> path` cycle chain."
+   },
+   {
+    "location": "agentic_coder_prototype/compilation/v2_loader.py:309-322 (build_config_view dispatch)",
+    "check": "Rejects unsupported explicit schema_version; validates schema-less numeric version 2 against v1; leaves schema-less nonnumeric legacy configs on the raw path.",
+    "schema_covered": "no",
+    "cross_field": true,
+    "error_quality": "Unsupported-version message is exact and clear. Dispatch behavior depends jointly on schema_version and version and therefore cannot be replaced by the v2 document schema."
+   }
+  ],
+  "helper_checks": [
+   {
+    "location": "agentic_coder_prototype/compilation/helper_runtime_primitives.py:103-142 (_compile_error, _require_text, _optional_text, _require_bool, _require_int, _require_sequence, _require_mapping)",
+    "check": "Reusable guards enforce non-empty text, optional string/null, strict boolean, strict integer with configurable minimum (explicitly excluding bool), non-string Sequence, and Mapping; all failures become one-error PrimitiveCompileError values with schema version, record id, and JSON Pointer.",
+    "schema_covered": "no",
+    "cross_field": false,
+    "error_quality": "Excellent compiler-boundary diagnostics: stable pointer plus concise expectation and record/schema identity. These are not covered by the agent-config v2 schema; emitted records are subsequently checked against their own primitive schemas by finalize_record."
+   },
+   {
+    "location": "helper_runtime_primitives.py:175-240 compile_context_resource_pack",
+    "check": "Uses _require_text for pack_id and every source's source_id/source_kind/uri/content-or-content_hash; _require_sequence for sources; _require_mapping per source and metadata; _require_int for order; _require_bool for model_visible/host_visible; explicit source_kind enum.",
+    "schema_covered": "no",
+    "cross_field": true,
+    "error_quality": "Strong indexed pointers. The content/content_hash alternative is a genuine cross-field input-resolution rule and the enum error prints the accepted set."
+   },
+   {
+    "location": "helper_runtime_primitives.py:243-351 compile_capability_registry",
+    "check": "Uses required/optional text for ids/timestamps/evidence/reason, integer for registry_revision, sequence/mapping for declarations/provider/metadata, and explicit enums for capability_type, discovery_mode, exposure_mode/state, visibility.",
+    "schema_covered": "no",
+    "cross_field": true,
+    "error_quality": "Strong indexed pointers and accepted enum sets. Duplicate capability_id first-wins/shadowing, disabled-declaration omission, and defaults derived from model_visible are cross-record/cross-field resolution semantics; note model_visible and disabled are coerced with bool rather than guarded by _require_bool."
+   },
+   {
+    "location": "helper_runtime_primitives.py:354-413 compile_extension_hook_execution",
+    "check": "Uses required text for execution/hook/event/status/time and effect identifiers/types/refs/status, integer for duration_ms, mapping for visibility/effects, sequence for effects, and explicit effect-status enum.",
+    "schema_covered": "no",
+    "cross_field": false,
+    "error_quality": "Strong indexed pointers and enum choices. Top-level status is only checked as non-empty text here; final primitive-schema validation supplies any enum restriction."
+   },
+   {
+    "location": "helper_runtime_primitives.py:415-516 compile_resource_access_bundle",
+    "check": "Uses required text for access/URI/content/operation/boundary/resolver/scope/root/media, explicit operation enum, strict booleans for redaction/approval/encryption, sequence/mapping for sidecars, optional non-negative integer returned_size_bytes, then derives hashes/resource/blob/access records.",
+    "schema_covered": "no",
+    "cross_field": true,
+    "error_quality": "Strong pointers, enum choices, and record-specific schema identity. Cross-field/resolution behavior includes defaulting returned size from content bytes, deciding truncation from returned versus actual size, deriving URI/hash fields, and approval/redaction projections. It does not reject returned_size_bytes greater than content length."
+   },
+   {
+    "location": "helper_runtime_primitives.py:519-536 compile_protocol_provider_policy_bundle",
+    "check": "No _require_* calls; directly finalizes three complete semantic records against bb.external_protocol_session.v1, bb.provider_route.v1, and bb.effective_operation_policy.v1.",
+    "schema_covered": "no",
+    "cross_field": false,
+    "error_quality": "Strong schema-derived PrimitiveCompileError pointers; tests demonstrate missing route_id, invalid role, and wrong bindings type diagnostics."
+   },
+   {
+    "location": "helper_runtime_primitives.py:539-550 compile_memory_work_bundle",
+    "check": "No _require_* calls; directly finalizes memory_compaction_plan and work_item against their primitive schemas.",
+    "schema_covered": "no",
+    "cross_field": false,
+    "error_quality": "Strong schema-derived pointers; tests cover missing plan_id, invalid nested state status, and wrong owner type."
+   },
+   {
+    "location": "helper_runtime_primitives.py:553-564 compile_projection_broker_bundle",
+    "check": "No _require_* calls; directly finalizes projection_event and side_effect_broker against their primitive schemas.",
+    "schema_covered": "no",
+    "cross_field": false,
+    "error_quality": "Strong schema-derived pointers; tests cover missing projection_event_id, invalid status frame, and wrong target_refs type."
+   }
+  ],
+  "consolidation_candidates": [
+   "In _validate_v2, remove the post-schema required-top loop, version==2, providers.default_model, per-model id/adapter, features/rlm object and boolean checks, blob-store integer checks, routing checks, episode check, observability/reviewer/resume checks, and all other branches marked `schema_covered=yes`; schema validation already runs first, so their custom messages are unreachable.",
+   "Split partial families: remove schema-covered object/type/enum/integer-minimum portions while retaining only constraints absent from schema, or preferably add the missing JSON Schema keywords first and then remove Python copies.",
+   "Add `minimum: 0` to schema numeric cost and timeout/backoff fields where Python requires non-negativity; add `exclusiveMinimum: 0` for verification tier timeout; add `minItems: 1` for verification commands (and, if intended, providers.models and loop.sequence). Once schema tests confirm parity, consolidate those Python checks into `_validate_agent_config_surface`.",
+   "The helper `_require_*` guards are schema-duplicative relative to each output primitive's own schema for many emitted fields, but they validate the compiler's input boundary before transformation and preserve input-oriented pointers. They are not provably covered by bb.agent_config_surface.v2 and should not be removed merely because finalize_record validates output."
+  ],
+  "must_keep": [
+   "_validate_agent_config_surface` itself and `_format_config_schema_error`: authoritative schema enforcement plus higher-quality JSON Pointer diagnostics.",
+   "Schema-version dispatch and unsupported-version rejection in build_config_view; this is selection logic outside any one schema.",
+   "Extends resolution and cycle detection/config graph traversal; filesystem and multi-document invariants cannot be expressed in the v2 document schema.",
+   "Non-negative constraints currently absent from schema: rlm max_total_cost_usd (global/per-branch), subcall/scheduling timeout_seconds, long-running total/max cost, recovery backoff base/max, and positive verification timeout.",
+   "Verification non-empty commands and any intentionally non-empty providers.models/loop.sequence rules until corresponding minItems constraints are confirmed/added to schema.",
+   "Long-running budget alias precedence (`total_*` falling back to `max_total_*`) because this is resolution semantics; consider normalizing aliases before schema validation rather than silently deleting it.",
+   "The helper compiler input guards where they preserve pre-transformation, caller-facing pointers; especially content-vs-content_hash, duplicate/disabled capability resolution, derived visibility/defaults, returned-size/content truncation, URI/hash derivation, and explicit enum errors.",
+   "Primitive finalize_record calls for all helper compile_* entrypoints; these validate complete emitted records and catch constraints not enforced by input guards."
+  ],
+  "test_files_guarding": [
+   "tests/compilation/test_config_surface_v2.py \u2014 guards schema error prefix/pointers, additional-properties wording, dossier type wording, exact unsupported schema-version message, and both loader entrypoints.",
+   "tests/compilation/test_config_view_and_tool_registry.py \u2014 parametrically guards `agent config schema error at <pointer>:` plus expected jsonschema message fragments.",
+   "tests/test_schema_v2_loader.py \u2014 guards many legacy dotted-path messages via pytest match: reset policy, episode max steps, recovery jitter/signature repeats, observability, verification timeout, reviewer, resume, budgets, rlm budget/scheduling/routing/batch fields.",
+   "tests/test_longrun_policy_profile_validation.py \u2014 guards the `long_running.policy_profile` diagnostic.",
+   "tests/e4_parity/test_helper_runtime_primitives.py \u2014 guards helper input and finalize_record error pointers/messages for every compile_* entrypoint, including `must be an array` and `expected one of` fragments."
+  ]
+ },
+ "S4_ci": {
+  "jobs": [
+   {
+    "name": "Compat break guard",
+    "what": "On pull requests, detects changes to parity-kernel compatibility surfaces and requires an explicit compatibility-review acknowledgement; uploads a JSON guard report."
+   },
+   {
+    "name": "Zero-importer advisory",
+    "what": "Non-blockingly reports newly changed Python modules with no importers and uploads the advisory report."
+   },
+   {
+    "name": "Danger-zone ACR guard",
+    "what": "On pull requests, enforces an architecture-change-record requirement for danger-zone paths and validates the Kernel Contract Pack hash snapshot."
+   },
+   {
+    "name": "ATP contract governance guard",
+    "what": "On pull requests, validates ATP-sensitive changes against the repository\u2019s contract-governance and PR-template policy."
+   },
+   {
+    "name": "Governance v2 templates guard",
+    "what": "Checks that governance-v2 policy artifacts remain correctly bound to the pull-request template."
+   },
+   {
+    "name": "Kernel-extension boundary guard",
+    "what": "Validates that kernel code does not violate the declared kernel-to-extension import boundaries."
+   },
+   {
+    "name": "Request-body byte stability gate",
+    "what": "Compares compatibility request-body fixtures with the checked-in byte-hash baseline and uploads a gate report."
+   },
+   {
+    "name": "Tool-schema hash stability gate",
+    "what": "Compares tool-definition schemas with the checked-in schema-hash baseline and uploads a gate report."
+   },
+   {
+    "name": "Event-envelope snapshot stability gate",
+    "what": "Validates generated event-envelope snapshots against the checked-in baseline and uploads a gate report."
+   },
+   {
+    "name": "E4 target-freeze manifest guard",
+    "what": "Validates E4 target-freeze manifest coverage and runs its focused unit test."
+   },
+   {
+    "name": "Conformance matrix sync guard",
+    "what": "Runs CT scenarios, regenerates matrix statuses, fails on scenario or synchronization errors, and uploads the generated matrix artifacts."
+   },
+   {
+    "name": "Replay determinism guard",
+    "what": "Runs replay-determinism unit coverage and validates a seeded replay report with the determinism gate."
+   },
+   {
+    "name": "Evidence bundle contract guard",
+    "what": "Runs the focused evidence-bundle-v1 contract tests when their prerequisite test file is present."
+   },
+   {
+    "name": "Extension-disabled regression lane",
+    "what": "With extensions disabled, checks kernel boundaries, runs the conformance matrix, and executes focused extension-off regression tests."
+   },
+   {
+    "name": "Extension-enabled smoke lane",
+    "what": "With extensions enabled, runs small ATP and EvoLake campaigns plus their shared smoke tests and uploads the resulting artifacts."
+   },
+   {
+    "name": "Conformance gate (ubuntu)",
+    "what": "Enforces conformance-scoreboard and provider-conformance baselines, checks selected documentation references, and uploads conformance reports."
+   },
+   {
+    "name": "Compat core (ubuntu)",
+    "what": "Runs onboarding/devx paths, core import and compatibility suites, extension-off invariants, import lint, compatibility artifact generation, and an optional SDK guardrail."
+   },
+   {
+    "name": "Compat break regen guard",
+    "what": "For explicitly acknowledged compatibility-breaking pull requests, regenerates request-body fixtures and fails if the checked-in fixtures differ."
+   },
+   {
+    "name": "ATP Firecracker (self-hosted)",
+    "what": "When opted in by repository variables, performs Firecracker snapshot preflight and runs the ATP Firecracker smoke, benchmark, load, and pool probes."
+   },
+   {
+    "name": "TUI (${{ matrix.os }})",
+    "what": "Across Ubuntu, macOS, and Windows, typechecks/tests/builds the TUI, runs CLI/package smokes, and on Ubuntu adds strict runtime and Tier-1 UI gates."
+   },
+   {
+    "name": "Live smoke (ubuntu)",
+    "what": "Installs the Python engine and Node TUI dependencies and runs the integrated Phase 12 live-smoke script."
+   },
+   {
+    "name": "VSCode Sidebar E2E (ubuntu)",
+    "what": "Typechecks and unit-tests the VS Code sidebar, runs its PR IDE-E2E suite when available, asserts a clean summary, and uploads artifacts."
+   },
+   {
+    "name": "Python (${{ matrix.os }})",
+    "what": "On Ubuntu, checks exported CLI-bridge contract drift, runs a broad targeted Python suite, and exercises CLI streaming/event-log chaos tests."
+   },
+   {
+    "name": "Python smoke (${{ matrix.os }})",
+    "what": "Across Ubuntu, macOS, and Windows, installs minimal dependencies and runs lightweight CLI-contract, import/profile, IR-converter, and auth-store tests."
+   }
+  ],
+  "product_lane_candidates": [
+   {
+    "test_or_cmd": "python -m pytest -q tests/test_e4_api_surface.py",
+    "why": "Direct product API-spine coverage: E4 router mounting, versioned endpoints, health behavior, catalog/claim/runtime-record handling, API errors, and CLI-bridge integration. This substantial existing file is absent from ci.yml\u2019s named Python suites.",
+    "est_runtime": "~10\u201330 seconds [INFERENCE]"
+   },
+   {
+    "test_or_cmd": "python -m pytest -q tests/compilation",
+    "why": "Exercises the product\u2019s configuration/compiler spine: config surface v2 and dossier variants, kernel emitter, config/tool-registry views, and effective-config graph construction.",
+    "est_runtime": "~10\u201340 seconds [INFERENCE]"
+   },
+   {
+    "test_or_cmd": "python -m pytest -q tests/e4_parity/test_validate_lane.py tests/e4_parity/test_config_explanation.py tests/e4_parity/test_lane_def_v2.py tests/e4_parity/test_lane_definitions.py",
+    "why": "Focused authoring front-door lane covering scripts/authoring/validate_lane.py and scripts/authoring/explain_agent_config.py, including public dossier explanation, schema validity, lane-definition validation, and diagnostics.",
+    "est_runtime": "~10\u201335 seconds [INFERENCE]"
+   },
+   {
+    "test_or_cmd": "python scripts/release/export_cli_bridge_contracts.py && git diff --exit-code docs/contracts/cli_bridge",
+    "why": "Canonical release-path OpenAPI/CLI-bridge export drift check. ci.yml already performs equivalent behavior through the legacy wrapper scripts/export_cli_bridge_contracts.py; the canonical command also proves the migrated release entry point.",
+    "est_runtime": "~2\u201310 seconds [INFERENCE]"
+   },
+   {
+    "test_or_cmd": "python -m pytest -q tests/test_cli_bridge_contract_exports.py",
+    "why": "Validates exported CLI-bridge/OpenAPI contract structure and complements the byte-level no-diff export command; it already appears in Python targeted and cross-platform smoke jobs.",
+    "est_runtime": "~2\u20138 seconds [INFERENCE]"
+   },
+   {
+    "test_or_cmd": "for d in sdk/ts-kernel-core sdk/ts-kernel-contracts sdk/ts-backbone sdk/ts-host-kits sdk/ts-orchestration-temporal sdk/ts-execution-driver-local sdk/ts-execution-driver-oci sdk/ts-execution-driver-remote sdk/ts-execution-drivers sdk/ts-host-bridges sdk/ts-host-t3 sdk/ts-transport-ai-sdk sdk/ts-workspace; do (cd \"$d\" && npm test) || exit; done",
+    "why": "Runs existing TypeScript SDK package tests for core, generated contracts, backbone, host kits/bridges, orchestration, transports, workspace, and execution drivers. ci.yml has no direct SDK package-test lane.",
+    "est_runtime": "~1\u20134 minutes with dependencies cached [INFERENCE]"
+   },
+   {
+    "test_or_cmd": "cd sdk/ts && npm run typecheck",
+    "why": "Checks the aggregate @breadboard/sdk public TypeScript entry point and declaration surface; the aggregate package exposes build/typecheck scripts but no test script.",
+    "est_runtime": "~5\u201320 seconds with dependencies cached [INFERENCE]"
+   },
+   {
+    "test_or_cmd": "bash scripts/dev/sdk_hello_live_smoke.sh",
+    "why": "End-to-end Python and TypeScript SDK hello verification against a temporary local engine; this is the most representative SDK product smoke.",
+    "est_runtime": "~30\u2013120 seconds [INFERENCE]"
+   }
+  ],
+  "nightly_battery": [
+   "Full E4 parity suite: `python -m pytest -q tests/e4_parity`. Run nightly or when `scripts/e4_parity/**`, `tests/e4_parity/**`, `contracts/kernel/**`, `docs/conformance/**`, compiler code, or agent dossiers change.",
+   "Real regeneration fixed-point: `python scripts/e4_parity/regen.py fixed-point --json artifacts/conformance/e4_regen_fixed_point.json`. Run nightly and when regeneration stages, stage inputs/outputs, claims, ledgers, catalog generation, schemas, or lane definitions change.",
+   "Keep `python -m pytest -q tests/e4_parity/test_regen_front_door.py` in ordinary PR coverage, but do not substitute that mocked/unit-level contract test for the real twice-run regeneration fixed-point.",
+   "Touched-path authoring/product battery: `python -m pytest -q tests/test_e4_api_surface.py tests/compilation tests/e4_parity/test_validate_lane.py tests/e4_parity/test_config_explanation.py` for changes to E4 API, compilation, authoring scripts, agent configs, or kernel config contracts.",
+   "Touched-path SDK battery for `sdk/**`, CLI-bridge contracts, or engine API changes: all SDK package tests, aggregate `sdk/ts` typecheck, and the live SDK hello smoke; the live cross-process check can remain nightly if unsuitable for every PR."
+  ],
+  "drift_check_gaps": [
+   "The real E4 fixed-point command exists at `scripts/e4_parity/regen.py fixed-point`, but no workflow invokes it. Unit tests cover its contract; CI does not prove that the repository\u2019s actual regeneration graph reaches a byte-identical fixed point.",
+   "E4 closure and evidence-hash freshness validators (`scripts/e4_parity/validate_e4_closure.py` and `scripts/e4_parity/validate_e4_report_hash_freshness.py`) are not run by ci.yml as checked-in repository-state drift gates.",
+   "E4 coverage/ledger validators (`scripts/e4_parity/validate_e4_coverage.py`, `scripts/e4_parity/validate_atomic_feature_ledger.py`, and `scripts/e4_parity/check_er_progress.py`) have no explicit ci.yml repository-state gate.",
+   "The authoring front doors (`scripts/authoring/validate_lane.py` and `scripts/authoring/explain_agent_config.py`) have focused tests, including public dossier coverage, but ci.yml neither selects those tests nor validates all committed dossiers/lane definitions directly.",
+   "TypeScript SDK packages contain tests under `sdk/ts-*/test`, but ci.yml has no direct SDK-package test matrix or aggregate SDK typecheck. The referenced `scripts/sdk_ci_guardrail.sh` is absent in this checkout, so Compat core explicitly skips its SDK doctor/smoke step.",
+   "The canonical exporter is `scripts/release/export_cli_bridge_contracts.py`, while ci.yml invokes the compatibility wrapper `scripts/export_cli_bridge_contracts.py`. Generated contracts are gated, but the canonical migrated release entry point is not exercised directly.",
+   "E4 target drift audit is absent from push/PR ci.yml and runs only in `e4-target-drift-audit-nightly.yml`; target-sensitive pull requests therefore lack a touched-path live-head/snapshot drift gate.",
+   "`scripts/research/parity/check_e4_snapshot_coverage.py` exists but is not invoked by ci.yml; wrapper/command migration tests do not validate current snapshot coverage."
+  ],
+  "workflow_files_other": [
+   ".github/workflows/e4-recalibration-snapshot.yml",
+   ".github/workflows/e4-target-drift-audit-nightly.yml",
+   ".github/workflows/evolake_toy_campaign_nightly.yml",
+   ".github/workflows/ink-reference-manifest-check.yml",
+   ".github/workflows/legacy_path_guard.yml",
+   ".github/workflows/longrun-phase1-gate.yml",
+   ".github/workflows/longrun-phase2-live-pilot.yml",
+   ".github/workflows/longrun-phase2-strict.yml",
+   ".github/workflows/longrun-phase2-trend-warn.yml",
+   ".github/workflows/longrun-phase2-warn.yml",
+   ".github/workflows/phase4-release-tag-preflight-manual.yml",
+   ".github/workflows/phase4-release-tag-preflight.yml",
+   ".github/workflows/render-profile-bless.yml",
+   ".github/workflows/render-profile-freeze-gate.yml",
+   ".github/workflows/tmux-e2e-soft-gate.yml",
+   ".github/workflows/tmux-phase4-fullpane-gate.yml",
+   ".github/workflows/tmux-phase4-fullpane-nightly.yml",
+   ".github/workflows/tmux-phase4-tier3-nightly.yml",
+   ".github/workflows/tui-goldens-tier2-nightly.yml"
+  ]
+ },
+ "S5a_tiers_kernel": {
+  "entries": [
+   {
+    "schema_id": "bb.agent_config_surface.v1",
+    "proposed_tier": "superseded_active",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/v2_loader.py (default/legacy surface validation and normalization; lifecycle registry explicitly supersedes it with v2)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.agent_config_surface.v2",
+    "proposed_tier": "config_algebra",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/v2_loader.py (_validate_v2, is_v2_config, and load_agent_config)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.blob_ref.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (compile_resource_records emits and validates blob/resource boundary records)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.checkpoint_metadata.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/checkpointing/checkpoint_manager.py; agentic_coder_prototype/longrun/checkpoint.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.config_explanation.v1",
+    "proposed_tier": "config_algebra",
+    "consumer_evidence": [
+     "scripts/authoring/explain_agent_config.py (SCHEMA_VERSION and emitted explanation record); agentic_coder_prototype/compilation/primitive_records.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.config_mutation_record.v1",
+    "proposed_tier": "config_algebra",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/primitive_records.py; scripts/e4_parity/seed_atomic_feature_ledger.py (config-migration/writeback mapping)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.context_resource_pack.v1",
+    "proposed_tier": "config_algebra",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (compile_context_resource_pack); scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.coordination_delegated_verification_reference_slice.v1",
+    "proposed_tier": "evidence",
+    "consumer_evidence": [
+     "scripts/build_python_reference_contract_fixtures.py (delegated-verification reference output/fixture)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.coordination_intervention_reference_slice.v1",
+    "proposed_tier": "evidence",
+    "consumer_evidence": [
+     "scripts/build_python_reference_contract_fixtures.py (intervention reference output/fixture)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.coordination_longrun_reference_slice.v1",
+    "proposed_tier": "evidence",
+    "consumer_evidence": [
+     "scripts/build_python_reference_contract_fixtures.py (long-run reference outputs/fixtures)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.coordination_multi_worker_reference_slice.v1",
+    "proposed_tier": "evidence",
+    "consumer_evidence": [
+     "scripts/build_python_reference_contract_fixtures.py (multi-worker complete/blocked reference fixtures)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.coordination_reference_slice.v1",
+    "proposed_tier": "evidence",
+    "consumer_evidence": [
+     "scripts/build_python_reference_contract_fixtures.py (supervisor complete/blocked reference fixtures)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.coordination_verification_result.v1",
+    "proposed_tier": "evidence",
+    "consumer_evidence": [
+     "scripts/build_python_reference_contract_fixtures.py (embedded delegated verification result); scripts/release/validate_kernel_contract_fixtures.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.directive.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/orchestration/coordination.py (constructs and validates directives); scripts/release/validate_kernel_contract_fixtures.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.distributed_task_descriptor.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/build_python_reference_contract_fixtures.py (task descriptors); scripts/release/validate_kernel_contract_fixtures.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.environment_selector.v2",
+    "proposed_tier": "config_algebra",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/primitive_records.py (registered primitive validation); contracts/kernel/registries/schema_lifecycle.v1.json marks v2 active/default and v1 frozen"
+    ],
+    "confidence": "medium"
+   },
+   {
+    "schema_id": "bb.execution_capability.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (minimal and invalid boundary fixtures)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.execution_placement.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py; scripts/e4_parity/fixtures/p3_lane_fixtures.py (embedded sandbox placement record)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.extension_hook_execution.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (compiler/validator); scripts/e4_parity/adapters/pi_p5_l2_capture.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.external_protocol_session.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/helper_runtime_primitives.py; scripts/e4_parity/oh_my_pi_p6_lane_projection.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.kernel.common.v1",
+    "proposed_tier": "config_algebra",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/primitive_records.py (shared $ref schema registration); agentic_coder_prototype/conformance/c4_chain.py; scripts/e4_parity/lint_contract_conventions.py"
+    ],
+    "confidence": "medium"
+   },
+   {
+    "schema_id": "bb.memory_compaction_plan.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/helper_runtime_primitives.py; scripts/e4_parity/adapters/oh_my_pi_l5_projection.py; scripts/e4_parity/adapters/pi_p5_l2_capture.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.permission.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/build_python_reference_contract_fixtures.py (permission contract); scripts/release/validate_kernel_contract_fixtures.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.projection_event.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/helper_runtime_primitives.py; scripts/e4_parity/adapters/oh_my_pi_l6_projection.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.provider_exchange.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/build_python_reference_contract_fixtures.py (provider exchange/fallback reference contracts); scripts/release/validate_kernel_contract_fixtures.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.provider_route.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/helper_runtime_primitives.py; scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.registry.v1",
+    "proposed_tier": "config_algebra",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/primitive_records.py (registered generic registry envelope); contracts/kernel/packs.v1.json itself is a bb.registry.v1 instance"
+    ],
+    "confidence": "medium"
+   },
+   {
+    "schema_id": "bb.replay_session.v1",
+    "proposed_tier": "evidence",
+    "consumer_evidence": [
+     "scripts/e4_parity/seed_atomic_feature_ledger.py (north-star capture/replay campaign mappings); scripts/release/validate_kernel_contract_fixtures.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.resource_access.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (resource access compiler/validator); agentic_coder_prototype/compilation/visibility_adapters.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.resource_ref.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (resource reference compiler/validator); scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.review_verdict.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/orchestration/coordination.py (constructs and validates review verdicts); scripts/build_python_reference_contract_fixtures.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.run_context.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (minimal and invalid boundary fixtures)"
+    ],
+    "confidence": "medium"
+   },
+   {
+    "schema_id": "bb.run_request.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (minimal and invalid boundary fixtures)"
+    ],
+    "confidence": "medium"
+   },
+   {
+    "schema_id": "bb.sandbox_request.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (sandbox round-trip request fixture validation)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.sandbox_result.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (sandbox round-trip result fixture validation)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.schema_lifecycle.v1",
+    "proposed_tier": "evidence",
+    "consumer_evidence": [
+     "scripts/e4_parity/lint_schema_lifecycle.py (loads and validates lifecycle governance registry)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.side_effect_broker.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (compiler/validator); scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.signal.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/orchestration/coordination.py (constructs signals); scripts/release/validate_kernel_contract_fixtures.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.task.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (task/subagent reference fixture validation)"
+    ],
+    "confidence": "medium"
+   },
+   {
+    "schema_id": "bb.terminal_cleanup_result.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (minimal terminal cleanup boundary fixture)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.terminal_interaction.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (minimal terminal interaction boundary fixture)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.terminal_output_delta.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (minimal terminal output-delta boundary fixture)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.terminal_registry_snapshot.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (minimal terminal registry snapshot boundary fixture)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.terminal_session_descriptor.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (minimal terminal session descriptor boundary fixture)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.terminal_session_end.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/release/validate_kernel_contract_fixtures.py (minimal terminal session-end boundary fixture)"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.tool_binding.v1",
+    "proposed_tier": "config_algebra",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/primitive_records.py provides the schema-validation infrastructure, but no direct schema-id use was found in the requested source roots"
+    ],
+    "confidence": "medium"
+   },
+   {
+    "schema_id": "bb.tool_spec.v2",
+    "proposed_tier": "config_algebra",
+    "consumer_evidence": [
+     "agentic_coder_prototype/compilation/primitive_records.py (registered active v2 primitive); contracts/kernel/registries/schema_lifecycle.v1.json marks v2 active/default and v1 frozen"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.transcript_continuation_patch.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "scripts/e4_parity/adapters/oh_my_pi_l5_projection.py; scripts/e4_parity/adapters/pi_p5_l2_capture.py; scripts/release/validate_kernel_contract_fixtures.py"
+    ],
+    "confidence": "high"
+   },
+   {
+    "schema_id": "bb.wake_subscription.v1",
+    "proposed_tier": "host_protocol",
+    "consumer_evidence": [
+     "agentic_coder_prototype/orchestration/orchestrator.py (filters persisted subscriptions by schema version); scripts/build_python_reference_contract_fixtures.py"
+    ],
+    "confidence": "high"
+   }
+  ],
+  "notes": [
+   "Scope is exactly the 49 kernel-pack schemas left after removing the 12 runtime_protocol IDs supplied by the caller.",
+   "No remaining kernel-pack entry is proposed as frozen_legacy. The only remaining superseded schema is bb.agent_config_surface.v1; bb.tool_spec.v1 and environment_selector.v1 are frozen but are in the separate legacy_frozen pack and therefore outside this assignment.",
+   "Tier rule applied: authoring/config surfaces, reusable schema algebra, registries, selectors, and tool declarations are config_algebra; execution-environment, provider, permission, resource, orchestration, checkpoint, terminal, and other host-boundary records are host_protocol; reference slices, replay/campaign, verification, and lifecycle-governance records are evidence.",
+   "The phrase 'consumer evidence' includes generators and boundary validators in the two requested source roots. Fixture-only validation is weaker evidence than a live runtime producer/consumer and is reflected by medium confidence for run_context, run_request, and task.",
+   "bb.tool_binding.v1 had no direct schema-id occurrence in agentic_coder_prototype/ or scripts/ in the broad search. Its config_algebra placement is based on its declared tool-binding role and proximity to the active tool-spec/config compilation family; confidence is therefore medium.",
+   "bb.kernel.common.v1 is a shared definitions schema rather than a record family. config_algebra is the closest available tier because primitive validators register it to resolve cross-schema definitions; this boundary judgment is medium confidence.",
+   "packs.v1.json and contracts/kernel/schemas/README.md agree on kernel membership and describe the pack as active, but the lifecycle registry is more precise about per-version generation status (notably agent_config_surface.v1)."
+  ]
+ },
+ "S6_cli": {
+  "entry_points": [
+   {
+    "script": "scripts/authoring/explain_agent_config.py",
+    "purpose": "Loads an agent YAML config through the v2 config loader, resolves its effective surface (including extends, modes, tools, prompt/path references), classifies fields using contracts/kernel/registries/config_surface_fields.v1.json, and emits a finalized bb.config_explanation.v1 JSON record with diagnostics.",
+    "key_flags": [
+     "--config PATH (required; repo-root-relative or absolute agent config)",
+     "--json PATH (optional output file; otherwise stdout)",
+     "--strict (warnings become exit 2 when there are no errors)"
+    ],
+    "exit_behavior": "0 when there are no error diagnostics (warnings allowed unless --strict); 1 when any diagnostic has severity=error; 2 when --strict is set and there are warnings but no errors. argparse usage/input errors also exit 2. The script writes JSON even when its diagnostic result is nonzero."
+   },
+   {
+    "script": "scripts/authoring/validate_lane.py",
+    "purpose": "Validates one E4 lane definition plus its surrounding contract: lane schema, adapter/translator/comparator registry membership, capture inputs, artifact root, canonical inventory agreement, assertion IDs, claim scope, reverify command, freshness of accepted evidence bindings, and the metadata-non-normative sentinel. Emits bb.lane_validation_report.v1 JSON.",
+    "key_flags": [
+     "--lane ID_OR_PATH (required; lane_id or lane-definition path)",
+     "--json PATH (optional output file; otherwise stdout)"
+    ],
+    "exit_behavior": "0 only when report.ok is true; 1 when any reported check fails. Missing/unloadable lanes become a structured failed report rather than an uncaught lookup error. argparse usage errors exit 2."
+   },
+   {
+    "script": "scripts/authoring/render_field_table.py",
+    "purpose": "Renders the config-surface field registry as a sorted Markdown table showing field, classification, runtime consumer, and public-dossier usage count.",
+    "key_flags": [
+     "--registry PATH (optional; defaults to contracts/kernel/registries/config_surface_fields.v1.json)"
+    ],
+    "exit_behavior": "Returns 0 after printing Markdown to stdout. File/JSON errors are not converted into a stable CLI result and therefore escape with a traceback/nonzero interpreter exit; argparse errors exit 2."
+   },
+   {
+    "script": "scripts/e4_parity/run_lane.py",
+    "purpose": "Runs one E4 lane, or the predefined north-star lane set, from lane-definition and inventory data across capture/normalize/replay/compare/claim stages. It supports scratch output and guarded promotion of accepted artifacts. Important behavioral caveat: data-defined capture and the normalize/replay/compare stages can return successful 'skipped' metadata rather than executing artifact writers; claim runs the lane reverify command, while adapter captures can execute registered implementations.",
+    "key_flags": [
+     "--lane LANE_ID|north-star (required)",
+     "--stage capture|normalize|replay|compare|claim|all (default all)",
+     "--out PATH (scratch output root)",
+     "--promote-accepted (permits accepted-root writes; accepted lanes otherwise require --out)",
+     "--defer-promotion-refresh",
+     "--defer-derived-writes (only valid with capture + promote + deferred refresh + no --out)",
+     "--json",
+     "--lane-def-dir PATH",
+     "--inventory PATH",
+     "--comparator-registry PATH"
+    ],
+    "exit_behavior": "0 when every selected lane/stage result has returncode 0, including metadata-only skipped stages; 1 when an executed stage reports failure; 2 for LaneRunError/configuration errors such as unknown lane, invalid promotion combination, or inconsistent lane/inventory config_id. With --json it emits a result object; without it, errors go to stderr and successes print one summary line per stage. argparse errors exit 2."
+   },
+   {
+    "script": "scripts/e4_parity/regen.py",
+    "purpose": "Single script front door for the E4 evidence-regeneration DAG: execute it, explain its plan, verify a two-pass fixed point, or classify an existing failed-run JSON log.",
+    "key_flags": [
+     "global --python EXECUTABLE (defaults to current interpreter)",
+     "run [--json [OUT]]",
+     "explain [--json [OUT]]",
+     "fixed-point [--json [OUT]]",
+     "classify --log PATH [--json [OUT]]",
+     "For --json: omitted means normal text behavior; flag without OUT writes JSON to stdout; flag with OUT writes that file and prints 'wrote PATH'."
+    ],
+    "exit_behavior": "run returns the regeneration pipeline's code; an invalid stage graph returns 2. explain returns 0 for a valid graph and 2 for an invalid graph. fixed-point returns 0 only if both passes succeed and the watched write set is byte-identical, otherwise 1. classify returns 0 after producing a classification; malformed/missing input is not normalized and can raise. argparse errors exit 2."
+   },
+   {
+    "script": "scripts/e4_parity/scaffold_e4_target_lane.py",
+    "purpose": "Creates a deterministic, scaffold-only E4 target-lane workspace under docs_tmp/phase_15/lane_scaffolds, including probe/manifest records and optionally draft inventory, lane definition, builder, and comparator files. It explicitly prevents writes to accepted evidence/config roots.",
+    "key_flags": [
+     "--lane-id ID (required)",
+     "--config-id ID (required)",
+     "--target-family ID (required)",
+     "--target-version VERSION (required)",
+     "--provider-model MODEL (default no-provider)",
+     "--sandbox-mode MODE (default fixture_only)",
+     "--run-id ID",
+     "--out-dir PATH (must remain under the fixed scaffold root)",
+     "--dry-run-json",
+     "--emit-inventory-row",
+     "--emit-builder-skeleton",
+     "--emit-comparator-skeleton",
+     "--emit-lane-def"
+    ],
+    "exit_behavior": "0 after printing a deterministic JSON summary (and, unless dry-run, writing the scaffold); 1 for caught validation, safety, schema, or I/O exceptions, with a prefixed error on stderr. argparse errors exit 2."
+   },
+   {
+    "script": "agentic_coder_prototype/api/cli_bridge/server.py / agentic_coder_prototype.api.cli_bridge.app:create_app",
+    "purpose": "Starts the FastAPI 'BreadBoard CLI Bridge'. server.py loads repo .env and .env.local without overriding existing environment, constructs the app with create_app(), and runs uvicorn. app.py also exports module-level app=create_app(), and create_app is usable as a uvicorn factory.",
+    "key_flags": [
+     "No argparse flags in server.py; configuration is environmental",
+     "BREADBOARD_CLI_HOST (default 127.0.0.1)",
+     "BREADBOARD_CLI_PORT (default 9099)",
+     "BREADBOARD_CLI_RELOAD (any nonempty string enables reload)",
+     "BREADBOARD_CLI_LOG_LEVEL (default info)",
+     "BREADBOARD_API_TOKEN",
+     "BREADBOARD_ALLOW_INSECURE_REMOTE=1|true|yes (unsafe override for external bind)",
+     "Documented factory invocation: python -m uvicorn agentic_coder_prototype.api.cli_bridge.app:create_app --factory --host HOST --port PORT"
+    ],
+    "exit_behavior": "Normally remains running until uvicorn shutdown, then follows uvicorn's process behavior. Before startup it fails closed with SystemExit when binding to a non-loopback host without BREADBOARD_API_TOKEN or the explicit insecure override. Invalid port text raises during int conversion. create_app() itself returns a FastAPI object and has no process exit semantics."
+   }
+  ],
+  "session_flow_endpoints": [
+   "POST /v1/sessions \u2014 create a session. Minimal body still requires both config_path and task; optional fields are overrides, metadata, workspace, max_steps, permission_mode, and stream (default true). Response provides session_id, status, created_at, and optional logging_dir.",
+   "POST /v1/sessions/{session_id}/input \u2014 send subsequent user input. Body requires nonblank content and may include attachment IDs. Returns HTTP 202 with {status: \"accepted\"}.",
+   "GET /v1/sessions/{session_id}/records \u2014 read persisted session records. Optional query parameters: schema_version, offset (default 0), limit (default 100; 1..1000). This route has no unversioned alias in the inspected app.",
+   "GET /v1/sessions/{session_id}/events \u2014 SSE stream (media type text/event-stream). Optional replay boolean, limit integer, and from_id cursor; the cursor may instead be supplied as Last-Event-ID. Event IDs support resume/replay validation.",
+   "The create/input/events routes also have legacy unversioned /sessions aliases in app.py, but the stable minimal flow should use /v1. Alias exposure is configuration-dependent in create_app; records is v1-only."
+  ],
+  "packaging": {
+   "console_scripts": [],
+   "pyproject_or_setup": "There is no root pyproject.toml, setup.py, or setup.cfg in the inspected repository, so Python packaging declares no console_scripts and server.py is not installed as a Python command. The only current `breadboard` executable mapping found is the private Node package tui_skeleton/package.json: `\"bin\": {\"breadboard\": \"dist/main.js\"}`. Its build runs scripts/installLocalBin.ts, so this command is the compiled TUI entry, not a Python authoring/harness command and not a published root Python console script."
+  },
+  "gaps_for_front_door": [
+   "No root distributable CLI package or unified parser exists. The Python entry points are direct scripts, while the name `breadboard` belongs to a private TUI package's dist/main.js; ownership/routing of the command must be unified without breaking the interactive TUI.",
+   "There is no single command model or shared option vocabulary. Inputs are variously --config, --lane, four scaffold identity flags, environmental server configuration, and regen subcommands; output switches also differ (--json PATH, boolean --json, optional-value --json, and --dry-run-json).",
+   "`init` has no direct product-level equivalent. scaffold_e4_target_lane is narrowly E4/campaign-specific, requires lane/config/target identity up front, can only write beneath docs_tmp/phase_15/lane_scaffolds, and emits drafts/placeholders rather than initializing a normal user harness/project.",
+   "`validate` is lane-only. There is no unified validation dispatcher for an initialized harness/agent config, no direct config validator command paired with explain, and render_field_table is another standalone authoring utility.",
+   "`explain` is split between agent-config explanation and regeneration-plan explanation. A front door needs an explicit object model and dispatch rule (for example, harness config versus regen plan) plus one stable JSON/stdout contract.",
+   "`run` is ambiguous between interactive session execution, E4 lane execution, and full evidence regeneration. run_lane is an internal conformance runner whose normalize/replay/compare stages may succeed as skipped metadata, not a general harness runner. The actual runtime flow is exposed through the HTTP server/session API rather than a local unified command.",
+   "`lock` has no corresponding inspected entry point. regen fixed-point verifies regenerated bytes but does not create/update a user-facing dependency/config lock; promotion/accepted-root writes are instead controlled by specialized run_lane flags and regeneration stages.",
+   "The authoring scripts and runtime server do not share a common application/service layer exposed as CLI commands. A unified front door would need adapters around build_explanation, validate_lane, scaffold creation, session create/input/event handling (or server lifecycle), lane running, and whatever lock semantics are chosen.",
+   "Exit codes are inconsistent and partly accidental: explain uses 1 for errors and 2 for strict warnings; validate uses 1 for failed checks; run_lane reserves 2 for contract/config errors; scaffold collapses caught failures to 1; renderer and some regen paths allow tracebacks. A public CLI needs a documented, stable taxonomy.",
+   "Machine-output behavior is inconsistent: some commands always emit JSON, one emits Markdown, run_lane defaults to text, regen's --json optionally consumes a path, and server startup is environment-only. A single front door needs consistent `--json`/`--output`, stdout/stderr separation, and schemas.",
+   "Configuration/path resolution is repository-layout-dependent: scripts derive ROOT from their own location, rely on checked-in registries/contracts/config/evidence, and in places write to sibling workspace docs_tmp. They are not yet relocatable installed commands.",
+   "The server has no declared console entry and no CLI flags; users must know module paths or environment variables. The front door must decide whether `breadboard harness run` starts/owns the server, talks to an existing server, or runs the session service in-process.",
+   "The minimal session API requires both config_path and an initial task at creation, then supports further input asynchronously via 202 plus SSE/records. A CLI run UX needs lifecycle policy: wait/attach/detach behavior, SSE reconnect via Last-Event-ID/from_id, terminal-state handling, record pagination, authentication/base URL, and propagation of server errors to process exit.",
+   "Legacy and stable API paths coexist unevenly: create/input/events have unversioned aliases, records does not, and alias availability is controlled by app configuration. A front door/client must standardize on /v1 and avoid assuming legacy aliases.",
+   "Remote server safety/auth is environment-driven. A unified command needs explicit host/port/token handling while preserving server.py's fail-closed rule for non-loopback unauthenticated binds.",
+   "There is no demonstrated end-to-end command connecting init \u2192 validate \u2192 explain \u2192 run \u2192 lock over one durable harness artifact. Existing tools operate on different domain artifacts (agent config, E4 lane definition, regeneration DAG, HTTP session), so the primary missing design is a canonical harness manifest and lifecycle, not merely argparse aliases."
+  ]
+ },
+ "S7_stages": {
+  "adapter_entries": [
+   {
+    "id": "identity",
+    "impl": "scripts.e4_parity.adapters.identity:translate",
+    "kind": "translator",
+    "call_signature": "translate(payload: Any, *, config: Mapping[str, Any] | None = None) -> Any"
+   },
+   {
+    "id": "north_star_stored_report_replay",
+    "impl": "scripts.e4_parity.adapters.stored_report:compare",
+    "kind": "comparator",
+    "call_signature": "compare(*args: Any, **kwargs: Any) -> dict[str, Any]"
+   },
+   {
+    "id": "codex_stored_report_replay",
+    "impl": "scripts.e4_parity.adapters.stored_report:compare",
+    "kind": "comparator",
+    "call_signature": "compare(*args: Any, **kwargs: Any) -> dict[str, Any]"
+   },
+   {
+    "id": "oh_my_pi_stored_report_replay",
+    "impl": "scripts.e4_parity.adapters.stored_report:compare",
+    "kind": "comparator",
+    "call_signature": "compare(*args: Any, **kwargs: Any) -> dict[str, Any]"
+   },
+   {
+    "id": "pi_stored_report_replay",
+    "impl": "scripts.e4_parity.adapters.stored_report:compare",
+    "kind": "comparator",
+    "call_signature": "compare(*args: Any, **kwargs: Any) -> dict[str, Any]"
+   },
+   {
+    "id": "semantic_replay_v1",
+    "impl": "scripts.e4_parity.adapters.semantic_replay:compare",
+    "kind": "comparator",
+    "call_signature": "compare(*args: Any, **kwargs: Any) -> dict[str, Any]"
+   },
+   {
+    "id": "north_star_package_capture",
+    "impl": "scripts.e4_parity.adapters.package_capture:capture",
+    "kind": "capture_adapter",
+    "call_signature": "capture(*args: Any, **kwargs: Any) -> Any (delegates directly to build_lane_from_definition)"
+   },
+   {
+    "id": "lane_definition_build",
+    "impl": "scripts.e4_parity.adapters.lane_definition_build:capture",
+    "kind": "capture_adapter",
+    "call_signature": "capture(lane_def: Mapping[str, Any], inventory_lane: Mapping[str, Any] | None = None, *, promote_accepted: bool, out_dir: Path | None = None) -> dict[str, Any]"
+   },
+   {
+    "id": "accepted_artifact_materialize",
+    "impl": "scripts.e4_parity.adapters.accepted_artifact_materialize:capture",
+    "kind": "capture_adapter",
+    "call_signature": "capture(lane_def: Mapping[str, Any], inventory_lane: Mapping[str, Any] | None = None, *, promote_accepted: bool, out_dir: Path | None = None) -> dict[str, Any]"
+   },
+   {
+    "id": "oh_my_pi_compiler_capture",
+    "impl": "scripts.e4_parity.adapters.oh_my_pi_compiler_capture:capture",
+    "kind": "capture_adapter",
+    "call_signature": "capture(lane_def: Mapping[str, Any], inventory_lane: Mapping[str, Any] | None = None, *, promote_accepted: bool, out_dir: Path | None = None) -> dict[str, Any]"
+   },
+   {
+    "id": "pi_p5_l1_capture",
+    "impl": "scripts.e4_parity.adapters.pi_p5_l1_capture:capture",
+    "kind": "capture_adapter",
+    "call_signature": "capture(lane_def: Mapping[str, Any] | None = None, inventory_lane: Mapping[str, Any] | None = None, *, promote_accepted: bool, out_dir: Path | None = None) -> dict[str, Any]"
+   },
+   {
+    "id": "pi_p5_l2_capture",
+    "impl": "scripts.e4_parity.adapters.pi_p5_l2_capture:capture",
+    "kind": "capture_adapter",
+    "call_signature": "capture(lane_def: Mapping[str, Any] | None = None, inventory_lane: Mapping[str, Any] | None = None, *, promote_accepted: bool, out_dir: Path | None = None) -> dict[str, Any]"
+   }
+  ],
+  "translator_registry": [
+   "The only translator registry entry is id='identity', status='active', metadata.kind='translator', metadata.impl='scripts.e4_parity.adapters.identity:translate', metadata.config_keys=[].",
+   "Lane-def v2 loading validates normalize.translator against contracts/kernel/registries/e4_adapters.v1.json via assert_registered('e4_adapters', value, expected_kind='translator'); every checked lane definition currently names identity.",
+   "run_lane does not invoke the translator callable. Its normalize stage is metadata-only and reports translator=<normalize.translator>, skipped=true, reason='identity/data-only normalize stage has no artifact writer'.",
+   "normalize.config.record_builders are consumed specifically by scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py: capture() -> _validate_config()/_record_builders(), then _execute_record_builders(). Each builder requires id, projection equal to id, registered PROJECTIONS membership, schema_version, source declared in capture.inputs, and a nonempty duplicate-free records list. It calls PROJECTIONS[builder_id](_projection_context(...)), normalizes/finalizes projected records, rejects duplicate output record keys, and accumulates derived_facts. The resulting builders/records/facts feed _capture_projection_packet or capture_p3_remaining. Thus record_builders are adapter configuration, not dynamically dispatched through the identity translator.",
+   "Other normalize.config readers exist for adjacent configuration: regenerate_evidence.py and run_lane.py inspect roles to determine write/read sets; oh_my_pi_p3_remaining_capture.py and oh_my_pi_projection_packet.py consume packet_constants/roles. The actual record_builders execution remains owned by oh_my_pi_compiler_capture.py."
+  ],
+  "comparator_registry": [
+   "Registry top-level shape: {schema_version: 'bb.e4.comparator_registry.v1', registry_id: 'e4_comparator_registry_v1', generated_at_utc: string, comparators: [...]}",
+   "Each comparator entry shape is {comparator_class, comparator_id, entrypoint: {module, callable}, input_roles: ['capture_ref','replay_ref','comparator_ref'], lane_ids: string[], report_schema_version: 'bb.e4.comparator_report.v1'}.",
+   "oh_my_pi_stored_report_replay | deterministic_replay | conformance.comparators.oh_my_pi:compare | 15 Oh-My-Pi P3/P6 lane ids.",
+   "pi_stored_report_replay | deterministic_replay | conformance.comparators.pi:compare | pi_p5_l1_cli_config_context_tool_surface, pi_p5_l2_extension_session_residual.",
+   "codex_stored_report_replay | deterministic_replay | conformance.comparators.codex_cli:compare | codex_cli_e4_capture_probe_v1.",
+   "semantic_replay_v1 | semantic_replay | conformance.comparators.semantic_replay:compare | semantic_replay_oh_my_pi_p6_6_task_job_subagent.",
+   "north_star_stored_report_replay | deterministic_replay | conformance.comparators.stored_report:compare | claude_code_north_star_capture_v1, opencode_north_star_capture_v1, breadboard_self_runtime_records_v1.",
+   "protocol.py defines ComparatorAssertion TypedDict: assertion_id:str, status: Literal['passed','failed','warned'], observed:Any, expected:Any, detail:str. ComparatorInput TypedDict: capture:dict[str,Any], replay:dict[str,Any], scope:dict[str,Any], artifacts:Mapping[str,Path], optional repo_root:Path. Comparator Protocol exact call is __call__(self, inp: ComparatorInput) -> dict[str, Any], documented to return a bb.e4.comparator_report.v1-shaped record.",
+   "run_lane's compare stage resolves registry membership by comparator_id plus lane_id but does not import/call registry.entrypoint; it emits metadata and defers rerun/diff to the claim command."
+  ],
+  "stage_flow": [
+   "Exact ALL_STAGES order is ('capture', 'normalize', 'replay', 'compare', 'claim'); --stage all expands to that list.",
+   "Capture: resolve capture.strategy='adapter' through active e4_adapters capture_adapter metadata.impl using importlib and getattr; invoke exactly adapter_capture(lane_def, inventory_lane, promote_accepted=promote_accepted, out_dir=out_dir). If no adapter, execute capture.argv when present; promotion can instead call build_lane_from_definition; otherwise emit metadata skip.",
+   "Normalize: no command execution; metadata-only skip.",
+   "Replay: no command execution; metadata-only skip.",
+   "Compare: resolve the comparator registry entry by compare.comparator and lane membership; metadata-only skip.",
+   "Claim: choose argv in priority order lane_def.reverify_command.argv, inventory reverify_command.argv, inventory ct.command.argv; retarget --json-out under --out, subprocess.run it, and stop the stage loop on nonzero return code. Any adapter packet with row.ok false likewise stops later stages.",
+   "The outer report is {'ok': all(stage.returncode == 0), 'lane_id': lane_id, 'stages': stage-result[]}. Note that successful skipped stages have returncode 0 and therefore count as ok."
+  ],
+  "skip_semantics": [
+   "Capture/data-defined exact text: 'data-defined capture uses checked-in canonical artifacts; no lane-specific packet builder is executed'. Shape also includes strategy, inputs, artifacts_root, skipped=true.",
+   "Normalize exact text: 'identity/data-only normalize stage has no artifact writer'. Shape also includes translator and skipped=true.",
+   "Replay exact text: 'stored replay stage has no artifact writer'. Shape also includes comparator_class and skipped=true.",
+   "Compare exact text: 'comparator registry resolved; C4 claim stage performs rerun/diff'. Shape also includes comparator_id, entrypoint and skipped=true.",
+   "Unsafe generic capture exact text: 'capture argv has no --json-out contract; unsafe to run through generic lane runner'. This yields returncode=0 and skipped=true.",
+   "Promotion refresh deferral exact text: 'deferred by --defer-promotion-refresh'. Shape is {'skipped': true, 'reason': ...}.",
+   "Isolated/deferred-derived capture promotion refresh exact text: 'derived writes deferred to canonical DAG owners'. Shape is {'skipped': true, 'reason': ...}.",
+   "Stage processing stops after the first nonzero command returncode or capture packet with ok=false; remaining stages are absent, not emitted as skipped."
+  ],
+  "stage_report_shapes": [
+   "Metadata base: {stage, lane_id, returncode:0}; capture adds strategy, inputs, artifacts_root, skipped:true, reason; normalize adds translator, skipped:true, reason; replay adds comparator_class, skipped:true, reason; compare adds comparator_id, entrypoint:{module,callable}, skipped:true, reason.",
+   "Capture-adapter / promoted lane builder: {stage:'capture', lane_id, returncode:0|1, artifact_writer:<adapter id or 'run_lane'>, output_path:<packet row node_gate>, promotion_refresh:<object|null>, packet_report:<adapter/builder row>}.",
+   "Command-backed capture or claim: {stage, lane_id, command:string[], returncode:int, output_path:string, accepted_path:string, stdout:string, stderr:string}; conditionally output_sha256, accepted_sha256, byte_parity, and accepted_compatible_rewrite:true.",
+   "Unsafe capture argv skip: {stage:'capture', lane_id, returncode:0, skipped:true, reason}.",
+   "Deferred-derived isolated capture: capture-stage result includes stage, lane_id, returncode, artifact_writer, output_path, promotion_refresh:{skipped:true,reason:'derived writes deferred to canonical DAG owners'}, packet_report, promoted_paths, scratch_root (as constructed by _run_isolated_capture).",
+   "There is no single per-stage schema_version in run_lane output. Separately, governed packet artifacts produced by adapters have their own schemas, including bb.e4.raw_capture_manifest.v1, bb.e4.bb_replay_result.v1, bb.e4.comparator_report.v1, bb.e4.parity_results.v1, bb.e4.secret_scan_report.v1, bb.e4.c4_prevalidation_report.v1, bb.e4.support_claim.v2/v4 as lifecycle-selected, bb.e4.evidence_manifest.v1, and bb.e4.c4_chain_validation_report.v1."
+  ],
+  "c4_claim_cmd": "For the representative oh_my_pi_p3_1_effective_config_graph_compiler lane, the exact argv joined as a command string is: .venv/bin/python scripts/validate_e4_c4_chain.py --config-id oh_my_pi_p3_1_effective_config_graph_compiler_v1 --support-claim docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json --evidence-manifest docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json --json-out artifacts/conformance/node_gate/ct_p3_oh_my_pi_p31_effective_config_graph_c4_chain.json --check-only (cwd='.'). This is lane-specific rather than one global literal: run_lane reads the exact argv from lane_def.reverify_command first, then inventory reverify_command, then inventory ct.command; all current lane commands use the same validator/flag structure with lane-specific config, claim, manifest, and node-gate paths."
+ },
+ "S8_demo": {
+  "candidate_targets": [
+   {
+    "name": "Aider",
+    "why_bounded": "A small, mature OSS terminal coding agent with a sharply testable profile: one-file edit tasks; explicit chat modes such as ask/code/architect; and explicit edit protocols such as whole-file, search/replace diff, and unified-diff variants. A first lane can freeze one model, one edit format, one file, no git commit, and assert the emitted edit plus resulting filesystem delta. It is not named in E4_TARGET_PACKAGES.md or config/e4_target_freeze_manifest.yaml, and a targeted repo search found no Aider family/config entry. Official behavior references: https://aider.chat/docs/usage/modes.html and https://aider.chat/docs/more/edit-formats.html.",
+    "capture_route": "Preferred: adapter. Capture argv/config, prompt/model selection, streamed assistant response, parsed edit blocks, and before/after file hashes from a fixture-only invocation. A replay_dump route would be attractive only if a stable, complete Aider machine-readable session export is confirmed; that export capability was not established in this investigation, so treating replay_dump as available would be invented.",
+    "risk": "Medium. Git integration, repo-map/context selection, model-specific edit-format defaults, and optional architect/editor two-model behavior can enlarge scope or make captures version-sensitive. Bound the demo to code mode, an explicitly pinned edit format, a single tracked fixture file, and disabled auto-commit. Licensing/version pin and exact noninteractive output stability remain to be checked."
+   },
+   {
+    "name": "gptme",
+    "why_bounded": "An OSS chat CLI whose tool surface is directly allowlistable. Official docs expose exact/additive/subtractive tool selection and named tools including read, patch, shell, browser, subagent, and others. A narrow lane can permit only read+patch (or read+shell), use one fixture file, and assert the tool-call sequence and delta. It is absent from the two requested coverage sources, and the targeted repo search found no gptme family/config. Official references: https://gptme.org/docs/tools.html and https://gptme.org/docs/cli.html.",
+    "capture_route": "Preferred: adapter for a deliberately restricted, noninteractive CLI run, normalizing messages/tool invocations and filesystem effects. replay_dump may be preferable if gptme's stored conversation format is verified to include all tool inputs/outcomes and stable ordering; the presence and stability of such a complete export were not verified here.",
+    "risk": "Low-to-medium for a restricted lane, high if the general tool catalog is included. The current tool list is broad (shell, browser, computer, MCP, subagent, tmux, etc.), so default-tool behavior would defeat boundedness. Pin the version/model and exact --tools allowlist; disable network/GUI/subagents. Exact transcript storage schema and deterministic IDs/timestamps are unknown."
+   },
+   {
+    "name": "Goose (Block)",
+    "why_bounded": "An OSS CLI agent organized around YAML configuration, extensions, and recipes. Official docs say recipes package prompts/settings/extensions and Goose supports built-in, command-line, and remote/MCP extensions. A first lane can freeze one recipe with only the built-in developer surface against a tiny fixture and assert extension discovery, one tool call, and the file delta. It is not listed in E4_TARGET_PACKAGES.md or the freeze manifest, and the targeted repo search found no Goose family/config. Official references: https://block.github.io/goose/docs/guides/recipes/ and https://block.github.io/goose/docs/guides/config-file/.",
+    "capture_route": "Preferred: adapter, because the interesting boundary is config/recipe loading plus extension/tool dispatch, not merely final text. Normalize the pinned recipe, enabled extensions, tool request/outcome records, and fixture delta. replay_dump is a fallback only if Goose exposes a stable, complete session export; that was not established here.",
+    "risk": "Medium. MCP/remote extensions, recipe subrecipes, parallel workers, and provider configuration create a large optional surface. Exclude remote extensions and subrecipes for the flagship demo. Session persistence format, noninteractive capture ergonomics, license/version pin, and whether built-in developer tools are stable across releases remain unknown."
+   },
+   {
+    "name": "Plandex",
+    "why_bounded": "An OSS terminal planning/coding harness with an unusually crisp state transition: proposed edits remain in a version-controlled sandbox, `plandex diff` exposes them, and `plandex apply` moves them into the working tree. A lane can stop before apply and compare the pending diff, or separately assert the apply transition on one fixture file. It is absent from E4_TARGET_PACKAGES.md and the freeze manifest, and the targeted repo search found no Plandex family/config. Official references: https://docs.plandex.ai/core-concepts/prompts/ and https://docs.plandex.ai/repl/.",
+    "capture_route": "Preferred: adapter. Capture a pinned plan invocation, the pending sandbox diff, apply/no-apply state, and before/after fixture hashes. A replay_dump route could cover the conversational portion if Plandex has a stable export, but sandbox state and apply semantics still favor an adapter. Stable export availability was not verified.",
+    "risk": "Medium-to-high. Server/account/provider requirements may undermine a one-day offline demo; autonomous planning can be multi-step; and sandbox metadata may include volatile identifiers. Bound to a single prompt and file, no commit, and either diff-only or one explicit apply. Self-host/offline feasibility, session export format, exact licensing/version pin, and deterministic automation are unknown."
+   }
+  ],
+  "existing_onboarding_assets": [
+   "`docs/authoring/AGENT_CONFIG_AUTHORING.md`: outsider-facing v2 config path. It tells authors to copy `agent_configs/templates/minimal_harness.v2.yaml`, explains runtime vs prompt/tool vs E4-binding layers, gives strict explanation/validation commands, an offline mock-provider smoke boot through `SessionService`, scaffold invocation, and lane validation. It explicitly warns that dossier-only legacy fields are not runtime configuration.",
+   "`agent_configs/templates/minimal_harness.v2.yaml` plus `agent_configs/templates/prompts/minimal_system.md`: the minimal commented config/prompt starter named by the authoring guide and cookbook. The guide describes it as schema v2, workspace-rooted, one offline mock provider, default tool definitions, one respond mode, and a one-step loop.",
+   "`docs/conformance/E4_COOKBOOK_V2.md`: current capture-to-promotion workflow. It distinguishes a bootable harness config from an E4 capture implementation; requires choosing/adding a registered adapter; documents lane-def v2 fields, scratch validation/capture, accepted-root promotion preconditions, and the `regen.py explain/run/fixed-point/classify` front door. It states arbitrary target capture is not config-only.",
+   "`scripts/e4_parity/scaffold_e4_target_lane.py`: executable scaffold front door. Required identity inputs are lane/config/family/version, with provider/sandbox/run options. Default output is constrained to `docs_tmp/phase_15/lane_scaffolds`; it can emit inventory/lane-definition drafts and optional builder/comparator skeletons. Its probe report is explicitly `scaffold_only`, forbids support-claim/score fields, and defaults to no provider plus fixture-only sandbox.",
+   "`docs/conformance/schemas/bb.e4.lane_scaffold_manifest.v1.schema.json` and `docs/conformance/schemas/bb.e4.target_probe_report.v1.schema.json`: schemas consumed by the scaffold implementation for generated manifest/probe validation.",
+   "`scripts/authoring/explain_agent_config.py` and `scripts/authoring/validate_lane.py`: the validation commands directly prescribed by the authoring guide/cookbook.",
+   "`docs/guides/AUTHOR_AN_AGENT.md`: another discoverable authoring guide by filename. It was located but not read in this bounded investigation, so its current accuracy or overlap with the newer authoring guide is unknown.",
+   "`docs/conformance/E4_COOKBOOK_V1.md`: an older cookbook is present. Because V2 explicitly describes the current path, V1 should not be presented as authoritative without checking its status."
+  ],
+  "predeclared_budget_precedents": [
+   "No repo/docs_tmp precedent specifically predeclaring a *new harness onboarding* time/cost budget was found. The initial broad search for onboarding+budget, predeclared, timebox, and one-day language returned no relevant first-party onboarding policy; an alternate search for explicit wall-clock/token/USD/run caps also found no harness-onboarding budget. This is an evidence-backed absence from the searched paths, not proof that no obscure unsearched file exists.",
+   "Closest concrete precedent: `docs_tmp/ZYPHRA/project_1/goal_program/post_m11_first_optimization_prep/policies/candidate_budget_rerun_policy.yaml`. It is an active first optimization-run gate, not onboarding. It predeclares `max_candidate_count: 24`, baseline/candidate/shortlist/promotion repeat counts, `max_total_task_evaluations: 1200`, `max_wall_clock_hours: 8`, and `max_live_model_usd: 50`, plus explicit rerun triggers and stop conditions. This is a strong structural precedent for a future onboarding budget (multiple resource ceilings plus stop conditions), but its numeric values should not be copied as onboarding defaults.",
+   "Related but less direct precedent: `docs_tmp/ZYPHRA/project_1/goal_program/m11_eval_portfolio/...` documents budget-matched RSA/TTC evaluation and token/wall-clock accounting. These are evaluation-governance precedents, not predeclared outsider onboarding budgets.",
+   "Archived/temporary operational precedent: `docs_tmp/offload/docs_root_feature_guides_20260328/LONGRUN_SAFE_OPERATION.md` contains finite operation caps such as `max_episodes: 6`, `max_wall_clock_seconds: 1800`, retries, and no-progress bounds. It is under `docs_tmp/offload`, so its authority/currentness is unknown and it is not an onboarding policy."
+  ],
+  "notes": [
+   "Coverage baseline observed in `docs/conformance/E4_TARGET_PACKAGES.md`: packaged snapshots for Codex, Claude Code, OpenCode, and Oh My OpenCode. The freeze manifest visibly contains many pinned rows for those families and associated evidence. The user additionally supplied current lanes for Oh My Pi, pi_p5, Claude Code replay, OpenCode replay, Codex probe, and BreadBoard self; the proposed candidates avoid all of them.",
+   "The freeze manifest is 1,069 lines; the initial read covered its first 300 lines plus the tool's structural tail indication. Candidate absence was cross-checked using a targeted search over config and E4_TARGET_PACKAGES.md for Aider, gptme, Goose, Plandex, Mentat, Gemini, Continue, Sweep, and Open Interpreter; no matches were found. This supports 'not already captured' for the four recommended names in the requested coverage surfaces.",
+   "Route recommendation principle from `E4_COOKBOOK_V2.md`: use an active registered adapter only when its input/output contract matches; otherwise add/register one. A config alone is not arbitrary target capture. Therefore the candidates above default to adapter where filesystem/tool/state behavior matters, and replay_dump is conditional on verifying a complete stable upstream session dump.",
+   "Suggested flagship ordering [INFERENCE]: Aider first (smallest crisp edit protocol), gptme second (best explicit tool allowlist), Goose third (good config/extension story but more integration surface), Plandex fourth (excellent sandbox semantics but higher service/account risk).",
+   "Unknowns intentionally preserved: exact current upstream versions/commits, licenses, stable machine-readable session export support, noninteractive invocation details, provider/account requirements, and deterministic transcript fields. Those should be resolved during target freeze/probe rather than asserted now."
+  ]
+ }
+}

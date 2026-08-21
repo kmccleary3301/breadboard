@@ -1,0 +1,85 @@
+{
+  "fixture_family": "work_item",
+  "fixture_id": "work_item_minimal",
+  "comparator_class": "shape-equal",
+  "support_tier": "draft-shape",
+  "contract": "bb.work_item.v1",
+  "reference_output": {
+    "schema_version": "bb.work_item.v1",
+    "work_item_id": "work_item_minimal",
+    "identity": {
+      "task_id": "task_001",
+      "task_kind": "subagent",
+      "subagent_id": "agent_001",
+      "distributed_task_id": "distributed_task_001",
+      "correlation_id": "correlation_001"
+    },
+    "delegation": {
+      "parent_work_item_id": "work_item_parent",
+      "parent_task_id": "task_parent",
+      "delegated_by": {
+        "actor_kind": "agent",
+        "actor_id": "agent_parent"
+      },
+      "delegation_ref": "bb.distributed_task_descriptor.v1:distributed_task_001"
+    },
+    "state": {
+      "status": "running",
+      "entered_at": "2026-03-08T00:00:00Z",
+      "reason": "Worker accepted delegated schema work.",
+      "checkpoint_ref": null
+    },
+    "owner": {
+      "actor_kind": "agent",
+      "actor_id": "agent_parent"
+    },
+    "assignee": {
+      "actor_kind": "subagent",
+      "actor_id": "agent_001"
+    },
+    "input_artifact_refs": [
+      {
+        "ref": "bb.resource_ref.v1:assignment_payload",
+        "artifact_kind": "prompt",
+        "visibility": {
+          "model_visible": true,
+          "provider_visible": true,
+          "host_visible": true
+        }
+      }
+    ],
+    "output_artifact_refs": [
+      {
+        "ref": "bb.resource_ref.v1:work_result",
+        "artifact_kind": "report",
+        "visibility": {
+          "model_visible": true,
+          "provider_visible": false,
+          "host_visible": true
+        }
+      }
+    ],
+    "cancellation_policy": {
+      "mode": "cooperative",
+      "cancellable_by": [
+        {
+          "actor_kind": "agent",
+          "actor_id": "agent_parent"
+        }
+      ],
+      "propagate_to_children": true,
+      "on_cancel": "checkpoint_then_stop"
+    },
+    "resume_policy": {
+      "mode": "checkpoint",
+      "resume_from_ref": null,
+      "requires_approval": false,
+      "wake_refs": ["bb.wake_subscription.v1:wake_work_item_minimal"]
+    },
+    "visibility": {
+      "model_visible": true,
+      "provider_visible": false,
+      "host_visible": true
+    }
+  }
+}

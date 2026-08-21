@@ -182,6 +182,7 @@ def validate_phase3_artifact_hashes(
 
 
 
+
 def validate_phase3_component_report(
     report: Mapping[str, Any], *, expected_schema: str, expected_claim_boundary: str, target_run_id: str,
     required_artifact_keys: Sequence[str], evidence_root: Path

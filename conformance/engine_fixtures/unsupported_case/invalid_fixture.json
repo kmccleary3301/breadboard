@@ -1,0 +1,22 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.unsupported_case.v1",
+  "fixture_family": "unsupported_case",
+  "fixture_id": "unsupported_case_invalid_missing_reason_code",
+  "invalid_reason": "Removes required reference_output field 'reason_code' from bb.unsupported_case.v1.",
+  "reference_output": {
+    "contract_family": "bb.execution_placement.v1",
+    "evidence_refs": [],
+    "fallback_allowed": true,
+    "fallback_taken": false,
+    "metadata": {
+      "driver_family": "remote"
+    },
+    "required_capability_id": "cap:openclaw:remote_tool",
+    "schema_version": "bb.unsupported_case.v1",
+    "summary": "No execution driver supports delegated_microvm for isolation remote_service",
+    "unavailable_placement": "delegated_microvm"
+  },
+  "source_fixture": "unsupported_case/reference_fixture.json",
+  "support_tier": "draft-semantic"
+}

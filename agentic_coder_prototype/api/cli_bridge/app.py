@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -12,7 +13,8 @@ import time
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 
 try:
@@ -29,6 +31,7 @@ if load_dotenv is not None:
 from .events import SessionEvent, PROTOCOL_VERSION
 from .models import (
     AttachmentUploadResponse,
+    ErrorEnvelope,
     ErrorResponse,
     ModelCatalogResponse,
     ProviderAuthAttachRequest,
@@ -51,6 +54,8 @@ from .models import (
 from .service import SessionService
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
+from agentic_coder_prototype.api.public import mount_public_routes
+from agentic_coder_prototype.api.public.models import is_public_operation_request, problem_response
 
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
@@ -105,6 +110,49 @@ def _load_chaos_config() -> Dict[str, float] | None:
 
 def _env_flag(name: str) -> bool:
     return (os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"})
+
+
+def _env_flag_default(name: str, *, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _drop_legacy_routes(app: FastAPI, *, drop_versioned: bool = False) -> None:
+    # Operational probes remain routable for existing launchers, but are not product-contract operations.
+    hidden_operational = {"/health", "/ready", "/status"}
+    legacy_exact = {"/models", "/features"}
+    legacy_prefixes = ("/sessions", "/atp", "/ext/evolake")
+    preserved_versioned = ("/v1/rl", "/v1/e4") if _env_flag("BREADBOARD_ENABLE_E4_API") else ("/v1/rl",)
+
+    def _route_path(route: Any) -> str:
+        path = getattr(route, "path", None)
+        if path is not None:
+            return str(path)
+        include_context = getattr(route, "include_context", None)
+        prefix = getattr(include_context, "prefix", None)
+        return str(prefix) if prefix is not None else ""
+
+    retained = []
+    for route in app.router.routes:
+        path = _route_path(route)
+        remove = path in legacy_exact or any(path.startswith(prefix) for prefix in legacy_prefixes)
+        if drop_versioned and path.startswith("/v1/") and not any(
+            path.startswith(prefix) for prefix in preserved_versioned
+        ):
+            remove = True
+        if remove:
+            continue
+        if path in hidden_operational and hasattr(route, "include_in_schema"):
+            route.include_in_schema = False
+        retained.append(route)
+    app.router.routes = retained
 
 
 def _run_git_command(args: list[str], cwd: Path) -> str | None:
@@ -175,15 +223,101 @@ def _configured_extension_enabled(config: Dict[str, Any] | None, ext_id: str) ->
     return None
 
 
+def _error_code_for_status(status_code: int) -> str:
+    if status_code == status.HTTP_401_UNAUTHORIZED:
+        return "unauthorized"
+    if status_code == status.HTTP_404_NOT_FOUND:
+        return "not_found"
+    if status_code == status.HTTP_409_CONFLICT:
+        return "conflict"
+    if 400 <= status_code < 500:
+        return "invalid_request"
+    return "internal"
+
+
+def _http_error_content(exc: HTTPException) -> dict[str, Any]:
+    detail = exc.detail
+    if isinstance(detail, dict):
+        error = detail.get("error") or detail.get("code") or detail.get("error_code") or _error_code_for_status(exc.status_code)
+        envelope_detail = detail.get("detail")
+        if envelope_detail is None:
+            envelope_detail = detail.get("message")
+        if envelope_detail is None:
+            envelope_detail = {key: value for key, value in detail.items() if key not in {"message", "error", "code", "error_code", "path"}}
+            if not envelope_detail:
+                envelope_detail = None
+        path = detail.get("path") if isinstance(detail.get("path"), str) else None
+        return ErrorEnvelope(error=str(error), detail=envelope_detail, path=path).model_dump()
+    return ErrorEnvelope(error=_error_code_for_status(exc.status_code), detail=str(detail) if detail is not None else None, path=None).model_dump()
+
+
+def _stable_json_hash(payload: Any) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 def create_app(service: SessionService | None = None, include_atp_routes: bool | None = None) -> FastAPI:
     engine_version = (os.environ.get("BREADBOARD_ENGINE_VERSION") or "0.1.0").strip() or "0.1.0"
     app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
     _service = service or SessionService()
+    app.state.session_service = _service
     store_path = os.environ.get("BREADBOARD_RL_RUN_STORE")
     rl_service = LiveRLRunService(Path(store_path) if store_path else ":memory:")
     rl_router = create_phase3_rl_router(rl_service)
     app.include_router(rl_router, prefix="/v1/rl", tags=["rl"])
     app.include_router(rl_router, prefix="/rl", tags=["rl"])
+
+    @app.exception_handler(HTTPException)
+    async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        operation_id = getattr(request.scope.get("route"), "operation_id", None)
+        if legacy_routes_enabled:
+            content = _http_error_content(exc)
+            content["detail"] = exc.detail
+            return JSONResponse(status_code=exc.status_code, content=content)
+        if public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path, operation_id):
+            content = _http_error_content(exc)
+            detail = content["detail"] if content["detail"] is not None else content["error"]
+            return problem_response(operation_id or "public.request", exc.status_code, str(content["error"]), str(detail))
+        return JSONResponse(status_code=exc.status_code, content=_http_error_content(exc))
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        operation_id = getattr(request.scope.get("route"), "operation_id", None)
+        if public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path, operation_id):
+            return problem_response(operation_id or "public.request", 422, "invalid_request", "request validation failed")
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content=ErrorEnvelope(error="invalid_request", detail={"errors": exc.errors()}, path=None).model_dump(),
+        )
+
+    e4_repo_root = Path(__file__).resolve().parents[3]
+    legacy_routes_enabled = _env_flag_default("BREADBOARD_LEGACY_ROUTES", default=False)
+    public_api_enabled = _env_flag_default("BREADBOARD_ENABLE_PUBLIC_API", default=True)
+    if _env_flag("BREADBOARD_ENABLE_E4_API"):
+        from agentic_coder_prototype.api.e4 import create_e4_router
+        from agentic_coder_prototype.api.e4.models import E4ApiError
+
+        @app.exception_handler(E4ApiError)
+        async def _e4_api_error_handler(_request: Request, exc: E4ApiError) -> JSONResponse:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=ErrorEnvelope(error=exc.error, detail=exc.detail_text, path=exc.path).model_dump(),
+            )
+
+        app.include_router(
+            create_e4_router(
+                repo_root=e4_repo_root,
+                inventory_path=e4_repo_root / "docs" / "conformance" / "e4_lane_inventory.json",
+                catalog_path=e4_repo_root / "docs" / "conformance" / "e4_artifact_catalog.json",
+                claims_dir=e4_repo_root / "docs" / "conformance" / "support_claims",
+                schemas_dir=e4_repo_root / "contracts" / "kernel" / "schemas",
+                ledger_path=Path(os.environ.get("BREADBOARD_E4_LEDGER_PATH", e4_repo_root.parent / "docs_tmp" / "phase_15" / "BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json")),
+                coverage_dir=Path(os.environ.get("BREADBOARD_E4_COVERAGE_DIR", e4_repo_root.parent / "docs_tmp" / "phase_16" / "coverage")),
+                runtime_records_dir=Path(os.environ.get("BREADBOARD_RUNTIME_RECORD_ROOT", e4_repo_root / "artifacts" / "runtime_records")),
+            ),
+            prefix="/v1/e4",
+            tags=["e4"],
+        )
     chaos_config = _load_chaos_config()
     required_token = (os.environ.get("BREADBOARD_API_TOKEN") or "").strip()
     extension_config = None
@@ -223,7 +357,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         if header.lower().startswith("bearer "):
             token = header[7:].strip()
         if not token or token != required_token:
-            return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"message": "unauthorized"})
+            return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content=ErrorEnvelope(error="unauthorized", detail="unauthorized", path=None).model_dump())
         return await call_next(request)
 
     @app.on_event("startup")
@@ -279,6 +413,38 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             yield f"id: {event_id}\n".encode("utf-8")
             yield f"data: {payload}\n\n".encode("utf-8")
 
+    def _registry_payloads() -> list[tuple[Path, dict[str, Any]]]:
+        registries_dir = e4_repo_root / "contracts" / "kernel" / "registries"
+        payloads: list[tuple[Path, dict[str, Any]]] = []
+        for path in sorted(registries_dir.glob("*.json")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict) and isinstance(payload.get("registry_id"), str):
+                payloads.append((path, payload))
+        return payloads
+
+    @app.get("/v1/registries")
+    async def list_registries() -> dict[str, Any]:
+        registries = [
+            {
+                "registry_id": str(payload["registry_id"]),
+                "schema_version": payload.get("schema_version"),
+                "path": path.relative_to(e4_repo_root).as_posix(),
+                "entries": len(payload.get("entries")) if isinstance(payload.get("entries"), list) else 0,
+            }
+            for path, payload in _registry_payloads()
+        ]
+        return {"registries": registries, "total": len(registries)}
+
+    @app.get("/v1/registries/{registry_id}")
+    async def get_registry(registry_id: str) -> dict[str, Any]:
+        for path, payload in _registry_payloads():
+            if registry_id in {str(payload.get("registry_id")), path.name, path.stem}:
+                return payload
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "registry_not_found", "detail": registry_id, "path": "contracts/kernel/registries"},
+        )
+
     @app.get("/health")
     async def health() -> dict[str, Any]:
         return {
@@ -307,6 +473,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             "provider_runtimes": runtime_ids,
         }
 
+    @app.get("/v1/status")
     @app.get("/status")
     async def engine_status() -> dict[str, Any]:
         ray_available = False
@@ -329,6 +496,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             },
         }
 
+    @app.get("/v1/features")
     @app.get("/features")
     async def feature_audit() -> dict[str, Any]:
         atp_status = _service.atp_feature_status(enabled=atp_routes_enabled)
@@ -468,6 +636,11 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         return ProviderAuthStatusResponse(attached=items)
 
     @app.get(
+        "/v1/models",
+        response_model=ModelCatalogResponse,
+        responses={400: {"model": ErrorResponse}},
+    )
+    @app.get(
         "/models",
         response_model=ModelCatalogResponse,
         responses={400: {"model": ErrorResponse}},
@@ -479,6 +652,11 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         return await svc.list_models(config_path)
 
     @app.post(
+        "/v1/sessions",
+        response_model=SessionCreateResponse,
+        responses={400: {"model": ErrorResponse}},
+    )
+    @app.post(
         "/sessions",
         response_model=SessionCreateResponse,
         responses={400: {"model": ErrorResponse}},
@@ -486,6 +664,10 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     async def create_session(payload: SessionCreateRequest, svc: SessionService = Depends(get_service)):
         return await svc.create_session(payload)
 
+    @app.get(
+        "/v1/sessions",
+        response_model=list[SessionSummary],
+    )
     @app.get(
         "/sessions",
         response_model=list[SessionSummary],
@@ -495,6 +677,11 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         return list(summaries)
 
     @app.get(
+        "/v1/sessions/{session_id}",
+        response_model=SessionSummary,
+        responses={404: {"model": ErrorResponse}},
+    )
+    @app.get(
         "/sessions/{session_id}",
         response_model=SessionSummary,
         responses={404: {"model": ErrorResponse}},
@@ -503,6 +690,34 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         record = await svc.ensure_session(session_id)
         return record.to_summary()
 
+    @app.get(
+        "/v1/sessions/{session_id}/records",
+        responses={404: {"model": ErrorResponse}},
+    )
+    async def get_session_records(
+        session_id: str,
+        schema_version: str | None = None,
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=1000),
+        svc: SessionService = Depends(get_service),
+    ):
+        return await svc.list_session_records(
+            session_id,
+            schema_version=schema_version,
+            offset=offset,
+            limit=limit,
+        )
+
+    @app.post(
+        "/v1/sessions/{session_id}/input",
+        response_model=SessionInputResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+        responses={
+            404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+            400: {"model": ErrorResponse},
+        },
+    )
     @app.post(
         "/sessions/{session_id}/input",
         response_model=SessionInputResponse,
@@ -517,6 +732,17 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         return await svc.send_input(session_id, payload)
 
     @app.post(
+        "/v1/sessions/{session_id}/command",
+        response_model=SessionCommandResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+        responses={
+            404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+            400: {"model": ErrorResponse},
+            501: {"model": ErrorResponse},
+        },
+    )
+    @app.post(
         "/sessions/{session_id}/command",
         response_model=SessionCommandResponse,
         status_code=status.HTTP_202_ACCEPTED,
@@ -530,6 +756,15 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     async def post_command(session_id: str, payload: SessionCommandRequest, svc: SessionService = Depends(get_service)):
         return await svc.execute_command(session_id, payload)
 
+    @app.post(
+        "/v1/sessions/{session_id}/attachments",
+        response_model=AttachmentUploadResponse,
+        responses={
+            400: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+        },
+    )
     @app.post(
         "/sessions/{session_id}/attachments",
         response_model=AttachmentUploadResponse,
@@ -555,6 +790,22 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                     detail=f"metadata must be valid JSON: {exc}",
                 ) from exc
         return await svc.upload_attachments(session_id, files, metadata_payload)
+
+    @app.get(
+        "/v1/sessions/{session_id}/files",
+        response_model=list[SessionFileInfo],
+        responses={
+            400: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+        },
+    )
+    async def list_session_files(
+        session_id: str,
+        path: str | None = None,
+        svc: SessionService = Depends(get_service),
+    ):
+        return await svc.list_files(session_id, root=path or ".")
 
     @app.get(
         "/sessions/{session_id}/files",
@@ -595,6 +846,42 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         return await svc.list_files(session_id, root=path or ".")
 
     @app.get(
+        "/v1/sessions/{session_id}/files/content",
+        response_model=SessionFileContent,
+        responses={
+            400: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+        },
+    )
+    async def read_session_file(
+        session_id: str,
+        path: str,
+        mode: str = "cat",
+        head_lines: int | None = None,
+        tail_lines: int | None = None,
+        max_bytes: int | None = None,
+        svc: SessionService = Depends(get_service),
+    ):
+        if mode == "snippet":
+            head_lines = 200 if head_lines is None else head_lines
+            tail_lines = 80 if tail_lines is None else tail_lines
+            max_bytes = 80_000 if max_bytes is None else max_bytes
+        return await svc.read_file(
+            session_id,
+            path,
+            mode=mode,
+            head_lines=head_lines,
+            tail_lines=tail_lines,
+            max_bytes=max_bytes,
+        )
+
+    @app.get(
+        "/v1/sessions/{session_id}/skills",
+        response_model=SkillCatalogResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
+    @app.get(
         "/sessions/{session_id}/skills",
         response_model=SkillCatalogResponse,
         responses={404: {"model": ErrorResponse}},
@@ -602,6 +889,11 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     async def session_skills(session_id: str, svc: SessionService = Depends(get_service)):
         return await svc.list_skills(session_id)
 
+    @app.get(
+        "/v1/sessions/{session_id}/ctrees",
+        response_model=CTreeSnapshotResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
     @app.get(
         "/sessions/{session_id}/ctrees",
         response_model=CTreeSnapshotResponse,
@@ -611,14 +903,23 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         return await svc.get_ctree_snapshot(session_id)
 
     @app.delete(
+        "/v1/sessions/{session_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        responses={404: {"model": ErrorResponse}},
+    )
+    @app.delete(
         "/sessions/{session_id}",
         status_code=status.HTTP_204_NO_CONTENT,
         responses={404: {"model": ErrorResponse}},
     )
     async def delete_session(session_id: str, svc: SessionService = Depends(get_service)):
-        await svc.stop_session(session_id)
+        await svc.delete_session(session_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+    @app.get(
+        "/v1/sessions/{session_id}/events",
+        responses={404: {"model": ErrorResponse}},
+    )
     @app.get(
         "/sessions/{session_id}/events",
         responses={404: {"model": ErrorResponse}},
@@ -652,6 +953,13 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         )
 
     @app.get(
+        "/v1/sessions/{session_id}/download",
+        responses={
+            400: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+        },
+    )
+    @app.get(
         "/sessions/{session_id}/download",
         responses={
             400: {"model": ErrorResponse},
@@ -677,6 +985,14 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             if isinstance(provider, EndpointProvider):
                 provider.register_routes(app, get_service)
         mounted_extensions.append("evolake")
+
+    if public_api_enabled and legacy_routes_enabled:
+        logger.warning("BREADBOARD_LEGACY_ROUTES takes precedence; product API routes remain disabled")
+    if public_api_enabled and not legacy_routes_enabled:
+        _drop_legacy_routes(app, drop_versioned=True)
+        mount_public_routes(app)
+    elif not legacy_routes_enabled:
+        _drop_legacy_routes(app)
 
     return app
 

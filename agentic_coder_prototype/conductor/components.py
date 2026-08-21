@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..compilation.enhanced_config_validator import EnhancedConfigValidator
+from ..compilation.tool_registry import default_tool_defs_dir, guardrail_names_for, resolve_tool_defs_dir
 from ..compilation.tool_yaml_loader import load_yaml_tools
 from ..execution.enhanced_executor import EnhancedToolExecutor
 from ..run_logging.workspace_manifest import build_workspace_manifest
@@ -365,7 +365,7 @@ def initialize_yaml_tools(conductor: Any) -> None:
         include_list_raw = list(registry_cfg.get("include") or [])
         exclude_list_raw = list(registry_cfg.get("exclude") or [])
         registry_paths = list(registry_cfg.get("paths") or [])
-        defs_dir = tools_cfg.get("defs_dir") or "implementations/tools/defs"
+        defs_dir = resolve_tool_defs_dir(tools_cfg.get("defs_dir"))
         overlays = (tools_cfg.get("overlays") or [])
         aliases = (tools_cfg.get("aliases") or {})
         if registry_paths:
@@ -373,7 +373,7 @@ def initialize_yaml_tools(conductor: Any) -> None:
             ordered_names: List[str] = []
             merged_manipulations: Dict[str, List[str]] = {}
             for raw_path in registry_paths:
-                path_str = str(raw_path)
+                path_str = str(resolve_tool_defs_dir(raw_path))
                 loaded = load_yaml_tools(path_str, overlays=overlays, aliases=aliases)
                 for tool in loaded.tools:
                     name = getattr(tool, "name", None)
@@ -389,7 +389,7 @@ def initialize_yaml_tools(conductor: Any) -> None:
             conductor.yaml_tools = [tools_by_name[name] for name in ordered_names if name in tools_by_name]
             conductor.yaml_tool_manipulations = merged_manipulations
         else:
-            loaded = load_yaml_tools(defs_dir, overlays=overlays, aliases=aliases)
+            loaded = load_yaml_tools(str(defs_dir), overlays=overlays, aliases=aliases)
             conductor.yaml_tools = loaded.tools
             conductor.yaml_tool_manipulations = loaded.manipulations_by_id
 
@@ -563,19 +563,13 @@ def initialize_yaml_tools(conductor: Any) -> None:
 
 
 def initialize_config_validator(conductor: Any) -> None:
-    validation_cfg = (conductor.config.get("enhanced_tools", {}).get("validation") or {})
-    validation_enabled = bool(validation_cfg.get("enabled", True))
-    if not validation_enabled:
-        conductor.config_validator = None
-        return
-    enhanced_tools_config = conductor.config.get("tools", {}).get("registry")
-    if not enhanced_tools_config or not os.path.exists("implementations/tools/enhanced_tools.yaml"):
-        conductor.config_validator = None
-        return
-    try:
-        conductor.config_validator = EnhancedConfigValidator("implementations/tools/enhanced_tools.yaml")
-    except Exception:
-        conductor.config_validator = None
+    """Disable the removed enhanced-tools validator hook.
+
+    Runtime tool-call constraints now live in AgentExecutor's config-backed
+    validation paths; the old module was a recovery stub and must not be
+    instantiated.
+    """
+    conductor.config_validator = None
     conductor.sequential_executor = None
 
 
@@ -702,14 +696,10 @@ def ensure_completion_tool(tool_defs: List[ToolDefinition]) -> List[ToolDefiniti
 def is_read_only_tool(tool_name: str) -> bool:
     if not tool_name:
         return False
-    read_only_tools = {
-        "list_dir",
-        "read_file",
-        "describe_file",
-        "preview_file",
-        "inspect_workspace",
-    }
-    return tool_name in read_only_tools
+    return tool_name in (
+        guardrail_names_for(None, "list")
+        | guardrail_names_for(None, "read")
+    )
 
 
 def normalize_assistant_text(text: Optional[str]) -> str:
@@ -946,84 +936,7 @@ def write_env_fingerprint(conductor: Any) -> None:
 
 
 def get_default_tool_definitions() -> List[ToolDefinition]:
-    return [
-        ToolDefinition(
-            type_id="python",
-            name="run_shell",
-            description="Run a shell command in the workspace and return stdout/exit.",
-            parameters=[
-                ToolParameter(name="command", type="string", description="The shell command to execute"),
-                ToolParameter(name="timeout", type="integer", description="Timeout seconds", default=30),
-            ],
-            blocking=True,
-        ),
-        ToolDefinition(
-            type_id="python",
-            name="create_file",
-            description=(
-                "Create an empty file (akin to 'touch'). For contents, use diff blocks: "
-                "SEARCH/REPLACE for edits to existing files; unified diff (```patch/```diff) or OpenCode Add File for new files."
-            ),
-            parameters=[
-                ToolParameter(name="path", type="string"),
-            ],
-        ),
-        ToolDefinition(
-            type_id="python",
-            name="mark_task_complete",
-            description=(
-                "Signal that the task is fully complete. When called, the agent will stop the run."
-            ),
-            parameters=[],
-            blocking=True,
-        ),
-        ToolDefinition(
-            type_id="python",
-            name="read_file",
-            description="Read a text file from the workspace.",
-            parameters=[ToolParameter(name="path", type="string")],
-        ),
-        ToolDefinition(
-            type_id="diff",
-            name="list_dir",
-            description="List files in a directory in the workspace. Optional depth parameter for tree structure (1-5, default 1).",
-            parameters=[
-                ToolParameter(name="path", type="string"),
-                ToolParameter(name="depth", type="integer", description="Tree depth (1-5, default 1)", default=1)
-            ],
-        ),
-        ToolDefinition(
-            type_id="diff",
-            name="apply_search_replace",
-            description="Edit code via SEARCH/REPLACE block (Aider-style)",
-            parameters=[
-                ToolParameter(name="file_name", type="string"),
-                ToolParameter(name="search", type="string"),
-                ToolParameter(name="replace", type="string"),
-            ],
-        ),
-        ToolDefinition(
-            type_id="diff",
-            name="apply_unified_patch",
-            description="Apply a unified-diff patch (may include new files, edits, deletes)",
-            parameters=[
-                ToolParameter(name="patch", type="string", description="Unified diff text; label blocks as ```patch or ```diff"),
-            ],
-            blocking=True,
-        ),
-        ToolDefinition(
-            type_id="diff",
-            name="create_file_from_block",
-            description=(
-                "Create a new file from an OpenCode-style Add File block's parsed content. "
-                "Use when not emitting a unified diff."
-            ),
-            parameters=[
-                ToolParameter(name="file_name", type="string"),
-                ToolParameter(name="content", type="string"),
-            ],
-        ),
-    ]
+    return load_yaml_tools(str(default_tool_defs_dir())).tools
 
 
 def maybe_run_plan_bootstrap(conductor: Any, session_state: Any, markdown_logger: Optional[Any] = None) -> None:

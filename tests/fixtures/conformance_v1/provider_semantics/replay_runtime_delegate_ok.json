@@ -1,0 +1,18 @@
+{
+  "expected_output": {
+    "actual_model": "replay-playback",
+    "actual_replay_metadata": true,
+    "actual_session_call_count": 1
+  },
+  "replay": {
+    "metadata": {
+      "active_replay_session": true
+    },
+    "model": "replay-playback"
+  },
+  "session_calls": [
+    {
+      "id": "call-1"
+    }
+  ]
+}

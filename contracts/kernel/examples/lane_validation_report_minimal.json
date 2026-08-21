@@ -1,0 +1,21 @@
+{
+  "schema_version": "bb.lane_validation_report.v1",
+  "lane_id": "example_lane",
+  "lane_def_path": "config/e4_lanes/example_lane.yaml",
+  "generated_at_utc": "2026-07-09T00:00:00Z",
+  "checks": [
+    {"check_id": "lane_def_schema_valid", "status": "passed", "detail": "lane definition schema is valid"},
+    {"check_id": "adapter_registered", "status": "passed", "detail": "capture adapter is registered or not required"},
+    {"check_id": "translator_registered", "status": "passed", "detail": "translator is registered"},
+    {"check_id": "comparator_registered", "status": "passed", "detail": "comparator is registered"},
+    {"check_id": "capture_inputs_exist", "status": "passed", "detail": "capture inputs exist"},
+    {"check_id": "artifacts_root_valid", "status": "passed", "detail": "artifacts root exists"},
+    {"check_id": "inventory_row_consistent", "status": "passed", "detail": "inventory row matches generated lane inventory fields"},
+    {"check_id": "assertion_ids_unique", "status": "passed", "detail": "assertion ids are unique"},
+    {"check_id": "claim_scope_complete", "status": "passed", "detail": "claim scope contains required anchors"},
+    {"check_id": "reverify_command_executable", "status": "passed", "detail": "reverify command has an executable script and json output"},
+    {"check_id": "accepted_artifact_hashes_fresh", "status": "passed", "detail": "accepted artifact hashes are fresh"},
+    {"check_id": "metadata_non_normative", "status": "passed", "detail": "metadata sentinel did not trip"}
+  ],
+  "ok": true
+}

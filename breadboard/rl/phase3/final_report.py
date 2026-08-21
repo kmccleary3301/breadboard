@@ -488,6 +488,7 @@ def build_phase3_core_readiness(milestone_reports: Mapping[str, Mapping[str, Any
         "blocked_core_milestones": blocked_milestones,
         "core_raw_points_total": PHASE3_CORE_RAW_POINTS_TOTAL,
         "core_raw_points_verified": core_raw_points_verified,
+
         "original_scorecard_total_points": PHASE3_ORIGINAL_TOTAL_POINTS,
         "report_label": label,
         "milestone_statuses": milestone_statuses,

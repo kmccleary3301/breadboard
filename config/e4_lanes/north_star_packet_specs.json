@@ -1,0 +1,149 @@
+{
+  "generated_from": "config/e4_lanes lane rows",
+  "packet_specs": [
+    {
+      "assertions": [
+        [
+          "target_config_present",
+          "target config is present"
+        ],
+        [
+          "package_ref_present",
+          "package reference tree is present"
+        ],
+        [
+          "pinned_target_version",
+          "target version is pinned"
+        ],
+        [
+          "read_only_scope_declared",
+          "read-only scope is declared"
+        ]
+      ],
+      "behavior_family": "replay_capture",
+      "claim_id": "claude_code_haiku45_north_star_capture_v1_c4_support_claim",
+      "config_id": "claude_code_haiku45_north_star_capture_v1",
+      "config_path": "agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml",
+      "ct_id": "ct_north_star_claude_code_capture_c4_chain",
+      "lane_id": "claude_code_north_star_capture_v1",
+      "package_ref": "config/e4_targets/claude_code/2.1.63",
+      "primitive": "bb.replay_session.v1",
+      "provider_model": "anthropic/claude-haiku-4-5-20251001",
+      "run_id": "20260707_north_star_claude_code_capture",
+      "sandbox_mode": "read-only static package capture",
+      "semantic_key": "north_star_claude_code_package_capture",
+      "source_paths": [
+        "agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml",
+        "config/e4_targets/claude_code/2.1.63/haiku45_harness.yaml",
+        "config/e4_targets/claude_code/2.1.63/README.md",
+        "config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md",
+        "config/e4_targets/claude_code/2.1.63/refs/settings-bash-sandbox.json"
+      ],
+      "target": "claude",
+      "target_family": "claude_code",
+      "target_version": "claude-code 2.1.63",
+      "upstream_commit": "9582ad480f687bbeaf0025852ac4f020b07f20bb",
+      "upstream_commit_date": "2026-03-05T00:25:31+00:00",
+      "upstream_release_label": "claude-code@snapshot-2026-03-04",
+      "upstream_repo": "https://github.com/anthropics/claude-code.git"
+    },
+    {
+      "assertions": [
+        [
+          "target_config_present",
+          "target config is present"
+        ],
+        [
+          "package_ref_present",
+          "package reference tree is present"
+        ],
+        [
+          "pinned_target_version",
+          "target version is pinned"
+        ],
+        [
+          "read_only_scope_declared",
+          "read-only scope is declared"
+        ]
+      ],
+      "behavior_family": "replay_capture",
+      "claim_id": "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",
+      "config_id": "opencode_gpt51mini_north_star_capture_v1",
+      "config_path": "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+      "ct_id": "ct_north_star_opencode_capture_c4_chain",
+      "lane_id": "opencode_north_star_capture_v1",
+      "package_ref": "config/e4_targets/opencode/1.2.17",
+      "primitive": "bb.replay_session.v1",
+      "provider_model": "openai/gpt-5.1-codex-mini",
+      "run_id": "20260707_north_star_opencode_capture",
+      "sandbox_mode": "read-only static package capture",
+      "semantic_key": "north_star_opencode_package_capture",
+      "source_paths": [
+        "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+        "config/e4_targets/opencode/1.2.17/codexmini_responses_harness.yaml",
+        "config/e4_targets/opencode/1.2.17/README.md",
+        "config/e4_targets/opencode/1.2.17/prompts/system.md",
+        "config/e4_targets/opencode/1.2.17/refs/tools.mdx"
+      ],
+      "target": "opencode",
+      "target_family": "opencode",
+      "target_version": "opencode 1.2.17",
+      "upstream_commit": "85ff05670a53079066fcbc0abc0271ea355585c1",
+      "upstream_commit_date": "2026-03-04T22:23:22-05:00",
+      "upstream_release_label": "opencode@dev-snapshot-2026-03-04",
+      "upstream_repo": "https://github.com/anomalyco/opencode"
+    },
+    {
+      "assertions": [
+        [
+          "runtime_records_manifest_present",
+          "runtime records manifest is present"
+        ],
+        [
+          "kernel_event_stream_present",
+          "kernel event stream is present"
+        ],
+        [
+          "strict_mode_quarantine_zero",
+          "strict mode has zero quarantine"
+        ],
+        [
+          "session_transcript_stream_present",
+          "session transcript stream is present"
+        ],
+        [
+          "replay_transcript_digest_matches_manifest",
+          "replay transcript digest matches manifest"
+        ],
+        [
+          "self_capture_schema_count",
+          "self capture emitted kernel_event records"
+        ]
+      ],
+      "behavior_family": "runtime_records",
+      "claim_id": "breadboard_self_runtime_records_v1_c4_support_claim",
+      "config_id": "breadboard_self_runtime_records_v1",
+      "config_path": "agent_configs/atp_hilbert_like_gpt54_v1.yaml",
+      "ct_id": "ct_north_star_breadboard_self_runtime_records_c4_chain",
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "package_ref": "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json",
+      "primitive": "bb.kernel_event.v2",
+      "provider_model": "no-provider",
+      "run_id": "20260707_north_star_breadboard_self_capture",
+      "sandbox_mode": "strict runtime_records self-capture",
+      "semantic_key": "north_star_breadboard_runtime_records_self_capture",
+      "source_paths": [
+        "agent_configs/atp_hilbert_like_gpt54_v1.yaml",
+        "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json"
+      ],
+      "target": "breadboard",
+      "target_family": "breadboard",
+      "target_version": "breadboard runtime_records strict kernel emission",
+      "upstream_commit": "workspace",
+      "upstream_commit_date": "2026-07-07T00:00:00Z",
+      "upstream_release_label": "breadboard-runtime-records-self-capture",
+      "upstream_repo": "local://breadboard"
+    }
+  ],
+  "schema_version": "bb.ns.packet_specs.v1"
+}

@@ -1,0 +1,78 @@
+{
+  "accepted_as_capture_ref": true,
+  "capture_class": "derived_capture",
+  "captured_artifacts": [
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+      "role": "source",
+      "sha256": "sha256:a5819fd983019702e0c5808e018a716fe98f51766e2b95cd3a986df5e5906b98"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
+      "role": "source",
+      "sha256": "sha256:bf41d1cab9535556032e654b934e431a38315ae8031cee409cc33cde7e5ef519"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json",
+      "role": "source",
+      "sha256": "sha256:693c9d9c01d1cd8515f56b4f9f7cbbc677f02f9a206e8d7a41ecdf8b258b23c6"
+    },
+    {
+      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "role": "source",
+      "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
+    },
+    {
+      "path": "agent_configs/misc/oh_my_pi_p3_7_memory_work_compiler_v1.yaml",
+      "role": "source",
+      "sha256": "sha256:02bf63d0ad808f59e71a52729fcc98eba8d01b7615ed0fa6b38da8baf40dac15"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/compiled_records.json",
+      "role": "source",
+      "sha256": "sha256:184fc6e1846aa2a808d6d881830793cb77ea48d97a851aebf732f4d6256c8074"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/schema_validation_report.json",
+      "role": "source",
+      "sha256": "sha256:dc7125da298679304d3e9a5e7b7e378192a808552ba64d5a97e98409bbefded5"
+    }
+  ],
+  "config_id": "oh_my_pi_p3_7_memory_work_compiler_v1",
+  "generated_at_utc": "2026-07-03T07:30:00Z",
+  "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+  "lineage_rationale": "P3.7 helper/runtime compiler capture is derived from canonical Oh-My-Pi P6.0-L1 source/capture material and scoped to BreadBoard helper-runtime primitive emission. It does not broaden target support beyond this named P3 lane.",
+  "provider_model": "no-provider",
+  "raw_source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json#sha256:a5819fd983019702e0c5808e018a716fe98f51766e2b95cd3a986df5e5906b98",
+  "raw_source_status": "canonical_raw_present",
+  "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.raw_capture_manifest.v1",
+  "source_artifacts": [
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json",
+    "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+    "agent_configs/misc/oh_my_pi_p3_7_memory_work_compiler_v1.yaml",
+    "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/compiled_records.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/schema_validation_report.json"
+  ],
+  "source_hashes": {
+    "agent_configs/misc/oh_my_pi_p3_7_memory_work_compiler_v1.yaml": "sha256:02bf63d0ad808f59e71a52729fcc98eba8d01b7615ed0fa6b38da8baf40dac15",
+    "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/compiled_records.json": "sha256:184fc6e1846aa2a808d6d881830793cb77ea48d97a851aebf732f4d6256c8074",
+    "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/schema_validation_report.json": "sha256:dc7125da298679304d3e9a5e7b7e378192a808552ba64d5a97e98409bbefded5",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json": "sha256:a5819fd983019702e0c5808e018a716fe98f51766e2b95cd3a986df5e5906b98",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json": "sha256:bf41d1cab9535556032e654b934e431a38315ae8031cee409cc33cde7e5ef519",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json": "sha256:693c9d9c01d1cd8515f56b4f9f7cbbc677f02f9a206e8d7a41ecdf8b258b23c6",
+    "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
+  },
+  "target_family": "oh_my_pi",
+  "target_source": {
+    "coding_agent_package": "@oh-my-pi/pi-coding-agent",
+    "coding_agent_version": "16.2.13",
+    "upstream_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "upstream_ref": "main",
+    "upstream_repo": "https://github.com/can1357/oh-my-pi"
+  },
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+}

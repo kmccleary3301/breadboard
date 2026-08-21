@@ -107,7 +107,6 @@ def test_component_report_with_real_artifact_passes(tmp_path: Path) -> None:
     assert validate_phase3_component_report(report, expected_schema=PHASE3_COMPONENT_REPORT_SCHEMA, expected_claim_boundary="boundary", target_run_id=TARGET, required_artifact_keys=("artifact",), evidence_root=tmp_path) == []
 
 
-
 def test_component_report_rejects_stale_artifact_input_hash(tmp_path: Path) -> None:
     artifact = tmp_path / "artifact.json"
     artifact.write_text('{"changed": true}\n')

@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json",
+  "title": "BreadBoard E4 fixed-point report V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report_id",
+    "generated_at_utc",
+    "watch_set_size",
+    "first_pass_snapshot_sha256",
+    "second_pass_snapshot_sha256",
+    "byte_identical",
+    "changed_paths",
+    "score_authority"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.fixed_point_report.v1"
+    },
+    "report_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "generated_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "score_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_ref", "source_sha256", "source_observed", "expected", "observed", "ok"],
+      "properties": {
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_sha256": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"
+        },
+        "source_observed": {
+          "$ref": "#/$defs/score_authority_source_values"
+        },
+        "expected": {
+          "$ref": "#/$defs/score_authority_values"
+        },
+        "observed": {
+          "$ref": "#/$defs/score_authority_values"
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      }
+    },
+    "watch_set_size": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "first_pass_snapshot_sha256": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"
+    },
+    "second_pass_snapshot_sha256": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"
+    },
+    "byte_identical": {
+      "type": "boolean"
+    },
+    "first_exit_code": {
+      "type": "integer"
+    },
+    "second_exit_code": {
+      "type": "integer"
+    },
+    "changed_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "score_authority_values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["points", "target_claims", "non_target_claims"],
+      "properties": {
+        "points": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target_claims": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "non_target_claims": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "score_authority_source_values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["points_total", "points_done", "points_blocked"],
+      "properties": {
+        "points_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "points_done": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "points_blocked": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

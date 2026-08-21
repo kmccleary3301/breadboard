@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from enum import Enum
 import uuid
 
-from ..compilation.enhanced_config_validator import EnhancedConfigValidator, ExecutionPlan
 
 
 class ToolState(Enum):
@@ -181,8 +180,8 @@ class SequentialToolExecutor:
     - Dependency resolution
     """
     
-    def __init__(self, 
-                 config_validator: EnhancedConfigValidator,
+    def __init__(self,
+                 config_validator: Any,
                  tool_executor_func: Callable[[Dict[str, Any]], Dict[str, Any]]):
         self.config_validator = config_validator
         self.tool_executor_func = tool_executor_func
@@ -364,12 +363,12 @@ class SequentialToolExecutor:
         }
 
 
-# Integration functions
-def create_sequential_executor(config_path: str, 
-                             tool_executor_func: Callable) -> SequentialToolExecutor:
-    """Create sequential executor with enhanced configuration."""
-    validator = EnhancedConfigValidator(config_path)
-    return SequentialToolExecutor(validator, tool_executor_func)
+def create_sequential_executor(
+    config_validator: Any,
+    tool_executor_func: Callable,
+) -> SequentialToolExecutor:
+    """Create a sequential executor with an explicit validator implementation."""
+    return SequentialToolExecutor(config_validator, tool_executor_func)
 
 
 async def execute_with_continuation(executor: SequentialToolExecutor,
@@ -405,18 +404,20 @@ if __name__ == "__main__":
     
     # Test execution
     async def test_execution():
-        from ..compilation.enhanced_config_validator import EnhancedConfigValidator
-        
         # Mock validator
-        validator = EnhancedConfigValidator()
-        validator.config = {
-            "tools": [
-                {"id": "run_shell", "blocking": True, "max_per_turn": 1, "dependencies": []},
-                {"id": "read_file", "blocking": False, "dependencies": []}
-            ]
-        }
-        validator._parse_tool_constraints()
-        
+        class MockValidator:
+            def validate_tool_calls(self, tool_calls):
+                return {
+                    "valid": True,
+                    "errors": [],
+                    "execution_plan": type(
+                        "ExecutionPlan",
+                        (),
+                        {"execution_order": list(range(len(tool_calls)))},
+                    )(),
+                }
+
+        validator = MockValidator()
         executor = SequentialToolExecutor(validator, mock_tool_executor)
         
         tool_calls = [

@@ -1,0 +1,7 @@
+{
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.effective_harness_lock.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json",
+  "description": "Public validation projection for the frozen Effective Harness Lock record role. Instances retain schema_version bb.effective_config_graph.v1.",
+  "title": "BreadBoard Effective Harness Lock V1"
+}

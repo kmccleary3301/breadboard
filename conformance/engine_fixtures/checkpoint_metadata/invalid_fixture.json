@@ -1,0 +1,23 @@
+{
+  "comparator_class": "normalized-trace-equal",
+  "contract": "bb.checkpoint_metadata.v1",
+  "fixture_family": "checkpoint_metadata",
+  "fixture_id": "checkpoint_metadata_invalid_missing_source_kind",
+  "invalid_reason": "Removes required reference_output field 'source_kind' from bb.checkpoint_metadata.v1.",
+  "reference_output": {
+    "checkpoint_ref": "ckpt-ref-1",
+    "created_at": 1234567890,
+    "schema_version": "bb.checkpoint_metadata.v1",
+    "summary": {
+      "additions": 4,
+      "checkpoint_id": "ckpt-ref-1",
+      "created_at": 1234567890,
+      "deletions": 1,
+      "has_untracked_changes": false,
+      "preview": "reference fixture",
+      "tracked_files": 2
+    }
+  },
+  "source_fixture": "checkpoint_metadata/reference_fixture.json",
+  "support_tier": "reference-engine"
+}

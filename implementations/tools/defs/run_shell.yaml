@@ -2,6 +2,17 @@ id: run_shell
 name: run_shell
 description: Execute a shell command in the project workspace
 type_id: python
+binding:
+  module: agentic_coder_prototype.tools.shell
+  callable: run_shell
+aliases:
+  - bash
+  - shell_command
+classification:
+  blocking: true
+  readonly: false
+  guardrail_class: bash
+  guardrail_sets: [bash]
 manipulations:
   - shell.exec
 syntax_formats_supported: [native_function_calling, json_block, yaml_command]

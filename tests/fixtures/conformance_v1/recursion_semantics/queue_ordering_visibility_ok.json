@@ -1,0 +1,29 @@
+{
+  "expected": {
+    "actual_claim_order": [
+      "task_alpha",
+      "task_beta"
+    ],
+    "actual_open_count": 1,
+    "actual_stop_reason": "episode_completed"
+  },
+  "queue": [
+    {
+      "claim_id": "task_alpha",
+      "claim_visible": true,
+      "status": "closed"
+    },
+    {
+      "claim_id": "task_beta",
+      "claim_visible": true,
+      "status": "closed"
+    },
+    {
+      "claim_id": "task_gamma",
+      "claim_visible": false,
+      "status": "open"
+    }
+  ],
+  "schema_version": "bb.ct.longrun.queue_ordering_visibility.fixture.v1",
+  "stop_reason": "episode_completed"
+}

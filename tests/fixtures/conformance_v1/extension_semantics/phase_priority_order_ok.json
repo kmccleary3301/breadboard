@@ -1,0 +1,28 @@
+{
+  "expected_output": {
+    "actual_order": [
+      "before_high",
+      "after_high",
+      "after_low"
+    ],
+    "error_count": 0,
+    "spec_count": 3
+  },
+  "specs": [
+    {
+      "id": "after_low",
+      "phase": "after",
+      "priority": 1
+    },
+    {
+      "id": "before_high",
+      "phase": "before",
+      "priority": 10
+    },
+    {
+      "id": "after_high",
+      "phase": "after",
+      "priority": 10
+    }
+  ]
+}

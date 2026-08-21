@@ -1,0 +1,53 @@
+{
+  "schema_version": "bb.side_effect_broker.v1",
+  "broker_id": "side_effect_broker_minimal",
+  "request": {
+    "request_id": "side_effect_request_001",
+    "effect_type": "resource_write",
+    "operation": "append",
+    "requested_by": {
+      "actor_kind": "agent",
+      "actor_id": "agent_001"
+    },
+    "reason": "Persist an approved output artifact.",
+    "idempotency_key": "effect_resource_append_001"
+  },
+  "policy_refs": ["policy:workspace_write"],
+  "permission_approval_refs": ["bb.permission.v1:permission_write_001"],
+  "target_refs": [
+    {
+      "target_kind": "resource",
+      "ref": "bb.resource_ref.v1:workspace_output",
+      "scope": "workspace"
+    }
+  ],
+  "execution_placement": {
+    "placement_id": "placement_local_sandbox",
+    "environment_id": "env_workspace",
+    "runner_ref": "bb.execution_placement.v1:placement_local_sandbox",
+    "isolation": "sandbox"
+  },
+  "before_refs": [
+    {
+      "ref": "bb.resource_ref.v1:workspace_output@before",
+      "hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "captured_at": "2026-03-08T00:00:00Z"
+    }
+  ],
+  "after_refs": [
+    {
+      "ref": "bb.resource_ref.v1:workspace_output@after",
+      "hash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "captured_at": "2026-03-08T00:00:01Z"
+    }
+  ],
+  "status": "applied",
+  "errors": [],
+  "visibility_impact": {
+    "model_visible": true,
+    "provider_visible": false,
+    "host_visible": true,
+    "model_visible_ref": "bb.tool_model_render.v1:write_result_render",
+    "provider_visible_ref": null
+  }
+}

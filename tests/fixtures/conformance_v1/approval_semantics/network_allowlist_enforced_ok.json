@@ -1,0 +1,21 @@
+{
+  "allowed_passed": true,
+  "audit_events": [
+    {
+      "id": "e1"
+    },
+    {
+      "id": "e2"
+    },
+    {
+      "id": "e3"
+    }
+  ],
+  "blocked_denied": true,
+  "expected_output": {
+    "allowed_passed": true,
+    "audit_violation_count": 0,
+    "blocked_denied": true,
+    "violation_count": 0
+  }
+}

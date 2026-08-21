@@ -3,13 +3,275 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.validate_kernel_contract_fixtures import validate_kernel_contract_fixtures
+import scripts.release.validate_kernel_contract_fixtures as kernel_fixture_validator
+import scripts.check_kernel_primitive_ct as primitive_ct
+from scripts.release.validate_kernel_contract_fixtures import validate_kernel_contract_fixtures
 
 
 def test_kernel_contract_scaffolds_validate() -> None:
     errors = validate_kernel_contract_fixtures()
     assert not errors, "\n".join(errors)
 
+
+def test_kernel_example_schema_map_reports_missing_files(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(kernel_fixture_validator, "EXAMPLES_DIR", tmp_path)
+    monkeypatch.setattr(
+        kernel_fixture_validator,
+        "EXAMPLE_SCHEMA_MAP",
+        {"missing_example.json": "bb.resource_ref.v1.schema.json"},
+    )
+
+    errors = kernel_fixture_validator._validate_examples()
+
+    assert errors == ["example missing_example.json missing example file"]
+
+
+def test_kernel_fixture_validator_reports_invalid_reference_output(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    fixture_dir = tmp_path / "engine_fixtures"
+    fixture_dir.mkdir()
+    manifest_path = fixture_dir / "python_reference_manifest_v1.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "bb.engine_conformance_manifest.v1",
+                "contractVersion": "kernel_v1_draft",
+                "rows": [
+                    {
+                        "engineFamily": "python_reference",
+                        "engineRef": "working-tree",
+                        "scenarioId": "resource_ref_invalid_reference_output",
+                        "supportTier": "draft-shape",
+                        "comparatorClass": "shape-equal",
+                        "evidence": ["bad_resource_ref_fixture.json"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (fixture_dir / "bad_resource_ref_fixture.json").write_text(
+        json.dumps(
+            {
+                "support_tier": "draft-shape",
+                "comparator_class": "shape-equal",
+                "contract": "bb.resource_ref.v1",
+                "reference_output": {
+                    "schema_version": "bb.resource_ref.v1",
+                    "uri": "file:///workspace/src/main.py",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(kernel_fixture_validator, "FIXTURE_DIR", fixture_dir)
+    monkeypatch.setattr(kernel_fixture_validator, "MANIFEST_PATH", manifest_path)
+
+    errors = kernel_fixture_validator._validate_manifest_and_fixtures()
+
+    assert any(
+        error.startswith(
+            "fixture bad_resource_ref_fixture.json failed bb.resource_ref.v1:"
+        )
+        for error in errors
+    )
+
+
+def test_kernel_fixture_validator_requires_invalid_fixture_coverage(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    fixture_dir = tmp_path / "engine_fixtures"
+    fixture_dir.mkdir()
+    monkeypatch.setattr(kernel_fixture_validator, "FIXTURE_DIR", fixture_dir)
+    monkeypatch.setattr(
+        kernel_fixture_validator,
+        "REQUIRED_INVALID_FIXTURE_LABELS",
+        {"resource_ref/invalid_fixture.json"},
+    )
+
+    errors = kernel_fixture_validator._validate_invalid_fixtures()
+
+    assert errors == [
+        "missing invalid fixture coverage: resource_ref/invalid_fixture.json"
+    ]
+
+
+def test_kernel_fixture_validator_rejects_passing_invalid_fixture(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (
+        root
+        / "conformance"
+        / "engine_fixtures"
+        / "resource_ref"
+        / "minimal_fixture.json"
+    )
+    fixture_dir = tmp_path / "engine_fixtures"
+    target_dir = fixture_dir / "resource_ref"
+    target_dir.mkdir(parents=True)
+    (target_dir / "invalid_fixture.json").write_text(
+        source.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(kernel_fixture_validator, "FIXTURE_DIR", fixture_dir)
+    monkeypatch.setattr(
+        kernel_fixture_validator,
+        "REQUIRED_INVALID_FIXTURE_LABELS",
+        {"resource_ref/invalid_fixture.json"},
+    )
+
+    errors = kernel_fixture_validator._validate_invalid_fixtures()
+
+    assert errors == [
+        "invalid fixture resource_ref/invalid_fixture.json unexpectedly passed bb.resource_ref.v1"
+    ]
+
+
+def test_kernel_fixture_validator_reports_ts_contract_registry_drift(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ts_index = tmp_path / "index.ts"
+    ts_index.write_text(
+        "\n".join(
+            [
+                'const runRequestSchema = loadTrackedSchema("bb.run_request.v1.schema.json")',
+                'const runContextSchema = loadTrackedSchema("bb.run_context.v1.schema.json")',
+                'registerTrackedSchema("bb.run_request.v1.schema.json", runRequestSchema)',
+                "const validators = {",
+                "  runRequest: runRequestSchema,",
+                "}",
+                "export const kernelSchemas = {",
+                "  runRequest: runRequestSchema,",
+                "} as const",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(kernel_fixture_validator, "TS_KERNEL_CONTRACT_INDEX", ts_index)
+
+    errors = kernel_fixture_validator._validate_ts_kernel_contracts_registry()
+
+    assert errors == [
+        "ts kernel contracts registerTrackedSchema missing loaded schemas: bb.run_context.v1.schema.json",
+        "ts kernel contracts kernelValidators missing loaded schemas: bb.run_context.v1.schema.json",
+        "ts kernel contracts kernelSchemas missing loaded schemas: bb.run_context.v1.schema.json",
+    ]
+
+def test_kernel_primitive_ct_loads_fixture_example_ref(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    fixture_dir = tmp_path / "engine_fixtures"
+    family_dir = fixture_dir / "permission"
+    family_dir.mkdir(parents=True)
+    example_dir = tmp_path / "contracts" / "kernel" / "examples"
+    example_dir.mkdir(parents=True)
+    (example_dir / "permission_minimal.json").write_text(
+        json.dumps({"schema_version": "bb.permission.v1", "request_id": "req-1"}),
+        encoding="utf-8",
+    )
+    fixture_path = family_dir / "minimal_fixture.json"
+    monkeypatch.setattr(primitive_ct, "ROOT", tmp_path)
+
+    output = primitive_ct._fixture_reference_output(
+        {
+            "contract": "bb.permission.v1",
+            "example_ref": "../../contracts/kernel/examples/permission_minimal.json",
+        },
+        fixture_path,
+    )
+
+    assert output == {"schema_version": "bb.permission.v1", "request_id": "req-1"}
+
+
+def test_kernel_primitive_ct_rejects_family_contract_mismatch(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    fixture_dir = tmp_path / "engine_fixtures"
+    family_dir = fixture_dir / "permission"
+    family_dir.mkdir(parents=True)
+    provider_exchange = json.loads(
+        (
+            root
+            / "contracts"
+            / "kernel"
+            / "examples"
+            / "provider_exchange_minimal.json"
+        ).read_text(encoding="utf-8")
+    )
+    (family_dir / "minimal_fixture.json").write_text(
+        json.dumps(
+            {
+                "fixture_family": "permission",
+                "fixture_id": "permission_minimal",
+                "support_tier": "draft-shape",
+                "comparator_class": "shape-equal",
+                "contract": "bb.provider_exchange.v1",
+                "reference_output": provider_exchange,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(primitive_ct, "FIXTURE_DIR", fixture_dir)
+
+    report = primitive_ct._validate_family(
+        "permission",
+        primitive_ct._schema_store(),
+        {"permission/minimal_fixture.json"},
+        require_invalid=False,
+    )
+
+    assert report["ok"] is False
+    assert report["errors"] == [
+        "valid fixture permission/minimal_fixture.json declares "
+        "bb.provider_exchange.v1; expected bb.permission.v1"
+    ]
+    assert report["valid"][0]["expected_contract"] == "bb.permission.v1"
+
+
+def test_kernel_primitive_ct_allows_non_p4_contract_families(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    fixture_dir = tmp_path / "engine_fixtures"
+    family_dir = fixture_dir / "coordination"
+    family_dir.mkdir(parents=True)
+    source = (
+        root
+        / "conformance"
+        / "engine_fixtures"
+        / "coordination"
+        / "minimal_fixture.json"
+    )
+    (family_dir / "minimal_fixture.json").write_text(
+        source.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(primitive_ct, "FIXTURE_DIR", fixture_dir)
+
+    report = primitive_ct._validate_family(
+        "coordination",
+        primitive_ct._schema_store(),
+        {"coordination/minimal_fixture.json"},
+        require_invalid=False,
+    )
+
+    assert report["ok"] is True
+    assert report["errors"] == []
+    assert report["valid"][0]["contract"] == "bb.coordination_reference_slice.v1"
+    assert report["valid"][0]["expected_contract"] is None
 
 def test_kernel_semantics_directory_tracks_expected_v1_dossiers() -> None:
     root = Path(__file__).resolve().parents[1]
@@ -150,6 +412,14 @@ def test_kernel_examples_include_execution_driver_contracts() -> None:
         "tool_binding_minimal.json",
         "tool_support_claim_minimal.json",
         "effective_tool_surface_minimal.json",
+        "effective_config_graph_minimal.json",
+        "config_mutation_record_minimal.json",
+        "context_resource_pack_minimal.json",
+        "capability_registry_minimal.json",
+        "extension_hook_execution_minimal.json",
+        "resource_ref_minimal.json",
+        "resource_access_minimal.json",
+        "blob_ref_minimal.json",
     }
     present = {path.name for path in example_dir.glob("*.json")}
     missing = sorted(expected - present)

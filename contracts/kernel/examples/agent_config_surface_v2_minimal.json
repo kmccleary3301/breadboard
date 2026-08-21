@@ -1,0 +1,35 @@
+{
+  "schema_version": "bb.agent_config_surface.v2",
+  "version": 2,
+  "workspace": {
+    "root": "."
+  },
+  "providers": {
+    "default_model": "openai/example",
+    "models": [
+      {
+        "id": "openai/example",
+        "adapter": "openai"
+      }
+    ]
+  },
+  "modes": [
+    {
+      "name": "default",
+      "prompt": "config/e4_targets/example/prompts/system.md",
+      "tools_enabled": [
+        "read"
+      ]
+    }
+  ],
+  "loop": {
+    "sequence": [
+      {
+        "mode": "default"
+      }
+    ]
+  },
+  "dossier": {
+    "notes": "Non-normative commentary. Runtime projection ignores this object."
+  }
+}

@@ -1,0 +1,629 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json",
+  "title": "BreadBoard effective operation policy V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "policy_id",
+    "applies_to",
+    "command_policy",
+    "file_policy",
+    "network_policy",
+    "tool_policy",
+    "resource_policy",
+    "side_effect_policy",
+    "approvals",
+    "budgets",
+    "limits",
+    "sandbox_refs",
+    "placement_refs",
+    "conditional_rules",
+    "redaction_visibility",
+    "enforcement_evidence_refs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.effective_operation_policy.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "policy_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the policy.",
+      "examples": [
+        "policy_example"
+      ]
+    },
+    "applies_to": {
+      "$ref": "#/$defs/applies_to",
+      "description": "Applies to record for this primitive."
+    },
+    "command_policy": {
+      "$ref": "#/$defs/policy_surface",
+      "description": "Command policy record for this primitive."
+    },
+    "file_policy": {
+      "$ref": "#/$defs/policy_surface",
+      "description": "File policy record for this primitive."
+    },
+    "network_policy": {
+      "$ref": "#/$defs/policy_surface",
+      "description": "Network policy record for this primitive."
+    },
+    "tool_policy": {
+      "$ref": "#/$defs/policy_surface",
+      "description": "Tool policy record for this primitive."
+    },
+    "resource_policy": {
+      "$ref": "#/$defs/policy_surface",
+      "description": "Resource policy record for this primitive."
+    },
+    "side_effect_policy": {
+      "$ref": "#/$defs/policy_surface",
+      "description": "Side effect policy record for this primitive."
+    },
+    "approvals": {
+      "$ref": "#/$defs/approvals",
+      "description": "Approvals record for this primitive."
+    },
+    "budgets": {
+      "$ref": "#/$defs/budgets",
+      "description": "Budgets record for this primitive."
+    },
+    "limits": {
+      "$ref": "#/$defs/limits",
+      "description": "Limits record for this primitive."
+    },
+    "sandbox_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in sandbox refs.",
+        "examples": [
+          [
+            "docs/conformance/sandbox.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the sandbox entries.",
+      "examples": [
+        [
+          "docs/conformance/sandbox.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "placement_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in placement refs.",
+        "examples": [
+          [
+            "docs/conformance/placement.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the placement entries.",
+      "examples": [
+        [
+          "docs/conformance/placement.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "conditional_rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/conditional_rule",
+        "description": "One entry in conditional rules."
+      },
+      "description": "Ordered conditional rules entries."
+    },
+    "redaction_visibility": {
+      "$ref": "#/$defs/redaction_visibility",
+      "description": "Redaction visibility record for this primitive."
+    },
+    "enforcement_evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in enforcement evidence refs.",
+        "examples": [
+          [
+            "docs/conformance/enforcement_evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the enforcement evidence entries.",
+      "examples": [
+        [
+          "docs/conformance/enforcement_evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "$defs": {
+    "decision": {
+      "enum": [
+        "allow",
+        "deny",
+        "ask",
+        "redact",
+        "limit"
+      ]
+    },
+    "applies_to": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "run_id",
+        "principal_ref",
+        "provider_route_ref"
+      ],
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the operation.",
+          "examples": [
+            "operation_example"
+          ]
+        },
+        "run_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Stable identifier for the run.",
+          "examples": [
+            "run_example"
+          ]
+        },
+        "principal_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the principal.",
+          "examples": [
+            "docs/conformance/principal_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "provider_route_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the provider route.",
+          "examples": [
+            "docs/conformance/provider_route_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    },
+    "policy_surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface",
+        "default_decision",
+        "rules",
+        "evidence_refs"
+      ],
+      "properties": {
+        "surface": {
+          "enum": [
+            "command",
+            "file",
+            "network",
+            "tool",
+            "resource",
+            "side_effect"
+          ],
+          "description": "Allowed surface value."
+        },
+        "default_decision": {
+          "$ref": "#/$defs/decision",
+          "description": "Default decision record for this primitive."
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/policy_rule",
+            "description": "One entry in rules."
+          },
+          "description": "Ordered rules entries."
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in evidence refs.",
+            "examples": [
+              [
+                "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the evidence entries.",
+          "examples": [
+            [
+              "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        }
+      }
+    },
+    "policy_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule_id",
+        "match",
+        "decision",
+        "approval_required",
+        "redaction_ref",
+        "evidence_refs"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the rule.",
+          "examples": [
+            "rule_example"
+          ]
+        },
+        "match": {
+          "$ref": "#/$defs/match",
+          "description": "Match record for this primitive."
+        },
+        "decision": {
+          "$ref": "#/$defs/decision",
+          "description": "Decision record for this primitive."
+        },
+        "approval_required": {
+          "type": "boolean",
+          "description": "Approval required value for this primitive."
+        },
+        "redaction_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the redaction.",
+          "examples": [
+            "docs/conformance/redaction_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in evidence refs.",
+            "examples": [
+              [
+                "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the evidence entries.",
+          "examples": [
+            [
+              "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        }
+      }
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "pattern",
+        "scope_ref"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Kind value for this primitive."
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Pattern value for this primitive."
+        },
+        "scope_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the scope.",
+          "examples": [
+            "docs/conformance/scope_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "approval_refs",
+        "approver_scope",
+        "evidence_refs"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "none",
+            "on_demand",
+            "preapproved",
+            "always_required"
+          ],
+          "description": "Allowed mode value."
+        },
+        "approval_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in approval refs.",
+            "examples": [
+              [
+                "docs/conformance/approval.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the approval entries.",
+          "examples": [
+            [
+              "docs/conformance/approval.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        },
+        "approver_scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Approver scope value for this primitive."
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in evidence refs.",
+            "examples": [
+              [
+                "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the evidence entries.",
+          "examples": [
+            [
+              "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "token_budget",
+        "cost_budget_usd",
+        "wall_time_seconds"
+      ],
+      "properties": {
+        "token_budget": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Numeric value for a token budget."
+        },
+        "cost_budget_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Numeric value for a cost budget usd."
+        },
+        "wall_time_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Numeric value for a wall time seconds."
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "concurrency",
+        "file_bytes",
+        "network_bytes",
+        "tool_calls"
+      ],
+      "properties": {
+        "concurrency": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Concurrency value for this primitive."
+        },
+        "file_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "File bytes value for this primitive."
+        },
+        "network_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Network bytes value for this primitive."
+        },
+        "tool_calls": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Tool calls value for this primitive."
+        }
+      }
+    },
+    "conditional_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule_id",
+        "condition_ref",
+        "when_true",
+        "when_false",
+        "evidence_refs"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the rule.",
+          "examples": [
+            "rule_example"
+          ]
+        },
+        "condition_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the condition.",
+          "examples": [
+            "docs/conformance/condition_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "when_true": {
+          "$ref": "#/$defs/decision",
+          "description": "When true record for this primitive."
+        },
+        "when_false": {
+          "$ref": "#/$defs/decision",
+          "description": "When false record for this primitive."
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in evidence refs.",
+            "examples": [
+              [
+                "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the evidence entries.",
+          "examples": [
+            [
+              "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        }
+      }
+    },
+    "redaction_visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_visible_paths",
+        "provider_visible_paths",
+        "host_only_paths",
+        "redacted_paths",
+        "redaction_policy_refs"
+      ],
+      "properties": {
+        "model_visible_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in model visible paths."
+          },
+          "description": "Ordered model visible paths entries."
+        },
+        "provider_visible_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in provider visible paths."
+          },
+          "description": "Ordered provider visible paths entries."
+        },
+        "host_only_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in host only paths."
+          },
+          "description": "Ordered host only paths entries."
+        },
+        "redacted_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in redacted paths."
+          },
+          "description": "Ordered redacted paths entries."
+        },
+        "redaction_policy_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in redaction policy refs.",
+            "examples": [
+              [
+                "docs/conformance/redaction_policy.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the redaction policy entries.",
+          "examples": [
+            [
+              "docs/conformance/redaction_policy.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        }
+      }
+    }
+  }
+}

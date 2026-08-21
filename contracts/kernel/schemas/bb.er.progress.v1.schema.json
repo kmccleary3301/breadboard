@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.er.progress.v1.schema.json",
+  "title": "BreadBoard ER progress tracker V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at_utc",
+    "plan_ref",
+    "revision",
+    "totals",
+    "workstreams"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.er.progress.v1"
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 1
+    },
+    "plan_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "amendments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "default": []
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "points_total",
+        "points_done",
+        "points_blocked"
+      ],
+      "properties": {
+        "points_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "points_done": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "points_blocked": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "workstreams": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ws_id",
+          "title",
+          "points_available",
+          "points_done",
+          "items"
+        ],
+        "properties": {
+          "ws_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "points_available": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "points_done": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "item_id",
+                "title",
+                "points",
+                "status",
+                "notes",
+                "evidence"
+              ],
+              "properties": {
+                "item_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "points": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "status": {
+                  "enum": [
+                    "open",
+                    "in_progress",
+                    "blocked",
+                    "done"
+                  ]
+                },
+                "notes": {
+                  "type": "string"
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "required": [
+                      "path",
+                      "sha256"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

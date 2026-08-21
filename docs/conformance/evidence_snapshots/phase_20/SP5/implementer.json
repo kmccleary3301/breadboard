@@ -1,0 +1,174 @@
+{
+  "packet": "SP5",
+  "branch": "p20/sp5",
+  "head_sha": "650c7daa01751e2c35aa1f7f0b2cf79bf96b6687",
+  "base_sha": "ba1a1cf7",
+  "root_causes": [
+    "LANE-EXPLICIT-MODE-FIXTURE-DRIFT",
+    "HASH-OWNERSHIP-DRIFT"
+  ],
+  "files_changed": [
+    "contracts/kernel/examples/e4_lane_def_minimal.json",
+    "contracts/kernel/examples/e4_lane_def_v2_minimal.json",
+    "scripts/e4_parity/compile_lane_lock.py",
+    "scripts/e4_parity/lane_definitions.py",
+    "scripts/e4_parity/metadata_non_normative.py",
+    "scripts/e4_parity/tree_digest.py",
+    "tests/e4_parity/test_generate_ct_rows.py"
+  ],
+  "before_at_base": {
+    "sha": "ba1a1cf7",
+    "commands": [
+      {
+        "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_validate_lane.py tests/e4_parity/test_config_explanation.py tests/e4_parity/test_regen_front_door.py",
+        "exit": 1,
+        "count": "2 failed, 47 passed, 10 warnings",
+        "failed_test_ids": [
+          "tests/e4_parity/test_validate_lane.py::test_current_accepted_lane_cli_emits_ok_v1_report_with_exact_checks",
+          "tests/e4_parity/test_validate_lane.py::test_temporary_lane_with_missing_capture_input_returns_schema_shaped_non_ok_report"
+        ],
+        "tail": "Both validation cases failed; metadata_non_normative was failed, and artifacts_root_valid plus accepted_artifact_hashes_fresh were also failed."
+      },
+      {
+        "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_single_hash_truth.py::test_scripts_e4_parity_keep_hashlib_usage_at_single_truth_sources",
+        "exit": 1,
+        "count": "1 failed",
+        "failed_test_ids": [
+          "tests/e4_parity/test_single_hash_truth.py::test_scripts_e4_parity_keep_hashlib_usage_at_single_truth_sources"
+        ],
+        "tail": "Three violations: compile_lane_lock.py:6, lane_definitions.py:4, and tree_digest.py:4 imported hashlib directly."
+      },
+      {
+        "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_lane_def_metadata_non_normative.py::test_lane_generators_do_not_read_non_normative_metadata tests/e4_parity/test_generate_ct_rows.py::test_lane_def_data_projects_new_ct_row_without_python_lane_branch tests/e4_parity/test_kernel_examples_manifest.py::test_manifest_examples_validate_against_paired_schemas",
+        "exit": 1,
+        "count": "3 failed, 6 warnings",
+        "failed_test_ids": [
+          "tests/e4_parity/test_lane_def_metadata_non_normative.py::test_lane_generators_do_not_read_non_normative_metadata",
+          "tests/e4_parity/test_generate_ct_rows.py::test_lane_def_data_projects_new_ct_row_without_python_lane_branch",
+          "tests/e4_parity/test_kernel_examples_manifest.py::test_manifest_examples_validate_against_paired_schemas"
+        ],
+        "tail": "Sentinel lacked normalize.mode; synthetic fixture and both lane examples lacked normalize.mode, replay.mode, and replay.artifacts."
+      }
+    ]
+  },
+  "after_at_head": {
+    "sha": "650c7daa01751e2c35aa1f7f0b2cf79bf96b6687",
+    "commands": [
+      {
+        "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_validate_lane.py tests/e4_parity/test_config_explanation.py tests/e4_parity/test_regen_front_door.py",
+        "exit": 1,
+        "count": "2 failed, 47 passed, 10 warnings",
+        "failed_test_ids": [
+          "tests/e4_parity/test_validate_lane.py::test_current_accepted_lane_cli_emits_ok_v1_report_with_exact_checks",
+          "tests/e4_parity/test_validate_lane.py::test_temporary_lane_with_missing_capture_input_returns_schema_shaped_non_ok_report"
+        ],
+        "tail": "SP5's metadata_non_normative check now passes in both reports. Residual checks are capture_inputs_exist plus artifacts_root_valid and accepted_artifact_hashes_fresh for the P3.1 lane; their ownership is not assigned by SP5 and must be bound during integration accounting."
+      },
+      {
+        "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_single_hash_truth.py::test_scripts_e4_parity_keep_hashlib_usage_at_single_truth_sources",
+        "exit": 0,
+        "count": "1 passed",
+        "failed_test_ids": [],
+        "tail": "1 passed in 0.20s"
+      },
+      {
+        "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_lane_def_metadata_non_normative.py::test_lane_generators_do_not_read_non_normative_metadata tests/e4_parity/test_generate_ct_rows.py::test_lane_def_data_projects_new_ct_row_without_python_lane_branch tests/e4_parity/test_kernel_examples_manifest.py::test_manifest_examples_validate_against_paired_schemas",
+        "exit": 0,
+        "count": "3 passed, 6 warnings",
+        "failed_test_ids": [],
+        "tail": "3 passed, 6 warnings in 1.08s"
+      },
+      {
+        "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_compile_lane_lock.py tests/e4_parity/test_tree_digest.py",
+        "exit": 0,
+        "count": "15 passed, 1 skipped",
+        "failed_test_ids": [],
+        "tail": "15 passed, 1 skipped in 0.18s"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_lane_def_metadata_non_normative.py::test_lane_generators_do_not_read_non_normative_metadata tests/e4_parity/test_generate_ct_rows.py::test_lane_def_data_projects_new_ct_row_without_python_lane_branch tests/e4_parity/test_kernel_examples_manifest.py::test_manifest_examples_validate_against_paired_schemas",
+      "exit": 0,
+      "tail": "3 passed, 6 warnings in 1.08s"
+    },
+    {
+      "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_single_hash_truth.py::test_scripts_e4_parity_keep_hashlib_usage_at_single_truth_sources",
+      "exit": 0,
+      "tail": "1 passed in 0.20s"
+    },
+    {
+      "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_compile_lane_lock.py tests/e4_parity/test_tree_digest.py",
+      "exit": 0,
+      "tail": "15 passed, 1 skipped in 0.18s"
+    },
+    {
+      "cmd": "PYTHONPATH=$WT <venv-python> -m pytest -q tests/e4_parity/test_validate_lane.py tests/e4_parity/test_config_explanation.py tests/e4_parity/test_regen_front_door.py",
+      "exit": 1,
+      "tail": "2 failed, 47 passed, 10 warnings; metadata_non_normative passes. Residual P3.1 checks are capture_inputs_exist, artifacts_root_valid, and accepted_artifact_hashes_fresh; ownership remains to be bound at integration accounting."
+    }
+  ],
+  "focused_results": {
+    "red_to_green": {
+      "metadata_non_normative_sentinel": "tests/e4_parity/test_lane_def_metadata_non_normative.py::test_lane_generators_do_not_read_non_normative_metadata: failed at base, passed at head",
+      "synthetic_lane_fixture": "tests/e4_parity/test_generate_ct_rows.py::test_lane_def_data_projects_new_ct_row_without_python_lane_branch: failed at base, passed at head",
+      "two_minimal_lane_examples": "tests/e4_parity/test_kernel_examples_manifest.py::test_manifest_examples_validate_against_paired_schemas: failed at base with six required-field errors across two examples, passed at head",
+      "hash_ownership": "tests/e4_parity/test_single_hash_truth.py::test_scripts_e4_parity_keep_hashlib_usage_at_single_truth_sources: failed at base with three unauthorized imports, passed at head"
+    },
+    "hash_behavior_regressions": "15 passed, 1 skipped",
+    "full_parity_subset": "SP5-owned metadata_non_normative failures resolved. The command goes green only at integration after both F5's P6.6 repairs and the unassigned P3.1/missing-input residuals are bound and repaired."
+  },
+  "residual_f5_ownership": {
+    "scope": "P6.6 config/generated support artifacts",
+    "check_ids": [
+      "artifacts_root_valid",
+      "accepted_artifact_hashes_fresh"
+    ],
+    "owner": "PacketF5",
+    "ownership_confirmation": "F5 changes remain run_lane/path_refs/c4/readiness plus P6.6 config/generated support artifacts and focused tests."
+  },
+  "unassigned_residuals": {
+    "ownership_status": "to be bound at integration accounting",
+    "candidate_owner_or_route": "SP6 (OHMYPI-FREEZE-INPUT-NOT-CHECKOUT-PORTABLE) or integration-time regeneration; no owner asserted",
+    "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+    "checks": [
+      {
+        "check_id": "capture_inputs_exist",
+        "missing_paths": [
+          "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+          "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
+          "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json",
+          "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json",
+          "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_probe_output.json"
+        ]
+      },
+      {
+        "check_id": "artifacts_root_valid",
+        "missing_paths": [
+          "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler"
+        ]
+      },
+      {
+        "check_id": "accepted_artifact_hashes_fresh",
+        "missing_paths": [
+          "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json",
+          "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/raw_capture_manifest.json"
+        ]
+      }
+    ]
+  },
+  "config_e4_lanes_files_touched": [],
+  "s03_check": {
+    "new_capability": false,
+    "lane_crud_or_api": false,
+    "sdk_e4_surface": false,
+    "typescript_repackaging": false,
+    "new_schema_family": false,
+    "scorecard_or_ledger_shape_change": false,
+    "parallel_framework": false,
+    "validation_weakened": false,
+    "hash_allowlist_expanded": false
+  },
+  "notes": "No config/e4_lanes files were touched, so PacketF5 can sequence its compile_lane_lock constant edit after SP5 merges. PacketF5 was contacted before investigation and retained exclusive ownership of the P6.6 manifest/lock and generated support artifacts. SP5 keeps explicit mode validation, absolute-path rejection, and freeze gates unchanged. The full parity-subset command goes green only at integration after F5's P6.6 repairs and the separately unassigned P3.1/missing-input residuals are bound and repaired."
+}
