@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -148,20 +149,24 @@ def test_phase18_finish_request_is_denied_before_closure_ready(tmp_path: Path) -
 
 
 def test_phase18_audit_reads_phase17_reentry_summary() -> None:
-    repo_root = Path("/shared_folders/querylake_server/ray_testing/ray_SCE")
+    evidence_root = Path(
+        os.environ.get(
+            "BREADBOARD_EVIDENCE_ROOT",
+            Path(__file__).resolve().parents[2] / "docs_tmp",
+        )
+    ).resolve()
     summary = build_phase18_finish_closure_audit(
-        repo_root / "docs_tmp/c_trees/phase_17/artifacts/verification_probe_reentry_v2/phase17_verification_probe_reentry_summary_v2.json"
+        evidence_root / "c_trees/phase_17/artifacts/verification_probe_reentry_v2/phase17_verification_probe_reentry_summary_v2.json"
     )
     assert summary["schema_version"] == "phase18_finish_closure_audit_v1"
     assert summary["tied_at_real_surface"] is True
     assert "edit_ready_no_close" in summary["global_class_counts"]
 
 
-def test_phase18_runner_dry_run_uses_finish_closure_payload() -> None:
-    repo_root = Path("/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_main_verify_20260313")
-    tasks_path = repo_root / "tmp" / "test_phase18_runner_tasks.json"
-    out_path = repo_root / "tmp" / "test_phase18_runner_results.json"
-    tasks_path.parent.mkdir(parents=True, exist_ok=True)
+def test_phase18_runner_dry_run_uses_finish_closure_payload(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    tasks_path = tmp_path / "test_phase18_runner_tasks.json"
+    out_path = tmp_path / "test_phase18_runner_results.json"
     tasks_path.write_text(
         json.dumps(
             {
@@ -195,7 +200,7 @@ def test_phase18_runner_dry_run_uses_finish_closure_payload() -> None:
             "--out",
             str(out_path),
             "--workspace-root",
-            "tmp/test_phase18_runner_dry_run",
+            str(tmp_path / "workspace"),
             "--dry-run",
         ],
         cwd=repo_root,

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import sys
@@ -15,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.e4_parity import regenerate_evidence as regen  # noqa: E402
-from scripts.e4_parity.validators.hash_utils import sha256_file, sha256_json  # noqa: E402
+from scripts.e4_parity.validators.hash_utils import sha256_bytes, sha256_file, sha256_json  # noqa: E402
 
 FAILURE_CLASSES = (
     "pin_stale",
@@ -51,7 +50,7 @@ def _snapshot_sha256_path(path: Path) -> str:
         (str(ROOT.parent.resolve()).encode(), b"<workspace-root>"),
     ):
         payload = payload.replace(prefix, marker)
-    return "sha256:" + hashlib.sha256(payload).hexdigest()
+    return sha256_bytes(payload)
 
 def _display_path(path: Path) -> str:
     resolved = path.resolve()

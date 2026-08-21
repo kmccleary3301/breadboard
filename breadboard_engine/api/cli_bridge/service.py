@@ -172,11 +172,7 @@ class SessionService:
         state_root: str | Path | None = None,
         subscriber_queue_maxsize: int | None = None,
     ) -> None:
-        configured_state_root = (
-            state_root
-            or os.environ.get("BREADBOARD_SESSION_STATE_ROOT")
-            or (default_runtime_record_root() / "session_state")
-        )
+        configured_state_root = state_root or os.environ.get("BREADBOARD_SESSION_STATE_ROOT")
         self.registry = registry or SessionRegistry(
             configured_state_root,
             process_identity=get_engine_process_identity(),

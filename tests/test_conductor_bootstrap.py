@@ -8,7 +8,6 @@ This test verifies that:
 """
 
 import pytest
-import ray
 import shutil
 import os
 from pathlib import Path
@@ -19,16 +18,9 @@ from breadboard_engine.conductor_context import ConductorContext
 ConductorClass = OpenAIConductor.__ray_metadata__.modified_class
 
 
-@pytest.fixture(scope="module")
-def ray_cluster():
-    """Start Ray cluster for conductor tests."""
-    if not ray.is_initialized():
-        ray.init(local_mode=True, ignore_reinit_error=True)
-    yield
-    ray.shutdown()
 
 
-def test_conductor_initialization_basic(ray_cluster, tmp_path):
+def test_conductor_initialization_basic(tmp_path):
     """Test that conductor initializes correctly with minimal config."""
     workspace = str(tmp_path / "test_workspace")
     
@@ -47,7 +39,7 @@ def test_conductor_initialization_basic(ray_cluster, tmp_path):
     assert conductor.local_mode is True
 
 
-def test_conductor_initialization_with_config(ray_cluster, tmp_path):
+def test_conductor_initialization_with_config(tmp_path):
     """Test conductor initialization with a more complete config."""
     workspace = str(tmp_path / "test_workspace")
     
@@ -79,7 +71,7 @@ def test_conductor_initialization_with_config(ray_cluster, tmp_path):
     assert conductor.workspace == workspace or str(Path(workspace).resolve())
 
 
-def test_conductor_components_initialized(ray_cluster, tmp_path):
+def test_conductor_components_initialized(tmp_path):
     """Verify all components are initialized correctly after bootstrap."""
     workspace = str(tmp_path / "test_workspace")
     
@@ -124,7 +116,7 @@ def test_conductor_components_initialized(ray_cluster, tmp_path):
     assert hasattr(conductor, 'streaming_policy')
 
 
-def test_persist_final_workspace_skips_nondisposable_workspace(ray_cluster, tmp_path):
+def test_persist_final_workspace_skips_nondisposable_workspace(tmp_path):
     workspace = tmp_path / "user_workspace"
     workspace.mkdir(parents=True, exist_ok=True)
     (workspace / "hello.txt").write_text("hello\n", encoding="utf-8")
@@ -149,7 +141,7 @@ def test_persist_final_workspace_skips_nondisposable_workspace(ray_cluster, tmp_
     assert payload["reason"] == "nondisposable_workspace_skipped"
 
 
-def test_persist_final_workspace_copies_disposable_workspace(ray_cluster, tmp_path):
+def test_persist_final_workspace_copies_disposable_workspace(tmp_path):
     workspace = tmp_path / "persistable_workspace"
     workspace.mkdir(parents=True, exist_ok=True)
     (workspace / "hello.txt").write_text("hello\n", encoding="utf-8")
@@ -187,7 +179,7 @@ def test_persist_final_workspace_copies_disposable_workspace(ray_cluster, tmp_pa
     assert conductor.turn_relayer is not None
 
 
-def test_conductor_satisfies_conductor_context_protocol(ray_cluster, tmp_path):
+def test_conductor_satisfies_conductor_context_protocol(tmp_path):
     """Verify conductor satisfies ConductorContext protocol (P2)."""
     workspace = str(tmp_path / "test_workspace")
     
@@ -238,7 +230,7 @@ def test_conductor_satisfies_conductor_context_protocol(ray_cluster, tmp_path):
     assert result == workspace or str(Path(workspace).resolve())
 
 
-def test_conductor_guardrail_attributes_initialized(ray_cluster, tmp_path):
+def test_conductor_guardrail_attributes_initialized(tmp_path):
     """Verify guardrail attributes are initialized correctly."""
     workspace = str(tmp_path / "test_workspace")
     
@@ -263,7 +255,7 @@ def test_conductor_guardrail_attributes_initialized(ray_cluster, tmp_path):
     assert hasattr(conductor, 'todo_rate_guard_handler')
 
 
-def test_conductor_replay_session_loading(ray_cluster, tmp_path):
+def test_conductor_replay_session_loading(tmp_path):
     """Test that replay session loading works (if configured)."""
     workspace = str(tmp_path / "test_workspace")
     
@@ -294,7 +286,7 @@ def test_conductor_replay_session_loading(ray_cluster, tmp_path):
         )
 
 
-def test_conductor_sandbox_initialization(ray_cluster, tmp_path):
+def test_conductor_sandbox_initialization(tmp_path):
     """Test that sandbox is initialized correctly."""
     workspace = str(tmp_path / "test_workspace")
     
@@ -312,7 +304,7 @@ def test_conductor_sandbox_initialization(ray_cluster, tmp_path):
     assert conductor.using_virtualized is False  # local_mode disables virtualization
 
 
-def test_conductor_workspace_preparation(ray_cluster, tmp_path):
+def test_conductor_workspace_preparation(tmp_path):
     """Test that workspace is prepared correctly."""
     workspace = str(tmp_path / "test_workspace")
     

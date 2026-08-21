@@ -5,6 +5,7 @@ import os
 import random
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import time
@@ -815,11 +816,21 @@ def _maybe_auto_verify_make_after_write_receipts(
     else:
         return False
     session_state.set_provider_metadata("auto_verify_make_after_write_receipts_successful_writes", successful_writes)
+    execution_args = subprocess_args
+    execution_timeout = 120.0
+    requested_timeout = re.match(r"timeout\s+([0-9]+(?:\.[0-9]+)?)s?\s+", smoke_command)
+    if requested_timeout and shutil.which("timeout") is None:
+        execution_args = [
+            "bash",
+            "-lc",
+            verify_command.replace(smoke_command, "bash smoke_test.sh"),
+        ]
+        execution_timeout = min(execution_timeout, float(requested_timeout.group(1)))
     started = time.monotonic()
     completed = _run_subprocess_capture_with_group_timeout(
-        subprocess_args,
+        execution_args,
         cwd=str(workspace),
-        timeout=120,
+        timeout=execution_timeout,
     )
     exit_code = int(completed.get("exit") or 0)
     stdout = str(completed.get("stdout") or "")

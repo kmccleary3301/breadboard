@@ -1637,6 +1637,11 @@ class SessionRegistry:
             record = self._records.get(session_id)
             if not record:
                 return
+            if record.product_session is not None and status is not record.projected_status():
+                raise RuntimeError(
+                    f"registry status {status.value!r} disagrees with product Session "
+                    f"status {record.product_session.read_model.status!r}"
+                )
             record.status = status
             record.last_activity_at = _utcnow()
             self._persist_record_locked(record)
