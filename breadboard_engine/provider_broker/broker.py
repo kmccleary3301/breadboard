@@ -678,6 +678,43 @@ class LeaseCapabilityServer:
                 continue
 
 
+def _scrub_ray_actor_environment(actor: Any) -> dict[str, Any]:
+    """Scrub one already-started Ray actor after Ray applies its own environment."""
+    del actor
+    scrub_child_environment()
+    state_dir = os.environ.get("BREADBOARD_STATE_DIR")
+    return {
+        "environment_violations": child_environment_violations(),
+        "credential_environment_violations": credential_environment_violations(),
+        "home_is_isolated": bool(state_dir) and os.environ.get("HOME") == state_dir,
+        "tmpdir_is_isolated": bool(state_dir) and os.environ.get("TMPDIR") == state_dir,
+    }
+
+
+def _confine_ray_queue_environment(transport: Any) -> None:
+    """Scrub a Ray queue actor before its handle crosses into a worker."""
+    import ray
+
+    actor = getattr(transport, "actor", None)
+    direct_call = getattr(actor, "__ray_call__", None)
+    remote = getattr(direct_call, "remote", None)
+    if not callable(remote):
+        raise RuntimeError("Ray queue actor does not expose a confinement call")
+    observation = ray.get(remote(_scrub_ray_actor_environment))
+    if not isinstance(observation, Mapping):
+        raise RuntimeError("Ray queue actor returned no confinement observation")
+    if (
+        observation.get("environment_violations")
+        or observation.get("credential_environment_violations")
+        or observation.get("home_is_isolated") is not True
+        or observation.get("tmpdir_is_isolated") is not True
+    ):
+        raise RuntimeError(
+            "Ray queue actor environment confinement failed: "
+            f"{dict(observation)}"
+        )
+
+
 def start_lease_capability_channel(
     broker: ProviderBroker,
     *,
@@ -706,11 +743,21 @@ def start_lease_capability_channel(
             ),
         },
     }
-    request_queue = Queue(maxsize=8, actor_options=actor_options)
+    request_queue = None
+    response_queue = None
     try:
+        request_queue = Queue(maxsize=8, actor_options=actor_options)
+        _confine_ray_queue_environment(request_queue)
         response_queue = Queue(maxsize=8, actor_options=actor_options)
+        _confine_ray_queue_environment(response_queue)
     except Exception:
-        request_queue.shutdown(force=True)
+        for transport in (request_queue, response_queue):
+            shutdown = getattr(transport, "shutdown", None)
+            if callable(shutdown):
+                try:
+                    shutdown(force=True)
+                except Exception:
+                    pass
         raise
     capability_token = secrets.token_urlsafe(32)
     channel = LeaseCapabilityChannel(

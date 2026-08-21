@@ -166,7 +166,7 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
     async def start(_runner) -> None: return None  # type: ignore[no-untyped-def]
     monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_runner.load_agent_config", load); monkeypatch.setattr("breadboard_engine.api.cli_bridge.runtime_emission.load_agent_config", lambda _: pytest.fail("emitter reloaded mutable source")); monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.primitive_emission_enabled", enable_primitives)
     monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.uuid.uuid4", lambda: "frozen-session"); monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_runner.SessionRunner.start", start); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records")); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events"))
-    service = SessionService(); response = await service.create_session(SessionCreateRequest(config_path="mutating.json", task="test")); record = await service.ensure_session(response.session_id); root = tmp_path / "records" / response.session_id; names = ("effective_config_graph", "capability_registry", "effective_tool_surface", "effective_operation_policy"); payloads = {name: json.loads((root / f"{name}.json").read_text()) for name in names}
+    service = SessionService(); response = await service.create_session(SessionCreateRequest(config_path="mutating.json", task="test", overrides={"provider_auth_runtime.openai.api_key": "override-secret"})); record = await service.ensure_session(response.session_id); root = tmp_path / "records" / response.session_id; names = ("effective_config_graph", "capability_registry", "effective_tool_surface", "effective_operation_policy"); payloads = {name: json.loads((root / f"{name}.json").read_text()) for name in names}
     graph, policy = payloads["effective_config_graph"], payloads["effective_operation_policy"]; tool_ids = {item["capability_id"] for item in payloads["capability_registry"]["capabilities"] if item["capability_type"] == "tool"}; assert calls == ["mutating.json"] and graph["graph_hash"] == record.product_session.events[0].payload["effective_lock_hash"]
     assert tool_ids == {"tool.list"} == set(payloads["effective_tool_surface"]["tool_ids"]) and [(rule["decision"], rule["match"]["pattern"]) for rule in policy["tool_policy"]["rules"]] == [("allow", "list"), ("deny", "blocked_tool")]
     serialized = json.dumps(payloads) + "".join(path.read_text() for path in tmp_path.rglob("*") if path.is_file()); assert policy["approvals"]["mode"] == "always_required" and all(secret not in serialized for secret in ("provider_auth_runtime", "runtime-secret", "flat-secret", "nested-secret", '"read"'))
@@ -183,8 +183,12 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
             "initialize": lambda self: None,
         },
     )
-    factory = lambda path, _workspace, _overrides: (
-        captured.update(config=json.loads(Path(path).read_text()), path=path),
+    factory = lambda path, _workspace, overrides: (
+        captured.update(
+            config=json.loads(Path(path).read_text()),
+            path=path,
+            overrides=overrides,
+        ),
         Agent(),
     )[1]
     record.runner.agent_factory = factory
@@ -198,6 +202,7 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
     )
     assert calls == ["mutating.json"]
     assert captured["config"] == record.runner.current_runtime_config()
+    assert captured["overrides"] is None
     assert "provider_auth_runtime" not in json.dumps(captured["config"])
     assert all(
         secret not in persisted and secret not in json.dumps(captured["config"])
@@ -206,8 +211,79 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
             "runtime-secret",
             "flat-secret",
             "nested-secret",
+            "override-secret",
         )
     )
     assert not Path(captured["path"]).exists()
     with pytest.raises(ValueError, match="denied by policy"): await record.runner.handle_command("set_model", {"model": "blocked-model"})
     await service.stop_session(response.session_id); await record.event_queue.put(None); await record.dispatcher_task
+
+
+@pytest.mark.asyncio
+async def test_cancelled_agent_initialization_waits_for_exact_lease_cleanup(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.provider_broker.broker import credential_environment_violations
+
+    for key in credential_environment_violations():
+        monkeypatch.delenv(key, raising=False)
+    runner = _runner("cancel-initialize")
+    runner.request.workspace = str(tmp_path / "workspace")
+    entered = threading.Event()
+    unblock = threading.Event()
+    releases: list[str] = []
+
+    class Agent:
+        workspace_dir = str(tmp_path / "workspace")
+
+        def initialize(self) -> None:
+            entered.set()
+            assert unblock.wait(2)
+
+        def _release_provider_lease(self) -> None:
+            releases.append("released")
+
+    runner.agent_factory = lambda _path, _workspace, _overrides: Agent()
+    initializing = asyncio.create_task(runner._ensure_agent_initialized())
+    assert await asyncio.to_thread(entered.wait, 1)
+
+    initializing.cancel()
+    unblock.set()
+    with pytest.raises(asyncio.CancelledError):
+        await initializing
+
+    assert releases == ["released"]
+    assert runner._agent is None
+
+
+@pytest.mark.asyncio
+async def test_stop_after_remote_initialization_releases_before_runner_exit(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.provider_broker.broker import credential_environment_violations
+
+    for key in credential_environment_violations():
+        monkeypatch.delenv(key, raising=False)
+    runner = _runner("stop-after-initialize")
+    runner.request.workspace = str(tmp_path / "workspace")
+    releases: list[str] = []
+
+    class Agent:
+        workspace_dir = str(tmp_path / "workspace")
+
+        def initialize(self) -> None:
+            runner._stop_event.set()
+
+        def _release_provider_lease(self) -> None:
+            releases.append("released")
+
+    runner.agent_factory = lambda _path, _workspace, _overrides: Agent()
+    await runner.registry.create(runner.session)
+
+    await runner._run()
+
+    assert releases == ["released"]
+    assert runner._closed is True
+    assert runner.session.status is SessionStatus.STOPPED

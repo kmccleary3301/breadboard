@@ -276,8 +276,11 @@ class AgenticCoder:
                 endpoint_id=model_route,
                 worker_state_dir=worker_state_dir,
             )
-        except Exception:
-            broker.release_execution_material(lease_id)
+        except Exception as exc:
+            if not broker.release_execution_material(lease_id):
+                raise RuntimeError(
+                    f"provider broker failed to release unstarted agent lease {lease_id}"
+                ) from exc
             raise
         self._provider_lease_id = lease_id
         self._provider_lease_channel = channel
@@ -296,7 +299,10 @@ class AgenticCoder:
             if lease_id:
                 from .provider_broker import get_provider_broker
 
-                get_provider_broker().release_execution_material(lease_id)
+                if not get_provider_broker().release_execution_material(lease_id):
+                    raise RuntimeError(
+                        f"provider broker failed to release agent lease {lease_id}"
+                    )
         finally:
             if server is not None:
                 try:

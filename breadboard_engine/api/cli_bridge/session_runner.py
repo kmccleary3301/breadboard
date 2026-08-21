@@ -269,6 +269,10 @@ class SessionRunner:
             if queue is None: return
             if self._stop_event.is_set(): queue.put({"kind": "stop"})
             elif not self._resume_event.is_set(): queue.put({"kind": "pause"})
+    def _release_agent_provider_lease(self) -> None:
+        release = getattr(self._agent, "_release_provider_lease", None)
+        if callable(release):
+            release()
     def _request_stop(self, reason: str) -> bool:
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
@@ -285,15 +289,19 @@ class SessionRunner:
             return stopping
     async def stop(self, reason: str = "operator request") -> None:
         if self._closed:
+            self._release_agent_provider_lease()
             return
         self._request_stop(reason)
         if self._task and not self._start_authority.is_set():
             self._task.cancel()
-        if self._task and not self._task.done():
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+        try:
+            if self._task and not self._task.done():
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+        finally:
+            self._release_agent_provider_lease()
     async def enqueue_input(
         self,
         content: str,
@@ -798,30 +806,49 @@ class SessionRunner:
                 "unsafe credential or capability environment: "
                 + ", ".join(unsafe_environment)
             )
-        overrides = dict(self.request.overrides or {})
         frozen = self.current_runtime_config()
         descriptor, snapshot = tempfile.mkstemp(suffix=".json")
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream: json.dump(frozen, stream, sort_keys=True); stream.flush(); os.fsync(stream.fileno())
-            self._agent = self.agent_factory(snapshot, self.request.workspace, overrides or None)
+            self._agent = self.agent_factory(snapshot, self.request.workspace, None)
             if hasattr(self._agent, "config_path"): self._agent.config_path = self.request.config_path
-            await asyncio.to_thread(self._agent.initialize)
-        finally: Path(snapshot).unlink(missing_ok=True)
-        workspace_dir = Path(self._agent.workspace_dir).resolve()
-        workspace_dir.mkdir(parents=True, exist_ok=True)
-        self._workspace_path = workspace_dir
-        if self._model_override:
-            self._apply_model_override()
-        if self._todo_enabled:
-            meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
-            if not isinstance(meta.get("todo_last_update"), dict):
-                await self._maybe_publish_todo_snapshot(workspace_dir, call_id="todo:snapshot:init")
-        try:
-            if self._checkpoint_manager is None:
-                self._checkpoint_manager = CheckpointManager(workspace_dir)
-                self._checkpoint_manager.create_checkpoint("Session start")
-        except Exception:
-            self._checkpoint_manager = None
+            initialization = asyncio.create_task(asyncio.to_thread(self._agent.initialize))
+            try:
+                await asyncio.shield(initialization)
+            except asyncio.CancelledError:
+                while not initialization.done():
+                    try:
+                        await asyncio.shield(initialization)
+                    except asyncio.CancelledError:
+                        continue
+                try:
+                    initialization.result()
+                except BaseException:
+                    pass
+                raise
+            workspace_dir = Path(self._agent.workspace_dir).resolve()
+            workspace_dir.mkdir(parents=True, exist_ok=True)
+            self._workspace_path = workspace_dir
+            if self._model_override:
+                self._apply_model_override()
+            if self._todo_enabled:
+                meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+                if not isinstance(meta.get("todo_last_update"), dict):
+                    await self._maybe_publish_todo_snapshot(workspace_dir, call_id="todo:snapshot:init")
+            try:
+                if self._checkpoint_manager is None:
+                    self._checkpoint_manager = CheckpointManager(workspace_dir)
+                    self._checkpoint_manager.create_checkpoint("Session start")
+            except Exception:
+                self._checkpoint_manager = None
+        except BaseException:
+            try:
+                self._release_agent_provider_lease()
+            finally:
+                self._agent = None
+            raise
+        finally:
+            Path(snapshot).unlink(missing_ok=True)
     async def _execute_replay_task(
         self,
         task_text: str,
@@ -1082,7 +1109,10 @@ class SessionRunner:
             if product_state == "failed": await self.publish_event_async(EventType.ERROR, {"message": str(exc)})
         finally:
             self._closed = True
-            await self._enqueue_termination()
+            try:
+                self._release_agent_provider_lease()
+            finally:
+                await self._enqueue_termination()
     def _load_todo_envelope_from_disk(self, workspace_dir: Path) -> Optional[Dict[str, Any]]:
         try:
             store = TodoStore(str(workspace_dir), load_existing=True)
