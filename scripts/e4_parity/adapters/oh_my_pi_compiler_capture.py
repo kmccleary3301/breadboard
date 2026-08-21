@@ -9,7 +9,12 @@ from typing import Any, Callable, Mapping
 import yaml
 
 from agentic_coder_prototype.compilation.effective_config_graph import finalize_effective_config_graph, graph_content_hash
-from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec, validate_record
+from agentic_coder_prototype.compilation.primitive_records import (
+    VALIDATION_ONLY_SCHEMA_VERSIONS,
+    finalize_record,
+    get_spec,
+    validate_record,
+)
 from agentic_coder_prototype.conformance.catalog_binding import catalog_segment_hash, reusable_catalog_revision
 from scripts.e4_parity import build_primitive_projection as primitive_projection
 from scripts.e4_parity import lane_inventory_utils as lane_inventory
@@ -366,7 +371,7 @@ def _projection_context(
 def _finalize_projected_record(schema_version: str, value: Mapping[str, Any]) -> dict[str, Any]:
     if schema_version == "bb.effective_config_graph.v1":
         return finalize_effective_config_graph(value)
-    if schema_version == "bb.work_item.v2":
+    if schema_version == "bb.work_item.v2" or schema_version in VALIDATION_ONLY_SCHEMA_VERSIONS:
         return validate_record(get_spec(schema_version), value)
     spec = get_spec(schema_version)
     if spec.hash_field is not None and spec.hash_field in value:

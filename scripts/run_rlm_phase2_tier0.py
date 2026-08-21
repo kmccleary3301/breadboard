@@ -142,8 +142,6 @@ def _base_config(
 
 
 def _invoke_baseline(prompt: str, model_route: str) -> Dict[str, Any]:
-    if model_route.startswith("mock/"):
-        os.environ.setdefault("MOCK_API_KEY", "mock")
     descriptor, model = provider_router.get_runtime_descriptor(model_route)
     runtime = provider_registry.create_runtime(descriptor)
     client_cfg = provider_router.create_client_config(model_route)
@@ -432,8 +430,6 @@ def run_tier0(
     subcall_timeout_seconds: float = 10.0,
     batch_timeout_seconds: float = 10.0,
 ) -> Dict[str, Any]:
-    if model_route.startswith("mock/"):
-        os.environ.setdefault("MOCK_API_KEY", "mock")
     runs: List[Dict[str, Any]] = []
     selected_arms = [a for a in ARMS if not arm_ids or a in set(arm_ids)]
     selected_scenarios = _iter_selected_scenarios(scenario_ids)

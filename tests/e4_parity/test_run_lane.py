@@ -1080,6 +1080,83 @@ def test_capture_adapter_promoted_run_refreshes_promoted_bindings(
     assert calls == [(True, None)]
     assert result["stages"][0]["promotion_refresh"] == {"ok": True, "refreshed": True}
 
+
+def test_isolated_promotion_rejects_ineligible_capture_before_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lane_id = "run_lane_test_ineligible_isolated_capture"
+    scratch_root = tmp_path / "regen"
+    calls: list[tuple[bool, Path | None]] = []
+
+    def fake_adapter(
+        lane_def: dict[str, object],
+        inventory_lane: dict[str, object] | None,
+        *,
+        promote_accepted: bool,
+        out_dir: Path | None,
+    ) -> dict[str, object]:
+        calls.append((promote_accepted, out_dir))
+        return {
+            "canonical_copy_eligible": False,
+            "ok": True,
+            "promotion_eligible": False,
+        }
+
+    fake_adapter.supports_scratch_out_dir = True
+    monkeypatch.setattr(run_lane, "_REGEN_SCRATCH_ROOT", scratch_root)
+    monkeypatch.setattr(
+        run_lane,
+        "_promote_capture_outputs",
+        lambda *_args: pytest.fail("ineligible capture must not reach canonical copy"),
+    )
+
+    with pytest.raises(
+        run_lane.LaneRunError,
+        match="capture report declares canonical_copy_eligible=false",
+    ):
+        run_lane._run_isolated_capture(
+            {"lane_id": lane_id, "capture": {"adapter": "fixture"}},
+            None,
+            fake_adapter,
+        )
+
+    assert calls == [(False, scratch_root / lane_id)]
+
+
+def test_isolated_promotion_allows_adapter_scratch_acceptance_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lane_id = "run_lane_test_scratch_acceptance_state"
+    scratch_root = tmp_path / "regen"
+    copied: list[Path] = []
+
+    def fake_adapter(
+        lane_def: dict[str, object],
+        inventory_lane: dict[str, object] | None,
+        *,
+        promote_accepted: bool,
+        out_dir: Path | None,
+    ) -> dict[str, object]:
+        return {"ok": True, "promotion_eligible": False}
+
+    def fake_copy(lane_def: dict[str, object], source: Path) -> list[str]:
+        copied.append(source)
+        return ["docs/conformance/copied.json"]
+
+    fake_adapter.supports_scratch_out_dir = True
+    monkeypatch.setattr(run_lane, "_REGEN_SCRATCH_ROOT", scratch_root)
+    monkeypatch.setattr(run_lane, "_promote_capture_outputs", fake_copy)
+
+    result = run_lane._run_isolated_capture(
+        {"lane_id": lane_id, "capture": {"adapter": "fixture"}},
+        None,
+        fake_adapter,
+    )
+
+    assert result["promoted_paths"] == ["docs/conformance/copied.json"]
+    assert copied == [scratch_root / lane_id]
+
+
 def test_output_with_only_empty_gate_envelope_fields_is_rewritten_to_accepted_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

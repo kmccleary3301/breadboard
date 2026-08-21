@@ -221,15 +221,23 @@ def _resolve_role_output(path_text: str) -> Path:
     return ROOT / raw
 
 
+def _is_retired_validation_only_lane(
+    lane_def: Mapping[str, Any],
+    spec: Mapping[str, Any],
+) -> bool:
+    if spec["p3_item"] != "P3.7":
+        return False
+    if lane_def.get("status") != "superseded":
+        raise ValueError("P3.7 validation-only evidence must remain superseded")
+    return True
+
+
 def _validate_capture_inputs(lane_def: Mapping[str, Any], spec: Mapping[str, Any], builders: tuple[Mapping[str, Any], ...]) -> None:
     capture = lane_def.get("capture")
     inputs = capture.get("inputs") if isinstance(capture, Mapping) else None
     if not isinstance(inputs, list) or not all(isinstance(item, str) and item for item in inputs):
         raise ValueError("capture.inputs must list concrete source artifacts")
     required = {
-        _display(SOURCE_L1_CAPTURE_PATH),
-        _display(SOURCE_L1_PROBE_PATH),
-        _display(SOURCE_L1_SETUP_PATH),
         _display(SOURCE_FREEZE_PATH),
         _display(HELPER_MODULE_PATH),
         "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
@@ -238,6 +246,15 @@ def _validate_capture_inputs(lane_def: Mapping[str, Any], spec: Mapping[str, Any
         "scripts/e4_parity/adapters/oh_my_pi_p3_packet.py",
         "scripts/e4_parity/fixtures/p3_lane_fixtures.py",
     }
+    validation_only_retired_lane = _is_retired_validation_only_lane(lane_def, spec)
+    if not validation_only_retired_lane:
+        required.update(
+            {
+                _display(SOURCE_L1_CAPTURE_PATH),
+                _display(SOURCE_L1_PROBE_PATH),
+                _display(SOURCE_L1_SETUP_PATH),
+            }
+        )
     missing = sorted(required - set(inputs))
     if missing:
         raise ValueError(f"capture.inputs missing required P3 compiler sources: {missing}")
@@ -310,12 +327,22 @@ def _write_agent_config(spec: Mapping[str, Any], physical: Mapping[str, Path]) -
     p3_packet.write_agent_config(spec, physical)
 
 
-def _source_pairs(physical: Mapping[str, Path], logical: Mapping[str, Path]) -> list[tuple[Path, Path]]:
+def _source_pairs(
+    spec: Mapping[str, Any],
+    physical: Mapping[str, Path],
+    logical: Mapping[str, Path],
+) -> list[tuple[Path, Path]]:
+    source_paths = [SOURCE_L1_CAPTURE_PATH, SOURCE_L1_PROBE_PATH, SOURCE_L1_SETUP_PATH, SOURCE_FREEZE_PATH]
+    if spec["p3_item"] == "P3.7":
+        source_paths = [
+            ROOT
+            / "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_target_freeze_manifest.yaml",
+            ROOT
+            / "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/source_freeze_provenance.json",
+            SOURCE_FREEZE_PATH,
+        ]
     return [
-        (SOURCE_L1_CAPTURE_PATH, SOURCE_L1_CAPTURE_PATH),
-        (SOURCE_L1_PROBE_PATH, SOURCE_L1_PROBE_PATH),
-        (SOURCE_L1_SETUP_PATH, SOURCE_L1_SETUP_PATH),
-        (SOURCE_FREEZE_PATH, SOURCE_FREEZE_PATH),
+        *((path, path) for path in source_paths),
         (physical["agent_config"], logical["agent_config"]),
         (physical["compiled_records"], logical["compiled_records"]),
         (physical["schema_validation"], logical["schema_validation"]),
@@ -329,23 +356,32 @@ def _write_capture_replay_compare(
     records: Mapping[str, Any],
     validation: Mapping[str, Any],
     comparator_facts: Mapping[str, Any],
-) -> None:
+) -> bool:
     _write_json(physical["compiled_records"], {"schema_version": "bb.e4.helper_runtime_compiled_records.v1", "lane_id": spec["lane_id"], "config_id": spec["config_id"], "records": records})
     _write_json(physical["schema_validation"], validation)
-    source_pairs = _source_pairs(physical, logical)
+    source_pairs = _source_pairs(spec, physical, logical)
     source_hashes = _source_hashes(source_pairs)
     captured = [{"path": _display(logical_path), "role": "source", "sha256": _sha256_file(physical_path)} for physical_path, logical_path in source_pairs]
+    raw_source_path = SOURCE_L1_CAPTURE_PATH
+    lineage_rationale = f"{spec['p3_item']} helper/runtime compiler capture is derived from canonical Oh-My-Pi P6.0-L1 source/capture material and scoped to BreadBoard helper-runtime primitive emission. It does not broaden target support beyond this named P3 lane."
+    raw_source_status = "canonical_raw_present"
+    accepted_as_capture_ref = True
+    if spec["p3_item"] == "P3.7":
+        raw_source_path = ROOT / "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_target_freeze_manifest.yaml"
+        lineage_rationale = "P3.7 validates retired memory/work evidence from its frozen target and source provenance through the shared helper-runtime adapter; it does not reactivate v1 dispatch or broaden target support."
+        raw_source_status = "derived_from_unavailable_raw"
+        accepted_as_capture_ref = False
     raw_capture = {
-        "accepted_as_capture_ref": True,
+        "accepted_as_capture_ref": accepted_as_capture_ref,
         "capture_class": "derived_capture",
         "captured_artifacts": captured,
         "config_id": spec["config_id"],
         "generated_at_utc": GENERATED_AT_UTC,
         "lane_id": spec["lane_id"],
-        "lineage_rationale": f"{spec['p3_item']} helper/runtime compiler capture is derived from canonical Oh-My-Pi P6.0-L1 source/capture material and scoped to BreadBoard helper-runtime primitive emission. It does not broaden target support beyond this named P3 lane.",
+        "lineage_rationale": lineage_rationale,
         "provider_model": spec["provider_model"],
-        "raw_source_ref": _ref(SOURCE_L1_CAPTURE_PATH, SOURCE_L1_CAPTURE_PATH),
-        "raw_source_status": "canonical_raw_present",
+        "raw_source_ref": _ref(raw_source_path, raw_source_path),
+        "raw_source_status": raw_source_status,
         "run_id": spec["run_id"],
         "sandbox_mode": spec["sandbox_mode"],
         "schema_version": "bb.e4.raw_capture_manifest.v1",
@@ -440,7 +476,7 @@ def _write_capture_replay_compare(
     prevalidation = {
         "schema_version": "bb.e4.prevalidation_report.v1",
         "ok": bool(validation.get("ok")) and comparator_failed == 0 and not findings,
-        "accepted": bool(validation.get("ok")) and comparator_failed == 0 and not findings,
+        "accepted": bool(validation.get("ok")) and comparator_failed == 0 and not findings and spec["p3_item"] != "P3.7",
         "lane_id": spec["lane_id"],
         "config_id": spec["config_id"],
         "checks": [
@@ -451,6 +487,7 @@ def _write_capture_replay_compare(
         "generated_at_utc": GENERATED_AT_UTC,
     }
     _write_json(physical["prevalidation"], prevalidation)
+    return bool(prevalidation["ok"])
 
 
 def _write_support_and_manifest(spec: Mapping[str, Any], inventory_lane: Mapping[str, Any], physical: Mapping[str, Path], logical: Mapping[str, Path]) -> None:
@@ -535,6 +572,9 @@ def capture_p3_remaining(
     derived_facts: Mapping[str, Any],
 ) -> dict[str, Any]:
     spec = _spec(lane_def, inventory_lane)
+    validation_only_retired_lane = _is_retired_validation_only_lane(lane_def, spec)
+    if validation_only_retired_lane and promote_accepted:
+        raise ValueError("P3.7 is retired validation-only evidence and cannot be promoted")
     builders = record_builders
     spec["tool_id"] = _tool_id(builders)
     base = _base(out_dir, promote_accepted)
@@ -560,7 +600,28 @@ def capture_p3_remaining(
         if overlap:
             raise ValueError(f"duplicate comparator facts: {overlap}")
         comparator_facts.update(facts)
-    _write_capture_replay_compare(spec, physical, logical, records, validation, comparator_facts)
+    prevalidation_ok = _write_capture_replay_compare(spec, physical, logical, records, validation, comparator_facts)
+    if validation_only_retired_lane:
+        return {
+            "claim_id": claim_id,
+            "config_id": spec["config_id"],
+            "ct_id": spec["ct_id"],
+            "feature_id": spec["feature_id"],
+            "node_gate": None,
+            "ok": prevalidation_ok,
+            "paths": {
+                "agent_config": _display(logical["agent_config"]),
+                "compiled_records": _display(logical["compiled_records"]),
+                "comparator": _display(logical["comparator"]),
+                "raw_capture": _display(logical["raw_capture"]),
+                "replay": _display(logical["replay"]),
+                "schema_validation": _display(logical["schema_validation"]),
+            },
+            "points": int(spec["points"]),
+            "canonical_copy_eligible": False,
+            "promotion_eligible": False,
+            "record_builders": [dict(builder) for builder in builders],
+        }
     _write_support_and_manifest(spec, inventory_lane, physical, logical)
     node_gate_report = _write_node_gate(spec, physical, logical)
 

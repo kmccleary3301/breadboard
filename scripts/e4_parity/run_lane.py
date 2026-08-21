@@ -918,6 +918,20 @@ def _promote_capture_outputs(lane_def: Mapping[str, Any], scratch_root: Path) ->
     return promoted
 
 
+def _assert_promotion_eligible(lane_id: str, row: Mapping[str, Any]) -> None:
+    if row.get("promotion_eligible") is False:
+        raise LaneRunError(
+            f"lane {lane_id!r} capture report declares promotion_eligible=false"
+        )
+
+
+def _assert_canonical_copy_eligible(lane_id: str, row: Mapping[str, Any]) -> None:
+    if row.get("canonical_copy_eligible") is False:
+        raise LaneRunError(
+            f"lane {lane_id!r} capture report declares canonical_copy_eligible=false"
+        )
+
+
 def _run_isolated_capture(
     lane_def: Mapping[str, Any],
     inventory_lane: Mapping[str, Any] | None,
@@ -947,6 +961,7 @@ def _run_isolated_capture(
         except ModuleNotFoundError:  # pragma: no cover - direct script execution
             from lane_acceptance_artifacts import build_lane_from_definition
         row = build_lane_from_definition(lane_def, inventory_lane, output_root=scratch_root)
+    _assert_canonical_copy_eligible(lane_id, row)
     promoted = _promote_capture_outputs(lane_def, scratch_root) if row.get("ok") else []
     return {
         "stage": "capture",
@@ -1137,6 +1152,8 @@ def run_lane(
                     f"lane {lane_id!r} capture.adapter {lane_def.get('capture', {}).get('adapter')!r} does not declare scratch out_dir support"
                 )
             row = adapter_capture(lane_def, inventory_lane, promote_accepted=promote_accepted, out_dir=out_dir)
+            if promote_accepted:
+                _assert_promotion_eligible(lane_id, row)
             refresh_report = _refresh_promoted_bindings() if row.get("ok") and promote_accepted and not defer_promotion_refresh else {"skipped": True, "reason": "deferred by --defer-promotion-refresh"} if row.get("ok") and promote_accepted else None
             adapter_result = _finalize_stage_result(
                 {
