@@ -348,11 +348,12 @@ def test_patch_execution_honors_enhanced_validation(tmp_path):
     )
     executor.set_enhanced_executor(enhanced)
     calls = []
-    patch = """--- a/existing.py
-+++ b/existing.py
-@@ -1 +1 @@
+    patch = """*** Begin Patch
+*** Update File: existing.py
+@@
 -old
 +new
+*** End Patch
 """
 
     result = executor.execute_tool_call(

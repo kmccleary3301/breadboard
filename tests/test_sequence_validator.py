@@ -38,3 +38,52 @@ def test_one_bash_per_turn_allows_first_bash():
     assert err is None
 
 
+def test_read_before_edit_blocks_unread_opencode_update():
+    validator = SequenceValidator(
+        enabled_rules=["read_before_edit"],
+        config={"read_before_edit": {"mode": "error"}},
+        workspace_root=".",
+    )
+    tool_call = {
+        "function": "apply_unified_patch",
+        "arguments": {
+            "patch": "*** Begin Patch\n*** Update File: existing.py\n@@\n-old\n+new\n*** End Patch\n"
+        },
+    }
+    context = {
+        "files_read_this_session": [],
+        "files_created_this_session": [],
+        "files_last_read_at": {},
+    }
+
+    err = validator.validate_call(tool_call, context)
+
+    assert err == "File existing.py must be read with read_file before editing."
+
+
+def test_file_exists_blocks_missing_opencode_update_but_allows_add(tmp_path):
+    validator = SequenceValidator(
+        enabled_rules=["file_exists"],
+        config={},
+        workspace_root=str(tmp_path),
+    )
+    context = {"files_created_this_session": []}
+    update = {
+        "function": "patch",
+        "arguments": {
+            "patchText": "*** Begin Patch\n*** Update File: missing.py\n@@\n-old\n+new\n*** End Patch\n"
+        },
+    }
+    add = {
+        "function": "patch",
+        "arguments": {
+            "patchText": "*** Begin Patch\n*** Add File: new.py\n+new\n*** End Patch\n"
+        },
+    }
+
+    assert validator.validate_call(update, context) == (
+        "File missing.py does not exist and is required for patch"
+    )
+    assert validator.validate_call(add, context) is None
+
+

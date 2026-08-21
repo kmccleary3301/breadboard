@@ -11,6 +11,23 @@ from pathlib import Path
 import re
 import time
 
+
+
+def _extract_existing_patch_files(patch_content: str) -> List[str]:
+    files: List[str] = []
+    for line in str(patch_content or "").splitlines():
+        file_path = ""
+        if line.startswith(("*** Update File: ", "*** Delete File: ")):
+            file_path = line.split(": ", 1)[1].strip()
+        elif line.startswith("--- "):
+            file_path = line[4:].split("\t", 1)[0].strip()
+            if file_path.startswith("a/"):
+                file_path = file_path[2:]
+            if file_path == "/dev/null":
+                file_path = ""
+        if file_path and file_path not in files:
+            files.append(file_path)
+    return files
 logger = logging.getLogger(__name__)
 
 class ValidationRule(ABC):
@@ -100,7 +117,7 @@ class ReadBeforeEditRule(ValidationRule):
             return None
 
         function = tool_call.get("function", "")
-        if function not in ["apply_unified_patch", "apply_search_replace"]:
+        if function not in ["apply_unified_patch", "apply_patch", "patch", "apply_search_replace"]:
             return None
 
         target_files = self._extract_target_files(tool_call)
@@ -162,25 +179,15 @@ class ReadBeforeEditRule(ValidationRule):
             file_name = args.get("file_name", "")
             return [file_name] if file_name else []
         
-        elif function == "apply_unified_patch":
+        elif function in {"apply_unified_patch", "apply_patch", "patch"}:
             patch_content = args.get("patch") or args.get("input") or args.get("patchText") or ""
             return self._extract_files_from_patch(patch_content)
         
         return []
     
     def _extract_files_from_patch(self, patch_content: str) -> List[str]:
-        """Extract file paths from patch content"""
-        files = []
-        for line in patch_content.split('\n'):
-            if line.startswith('--- ') or line.startswith('+++ '):
-                parts = line.split('\t')[0].split(' ', 1)
-                if len(parts) > 1:
-                    file_path = parts[1]
-                    if file_path.startswith(('a/', 'b/')):
-                        file_path = file_path[2:]
-                    if file_path != '/dev/null':
-                        files.append(file_path)
-        return list(set(files))
+        """Extract existing file paths from unified and OpenCode patches."""
+        return _extract_existing_patch_files(patch_content)
 
     def _lookup_last_read(self, file_path: str, last_read_map: Dict[str, Any]) -> Optional[float]:
         candidates = [file_path]
@@ -262,7 +269,7 @@ class FileExistsRule(ValidationRule):
         function = tool_call.get("function", "")
         
         # Operations that require existing files
-        if function in ["read_file", "apply_search_replace", "apply_unified_patch"]:
+        if function in ["read_file", "apply_search_replace", "apply_unified_patch", "apply_patch", "patch"]:
             target_files = self._get_operation_files(tool_call)
             
             for file_path in target_files:
@@ -294,25 +301,15 @@ class FileExistsRule(ValidationRule):
                 files.append(args[key])
         
         # Extract from patches
-        if function == "apply_unified_patch" and "patch" in args:
-            patch_files = self._extract_patch_files(args["patch"])
-            files.extend(patch_files)
+        if function in {"apply_unified_patch", "apply_patch", "patch"}:
+            patch_content = args.get("patch") or args.get("input") or args.get("patchText") or ""
+            files.extend(self._extract_patch_files(patch_content))
         
         return files
     
     def _extract_patch_files(self, patch_content: str) -> List[str]:
-        """Extract existing files from patch (exclude /dev/null)"""
-        files = []
-        for line in patch_content.split('\n'):
-            if line.startswith('--- '):
-                parts = line.split('\t')[0].split(' ', 1)
-                if len(parts) > 1:
-                    file_path = parts[1]
-                    if file_path.startswith('a/'):
-                        file_path = file_path[2:]
-                    if file_path != '/dev/null':
-                        files.append(file_path)
-        return files
+        """Extract existing file paths from unified and OpenCode patches."""
+        return _extract_existing_patch_files(patch_content)
 
 class OneBashPerTurnRule(ValidationRule):
     """Limit to one bash command per turn (best-effort, based on recent ops).
