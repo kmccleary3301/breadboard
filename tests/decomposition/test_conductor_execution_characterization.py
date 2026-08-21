@@ -71,6 +71,31 @@ def test_execution_export_set_is_exact() -> None:
     assert {name for name in dir(execution_module) if not name.startswith("__")} == EXPECTED_EXPORTS
 
 
+def test_execution_facades_declare_explicit_exports_without_wildcards() -> None:
+    compat = __import__("breadboard_engine.conductor_execution", fromlist=["*"])
+    for module in (execution_module, compat):
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        wildcard_imports = [
+            ast.unparse(node)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            and any(alias.name == "*" for alias in node.names)
+        ]
+        assert wildcard_imports == []
+
+    canonical_exports = set(execution_module.__all__)
+    public_exports = {name for name in EXPECTED_EXPORTS if not name.startswith("_")}
+    compat_exports = {name for name in dir(compat) if not name.startswith("__")}
+
+    assert canonical_exports == EXPECTED_EXPORTS
+    assert set(compat.__all__) == public_exports
+    assert compat_exports == public_exports | set(PRIVATE_NAMES)
+    assert all(
+        getattr(compat, name) is getattr(execution_module, name)
+        for name in compat_exports
+    )
+
+
 def test_private_exports_are_identical_through_compat_wrapper() -> None:
     compat = __import__("breadboard_engine.conductor_execution", fromlist=["*"])
     for name in PRIVATE_NAMES:
