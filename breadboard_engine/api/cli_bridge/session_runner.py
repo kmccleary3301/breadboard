@@ -69,7 +69,9 @@ def _canonical_permission_resolution(response: Any, responses: Any, requested_id
 def _control_kind(item: Any) -> str: return "stop" if item is None else item.strip().lower() if isinstance(item, str) else str(item.get("kind") or item.get("type") or ("stop" if item.get("stop") else "")).strip().lower() if isinstance(item, dict) else ""
 class _PauseAwareControlQueue:
     def __init__(self, queue: Any) -> None: self._queue = queue
-    def __getattr__(self, name: str) -> Any: return getattr(self._queue, name)
+    def __getattr__(self, name: str) -> Any:
+        queue = object.__getattribute__(self, "_queue")
+        return getattr(queue, name)
     def get_nowait(self) -> Any:
         item = self._queue.get_nowait()
         while _control_kind(item) == "pause": item = self._queue.get()

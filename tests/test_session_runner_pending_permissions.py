@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, json, multiprocessing, os, queue, stat, threading, pytest; from pathlib import Path; from breadboard.product.harness.lock import EffectiveHarnessLock; from breadboard.product.runtime import Session as ProductSession
+import asyncio, json, multiprocessing, os, pickle, queue, stat, threading, pytest; from pathlib import Path; from breadboard.product.harness.lock import EffectiveHarnessLock; from breadboard.product.runtime import Session as ProductSession
 from breadboard_engine.api.cli_bridge.events import EventType; from breadboard_engine.permissions import load_permission_rules, upsert_permission_rule; from breadboard_engine.permissions import rules_store; from breadboard_engine.permissions.broker import PermissionBroker; from breadboard_engine.permissions.rules_store import RULES_REL_PATH, _locked_rules
 from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus; from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry; from breadboard_engine.api.cli_bridge.session_runner import SessionRunner, _PauseAwareControlQueue, _canonical_permission_resolution
 from breadboard_engine.api.cli_bridge.service import SessionService
@@ -91,6 +91,11 @@ def test_stop_signals_runtime_when_cancel_evidence_fails() -> None:
     runner, session = _product_runner("stop-sink"); runner._control_queue = asyncio.Queue(); session._sink = type("Failing", (), {"append": lambda *_: (_ for _ in ()).throw(OSError("sink unavailable"))})()
     with pytest.raises(OSError, match="sink unavailable"): runner._request_stop("operator")
     assert runner._stop_event.is_set() and runner._resume_event.is_set() and runner._input_queue.get_nowait() is None and runner._control_queue.get_nowait() == {"kind": "stop"} and session.read_model.status == "running"; fallback = []; runner._agent = type("Agent", (), {"agent": type("Inner", (), {"request_stop": lambda self: fallback.append(True)})()})(); runner._signal_control = lambda _kind: (_ for _ in ()).throw(RuntimeError("control unavailable")); pytest.raises(OSError, runner._request_stop, "retry"); assert fallback == [True]  # type: ignore[method-assign]
+def test_control_queue_unpickles_without_recursive_delegation() -> None:
+    control = pickle.loads(pickle.dumps(_PauseAwareControlQueue([])))
+    control.append({"kind": "resume"})
+    assert control._queue == [{"kind": "resume"}]
+
 @pytest.mark.parametrize("final", ["resume", "stop"])
 def test_control_queue_holds_repeated_pause_until_resume_or_stop(final: str) -> None:
     raw, returned, result = queue.Queue(), threading.Event(), []
