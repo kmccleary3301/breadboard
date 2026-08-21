@@ -32,6 +32,23 @@ from scripts.e4_parity import seed_atomic_feature_ledger
 ACCEPTED_CLAIM_ID = "oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim"
 ACCEPTED_LANE_ID = "oh_my_pi_p6_0_l4_mcp_browser_resource"
 COMPARATOR_SCHEMA = "bb.e4.comparator_report.v1"
+E4_OPENAPI_PATHS = {
+    "/v1/e4/catalog",
+    "/v1/e4/catalog/binding",
+    "/v1/e4/claims",
+    "/v1/e4/claims/{claim_id}",
+    "/v1/e4/claims/{claim_id}/reverify",
+    "/v1/e4/coverage/{target_family}",
+    "/v1/e4/health",
+    "/v1/e4/lanes",
+    "/v1/e4/lanes/{lane_id}",
+    "/v1/e4/ledger/rows",
+    "/v1/e4/records",
+    "/v1/e4/registries",
+    "/v1/e4/registries/{registry_id}",
+    "/v1/e4/schemas",
+    "/v1/e4/schemas/{schema_id}",
+}
 
 
 
@@ -436,23 +453,14 @@ def test_validate_e4_c4_chain_shim_reexports_public_conformance_functions() -> N
 
 def test_e4_openapi_exposes_versioned_read_surface(client: TestClient) -> None:
     schema = client.get("/openapi.json").json()
-    assert {path for path in schema["paths"] if path.startswith("/v1/e4/")} == {
-        "/v1/e4/catalog",
-        "/v1/e4/catalog/binding",
-        "/v1/e4/claims",
-        "/v1/e4/claims/{claim_id}",
-        "/v1/e4/claims/{claim_id}/reverify",
-        "/v1/e4/coverage/{target_family}",
-        "/v1/e4/health",
-        "/v1/e4/lanes",
-        "/v1/e4/lanes/{lane_id}",
-        "/v1/e4/ledger/rows",
-        "/v1/e4/records",
-        "/v1/e4/registries",
-        "/v1/e4/registries/{registry_id}",
-        "/v1/e4/schemas",
-        "/v1/e4/schemas/{schema_id}",
-    }
+    assert {path for path in schema["paths"] if path.startswith("/v1/e4/")} == E4_OPENAPI_PATHS
+
+
+def test_checked_in_cli_bridge_openapi_matches_e4_read_surface() -> None:
+    root = Path(__file__).resolve().parents[1]
+    schema = json.loads((root / "docs/contracts/cli_bridge/openapi.json").read_text(encoding="utf-8"))
+
+    assert {path for path in schema["paths"] if path.startswith("/v1/e4/")} == E4_OPENAPI_PATHS
 
 
 def test_e4_health_schemas_and_lane_filters_read_accepted_inventory(client: TestClient) -> None:

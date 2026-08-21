@@ -935,6 +935,820 @@
         "title": "DrainControlResponse",
         "type": "object"
       },
+      "E4CatalogBinding": {
+        "properties": {
+          "catalog_path": {
+            "title": "Catalog Path",
+            "type": "string"
+          },
+          "generated_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At Utc"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/E4CatalogBindingSegment"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "segments_hash": {
+            "title": "Segments Hash",
+            "type": "string"
+          },
+          "stable_entries_hash": {
+            "title": "Stable Entries Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog_path",
+          "schema_version",
+          "segments",
+          "segments_hash",
+          "stable_entries_hash"
+        ],
+        "title": "E4CatalogBinding",
+        "type": "object"
+      },
+      "E4CatalogBindingSegment": {
+        "properties": {
+          "segment_id": {
+            "title": "Segment Id",
+            "type": "string"
+          },
+          "stable_entries_hash": {
+            "title": "Stable Entries Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "segment_id",
+          "stable_entries_hash"
+        ],
+        "title": "E4CatalogBindingSegment",
+        "type": "object"
+      },
+      "E4CatalogEntry": {
+        "additionalProperties": true,
+        "properties": {
+          "artifact_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Kind"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exists"
+          },
+          "lane_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lane Id"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "role_id": {
+            "title": "Role Id",
+            "type": "string"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          }
+        },
+        "required": [
+          "role_id"
+        ],
+        "title": "E4CatalogEntry",
+        "type": "object"
+      },
+      "E4CatalogPage": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/E4CatalogEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "total",
+          "entries"
+        ],
+        "title": "E4CatalogPage",
+        "type": "object"
+      },
+      "E4ClaimDetail": {
+        "properties": {
+          "claim": {
+            "$ref": "#/components/schemas/E4SupportClaim"
+          },
+          "evidence_manifest": {
+            "additionalProperties": true,
+            "title": "Evidence Manifest",
+            "type": "object"
+          }
+        },
+        "required": [
+          "claim",
+          "evidence_manifest"
+        ],
+        "title": "E4ClaimDetail",
+        "type": "object"
+      },
+      "E4ClaimList": {
+        "properties": {
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/E4SupportClaim"
+            },
+            "title": "Claims",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "claims",
+          "total"
+        ],
+        "title": "E4ClaimList",
+        "type": "object"
+      },
+      "E4CoverageMatrix": {
+        "additionalProperties": true,
+        "title": "E4CoverageMatrix",
+        "type": "object"
+      },
+      "E4Error": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "E4Error",
+        "type": "object"
+      },
+      "E4Health": {
+        "properties": {
+          "catalog_revision": {
+            "title": "Catalog Revision",
+            "type": "integer"
+          },
+          "inventory_revision": {
+            "title": "Inventory Revision",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "repo_root": {
+            "title": "Repo Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "repo_root",
+          "inventory_revision",
+          "catalog_revision"
+        ],
+        "title": "E4Health",
+        "type": "object"
+      },
+      "E4Lane": {
+        "additionalProperties": true,
+        "properties": {
+          "artifact_roles": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Artifact Roles",
+            "type": "object"
+          },
+          "builder_script": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builder Script"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "lane_id": {
+            "title": "Lane Id",
+            "type": "string"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "target_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Family"
+          },
+          "target_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Version"
+          }
+        },
+        "required": [
+          "lane_id"
+        ],
+        "title": "E4Lane",
+        "type": "object"
+      },
+      "E4LaneDetail": {
+        "properties": {
+          "lane": {
+            "$ref": "#/components/schemas/E4Lane"
+          },
+          "resolved_artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/E4ResolvedArtifact"
+            },
+            "title": "Resolved Artifacts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "lane",
+          "resolved_artifacts"
+        ],
+        "title": "E4LaneDetail",
+        "type": "object"
+      },
+      "E4LaneList": {
+        "properties": {
+          "lanes": {
+            "items": {
+              "$ref": "#/components/schemas/E4Lane"
+            },
+            "title": "Lanes",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lanes",
+          "total"
+        ],
+        "title": "E4LaneList",
+        "type": "object"
+      },
+      "E4LedgerRow": {
+        "additionalProperties": true,
+        "properties": {
+          "feature_id": {
+            "title": "Feature Id",
+            "type": "string"
+          },
+          "lane_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lane Id"
+          },
+          "points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "feature_id"
+        ],
+        "title": "E4LedgerRow",
+        "type": "object"
+      },
+      "E4LedgerRows": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/E4LedgerRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rows",
+          "total"
+        ],
+        "title": "E4LedgerRows",
+        "type": "object"
+      },
+      "E4RecordEnvelope": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "record": {
+            "additionalProperties": true,
+            "title": "Record",
+            "type": "object"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "evidence",
+              "runtime"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "source",
+          "path",
+          "record"
+        ],
+        "title": "E4RecordEnvelope",
+        "type": "object"
+      },
+      "E4RecordList": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/E4RecordEnvelope"
+            },
+            "title": "Records",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "records",
+          "total"
+        ],
+        "title": "E4RecordList",
+        "type": "object"
+      },
+      "E4ResolvedArtifact": {
+        "properties": {
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "role_id": {
+            "title": "Role Id",
+            "type": "string"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          }
+        },
+        "required": [
+          "role",
+          "role_id",
+          "path",
+          "exists"
+        ],
+        "title": "E4ResolvedArtifact",
+        "type": "object"
+      },
+      "E4ReverifyRequest": {
+        "properties": {
+          "rerun_comparators": {
+            "default": false,
+            "title": "Rerun Comparators",
+            "type": "boolean"
+          }
+        },
+        "title": "E4ReverifyRequest",
+        "type": "object"
+      },
+      "E4ReverifyResult": {
+        "properties": {
+          "checked_at": {
+            "title": "Checked At",
+            "type": "string"
+          },
+          "claim_id": {
+            "title": "Claim Id",
+            "type": "string"
+          },
+          "comparator_rerun": {
+            "title": "Comparator Rerun",
+            "type": "boolean"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "mode": {
+            "const": "check_only",
+            "default": "check_only",
+            "title": "Mode",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "errors",
+          "claim_id",
+          "comparator_rerun",
+          "checked_at"
+        ],
+        "title": "E4ReverifyResult",
+        "type": "object"
+      },
+      "E4SchemaInfo": {
+        "properties": {
+          "pack": {
+            "title": "Pack",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "schema_id": {
+            "title": "Schema Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_id",
+          "pack",
+          "path",
+          "sha256"
+        ],
+        "title": "E4SchemaInfo",
+        "type": "object"
+      },
+      "E4SchemaList": {
+        "properties": {
+          "schemas": {
+            "items": {
+              "$ref": "#/components/schemas/E4SchemaInfo"
+            },
+            "title": "Schemas",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schemas",
+          "total"
+        ],
+        "title": "E4SchemaList",
+        "type": "object"
+      },
+      "E4SupportClaim": {
+        "additionalProperties": true,
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "claim_id": {
+            "title": "Claim Id",
+            "type": "string"
+          },
+          "config_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Id"
+          },
+          "evidence_manifest_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Manifest Ref"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "lane_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lane Id"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          }
+        },
+        "required": [
+          "claim_id",
+          "accepted"
+        ],
+        "title": "E4SupportClaim",
+        "type": "object"
+      },
       "EngineArtifactRevision": {
         "additionalProperties": false,
         "properties": {
@@ -2138,6 +2952,61 @@
         "title": "PutApiKeyRequest",
         "type": "object"
       },
+      "RegistryInfo": {
+        "properties": {
+          "entries": {
+            "title": "Entries",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "registry_id": {
+            "title": "Registry Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version"
+          }
+        },
+        "required": [
+          "registry_id",
+          "path",
+          "entries"
+        ],
+        "title": "RegistryInfo",
+        "type": "object"
+      },
+      "RegistryList": {
+        "properties": {
+          "registries": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryInfo"
+            },
+            "title": "Registries",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "registries",
+          "total"
+        ],
+        "title": "RegistryList",
+        "type": "object"
+      },
       "SessionApprovalRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2808,6 +3677,869 @@
         "summary": "List Auth Providers",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/v1/e4/catalog": {
+      "get": {
+        "operationId": "get_catalog_v1_e4_catalog_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lane_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lane Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "artifact_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Artifact Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4CatalogPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Catalog",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/catalog/binding": {
+      "get": {
+        "operationId": "get_catalog_binding_v1_e4_catalog_binding_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4CatalogBinding"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Catalog Binding",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/claims": {
+      "get": {
+        "operationId": "list_claims_v1_e4_claims_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "accepted",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accepted"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_family",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Family"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4ClaimList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Claims",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/claims/{claim_id}": {
+      "get": {
+        "operationId": "get_claim_v1_e4_claims__claim_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "claim_id",
+            "required": true,
+            "schema": {
+              "title": "Claim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4ClaimDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Claim",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/claims/{claim_id}/reverify": {
+      "post": {
+        "operationId": "reverify_claim_v1_e4_claims__claim_id__reverify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "claim_id",
+            "required": true,
+            "schema": {
+              "title": "Claim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/E4ReverifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4ReverifyResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reverify Claim",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/coverage/{target_family}": {
+      "get": {
+        "operationId": "get_coverage_v1_e4_coverage__target_family__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_family",
+            "required": true,
+            "schema": {
+              "title": "Target Family",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4CoverageMatrix"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coverage",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/health": {
+      "get": {
+        "operationId": "health_v1_e4_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/lanes": {
+      "get": {
+        "operationId": "list_lanes_v1_e4_lanes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "phase",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Phase"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_family",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Family"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4LaneList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Lanes",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/lanes/{lane_id}": {
+      "get": {
+        "operationId": "get_lane_v1_e4_lanes__lane_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lane_id",
+            "required": true,
+            "schema": {
+              "title": "Lane Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4LaneDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Lane",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/ledger/rows": {
+      "get": {
+        "operationId": "get_ledger_rows_v1_e4_ledger_rows_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "feature_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Feature Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lane_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lane Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4LedgerRows"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ledger Rows",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/records": {
+      "get": {
+        "operationId": "get_records_v1_e4_records_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "schema_version",
+            "required": true,
+            "schema": {
+              "title": "Schema Version",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lane_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lane Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": "evidence",
+              "pattern": "^(evidence|runtime)$",
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4RecordList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Records",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/registries": {
+      "get": {
+        "operationId": "list_registries_v1_e4_registries_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Registries",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/registries/{registry_id}": {
+      "get": {
+        "operationId": "get_registry_v1_e4_registries__registry_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Registry",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/schemas": {
+      "get": {
+        "operationId": "list_schemas_v1_e4_schemas_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E4SchemaList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Schemas",
+        "tags": [
+          "e4"
+        ]
+      }
+    },
+    "/v1/e4/schemas/{schema_id}": {
+      "get": {
+        "operationId": "get_schema_v1_e4_schemas__schema_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schema_id",
+            "required": true,
+            "schema": {
+              "title": "Schema Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Schema",
+        "tags": [
+          "e4"
         ]
       }
     },

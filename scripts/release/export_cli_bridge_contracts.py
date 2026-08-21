@@ -26,7 +26,7 @@ CONTRACT_DIR = ROOT / "docs" / "contracts" / "cli_bridge"
 SCHEMA_DIR = CONTRACT_DIR / "schemas"
 
 EXPORT_ENV_PINS = {
-    "BREADBOARD_ENABLE_E4_API": "0",
+    "BREADBOARD_ENABLE_E4_API": "1",
     "BREADBOARD_ENGINE_VERSION": "0.1.0",
     "BREADBOARD_LEGACY_ROUTES": "0",
     "ATP_REPL_ENABLE": "0",
