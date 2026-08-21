@@ -11,7 +11,7 @@ The Phase C records live in:
 - `breadboard_engine/optimize/evaluation.py`
 - `breadboard_engine/optimize/diagnostics.py`
 - `breadboard_engine/optimize/wrongness.py`
-- `breadboard_engine/optimize/examples.py`
+- `breadboard_engine/corpora/optimize/examples.py`
 
 The main records are:
 
@@ -108,7 +108,7 @@ A higher score cannot explain:
 
 ## Canonical example
 
-The canonical Phase C example is the codex dossier evaluation example in `breadboard_engine/optimize/examples.py`.
+The canonical Phase C example is the codex dossier evaluation example in `breadboard_engine/corpora/optimize/examples.py`.
 
 It layers on top of the existing codex dossier substrate and dataset examples and includes:
 
@@ -121,7 +121,7 @@ The example intentionally shows a replay-stable candidate that still gets reject
 Minimal usage:
 
 ```python
-from breadboard_engine.optimize import build_codex_dossier_evaluation_example
+from breadboard_engine.corpora.optimize import build_codex_dossier_evaluation_example
 
 example = build_codex_dossier_evaluation_example()
 evaluation = example["evaluation"]
@@ -135,7 +135,7 @@ assert wrongness.failure_locus == "tool.render.exec_command"
 If you want serialized payloads:
 
 ```python
-from breadboard_engine.optimize import build_codex_dossier_evaluation_example_payload
+from breadboard_engine.corpora.optimize import build_codex_dossier_evaluation_example_payload
 
 payload = build_codex_dossier_evaluation_example_payload()
 ```

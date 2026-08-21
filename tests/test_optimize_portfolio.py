@@ -7,8 +7,8 @@ from breadboard_engine.optimize import (
     MaterializedCandidate,
     ObjectiveVector,
     PortfolioEntry,
-    build_codex_dossier_example,
 )
+from breadboard_engine.corpora.optimize import build_codex_dossier_example
 
 
 def _entry(candidate_id: str, applied_loci: list[str], objective_vector: ObjectiveVector) -> PortfolioEntry:

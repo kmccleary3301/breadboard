@@ -7,6 +7,8 @@ from breadboard_engine.optimize import (
     GroundTruthPackage,
     OptimizationDataset,
     OptimizationSample,
+)
+from breadboard_engine.corpora.optimize import (
     build_codex_dossier_dataset_example,
     build_codex_dossier_dataset_example_payload,
 )

@@ -10,6 +10,8 @@ from breadboard_engine.optimize import (
     SearchSpaceManifest,
     TargetFamilyManifest,
     TransferCohortManifest,
+)
+from breadboard_engine.corpora.optimize import (
     build_codex_opencode_live_replay_config_cell_example,
     build_codex_opencode_live_replay_config_cell_example_payload,
     build_codex_opencode_live_transfer_cohort_cell_example,
@@ -42,8 +44,6 @@ from breadboard_engine.optimize import (
     build_tool_guidance_coding_overlay_composition_example_payload,
     build_tool_guidance_benchmark_example,
     build_tool_guidance_benchmark_example_payload,
-)
-from breadboard_engine.optimize.examples import (
     build_coding_overlay_verifier_experiment_example,
     build_coding_overlay_verifier_experiment_example_payload,
 )

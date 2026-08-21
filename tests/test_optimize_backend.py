@@ -13,6 +13,10 @@ from breadboard_engine.optimize import (
     SingleLocusGreedyBackend,
     SupportEnvelope,
     WrongnessGuidedReflectionPolicy,
+    run_single_locus_greedy_backend,
+    validate_bounded_candidate,
+)
+from breadboard_engine.corpora.optimize import (
     build_codex_dossier_backend_example,
     build_codex_dossier_backend_example_payload,
     build_codex_dossier_evaluation_example,
@@ -24,11 +28,9 @@ from breadboard_engine.optimize import (
     build_support_execution_benchmark_example,
     build_support_execution_coding_overlay_composition_example,
     build_support_execution_tool_guidance_coding_overlay_package_example,
-    run_single_locus_greedy_backend,
-    validate_bounded_candidate,
+    build_staged_backend_comparison_example,
 )
 from breadboard_engine.optimize.backend import StagedOptimizer, StagedOptimizerRequest, run_staged_optimizer
-from breadboard_engine.optimize.examples import build_staged_backend_comparison_example
 
 
 def test_backend_example_round_trip() -> None:

@@ -11,7 +11,7 @@ The Phase F records live in:
 - `breadboard_engine/optimize/context.py`
 - `breadboard_engine/optimize/dataset.py`
 - `breadboard_engine/optimize/backend.py`
-- `breadboard_engine/optimize/examples.py`
+- `breadboard_engine/corpora/optimize/examples.py`
 
 The main records are:
 
@@ -117,7 +117,7 @@ That is more precise than a generic "environment mismatch" label.
 
 ## Canonical examples
 
-The canonical Phase F examples live in `breadboard_engine/optimize/examples.py`.
+The canonical Phase F examples live in `breadboard_engine/corpora/optimize/examples.py`.
 
 They include:
 
@@ -127,7 +127,7 @@ They include:
 Minimal usage:
 
 ```python
-from breadboard_engine.optimize import build_codex_dossier_runtime_context_examples
+from breadboard_engine.corpora.optimize import build_codex_dossier_runtime_context_examples
 
 example = build_codex_dossier_runtime_context_examples()
 
@@ -138,7 +138,7 @@ assert example["incompatible"]["result"].compatibility_results[0].status == "inc
 If you want serialized payloads:
 
 ```python
-from breadboard_engine.optimize import build_codex_dossier_runtime_context_examples_payload
+from breadboard_engine.corpora.optimize import build_codex_dossier_runtime_context_examples_payload
 
 payload = build_codex_dossier_runtime_context_examples_payload()
 ```

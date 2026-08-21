@@ -6,6 +6,8 @@ from breadboard_engine.optimize import (
     DiagnosticBundle,
     EvaluationRecord,
     WrongnessReport,
+)
+from breadboard_engine.corpora.optimize import (
     build_codex_dossier_evaluation_example,
     build_codex_dossier_evaluation_example_payload,
 )

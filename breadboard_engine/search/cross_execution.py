@@ -315,7 +315,7 @@ class SearchCrossExecutionNextLocusPacket:
 
 
 def build_search_cross_execution_matrix_packet() -> SearchCrossExecutionMatrixPacket:
-    from breadboard_engine.optimize import (
+    from breadboard_engine.corpora.optimize import (
         build_next_frontier_optimize_cohort_packet,
         build_next_frontier_optimize_live_experiment_cell,
     )

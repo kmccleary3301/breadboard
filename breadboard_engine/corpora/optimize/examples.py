@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from .benchmark import (
+from breadboard_engine.optimize.benchmark import (
     BackendComparisonResult,
     BenchmarkRunManifest,
     BenchmarkRunResult,
@@ -10,7 +10,7 @@ from .benchmark import (
     CandidateComparisonResult,
     build_paired_candidate_comparison,
 )
-from .backend import (
+from breadboard_engine.optimize.backend import (
     MutationBounds,
     OptimizationExecutionContext,
     PortfolioEntry,
@@ -22,7 +22,7 @@ from .backend import (
     run_single_locus_greedy_backend,
     run_staged_optimizer,
 )
-from .context import (
+from breadboard_engine.optimize.context import (
     EnvironmentSelector,
     MCPContextRequirement,
     OptimizationRuntimeContext,
@@ -31,17 +31,17 @@ from .context import (
     ToolPackContext,
     ToolRequirement,
 )
-from .dataset import CorrectnessRationale, GroundTruthPackage, OptimizationDataset, OptimizationSample
-from .diagnostics import DiagnosticBundle, DiagnosticEntry
-from .evaluation import EvaluationRecord
-from .promotion import (
+from breadboard_engine.optimize.dataset import CorrectnessRationale, GroundTruthPackage, OptimizationDataset, OptimizationSample
+from breadboard_engine.optimize.diagnostics import DiagnosticBundle, DiagnosticEntry
+from breadboard_engine.optimize.evaluation import EvaluationRecord
+from breadboard_engine.optimize.promotion import (
     PromotionDecision,
     PromotionEvidenceSummary,
     PromotionRecord,
     build_promotion_evidence_summary,
     promote_candidate,
 )
-from .suites import (
+from breadboard_engine.optimize.suites import (
     EvaluationSuiteManifest,
     FamilyCompositionManifest,
     ObjectiveBreakdownResult,
@@ -52,7 +52,7 @@ from .suites import (
     TransferSliceManifest,
     VerifierAugmentedExperimentResult,
 )
-from .substrate import (
+from breadboard_engine.optimize.substrate import (
     ArtifactRef,
     CandidateBundle,
     CandidateChange,
@@ -63,7 +63,7 @@ from .substrate import (
     SupportEnvelope,
     materialize_candidate,
 )
-from .wrongness import WrongnessReport
+from breadboard_engine.optimize.wrongness import WrongnessReport
 
 
 def _clone_evaluation_with_updates(

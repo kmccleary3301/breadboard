@@ -9,6 +9,8 @@ from breadboard_engine.optimize import (
     TransferCohortManifest,
     MaterializedCandidate,
     OptimizationTarget,
+)
+from breadboard_engine.corpora.optimize import (
     build_codex_dossier_example,
     build_codex_dossier_example_payload,
     build_next_frontier_optimize_cohort_packet,

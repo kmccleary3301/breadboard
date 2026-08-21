@@ -9,7 +9,7 @@ This is the layer that decides whether a candidate can move from "useful on the 
 The Phase E records live in:
 
 - `breadboard_engine/optimize/promotion.py`
-- `breadboard_engine/optimize/examples.py`
+- `breadboard_engine/corpora/optimize/examples.py`
 
 The main records are:
 
@@ -136,7 +136,7 @@ Optimization V1 is evidence-gated by design.
 
 ## Canonical examples
 
-The canonical Phase E examples live in `breadboard_engine/optimize/examples.py`.
+The canonical Phase E examples live in `breadboard_engine/corpora/optimize/examples.py`.
 
 They reuse the existing codex dossier substrate, dataset, evaluation, and backend path to produce three promotion outcomes:
 
@@ -147,7 +147,7 @@ They reuse the existing codex dossier substrate, dataset, evaluation, and backen
 Minimal usage:
 
 ```python
-from breadboard_engine.optimize import build_codex_dossier_promotion_examples
+from breadboard_engine.corpora.optimize import build_codex_dossier_promotion_examples
 
 example = build_codex_dossier_promotion_examples()
 
@@ -159,7 +159,7 @@ assert example["support_fail"]["record"].state == "rejected"
 If you want serialized payloads:
 
 ```python
-from breadboard_engine.optimize import build_codex_dossier_promotion_examples_payload
+from breadboard_engine.corpora.optimize import build_codex_dossier_promotion_examples_payload
 
 payload = build_codex_dossier_promotion_examples_payload()
 ```

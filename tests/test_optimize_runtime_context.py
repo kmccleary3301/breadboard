@@ -13,6 +13,8 @@ from breadboard_engine.optimize import (
     ServiceContextRequirement,
     ToolPackContext,
     ToolRequirement,
+)
+from breadboard_engine.corpora.optimize import (
     build_codex_dossier_dataset_example,
     build_codex_dossier_runtime_context_examples,
     build_codex_dossier_runtime_context_examples_payload,

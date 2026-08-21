@@ -14,6 +14,12 @@ from breadboard_engine.optimize import (
     PromotionDecision,
     PromotionEvidenceSummary,
     PromotionRecord,
+    build_promotion_evidence_summary,
+    create_promotion_record,
+    evaluate_family_promotion_gate,
+    promote_candidate,
+)
+from breadboard_engine.corpora.optimize import (
     build_codex_opencode_live_replay_config_cell_example,
     build_codex_opencode_live_transfer_cohort_cell_example,
     build_v6_live_result_boundary_example,
@@ -23,14 +29,10 @@ from breadboard_engine.optimize import (
     build_codex_dossier_promotion_examples_payload,
     build_coding_overlay_benchmark_example,
     build_opencode_prompt_config_tool_guidance_package_example,
-    build_promotion_evidence_summary,
     build_support_execution_benchmark_example,
     build_support_execution_coding_overlay_composition_example,
     build_support_execution_tool_guidance_coding_overlay_package_example,
     build_tool_guidance_benchmark_example,
-    create_promotion_record,
-    evaluate_family_promotion_gate,
-    promote_candidate,
 )
 
 

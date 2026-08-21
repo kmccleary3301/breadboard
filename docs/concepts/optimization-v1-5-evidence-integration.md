@@ -198,7 +198,7 @@ The first V1.5 methodology slice now includes three canonical pilot benchmark pa
 - tool description / tool-guidance optimization
 - bounded coding-harness overlay optimization
 
-The canonical builders are in `breadboard_engine/optimize/examples.py`:
+The canonical builders are in `breadboard_engine/corpora/optimize/examples.py`:
 
 - `build_support_execution_benchmark_example`
 - `build_support_execution_benchmark_example_payload`

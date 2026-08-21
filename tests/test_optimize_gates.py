@@ -8,13 +8,15 @@ from breadboard_engine.optimize import (
     ReplayConformanceGateInput,
     SupportEnvelope,
     SupportEnvelopeGateInput,
-    build_codex_dossier_promotion_examples,
-    build_support_execution_benchmark_example,
     evaluate_conformance_gate,
     evaluate_comparison_gate,
     evaluate_promotion_gates,
     evaluate_replay_gate,
     evaluate_support_envelope_gate,
+)
+from breadboard_engine.corpora.optimize import (
+    build_codex_dossier_promotion_examples,
+    build_support_execution_benchmark_example,
 )
 
 

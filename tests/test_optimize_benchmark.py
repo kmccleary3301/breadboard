@@ -7,6 +7,9 @@ from breadboard_engine.optimize import (
     BenchmarkRunManifest,
     BenchmarkRunResult,
     CandidateComparisonResult,
+    build_paired_candidate_comparison,
+)
+from breadboard_engine.corpora.optimize import (
     build_backend_comparison_example,
     build_backend_comparison_example_payload,
     build_codex_opencode_live_replay_config_cell_example,
@@ -21,7 +24,6 @@ from breadboard_engine.optimize import (
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example_payload,
     build_codex_opencode_transfer_cohort_example,
     build_codex_opencode_transfer_cohort_example_payload,
-    build_paired_candidate_comparison,
     build_coding_overlay_benchmark_example,
     build_coding_overlay_benchmark_example_payload,
     build_opencode_prompt_config_tool_guidance_package_example,
@@ -40,8 +42,6 @@ from breadboard_engine.optimize import (
     build_tool_guidance_coding_overlay_composition_example_payload,
     build_tool_guidance_benchmark_example,
     build_tool_guidance_benchmark_example_payload,
-)
-from breadboard_engine.optimize.examples import (
     build_staged_backend_comparison_example,
     build_staged_backend_comparison_example_payload,
 )
