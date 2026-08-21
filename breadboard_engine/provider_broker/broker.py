@@ -5,9 +5,10 @@ material is held by the SQLite store and is issued narrowly to provider
 routing; credential listings and audit records contain metadata only.
 """
 
-import time
-
+import queue
+import secrets
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
@@ -418,33 +419,177 @@ class ProviderBroker:
     put_api_key = putApiKey
 
 
-class LeaseCapabilityAuthority:
-    """Broker-owned narrow authority for one already-issued execution lease."""
+class LeaseCapabilityChannel:
+    """Worker-side fixed protocol for one already-issued execution lease."""
 
     def __init__(
         self,
         *,
-        store_path: str,
-        lease_id: str,
+        request_queue: Any,
+        response_queue: Any,
+        capability_token: str,
         provider_id: str,
         endpoint_id: str,
+        timeout_s: float = 30.0,
     ) -> None:
-        self._broker = ProviderBroker(SQLiteCredentialStore(store_path))
-        self._lease_id = lease_id
+        self._request_queue = request_queue
+        self._response_queue = response_queue
+        self._capability_token = capability_token
         self._provider_id = provider_id
         self._endpoint_id = endpoint_id
+        self._timeout_s = timeout_s
 
     def redeem(self, *, provider_id: str, endpoint_id: str) -> dict[str, Any] | None:
         if provider_id != self._provider_id or endpoint_id != self._endpoint_id:
             return None
-        return self._broker.redeem_execution_material(
-            self._lease_id,
-            provider_id=provider_id,
-            endpoint_id=endpoint_id,
+        request_id = secrets.token_urlsafe(18)
+        self._request_queue.put(
+            {
+                "request_id": request_id,
+                "capability_token": self._capability_token,
+                "operation": "redeem",
+                "provider_id": provider_id,
+                "endpoint_id": endpoint_id,
+            },
+            timeout=self._timeout_s,
+        )
+        deadline = time.monotonic() + self._timeout_s
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            try:
+                response = self._response_queue.get(timeout=remaining)
+            except queue.Empty:
+                return None
+            if not isinstance(response, Mapping) or response.get("request_id") != request_id:
+                continue
+            material = response.get("material")
+            return dict(material) if isinstance(material, Mapping) else None
+
+
+class LeaseCapabilityServer:
+    """Driver-owned fixed dispatcher; its broker is never serialized to workers."""
+
+    def __init__(
+        self,
+        *,
+        broker: ProviderBroker,
+        request_queue: Any,
+        response_queue: Any,
+        capability_token: str,
+        lease_id: str,
+        provider_id: str,
+        endpoint_id: str,
+    ) -> None:
+        self._broker = broker
+        self._request_queue = request_queue
+        self._response_queue = response_queue
+        self._capability_token = capability_token
+        self._lease_id = lease_id
+        self._provider_id = provider_id
+        self._endpoint_id = endpoint_id
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._serve,
+            name=f"breadboard-provider-lease-{lease_id[-8:]}",
+            daemon=True,
         )
 
-    def release(self) -> bool:
-        return self._broker.release_execution_material(self._lease_id)
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2)
+        for transport in (self._request_queue, self._response_queue):
+            shutdown = getattr(transport, "shutdown", None)
+            if callable(shutdown):
+                try:
+                    shutdown(force=True)
+                except Exception:
+                    pass
+
+    def _serve(self) -> None:
+        while not self._stop.is_set():
+            try:
+                request = self._request_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if not isinstance(request, Mapping):
+                continue
+            request_id = request.get("request_id")
+            material: dict[str, Any] | None = None
+            if (
+                isinstance(request_id, str)
+                and request.get("capability_token") == self._capability_token
+                and request.get("operation") == "redeem"
+                and request.get("provider_id") == self._provider_id
+                and request.get("endpoint_id") == self._endpoint_id
+            ):
+                try:
+                    material = self._broker.redeem_execution_material(
+                        self._lease_id,
+                        provider_id=self._provider_id,
+                        endpoint_id=self._endpoint_id,
+                    )
+                except Exception:
+                    material = None
+            try:
+                self._response_queue.put(
+                    {"request_id": request_id, "material": material},
+                    timeout=0.1,
+                )
+            except queue.Full:
+                continue
+
+
+def start_lease_capability_channel(
+    broker: ProviderBroker,
+    *,
+    lease_id: str,
+    provider_id: str,
+    endpoint_id: str,
+    worker_state_dir: str,
+) -> tuple[LeaseCapabilityChannel, LeaseCapabilityServer]:
+    """Start isolated Ray transports while retaining broker authority in the driver."""
+    from ray.util.queue import Queue
+
+    actor_options = {
+        "num_cpus": 0,
+        "runtime_env": {
+            "env_vars": {
+                "BREADBOARD_CREDENTIAL_STORE_PATH": "",
+                "BREADBOARD_CREDENTIAL_DB": "",
+                "BREADBOARD_STATE_DIR": worker_state_dir,
+            }
+        },
+    }
+    request_queue = Queue(maxsize=8, actor_options=actor_options)
+    try:
+        response_queue = Queue(maxsize=8, actor_options=actor_options)
+    except Exception:
+        request_queue.shutdown(force=True)
+        raise
+    capability_token = secrets.token_urlsafe(32)
+    channel = LeaseCapabilityChannel(
+        request_queue=request_queue,
+        response_queue=response_queue,
+        capability_token=capability_token,
+        provider_id=provider_id,
+        endpoint_id=endpoint_id,
+    )
+    server = LeaseCapabilityServer(
+        broker=broker,
+        request_queue=request_queue,
+        response_queue=response_queue,
+        capability_token=capability_token,
+        lease_id=lease_id,
+        provider_id=provider_id,
+        endpoint_id=endpoint_id,
+    )
+    server.start()
+    return channel, server
 
 
 _default_lock = threading.Lock()

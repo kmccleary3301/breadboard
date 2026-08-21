@@ -82,6 +82,7 @@ class AgenticCoder:
         self._local_mode = force_local_mode or os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1"
         self._provider_lease_id: Optional[str] = None
         self._provider_lease_channel: Any | None = None
+        self._provider_lease_server: Any | None = None
         self._provider_worker_state_dir: Optional[str] = None
         
     def _load_config(self) -> Dict[str, Any]:
@@ -237,13 +238,19 @@ class AgenticCoder:
                 workspace_path = _REPO_ROOT / "tmp" / workspace_path
         return validate_workspace_path(workspace_path, repo_root=_REPO_ROOT)
 
-    def _provider_lease_for_remote(self, ray_mod: Any) -> Any | None:
+    def _provider_lease_for_remote(
+        self,
+        ray_mod: Any,
+        *,
+        worker_state_dir: str,
+    ) -> Any | None:
+        del ray_mod
         model_route = self._select_model()
         descriptor, _ = provider_router.get_runtime_descriptor(model_route)
         if descriptor.runtime_id in {"codex_app_server", "mock_chat", "replay"}:
             return None
         from .provider_broker import get_provider_broker
-        from .provider_broker.broker import LeaseCapabilityAuthority
+        from .provider_broker.broker import start_lease_capability_channel
 
         broker = get_provider_broker()
         material = broker.issue_execution_material(
@@ -257,31 +264,29 @@ class AgenticCoder:
                 f"Provider broker has no execution material for {descriptor.provider_id}."
             )
         lease_id = str(material["lease_id"])
-        store_path = str(getattr(getattr(broker, "store", None), "path", "") or "")
-        if not store_path or store_path == ":memory:":
-            broker.release_execution_material(lease_id)
-            raise RuntimeError("Provider broker store is not available to the lease authority.")
-        authority_class = ray_mod.remote(LeaseCapabilityAuthority)
         try:
-            channel = authority_class.options(num_cpus=0).remote(
-                store_path=store_path,
+            channel, server = start_lease_capability_channel(
+                broker,
                 lease_id=lease_id,
                 provider_id=descriptor.provider_id,
                 endpoint_id=model_route,
+                worker_state_dir=worker_state_dir,
             )
         except Exception:
             broker.release_execution_material(lease_id)
             raise
         self._provider_lease_id = lease_id
         self._provider_lease_channel = channel
+        self._provider_lease_server = server
         return channel
 
     def _release_provider_lease(self) -> None:
         lease_id = self._provider_lease_id
-        channel = self._provider_lease_channel
+        server = self._provider_lease_server
         worker_state_dir = self._provider_worker_state_dir
         self._provider_lease_id = None
         self._provider_lease_channel = None
+        self._provider_lease_server = None
         self._provider_worker_state_dir = None
         try:
             if lease_id:
@@ -289,10 +294,9 @@ class AgenticCoder:
 
                 get_provider_broker().release_execution_material(lease_id)
         finally:
-            ray_mod = _get_ray()
-            if ray_mod is not None and channel is not None:
+            if server is not None:
                 try:
-                    ray_mod.kill(channel, no_restart=True)
+                    server.stop()
                 except Exception:
                     pass
             if worker_state_dir:
@@ -353,16 +357,19 @@ class AgenticCoder:
             ray_mod = _get_ray()
             if ray_mod is None:
                 raise RuntimeError("Ray is unavailable for remote execution.")
-            lease_channel = self._provider_lease_for_remote(ray_mod)
             self._provider_worker_state_dir = tempfile.mkdtemp(prefix="bb-provider-worker-")
-            runtime_env = {
-                "env_vars": {
-                    "BREADBOARD_CREDENTIAL_STORE_PATH": "",
-                    "BREADBOARD_CREDENTIAL_DB": "",
-                    "BREADBOARD_STATE_DIR": self._provider_worker_state_dir,
-                }
-            }
             try:
+                lease_channel = self._provider_lease_for_remote(
+                    ray_mod,
+                    worker_state_dir=self._provider_worker_state_dir,
+                )
+                runtime_env = {
+                    "env_vars": {
+                        "BREADBOARD_CREDENTIAL_STORE_PATH": "",
+                        "BREADBOARD_CREDENTIAL_DB": "",
+                        "BREADBOARD_STATE_DIR": self._provider_worker_state_dir,
+                    }
+                }
                 self.agent = OpenAIConductor.options(runtime_env=runtime_env).remote(
                     workspace=self.workspace_dir,
                     config=self.config,

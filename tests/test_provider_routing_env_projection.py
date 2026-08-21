@@ -10,6 +10,7 @@ import pytest
 
 import breadboard_engine.provider.routing as routing_module
 import breadboard_engine.provider_broker as broker_module
+import breadboard_engine.provider_broker.broker as broker_impl
 from breadboard_engine.provider.routing import ProviderRouter
 
 
@@ -222,16 +223,18 @@ def test_ray_child_receives_only_confined_lease_capability_and_releases_it(
     captured: dict[str, Any] = {}
     channel = object()
 
-    class FakeAuthorityFactory:
-        @classmethod
-        def options(cls, **kwargs: Any) -> type[FakeAuthorityFactory]:
-            captured["authority_options"] = kwargs
-            return cls
+    class FakeServer:
+        stop_calls = 0
 
-        @staticmethod
-        def remote(**kwargs: Any) -> object:
-            captured["authority_kwargs"] = kwargs
-            return channel
+        def stop(self) -> None:
+            self.stop_calls += 1
+
+    server = FakeServer()
+
+    def fake_start_channel(broker_arg: Any, **kwargs: Any) -> tuple[Any, Any]:
+        captured["channel_broker"] = broker_arg
+        captured["channel_kwargs"] = kwargs
+        return channel, server
 
     class FakeRun:
         @staticmethod
@@ -261,18 +264,9 @@ def test_ray_child_receives_only_confined_lease_capability_and_releases_it(
             return True
 
         @staticmethod
-        def remote(authority: Any) -> type[FakeAuthorityFactory]:
-            captured["authority_class"] = authority
-            return FakeAuthorityFactory
-
-        @staticmethod
         def get(reference: Any) -> dict[str, Any]:
             assert reference == "run-ref"
             return {"ok": True}
-
-        @staticmethod
-        def kill(handle: Any, *, no_restart: bool) -> None:
-            captured["killed"] = (handle, no_restart)
 
     for key in (
         "OPENAI_API_KEY",
@@ -284,6 +278,7 @@ def test_ray_child_receives_only_confined_lease_capability_and_releases_it(
         monkeypatch.setenv(key, f"credential-poison:{key}")
     monkeypatch.setattr(agent_module, "_get_ray", lambda: FakeRay())
     monkeypatch.setattr(agent_module, "OpenAIConductor", FakeConductor)
+    monkeypatch.setattr(broker_impl, "start_lease_capability_channel", fake_start_channel)
     broker = _StubBroker(
         {
             "api_key": "broker-token",
@@ -301,17 +296,19 @@ def test_ray_child_receives_only_confined_lease_capability_and_releases_it(
     coder._local_mode = False
     coder._provider_lease_id = None
     coder._provider_lease_channel = None
+    coder._provider_lease_server = None
     coder._provider_worker_state_dir = None
     monkeypatch.setattr(coder, "_resolve_workspace_path", lambda: tmp_path / "workspace")
 
     coder.initialize()
     worker_state_dir = Path(coder._provider_worker_state_dir or "")
 
-    assert captured["authority_kwargs"] == {
-        "store_path": str(tmp_path / "credentials.sqlite3"),
+    assert captured["channel_broker"] is broker
+    assert captured["channel_kwargs"] == {
         "lease_id": "bblease-child-channel",
         "provider_id": "openai",
         "endpoint_id": "openai/gpt-5.4-mini",
+        "worker_state_dir": str(worker_state_dir),
     }
     env_vars = captured["options"]["runtime_env"]["env_vars"]
     assert env_vars["BREADBOARD_CREDENTIAL_STORE_PATH"] == ""
@@ -332,9 +329,10 @@ def test_ray_child_receives_only_confined_lease_capability_and_releases_it(
     assert coder.run_task("hello") == {"ok": True}
 
     assert broker.release_calls == ["bblease-child-channel"]
-    assert captured["killed"] == (channel, True)
+    assert server.stop_calls == 1
     assert coder._provider_lease_id is None
     assert coder._provider_lease_channel is None
+    assert coder._provider_lease_server is None
     assert not worker_state_dir.exists()
     serialized = repr(captured)
     assert "broker-token" not in serialized
@@ -348,34 +346,42 @@ def _active_remote_coder(
 ) -> tuple[Any, Path, Any]:
     worker_state_dir = tmp_path / "worker-state"
     worker_state_dir.mkdir()
-    channel = object()
+
+    class FakeServer:
+        stop_calls = 0
+
+        def stop(self) -> None:
+            self.stop_calls += 1
+
+    server = FakeServer()
     coder = object.__new__(agent_module.AgenticCoder)
     coder.config = {"providers": {"default_model": "openai/gpt-5.4-mini"}}
     coder.agent = SimpleNamespace(run_agentic_loop=SimpleNamespace(remote=remote_call))
     coder._local_mode = False
     coder._provider_lease_id = "bblease-lifecycle"
-    coder._provider_lease_channel = channel
+    coder._provider_lease_channel = object()
+    coder._provider_lease_server = server
     coder._provider_worker_state_dir = str(worker_state_dir)
-    return coder, worker_state_dir, channel
+    return coder, worker_state_dir, server
 
 
 def _assert_exact_lease_released(
     coder: Any,
     worker_state_dir: Path,
     broker: _StubBroker,
-    channel: Any,
-    killed: list[tuple[Any, bool]],
+    server: Any,
 ) -> None:
     assert broker.release_calls == ["bblease-lifecycle"]
     assert broker.redeem_execution_material("bblease-lifecycle") is None
-    assert killed == [(channel, True)]
+    assert server.stop_calls == 1
     assert coder._provider_lease_id is None
     assert coder._provider_lease_channel is None
+    assert coder._provider_lease_server is None
     assert coder._provider_worker_state_dir is None
     assert not worker_state_dir.exists()
     coder._release_provider_lease()
     assert broker.release_calls == ["bblease-lifecycle"]
-    assert killed == [(channel, True)]
+    assert server.stop_calls == 1
 
 
 @pytest.mark.parametrize(
@@ -389,28 +395,25 @@ def test_run_task_releases_exact_lease_when_remote_submission_fails(
 ) -> None:
     import breadboard_engine.agent as agent_module
 
-    killed: list[tuple[Any, bool]] = []
     broker = _StubBroker(
         {"api_key": "broker-token", "lease_id": "bblease-lifecycle"},
         store_path=str(tmp_path / "credentials.sqlite3"),
     )
 
-    class FakeRay:
-        @staticmethod
-        def kill(handle: Any, *, no_restart: bool) -> None:
-            killed.append((handle, no_restart))
-
     def fail_dispatch(*args: Any, **kwargs: Any) -> None:
         raise dispatch_error
 
-    coder, worker_state_dir, channel = _active_remote_coder(agent_module, tmp_path, fail_dispatch)
-    monkeypatch.setattr(agent_module, "_get_ray", lambda: FakeRay())
+    coder, worker_state_dir, server = _active_remote_coder(
+        agent_module,
+        tmp_path,
+        fail_dispatch,
+    )
     monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
 
     with pytest.raises(type(dispatch_error), match="dispatch failed"):
         coder.run_task("hello")
 
-    _assert_exact_lease_released(coder, worker_state_dir, broker, channel, killed)
+    _assert_exact_lease_released(coder, worker_state_dir, broker, server)
 
 
 @pytest.mark.parametrize(
@@ -425,7 +428,6 @@ def test_run_task_releases_exact_lease_when_remote_result_fails(
 ) -> None:
     import breadboard_engine.agent as agent_module
 
-    killed: list[tuple[Any, bool]] = []
     broker = _StubBroker(
         {"api_key": "broker-token", "lease_id": "bblease-lifecycle"},
         store_path=str(tmp_path / "credentials.sqlite3"),
@@ -437,11 +439,7 @@ def test_run_task_releases_exact_lease_when_remote_result_fails(
             assert reference == "run-ref"
             raise get_error
 
-        @staticmethod
-        def kill(handle: Any, *, no_restart: bool) -> None:
-            killed.append((handle, no_restart))
-
-    coder, worker_state_dir, channel = _active_remote_coder(
+    coder, worker_state_dir, server = _active_remote_coder(
         agent_module,
         tmp_path,
         lambda *args, **kwargs: "run-ref",
@@ -449,10 +447,13 @@ def test_run_task_releases_exact_lease_when_remote_result_fails(
     monkeypatch.setattr(agent_module, "_get_ray", lambda: FakeRay())
     monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
 
-    with pytest.raises(type(get_error), match="get failed" if isinstance(get_error, RuntimeError) else None):
+    with pytest.raises(
+        type(get_error),
+        match="get failed" if isinstance(get_error, RuntimeError) else None,
+    ):
         coder.run_task("hello")
 
-    _assert_exact_lease_released(coder, worker_state_dir, broker, channel, killed)
+    _assert_exact_lease_released(coder, worker_state_dir, broker, server)
 
 
 @pytest.mark.parametrize(
@@ -466,7 +467,6 @@ def test_interactive_session_releases_exact_lease_on_every_exit(
 ) -> None:
     import breadboard_engine.agent as agent_module
 
-    killed: list[tuple[Any, bool]] = []
     broker = _StubBroker(
         {"api_key": "broker-token", "lease_id": "bblease-lifecycle"},
         store_path=str(tmp_path / "credentials.sqlite3"),
@@ -480,11 +480,7 @@ def test_interactive_session_releases_exact_lease_on_every_exit(
                 raise RuntimeError("remote failed")
             return {"completion_reason": "done"}
 
-        @staticmethod
-        def kill(handle: Any, *, no_restart: bool) -> None:
-            killed.append((handle, no_restart))
-
-    coder, worker_state_dir, channel = _active_remote_coder(
+    coder, worker_state_dir, server = _active_remote_coder(
         agent_module,
         tmp_path,
         lambda *args, **kwargs: "run-ref",
@@ -506,7 +502,7 @@ def test_interactive_session_releases_exact_lease_on_every_exit(
 
     coder.interactive_session()
 
-    _assert_exact_lease_released(coder, worker_state_dir, broker, channel, killed)
+    _assert_exact_lease_released(coder, worker_state_dir, broker, server)
 
 @pytest.mark.asyncio
 async def test_session_runner_startup_observes_broker_source_and_secret_free_environment(

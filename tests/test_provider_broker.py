@@ -3,11 +3,15 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import queue
 import subprocess
 import sys
 
 from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialStore
-from breadboard_engine.provider_broker.broker import LeaseCapabilityAuthority
+from breadboard_engine.provider_broker.broker import (
+    LeaseCapabilityChannel,
+    LeaseCapabilityServer,
+)
 
 
 def test_broker_nine_method_surface_and_plain_data(tmp_path):
@@ -99,7 +103,7 @@ def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
     )
 
 
-def test_lease_capability_authority_is_bound_to_one_scope_and_releases(tmp_path):
+def test_lease_capability_channel_is_bound_and_has_no_broker_authority(tmp_path):
     db = tmp_path / "credentials.sqlite3"
     broker = ProviderBroker(SQLiteCredentialStore(db))
     broker.putApiKey(
@@ -122,33 +126,56 @@ def test_lease_capability_authority_is_bound_to_one_scope_and_releases(tmp_path)
         endpoint_id="openai/gpt-5.4-mini",
     )
     assert material is not None
-    authority = LeaseCapabilityAuthority(
-        store_path=str(db),
+    requests: queue.Queue = queue.Queue()
+    responses: queue.Queue = queue.Queue()
+    channel = LeaseCapabilityChannel(
+        request_queue=requests,
+        response_queue=responses,
+        capability_token="test-capability",
+        provider_id="openai",
+        endpoint_id="openai/gpt-5.4-mini",
+    )
+    server = LeaseCapabilityServer(
+        broker=broker,
+        request_queue=requests,
+        response_queue=responses,
+        capability_token="test-capability",
         lease_id=material["lease_id"],
         provider_id="openai",
         endpoint_id="openai/gpt-5.4-mini",
     )
+    server.start()
+    try:
+        redeemed = channel.redeem(
+            provider_id="openai",
+            endpoint_id="openai/gpt-5.4-mini",
+        )
+        assert redeemed and redeemed["api_key"] == "openai-authority-secret"
+        assert channel.redeem(
+            provider_id="anthropic",
+            endpoint_id="openai/gpt-5.4-mini",
+        ) is None
+        assert channel.redeem(
+            provider_id="openai",
+            endpoint_id="openai/different",
+        ) is None
+        assert not hasattr(channel, "_broker")
+        assert str(db) not in repr(vars(channel))
 
-    redeemed = authority.redeem(
-        provider_id="openai",
-        endpoint_id="openai/gpt-5.4-mini",
-    )
-    assert redeemed and redeemed["api_key"] == "openai-authority-secret"
-    assert authority.redeem(
-        provider_id="anthropic",
-        endpoint_id="openai/gpt-5.4-mini",
-    ) is None
-    assert authority.redeem(
-        provider_id="openai",
-        endpoint_id="openai/different",
-    ) is None
-    assert not hasattr(authority, "issue_execution_material")
-    assert authority.release() is True
-    assert authority.release() is False
-    assert authority.redeem(
-        provider_id="openai",
-        endpoint_id="openai/gpt-5.4-mini",
-    ) is None
+        requests.put(
+            {
+                "request_id": "lateral",
+                "capability_token": "test-capability",
+                "operation": "issue",
+                "provider_id": "anthropic",
+                "endpoint_id": "anthropic/claude-sonnet-4",
+            }
+        )
+        response = responses.get(timeout=1)
+        assert response == {"request_id": "lateral", "material": None}
+    finally:
+        assert broker.release_execution_material(material["lease_id"]) is True
+        server.stop()
 
 
 def test_session_start_child_inherits_no_credential_environment(tmp_path):
