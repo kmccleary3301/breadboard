@@ -113,3 +113,57 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
     assert import_result.returncode == 0, import_result.stderr
     origins = [Path(value).resolve() for value in json.loads(import_result.stdout)]
     assert all(origin.is_relative_to(ROOT) for origin in origins), origins
+
+
+def test_editable_install_exposes_engine_from_fully_isolated_environment(
+    tmp_path: Path,
+) -> None:
+    venv = tmp_path / "clean-venv"
+    outside_repo = tmp_path / "unrelated-working-directory"
+    outside_repo.mkdir()
+    environment = _clean_environment()
+
+    subprocess.run(
+        [sys.executable, "-m", "venv", str(venv)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    venv_python = venv / "bin" / "python"
+    subprocess.run(
+        [
+            str(venv_python),
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "--editable",
+            str(ROOT),
+        ],
+        cwd=outside_repo,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    import_result = subprocess.run(
+        [
+            str(venv_python),
+            "-I",
+            "-c",
+            (
+                "import breadboard_engine, json; "
+                "print(json.dumps(breadboard_engine.__file__))"
+            ),
+        ],
+        cwd=outside_repo,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert import_result.returncode == 0, import_result.stderr
+    origin = Path(json.loads(import_result.stdout)).resolve()
+    assert origin == ROOT / "breadboard_engine" / "__init__.py"
