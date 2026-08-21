@@ -1144,7 +1144,7 @@ def run_lane(
                     "lane_id": lane_id,
                     "returncode": 0 if row.get("ok") else 1,
                     "artifact_writer": str(lane_def.get("capture", {}).get("adapter")),
-                    "output_path": row.get("node_gate") or row.get("report_ref"),
+                    "output_path": row.get("scratch_report_ref") or row.get("node_gate") or row.get("report_ref"),
                     "promotion_refresh": refresh_report,
                     "packet_report": row,
                 },

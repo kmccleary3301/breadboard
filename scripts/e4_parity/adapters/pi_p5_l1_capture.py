@@ -1007,8 +1007,13 @@ def capture(
         return build(write=True, recapture=False)
     if out_dir is None:
         raise ValueError("Pi P5 L1 scratch capture requires out_dir")
+    scratch_node_gate_path = _overlay_path(Path(out_dir), NODE_GATE_PATH)
     with _scratch_paths(Path(out_dir)):
         row = build(write=True, recapture=False)
+    row["accepted"] = False
+    row["promotion_eligible"] = False
+    row["accepted_node_gate_ref"] = row.get("node_gate")
+    row["node_gate"] = display_path(scratch_node_gate_path)
     row["scratch_node_gate_ok"] = row.get("ok")
     row["scratch_node_gate_errors"] = list(row.get("errors", []))
     row["ok"] = True
