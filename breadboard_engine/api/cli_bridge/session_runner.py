@@ -696,7 +696,9 @@ class SessionRunner:
         """Freeze the exact base configuration and overrides passed to the agent."""
         if self._prepared_runtime_config is not None:
             return dict(self._prepared_runtime_config)
-        overrides = dict(self.request.overrides or {})
+        overrides = _sanitize_persisted_runtime_config(
+            dict(self.request.overrides or {})
+        )
         if isinstance(self._model_override, str) and self._model_override.strip():
             overrides["providers.default_model"] = self._model_override.strip()
         if isinstance(self._mode, str) and self._mode.strip():

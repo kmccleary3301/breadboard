@@ -203,6 +203,8 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
     assert calls == ["mutating.json"]
     assert captured["config"] == record.runner.current_runtime_config()
     assert captured["overrides"] is None
+    assert "provider_auth_runtime" not in json.dumps(record.runner.request.overrides)
+    assert "override-secret" not in json.dumps(record.runner.request.overrides)
     assert "provider_auth_runtime" not in json.dumps(captured["config"])
     assert all(
         secret not in persisted and secret not in json.dumps(captured["config"])
