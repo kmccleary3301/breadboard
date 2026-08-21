@@ -10,7 +10,6 @@ import queue
 import secrets
 import threading
 import time
-from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from breadboard_engine.security import redaction
@@ -153,20 +152,6 @@ def scrub_child_environment() -> None:
             os.environ.pop(name, None)
 
 
-@dataclass(frozen=True)
-class BrokerProblem:
-    code: str
-    message: str
-    details: Mapping[str, Any] | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "code": self.code,
-            "message": self.message,
-            "details": dict(self.details or {}),
-        }
-
-
 class ProviderBroker:
     """Single-process broker with an out-of-process-compatible data boundary."""
 
@@ -211,7 +196,7 @@ class ProviderBroker:
 
     def _emit(self, event: str, **fields: Any) -> None:
         payload, _problems = redaction.scrub_structure(
-            {"event": event, "timestamp_ms": __import__("time").time_ns() // 1_000_000, **fields}
+            {"event": event, "timestamp_ms": time.time_ns() // 1_000_000, **fields}
         )
         if not isinstance(payload, dict):
             return
@@ -360,8 +345,6 @@ class ProviderBroker:
         ttl_seconds = self._value(payload, "ttlSeconds", "ttl_seconds")
         if expires_at_ms is None and ttl_seconds is not None:
             try:
-                import time
-
                 expires_at_ms = int(time.time() * 1000) + max(0, int(ttl_seconds)) * 1000
             except (TypeError, ValueError):
                 expires_at_ms = None

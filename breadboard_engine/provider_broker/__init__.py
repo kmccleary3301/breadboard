@@ -1,12 +1,11 @@
 """BreadBoard provider credential broker and SQLite store."""
 
-from .broker import BrokerProblem, ProviderBroker, get_provider_broker, provider_broker
+from .broker import ProviderBroker, get_provider_broker, provider_broker
 from .catalog import OAuthFlowSpec, ProviderCatalogEntry, get_provider_catalog_entry, provider_catalog
 from .oauth import OAuthFlowAdapter, OAuthFlowError
 from .store import SQLiteCredentialStore, default_store_path
 
 __all__ = [
-    "BrokerProblem",
     "OAuthFlowAdapter",
     "OAuthFlowError",
     "OAuthFlowSpec",

@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import io
 import json
 import time
+import urllib.error
 import urllib.parse
+from email.message import Message
+
+import pytest
 
 from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialStore, provider_catalog
 
@@ -16,6 +21,14 @@ def _transport_factory(responses):
         return response
 
     return transport, calls
+
+
+class _FailingResponseBody:
+    def __init__(self, error):
+        self.error = error
+
+    def read(self, *_args, **_kwargs):
+        raise self.error
 
 
 def test_catalog_is_data_driven_and_only_source_established_flows_are_available():
@@ -145,3 +158,148 @@ def test_refresh_response_without_rotated_refresh_token_preserves_stored_token(t
     )
     assert material and material["api_key"] == "new-access"
     assert material["refresh_token"] == "stored-refresh"
+
+
+@pytest.mark.parametrize(
+    ("transport_error", "expected_code", "expected_cause_type"),
+    [
+        (
+            urllib.error.URLError(OSError("network-secret-canary")),
+            "oauth_transport_error",
+            "OSError",
+        ),
+        (TimeoutError("timeout-secret-canary"), "oauth_transport_timeout", "TimeoutError"),
+        (
+            urllib.error.URLError(TimeoutError("timeout-secret-canary")),
+            "oauth_transport_timeout",
+            "TimeoutError",
+        ),
+    ],
+)
+def test_oauth_transport_failures_return_typed_broker_problems(
+    monkeypatch,
+    tmp_path,
+    transport_error,
+    expected_code,
+    expected_cause_type,
+):
+    def fail_transport(*_args, **_kwargs):
+        raise transport_error
+
+    monkeypatch.setattr(
+        "breadboard_engine.provider_broker.oauth.urllib.request.urlopen",
+        fail_transport,
+    )
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / f"{expected_cause_type}.sqlite3"))
+
+    result = broker.beginLogin({"provider_id": "codex", "flow": "device"})
+
+    assert result["status"] == "unavailable"
+    assert result["problem"] == {
+        "code": expected_code,
+        "message": (
+            "OAuth endpoint request timed out"
+            if expected_code == "oauth_transport_timeout"
+            else "OAuth endpoint request failed"
+        ),
+        "details": {
+            "provider_id": "codex",
+            "cause_type": expected_cause_type,
+        },
+    }
+    assert "secret-canary" not in json.dumps(result)
+
+
+@pytest.mark.parametrize(
+    ("transport_error", "expected_code"),
+    [
+        (urllib.error.URLError(OSError("injected-url-secret")), "oauth_transport_error"),
+        (TimeoutError("injected-timeout-secret"), "oauth_transport_timeout"),
+        (
+            urllib.error.URLError(TimeoutError("injected-timeout-secret")),
+            "oauth_transport_timeout",
+        ),
+    ],
+)
+def test_injected_transport_failures_return_typed_broker_problems(
+    tmp_path,
+    transport_error,
+    expected_code,
+):
+    def fail_transport(*_args, **_kwargs):
+        raise transport_error
+
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / "injected-error.sqlite3"),
+        oauth_transport=fail_transport,
+    )
+
+    result = broker.beginLogin({"provider_id": "codex", "flow": "device"})
+
+    assert result["status"] == "unavailable"
+    assert result["problem"]["code"] == expected_code
+    assert result["problem"]["details"]["cause_type"] == (
+        "TimeoutError" if expected_code == "oauth_transport_timeout" else "OSError"
+    )
+    assert "injected-" not in json.dumps(result)
+
+
+def test_injected_transport_http_error_preserves_flow_specific_failure(tmp_path):
+    def fail_transport(url, **_kwargs):
+        raise urllib.error.HTTPError(
+            url,
+            503,
+            "Service Unavailable",
+            Message(),
+            io.BytesIO(b'{"error":"unavailable"}'),
+        )
+
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / "injected-http-error.sqlite3"),
+        oauth_transport=fail_transport,
+    )
+
+    result = broker.beginLogin({"provider_id": "codex", "flow": "device"})
+
+    assert result["status"] == "unavailable"
+    assert result["problem"] == {
+        "code": "oauth_device_start_failed",
+        "message": "Device authorization initiation failed",
+        "details": {
+            "provider_id": "codex",
+            "status": 503,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("body_error", "expected_code"),
+    [
+        (urllib.error.URLError(OSError("body-url-secret")), "oauth_transport_error"),
+        (TimeoutError("body-timeout-secret"), "oauth_transport_timeout"),
+    ],
+)
+def test_injected_http_error_body_failures_are_typed(
+    tmp_path,
+    body_error,
+    expected_code,
+):
+    def fail_transport(url, **_kwargs):
+        raise urllib.error.HTTPError(
+            url,
+            503,
+            "Service Unavailable",
+            Message(),
+            _FailingResponseBody(body_error),
+        )
+
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / "http-body-error.sqlite3"),
+        oauth_transport=fail_transport,
+    )
+
+    result = broker.beginLogin({"provider_id": "codex", "flow": "device"})
+
+    assert result["status"] == "unavailable"
+    assert result["problem"]["code"] == expected_code
+    assert "body-" not in json.dumps(result)

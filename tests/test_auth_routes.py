@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 
 from fastapi.testclient import TestClient
 
@@ -70,6 +71,38 @@ def test_auth_routes_are_typed_and_never_return_secret(tmp_path, monkeypatch, ca
     assert client.delete(f"/v1/auth/credentials/{credential['credential_id']}").json()["ok"] is True
     assert secret not in caplog.text
     assert secret not in json.dumps(broker.audit_events())
+
+
+def test_auth_login_transport_failure_returns_typed_response(tmp_path, monkeypatch):
+    import breadboard_engine.provider_broker.broker as broker_module
+
+    def fail_transport(*_args, **_kwargs):
+        raise urllib.error.URLError(OSError("route-secret-canary"))
+
+    monkeypatch.setattr(
+        "breadboard_engine.provider_broker.oauth.urllib.request.urlopen",
+        fail_transport,
+    )
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "transport-error.sqlite3"))
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/auth/login-sessions",
+        json={"provider_id": "codex", "flow": "device"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["problem"] == {
+        "code": "oauth_transport_error",
+        "message": "OAuth endpoint request failed",
+        "details": {
+            "provider_id": "codex",
+            "cause_type": "OSError",
+        },
+    }
+    assert "route-secret-canary" not in response.text
 
 
 def test_api_rotation_preserves_resolved_role_lock_hash(tmp_path, monkeypatch):

@@ -6,6 +6,7 @@ import queue
 import subprocess
 import sys
 
+import breadboard_engine.provider_broker as provider_broker_package
 from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialStore
 from breadboard_engine.provider_broker.broker import (
     LeaseCapabilityChannel,
@@ -52,6 +53,11 @@ def test_broker_nine_method_surface_and_plain_data(tmp_path):
     assert broker.logout({"account_id": credential["account_id"]})["ok"] is True
     assert broker.revoke({"account_id": credential["account_id"]})["ok"] is True
     assert broker.listCredentials("openai")[0]["status"] == "revoked"
+
+
+def test_obsolete_broker_problem_is_not_exported():
+    assert "BrokerProblem" not in provider_broker_package.__all__
+    assert not hasattr(provider_broker_package, "BrokerProblem")
 
 
 def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):

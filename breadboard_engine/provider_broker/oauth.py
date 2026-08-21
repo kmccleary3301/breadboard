@@ -32,7 +32,9 @@ def default_oauth_transport(
         with urllib.request.urlopen(request, timeout=30) as response:
             return int(response.status), dict(response.headers.items()), response.read()
     except urllib.error.HTTPError as error:
-        return int(error.code), dict(error.headers.items()), error.read()
+        return _http_error_response(error)
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise _transport_failure(error) from error
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,37 @@ class OAuthFlowError(ValueError):
         super().__init__(message)
         self.code = code
         self.details = details
+
+
+def _transport_failure(
+    error: urllib.error.URLError | TimeoutError,
+) -> OAuthFlowError:
+    cause = error.reason if isinstance(error, urllib.error.URLError) else error
+    cause_type = type(cause).__name__
+    if isinstance(cause, TimeoutError):
+        return OAuthFlowError(
+            "oauth_transport_timeout",
+            "OAuth endpoint request timed out",
+            cause_type=cause_type,
+        )
+    return OAuthFlowError(
+        "oauth_transport_error",
+        "OAuth endpoint request failed",
+        cause_type=cause_type,
+    )
+
+
+def _http_error_response(
+    error: urllib.error.HTTPError,
+) -> tuple[int, Mapping[str, str], bytes]:
+    response_headers = (
+        dict(error.headers.items()) if error.headers is not None else {}
+    )
+    try:
+        body = error.read()
+    except (urllib.error.URLError, TimeoutError) as body_error:
+        raise _transport_failure(body_error) from body_error
+    return int(error.code), response_headers, body
 
 
 def _json_body(status: int, body: bytes) -> dict[str, Any]:
@@ -84,6 +117,21 @@ class OAuthFlowAdapter:
         self.client_id = spec.resolved_client_id()
         self.transport = transport or default_oauth_transport
 
+    def _request(
+        self,
+        url: str,
+        *,
+        method: str,
+        headers: Mapping[str, str],
+        body: bytes | None = None,
+    ) -> tuple[int, Mapping[str, str], bytes]:
+        try:
+            return self.transport(url, method=method, headers=headers, body=body)
+        except urllib.error.HTTPError as error:
+            return _http_error_response(error)
+        except (urllib.error.URLError, TimeoutError) as error:
+            raise _transport_failure(error) from error
+
     def _require_client_id(self) -> str:
         if self.client_id:
             return self.client_id
@@ -99,7 +147,7 @@ class OAuthFlowAdapter:
         if flow_kind == "device":
             if not self.spec.device_usercode_url:
                 raise OAuthFlowError("flow_unavailable", f"No device flow is established for '{self.spec.flow_id}'.")
-            status, _headers, raw = self.transport(
+            status, _headers, raw = self._request(
                 self.spec.device_usercode_url,
                 method="POST",
                 headers={"Content-Type": "application/json"},
@@ -168,7 +216,7 @@ class OAuthFlowAdapter:
             body_values["state"] = str(state)
         headers = {"Content-Type": "application/json"} if self.spec.flow_id == "anthropic" else {"Content-Type": "application/x-www-form-urlencoded"}
         body = json.dumps(body_values).encode() if self.spec.flow_id == "anthropic" else urllib.parse.urlencode(body_values).encode()
-        status, _response_headers, raw = self.transport(self.spec.token_url, method="POST", headers=headers, body=body)
+        status, _response_headers, raw = self._request(self.spec.token_url, method="POST", headers=headers, body=body)
         if status < 200 or status >= 300:
             raise OAuthFlowError("oauth_token_exchange_failed", "OAuth token exchange failed", status=status)
         return self._token_material(_json_body(status, raw))
@@ -179,7 +227,7 @@ class OAuthFlowAdapter:
         interval = max(1.0, float(flow.get("interval") or 5))
         deadline = time.time() + float(flow.get("expires_in") or 600)
         while time.time() < deadline:
-            status, _headers, raw = self.transport(
+            status, _headers, raw = self._request(
                 self.spec.device_token_url,
                 method="POST",
                 headers={"Content-Type": "application/json"},
@@ -194,14 +242,12 @@ class OAuthFlowAdapter:
             auth_code, verifier = data.get("authorization_code"), data.get("code_verifier")
             if not isinstance(auth_code, str) or not isinstance(verifier, str):
                 raise OAuthFlowError("oauth_invalid_response", "Device response missing authorization_code or code_verifier")
-            next_flow = dict(flow)
-            next_flow.update({"flow_kind": "browser", "code_verifier": verifier, "verifier": verifier, "redirect_uri": self.spec.device_redirect_uri, "state": flow.get("state")})
             return self._exchange_device_code(auth_code, verifier)
         raise OAuthFlowError("oauth_device_timeout", "Device authorization timed out")
 
     def _exchange_device_code(self, code: str, verifier: str) -> dict[str, Any]:
         values = {"grant_type": "authorization_code", "client_id": self._require_client_id(), "code": code, "code_verifier": verifier, "redirect_uri": self.spec.device_redirect_uri or ""}
-        status, _headers, raw = self.transport(self.spec.token_url, method="POST", headers={"Content-Type": "application/x-www-form-urlencoded"}, body=urllib.parse.urlencode(values).encode())
+        status, _headers, raw = self._request(self.spec.token_url, method="POST", headers={"Content-Type": "application/x-www-form-urlencoded"}, body=urllib.parse.urlencode(values).encode())
         if status < 200 or status >= 300:
             raise OAuthFlowError("oauth_token_exchange_failed", "OAuth token exchange failed", status=status)
         return self._token_material(_json_body(status, raw))
@@ -231,7 +277,7 @@ class OAuthFlowAdapter:
         if self.spec.flow_id == "anthropic":
             headers.update({"anthropic-beta": "oauth-2025-04-20", "User-Agent": "anthropic-sdk-typescript/0.94.0 userOAuthProvider"})
         body = json.dumps(values).encode() if self.spec.flow_id == "anthropic" else urllib.parse.urlencode(values).encode()
-        status, _response_headers, raw = self.transport(self.spec.token_url, method="POST", headers=headers, body=body)
+        status, _response_headers, raw = self._request(self.spec.token_url, method="POST", headers=headers, body=body)
         if status < 200 or status >= 300:
             raise OAuthFlowError("oauth_refresh_failed", "OAuth token refresh failed", status=status)
         result = self._token_material(_json_body(status, raw), require_refresh=False)
