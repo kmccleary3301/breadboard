@@ -4,6 +4,7 @@ import argparse
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -15,6 +16,8 @@ EXPECTED_PLAN_REVISION = 2
 EXPECTED_TOTAL_POINTS = 1000
 EXPECTED_ITEM_COUNT = 93
 EXPECTED_GOAL_COUNT = 102
+EXPECTED_PLAN_INVENTORY_SHA256 = "sha256:a2a08213e1871606e86ff3995ed906ebd5bd24a3bd63ec7672fc5e95bd32f5a1"
+EXPECTED_CROSSWALK_INVENTORY_SHA256 = "sha256:3740dce457e93cceea1b0fbd120de4d89e555d6d8f223dc075349b11470c4023"
 EXPECTED_TRACKS: dict[str, tuple[int, int]] = {
     "SEC": (140, 13),
     "PROV": (50, 5),
@@ -55,6 +58,35 @@ DEFAULT_CARD_FIELDS = {
     "method",
     "declared_scope",
     "test_double_status",
+}
+PLAN_ITEM_RE = re.compile(
+    r"^\| ((?:SEC|PROV|E4|PRIM|ENG|SRV|RAY|TS|TEST|GOV|PROD|RL|SYNC|AUD)-\d+) "
+    r"\| (\d+) \| ([^|]+?) \| (.*?) \| (.*?) \|$"
+)
+CROSSWALK_INVENTORY_FIELDS = (
+    "goal_id",
+    "source_domain",
+    "status_at_inventory",
+    "statement",
+    "disposition",
+    "plan_refs",
+    "wake_trigger",
+    "coverage_rule",
+)
+AUD2_ITEM_CHECK_FIELDS = {
+    "item_id",
+    "assigned_dimension",
+    "claim",
+    "seam",
+    "evidence_card_id",
+    "artifact_identity",
+    "falsification_method",
+    "scope_checked",
+    "test_double_status",
+    "falsification_observation_ref",
+    "falsification_observation_identity",
+    "observed_result",
+    "verdict",
 }
 
 
@@ -105,6 +137,131 @@ def _identity_error(
     actual = _sha256_bytes(path.read_bytes())
     if actual != identity:
         return f"{item_id}: {field_prefix}_identity does not match current bytes"
+    return None
+
+def _read_local_json_ref(*, workspace_root: Path, ref: Any) -> Mapping[str, Any] | None:
+    path = _resolve_local_ref(workspace_root=workspace_root, ref=ref)
+    if path is None or not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _plan_inventory(
+    *,
+    ledger: Mapping[str, Any],
+    workspace_root: Path,
+) -> tuple[list[dict[str, Any]], str | None]:
+    path = _resolve_local_ref(workspace_root=workspace_root, ref=ledger.get("plan"))
+    if path is None or not path.is_file():
+        return [], "ledger plan must reference the portable canonical master plan"
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = PLAN_ITEM_RE.match(line)
+        if match is None:
+            continue
+        item_id, points, kind, claim, seam = match.groups()
+        rows.append(
+            {
+                "track": item_id.split("-", 1)[0],
+                "id": item_id,
+                "points": int(points),
+                "kind": kind.strip(),
+                "claim": claim.strip(),
+                "seam": seam.strip(),
+            }
+        )
+    if len(rows) != EXPECTED_ITEM_COUNT:
+        return rows, f"canonical plan must project exactly {EXPECTED_ITEM_COUNT} scored rows"
+    return rows, None
+
+
+def _ledger_inventory(tracks: Iterable[Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for track in tracks:
+        if not isinstance(track, dict):
+            continue
+        track_name = str(track.get("track") or "")
+        for item in track.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            rows.append(
+                {
+                    "track": track_name,
+                    "id": item.get("id"),
+                    "points": item.get("points"),
+                    "kind": item.get("kind"),
+                    "claim": item.get("claim"),
+                    "seam": item.get("seam"),
+                }
+            )
+    return rows
+
+
+def _crosswalk_inventory(crosswalk: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {field: row.get(field) for field in CROSSWALK_INVENTORY_FIELDS}
+        for row in crosswalk.get("rows") or []
+        if isinstance(row, dict)
+    ]
+
+
+def _receipt_success(payload: Mapping[str, Any]) -> bool:
+    if payload.get("passed") is True:
+        return True
+    return any(
+        payload.get(field) in {"approved", "passed", "success", "succeeded"}
+        for field in ("decision", "outcome", "result", "state", "status")
+    )
+
+
+def _receipt_candidate(payload: Mapping[str, Any]) -> str | None:
+    for field in (
+        "candidate_commit",
+        "candidate",
+        "candidate_or_run",
+        "checkout_head",
+        "target_run_id",
+        "run_id",
+        "external_run_id",
+    ):
+        value = payload.get(field)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _evidence_receipt_error(
+    *,
+    item: Mapping[str, Any],
+    card: Mapping[str, Any],
+    workspace_root: Path,
+) -> str | None:
+    item_id = str(item.get("id") or "<missing>")
+    receipt = _read_local_json_ref(
+        workspace_root=workspace_root,
+        ref=card.get("observation_receipt_ref"),
+    )
+    if receipt is None:
+        return f"{item_id}: observation receipt must contain a JSON object"
+    if not isinstance(receipt.get("schema_version"), str) or not receipt.get("schema_version"):
+        return f"{item_id}: observation receipt must name a schema_version"
+    if not _receipt_success(receipt):
+        return f"{item_id}: observation receipt does not record success"
+    claim_ids = receipt.get("claim_ids")
+    if receipt.get("item_id") != item_id and (
+        not isinstance(claim_ids, list) or item_id not in claim_ids
+    ):
+        return f"{item_id}: observation receipt is not scoped to the scored item"
+    observed_candidate = _receipt_candidate(receipt)
+    if observed_candidate is None or observed_candidate not in str(card.get("candidate_or_run") or ""):
+        return f"{item_id}: observation receipt candidate/run does not match the evidence card"
+    receipt_test_double = receipt.get("test_double_status")
+    if receipt_test_double is not None and receipt_test_double != card.get("test_double_status"):
+        return f"{item_id}: observation receipt test-double status does not match the evidence card"
     return None
 
 
@@ -193,36 +350,324 @@ def _validate_crosswalk(
     return errors, {"rows": len(rows), "unique_goal_ids": len(set(goal_ids))}
 
 
-def _current_passed_broad_run(ledger: Mapping[str, Any], *, gate: str, candidate: str) -> bool:
+def _identity_matches_ref(
+    *,
+    workspace_root: Path,
+    ref: Any,
+    identity: Any,
+) -> bool:
+    path = _resolve_local_ref(workspace_root=workspace_root, ref=ref)
+    return (
+        path is not None
+        and path.is_file()
+        and isinstance(identity, str)
+        and _sha256_bytes(path.read_bytes()) == identity
+    )
+
+
+def _current_passed_broad_run(
+    ledger: Mapping[str, Any],
+    *,
+    gate: str,
+    candidate: str,
+    workspace_root: Path,
+) -> bool:
     for row in ledger.get("broad_runs") or []:
         if not isinstance(row, dict) or row.get("gate") != gate or row.get("state") != "passed":
             continue
-        observed_head = row.get("checkout_head") or row.get("candidate") or row.get("head")
-        if observed_head == candidate:
-            return True
+        if row.get("checkout_head") != candidate or row.get("exit_status") != 0:
+            continue
+        if not isinstance(row.get("operation_nonce"), str) or not row.get("operation_nonce"):
+            continue
+        if not isinstance(row.get("executor_harness_session_id"), str):
+            continue
+        if not isinstance(row.get("argv"), (str, list)):
+            continue
+        if not isinstance(row.get("input_fingerprint"), str) or not row["input_fingerprint"].startswith("sha256:"):
+            continue
+        if not _identity_matches_ref(
+            workspace_root=workspace_root,
+            ref=row.get("artifact_ref"),
+            identity=row.get("artifact_identity"),
+        ):
+            continue
+        if not _identity_matches_ref(
+            workspace_root=workspace_root,
+            ref=row.get("start_receipt_ref"),
+            identity=row.get("start_receipt_identity"),
+        ):
+            continue
+        start_receipt = _read_local_json_ref(
+            workspace_root=workspace_root,
+            ref=row.get("start_receipt_ref"),
+        )
+        if start_receipt is None:
+            continue
+        if (
+            start_receipt.get("operation_nonce") != row.get("operation_nonce")
+            or start_receipt.get("gate") != gate
+            or _receipt_candidate(start_receipt) != candidate
+            or not (start_receipt.get("started") is True or _receipt_success(start_receipt))
+        ):
+            continue
+        return True
     return False
 
 
-def _aud2_is_complete(ledger: Mapping[str, Any], *, candidate: str, item_ids: set[str]) -> bool:
-    workspace_root = _workspace_root(Path(str(ledger.get("_ledger_path") or ".")))
+def _derived_author_session_ids(ledger: Mapping[str, Any]) -> list[str]:
+    author_keys = {
+        "author_session_id",
+        "author_session_ids",
+        "campaign_author_session_ids",
+        "candidate_author_session_ids",
+        "plan_author_session_id",
+    }
+    observed: set[str] = set()
+
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key in author_keys:
+                    values = child if isinstance(child, list) else [child]
+                    observed.update(item for item in values if isinstance(item, str) and item)
+                elif key not in {"reviews", "plan_audits", "pre_schema_audits"}:
+                    collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+
+    for field in ("candidate", "active_packets", "integration_transactions", "activation_transaction"):
+        collect(ledger.get(field))
+    return sorted(observed)
+
+
+def _aud2_input_fingerprint(
+    *,
+    candidate: str,
+    item_by_id: Mapping[str, Mapping[str, Any]],
+    author_ids: list[str],
+) -> str:
+    return _canonical_sha256(
+        {
+            "candidate": candidate,
+            "candidate_author_session_ids": author_ids,
+            "items": [
+                {
+                    "item_id": item_id,
+                    "claim": item.get("claim"),
+                    "seam": item.get("seam"),
+                    "artifact_identity": (item.get("evidence_card") or {}).get("artifact_identity"),
+                    "observation_receipt_identity": (item.get("evidence_card") or {}).get(
+                        "observation_receipt_identity"
+                    ),
+                }
+                for item_id, item in sorted(item_by_id.items())
+            ],
+        }
+    )
+
+def _aud2_checks_identity(item_checks: Iterable[Any]) -> str:
+    material: list[Any] = []
+    for row in item_checks:
+        if not isinstance(row, dict):
+            material.append(row)
+            continue
+        copied = dict(row)
+        copied.pop("falsification_observation_identity", None)
+        material.append(copied)
+    return _canonical_sha256(material)
+
+
+def _aud2_is_complete(
+    ledger: Mapping[str, Any],
+    *,
+    candidate: str,
+    item_by_id: Mapping[str, Mapping[str, Any]],
+    workspace_root: Path,
+) -> bool:
+    item_ids = set(item_by_id)
+    author_ids = _derived_author_session_ids(ledger)
+    author_identity = _canonical_sha256(author_ids)
+    input_fingerprint = _aud2_input_fingerprint(
+        candidate=candidate,
+        item_by_id=item_by_id,
+        author_ids=author_ids,
+    )
     for review in ledger.get("reviews") or []:
         if not isinstance(review, dict) or review.get("decision") != "approved":
             continue
-        if "AUD-2" not in str(review.get("review_id") or ""):
+        review_id = str(review.get("review_id") or "")
+        if "AUD-2" not in review_id:
             continue
         if review.get("candidate_or_run") != candidate or review.get("non_author_check") is not True:
             continue
-        if set(review.get("checked_item_ids") or []) != item_ids or review.get("unchecked_item_ids") != []:
+        if review.get("candidate_author_session_ids") != author_ids:
             continue
-        if {row.get("item_id") for row in review.get("item_checks") or [] if isinstance(row, dict)} != item_ids:
+        if review.get("candidate_author_set_identity") != author_identity:
             continue
         reviewer = review.get("reviewer_harness_session_id")
-        if reviewer in set(review.get("candidate_author_session_ids") or []):
+        if not isinstance(reviewer, str) or not reviewer or reviewer in set(author_ids):
             continue
-        path = _resolve_local_ref(workspace_root=workspace_root, ref=review.get("reviewer_output_ref"))
-        if path is None or not path.is_file() or _sha256_bytes(path.read_bytes()) != review.get("reviewer_output_identity"):
+        if review.get("input_fingerprint") != input_fingerprint:
+            continue
+        if set(review.get("checked_item_ids") or []) != item_ids or review.get("unchecked_item_ids") != []:
+            continue
+        item_checks = review.get("item_checks")
+        if not isinstance(item_checks, list) or len(item_checks) != len(item_ids):
+            continue
+        checks_by_id = {
+            row.get("item_id"): row
+            for row in item_checks
+            if isinstance(row, dict) and isinstance(row.get("item_id"), str)
+        }
+        if set(checks_by_id) != item_ids or len(checks_by_id) != len(item_checks):
+            continue
+        checks_valid = True
+        for item_id, check in checks_by_id.items():
+            item = item_by_id[item_id]
+            card = item.get("evidence_card") or {}
+            if not AUD2_ITEM_CHECK_FIELDS.issubset(check):
+                checks_valid = False
+                break
+            if (
+                check.get("claim") != item.get("claim")
+                or check.get("seam") != item.get("seam")
+                or check.get("artifact_identity") != card.get("artifact_identity")
+                or check.get("test_double_status") != card.get("test_double_status")
+                or check.get("verdict") != "approved"
+                or not isinstance(check.get("observed_result"), str)
+                or not check.get("observed_result")
+                or not _identity_matches_ref(
+                    workspace_root=workspace_root,
+                    ref=check.get("falsification_observation_ref"),
+                    identity=check.get("falsification_observation_identity"),
+                )
+            ):
+                checks_valid = False
+                break
+        if not checks_valid:
+            continue
+        if not _identity_matches_ref(
+            workspace_root=workspace_root,
+            ref=review.get("reviewer_output_ref"),
+            identity=review.get("reviewer_output_identity"),
+        ):
+            continue
+        reviewer_output = _read_local_json_ref(
+            workspace_root=workspace_root,
+            ref=review.get("reviewer_output_ref"),
+        )
+        if reviewer_output is None:
+            continue
+        output_candidate = reviewer_output.get("candidate_commit") or reviewer_output.get("candidate")
+        if (
+            reviewer_output.get("review_id") != review_id
+            or reviewer_output.get("reviewer_session_id") != reviewer
+            or output_candidate != candidate
+            or reviewer_output.get("decision") != "approved"
+            or reviewer_output.get("input_fingerprint") != input_fingerprint
+            or set(reviewer_output.get("checked_item_ids") or []) != item_ids
+            or reviewer_output.get("unchecked_item_ids") != []
+            or reviewer_output.get("findings") != []
+            or reviewer_output.get("item_checks_identity") != _aud2_checks_identity(item_checks)
+        ):
             continue
         return True
+    return False
+
+
+def _gate_is_current(
+    *,
+    ledger: Mapping[str, Any],
+    gate_name: str,
+    gate: Mapping[str, Any],
+    candidate: str,
+    workspace_root: Path,
+) -> bool:
+    if gate.get("status") != "passed" or gate.get("candidate") != candidate:
+        return False
+    if not isinstance(gate.get("input_fingerprint"), str) or not gate["input_fingerprint"].startswith("sha256:"):
+        return False
+    review_ids = gate.get("review_ids")
+    if not isinstance(review_ids, list) or not review_ids:
+        return False
+    approved_reviews = {
+        review.get("review_id")
+        for review in ledger.get("reviews") or []
+        if isinstance(review, dict)
+        and review.get("decision") == "approved"
+        and review.get("candidate_or_run") == candidate
+    }
+    if not set(review_ids).issubset(approved_reviews):
+        return False
+    card = gate.get("evidence_card")
+    if not isinstance(card, dict):
+        return False
+    for prefix in ("artifact", "observation_receipt"):
+        if _identity_error(
+            item_id=gate_name,
+            field_prefix=prefix,
+            card=card,
+            workspace_root=workspace_root,
+        ):
+            return False
+    receipt = _read_local_json_ref(
+        workspace_root=workspace_root,
+        ref=card.get("observation_receipt_ref"),
+    )
+    return bool(
+        receipt
+        and receipt.get("gate_id") == gate_name
+        and _receipt_candidate(receipt) == candidate
+        and receipt.get("input_fingerprint") == gate.get("input_fingerprint")
+        and receipt.get("review_ids") == review_ids
+        and _receipt_success(receipt)
+    )
+
+
+def _dolt_push_is_current(
+    *,
+    ledger: Mapping[str, Any],
+    candidate: str,
+    workspace_root: Path,
+) -> bool:
+    for row in ledger.get("issue_operations") or []:
+        if not isinstance(row, dict) or row.get("kind") != "dolt_push":
+            continue
+        if (
+            row.get("state") not in {"observed", "closed"}
+            or row.get("outcome") not in {"success", "passed"}
+            or row.get("exit_status") != 0
+            or row.get("candidate") != candidate
+            or not isinstance(row.get("operation_nonce"), str)
+            or not isinstance(row.get("pre_push_identity"), str)
+            or not row["pre_push_identity"].startswith("sha256:")
+            or not isinstance(row.get("post_push_identity"), str)
+            or not row["post_push_identity"].startswith("sha256:")
+            or row.get("remote_head") != row.get("post_push_identity")
+            or "bd dolt push" not in str(row.get("argv") or "")
+        ):
+            continue
+        if not _identity_matches_ref(
+            workspace_root=workspace_root,
+            ref=row.get("receipt_ref"),
+            identity=row.get("receipt_identity"),
+        ):
+            continue
+        receipt = _read_local_json_ref(
+            workspace_root=workspace_root,
+            ref=row.get("receipt_ref"),
+        )
+        if (
+            receipt
+            and receipt.get("operation_nonce") == row.get("operation_nonce")
+            and _receipt_candidate(receipt) == candidate
+            and receipt.get("pre_push_identity") == row.get("pre_push_identity")
+            and receipt.get("post_push_identity") == row.get("post_push_identity")
+            and receipt.get("remote_head") == row.get("post_push_identity")
+            and _receipt_success(receipt)
+        ):
+            return True
     return False
 
 
@@ -231,6 +676,8 @@ def validate_scorecard(
     ledger: Mapping[str, Any],
     crosswalk: Mapping[str, Any],
     ledger_path: Path,
+    expected_plan_inventory_sha256: str = EXPECTED_PLAN_INVENTORY_SHA256,
+    expected_crosswalk_inventory_sha256: str = EXPECTED_CROSSWALK_INVENTORY_SHA256,
 ) -> dict[str, Any]:
     ledger_material = dict(ledger)
     ledger_material["_ledger_path"] = str(ledger_path.resolve())
@@ -254,6 +701,18 @@ def validate_scorecard(
     observed_track_names = [track.get("track") for track in tracks if isinstance(track, dict)]
     if set(observed_track_names) != set(EXPECTED_TRACKS) or len(observed_track_names) != len(EXPECTED_TRACKS):
         errors.append("ledger tracks must contain each expected track exactly once")
+    plan_inventory, plan_error = _plan_inventory(
+        ledger=ledger,
+        workspace_root=workspace_root,
+    )
+    if plan_error:
+        errors.append(plan_error)
+    plan_inventory_identity = _canonical_sha256(plan_inventory)
+    if plan_inventory_identity != expected_plan_inventory_sha256:
+        errors.append("canonical plan scored-item inventory identity is not approved")
+    ledger_inventory = _ledger_inventory(tracks)
+    if ledger_inventory != plan_inventory:
+        errors.append("ledger scored-item inventory does not match the canonical plan")
 
     items: list[dict[str, Any]] = []
     for track in tracks:
@@ -291,6 +750,11 @@ def validate_scorecard(
         errors.append("ledger item ids must be non-empty and unique")
     if sum(item.get("points", 0) for item in items if isinstance(item.get("points"), int)) != EXPECTED_TOTAL_POINTS:
         errors.append(f"scored item weights must total {EXPECTED_TOTAL_POINTS}")
+    item_by_id = {
+        str(item.get("id")): item
+        for item in items
+        if isinstance(item.get("id"), str) and item.get("id")
+    }
 
     earned_items = [item for item in items if item.get("state") == "earned"]
     earned_points = sum(item.get("points", 0) for item in earned_items if isinstance(item.get("points"), int))
@@ -323,9 +787,8 @@ def validate_scorecard(
             errors.append(f"{item_id}: evidence_card observation_kind is not allowed")
         if card.get("test_double_status") not in ALLOWED_TEST_DOUBLE_STATUSES:
             errors.append(f"{item_id}: evidence_card test_double_status is invalid")
-        candidate = str((ledger.get("candidate") or {}).get("current_head") or "")
-        if observation_kind == "local" and candidate not in str(card.get("candidate_or_run") or ""):
-            errors.append(f"{item_id}: local evidence_card is not bound to current candidate")
+        if not isinstance(card.get("candidate_or_run"), str) or not card.get("candidate_or_run"):
+            errors.append(f"{item_id}: evidence_card must name its exact candidate or run")
         for field_prefix in ("artifact", "observation_receipt"):
             identity_error = _identity_error(
                 item_id=item_id,
@@ -335,6 +798,13 @@ def validate_scorecard(
             )
             if identity_error:
                 errors.append(identity_error)
+        receipt_error = _evidence_receipt_error(
+            item=item,
+            card=card,
+            workspace_root=workspace_root,
+        )
+        if receipt_error:
+            errors.append(receipt_error)
 
     deferred_ids = {
         str(row.get("deferred_id") or row.get("id") or "")
@@ -347,6 +817,9 @@ def validate_scorecard(
         deferred_ids=deferred_ids,
     )
     errors.extend(crosswalk_errors)
+    crosswalk_inventory_identity = _canonical_sha256(_crosswalk_inventory(crosswalk))
+    if crosswalk_inventory_identity != expected_crosswalk_inventory_sha256:
+        errors.append("crosswalk goal inventory identity is not approved")
 
     candidate = str((ledger.get("candidate") or {}).get("current_head") or "")
     if earned_points != EXPECTED_TOTAL_POINTS:
@@ -355,8 +828,14 @@ def validate_scorecard(
         blockers.append("every scored item must be earned for completion")
     for gate_name in EXPECTED_GATES:
         gate = (ledger.get("gates") or {}).get(gate_name) or {}
-        if gate.get("status") != "passed" or gate.get("candidate") != candidate:
-            blockers.append(f"gate {gate_name} must be passed on the current candidate")
+        if not isinstance(gate, dict) or not _gate_is_current(
+            ledger=ledger,
+            gate_name=gate_name,
+            gate=gate,
+            candidate=candidate,
+            workspace_root=workspace_root,
+        ):
+            blockers.append(f"gate {gate_name} must have a current receipt bound to exact inputs")
     open_reds = [
         str(red.get("red_id") or "<missing>")
         for red in ledger.get("reds") or []
@@ -366,11 +845,21 @@ def validate_scorecard(
         blockers.append("reds must contain no open or blocked rows: " + ", ".join(sorted(open_reds)))
     if (ledger.get("candidate") or {}).get("merged_main_head") != candidate or not candidate:
         blockers.append("merged_main_head must equal the current candidate")
-    if not _aud2_is_complete(ledger_material, candidate=candidate, item_ids=item_id_set):
+    if not _aud2_is_complete(
+        ledger_material,
+        candidate=candidate,
+        item_by_id=item_by_id,
+        workspace_root=workspace_root,
+    ):
         blockers.append("AUD-2 must be an exact-candidate independent review covering every scored item")
     for gate_name in ("G3", "G4"):
-        if not _current_passed_broad_run(ledger, gate=gate_name, candidate=candidate):
-            blockers.append(f"a current passed broad run must bind {gate_name}")
+        if not _current_passed_broad_run(
+            ledger,
+            gate=gate_name,
+            candidate=candidate,
+            workspace_root=workspace_root,
+        ):
+            blockers.append(f"a receipt-bound current passed broad run must bind {gate_name}")
 
     mapped_item_ids: set[str] = set()
     issue_rows = (ledger.get("bd_issue_map") or {}).get("packets") or []
@@ -384,16 +873,12 @@ def validate_scorecard(
             issue_rows_closed = False
     if mapped_item_ids != item_id_set or not issue_rows_closed:
         blockers.append("bd_issue_map must cover every scored item with closed mapped issues")
-    dolt_push_green = any(
-        isinstance(row, dict)
-        and row.get("kind") == "dolt_push"
-        and row.get("state") in {"observed", "closed"}
-        and row.get("outcome") in {"success", "passed"}
-        and row.get("exit_status") in {None, 0}
-        for row in ledger.get("issue_operations") or []
-    )
-    if not dolt_push_green:
-        blockers.append("an observed successful bd dolt push operation is required")
+    if not _dolt_push_is_current(
+        ledger=ledger,
+        candidate=candidate,
+        workspace_root=workspace_root,
+    ):
+        blockers.append("a receipt-bound successful bd dolt push must match the current candidate")
     if any(
         isinstance(row, dict) and row.get("state") not in {"closed", "completed"}
         for row in ledger.get("active_packets") or []
@@ -420,6 +905,10 @@ def validate_scorecard(
         "valid": not errors,
         "ready": not errors and not blockers,
         "input_fingerprint": _canonical_sha256(fingerprint_payload),
+        "canonical_identities": {
+            "plan_inventory": plan_inventory_identity,
+            "crosswalk_inventory": crosswalk_inventory_identity,
+        },
         "counts": {
             "total_points": ledger.get("total_points"),
             "earned_points": earned_points,
