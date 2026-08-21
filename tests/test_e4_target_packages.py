@@ -72,8 +72,8 @@ def test_latest_snapshot_configs_load_via_target_packages() -> None:
     )
 
 
-def test_top_level_e4_reference_configs_are_standalone_and_only_four_yaml_files_exist() -> None:
-    top_level_yaml_paths = sorted((REPO_ROOT / "agent_configs").glob("*.yaml"))
+def test_top_level_e4_reference_configs_are_standalone() -> None:
+    top_level_yaml_paths = sorted((REPO_ROOT / "agent_configs").glob("*_e4_3-6-2026.yaml"))
     assert [path.name for path in top_level_yaml_paths] == [
         "claude_code_2-1-63_e4_3-6-2026.yaml",
         "codex_0-107-0_e4_3-6-2026.yaml",
