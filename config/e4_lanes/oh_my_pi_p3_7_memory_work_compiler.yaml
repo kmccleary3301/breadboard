@@ -13,7 +13,6 @@
     "argv": null,
     "inputs": [
       "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_target_freeze_manifest.yaml",
-      "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/source_freeze_provenance.json",
       "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
       "breadboard_engine/compilation/helper_runtime_primitives.py",
       "breadboard_engine/compilation/primitive_records.py",
@@ -213,7 +212,6 @@
     "upstream_release_label": "@oh-my-pi/pi-coding-agent@16.2.13",
     "source_paths": [
       "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_target_freeze_manifest.yaml",
-      "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/source_freeze_provenance.json",
       "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
       "breadboard_engine/compilation/helper_runtime_primitives.py",
       "breadboard_engine/compilation/primitive_records.py",
