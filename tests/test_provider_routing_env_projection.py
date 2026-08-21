@@ -416,6 +416,31 @@ def test_run_task_releases_exact_lease_when_remote_submission_fails(
     _assert_exact_lease_released(coder, worker_state_dir, broker, server)
 
 
+def test_run_task_releases_exact_lease_when_preflight_validation_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import breadboard_engine.agent as agent_module
+
+    broker = _StubBroker(
+        {"api_key": "broker-token", "lease_id": "bblease-lifecycle"},
+        store_path=str(tmp_path / "credentials.sqlite3"),
+    )
+    remote_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    coder, worker_state_dir, server = _active_remote_coder(
+        agent_module,
+        tmp_path,
+        lambda *args, **kwargs: remote_calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
+
+    with pytest.raises(ValueError):
+        coder.run_task("hello", max_iterations="not-an-integer")  # type: ignore[arg-type]
+
+    assert remote_calls == []
+    _assert_exact_lease_released(coder, worker_state_dir, broker, server)
+
+
 @pytest.mark.parametrize(
     "get_error",
     [RuntimeError("get failed"), KeyboardInterrupt()],

@@ -398,6 +398,8 @@ class AgenticCoder:
     ) -> Dict[str, Any]:
         """Run a single task and return results."""
         if replay_session and self.agent is not None:
+            if not self._local_mode:
+                self._release_provider_lease()
             raise RuntimeError("Replay/parity options must be set before agent initialization.")
 
         if replay_session:
@@ -422,58 +424,59 @@ class AgenticCoder:
         if not self.agent:
             self.initialize()
 
-        model = self._select_model()
-        loop_cfg = self.config.get('loop') or {}
-        steps = int(
-            max_iterations
-            or self.config.get('max_iterations')
-            or loop_cfg.get('max_iterations')
-            or loop_cfg.get('max_steps')
-            or 12
-        )
-        tool_prompt_mode = self._resolve_tool_prompt_mode() or "system_once"
-        # If task is a file path, read it as the user prompt content; else use as-is
-        user_prompt = task
-        task_seed: Optional[Tuple[str, str]] = None
+        remote_execution = not self._local_mode
         try:
-            p = Path(task)
-            if p.exists() and p.is_file():
-                user_prompt = p.read_text(encoding="utf-8", errors="replace")
-                if not is_replay:
-                    task_seed = (p.name, user_prompt)
-                    self._materialize_task_spec(p, user_prompt)
-        except Exception:
-            pass
-        if task_seed and not is_replay:
-            self._seed_agent_workspace_file(task_seed[0], task_seed[1])
-        # Run empty system prompt to allow v2 compiler to inject packs; user prompt carries content
-        effective_stream = bool(stream)
-        effective_emitter = event_emitter if self._local_mode else None
-        if event_emitter and not self._local_mode:
-            logger.warning(
-                "Streaming event emitters are currently only supported in local mode; "
-                "falling back to queue-based streaming."
+            model = self._select_model()
+            loop_cfg = self.config.get('loop') or {}
+            steps = int(
+                max_iterations
+                or self.config.get('max_iterations')
+                or loop_cfg.get('max_iterations')
+                or loop_cfg.get('max_steps')
+                or 12
             )
-        if self._local_mode:
-            return self.agent.run_agentic_loop(
-                "",
-                user_prompt,
-                model,
-                max_steps=steps,
-                output_json_path=None,
-                stream_responses=effective_stream,
-                output_md_path=None,
-                tool_prompt_mode=tool_prompt_mode,
-                event_emitter=effective_emitter,
-                event_queue=event_queue,
-                permission_queue=permission_queue,
-                control_queue=control_queue,
-                kernel_emitter_run_dir=kernel_emitter_run_dir,
-                kernel_emitter_mode=kernel_emitter_mode,
-                context=context,
-            )
+            tool_prompt_mode = self._resolve_tool_prompt_mode() or "system_once"
+            # If task is a file path, read it as the user prompt content; else use as-is
+            user_prompt = task
+            task_seed: Optional[Tuple[str, str]] = None
+            try:
+                p = Path(task)
+                if p.exists() and p.is_file():
+                    user_prompt = p.read_text(encoding="utf-8", errors="replace")
+                    if not is_replay:
+                        task_seed = (p.name, user_prompt)
+                        self._materialize_task_spec(p, user_prompt)
+            except Exception:
+                pass
+            if task_seed and not is_replay:
+                self._seed_agent_workspace_file(task_seed[0], task_seed[1])
+            # Run empty system prompt to allow v2 compiler to inject packs; user prompt carries content
+            effective_stream = bool(stream)
+            effective_emitter = event_emitter if self._local_mode else None
+            if event_emitter and not self._local_mode:
+                logger.warning(
+                    "Streaming event emitters are currently only supported in local mode; "
+                    "falling back to queue-based streaming."
+                )
+            if self._local_mode:
+                return self.agent.run_agentic_loop(
+                    "",
+                    user_prompt,
+                    model,
+                    max_steps=steps,
+                    output_json_path=None,
+                    stream_responses=effective_stream,
+                    output_md_path=None,
+                    tool_prompt_mode=tool_prompt_mode,
+                    event_emitter=effective_emitter,
+                    event_queue=event_queue,
+                    permission_queue=permission_queue,
+                    control_queue=control_queue,
+                    kernel_emitter_run_dir=kernel_emitter_run_dir,
+                    kernel_emitter_mode=kernel_emitter_mode,
+                    context=context,
+                )
 
-        try:
             ref = self.agent.run_agentic_loop.remote(
                 "",
                 user_prompt,
@@ -496,7 +499,8 @@ class AgenticCoder:
                 raise RuntimeError("Ray is unavailable for remote execution.")
             return ray_mod.get(ref)
         finally:
-            self._release_provider_lease()
+            if remote_execution:
+                self._release_provider_lease()
     
     def interactive_session(self) -> None:
         """Start an interactive session with the agent."""
