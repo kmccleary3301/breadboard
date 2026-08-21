@@ -522,6 +522,30 @@ def test_aud2_rejects_presence_only_semantic_fields_even_when_output_rebinds(
     assert report["ready"] is False
     assert "AUD-2 must be an exact-candidate independent review covering every scored item" in report["blockers"]
 
+def test_aud2_rejects_hash_valid_semantically_empty_falsification_observation(
+    tmp_path: Path,
+) -> None:
+    fixture = _write_ready_fixture(tmp_path)
+    review = fixture["ledger"]["reviews"][0]
+    first_check = review["item_checks"][0]
+    empty_observation = tmp_path / "reviews" / "empty-observation.json"
+    _write_json(empty_observation, {})
+    first_check["falsification_observation_ref"] = empty_observation.relative_to(tmp_path).as_posix()
+    first_check["falsification_observation_identity"] = _sha256(empty_observation)
+    output_path = tmp_path / review["reviewer_output_ref"]
+    output = json.loads(output_path.read_text(encoding="utf-8"))
+    output["item_checks_identity"] = validator._aud2_checks_identity(review["item_checks"])
+    _write_json(output_path, output)
+    new_identity = _sha256(output_path)
+    review["reviewer_output_identity"] = new_identity
+    for check in review["item_checks"][1:]:
+        check["falsification_observation_identity"] = new_identity
+
+    report = _validate(fixture)
+
+    assert report["ready"] is False
+    assert "AUD-2 must be an exact-candidate independent review covering every scored item" in report["blockers"]
+
 
 def test_aud2_parses_reviewer_output_decision(tmp_path: Path) -> None:
     fixture = _write_ready_fixture(tmp_path)

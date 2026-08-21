@@ -522,10 +522,26 @@ def _aud2_is_complete(
         }
         if set(checks_by_id) != item_ids or len(checks_by_id) != len(item_checks):
             continue
+        checks_identity = _aud2_checks_identity(item_checks)
         checks_valid = True
         for item_id, check in checks_by_id.items():
             item = item_by_id[item_id]
             card = item.get("evidence_card") or {}
+            falsification_observation = _read_local_json_ref(
+                workspace_root=workspace_root,
+                ref=check.get("falsification_observation_ref"),
+            )
+            observation_candidate = (
+                falsification_observation.get("candidate_commit")
+                or falsification_observation.get("candidate")
+                if falsification_observation
+                else None
+            )
+            observation_item_ids = (
+                set(falsification_observation.get("checked_item_ids") or [])
+                if falsification_observation
+                else set()
+            )
             if not AUD2_ITEM_CHECK_FIELDS.issubset(check):
                 checks_valid = False
                 break
@@ -548,6 +564,16 @@ def _aud2_is_complete(
                     ref=check.get("falsification_observation_ref"),
                     identity=check.get("falsification_observation_identity"),
                 )
+                or falsification_observation is None
+                or observation_candidate != candidate
+                or (
+                    falsification_observation.get("item_id") != item_id
+                    and item_id not in observation_item_ids
+                )
+                or falsification_observation.get("decision") != "approved"
+                or falsification_observation.get("input_fingerprint") != input_fingerprint
+                or falsification_observation.get("findings") != []
+                or falsification_observation.get("item_checks_identity") != checks_identity
             ):
                 checks_valid = False
                 break
@@ -575,7 +601,7 @@ def _aud2_is_complete(
             or set(reviewer_output.get("checked_item_ids") or []) != item_ids
             or reviewer_output.get("unchecked_item_ids") != []
             or reviewer_output.get("findings") != []
-            or reviewer_output.get("item_checks_identity") != _aud2_checks_identity(item_checks)
+            or reviewer_output.get("item_checks_identity") != checks_identity
         ):
             continue
         return True
