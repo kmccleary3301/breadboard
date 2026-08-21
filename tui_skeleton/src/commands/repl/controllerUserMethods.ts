@@ -152,22 +152,24 @@ const mergeRecentSessions = async (backend: ReadonlyArray<SessionSummary>): Prom
   if (backend.length > 0) {
     await Promise.all(backend.map((summary) => rememberSession(summary)))
   }
+  const cached = await listCachedSessions()
+  const cachedById = new Map(cached.map((entry) => [entry.sessionId, entry]))
   const rows: RecentSessionRow[] = []
   const seen = new Set<string>()
   for (const summary of backend) {
+    const entry = cachedById.get(summary.session_id)
     rows.push({
       sessionId: summary.session_id,
       status: summary.status,
-      createdAt: summary.created_at,
-      lastActivityAt: summary.last_activity_at,
-      model: summary.model ?? (summary.metadata?.model as string | undefined) ?? null,
-      name: (summary.metadata?.name as string | undefined) ?? null,
-      loggingDir: summary.logging_dir ?? null,
+      createdAt: summary.created_at ?? entry?.createdAt ?? "",
+      lastActivityAt: summary.last_activity_at ?? entry?.lastActivityAt ?? "",
+      model: summary.model ?? (summary.metadata?.model as string | undefined) ?? entry?.model ?? null,
+      name: (summary.metadata?.name as string | undefined) ?? entry?.name ?? null,
+      loggingDir: summary.logging_dir ?? entry?.loggingDir ?? null,
       source: "backend",
     })
     seen.add(summary.session_id)
   }
-  const cached = await listCachedSessions()
   for (const entry of cached) {
     if (seen.has(entry.sessionId)) continue
     rows.push({

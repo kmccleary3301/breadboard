@@ -25,7 +25,7 @@ test("candidate product methods preserve canonical result envelopes and routes",
     () => client.probeIntegration("fixture.provider", "probe-key"), () => client.listArtifact(),
     () => client.getArtifact("sha256:abc"), () => client.verifyArtifact("sha256:abc"),
     () => client.startSession({ lock_id: "locks/main.json", task: "run" }, "start-key"), () => client.listSession(),
-    () => client.getSession("session-1"), () => client.sendInputSession("session-1", "continue", "input-key"),
+    () => client.invokePublicAction("public.session.get", { session_id: "session-1" }), () => client.sendInputSession("session-1", "continue", "input-key"),
     () => client.approveSession("session-1", "approval-1", "allow", "approval-key"),
     () => client.resumeSession("session-1", "resume-key"), () => client.cancelSession("session-1", "done", "cancel-key"),
     () => client.artifactsSession("session-1"),
@@ -45,6 +45,20 @@ test("candidate product methods preserve canonical result envelopes and routes",
     ["GET", "/v1/sessions/session-1/artifacts"],
   ])
   assert.deepEqual(requests.filter((row) => row[2]).map((row) => row[2]), ["probe-key", "start-key", "input-key", "approval-key", "resume-key", "cancel-key"])
+})
+
+test("session readers unwrap the canonical public result", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const summary = { session_id: "session-1", status: "completed", event_count: 2 }
+  globalThis.fetch = async (input) => {
+    const path = new URL(String(input)).pathname
+    const data = path.endsWith("/session-1") ? { session: summary } : { sessions: [summary], count: 1 }
+    return new Response(JSON.stringify({ schema_version: "bb.cli.result.v1", ok: true, status: "ok", command: [], record_refs: [], hashes: {}, stage_outcomes: [], warnings: [], next_actions: [], error: null, exit_code: 0, data }), { headers: { "content-type": "application/json" } })
+  }
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+  assert.deepEqual(await client.listSessions(), [summary])
+  assert.deepEqual(await client.getSession("session-1"), summary)
 })
 
 

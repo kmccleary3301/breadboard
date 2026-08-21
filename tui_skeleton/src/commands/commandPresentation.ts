@@ -1,4 +1,3 @@
-import { Console } from "effect"
 import { printJsonOutput } from "./commandOutput.js"
 
 export type CommandPresentationMode = "text" | "table" | "json"
@@ -40,7 +39,7 @@ export const printCommandPresentation = async (options: {
     return
   }
   if (resolved.kind === "text") {
-    await Console.log(resolved.value)
+    console.log(resolved.value)
   }
 }
 

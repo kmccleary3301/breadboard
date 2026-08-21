@@ -33,12 +33,13 @@ export const mergeSessions = async (backend: SessionSummary[]): Promise<SessionR
   const rows: SessionRow[] = []
   const seen = new Set<string>()
   for (const summary of backend) {
+    const cached = cache.sessions[summary.session_id]
     rows.push({
       sessionId: summary.session_id,
       status: summary.status,
-      createdAt: summary.created_at,
-      lastActivityAt: summary.last_activity_at,
-      model: (summary.metadata?.model as string | undefined) ?? undefined,
+      createdAt: summary.created_at ?? cached?.createdAt ?? "",
+      lastActivityAt: summary.last_activity_at ?? cached?.lastActivityAt ?? "",
+      model: (summary.metadata?.model as string | undefined) ?? cached?.model,
       source: "backend",
     })
     seen.add(summary.session_id)

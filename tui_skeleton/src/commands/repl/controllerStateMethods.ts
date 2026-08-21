@@ -151,7 +151,7 @@ export function slashHandlers(this: any): Record<string, SlashHandler> {
     status: async () => {
       try {
         const summary = await this.api().getSession(this.sessionId)
-        this.pushHint(`Status: ${summary.status}, last activity ${summary.last_activity_at}`)
+        this.pushHint(summary.last_activity_at ? `Status: ${summary.status}, last activity ${summary.last_activity_at}` : `Status: ${summary.status}`)
         this.status = `Status: ${summary.status}`
         if (summary.completion_summary) {
           this.addTool("status", `[status] completion ${JSON.stringify(summary.completion_summary)}`)
