@@ -679,6 +679,8 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         mounted_extensions=mounted_extensions,
         evolake_routes_enabled=evolake_routes_enabled,
         repo_root=e4_repo_root,
+        engine_started_at=ENGINE_STARTED_AT,
+        engine_started_at_iso=ENGINE_STARTED_AT_ISO,
     )
     register_provider_auth_routes(
         app,

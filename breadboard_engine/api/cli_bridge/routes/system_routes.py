@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,8 @@ def register_system_routes(
     mounted_extensions: list[str],
     evolake_routes_enabled: bool,
     repo_root: Path,
+    engine_started_at: float,
+    engine_started_at_iso: str,
 ) -> None:
     _build_engine_identity = build_engine_identity
     _service = service
@@ -65,10 +68,10 @@ def register_system_routes(
     @app.get("/ready")
     async def ready() -> dict[str, Any]:
         try:
-            from ...provider import runtime_codex as _runtime_codex_module  # noqa: F401
+            from breadboard_engine.provider import runtime_codex as _runtime_codex_module  # noqa: F401
         except Exception:
             pass
-        from ...provider.runtime import provider_registry
+        from breadboard_engine.provider.runtime import provider_registry
 
         try:
             runtime_classes = getattr(provider_registry, "_runtime_classes", {})
@@ -98,7 +101,7 @@ def register_system_routes(
             ray_initialized = False
         return {
             "status": "ok",
-            "uptime_s": max(0.0, time.time() - ENGINE_STARTED_AT),
+            "uptime_s": max(0.0, time.time() - engine_started_at),
             **_build_engine_identity(app),
             "ray": {
                 "available": ray_available,
