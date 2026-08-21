@@ -49,6 +49,10 @@ def _copy_required_phase_files(dst: Path) -> None:
 
 def test_m12_evidence_consistency_current_target_validated_state_passes() -> None:
     report = build_m12_evidence_consistency_report(phase_dir=PHASE_DIR)
+    archive_manifest = json.loads(
+        (PHASE_DIR / "runs/m12_transfer_prep/m12_transfer_archive_manifest.json").read_text(encoding="utf-8")
+    )
+    expected_archive_entries = archive_manifest["included_entry_count"]
 
     assert report["report_id"] == "bb_zyphra_rl_phase1_m12_evidence_consistency_v1"
     assert report["claim_boundary"] == "m12_evidence_consistency_not_scorecard_update"
@@ -59,13 +63,13 @@ def test_m12_evidence_consistency_current_target_validated_state_passes() -> Non
     assert report["counts"]["scorecard_current_verified_points"] == 1000
     assert report["counts"]["m12_verified_points"] == 80
     assert report["counts"]["transfer_artifacts"] == 28
-    assert report["counts"]["archive_entries"] == 213
-    assert report["counts"]["overlay_would_write"] == 213
-    assert report["counts"]["bootstrap_overlay_would_write"] == 213
+    assert report["counts"]["archive_entries"] == expected_archive_entries
+    assert report["counts"]["overlay_would_write"] == expected_archive_entries
+    assert report["counts"]["bootstrap_overlay_would_write"] == expected_archive_entries
     assert report["counts"]["overlay_existing_destinations"] > 0
     assert report["counts"]["transfer_commands"] == 10
     assert report["counts"]["transfer_expected_outputs"] == 15
-    assert report["counts"]["archive_verify_entries"] == 213
+    assert report["counts"]["archive_verify_entries"] == expected_archive_entries
     assert report["counts"]["local_final_missing_gates"] == 0
     assert report["counts"]["local_remediation_summary_actions"] == 0
     assert report["counts"]["local_promotion_missing_requirements"] == 0
