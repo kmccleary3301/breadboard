@@ -642,7 +642,8 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                     logger.warning("Ray init exceeded configured timeout (%.1fs > %.1fs)", elapsed, timeout_s)
                 logger.info("Ray initialized during engine startup")
         except BaseException as exc:  # noqa: BLE001
-            # Do not crash the engine; sessions may fall back to local execution if Ray is unavailable.
+            # Non-strict startup keeps health routes available; session execution
+            # still fails closed because SessionRunner never falls back in-process.
             if strict_required:
                 raise
             logger.warning("Ray init failed during engine startup: %s", exc)

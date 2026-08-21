@@ -339,6 +339,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         provider_lease_channel: Any | None = None,
     ) -> None:
         """Initialize conductor with workspace, image, and configuration."""
+        if not local_mode:
+            from .provider_broker.broker import scrub_child_environment
+
+            scrub_child_environment()
         bootstrap_conductor(
             self,
             workspace=workspace,

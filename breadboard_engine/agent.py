@@ -54,6 +54,7 @@ class AgenticCoder:
         overrides: Optional[Dict[str, Any]] = None,
         *,
         force_local_mode: bool = False,
+        honor_environment_local_mode: bool = True,
     ):
         """Initialize the agentic coder with a config file."""
         self.config_path = config_path
@@ -79,7 +80,10 @@ class AgenticCoder:
         except Exception:
             pass
         self.agent = None
-        self._local_mode = force_local_mode or os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1"
+        self._local_mode = force_local_mode or (
+            honor_environment_local_mode
+            and os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1"
+        )
         self._provider_lease_id: Optional[str] = None
         self._provider_lease_channel: Any | None = None
         self._provider_lease_server: Any | None = None
@@ -326,23 +330,18 @@ class AgenticCoder:
             shutil.rmtree(workspace_path)
         workspace_path.mkdir(parents=True, exist_ok=True)
         
-        # Initialize Ray and underlying actor
+        # Remote mode is fail-closed. Production callers must initialize Ray on
+        # the main thread rather than silently sharing the server process.
         if not self._local_mode:
             ray = _get_ray()
             if ray is None:
-                self._local_mode = True
-            else:
-                try:
-                    if not ray.is_initialized():
-                        if threading.current_thread() is not threading.main_thread():
-                            logger.warning(
-                                "Ray init requested from non-main thread; falling back to local mode."
-                            )
-                            raise RuntimeError("Ray init requested from non-main thread")
-                        # Start an isolated local cluster with a nonstandard dashboard port
-                        ray.init(address="local", include_dashboard=False)
-                except Exception:
-                    self._local_mode = True
+                raise RuntimeError("Ray is unavailable for remote execution.")
+            if not ray.is_initialized():
+                if threading.current_thread() is not threading.main_thread():
+                    raise RuntimeError(
+                        "Ray must be initialized on the main thread before remote agent startup."
+                    )
+                ray.init(address="local", include_dashboard=False)
 
         if self._local_mode:
             print("[Ray disabled] Using local in-process execution mode.")
@@ -371,6 +370,8 @@ class AgenticCoder:
                             "BREADBOARD_CREDENTIAL_STORE_PATH": "",
                             "BREADBOARD_CREDENTIAL_DB": "",
                             "BREADBOARD_STATE_DIR": self._provider_worker_state_dir,
+                            "HOME": self._provider_worker_state_dir,
+                            "TMPDIR": self._provider_worker_state_dir,
                         }
                     ),
                     "worker_process_setup_hook": (
@@ -621,6 +622,7 @@ def create_agent(
     overrides: Optional[Dict[str, Any]] = None,
     *,
     force_local_mode: bool = False,
+    honor_environment_local_mode: bool = True,
 ) -> AgenticCoder:
     """Convenient factory function to create an agentic coder."""
     return AgenticCoder(
@@ -628,4 +630,5 @@ def create_agent(
         workspace_dir,
         overrides=overrides,
         force_local_mode=force_local_mode,
+        honor_environment_local_mode=honor_environment_local_mode,
     )

@@ -42,6 +42,7 @@ from .events import EventType, SessionEvent
 from .event_normalization import normalize_task_event_payload
 from .models import SessionCreateRequest, SessionStatus
 from .registry import SessionRecord, SessionRegistry, TurnRecord, submission_body_digest, identity_digest
+from .runtime_emission import _sanitize_persisted_runtime_config
 logger = logging.getLogger(__name__)
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
 MAX_ATTACHMENT_BYTES = 16 * 1024
@@ -203,13 +204,12 @@ class SessionRunner:
         overrides: Optional[Dict[str, Any]],
     ) -> Any:
         from breadboard_engine.agent import create_agent
-        metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
-        force_local_mode = bool(metadata.get("cli_force_local_mode", True))
         return create_agent(
             config_path,
             workspace_dir=workspace_dir,
             overrides=overrides,
-            force_local_mode=force_local_mode,
+            force_local_mode=False,
+            honor_environment_local_mode=False,
         )
 
     def schedule_start(self) -> None:
@@ -720,7 +720,9 @@ class SessionRunner:
                     value = existing + [item for item in value if item not in existing]
                 overrides[key] = value
         self.request.overrides = overrides
-        self._prepared_runtime_config = apply_dotted_overrides(base_cfg, overrides)
+        self._prepared_runtime_config = _sanitize_persisted_runtime_config(
+            apply_dotted_overrides(base_cfg, overrides)
+        )
         return dict(self._prepared_runtime_config)
     def current_runtime_config(self) -> Dict[str, Any]:
         return dict(config) if isinstance((config := getattr(self._agent, "config", None)), dict) else self.prepare_runtime_config()
@@ -778,6 +780,24 @@ class SessionRunner:
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
             return
+        from breadboard_engine.provider_broker.broker import (
+            credential_environment_violations,
+        )
+
+        unsafe_environment = [
+            name
+            for name in credential_environment_violations()
+            if name
+            not in {
+                "BREADBOARD_CREDENTIAL_DB",
+                "BREADBOARD_CREDENTIAL_STORE_PATH",
+            }
+        ]
+        if unsafe_environment:
+            raise RuntimeError(
+                "unsafe credential or capability environment: "
+                + ", ".join(unsafe_environment)
+            )
         overrides = dict(self.request.overrides or {})
         frozen = self.current_runtime_config()
         descriptor, snapshot = tempfile.mkstemp(suffix=".json")

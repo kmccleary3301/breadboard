@@ -10,6 +10,7 @@ from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialSt
 from breadboard_engine.provider_broker.broker import (
     LeaseCapabilityChannel,
     LeaseCapabilityServer,
+    child_environment_violations,
     project_child_environment,
 )
 
@@ -178,9 +179,14 @@ def test_lease_capability_channel_is_bound_and_has_no_broker_authority(tmp_path)
         server.stop()
 
 
-def test_session_start_child_inherits_no_credential_environment(tmp_path):
+def test_session_start_child_uses_explicit_safe_environment_allowlist(
+    tmp_path,
+    monkeypatch,
+):
     broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
     broker.putApiKey({"provider_id": "openai", "account_label": "child", "api_key": "sk-child-secret"})
+    monkeypatch.setenv("SSH_AUTH_SOCK", str(tmp_path / "agent.sock"))
+    monkeypatch.setenv("UNRELATED_PARENT_SETTING", "must-not-cross")
     child_env = project_child_environment(
         {
             "BREADBOARD_CREDENTIAL_STORE_PATH": "",
@@ -188,18 +194,23 @@ def test_session_start_child_inherits_no_credential_environment(tmp_path):
             "BREADBOARD_STATE_DIR": str(tmp_path),
         }
     )
+    assert child_environment_violations(child_env) == []
+    assert "SSH_AUTH_SOCK" not in child_env
+    assert "UNRELATED_PARENT_SETTING" not in child_env
+    assert child_env["HOME"] == str(tmp_path)
+    assert child_env["TMPDIR"] == str(tmp_path)
     result = subprocess.run(
         [
             sys.executable,
             "-c",
-            "import os; print('credential-env=', any(k.endswith('API_KEY') for k in os.environ))",
+            "import os; print('unsafe-env=', bool(os.environ.get('SSH_AUTH_SOCK') or os.environ.get('UNRELATED_PARENT_SETTING') or any(k.endswith('API_KEY') for k in os.environ)))",
         ],
         env=child_env,
         check=True,
         capture_output=True,
         text=True,
     )
-    assert result.stdout.strip() == "credential-env= False"
+    assert result.stdout.strip() == "unsafe-env= False"
 
 
 def test_provider_client_construction_uses_broker_material_and_sdk_seam(tmp_path, monkeypatch):

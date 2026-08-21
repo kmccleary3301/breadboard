@@ -170,8 +170,44 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
     graph, policy = payloads["effective_config_graph"], payloads["effective_operation_policy"]; tool_ids = {item["capability_id"] for item in payloads["capability_registry"]["capabilities"] if item["capability_type"] == "tool"}; assert calls == ["mutating.json"] and graph["graph_hash"] == record.product_session.events[0].payload["effective_lock_hash"]
     assert tool_ids == {"tool.list"} == set(payloads["effective_tool_surface"]["tool_ids"]) and [(rule["decision"], rule["match"]["pattern"]) for rule in policy["tool_policy"]["rules"]] == [("allow", "list"), ("deny", "blocked_tool")]
     serialized = json.dumps(payloads) + "".join(path.read_text() for path in tmp_path.rglob("*") if path.is_file()); assert policy["approvals"]["mode"] == "always_required" and all(secret not in serialized for secret in ("provider_auth_runtime", "runtime-secret", "flat-secret", "nested-secret", '"read"'))
-    captured = {}; Agent = type("Agent", (), {"workspace_dir": str(tmp_path / "workspace"), "initialize": lambda self: None}); factory = lambda path, _workspace, _overrides: (captured.update(config=json.loads(Path(path).read_text()), path=path), Agent())[1]  # type: ignore[assignment]
-    record.runner.agent_factory = factory; record.runner.get_skill_catalog(); await record.runner._ensure_agent_initialized()
-    persisted = "".join(path.read_text() for root in (tmp_path / "records", tmp_path / "events") for path in root.rglob("*") if path.is_file()); assert calls == ["mutating.json"] and captured["config"] == record.runner.current_runtime_config() and captured["config"]["provider_auth_runtime"]["openai"]["api_key"] == "runtime-secret" and all(secret not in persisted for secret in ("provider_auth_runtime", "runtime-secret", "flat-secret", "nested-secret")) and not Path(captured["path"]).exists()
+    from breadboard_engine.provider_broker.broker import credential_environment_violations
+
+    for key in credential_environment_violations():
+        monkeypatch.delenv(key, raising=False)
+    captured = {}
+    Agent = type(
+        "Agent",
+        (),
+        {
+            "workspace_dir": str(tmp_path / "workspace"),
+            "initialize": lambda self: None,
+        },
+    )
+    factory = lambda path, _workspace, _overrides: (
+        captured.update(config=json.loads(Path(path).read_text()), path=path),
+        Agent(),
+    )[1]
+    record.runner.agent_factory = factory
+    record.runner.get_skill_catalog()
+    await record.runner._ensure_agent_initialized()
+    persisted = "".join(
+        path.read_text()
+        for root in (tmp_path / "records", tmp_path / "events")
+        for path in root.rglob("*")
+        if path.is_file()
+    )
+    assert calls == ["mutating.json"]
+    assert captured["config"] == record.runner.current_runtime_config()
+    assert "provider_auth_runtime" not in json.dumps(captured["config"])
+    assert all(
+        secret not in persisted and secret not in json.dumps(captured["config"])
+        for secret in (
+            "provider_auth_runtime",
+            "runtime-secret",
+            "flat-secret",
+            "nested-secret",
+        )
+    )
+    assert not Path(captured["path"]).exists()
     with pytest.raises(ValueError, match="denied by policy"): await record.runner.handle_command("set_model", {"model": "blocked-model"})
     await service.stop_session(response.session_id); await record.event_queue.put(None); await record.dispatcher_task

@@ -30,6 +30,10 @@ def _broker_execution_material(monkeypatch):
         def issue_execution_material(_provider_id, **_kwargs):
             return {"api_key": "test-key", "lease_id": "bblease-openrouter-test"}
 
+        @staticmethod
+        def release_execution_material(_lease_id):
+            return True
+
     monkeypatch.setattr("breadboard_engine.provider_broker.get_provider_broker", lambda: Broker())
 
 

@@ -8,7 +8,7 @@ Supports model ID prefixes like:
 
 Provides provider-specific tool schema translation and native tool calling detection.
 """
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -378,7 +378,7 @@ class ProviderRouter:
         *,
         lease_channel: Any | None = None,
     ) -> Dict[str, Any]:
-        """Create client configuration for the given model"""
+        """Create client configuration and close any router-owned broker lease."""
         config, actual_model, _ = self.get_provider_config(model_id)
 
         api_key: Optional[str] = None
@@ -387,6 +387,9 @@ class ProviderRouter:
         elif config.provider_id == "mock":
             api_key = "mock"
 
+        overlay: Mapping[str, Any] | None = None
+        owned_broker: Any | None = None
+        owned_lease_id: str | None = None
         try:
             if lease_channel is not None:
                 overlay = _redeem_lease_channel(
@@ -397,51 +400,58 @@ class ProviderRouter:
             else:
                 from ..provider_broker import get_provider_broker
 
-                overlay = get_provider_broker().issue_execution_material(
+                owned_broker = get_provider_broker()
+                overlay = owned_broker.issue_execution_material(
                     config.provider_id,
                     endpoint_id=str(model_id),
                     minimum_validity_ms=0,
                 )
+                if overlay is not None and overlay.get("lease_id"):
+                    owned_lease_id = str(overlay["lease_id"])
         except Exception:
             overlay = None
 
-        base_url = config.base_url
-        headers: Dict[str, str] = {}
-        if config.default_headers:
-            headers.update({k: v for k, v in config.default_headers.items() if v})
-        if overlay is not None:
-            overlay_api_key = overlay.get("api_key")
-            overlay_base_url = overlay.get("base_url")
-            overlay_headers = overlay.get("headers")
-            if overlay_api_key:
-                api_key = str(overlay_api_key)
-            if overlay_base_url:
-                base_url = str(overlay_base_url)
-            if isinstance(overlay_headers, dict):
-                for k, v in overlay_headers.items():
-                    if k and v is not None:
-                        headers[str(k)] = str(v)
+        try:
+            base_url = config.base_url
+            headers: Dict[str, str] = {}
+            if config.default_headers:
+                headers.update({k: v for k, v in config.default_headers.items() if v})
+            if overlay is not None:
+                overlay_api_key = overlay.get("api_key")
+                overlay_base_url = overlay.get("base_url")
+                overlay_headers = overlay.get("headers")
+                if overlay_api_key:
+                    api_key = str(overlay_api_key)
+                if overlay_base_url:
+                    base_url = str(overlay_base_url)
+                if isinstance(overlay_headers, dict):
+                    for key, value in overlay_headers.items():
+                        if key and value is not None:
+                            headers[str(key)] = str(value)
 
-        client_config = {
-            "model": actual_model,
-            "api_key": api_key,
-        }
-
-        if base_url:
-            client_config["base_url"] = base_url
-
-        if headers:
-            client_config["default_headers"] = headers
-
-        if overlay is not None:
-            client_config["credential_source"] = "broker_lease"
-            if overlay.get("lease_id"):
-                client_config["lease_id"] = str(overlay["lease_id"])
-
-        if overlay is not None and isinstance(overlay.get("routing"), dict):
-            client_config["routing"] = dict(overlay["routing"])
-
-        return client_config
+            client_config = {
+                "model": actual_model,
+                "api_key": api_key,
+            }
+            if base_url:
+                client_config["base_url"] = base_url
+            if headers:
+                client_config["default_headers"] = headers
+            if overlay is not None:
+                client_config["credential_source"] = "broker_lease"
+                if lease_channel is not None and overlay.get("lease_id"):
+                    client_config["lease_id"] = str(overlay["lease_id"])
+                if isinstance(overlay.get("routing"), dict):
+                    client_config["routing"] = dict(overlay["routing"])
+            return client_config
+        finally:
+            if owned_lease_id is not None:
+                if owned_broker is None or not owned_broker.release_execution_material(
+                    owned_lease_id
+                ):
+                    raise RuntimeError(
+                        f"provider broker failed to release router-owned lease {owned_lease_id}"
+                    )
 
 
 # Global instance

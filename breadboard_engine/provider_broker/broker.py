@@ -21,49 +21,135 @@ from .oauth import OAuthFlowAdapter, OAuthFlowError, OAuthTransport
 
 
 _CREDENTIAL_ENV_MARKERS = (
+    "ACCESS_KEY",
     "API_KEY",
-    "TOKEN",
-    "SECRET",
-    "PASSWORD",
+    "AUTH_TOKEN",
     "CREDENTIAL",
+    "PASSWORD",
+    "PRIVATE_KEY",
+    "SECRET",
+    "TOKEN",
 )
 _CREDENTIAL_ENV_SUFFIXES = ("AUTH_HEADERS_JSON", "AUTH_BASE_URL")
+_SENSITIVE_CAPABILITY_ENV_NAMES = frozenset(
+    {
+        "AWS_PROFILE",
+        "AWS_SHARED_CREDENTIALS_FILE",
+        "AZURE_CONFIG_DIR",
+        "DOCKER_CONFIG",
+        "DOCKER_HOST",
+        "GIT_ASKPASS",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "GPG_AGENT_INFO",
+        "KUBECONFIG",
+        "NETRC",
+        "SSH_AGENT_PID",
+        "SSH_ASKPASS",
+        "SSH_AUTH_SOCK",
+    }
+)
+_CHILD_ENV_ALLOWLIST = frozenset(
+    {
+        "BREADBOARD_STATE_DIR",
+        "COLORTERM",
+        "CURL_CA_BUNDLE",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "LOGNAME",
+        "MKL_NUM_THREADS",
+        "NO_COLOR",
+        "NUMEXPR_NUM_THREADS",
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "PATH",
+        "PRESERVE_SEEDED_WORKSPACE",
+        "PYTHONHASHSEED",
+        "PYTHONIOENCODING",
+        "PYTHONUNBUFFERED",
+        "REQUESTS_CA_BUNDLE",
+        "SHELL",
+        "SSL_CERT_DIR",
+        "SSL_CERT_FILE",
+        "TEMP",
+        "TERM",
+        "TMP",
+        "TMPDIR",
+        "USER",
+        "VECLIB_MAXIMUM_THREADS",
+    }
+)
 
 
 def _is_credential_environment_name(name: str) -> bool:
     normalized = str(name).strip().upper().replace("-", "_")
-    return redaction.is_secret_key(name) or any(
-        marker in normalized for marker in _CREDENTIAL_ENV_MARKERS
-    ) or normalized.endswith(_CREDENTIAL_ENV_SUFFIXES)
+    return (
+        normalized in _SENSITIVE_CAPABILITY_ENV_NAMES
+        or redaction.is_secret_key(name)
+        or any(marker in normalized for marker in _CREDENTIAL_ENV_MARKERS)
+        or normalized.endswith(_CREDENTIAL_ENV_SUFFIXES)
+    )
+
+
+def credential_environment_violations(
+    environment: Mapping[str, Any] | None = None,
+) -> list[str]:
+    """Return non-empty ambient credential or authority-capability names."""
+    source = os.environ if environment is None else environment
+    return sorted(
+        str(name)
+        for name, value in source.items()
+        if str(value) and _is_credential_environment_name(str(name))
+    )
+
+
+def _is_allowed_child_environment_name(name: str) -> bool:
+    normalized = str(name).strip().upper()
+    return (
+        normalized in _CHILD_ENV_ALLOWLIST
+        and not _is_credential_environment_name(normalized)
+    )
+
+
+def child_environment_violations(
+    environment: Mapping[str, Any] | None = None,
+) -> list[str]:
+    """Return non-empty variables outside the explicit worker allowlist."""
+    source = os.environ if environment is None else environment
+    return sorted(
+        str(name)
+        for name, value in source.items()
+        if str(value) and not _is_allowed_child_environment_name(str(name))
+    )
 
 
 def project_child_environment(
     overrides: Mapping[str, Any] | None = None,
 ) -> dict[str, str]:
-    """Project a worker environment without credential-shaped variables.
-
-    Ray workers inherit the driver's environment before applying
-    ``runtime_env.env_vars``.  Build the projection from the complete parent
-    environment so an unlisted provider cannot bypass the boundary, then
-    overlay explicitly allowed worker variables.  Credential-shaped
-    overrides are retained only as empty values so the Ray setup hook can
-    clear inherited names.
-    """
+    """Build the explicit environment allowlist for an untrusted worker."""
     projected = {
         name: value
         for name, value in os.environ.items()
-        if not _is_credential_environment_name(name)
+        if _is_allowed_child_environment_name(name)
     }
-    for name, value in (overrides or {}).items():
-        key = str(name)
-        projected[key] = "" if _is_credential_environment_name(key) else str(value)
+    override_values = {str(name): value for name, value in (overrides or {}).items()}
+    for key, value in override_values.items():
+        if _is_allowed_child_environment_name(key):
+            projected[key] = str(value)
+        elif _is_credential_environment_name(key):
+            projected[key] = ""
+    state_dir = projected.get("BREADBOARD_STATE_DIR")
+    if state_dir:
+        projected["HOME"] = state_dir
+        projected["TMPDIR"] = state_dir
     return projected
 
 
 def scrub_child_environment() -> None:
-    """Remove credential-shaped names from the current worker process."""
+    """Delete every worker variable outside the explicit allowlist."""
     for name in tuple(os.environ):
-        if _is_credential_environment_name(name):
+        if not _is_allowed_child_environment_name(name):
             os.environ.pop(name, None)
 
 
@@ -611,6 +697,8 @@ def start_lease_capability_channel(
                     "BREADBOARD_CREDENTIAL_STORE_PATH": "",
                     "BREADBOARD_CREDENTIAL_DB": "",
                     "BREADBOARD_STATE_DIR": worker_state_dir,
+                    "HOME": worker_state_dir,
+                    "TMPDIR": worker_state_dir,
                 }
             ),
             "worker_process_setup_hook": (

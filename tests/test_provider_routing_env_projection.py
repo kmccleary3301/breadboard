@@ -87,7 +87,6 @@ def test_openai_client_config_uses_only_broker_execution_material(monkeypatch, t
         "base_url": "https://broker.example.test/v1",
         "default_headers": {"Authorization": "Bearer broker-token", "X-Broker": "1"},
         "credential_source": "broker_lease",
-        "lease_id": "bblease-test",
     }
     assert broker.calls == [
         (
@@ -98,6 +97,7 @@ def test_openai_client_config_uses_only_broker_execution_material(monkeypatch, t
             },
         )
     ]
+    assert broker.release_calls == ["bblease-test"]
 
 
 def test_provider_router_redeems_exact_capability_without_new_issuance(monkeypatch) -> None:
@@ -214,6 +214,35 @@ def test_conductor_startup_does_not_project_runtime_auth(monkeypatch, tmp_path: 
     )
 
 
+def test_conductor_scrubs_environment_after_remote_worker_startup(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import breadboard_engine.agent_llm_openai as conductor_module
+
+    scrub_calls: list[str] = []
+
+    def bootstrap_without_side_effects(instance: Any, **kwargs: Any) -> None:
+        instance.config = kwargs["config"]
+
+    monkeypatch.setattr(
+        conductor_module,
+        "bootstrap_conductor",
+        bootstrap_without_side_effects,
+    )
+    monkeypatch.setattr(
+        broker_impl,
+        "scrub_child_environment",
+        lambda: scrub_calls.append("remote"),
+    )
+    conductor_class = conductor_module.OpenAIConductor.__ray_metadata__.modified_class
+
+    conductor_class(workspace=str(tmp_path), config={}, local_mode=False)
+    conductor_class(workspace=str(tmp_path), config={}, local_mode=True)
+
+    assert scrub_calls == ["remote"]
+
+
 def test_ray_child_receives_only_confined_lease_capability_and_releases_it(
     monkeypatch,
     tmp_path: Path,
@@ -314,6 +343,9 @@ def test_ray_child_receives_only_confined_lease_capability_and_releases_it(
     assert env_vars["BREADBOARD_CREDENTIAL_STORE_PATH"] == ""
     assert env_vars["BREADBOARD_CREDENTIAL_DB"] == ""
     assert env_vars["BREADBOARD_STATE_DIR"] == str(worker_state_dir)
+    assert env_vars["HOME"] == str(worker_state_dir)
+    assert env_vars["TMPDIR"] == str(worker_state_dir)
+    assert broker_impl.child_environment_violations(env_vars) == []
     assert captured["options"]["runtime_env"]["worker_process_setup_hook"] == (
         "breadboard_engine.provider_broker.broker.scrub_child_environment"
     )
@@ -542,6 +574,118 @@ def test_interactive_session_releases_exact_lease_on_every_exit(
 
     _assert_exact_lease_released(coder, worker_state_dir, broker, server)
 
+def test_agent_factory_can_ignore_ambient_local_mode(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.agent import create_agent
+
+    config_path = tmp_path / "agent.json"
+    config_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+
+    direct_agent = create_agent(str(config_path))
+    session_agent = create_agent(
+        str(config_path),
+        honor_environment_local_mode=False,
+    )
+
+    assert direct_agent._local_mode is True
+    assert session_agent._local_mode is False
+
+
+def test_session_runner_default_factory_uses_remote_execution(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import breadboard_engine.agent as agent_module
+    from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
+    from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+    from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+
+    captured: dict[str, Any] = {}
+
+    def fake_create_agent(
+        config_path: str,
+        workspace_dir: str | None = None,
+        overrides: dict[str, Any] | None = None,
+        *,
+        force_local_mode: bool = False,
+        honor_environment_local_mode: bool = True,
+    ) -> object:
+        captured.update(
+            config_path=config_path,
+            workspace_dir=workspace_dir,
+            overrides=overrides,
+            force_local_mode=force_local_mode,
+            honor_environment_local_mode=honor_environment_local_mode,
+        )
+        return object()
+
+    monkeypatch.setattr(agent_module, "create_agent", fake_create_agent)
+    request = SessionCreateRequest(
+        config_path=str(tmp_path / "agent.json"),
+        task="remote boundary",
+        workspace=str(tmp_path / "workspace"),
+        stream=False,
+    )
+    runner = SessionRunner(
+        session=SessionRecord(session_id="sec123-default-remote", status=SessionStatus.RUNNING),
+        registry=SessionRegistry(),
+        request=request,
+    )
+
+    runner._default_factory(request.config_path, request.workspace, None)
+
+    assert captured["honor_environment_local_mode"] is False
+    assert captured["force_local_mode"] is False
+
+
+@pytest.mark.asyncio
+async def test_session_runner_rejects_ambient_credential_capability_environment(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
+    from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+    from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-provider-poison")
+    monkeypatch.setenv("SSH_AUTH_SOCK", str(tmp_path / "ambient-agent.sock"))
+    factory_called = False
+
+    def fail_if_called(
+        _snapshot: str,
+        _workspace: str | None,
+        _overrides: dict[str, Any] | None,
+    ) -> object:
+        nonlocal factory_called
+        factory_called = True
+        return object()
+
+    request = SessionCreateRequest(
+        config_path=str(tmp_path / "agent.json"),
+        task="reject ambient credentials",
+        workspace=str(tmp_path / "workspace"),
+        stream=False,
+    )
+    runner = SessionRunner(
+        session=SessionRecord(session_id="sec123-ambient-reject", status=SessionStatus.RUNNING),
+        registry=SessionRegistry(),
+        request=request,
+        agent_factory=fail_if_called,
+    )
+    runner._base_config_cache = {
+        "providers": {"default_model": "openai/gpt-5.4-mini"},
+        "workspace": {"root": str(tmp_path / "workspace")},
+    }
+
+    with pytest.raises(RuntimeError, match="unsafe credential or capability environment"):
+        await runner._ensure_agent_initialized()
+
+    assert factory_called is False
+
+
 @pytest.mark.asyncio
 async def test_session_runner_startup_observes_broker_source_and_secret_free_environment(
     monkeypatch,
@@ -550,6 +694,7 @@ async def test_session_runner_startup_observes_broker_source_and_secret_free_env
     from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
     from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
     from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+    from breadboard_engine.provider_broker.broker import credential_environment_violations
 
     credential_keys = (
         "OPENAI_API_KEY",
@@ -558,7 +703,7 @@ async def test_session_runner_startup_observes_broker_source_and_secret_free_env
         "BREADBOARD_OPENAI_AUTH_BASE_URL",
         "BREADBOARD_OPENAI_AUTH_HEADERS_JSON",
     )
-    for key in credential_keys:
+    for key in credential_environment_violations():
         monkeypatch.delenv(key, raising=False)
 
     broker = _StubBroker(
@@ -606,6 +751,7 @@ async def test_session_runner_startup_observes_broker_source_and_secret_free_env
 
     assert observed["environment"] == {key: None for key in credential_keys}
     assert observed["client_config"]["credential_source"] == "broker_lease"
-    assert observed["client_config"]["lease_id"] == "bblease-session-start"
+    assert "lease_id" not in observed["client_config"]
     assert observed["client_config"]["api_key"] == "broker-session-token"
+    assert broker.release_calls == ["bblease-session-start"]
     assert "provider_auth_runtime" not in json.dumps(observed["snapshot"])
