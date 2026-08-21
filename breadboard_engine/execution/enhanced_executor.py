@@ -142,9 +142,9 @@ class EnhancedToolExecutor:
             replacement = args.get("replace")
             if prefer_write and not str(args.get("search") or "").strip() and replacement is not None:
                 return {
-                    "function": "write_text",
+                    "function": "create_file_from_block",
                     "arguments": {
-                        "path": str(args.get("file_name") or ""),
+                        "file_name": str(args.get("file_name") or ""),
                         "content": str(replacement),
                     },
                 }
@@ -411,7 +411,7 @@ class EnhancedToolExecutor:
         if fn == "apply_search_replace":
             return self._call_sandbox("apply_search_replace", **args)
 
-        if fn in {"write_file", "write_text", "create_file"}:
+        if fn in {"write_file", "write_text", "create_file", "create_file_from_block"}:
             path = str(args.get("path") or args.get("file_name") or "")
             content = args.get("content")
             if content is None:

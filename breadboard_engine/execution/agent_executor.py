@@ -266,13 +266,6 @@ class AgentToolExecutor:
 
     def execute_tool_call(self, tool_call: Dict[str, Any], exec_func: Callable) -> Dict[str, Any]:
         """Execute a single tool call with enhanced executor support"""
-        tool_name = self._canonical_tool_name(str(tool_call.get("function") or ""))
-        if tool_name in {"apply_patch", "apply_unified_patch", "patch"}:
-            # Patch execution has BreadBoard-specific OpenCode/Codex parsing and
-            # direct-write fallback. The enhanced executor can short-circuit that
-            # path with raw git/apply errors, which breaks provider-native patch
-            # sessions.
-            return exec_func(tool_call)
         if self.enhanced_executor:
             try:
                 import asyncio
@@ -284,19 +277,9 @@ class AgentToolExecutor:
                         return await result
                     return result
                 
-                # Try to get existing event loop, create new one if needed
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_closed():
-                        raise RuntimeError("Loop is closed")
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                
-                result = loop.run_until_complete(
+                return asyncio.run(
                     self.enhanced_executor.execute_tool_call(tool_call, async_exec)
                 )
-                return result
             except Exception:
                 # Fallback to raw execution on enhanced executor failure
                 pass

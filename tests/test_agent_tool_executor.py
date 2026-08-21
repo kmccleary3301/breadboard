@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from breadboard_engine.execution.agent_executor import AgentToolExecutor
+from breadboard_engine.execution.enhanced_executor import EnhancedToolExecutor
 from breadboard_engine.execution.concurrency_validator import (
     ConcurrencyConfigError,
     validate_concurrency_config,
@@ -303,3 +304,148 @@ def test_alias_canonicalization_applied_before_execution():
     assert len(executed) == 1
     assert seen == ["apply_unified_patch"]
     assert plan["strategy"] in {"nonblocking_concurrent", "sequential"}
+
+
+def test_patch_execution_updates_enhanced_workspace_context(tmp_path):
+    executor = AgentToolExecutor({}, workspace=str(tmp_path))
+    enhanced = EnhancedToolExecutor(sandbox=object(), config={"workspace": str(tmp_path)})
+    executor.set_enhanced_executor(enhanced)
+    calls = []
+    patch = """*** Begin Patch
+*** Add File: created.py
++print("created")
+*** End Patch
+"""
+
+    result = executor.execute_tool_call(
+        {"function": "apply_unified_patch", "arguments": {"patch": patch}},
+        lambda call: calls.append(call) or {"ok": True},
+    )
+
+    assert result == {"ok": True}
+    assert calls == [
+        {"function": "apply_unified_patch", "arguments": {"patch": patch}}
+    ]
+    context = enhanced.get_workspace_context()
+    assert context["files_created_this_session"] == ["created.py"]
+    assert context["recent_operations"][-1]["files_affected"] == ["created.py"]
+
+
+def test_patch_execution_honors_enhanced_validation(tmp_path):
+    config = {
+        "enhanced_tools": {
+            "validation": {
+                "enabled": True,
+                "rules": ["read_before_edit"],
+                "rule_config": {"read_before_edit": {"mode": "error"}},
+            }
+        }
+    }
+    executor = AgentToolExecutor(config, workspace=str(tmp_path))
+    enhanced = EnhancedToolExecutor(
+        sandbox=object(),
+        config={**config, "workspace": str(tmp_path)},
+    )
+    executor.set_enhanced_executor(enhanced)
+    calls = []
+    patch = """--- a/existing.py
++++ b/existing.py
+@@ -1 +1 @@
+-old
++new
+"""
+
+    result = executor.execute_tool_call(
+        {"function": "apply_unified_patch", "arguments": {"patch": patch}},
+        lambda call: calls.append(call) or {"ok": True},
+    )
+
+    assert result["validation_failure"] is True
+    assert "must be read" in result["error"]
+    assert calls == []
+
+
+def test_aider_create_policy_routes_through_production_writer(tmp_path):
+    from breadboard_engine.agent_llm_openai import OpenAIConductor
+
+    config = {
+        "tools": {
+            "dialects": {
+                "create_file_policy": {
+                    "aider_search_replace": {"prefer_write_file_tool": True}
+                }
+            }
+        }
+    }
+    executor = AgentToolExecutor(config, workspace=str(tmp_path))
+    enhanced = EnhancedToolExecutor(
+        sandbox=object(),
+        config={**config, "workspace": str(tmp_path)},
+    )
+    executor.set_enhanced_executor(enhanced)
+
+    writes = []
+    conductor_class = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = object.__new__(conductor_class)
+    conductor.config = config
+    conductor.workspace = str(tmp_path)
+    conductor._ray_get = lambda value: value
+    conductor.sandbox = types.SimpleNamespace(
+        write_text=types.SimpleNamespace(
+            remote=lambda path, content: writes.append((path, content)) or {"ok": True}
+        )
+    )
+
+    result = executor.execute_tool_call(
+        {
+            "function": "apply_search_replace",
+            "arguments": {
+                "file_name": "created.txt",
+                "search": "",
+                "replace": "created",
+            },
+        },
+        conductor._exec_raw,
+    )
+
+    assert result == {"ok": True}
+    assert writes == [(str(tmp_path / "created.txt"), "created")]
+    assert enhanced.get_workspace_context()["files_created_this_session"] == [
+        "created.txt"
+    ]
+
+
+def test_aider_create_policy_remains_an_edit_permission(tmp_path):
+    config = {
+        "tools": {
+            "dialects": {
+                "create_file_policy": {
+                    "aider_search_replace": {"prefer_write_file_tool": True}
+                }
+            }
+        },
+        "enhanced_tools": {"permissions": {"edit": {"default": "deny"}}},
+    }
+    executor = AgentToolExecutor(config, workspace=str(tmp_path))
+    enhanced = EnhancedToolExecutor(
+        sandbox=object(),
+        config={**config, "workspace": str(tmp_path)},
+    )
+    executor.set_enhanced_executor(enhanced)
+    calls = []
+
+    result = executor.execute_tool_call(
+        {
+            "function": "apply_search_replace",
+            "arguments": {
+                "file_name": "created.txt",
+                "search": "",
+                "replace": "created",
+            },
+        },
+        lambda call: calls.append(call) or {"ok": True},
+    )
+
+    assert result["validation_failure"] is True
+    assert "Permission denied" in result["error"]
+    assert calls == []
