@@ -80,6 +80,9 @@ REQUIRED_INVALID_FIXTURE_LABELS = {
 }
 
 EXAMPLE_SCHEMA_MAP = {
+    "agent_config_surface_minimal.json": "bb.agent_config_surface.v1.schema.json",
+    "e4_common_usage.json": "bb.e4.common.v1.schema.json",
+    "kernel_common_usage.json": "bb.kernel.common.v1.schema.json",
     "kernel_event_minimal.json": "bb.kernel_event.v1.schema.json",
     "signal_complete_minimal.json": "bb.signal.v1.schema.json",
     "signal_blocked_minimal.json": "bb.signal.v1.schema.json",
@@ -160,7 +163,11 @@ def _validate_atomic_feature_ledger_payload(payload: Any, label: str) -> List[st
 def _validate_examples() -> List[str]:
     errors: List[str] = []
     schema_store = _build_schema_store()
-    example_names = {path.name for path in EXAMPLES_DIR.glob("*.json")}
+    example_names = {
+        path.name
+        for path in EXAMPLES_DIR.glob("*.json")
+        if path.name != "examples_manifest.json"
+    }
     for example_name in sorted(EXAMPLE_SCHEMA_MAP.keys() | example_names):
         example_path = EXAMPLES_DIR / example_name
         if not example_path.is_file():

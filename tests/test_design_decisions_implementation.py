@@ -525,25 +525,13 @@ class TestIntegrationScenarios:
     
     @pytest.mark.asyncio
     async def test_ray_sce_test_environment_compatibility(self):
-        """Test compatibility with ray_sce_test conda environment."""
-        
-        # This test verifies that our implementation works in the target environment
-        import sys
-        import subprocess
-        
-        # Check conda environment
-        result = subprocess.run(
-            ["conda", "list", "-n", "ray_sce_test"],
-            capture_output=True,
-            text=True
-        )
-        
-        # Should run without error (if environment exists)
-        # In actual test environment, this would verify package compatibility
-        environment_available = result.returncode == 0
-        
-        # Mock test for now
-        assert True  # Will be replaced with actual environment tests
+        """Test the Ray actor boundary in the active Python environment."""
+
+        # The SCE runtime uses these production classes as Ray actors.  Checking
+        # their current actor API keeps this compatibility contract portable
+        # without requiring an ambient environment manager executable.
+        assert callable(getattr(OpenAIConductor, "remote", None))
+        assert callable(getattr(DevSandboxV2, "remote", None))
 
 
 if __name__ == "__main__":

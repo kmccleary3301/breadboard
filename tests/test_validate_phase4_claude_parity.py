@@ -356,8 +356,8 @@ def test_subagents_strip_churn_stress_passes_without_echo_markers_when_task_gram
     text = "\n".join(
         [
             "BreadBoard v0.2.0",
-            "☐ running · Index workspace files · task-1",
-            "☐ running · Compute TODO preview metrics · task-2",
+            "☐ running · Index workspace files · strip-01",
+            "☐ running · Compute TODO preview metrics · strip-02",
             "[done]",
             "╭────────────╮",
             "│ Background tasks │",
