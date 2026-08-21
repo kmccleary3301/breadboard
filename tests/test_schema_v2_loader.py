@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import pytest
@@ -50,7 +49,7 @@ long_running:
     )
 
     monkeypatch.setenv("AGENT_SCHEMA_V2_ENABLED", "1")
-    os.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
     conf = load_agent_config(str(child))
     assert conf["version"] == 2
     assert conf["tools"]["registry"]["paths"] == ["implementations/tools/defs"]
