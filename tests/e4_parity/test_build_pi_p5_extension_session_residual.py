@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -91,3 +92,46 @@ def test_scratch_overlay_materializes_bound_artifact_catalog(tmp_path: Path) -> 
 
     with builder._scratch_paths(tmp_path):
         assert scratch.read_bytes() == source.read_bytes()
+
+
+def test_target_probe_argv_uses_absolute_scratch_script_path() -> None:
+    assert builder._target_probe_argv() == [
+        "npx",
+        "tsx",
+        builder.TARGET_PROBE_SCRIPT_PATH.resolve().as_posix(),
+    ]
+
+
+def test_scratch_capture_validates_live_probe_without_mutating_accepted_replay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted_replay = builder.REPLAY_PATH.read_bytes()
+    probe = copy.deepcopy(load_json(builder.TARGET_PROBE_OUTPUT_PATH))
+    probe["session"]["hashes"]["forked_session"] = "sha256:" + ("0" * 64)
+    setup = load_json(builder.SETUP_REPORT_PATH)
+    calls: list[bool] = []
+
+    def fake_target_capture() -> tuple[dict[str, Any], dict[str, Any]]:
+        calls.append(True)
+        return probe, setup
+
+    monkeypatch.setattr(builder, "run_target_capture", fake_target_capture)
+
+    result = builder.capture(
+        promote_accepted=False,
+        out_dir=tmp_path,
+    )
+
+    assert calls == [True]
+    assert result["ok"] is True
+    assert result["capture_mode"] == "live"
+    report_path = (
+        tmp_path
+        / builder.LANE_DIR.relative_to(builder.ROOT)
+        / "scratch_capture_validation.json"
+    )
+    report = load_json(report_path)
+    assert report["ok"] is True
+    assert report["failed"] == 0
+    assert builder.REPLAY_PATH.read_bytes() == accepted_replay
