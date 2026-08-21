@@ -10,7 +10,7 @@ import pytest
 
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionInputRequest, SessionStatus
-from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry, TurnRecord
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.session_runner import (
     BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES,
@@ -533,10 +533,17 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
 
     class Runner:
         def __init__(self) -> None:
-            self.inputs: list[tuple[str, list[str]]] = []
+            self.inputs: list[tuple[str, list[str], str | None, str | None, str | None]] = []
 
-        async def enqueue_input(self, content: str, attachments: list[str]) -> str:
-            self.inputs.append((content, attachments))
+        async def enqueue_input(
+            self,
+            content: str,
+            attachments: list[str],
+            *,
+            input_id: str | None = None,
+            turn_id: str | None = None,
+        ) -> str:
+            self.inputs.append((content, attachments, input_id, turn_id, record.active_turn_id))
             return content
 
     runner = Runner()
@@ -560,8 +567,59 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
         **first.model_dump(),
         "disposition": "deduplicated",
     }
-    assert runner.inputs == [("continue", [])]
+    assert runner.inputs == [
+        ("continue", [], first.input_id, first.turn_id, first.turn_id),
+    ]
     assert record.active_turn_id == first.turn_id
+
+
+@pytest.mark.asyncio
+async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_path: Path) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(session_id="sess-turn-promotion", status=SessionStatus.RUNNING)
+    first = TurnRecord(
+        input_id="input-1",
+        turn_id="turn-1",
+        client_message_id="client-1",
+        content="first",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    second = TurnRecord(
+        input_id="input-2",
+        turn_id="turn-2",
+        client_message_id="client-2",
+        content="second",
+        attachments=(),
+        original_disposition="queued",
+        state="queued",
+    )
+    record.turns_by_id = {first.turn_id: first, second.turn_id: second}
+    record.active_turn_id = first.turn_id
+    record.queued_turn_ids.append(second.turn_id)
+    await registry.create(record)
+    service = SessionService(registry=registry)
+    await service._ensure_dispatcher(record)
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+
+    assert await runner._finish_turn(first, "completed") is True
+    await asyncio.sleep(0)
+
+    assert first.terminal_resolution_committed is True
+    assert len(record.terminal_event_envelopes) == 1
+    assert record.active_turn_id == second.turn_id
+    assert second.state == "active"
+    assert not record.queued_turn_ids
+    assert record.dispatcher_task is not None
+    assert not record.dispatcher_task.done()
+
+    await record.event_queue.put(None)
+    await record.dispatcher_task
 
 
 @pytest.mark.asyncio

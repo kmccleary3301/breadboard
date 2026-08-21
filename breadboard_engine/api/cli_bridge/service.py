@@ -586,33 +586,37 @@ class SessionService:
         while True:
             event = await record.event_queue.get()
             if event is None:
+                record.event_queue.task_done()
                 break
-            async with record.dispatch_lock:
-                if event.type in {
-                    EventType.TURN_COMPLETED,
-                    EventType.TURN_FAILED,
-                    EventType.TURN_CANCELLED,
-                }:
-                    try:
-                        await self.registry.persist(record, terminal_event=event)
-                    except Exception:
-                        # A terminal event without durable retention is not safe
-                        # to expose as resolved evidence.
-                        setattr(record, "_dispatcher_complete", True)
-                        break
-                record.event_seq += 1
-                if event.seq is None:
-                    event.seq = record.event_seq
-                else:
-                    record.event_seq = max(record.event_seq, int(event.seq))
-                record.event_log.append(event)
-                if record.subscribers:
-                    for subscriber in list(record.subscribers):
+            try:
+                async with record.dispatch_lock:
+                    if event.type in {
+                        EventType.TURN_COMPLETED,
+                        EventType.TURN_FAILED,
+                        EventType.TURN_CANCELLED,
+                    }:
                         try:
-                            subscriber.put_nowait(event)
-                        except asyncio.QueueFull:
-                            # Drop on overflow; subscribers are best-effort observers.
-                            continue
+                            await self.registry.persist(record, terminal_event=event)
+                        except Exception:
+                            # A terminal event without durable retention is not safe
+                            # to expose as resolved evidence.
+                            setattr(record, "_dispatcher_complete", True)
+                            break
+                    record.event_seq += 1
+                    if event.seq is None:
+                        event.seq = record.event_seq
+                    else:
+                        record.event_seq = max(record.event_seq, int(event.seq))
+                    record.event_log.append(event)
+                    if record.subscribers:
+                        for subscriber in list(record.subscribers):
+                            try:
+                                subscriber.put_nowait(event)
+                            except asyncio.QueueFull:
+                                # Drop on overflow; subscribers are best-effort observers.
+                                continue
+            finally:
+                record.event_queue.task_done()
         async with record.dispatch_lock:
             setattr(record, "_dispatcher_complete", True); subscribers = list(record.subscribers)
             for subscriber in subscribers:
@@ -784,21 +788,12 @@ class SessionService:
                         disposition="deduplicated",
                         original_disposition=existing.original_disposition,
                     )
-                try:
-                    accepted_content = await runner.enqueue_input(
-                        payload.content,
-                        attachments=list(attachments),
-                    )
-                except ValueError as exc:
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-                except RuntimeError as exc:
-                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
                 disposition = "started" if record.active_turn_id is None else "queued"
                 turn = TurnRecord(
                     input_id=f"input-{uuid.uuid4().hex}",
                     turn_id=f"turn-{uuid.uuid4().hex}",
                     client_message_id=client_message_id,
-                    content=accepted_content,
+                    content=payload.content,
                     attachments=attachments,
                     original_disposition=disposition,
                     state="active" if disposition == "started" else "queued",
@@ -811,11 +806,37 @@ class SessionService:
                     record.active_turn_id = turn.turn_id
                 else:
                     record.queued_turn_ids.append(turn.turn_id)
-                record.turn_admission = (
-                    record.turn_admission.__class__.ACTIVE
-                    if record.active_turn_id is not None
-                    else record.turn_admission.__class__.IDLE
-                )
+                record.turn_admission = record.turn_admission.__class__.ACTIVE
+                try:
+                    accepted_content = await runner.enqueue_input(
+                        payload.content,
+                        attachments=list(attachments),
+                        input_id=turn.input_id,
+                        turn_id=turn.turn_id,
+                    )
+                except (ValueError, RuntimeError) as exc:
+                    record.turns_by_id.pop(turn.turn_id, None)
+                    record.submissions_by_key.pop(client_message_id, None)
+                    record.submissions_by_key_digest.pop(identity_digest(client_message_id), None)
+                    if record.active_turn_id == turn.turn_id:
+                        record.active_turn_id = None
+                    else:
+                        try:
+                            record.queued_turn_ids.remove(turn.turn_id)
+                        except ValueError:
+                            pass
+                    record.turn_admission = (
+                        record.turn_admission.__class__.ACTIVE
+                        if record.active_turn_id is not None
+                        else record.turn_admission.__class__.IDLE
+                    )
+                    http_status = (
+                        status.HTTP_400_BAD_REQUEST
+                        if isinstance(exc, ValueError)
+                        else status.HTTP_409_CONFLICT
+                    )
+                    raise HTTPException(status_code=http_status, detail=str(exc)) from exc
+                turn.content = accepted_content
                 return SessionInputResponse(
                     client_message_id=client_message_id,
                     input_id=turn.input_id,

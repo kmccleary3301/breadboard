@@ -294,7 +294,14 @@ class SessionRunner:
                 await self._task
             except asyncio.CancelledError:
                 pass
-    async def enqueue_input(self, content: str, attachments: Optional[list[str]] = None) -> str:
+    async def enqueue_input(
+        self,
+        content: str,
+        attachments: Optional[list[str]] = None,
+        *,
+        input_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+    ) -> str:
         if self._closed:
             raise RuntimeError("session is closed")
         if not content or not content.strip():
@@ -307,7 +314,12 @@ class SessionRunner:
             total_bytes = sum(int(getattr(artifacts[item], "size_bytes", MAX_ATTACHMENT_BYTES + 1)) for item in attachment_ids)
             if total_bytes > MAX_ATTACHMENT_BYTES: raise ValueError(f"selected attachments exceed {MAX_ATTACHMENT_BYTES}-byte handoff limit")
             content = self._sanitize_interactive_input_content(content)
-            payload = {"content": content, "attachments": attachment_ids}
+            payload = {
+                "content": content,
+                "attachments": attachment_ids,
+                "input_id": input_id,
+                "turn_id": turn_id,
+            }
             product_session = getattr(self.session, "product_session", None)
             if product_session is not None:
                 product_session.input(content, [artifacts[item] for item in attachment_ids])
@@ -782,7 +794,13 @@ class SessionRunner:
                 self._checkpoint_manager.create_checkpoint("Session start")
         except Exception:
             self._checkpoint_manager = None
-    async def _execute_replay_task(self, task_text: str) -> Dict[str, Any]:
+    async def _execute_replay_task(
+        self,
+        task_text: str,
+        *,
+        input_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         replay_path = self._parse_replay_path(task_text)
         if replay_path is None:
             raise ValueError("replay task missing path (expected replay:<path>)")
@@ -801,12 +819,15 @@ class SessionRunner:
         published_events = 0
         metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
         one_shot = bool(metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot")
-        active_turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
-        correlation = (
-            {"input_id": active_turn.input_id, "turn_id": active_turn.turn_id}
-            if active_turn is not None
-            else {}
-        )
+        correlation = {
+            key: value
+            for key, value in (("input_id", input_id), ("turn_id", turn_id))
+            if value is not None
+        }
+        if not correlation:
+            active_turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
+            if active_turn is not None:
+                correlation = {"input_id": active_turn.input_id, "turn_id": active_turn.turn_id}
         terminal_events: list[TranslatedRuntimeEvent] = []
         with replay_path.open("r", encoding="utf-8") as f:
             for raw_line in f:
@@ -905,7 +926,13 @@ class SessionRunner:
                 pass
             if initial_task:
                 self._accepted_task_texts.append(initial_task)
-                self._input_queue.put_nowait({"content": initial_task, "attachments": []})
+                initial_turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
+                self._input_queue.put_nowait({
+                    "content": initial_task,
+                    "attachments": [],
+                    "input_id": initial_turn.input_id if initial_turn is not None else None,
+                    "turn_id": initial_turn.turn_id if initial_turn is not None else None,
+                })
             while not self._stop_event.is_set():
                 try:
                     next_input = await self._input_queue.get()
@@ -917,9 +944,18 @@ class SessionRunner:
                 if self._stop_event.is_set(): self._input_queue.task_done(); break
                 task_payload = dict(next_input)
                 task_text = str(task_payload.get("content", ""))
+                task_input_id = task_payload.get("input_id")
+                task_turn_id = task_payload.get("turn_id")
+                task_turn = self.session.turns_by_id.get(str(task_turn_id or ""))
+                if task_turn is not None and self.session.active_turn_id != task_turn.turn_id:
+                    raise RuntimeError("turn queue correlation mismatch")
                 task_received_at = time.monotonic()
                 if self._parse_replay_path(task_text) is not None:
-                    result = await self._execute_replay_task(task_text)
+                    result = await self._execute_replay_task(
+                        task_text,
+                        input_id=str(task_input_id) if task_input_id is not None else None,
+                        turn_id=str(task_turn_id) if task_turn_id is not None else None,
+                    )
                     after_execute_task_at = time.monotonic()
                 else:
                     attachment_ids = task_payload.get("attachments") or []
@@ -937,7 +973,12 @@ class SessionRunner:
                             "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
                             "task_received_to_agent_initialized_seconds": round(after_agent_init_at - task_received_at, 6),
                         }
-                    result = await asyncio.to_thread(self._execute_task, task_text)
+                    result = await asyncio.to_thread(
+                        self._execute_task,
+                        task_text,
+                        input_id=str(task_input_id) if task_input_id is not None else None,
+                        turn_id=str(task_turn_id) if task_turn_id is not None else None,
+                    )
                     after_execute_task_at = time.monotonic()
                     if self._profile_timing_enabled and isinstance(result, dict):
                         timing = result.setdefault("bridge_timing", {})
@@ -968,6 +1009,24 @@ class SessionRunner:
                     )
                     for event_type, event_payload, event_turn, event_contract in result.pop("_terminal_events", ()):
                         await self.publish_event_async(event_type, event_payload, turn=event_turn, input_id=event_contract.get("input_id"), turn_id=event_contract.get("turn_id"), classification=event_contract.get("classification"), family=event_contract.get("family"), actor=event_contract.get("actor"), visibility=event_contract.get("visibility"))
+                if task_turn is not None:
+                    completion_summary = result.get("completion_summary") or {}
+                    completion_reason = str(
+                        completion_summary.get("reason")
+                        or completion_summary.get("exit_kind")
+                        or "turn_execution_failed"
+                    )
+                    if self._stop_event.is_set():
+                        await self._finish_turn(task_turn, "cancelled", reason=completion_reason)
+                    elif bool(completion_summary.get("completed")):
+                        await self._finish_turn(task_turn, "completed")
+                    else:
+                        await self._finish_turn(
+                            task_turn,
+                            "failed",
+                            reason=completion_reason,
+                            error_code=completion_reason,
+                        )
                 after_registry_update_at = time.monotonic()
                 if self._profile_timing_enabled and isinstance(result, dict):
                     timing = result.setdefault("bridge_timing", {})
@@ -1177,7 +1236,13 @@ class SessionRunner:
             source="task", task_session_id=str((payload or {}).get("sessionId") or ""),
             subagent_type=str((payload or {}).get("subagent_type") or ""),
         )
-    def _execute_task(self, task_text: str) -> Dict[str, Any]:
+    def _execute_task(
+        self,
+        task_text: str,
+        *,
+        input_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         if not self._agent:
             raise RuntimeError("agent missing")
         execute_started_at = time.monotonic()
@@ -1185,12 +1250,15 @@ class SessionRunner:
         self._published_events = 0
         metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
         one_shot = bool(metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot")
-        active_turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
-        correlation = (
-            {"input_id": active_turn.input_id, "turn_id": active_turn.turn_id}
-            if active_turn is not None
-            else {}
-        )
+        correlation = {
+            key: value
+            for key, value in (("input_id", input_id), ("turn_id", turn_id))
+            if value is not None
+        }
+        if not correlation:
+            active_turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
+            if active_turn is not None:
+                correlation = {"input_id": active_turn.input_id, "turn_id": active_turn.turn_id}
         terminal_events: list[TranslatedRuntimeEvent] = []; terminal_lock = threading.Lock()
         is_local_agent = bool(getattr(self._agent, "_local_mode", False))
         event_queue = permission_queue = control_queue = queue_stop = queue_thread = None
@@ -1492,12 +1560,6 @@ class SessionRunner:
             event_type, payload = EventType.TURN_FAILED, {
                 "error": {"code": error_code or "turn_execution_failed"}
             }
-        await self.publish_event_async(
-            event_type,
-            payload,
-            input_id=turn.input_id,
-            turn_id=turn.turn_id,
-        )
         terminal_event = SessionEvent(
             type=event_type,
             session_id=self.session.session_id,
@@ -1505,11 +1567,33 @@ class SessionRunner:
             input_id=turn.input_id,
             turn_id=turn.turn_id,
         )
+        dispatcher = getattr(self.session, "dispatcher_task", None)
         try:
-            await self.registry.persist(self.session, terminal_event=terminal_event)
+            if dispatcher is not None and not dispatcher.done():
+                await self._enqueue_event_async(terminal_event)
+                await self.session.event_queue.join()
+            else:
+                await self.registry.persist(self.session, terminal_event=terminal_event)
         except Exception:
             return True
-        await self.session.event_queue.put(None)
+        if not turn.terminal_resolution_committed:
+            return True
+        async with self.session.admission_lock:
+            if self.session.active_turn_id == turn.turn_id:
+                self.session.active_turn_id = None
+            while self.session.queued_turn_ids:
+                next_turn_id = self.session.queued_turn_ids.popleft()
+                next_turn = self.session.turns_by_id.get(next_turn_id)
+                if next_turn is None or next_turn.terminal_outcome is not None:
+                    continue
+                next_turn.state = "active"
+                self.session.active_turn_id = next_turn.turn_id
+                break
+            self.session.turn_admission = (
+                self.session.turn_admission.__class__.ACTIVE
+                if self.session.active_turn_id is not None
+                else self.session.turn_admission.__class__.IDLE
+            )
         return True
 
     async def publish_event_async(

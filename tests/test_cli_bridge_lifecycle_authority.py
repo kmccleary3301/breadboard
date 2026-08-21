@@ -2227,16 +2227,18 @@ async def test_paused_terminal_publish_remains_unresolved_for_drain() -> None:
         registry=registry,
         request=SessionCreateRequest(config_path="unused"),
     )
-    publish_entered = asyncio.Event()
-    release_publish = asyncio.Event()
+    persist_entered = asyncio.Event()
+    release_persist = asyncio.Event()
+    original_persist = registry.persist
 
-    async def paused_publish(*_args: Any, **_kwargs: Any) -> None:
-        publish_entered.set()
-        await release_publish.wait()
+    async def paused_persist(*args: Any, **kwargs: Any) -> None:
+        persist_entered.set()
+        await release_persist.wait()
+        await original_persist(*args, **kwargs)
 
-    runner.publish_event_async = paused_publish  # type: ignore[method-assign]
+    registry.persist = paused_persist  # type: ignore[method-assign]
     finish_task = asyncio.create_task(runner._finish_turn(turn, "completed"))
-    await publish_entered.wait()
+    await persist_entered.wait()
     assert turn.terminal_outcome == "completed"
     assert turn.terminal_resolution_committed is False
     with pytest.raises(LifecycleAuthorityError) as unresolved:
@@ -2245,7 +2247,7 @@ async def test_paused_terminal_publish_remains_unresolved_for_drain() -> None:
             begin_drain(registry, process_identity, registration),
         )
     assert unresolved.value.code == "drain_turn_active"
-    release_publish.set()
+    release_persist.set()
     await finish_task
 
 
