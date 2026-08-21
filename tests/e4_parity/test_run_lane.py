@@ -249,6 +249,37 @@ def test_stored_replay_hashes_every_declared_artifact_in_manifest_order(
     ]
     assert stage["honesty_errors"] == []
 
+def test_stored_replay_resolves_declared_artifact_from_scratch_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logical_path = "docs/conformance/e4_target_support/fixture/bb_replay_result.json"
+    scratch_root = tmp_path / "scratch"
+    scratch_artifact = scratch_root / logical_path
+    content = b'{"replay":"fresh-scratch"}\n'
+    scratch_artifact.parent.mkdir(parents=True)
+    scratch_artifact.write_bytes(content)
+    lane_def = _normalized_h2_lane([])
+    lane_def["replay"]["artifacts"] = [logical_path]
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="replay",
+        out_dir=scratch_root,
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert result["ok"] is True
+    assert result["stages"][0]["reused_inputs"] == [
+        {
+            "path": logical_path,
+            "sha256": "sha256:" + hashlib.sha256(content).hexdigest(),
+        }
+    ]
+
 
 def test_stored_replay_fails_when_a_declared_artifact_is_missing(
     tmp_path: Path,
@@ -735,6 +766,62 @@ def test_claim_stage_uses_lane_def_reverify_command_and_retargets_json_out(
     assert not (repo_root / accepted_json).exists()
 
 
+
+def test_c4_claim_validates_against_scratch_repository_overlay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lane_id = "run_lane_test_c4_scratch_root"
+    config_id = "run_lane_test_config"
+    lane_def_dir = tmp_path / "lane_defs"
+    inventory_path = tmp_path / "inventory.json"
+    repo_root = tmp_path / "repo"
+    scratch_root = tmp_path / "scratch"
+    catalog_path = repo_root / "docs/conformance/e4_artifact_catalog.json"
+    catalog_path.parent.mkdir(parents=True)
+    catalog_path.write_text('{"schema_version":"catalog.fixture.v1"}\n', encoding="utf-8")
+    _write_lane_def(
+        lane_def_dir,
+        lane_id=lane_id,
+        config_id=config_id,
+        reverify_command=_command(
+            [
+                "python",
+                "scripts/validate_e4_c4_chain.py",
+                "--config-id",
+                config_id,
+                "--support-claim",
+                "docs/conformance/support_claims/claim.json",
+                "--json-out",
+                "artifacts/conformance/node_gate/claim.json",
+            ]
+        ),
+    )
+    _write_inventory(inventory_path, [])
+    monkeypatch.setattr(run_lane, "ROOT", repo_root)
+    monkeypatch.setattr(
+        run_lane,
+        "LANE_SHARED_READ_ONLY_PATHS",
+        frozenset({"docs/conformance/e4_artifact_catalog.json"}),
+    )
+    calls = _patch_successful_subprocess(monkeypatch)
+
+    result = run_lane.run_lane(
+        lane_id,
+        stage="claim",
+        out_dir=scratch_root,
+        lane_def_dir=lane_def_dir,
+        inventory_path=inventory_path,
+    )
+
+    assert result["ok"] is True
+    repo_root_index = calls[0].index("--repo-root")
+    assert calls[0][repo_root_index + 1] == scratch_root.resolve().as_posix()
+    assert (
+        scratch_root / "docs/conformance/e4_artifact_catalog.json"
+    ).read_bytes() == catalog_path.read_bytes()
+
+
 @pytest.mark.parametrize(
     ("inventory_reverify_command", "inventory_ct_command", "expected_tool", "expected_json"),
     [
@@ -1110,7 +1197,7 @@ def test_compare_invokes_registered_callable_once_with_protocol_exact_input_and_
                 "capture_ref": artifact_paths["capture_ref"],
                 "replay_ref": artifact_paths["replay_ref"],
             },
-            "repo_root": tmp_path,
+            "repo_root": scratch_root,
         }
     ]
     assert result["ok"] is True
@@ -1119,6 +1206,54 @@ def test_compare_invokes_registered_callable_once_with_protocol_exact_input_and_
     report_path = _report_path(tmp_path, stage["report_ref"])
     assert report_path == scratch_root / "evidence" / lane_id / "comparator_report.json"
     assert json.loads(report_path.read_text(encoding="utf-8")) == returned_report
+
+def test_compare_reads_input_role_artifacts_from_scratch_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lane_id = "h4_scratch_input_fixture"
+    lane, accepted_paths = _h4_lane(tmp_path, lane_id=lane_id)
+    scratch_root = tmp_path / "scratch"
+    scratch_paths: dict[str, Path] = {}
+    for role, accepted_path in accepted_paths.items():
+        scratch_path = scratch_root / Path(str(lane["artifacts_root"])) / accepted_path.name
+        scratch_path.parent.mkdir(parents=True, exist_ok=True)
+        scratch_path.write_bytes(accepted_path.read_bytes())
+        accepted_path.unlink()
+        scratch_paths[role] = scratch_path
+    registry_path = tmp_path / "comparator_registry.json"
+    module_name = "h4_scratch_input_comparator"
+    _write_h4_registry(registry_path, lane_id=lane_id, module_name=module_name)
+    calls: list[dict[str, object]] = []
+    report = {
+        "schema_version": "bb.e4.comparator_report.v1",
+        "lane_id": lane_id,
+        "config_id": lane["config_id"],
+        "scope": lane["claim"]["scope"],
+        "assertions": [],
+        "details": [],
+        "passed": 0,
+        "failed": 0,
+        "warned": 0,
+    }
+    comparator_module = ModuleType(module_name)
+    comparator_module.compare = lambda inp: calls.append(inp) or report
+    monkeypatch.setitem(sys.modules, module_name, comparator_module)
+    _patch_h2_lane_loading(monkeypatch, lane)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+
+    result = run_lane.run_lane(
+        lane_id,
+        stage="compare",
+        out_dir=scratch_root,
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+        comparator_registry_path=registry_path,
+    )
+
+    assert result["ok"] is True
+    assert calls[0]["artifacts"] == scratch_paths
+    assert calls[0]["repo_root"] == scratch_root
 
 
 def test_compare_refuses_ancestor_only_input_role_artifacts(
@@ -1267,7 +1402,9 @@ def test_claim_uses_existing_comparator_report_and_disables_validator_rerun(
     command = calls[0]
     assert command.count("--no-rerun-comparators") == 1
     assert "--rerun-comparators" not in command
-    assert command[:9] == original_argv[:9]
+    assert command[:2] == original_argv[:2]
+    assert command[2:4] == ["--repo-root", scratch_root.resolve().as_posix()]
+    assert command[4:11] == original_argv[2:9]
     assert "--check-only" not in command
     assert result["ok"] is True
     assert result["stages"][0]["outcome"] == "executed_pass"

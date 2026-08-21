@@ -83,3 +83,11 @@ def test_work_item_v1_regeneration_paths_fail_closed(regeneration: Any) -> None:
         regeneration()
     assert hashlib.sha256(builder.REPLAY_PATH.read_bytes()).hexdigest() == before
     assert not hasattr(builder, "compile_replay_records")
+
+
+def test_scratch_overlay_materializes_bound_artifact_catalog(tmp_path: Path) -> None:
+    source = builder.ROOT / builder.CATALOG_BINDING_PATH
+    scratch = tmp_path / builder.CATALOG_BINDING_PATH
+
+    with builder._scratch_paths(tmp_path):
+        assert scratch.read_bytes() == source.read_bytes()

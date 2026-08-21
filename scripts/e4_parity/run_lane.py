@@ -216,6 +216,53 @@ def _resolve_repo_path(path_text: str) -> Path:
         must_exist=False,
     )
 
+def _resolve_reused_input(path_text: str, out_dir: Path | None) -> Path:
+    accepted_path = _resolve_repo_path(path_text)
+    if out_dir is None:
+        return accepted_path
+    try:
+        relative = accepted_path.resolve().relative_to(ROOT.resolve())
+    except ValueError:
+        try:
+            relative = Path("__workspace__") / accepted_path.resolve().relative_to(
+                workspace_root_for_checkout(ROOT).resolve()
+            )
+        except ValueError:
+            return accepted_path
+    scratch_path = out_dir / relative
+    return scratch_path if scratch_path.exists() else accepted_path
+
+def _materialize_shared_read_only_inputs(out_dir: Path | None) -> None:
+    if out_dir is None:
+        return
+    workspace_root = workspace_root_for_checkout(ROOT).resolve()
+    copied: set[Path] = set()
+    for declared_path in sorted(LANE_SHARED_READ_ONLY_PATHS):
+        parts = Path(declared_path).parts
+        logical_path = (
+            Path(*parts[1:]).as_posix()
+            if parts[:2] == ("..", "docs_tmp")
+            else declared_path
+        )
+        source = _resolve_repo_path(logical_path)
+        if not source.is_file():
+            continue
+        try:
+            relative = source.resolve().relative_to(ROOT.resolve())
+        except ValueError:
+            try:
+                relative = Path("__workspace__") / source.resolve().relative_to(
+                    workspace_root
+                )
+            except ValueError:
+                continue
+        destination = out_dir / relative
+        if destination in copied:
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        copied.add(destination)
+
 
 def _digest_input(path: Path) -> str:
     if path.is_file():
@@ -242,6 +289,33 @@ def _retarget_json_out(argv: Sequence[str], out_dir: Path | None) -> tuple[list[
     if "--check-only" in result:
         result.remove("--check-only")
     return result, accepted_path, scratch_path
+
+def _retarget_c4_repo_root(argv: Sequence[str], out_dir: Path | None) -> list[str]:
+    result = list(argv)
+    if out_dir is None:
+        return result
+    script_index = next(
+        (
+            index
+            for index, value in enumerate(result)
+            if Path(value).name == "validate_e4_c4_chain.py"
+        ),
+        None,
+    )
+    if script_index is None:
+        return result
+    scratch_root = out_dir.resolve().as_posix()
+    for index, value in enumerate(result):
+        if value == "--repo-root":
+            if index + 1 >= len(result):
+                raise LaneRunError("--repo-root has no following path")
+            result[index + 1] = scratch_root
+            return result
+        if value.startswith("--repo-root="):
+            result[index] = f"--repo-root={scratch_root}"
+            return result
+    result[script_index + 1 : script_index + 1] = ["--repo-root", scratch_root]
+    return result
 
 
 def _stage_list(stage: str) -> list[str]:
@@ -274,6 +348,7 @@ def _comparator_entry(lane_def: Mapping[str, Any], registry_path: Path) -> Mappi
 def _comparator_artifacts(
     lane_def: Mapping[str, Any],
     entry: Mapping[str, Any],
+    out_dir: Path | None,
 ) -> dict[str, Path]:
     artifacts_root = lane_def.get("artifacts_root")
     if not isinstance(artifacts_root, str) or not artifacts_root:
@@ -289,8 +364,10 @@ def _comparator_artifacts(
     unknown = [role for role in input_roles if role not in names]
     if unknown:
         raise LaneRunError("unsupported comparator input_role(s): " + ", ".join(unknown))
-    root = _resolve_repo_path(artifacts_root)
-    artifacts = {role: root / names[role] for role in input_roles}
+    artifacts = {
+        role: _resolve_reused_input(f"{artifacts_root}/{names[role]}", out_dir)
+        for role in input_roles
+    }
     missing = [role for role, path in artifacts.items() if not path.is_file()]
     if missing:
         raise LaneRunError("missing comparator input_role artifact(s): " + ", ".join(missing))
@@ -323,7 +400,7 @@ def _run_compare(
     output_path = _compare_output_path(lane_def, out_dir)
     try:
         entry = _comparator_entry(lane_def, registry_path)
-        artifacts = _comparator_artifacts(lane_def, entry)
+        artifacts = _comparator_artifacts(lane_def, entry, out_dir)
         claim = lane_def.get("claim")
         scope = claim.get("scope") if isinstance(claim, Mapping) else None
         if not isinstance(scope, Mapping):
@@ -333,7 +410,7 @@ def _run_compare(
             "replay": _load_json(artifacts["replay_ref"]),
             "scope": dict(scope),
             "artifacts": artifacts,
-            "repo_root": ROOT,
+            "repo_root": out_dir if out_dir is not None else ROOT,
         }
         report = _comparator_callable(entry)(payload)
         expected_schema = entry.get("report_schema_version")
@@ -619,7 +696,7 @@ def _declared_non_execution(
         reused_inputs: list[dict[str, str]] = []
         digest_errors: list[str] = []
         for logical_path in reused_paths:
-            artifact_path = _resolve_repo_path(logical_path)
+            artifact_path = _resolve_reused_input(logical_path, out_dir)
             try:
                 digest = _digest_input(artifact_path)
             except (OSError, ValueError) as exc:
@@ -999,6 +1076,7 @@ def run_lane(
             "--defer-promotion-refresh and no --out"
         )
 
+    _materialize_shared_read_only_inputs(out_dir)
     results: list[dict[str, Any]] = []
     blocked_by: str | None = None
     for stage_name in stages:
@@ -1126,6 +1204,7 @@ def run_lane(
         command = _resolve_python_launcher(argv)
         try:
             command, accepted_path, output_path = _retarget_json_out(command, out_dir)
+            command = _retarget_c4_repo_root(command, out_dir)
         except LaneRunError:
             if stage_name == "capture":
                 metadata_result = _finalize_stage_result(

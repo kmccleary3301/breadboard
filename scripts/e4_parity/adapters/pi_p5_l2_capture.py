@@ -859,6 +859,11 @@ def _scratch_paths(out_dir: Path):
         if source.is_file():
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
+    catalog_source = ROOT / CATALOG_BINDING_PATH
+    catalog_destination = out_dir / CATALOG_BINDING_PATH
+    if catalog_source.is_file():
+        catalog_destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(catalog_source, catalog_destination)
 
     def logical_display(path: Path) -> str:
         resolved = path.resolve()
