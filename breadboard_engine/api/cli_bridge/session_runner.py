@@ -96,6 +96,9 @@ BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES = {
     "assistant.message.end",
     "assistant.reasoning.delta",
     "assistant.thought_summary.delta",
+    "assistant.tool_call.start",
+    "assistant.tool_call.delta",
+    "assistant.tool_call.end",
     "tool.exec.start",
     "tool.exec.stdout.delta",
     "tool.exec.stderr.delta",
@@ -140,6 +143,8 @@ def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
         return {"classification": "kernel", "family": "message.user", "actor": "human", "visibility": "transcript"}
     if event_name in {"assistant.reasoning.delta", "assistant.thought_summary.delta"}:
         return {"classification": "bridge_stream", "family": "reasoning.delta", "actor": "engine", "visibility": "diagnostic"}
+    if event_name.startswith("assistant.tool_call."):
+        return {"classification": "bridge_stream", "family": "tool.call.delta", "actor": "engine", "visibility": "tool"}
     if event_name.startswith("tool.") or event_name in {"tool_call", "tool_result", "tool.result", "todo_event"}:
         return {"classification": "kernel", "family": "tool.event", "actor": "tool", "visibility": "tool"}
     if event_name in {"ctree_node", "turn_start", "lifecycle_event", "guardrail_event"}:
@@ -2041,6 +2046,9 @@ class SessionRunner:
             "assistant.message.end": EventType.ASSISTANT_MESSAGE_END,
             "assistant.reasoning.delta": EventType.ASSISTANT_REASONING_DELTA,
             "assistant.thought_summary.delta": EventType.ASSISTANT_THOUGHT_SUMMARY_DELTA,
+            "assistant.tool_call.start": EventType.ASSISTANT_TOOL_CALL_START,
+            "assistant.tool_call.delta": EventType.ASSISTANT_TOOL_CALL_DELTA,
+            "assistant.tool_call.end": EventType.ASSISTANT_TOOL_CALL_END,
             "tool.exec.start": EventType.TOOL_EXEC_START,
             "tool.exec.stdout.delta": EventType.TOOL_EXEC_STDOUT_DELTA,
             "tool.exec.stderr.delta": EventType.TOOL_EXEC_STDERR_DELTA,

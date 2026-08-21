@@ -62,6 +62,23 @@ from .turn_runtime import (
     apply_turn_guards, build_turn_context, finalize_turn_context_snapshot, handle_blocked_calls,
     maybe_transition_plan_mode, summarize_execution_results,
 )
+def _assistant_history_message(
+    msg: Any,
+    *,
+    tool_calls: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    history: Dict[str, Any] = {"role": "assistant", "content": msg.content}
+    if tool_calls is not None:
+        history["tool_calls"] = tool_calls
+    annotations = getattr(msg, "annotations", None)
+    if isinstance(annotations, dict):
+        for field_name in ("reasoning_content", "reasoning", "reasoning_details"):
+            field_value = annotations.get(field_name)
+            if field_value is not None:
+                history[field_name] = field_value
+    return history
+
+
 def log_provider_message(conductor: ConductorContext, provider_message: ProviderMessage, session_state: SessionState, markdown_logger: MarkdownLogger, stream_responses: bool) -> None:
     legacy_msg = legacy_message_view(provider_message)
 
@@ -513,8 +530,9 @@ def handle_text_tool_calls(
                         except Exception:
                             pass
                     return False
-        session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
-        session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=True)
+        assistant_history = _assistant_history_message(msg)
+        session_state.add_message(assistant_history, to_provider=False)
+        session_state.add_message(dict(assistant_history), to_provider=True)
         if isinstance(completion_analysis, dict):
             if completion_analysis.get("completed"):
                 signal_task_id, signal_parent_task_id, signal_mission_task_id = _coordination_task_context(session_state)
@@ -590,8 +608,9 @@ def handle_text_tool_calls(
     if _maybe_force_read_only_observation_closure(session_state, parsed):
         msg.content = ""
         return True
-    session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
-    session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=True)
+    assistant_history = _assistant_history_message(msg)
+    session_state.add_message(assistant_history, to_provider=False)
+    session_state.add_message(dict(assistant_history), to_provider=True)
     session_state.add_transcript_entry({"assistant": msg.content})
 
     plan_bootstrap_traces = session_state.get_provider_metadata("plan_bootstrap_traces") or []
@@ -887,11 +906,22 @@ def handle_native_tool_calls(
         for tc in msg.tool_calls:
             fn_name = getattr(getattr(tc, "function", None), "name", None)
             arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
-            tool_calls_payload.append({
+            tool_call_payload = {
                 "id": getattr(tc, "id", None),
                 "type": "function",
                 "function": {"name": fn_name, "arguments": arg_str if isinstance(arg_str, str) else json.dumps(arg_str or {})},
-            })
+            }
+            raw_tool_call = getattr(tc, "raw", None)
+            if hasattr(raw_tool_call, "model_dump"):
+                try:
+                    raw_tool_call = raw_tool_call.model_dump(exclude_none=True)
+                except Exception:
+                    raw_tool_call = None
+            if isinstance(raw_tool_call, dict):
+                for field_name in ("thought_signature", "thoughtSignature", "extra_content"):
+                    if raw_tool_call.get(field_name) is not None:
+                        tool_call_payload[field_name] = raw_tool_call[field_name]
+            tool_calls_payload.append(tool_call_payload)
         try:
             if conductor.logger_v2.run_dir and tool_calls_payload:
                 turn_index = len(session_state.transcript) + 1
@@ -909,12 +939,8 @@ def handle_native_tool_calls(
 
         enhanced_tool_calls = conductor.message_formatter.create_enhanced_tool_calls(tool_calls_payload)
 
-        assistant_entry = {
-            "role": "assistant",
-            "content": msg.content,
-            "tool_calls": enhanced_tool_calls,
-        }
-        provider_assistant_tool_message = {"role": "assistant", "content": msg.content, "tool_calls": tool_calls_payload}
+        assistant_entry = _assistant_history_message(msg, tool_calls=enhanced_tool_calls)
+        provider_assistant_tool_message = _assistant_history_message(msg, tool_calls=tool_calls_payload)
 
         parsed_calls: List[Any] = []
         for tc in msg.tool_calls:

@@ -125,6 +125,8 @@ def legacy_message_view(provider_message: ProviderMessage) -> SimpleNamespace:
         raw_message=provider_message.raw_message,
         finish_reason=provider_message.finish_reason,
         index=provider_message.index,
+        reasoning=provider_message.reasoning,
+        annotations=dict(provider_message.annotations),
     )
 
 

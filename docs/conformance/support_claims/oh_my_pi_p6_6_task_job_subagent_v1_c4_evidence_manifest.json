@@ -88,14 +88,14 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:4e36824a552be2442a4995c6731d01b82d05acd369423fb5d583ae2f332b2725"
+      "sha256": "sha256:0ea7a122ae37ea35ef3c575dfa23418fe45a75b29f063bebce105098a0a24716"
     },
     {
-      "bytes": 225537,
+      "bytes": 241946,
       "exists": true,
       "path": "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:b60182dc5a4eaf6221dad2cff690365ec0c89ae5884d3267ce099f873d9a93b1"
+      "sha256": "sha256:d7c709776a7bb8e2629e6816f6e7121d760db5b8a2c181c14e874a376b2f4bfd"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json",

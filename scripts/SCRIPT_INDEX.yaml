@@ -22,7 +22,7 @@ entries:
   - path: scripts/_cross_system_eval_v1.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/_inventory/python_scripts_inventory_20260401.csv
     class: live-owned
@@ -337,17 +337,17 @@ entries:
   - path: scripts/build_darwin_stage4_bounded_transfer_outcomes_v0.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_canonical_artifact_index_v0.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_comparative_bundle_v0.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_deep_live_reports_v0.py
     class: live-wired
@@ -357,37 +357,37 @@ entries:
   - path: scripts/build_darwin_stage4_failed_transfer_taxonomy_v0.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_family_candidates_v0.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_family_memo_v0.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_family_promotion_report_v0.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_family_registry_v0.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_family_scorecard_v0.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_family_verification_bundle_v0.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_live_readiness_v0.py
     class: live-wired
@@ -407,7 +407,7 @@ entries:
   - path: scripts/build_darwin_stage4_second_family_decision_v0.py
     class: campaign
     owner: kmccleary3301
-    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_systems_ev_bundle_v0.py
     class: live-wired
@@ -629,6 +629,16 @@ entries:
     owner: kmccleary3301
     callers: [docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
     expiry: none (durable tooling)
+  - path: scripts/check_approval_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_conformance_matrix_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
   - path: scripts/check_contract_tiers.py
     class: live-wired
     owner: kmccleary3301
@@ -644,6 +654,11 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, tests/test_check_deleted_path_references.py]
     expiry: none (durable tooling)
+  - path: scripts/check_docs_sample_ladder_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
   - path: scripts/check_e4_snapshot_coverage.py
     class: live-wired
     owner: kmccleary3301
@@ -659,6 +674,16 @@ entries:
     owner: kmccleary3301
     callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
+  - path: scripts/check_extension_audit_stream_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_extension_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
   - path: scripts/check_gap_closure_consistency.py
     class: live-wired
     owner: kmccleary3301
@@ -679,6 +704,11 @@ entries:
     owner: kmccleary3301
     callers: [.github/workflows/longrun-phase1-gate.yml, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, tests/test_check_longrun_run_summary_parity_audit.py]
     expiry: none (durable tooling)
+  - path: scripts/check_longrun_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
   - path: scripts/check_phase20_freeze.py
     class: live-wired
     owner: kmccleary3301
@@ -714,6 +744,41 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, tests/test_check_phase5_reliability_flake_budget.py]
     expiry: none (durable tooling)
+  - path: scripts/check_plan_envelope_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_plugin_discovery_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_projection_overlay_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_projection_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_projection_surface_parity_bundle.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_protocol_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_provider_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
   - path: scripts/check_render_profile_freeze.py
     class: live-wired
     owner: kmccleary3301
@@ -724,6 +789,41 @@ entries:
     owner: kmccleary3301
     callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
+  - path: scripts/check_replay_placeholder_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_rollback_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_session_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_surface_manifest_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_sync_mapping_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_tool_policy_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/check_tool_transition_semantics.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
   - path: scripts/check_zero_importer_advisory.py
     class: live-wired
     owner: kmccleary3301
@@ -779,6 +879,11 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, tests/test_convert_hilbert_results_to_cross_system_v2.py]
     expiry: none (durable tooling)
+  - path: scripts/ct_semantic_helpers.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
   - path: scripts/curate_phase4_fullpane_visual_pack.py
     class: live-wired
     owner: kmccleary3301
@@ -1914,6 +2019,11 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, tests/compilation/test_kernel_emitter.py]
     expiry: none (durable tooling)
+  - path: scripts/safe_delete.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
   - path: scripts/sanitize_provider_logs.py
     class: live-wired
     owner: kmccleary3301
@@ -1929,6 +2039,11 @@ entries:
     owner: kmccleary3301
     callers: [.github/workflows/tmux-phase4-tier3-nightly.yml, scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
+  - path: scripts/subagents_ex2_tail_index_capture.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
   - path: scripts/sync_conformance_matrix_status.py
     class: live-wired
     owner: kmccleary3301
@@ -1949,6 +2064,11 @@ entries:
     owner: kmccleary3301
     callers: [.github/workflows/render-profile-freeze-gate.yml, scripts/SCRIPT_INDEX.yaml, scripts/TMUX_CAPTURE_RENDER_LOCK.md, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/bless_render_profile_version.py, tests/test_tmux_capture_render_profile.py]
     expiry: none (durable tooling)
+  - path: scripts/tmux_capture_time.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
   - path: scripts/tmux_capture_to_png.py
     class: live-wired
     owner: kmccleary3301

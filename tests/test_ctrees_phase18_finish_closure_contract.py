@@ -1888,6 +1888,52 @@ def test_requested_make_clean_all_and_smoke_requires_exact_verification_terms(tm
     assert _implementation_receipts_satisfied(conductor, session_state) is True
 
 
+def test_receipt_guard_allows_tools_for_non_implementation_requests(tmp_path: Path) -> None:
+    session_state = SessionState(str(tmp_path), None, {})
+    session_state.add_message(
+        {
+            "role": "user",
+            "content": (
+                "<system-reminder>Current working directory: /tmp/workspace.</system-reminder>\n"
+                "Use run_shell exactly once to read tool-proof.txt.\n\n"
+                "# TOOL CATALOG\n"
+                "- create_file_from_block\n"
+                "- run_shell\n\n"
+                "<WORKSPACE_TOOL_REQUIRED>Use a workspace tool.</WORKSPACE_TOOL_REQUIRED>"
+            ),
+        },
+        to_provider=True,
+    )
+    conductor = SimpleNamespace(
+        config={
+            "workloop_guards": {
+                "implementation_write_receipts": {
+                    "enabled": True,
+                    "auto_verify_make_after_write_receipts": True,
+                }
+            }
+        },
+    )
+    parsed_calls = [
+        SimpleNamespace(
+            function="run_shell",
+            arguments={"command": "cat tool-proof.txt"},
+        )
+    ]
+    markdown_logger = SimpleNamespace(log_user_message=lambda *_args, **_kwargs: None)
+
+    closed = _maybe_block_read_only_implementation_loop(
+        conductor,
+        session_state,
+        markdown_logger,
+        parsed_calls,
+        False,
+    )
+
+    assert closed is False
+    assert not session_state.completion_summary
+
+
 def test_post_receipt_extra_write_tool_forces_final_answer(tmp_path: Path) -> None:
     session_state = SessionState(str(tmp_path), None, {})
     session_state.add_message(

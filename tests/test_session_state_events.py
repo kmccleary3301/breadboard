@@ -453,6 +453,24 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
     assert contract["visibility"] == "transcript"
 
+    tool_delta_translated = runner._translate_runtime_event(
+        "assistant.tool_call.delta",
+        {
+            "index": 0,
+            "call_id": "call-1",
+            "tool": "read",
+            "arguments_delta": '{"path":',
+        },
+        turn=3,
+    )
+    assert tool_delta_translated is not None
+    evt_type, payload, turn, contract = tool_delta_translated
+    assert evt_type is EventType.ASSISTANT_TOOL_CALL_DELTA
+    assert payload["arguments_delta"] == '{"path":'
+    assert turn == 3
+    assert contract["classification"] == "bridge_stream"
+    assert contract["visibility"] == "tool"
+
     assert runner._translate_runtime_event("unknown", {}, turn=None) is None
 
     tool_call_translated = runner._translate_runtime_event(

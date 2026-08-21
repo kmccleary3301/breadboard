@@ -174,6 +174,15 @@ class ProviderInvoker:
             except Exception:
                 pass
 
+        def _can_fallback(exc: ProviderRuntimeError) -> bool:
+            return exc.kind not in {"adapter", "configuration"} and exc.replay_safe
+
+        def _record_route_failure(exc: ProviderRuntimeError, reason: str) -> None:
+            if exc.kind in {"adapter", "configuration"}:
+                return
+            self.route_health.record_failure(model, reason)
+            self.update_health_metadata(session_state)
+
         if stream_responses:
             try:
                 result = _call_runtime(model, True)
@@ -185,8 +194,9 @@ class ProviderInvoker:
                 fallback_stream_reason = str(exc) or exc.__class__.__name__
                 last_error = exc
                 attempted_models.append((model, True, fallback_stream_reason))
-                self.route_health.record_failure(model, fallback_stream_reason)
-                self.update_health_metadata(session_state)
+                _record_route_failure(exc, fallback_stream_reason)
+                if not _can_fallback(exc):
+                    raise
 
         used_streaming = stream_responses and result is not None
 
@@ -223,10 +233,12 @@ class ProviderInvoker:
                 self.update_health_metadata(session_state)
             except ProviderRuntimeError as exc:
                 last_error = exc
-                attempted_models.append((model, False, str(exc) or exc.__class__.__name__))
+                reason = str(exc) or exc.__class__.__name__
+                attempted_models.append((model, False, reason))
                 result = None
-                self.route_health.record_failure(model, str(exc) or exc.__class__.__name__)
-                self.update_health_metadata(session_state)
+                _record_route_failure(exc, reason)
+                if not _can_fallback(exc):
+                    raise
 
         if result is None and _is_tool_turn():
             history = session_state.get_provider_metadata("streaming_disabled")

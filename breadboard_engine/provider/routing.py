@@ -15,7 +15,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
-from .capabilities import CAPABILITY_MATRIX, ProviderCapabilities
+from .capabilities import (
+    CAPABILITY_MATRIX,
+    ProviderCapabilities,
+    get_model_capability_override,
+)
 
 
 _CODEX_AUTH_PATH = Path.home() / ".codex" / "auth.json"
@@ -302,9 +306,15 @@ class ProviderRouter:
         provider, actual_model, routing_path = self.parse_model_id(model_id)
         config = self.providers.get(provider, self.providers["openai"])
         
-        # Special logic for OpenRouter: only supports native tools for OpenAI models
+        # OpenRouter is conservative by default; exact model overrides document verified behavior.
         supports_native = config.supports_native_tools
-        if provider == "openrouter" and routing_path == "routed":
+        model_override = get_model_capability_override(provider, actual_model)
+        if (
+            model_override is not None
+            and model_override.supports_native_tools is not None
+        ):
+            supports_native = model_override.supports_native_tools
+        elif provider == "openrouter" and routing_path == "routed":
             # Check if this is an OpenAI model through OpenRouter
             supports_native = actual_model.startswith("openai/")
 
@@ -315,8 +325,16 @@ class ProviderRouter:
 
         config, actual_model, supports_native = self.get_provider_config(model_id)
         descriptor = config.to_descriptor(supports_native_override=supports_native)
+        model_override = get_model_capability_override(
+            descriptor.provider_id, actual_model
+        )
+        if model_override is not None:
+            if model_override.runtime_id is not None:
+                descriptor.runtime_id = model_override.runtime_id
+            if model_override.api_variant is not None:
+                descriptor.default_api_variant = model_override.api_variant
         # OpenRouter's GPT-5 OpenAI models are commonly served via a Responses-style backend.
-        if (
+        elif (
             descriptor.provider_id == "openrouter"
             and isinstance(actual_model, str)
             and actual_model.startswith("openai/gpt-5")
@@ -353,7 +371,10 @@ class ProviderRouter:
         return supports_native
 
     def get_capabilities(self, model_id: str) -> ProviderCapabilities:
-        provider, _, _ = self.parse_model_id(model_id)
+        provider, actual_model, _ = self.parse_model_id(model_id)
+        model_override = get_model_capability_override(provider, actual_model)
+        if model_override is not None and model_override.capabilities is not None:
+            return model_override.capabilities
         return CAPABILITY_MATRIX.get(provider, CAPABILITY_MATRIX["openai"])
 
     def _find_codex_token(self, value: Any, seen: Optional[set[int]] = None) -> Optional[str]:

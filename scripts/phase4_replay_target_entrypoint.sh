@@ -132,6 +132,12 @@ if [[ -n "$landing_always" ]]; then
   export BREADBOARD_TUI_LANDING_ALWAYS="$landing_always"
 fi
 
+# The phase4 replay TUI speaks the legacy session contract (config_path/task
+# session start). Product API defaults enable the public surface whose
+# lock-based SessionStartRequest rejects that payload with 422; pin the legacy
+# routes for replay targets exactly like the engine conformance tests do.
+export BREADBOARD_LEGACY_ROUTES=1
+
 # Fail fast if requested port is already occupied. Without this guard, a stale
 # local cli_bridge process can satisfy health checks and mask a failed launch.
 if command -v ss >/dev/null 2>&1; then

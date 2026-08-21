@@ -584,6 +584,8 @@ def _maybe_block_read_only_implementation_loop(
     guard_cfg = _implementation_write_guard_config(conductor)
     if not bool(guard_cfg.get("enabled", False)):
         return False
+    if not _latest_prompt_requires_implementation_write(session_state):
+        return False
     summary = getattr(session_state, "tool_usage_summary", {}) or {}
     receipts_satisfied = _implementation_receipts_satisfied(conductor, session_state)
     if receipts_satisfied:

@@ -224,6 +224,20 @@ export interface PermissionRequestedPayload {
   readonly rewindable: boolean
 }
 
+export interface AssistantToolCallStartedPayload {
+  readonly index: number
+  readonly callId: ToolCallId
+  readonly tool: string | null
+}
+
+export interface AssistantToolCallDeltaPayload extends AssistantToolCallStartedPayload {
+  readonly argumentsDelta: string
+}
+
+export interface AssistantToolCallCompletedPayload extends AssistantToolCallStartedPayload {
+  readonly arguments: string
+}
+
 export interface PermissionRespondedPayload {
   readonly requestId: PermissionRequestId
   readonly decision: string
@@ -246,6 +260,9 @@ export type ConversationCompactionCompletedEvent = TurnOwnedLoggedEvent<"convers
 export type AssistantMessageStartedEvent = TurnOwnedLoggedEvent<"assistant_message_started", AssistantMessageStartedPayload>
 export type AssistantReasoningDeltaEvent = TurnOwnedLoggedEvent<"assistant_reasoning_delta", { readonly text: string }>
 export type AssistantThoughtSummaryDeltaEvent = TurnOwnedLoggedEvent<"assistant_thought_summary_delta", { readonly text: string }>
+export type AssistantToolCallStartedEvent = TurnOwnedLoggedEvent<"assistant_tool_call_started", AssistantToolCallStartedPayload>
+export type AssistantToolCallDeltaEvent = TurnOwnedLoggedEvent<"assistant_tool_call_delta", AssistantToolCallDeltaPayload>
+export type AssistantToolCallCompletedEvent = TurnOwnedLoggedEvent<"assistant_tool_call_completed", AssistantToolCallCompletedPayload>
 export type ToolExecutionStartedEvent = TurnOwnedLoggedEvent<"tool_execution_started", CanonicalJsonObject>
 export type ToolExecutionStdoutDeltaEvent = TurnOwnedLoggedEvent<"tool_execution_stdout_delta", CanonicalJsonObject>
 export type ToolExecutionStderrDeltaEvent = TurnOwnedLoggedEvent<"tool_execution_stderr_delta", CanonicalJsonObject>
@@ -285,6 +302,9 @@ export type LoggedSessionEvent =
   | AssistantMessageStartedEvent
   | AssistantReasoningDeltaEvent
   | AssistantThoughtSummaryDeltaEvent
+  | AssistantToolCallStartedEvent
+  | AssistantToolCallDeltaEvent
+  | AssistantToolCallCompletedEvent
   | ToolExecutionStartedEvent
   | ToolExecutionStdoutDeltaEvent
   | ToolExecutionStderrDeltaEvent
@@ -621,7 +641,7 @@ const parseTextPayload = (payload: unknown, field: string): { readonly text: str
 const parseOptionalTextPayload = (payload: unknown, field: string): { readonly text: string | null } => {
   if (!isRawObject(payload)) throw new CanonicalE4ClientError({ kind: "protocol", code: `invalid_${field}_payload` })
   const text = payloadText(payload)
-  return { text: text === undefined ? null : requiredString(text, `${field}_text`) }
+  return { text: typeof text === "string" ? text : null }
 }
 
 const parseCancellationReason = (payload: unknown): { readonly reason: CancellationReason } => {
@@ -707,6 +727,33 @@ const parseToolCalled = (payload: unknown): ToolCalledPayload => {
       : toJsonValue(own(payload, "progress"), new Set()),
   }
 }
+
+const parseAssistantToolCallStarted = (payload: unknown): AssistantToolCallStartedPayload => {
+  if (!isRawObject(payload)) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_assistant_tool_call_started_payload" })
+  }
+  return {
+    index: requiredInteger(own(payload, "index"), "assistant_tool_call_index", 0),
+    callId: requiredString(own(payload, "call_id"), "assistant_tool_call_id") as ToolCallId,
+    tool: optionalPayloadString(payload, "tool", "assistant_tool_call_tool"),
+  }
+}
+
+const parseAssistantToolCallDelta = (payload: unknown): AssistantToolCallDeltaPayload => ({
+  ...parseAssistantToolCallStarted(payload),
+  argumentsDelta: requiredString(
+    isRawObject(payload) ? own(payload, "arguments_delta") : undefined,
+    "assistant_tool_call_arguments_delta",
+  ),
+})
+
+const parseAssistantToolCallCompleted = (payload: unknown): AssistantToolCallCompletedPayload => ({
+  ...parseAssistantToolCallStarted(payload),
+  arguments: requiredString(
+    isRawObject(payload) ? own(payload, "arguments") : undefined,
+    "assistant_tool_call_arguments",
+  ),
+})
 
 const parseToolResultObserved = (payload: unknown): ToolResultObservedPayload => {
   if (!isRawObject(payload)) {
@@ -835,6 +882,9 @@ export const decodeLoggedSessionEvent = (value: unknown): LoggedSessionEvent => 
         : { ...turnBase(), kind: "assistant_text_completed", payload: parseOptionalTextPayload(payload, "assistant_text_completed") }
     case "assistant.reasoning.delta": return { ...turnBase(), kind: "assistant_reasoning_delta", payload: parseTextPayload(payload, "assistant_reasoning_delta") }
     case "assistant.thought_summary.delta": return { ...turnBase(), kind: "assistant_thought_summary_delta", payload: parseTextPayload(payload, "assistant_thought_summary_delta") }
+    case "assistant.tool_call.start": return { ...turnBase(), kind: "assistant_tool_call_started", payload: parseAssistantToolCallStarted(payload) }
+    case "assistant.tool_call.delta": return { ...turnBase(), kind: "assistant_tool_call_delta", payload: parseAssistantToolCallDelta(payload) }
+    case "assistant.tool_call.end": return { ...turnBase(), kind: "assistant_tool_call_completed", payload: parseAssistantToolCallCompleted(payload) }
     case "tool.exec.start": return { ...turnBase(), kind: "tool_execution_started", payload: jsonPayload("tool_execution_started") }
     case "tool.exec.stdout.delta": return { ...turnBase(), kind: "tool_execution_stdout_delta", payload: jsonPayload("tool_execution_stdout_delta") }
     case "tool.exec.stderr.delta": return { ...turnBase(), kind: "tool_execution_stderr_delta", payload: jsonPayload("tool_execution_stderr_delta") }

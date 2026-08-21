@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from .routing import ProviderDescriptor
 
@@ -57,12 +57,31 @@ class ProviderRuntimeContext:
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
-class ProviderRuntimeError(RuntimeError):
-    """Raised when a provider runtime encounters a fatal error."""
+ProviderErrorKind = Literal[
+    "adapter", "provider", "transport", "protocol", "configuration"
+]
 
-    def __init__(self, message: str, *, details: Optional[Dict[str, Any]] = None) -> None:
+
+class ProviderRuntimeError(RuntimeError):
+    """Raised when a provider runtime encounters a classified fatal error."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: Optional[Dict[str, Any]] = None,
+        kind: ProviderErrorKind = "provider",
+        output_emitted: bool = False,
+    ) -> None:
         super().__init__(message)
         self.details: Dict[str, Any] = details or {}
+        self.kind: ProviderErrorKind = kind
+        self.output_emitted = output_emitted
+
+    @property
+    def replay_safe(self) -> bool:
+        """Whether a non-streaming retry cannot duplicate visible streamed output."""
+        return not self.output_emitted
 
 
 class ProviderRuntime:

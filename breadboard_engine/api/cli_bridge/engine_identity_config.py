@@ -45,7 +45,7 @@ P30_SESSION_CONTRACT_ID = "p30-e4-session-v1"
 P30_SESSION_CONTRACT_SCHEMA_VERSION = "bb.p30.e4_session.v1"
 # This value is intentionally fixed. A landed session-schema change makes readiness
 # false until the contract change is explicitly reviewed and this digest is updated.
-P30_SESSION_SCHEMA_SHA256 = "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+P30_SESSION_SCHEMA_SHA256 = "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"
 P30_SESSION_REPLAY_CONTRACT_DIGEST = (
     "sha256:a107aea87bdc7075d68495d3c0bf2b68e85e38a2b2fef1000bf3f1eaee77f743"
 )

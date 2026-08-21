@@ -277,12 +277,17 @@ def _required_final_answer_reminder(session_state: SessionState) -> str:
     return marker_clause + terms_clause
 
 def _strip_internal_prompt_blocks(text: str) -> str:
-    return re.sub(
-        r"<(?:VALIDATION_ERROR|WORKSPACE_TOOL_REQUIRED|WORKSPACE_RECEIPT_REQUIRED|BREADBOARD_INTERNAL)>.*?</(?:VALIDATION_ERROR|WORKSPACE_TOOL_REQUIRED|WORKSPACE_RECEIPT_REQUIRED|BREADBOARD_INTERNAL)>",
+    sanitized = re.sub(
+        r"<(?:VALIDATION_ERROR|WORKSPACE_TOOL_REQUIRED|WORKSPACE_RECEIPT_REQUIRED|BREADBOARD_INTERNAL|system-reminder)>.*?</(?:VALIDATION_ERROR|WORKSPACE_TOOL_REQUIRED|WORKSPACE_RECEIPT_REQUIRED|BREADBOARD_INTERNAL|system-reminder)>",
         "",
         str(text or ""),
         flags=re.IGNORECASE | re.DOTALL,
-    ).strip()
+    )
+    return re.split(
+        r"(?im)^\s*# TOOL CATALOG\s*$",
+        sanitized,
+        maxsplit=1,
+    )[0].strip()
 
 def _implementation_write_guard_config(conductor: ConductorContext) -> Dict[str, Any]:
     cfg = conductor.config if isinstance(getattr(conductor, "config", None), dict) else {}

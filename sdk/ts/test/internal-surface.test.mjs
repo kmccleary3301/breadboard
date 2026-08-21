@@ -29,3 +29,51 @@ test("internal event decoder accepts session-scoped compaction tree nodes", asyn
   assert.equal(event.inputId, null)
   assert.equal(event.turnId, null)
 })
+
+
+test("internal event decoder preserves incremental assistant tool calls", async () => {
+  const internal = await import("../dist/internal.js")
+  const envelope = (seq, type, payload) => ({
+    stable_cursor: true,
+    id: `event-${seq}`,
+    seq,
+    session_id: "session-1",
+    input_id: "input-1",
+    turn_id: "turn-1",
+    timestamp_ms: seq,
+    type,
+    payload,
+  })
+
+  const started = internal.decodeLoggedSessionEvent(
+    envelope(1, "assistant.tool_call.start", { index: 0, call_id: "call-1", tool: "read" }),
+  )
+  const delta = internal.decodeLoggedSessionEvent(
+    envelope(2, "assistant.tool_call.delta", {
+      index: 0,
+      call_id: "call-1",
+      tool: "read",
+      arguments_delta: '{"path":',
+    }),
+  )
+  const completed = internal.decodeLoggedSessionEvent(
+    envelope(3, "assistant.tool_call.end", {
+      index: 0,
+      call_id: "call-1",
+      tool: "read",
+      arguments: '{"path":"README.md"}',
+    }),
+  )
+  const emptyTextCompleted = internal.decodeLoggedSessionEvent(
+    envelope(4, "assistant.message.end", { message_id: "message-1", text: "" }),
+  )
+
+  assert.deepEqual(
+    [started.kind, delta.kind, completed.kind],
+    ["assistant_tool_call_started", "assistant_tool_call_delta", "assistant_tool_call_completed"],
+  )
+  assert.equal(delta.payload.argumentsDelta, '{"path":')
+  assert.equal(completed.payload.arguments, '{"path":"README.md"}')
+  assert.equal(emptyTextCompleted.kind, "assistant_text_completed")
+  assert.equal(emptyTextCompleted.payload.text, "")
+})

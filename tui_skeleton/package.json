@@ -157,7 +157,7 @@
   },
   "dependencies": {
     "@breadboard/kernel-contracts": "file:../sdk/ts-kernel-contracts",
-    "@breadboard/sdk": "file:../sdk/ts",
+    "@breadboard/sdk": "file:./vendor/breadboard-sdk-0.3.0.tgz",
     "@effect/cli": "^0.69.0",
     "@effect/cluster": "^0.47.0",
     "@effect/platform": "^0.90.2",
