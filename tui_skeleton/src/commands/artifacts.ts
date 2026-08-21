@@ -14,6 +14,24 @@ const artifactOption = Options.text("artifact").pipe(Options.withDefault("conver
 const outOption = Options.text("out").pipe(Options.optional)
 
 const outputOption = Options.text("output").pipe(Options.withDefault("table"))
+export function renderArtifactListTable(artifacts: readonly unknown[]): string {
+  if (artifacts.length === 0) return "(empty)"
+  return renderSimpleTable(
+    ["Name", "Digest", "Size", "Media Type"],
+    artifacts.map((artifact) => {
+      const item = typeof artifact === "object" && artifact !== null
+        ? artifact as Record<string, unknown>
+        : {}
+      return [
+        String(item.name ?? "-"),
+        String(item.digest ?? "-"),
+        String(item.size_bytes ?? "-"),
+        String(item.media_type ?? "-"),
+      ]
+    }),
+  )
+}
+
 
 const listCommand = Command.make("list", { session: sessionArg, output: outputOption }, ({ session, output }) =>
   Effect.tryPromise(async () => {
@@ -24,15 +42,7 @@ const listCommand = Command.make("list", { session: sessionArg, output: outputOp
         throw new Error("Session artifact response is missing data.artifacts")
       }
       const mode = normalizeTableJsonOutputMode(output)
-      const text = artifacts.length === 0
-        ? "(empty)"
-        : renderSimpleTable(
-            ["Name", "Digest", "Size", "Media Type"],
-            artifacts.map((artifact) => {
-              const item = artifact as Record<string, unknown>
-              return [String(item.name ?? "-"), String(item.digest ?? "-"), String(item.size ?? "-"), String(item.media_type ?? "-")]
-            }),
-          )
+      const text = renderArtifactListTable(artifacts)
       await printCommandPresentation({ mode, jsonValue: artifacts, text })
     } catch (error) {
       await reportApiCommandError("list artifacts", error)
