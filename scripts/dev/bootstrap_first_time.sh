@@ -457,14 +457,9 @@ if [[ "${SKIP_PYTHON}" == "0" ]]; then
     echo "     node scripts/dev/ts_sdk_hello.mjs"
   fi
 fi
-if [[ "${SKIP_NODE}" == "0" ]]; then
-  if [[ "${HAS_TUI_SOURCE}" == "1" ]]; then
-    echo "  4) Run UI:"
-    echo "     breadboard ui --config agent_configs/misc/opencode_mock_c_fs.yaml"
-  else
-    echo "  4) TUI source not present in this checkout; engine/sdk setup completed."
-  fi
-else
-  echo "  4) TUI setup was skipped (--profile engine or --skip-node)."
-  echo "     If needed later: bash scripts/dev/bootstrap_first_time.sh --profile tui"
+echo "  4) Run the canonical product TUI from its standalone repository:"
+echo "     bb"
+echo "     Source: https://github.com/kmccleary3301/breadboard-tui"
+if [[ "${SKIP_NODE}" == "0" && "${HAS_TUI_SOURCE}" == "1" ]]; then
+  echo "     The in-repo tui_skeleton build is a legacy contract harness only."
 fi
