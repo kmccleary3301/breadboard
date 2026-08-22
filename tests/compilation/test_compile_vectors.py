@@ -519,6 +519,8 @@ def test_shared_fixture_bytes_are_identical_to_wrapper_mirror() -> None:
         / "config_compiler"
         / "v1"
     )
+    if not wrapper_root.is_dir():
+        pytest.skip("verl wrapper mirror is not provisioned in this checkout")
     authoritative, authoritative_index = _fixture_tree_digest(FIXTURE_ROOT)
     mirrored, mirrored_index = _fixture_tree_digest(wrapper_root)
 
