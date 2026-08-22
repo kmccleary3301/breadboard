@@ -1,15 +1,11 @@
 {
-  "name": "breadboard-tui-skeleton",
+  "name": "breadboard-tui-contract-harness",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": {
-    "breadboard": "dist/main.js"
-  },
   "scripts": {
     "dev": "tsx src/main.ts",
     "build": "tsc -p tsconfig.json && tsx scripts/copyAsciiHeader.ts",
-    "postbuild": "tsx scripts/installLocalBin.ts",
     "start": "node dist/main.js",
     "preflight:integrity": "node --import tsx scripts/preflight_integrity_check.ts",
     "preflight:snapshot": "node --import tsx scripts/preflight_integrity_check.ts --snapshot",

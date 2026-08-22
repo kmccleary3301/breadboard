@@ -6,7 +6,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -112,7 +111,7 @@ def _build_payload(include_advanced: bool) -> dict:
         actions.append(
             {
                 "step": "cli_fix",
-                "command": "bash scripts/dev/repair_cli_wrapper.sh",
+                "command": "make repair-cli",
             }
         )
 

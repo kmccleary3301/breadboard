@@ -188,6 +188,8 @@ install_python_deps() {
 
   local req_hash
   req_hash="$(sha256_file "${ROOT_DIR}/requirements.txt")"
+  local project_hash
+  project_hash="$(sha256_file "${ROOT_DIR}/pyproject.toml")"
   local py_version
   py_version="$("${vpy}" - <<'PY'
 import sys
@@ -199,13 +201,13 @@ PY
     resolver="uv"
   fi
   local expected
-  expected="requirements=${req_hash}|python=${py_version}|resolver=${resolver}"
+  expected="requirements=${req_hash}|project=${project_hash}|python=${py_version}|resolver=${resolver}"
 
   if [[ "${REFRESH_PYTHON_DEPS}" == "0" && -f "${marker}" ]]; then
     local current
     current="$(cat "${marker}")"
     if [[ "${current}" == "${expected}" ]]; then
-      echo "[bootstrap] python deps skipped (requirements+python+resolver unchanged)"
+      echo "[bootstrap] python deps skipped (requirements+project+python+resolver unchanged)"
       return
     fi
   fi
@@ -217,6 +219,11 @@ PY
     echo "[bootstrap] installing python deps via pip"
     "${vpy}" -m pip install --upgrade pip
     "${vpy}" -m pip install -r "${ROOT_DIR}/requirements.txt"
+  fi
+  if [[ "${resolver}" == "uv" ]]; then
+    uv pip install --python "${vpy}" --no-deps -e "${ROOT_DIR}"
+  else
+    "${vpy}" -m pip install --no-deps -e "${ROOT_DIR}"
   fi
   printf '%s' "${expected}" >"${marker}"
 }
@@ -355,7 +362,6 @@ install_node_deps_and_build() {
       "${ROOT_DIR}/tui_skeleton/dist/main.js" \
       "${ROOT_DIR}/tui_skeleton/src" \
       "${ROOT_DIR}/tui_skeleton/scripts/copyAsciiHeader.ts" \
-      "${ROOT_DIR}/tui_skeleton/scripts/installLocalBin.ts" \
       "${ROOT_DIR}/tui_skeleton/package.json" \
       "${ROOT_DIR}/tui_skeleton/package-lock.json" \
       "${ROOT_DIR}/tui_skeleton/tsconfig.json"
@@ -434,15 +440,15 @@ else
   echo "  1) Python setup was skipped (--profile tui or --skip-python)."
   echo "     If needed later: bash scripts/dev/bootstrap_first_time.sh --profile engine"
 fi
-if breadboard_cli_usable; then
+if [[ "${SKIP_PYTHON}" == "0" && -x "${VENV_DIR}/bin/breadboard" ]]; then
+  echo "  2) Verify the Python-owned CLI:"
+  echo "     ${VENV_DIR}/bin/breadboard --json system health"
+elif breadboard_cli_usable; then
   echo "  2) Verify CLI:"
-  echo "     breadboard doctor --config agent_configs/misc/opencode_mock_c_fs.yaml"
+  echo "     breadboard --json system health"
 else
-  echo "  2) CLI wrapper is unavailable in the current state."
-  echo "     Use quickstart helper: python scripts/dev/quickstart_first_time.py --include-advanced"
-  if [[ "${HAS_TUI_SOURCE}" == "1" ]]; then
-    echo "     Then rebuild wrapper: bash scripts/dev/repair_cli_wrapper.sh"
-  fi
+  echo "  2) The Python-owned breadboard CLI is not installed."
+  echo "     Run: make repair-cli"
 fi
 if [[ "${SKIP_PYTHON}" == "0" ]]; then
   echo "  3) Run SDK hello smokes (engine must be running):"

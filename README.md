@@ -63,7 +63,7 @@ This repository is for engineers and researchers who care about:
 | Python SDK | Programmatic access to the engine from Python | 🟢 |
 | TypeScript SDK | CLI-bridge TypeScript client package | 🟢 |
 | TypeScript packages | SDK, transport, and runtime-boundary packages | 🟡 |
-| TUI | Main terminal UX in [`tui_skeleton/`](tui_skeleton/) | 🟢 |
+| Primary TUI | [`kmccleary3301/breadboard-tui`](https://github.com/kmccleary3301/breadboard-tui) | 🟢 |
 | OpenTUI slab | Fixed-height slab client in [`opentui_slab/`](opentui_slab/) | 🟡 |
 | VSCode sidebar | Early client surface in [`vscode_sidebar/`](vscode_sidebar/) | 🟡 |
 | Harness execution | Author, validate, lock, and run reproducible harnesses | 🟢 |
@@ -181,7 +181,7 @@ The stable top-level zone model is documented in
 ├── tests/                         Python-side validation and conformance tests
 ├── tool_calling/                  tool-dialect work and examples
 ├── tools/                         supporting tooling (for example instrumented harness refs)
-├── tui_skeleton/                  main terminal client
+├── tui_skeleton/                  legacy TUI contract/golden harness (not distributed)
 └── vscode_sidebar/                VSCode sidebar surface
 ```
 
@@ -480,7 +480,8 @@ If you are evaluating the TypeScript packages, this table is the starting point.
 
 | Client | Path | Notes |
 |---|---|---|
-| Main terminal client | [`tui_skeleton/`](tui_skeleton/) | primary TUI surface |
+| Primary terminal client | [`kmccleary3301/breadboard-tui`](https://github.com/kmccleary3301/breadboard-tui) | canonical end-user TUI and `bb` binary |
+| Legacy TUI contract harness | [`tui_skeleton/`](tui_skeleton/) | retained for contract, replay, and golden validation; not distributed |
 | OpenTUI slab | [`opentui_slab/`](opentui_slab/) | fixed-height slab experiments |
 | VSCode sidebar | [`vscode_sidebar/`](vscode_sidebar/) | extension/client surface |
 | Python host scripts | [`breadboard_sdk/`](breadboard_sdk/) | Python API consumption |

@@ -139,34 +139,29 @@ breadboard --json system describe
 
 ---
 
-## Building the CLI/TUI
+## Primary TUI
+
+The canonical end-user TUI and `bb` binary are maintained in
+[`kmccleary3301/breadboard-tui`](https://github.com/kmccleary3301/breadboard-tui).
+That repository consumes the packed `@breadboard/sdk` contract and owns TUI
+builds, upstream OMP convergence, and distribution.
+
+## Legacy contract harness
+
+The in-repo `tui_skeleton` client remains available for engine contract,
+projection, replay, and golden validation:
 
 ```bash
 npm -C tui_skeleton ci
+npm -C tui_skeleton run typecheck
+npm -C tui_skeleton test
 npm -C tui_skeleton run build
-# or
-make repair-cli
 ```
 
-### Local `breadboard` wrapper
+It does not install or own the `bb` or `breadboard` commands. Run it directly
+with `npm -C tui_skeleton start -- --help` only when validating its retained
+contract surface.
 
-The `tui_skeleton` build runs a `postbuild` step that installs a small wrapper named `breadboard` (and `bb`) into a local bin directory.
-
-Defaults:
-
-- Linux/macOS: `~/.local/bin/breadboard`
-- Windows: `~/.breadboard/bin/breadboard.cmd` and `breadboard.ps1`
-
-Overrides:
-
-- `BREADBOARD_BIN_DIR=/some/path` — custom install path (relative paths resolve from `tui_skeleton/`)
-- `BREADBOARD_SKIP_LOCAL_BIN_INSTALL=1` — skip wrapper installation (recommended for CI)
-
-If you rebuilt and still see old CLI behavior:
-
-```bash
-hash -r
-```
 
 ---
 
@@ -343,14 +338,13 @@ Common options:
 
 ---
 
-## CLI wrapper repair
+## Engine CLI repair
 
-If the `breadboard` command is broken or missing:
+The `breadboard` command is owned by the Python package, not the legacy TUI
+contract harness. Reinstall its editable entrypoint in `.venv` with:
 
 ```bash
 make repair-cli
-# or
-bash scripts/dev/repair_cli_wrapper.sh
+source .venv/bin/activate
+breadboard --help
 ```
-
-Then ensure `~/.local/bin` is on `PATH` and run `hash -r`.

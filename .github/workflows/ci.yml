@@ -1487,8 +1487,8 @@ jobs:
           ATP_SNAPSHOT_POOL_MIN_HEALTHY: ${{ vars.ATP_SNAPSHOT_POOL_MIN_HEALTHY || '1' }}
         run: bash scripts/atp_firecracker_ci.sh
 
-  tui:
-    name: TUI (${{ matrix.os }})
+  tui_contract_harness:
+    name: Legacy TUI contract harness (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
