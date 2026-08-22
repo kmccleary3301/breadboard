@@ -13,6 +13,7 @@ export interface CachedSessionEntry {
   readonly lastActivityAt: string
   readonly status: string
   readonly model?: string
+  readonly mode?: string
   readonly loggingDir?: string | null
   readonly metadata?: Record<string, unknown> | null
   readonly draft?: DraftState | null
@@ -96,8 +97,7 @@ export const rememberSession = async (
     status: summary.status,
     model: options.model ?? (summary.metadata?.model as string | undefined) ?? previous?.model,
     loggingDir: summary.logging_dir ?? previous?.loggingDir ?? null,
-    metadata: normalizeMetadata(summary.metadata ?? previous?.metadata ?? null),
-    draft: previous?.draft ?? null,
+    mode: summary.mode ?? previous?.mode,
   }
   cache.sessions[entry.sessionId] = entry
   cache.recent = [entry.sessionId, ...cache.recent.filter((id) => id !== entry.sessionId)].slice(0, MAX_RECENT)
