@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { ReplSessionController } from "../controller.js"
-import { rememberSession } from "../../../cache/sessionCache.js"
+import { loadSessionCache, rememberSession } from "../../../cache/sessionCache.js"
 
 const previousCacheEnv = process.env.BREADBOARD_SESSION_CACHE
 
@@ -55,6 +55,26 @@ describe("recent session re-entry helpers", () => {
       "backend-session:backend",
       "cached-session:cache",
     ])
+
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it("preserves metadata across sparse session refreshes", async () => {
+    const dir = await withTempSessionCache()
+    await rememberSession({
+      session_id: "sparse-session",
+      status: "running",
+      metadata: { model: "cached-model", name: "Cached session" },
+    })
+    await rememberSession({
+      session_id: "sparse-session",
+      status: "paused",
+    })
+
+    expect((await loadSessionCache()).sessions["sparse-session"]?.metadata).toEqual({
+      model: "cached-model",
+      name: "Cached session",
+    })
 
     await rm(dir, { recursive: true, force: true })
   })
