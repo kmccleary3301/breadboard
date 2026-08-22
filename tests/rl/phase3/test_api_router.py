@@ -69,6 +69,7 @@ def test_cli_bridge_default_run_store_uses_sqlite_memory_dsn(tmp_path, monkeypat
     monkeypatch.delenv("BREADBOARD_RL_RUN_STORE", raising=False)
     monkeypatch.chdir(tmp_path)
 
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     bridge = TestClient(create_app())
     response = bridge.post("/v1/rl/runs", json=payload())
 

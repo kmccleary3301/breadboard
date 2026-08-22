@@ -128,8 +128,8 @@ def _drop_legacy_routes(app: FastAPI, *, drop_versioned: bool = False) -> None:
     # Operational probes remain routable for existing launchers, but are not product-contract operations.
     hidden_operational = {"/health", "/ready", "/status"}
     legacy_exact = {"/models", "/features"}
-    legacy_prefixes = ("/sessions", "/atp", "/ext/evolake")
-    preserved_versioned = ("/v1/rl", "/v1/e4") if _env_flag("BREADBOARD_ENABLE_E4_API") else ("/v1/rl",)
+    legacy_prefixes = ("/sessions", "/atp", "/ext/evolake", "/rl")
+    preserved_versioned = ("/v1/e4",) if _env_flag("BREADBOARD_ENABLE_E4_API") else ()
 
     def _route_path(route: Any) -> str:
         path = getattr(route, "path", None)
