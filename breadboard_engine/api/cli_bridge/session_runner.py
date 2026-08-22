@@ -1236,8 +1236,10 @@ class SessionRunner:
                           if isinstance(entry, dict) and str(entry.get("request_id") or "") == request_id), None)
             if match is None: return
             remaining = [entry for index, entry in enumerate(pending) if index != match and isinstance(entry, dict)]
+            first_valid = next((index for index, entry in enumerate(pending) if isinstance(entry, dict)), None)
+            is_head = first_valid is not None and match == first_valid
             product_session = getattr(self.session, "product_session", None)
-            if match == 0 and product_session is not None and product_session.read_model.status == "awaiting_approval":
+            if is_head and product_session is not None and product_session.read_model.status == "awaiting_approval":
                 self.transition_product_session("resolve_approval", request_id, "reject")
                 head = remaining[0] if remaining else None
                 if head is not None:

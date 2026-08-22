@@ -76,15 +76,24 @@ async def test_stray_decision_for_sibling_preserves_active_head() -> None:
 @pytest.mark.asyncio
 async def test_head_discard_promotes_next_valid_sibling_past_malformed() -> None:
     runner, session = _product_runner("always"); runner._permission_queue = None
-    runner.session.metadata["pending_permissions"] = [
-        {"request_id": "permission-1", "request": {"category": "shell"}},
-        "junk",
-        {"request_id": "permission-3", "request": {"category": "shell"}},
-    ]
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-1", "category": "shell"})
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-3", "category": "shell"})
+    entries = runner.session.metadata["pending_permissions"]; assert session.read_model.pending_approval == "permission-1"
+    runner.session.metadata["pending_permissions"] = [entries[0], "junk", entries[1]]
     failure = (await asyncio.gather(runner.handle_command("respond_permission", {"request_id": "permission-1", "response": "always"}), return_exceptions=True))[0]
     assert isinstance(failure, ValueError)
     assert session.read_model.status == "awaiting_approval" and session.read_model.pending_approval == "permission-3"
     assert [entry["request_id"] for entry in runner.session.metadata["pending_permissions"]] == ["permission-3"]
+
+@pytest.mark.asyncio
+async def test_head_discard_treats_first_valid_entry_as_active() -> None:
+    runner, session = _product_runner("always"); runner._permission_queue = None
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-1", "category": "shell"})
+    runner.session.metadata["pending_permissions"] = ["junk", dict(runner.session.metadata["pending_permissions"][0])]
+    assert session.read_model.pending_approval == "permission-1"
+    failure = (await asyncio.gather(runner.handle_command("respond_permission", {"request_id": "permission-1", "response": "always"}), return_exceptions=True))[0]
+    assert isinstance(failure, ValueError)
+    assert session.read_model.status == "running" and "pending_permissions" not in runner.session.metadata
 
 def test_control_queue_unpickles_without_recursive_delegation() -> None:
     control = pickle.loads(pickle.dumps(_PauseAwareControlQueue([])))
