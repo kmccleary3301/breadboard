@@ -1235,15 +1235,18 @@ class SessionRunner:
             match = next((index for index, entry in enumerate(pending)
                           if isinstance(entry, dict) and str(entry.get("request_id") or "") == request_id), None)
             if match is None: return
-            remaining = [entry for index, entry in enumerate(pending) if index != match]
-            head = next((entry for entry in remaining if isinstance(entry, dict)), None)
+            remaining = [entry for index, entry in enumerate(pending) if index != match and isinstance(entry, dict)]
             product_session = getattr(self.session, "product_session", None)
             if match == 0 and product_session is not None and product_session.read_model.status == "awaiting_approval":
                 self.transition_product_session("resolve_approval", request_id, "reject")
-                if isinstance(head, dict):
+                head = remaining[0] if remaining else None
+                if head is not None:
                     request = head.get("request") if isinstance(head.get("request"), dict) else {}
                     operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
-                    self.transition_product_session("request_approval", str(head.get("request_id") or head.get("id") or ""), operation)
+                    try:
+                        self.transition_product_session("request_approval", str(head.get("request_id") or head.get("id") or ""), operation)
+                    except Exception:
+                        logger.warning("Failed to re-expose pending approval after discarding undeliverable request", exc_info=True)
                 self.session.metadata["session_contract"] = product_session.read_model.as_dict()
             if remaining: self.session.metadata["pending_permissions"] = remaining
             else: self.session.metadata.pop("pending_permissions", None)
