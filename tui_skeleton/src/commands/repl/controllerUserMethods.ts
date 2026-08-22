@@ -5,7 +5,7 @@ import { promises as fs } from "node:fs"
 import path from "node:path"
 import { DEFAULT_MODEL_ID } from "../../config/appConfig.js"
 import { getModelCatalog } from "../../providers/modelCatalog.js"
-import { listCachedSessions, rememberSession } from "../../cache/sessionCache.js"
+import { listCachedSessions, loadSessionCache, rememberSession } from "../../cache/sessionCache.js"
 import type {
   ModelMenuItem,
   SkillCatalog,
@@ -152,14 +152,15 @@ const mergeRecentSessions = async (backend: ReadonlyArray<SessionSummary>): Prom
   if (backend.length > 0) {
     await Promise.all(backend.map((summary) => rememberSession(summary)))
   }
+  const cache = await loadSessionCache()
   const rows: RecentSessionRow[] = []
   const seen = new Set<string>()
   for (const summary of backend) {
     rows.push({
       sessionId: summary.session_id,
       status: summary.status,
-      createdAt: summary.created_at,
-      lastActivityAt: summary.last_activity_at,
+      createdAt: summary.created_at ?? cache.sessions[summary.session_id]?.createdAt ?? "",
+      lastActivityAt: summary.last_activity_at ?? cache.sessions[summary.session_id]?.lastActivityAt ?? "",
       model: summary.model ?? (summary.metadata?.model as string | undefined) ?? null,
       name: (summary.metadata?.name as string | undefined) ?? null,
       loggingDir: summary.logging_dir ?? null,
