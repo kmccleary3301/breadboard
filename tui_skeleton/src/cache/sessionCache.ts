@@ -90,8 +90,8 @@ export const rememberSession = async (
   const entry: CachedSessionEntry = {
     sessionId: summary.session_id,
     name: options.name,
-    createdAt: summary.created_at,
-    lastActivityAt: summary.last_activity_at,
+    createdAt: summary.created_at ?? cache.sessions[summary.session_id]?.createdAt ?? "",
+    lastActivityAt: summary.last_activity_at ?? cache.sessions[summary.session_id]?.lastActivityAt ?? "",
     status: summary.status,
     model: options.model ?? (summary.metadata?.model as string | undefined),
     loggingDir: summary.logging_dir ?? null,

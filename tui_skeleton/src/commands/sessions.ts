@@ -36,8 +36,8 @@ export const mergeSessions = async (backend: SessionSummary[]): Promise<SessionR
     rows.push({
       sessionId: summary.session_id,
       status: summary.status,
-      createdAt: summary.created_at,
-      lastActivityAt: summary.last_activity_at,
+      createdAt: summary.created_at ?? cache.sessions[summary.session_id]?.createdAt ?? "",
+      lastActivityAt: summary.last_activity_at ?? cache.sessions[summary.session_id]?.lastActivityAt ?? "",
       model: (summary.metadata?.model as string | undefined) ?? undefined,
       source: "backend",
     })
