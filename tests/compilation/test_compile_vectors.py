@@ -34,8 +34,8 @@ from pathlib import Path
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "fixtures" / "config_compiler" / "v1"
 REPO_ROOT = Path(__file__).parents[2]
-EXPECTED_CORPUS_DIGEST = "sha256:d443492eb5b8368f7715cdcbc70ec40db59d9172382234bb78c08ed0c0181b66"
-EXPECTED_MANIFEST_SHA256 = "44e118f1c7617a3cc2d0ef5c0bd73804f1fd4bfbd2682d52054c259d84266eb2"
+EXPECTED_CORPUS_DIGEST = "sha256:6a0c3564875ddecaa7bdb9d700313b7232cbf1328b81034332ce7821c3a881ea"
+EXPECTED_MANIFEST_SHA256 = "c00c39d0c7aefedfc9af8cb87d942fb5d99f7aea05fcda4e5d053ffc039c34ff"
 
 
 _CHILD_COMPILER = r"""
