@@ -47,16 +47,28 @@ describe("LineEditor", () => {
 
   it("keeps slowly typed literal CSI-u text as normal input", async () => {
     const handleChange = vi.fn()
-    const { stdin } = render(
+    const view = render(
       <LineEditor value="first line" cursor={10} focus placeholder="test" onChange={handleChange} onSubmit={() => {}} />,
     )
     await flush()
-    for (const char of "[13;2u") {
-      stdin.write(char)
-      await flush()
+
+    view.stdin.write("[")
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    view.stdin.write("1")
+    await vi.waitFor(() => expect(handleChange).toHaveBeenLastCalledWith("first line[1", 12))
+
+    for (const [char, expectedValue, expectedCursor] of [
+      ["3", "first line[13", 13],
+      [";", "first line[13;", 14],
+      ["2", "first line[13;2", 15],
+      ["u", "first line[13;2u", 16],
+    ] as const) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      view.stdin.write(char)
+      await vi.waitFor(() => expect(handleChange).toHaveBeenLastCalledWith(expectedValue, expectedCursor))
     }
-    await flush()
-    expect(handleChange).toHaveBeenLastCalledWith("first line[13;2u", 16)
+
+    view.unmount()
   })
 
   it("routes fake clipboard images to attachment handling on Ctrl+V", async () => {
