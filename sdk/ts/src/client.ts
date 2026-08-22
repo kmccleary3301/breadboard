@@ -114,10 +114,16 @@ const action = (config: BreadboardClientConfig, id: PublicActionId, input: Reado
 }
 
 const publicData = async <T>(config: BreadboardClientConfig, route: string, key: string): Promise<T> => {
-  const result = await request<PublicResult>(config, route, "GET")
-  const value = (result.data as Record<string, unknown> | undefined)?.[key]
-  if (!result.ok || value === undefined) throw new ApiError(`Public result missing data.${key}`, 502, result)
-  return value as T
+  const result = await request<unknown>(config, route, "GET")
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    const envelope = result as { ok?: unknown; data?: Record<string, unknown> }
+    if (envelope.data && typeof envelope.data === "object") {
+      const value = envelope.data[key]
+      if (value !== undefined) return value as T
+      if (envelope.ok === false) throw new ApiError(`Public result missing data.${key}`, 502, result)
+    }
+  }
+  return result as T
 }
 export const createBreadboardClient = (config: BreadboardClientConfig): BreadboardClient => {
   const c = {

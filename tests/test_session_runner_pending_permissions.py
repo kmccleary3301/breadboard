@@ -84,7 +84,7 @@ async def test_head_discard_promotes_next_valid_sibling_past_malformed() -> None
     failure = (await asyncio.gather(runner.handle_command("respond_permission", {"request_id": "permission-1", "response": "always"}), return_exceptions=True))[0]
     assert isinstance(failure, ValueError)
     assert session.read_model.status == "awaiting_approval" and session.read_model.pending_approval == "permission-3"
-    assert [entry if isinstance(entry, str) else entry["request_id"] for entry in runner.session.metadata["pending_permissions"]] == ["junk", "permission-3"]
+    assert [entry["request_id"] for entry in runner.session.metadata["pending_permissions"]] == ["permission-3"]
 
 def test_control_queue_unpickles_without_recursive_delegation() -> None:
     control = pickle.loads(pickle.dumps(_PauseAwareControlQueue([])))
