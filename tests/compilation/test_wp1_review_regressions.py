@@ -689,7 +689,6 @@ def test_dependency_closure_rejects_folded_external_aliases_through_both_apis(
     payload["edges"] = [edge.to_dict() for edge in edges]
     payload["total_bytes"] += sum(member.size_bytes for member in externals)
     payload["total_members"] += len(externals)
-    payload.pop("closure_digest")
 
     with pytest.raises(BundleValidationError, match="shadow|collid"):
         DependencyClosureManifest.from_dict(payload)

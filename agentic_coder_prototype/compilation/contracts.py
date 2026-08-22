@@ -110,9 +110,13 @@ def _encode_canonical(value: Any) -> str:
     if type(value) is str:
         return _encode_string(value)
     if type(value) is int:
-        if not -MAX_SAFE_INTEGER <= value <= MAX_SAFE_INTEGER:
-            raise CanonicalJSONError("integer is outside the JCS safe integer range")
-        return _encode_float(float(value))
+        try:
+            as_float = float(value)
+        except OverflowError as error:
+            raise CanonicalJSONError("integer is outside the finite binary64 domain") from error
+        if as_float != value or as_float in (float("inf"), float("-inf")):
+            raise CanonicalJSONError("integer is outside the finite binary64 domain")
+        return _encode_float(as_float)
     if type(value) is float:
         return _encode_float(value)
     if isinstance(value, Mapping):
@@ -738,6 +742,20 @@ class DependencyClosureManifest:
         )
         if len(paths) != len(raw_members):
             raise BundleValidationError("duplicate dependency closure member")
+        folded_paths: dict[str, str] = {}
+        for member in raw_members:
+            folded = member.logical_path.casefold()
+            if folded in folded_paths:
+                raise BundleValidationError(
+                    "dependency closure members collide under case folding"
+                )
+            folded_paths[folded] = member.logical_path
+        for folded in folded_paths:
+            prefix = folded + "/"
+            if any(other.startswith(prefix) for other in folded_paths):
+                raise BundleValidationError(
+                    "a closure member shadows a folded archive directory"
+                )
         edge_keys: set[tuple[str, str, int]] = set()
         ordinal_groups: dict[tuple[str, str], tuple[int, int]] = {}
         adjacency: dict[str, set[str]] = {path: set() for path in paths}
@@ -864,8 +882,7 @@ class DependencyClosureManifest:
             "total_members",
         }
         raw = _strict_mapping(value, fields, "DependencyClosureManifest")
-        required = fields
-        if required - set(raw):
+        if fields - set(raw):
             raise BundleValidationError(
                 "DependencyClosureManifest is missing required fields"
             )

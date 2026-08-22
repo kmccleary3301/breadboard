@@ -1696,13 +1696,19 @@ def test_bundle_and_closure_wire_decoders_require_and_revalidate_identities() ->
     assert replace(closure, closure_digest="").closure_digest == closure.closure_digest
 
 
-@pytest.mark.parametrize("value", [MAX_SAFE_INTEGER, -MAX_SAFE_INTEGER])
+@pytest.mark.parametrize(
+    "value",
+    [MAX_SAFE_INTEGER, -MAX_SAFE_INTEGER, 2**53, -(2**53)],
+)
 def test_canonical_integer_safe_boundaries_are_accepted(value: int) -> None:
     assert canonical_json_loads(canonical_json_bytes(value)) == value
     assert canonical_sha256({"nested": [value]}).startswith("sha256:")
 
 
-@pytest.mark.parametrize("value", [MAX_SAFE_INTEGER + 1, -(MAX_SAFE_INTEGER + 1)])
+@pytest.mark.parametrize(
+    "value",
+    [2**53 + 1, -(2**53 + 1), 10**309, -(10**309)],
+)
 def test_canonical_integer_unsafe_boundaries_are_rejected_everywhere(value: int) -> None:
     for candidate in (value, {"nested": [value]}):
         with pytest.raises(CanonicalJSONError):
