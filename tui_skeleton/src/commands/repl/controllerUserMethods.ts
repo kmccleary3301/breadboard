@@ -5,6 +5,7 @@ import { promises as fs } from "node:fs"
 import path from "node:path"
 import { DEFAULT_MODEL_ID } from "../../config/appConfig.js"
 import { getModelCatalog } from "../../providers/modelCatalog.js"
+import { normalizeModeValue } from "./controllerUtils.js"
 import { listCachedSessions, loadSessionCache, rememberSession } from "../../cache/sessionCache.js"
 import type {
   ModelMenuItem,
@@ -368,10 +369,13 @@ export async function attachExistingSession(this: any, sessionId: string): Promi
       (summary.metadata?.model as string | undefined) ??
       cached?.model ??
       DEFAULT_MODEL_ID
+    this.mode =
+      summary.mode && typeof summary.mode === "string"
+        ? summary.mode
+        : cached?.mode && typeof cached.mode === "string"
+          ? cached.mode
+          : normalizeModeValue(process.env.BREADBOARD_DEFAULT_MODE) ?? "build"
     this.resolveProviderCapabilitiesSnapshot(this.stats.model)
-    if (summary.mode && typeof summary.mode === "string") {
-      this.mode = summary.mode
-    }
     try {
       const ctree = await this.api().getCtreeSnapshot(target)
       this.ctreeSnapshot = (ctree ?? null) as unknown as any

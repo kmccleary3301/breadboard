@@ -1232,11 +1232,13 @@ class SessionRunner:
         with self._product_session_lock:
             pending = self.session.metadata.get("pending_permissions")
             if not isinstance(pending, list): return
+            def _usable(entry: Any) -> bool:
+                return isinstance(entry, dict) and bool(str(entry.get("request_id") or ""))
             match = next((index for index, entry in enumerate(pending)
-                          if isinstance(entry, dict) and str(entry.get("request_id") or "") == request_id), None)
+                          if _usable(entry) and str(entry.get("request_id")) == request_id), None)
             if match is None: return
-            remaining = [entry for index, entry in enumerate(pending) if index != match and isinstance(entry, dict)]
-            first_valid = next((index for index, entry in enumerate(pending) if isinstance(entry, dict)), None)
+            remaining = [entry for index, entry in enumerate(pending) if index != match and _usable(entry)]
+            first_valid = next((index for index, entry in enumerate(pending) if _usable(entry)), None)
             is_head = first_valid is not None and match == first_valid
             product_session = getattr(self.session, "product_session", None)
             if is_head and product_session is not None and product_session.read_model.status == "awaiting_approval":

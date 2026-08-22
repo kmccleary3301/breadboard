@@ -95,6 +95,16 @@ async def test_head_discard_treats_first_valid_entry_as_active() -> None:
     assert isinstance(failure, ValueError)
     assert session.read_model.status == "running" and "pending_permissions" not in runner.session.metadata
 
+@pytest.mark.asyncio
+async def test_head_discard_skips_entries_without_request_ids() -> None:
+    runner, session = _product_runner("always"); runner._permission_queue = None
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-1", "category": "shell"})
+    runner.session.metadata["pending_permissions"] = [{}, dict(runner.session.metadata["pending_permissions"][0])]
+    assert session.read_model.pending_approval == "permission-1"
+    failure = (await asyncio.gather(runner.handle_command("respond_permission", {"request_id": "permission-1", "response": "always"}), return_exceptions=True))[0]
+    assert isinstance(failure, ValueError)
+    assert session.read_model.status == "running" and "pending_permissions" not in runner.session.metadata
+
 def test_control_queue_unpickles_without_recursive_delegation() -> None:
     control = pickle.loads(pickle.dumps(_PauseAwareControlQueue([])))
     control.append({"kind": "resume"})
