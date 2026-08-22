@@ -98,6 +98,7 @@ export const rememberSession = async (
     model: options.model ?? (summary.metadata?.model as string | undefined) ?? previous?.model,
     loggingDir: summary.logging_dir ?? previous?.loggingDir ?? null,
     mode: summary.mode ?? previous?.mode,
+    draft: previous?.draft ?? null,
   }
   cache.sessions[entry.sessionId] = entry
   cache.recent = [entry.sessionId, ...cache.recent.filter((id) => id !== entry.sessionId)].slice(0, MAX_RECENT)
