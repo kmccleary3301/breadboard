@@ -68,7 +68,9 @@ def _canonical_permission_resolution(response: Any, responses: Any, requested_id
 def _control_kind(item: Any) -> str: return "stop" if item is None else item.strip().lower() if isinstance(item, str) else str(item.get("kind") or item.get("type") or ("stop" if item.get("stop") else "")).strip().lower() if isinstance(item, dict) else ""
 class _PauseAwareControlQueue:
     def __init__(self, queue: Any) -> None: self._queue = queue
-    def __getattr__(self, name: str) -> Any: return getattr(self._queue, name)
+    def __getattr__(self, name: str) -> Any:
+        queue = object.__getattribute__(self, "_queue")
+        return getattr(queue, name)
     def get_nowait(self) -> Any:
         item = self._queue.get_nowait()
         while _control_kind(item) == "pause": item = self._queue.get()
@@ -650,6 +652,7 @@ class SessionRunner:
                             self._update_pending_permissions("permission_response", response_payload, source="session")
                         await self.publish_event_async(EventType.PERMISSION_RESPONSE, response_payload)
                         return {"status": "ok", "request_id": normalized_request_id, "decision": resolution, "delivered": response_payload, "debug": True}
+                    self._discard_undeliverable_permission(normalized_request_id)
                     raise ValueError("no permission request is active")
                 if canonical_responses is not None:
                     item: Dict[str, Any] = {"request_id": normalized_request_id, "responses": canonical_responses}
@@ -1225,6 +1228,26 @@ class SessionRunner:
                 else: self.session.metadata.pop("pending_permissions", None)
             self._persist_metadata_snapshot_threadsafe()
             return ready
+    def _discard_undeliverable_permission(self, request_id: str) -> None:
+        with self._product_session_lock:
+            pending = self.session.metadata.get("pending_permissions")
+            if not isinstance(pending, list): return
+            match = next((index for index, entry in enumerate(pending)
+                          if isinstance(entry, dict) and str(entry.get("request_id") or "") == request_id), None)
+            if match is None: return
+            remaining = [entry for index, entry in enumerate(pending) if index != match]
+            if remaining: self.session.metadata["pending_permissions"] = remaining
+            else: self.session.metadata.pop("pending_permissions", None)
+            product_session = getattr(self.session, "product_session", None)
+            if match == 0 and product_session is not None and product_session.read_model.status == "awaiting_approval":
+                self.transition_product_session("resolve_approval", request_id, "reject")
+                head = remaining[0] if remaining else None
+                if isinstance(head, dict):
+                    request = head.get("request") if isinstance(head.get("request"), dict) else {}
+                    operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
+                    self.transition_product_session("request_approval", str(head.get("request_id") or head.get("id") or ""), operation)
+                self.session.metadata["session_contract"] = product_session.read_model.as_dict()
+        self._persist_metadata_snapshot_threadsafe()
     def _rehydrate_pending_permissions(
         self, event_type: str, payload: Dict[str, Any],
     ) -> Optional[List[Dict[str, Any]]]:
