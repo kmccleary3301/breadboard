@@ -1763,17 +1763,12 @@ jobs:
 
       - name: Build
         working-directory: tui_skeleton
-        env:
-          BREADBOARD_SKIP_LOCAL_BIN_INSTALL: "1"
-          BREADBOARD_INSTALL_QUIET: "1"
         run: npm run build
 
-      - name: CLI smoke (--help)
+      - name: Legacy contract harness smoke (--help)
         working-directory: tui_skeleton
         run: node dist/main.js --help
 
-      - name: npm pack smoke
-        run: node scripts/cli_pack_smoke.mjs
 
   live_smoke:
     name: Live smoke (ubuntu)

@@ -277,11 +277,6 @@ Notes:
 bash scripts/phase12_live_smoke.sh
 ```
 
-### npm pack smoke (cross-platform)
-
-```bash
-node scripts/cli_pack_smoke.mjs
-```
 
 ---
 
