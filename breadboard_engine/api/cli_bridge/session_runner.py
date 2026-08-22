@@ -1236,17 +1236,17 @@ class SessionRunner:
                           if isinstance(entry, dict) and str(entry.get("request_id") or "") == request_id), None)
             if match is None: return
             remaining = [entry for index, entry in enumerate(pending) if index != match]
-            if remaining: self.session.metadata["pending_permissions"] = remaining
-            else: self.session.metadata.pop("pending_permissions", None)
+            head = next((entry for entry in remaining if isinstance(entry, dict)), None)
             product_session = getattr(self.session, "product_session", None)
             if match == 0 and product_session is not None and product_session.read_model.status == "awaiting_approval":
                 self.transition_product_session("resolve_approval", request_id, "reject")
-                head = remaining[0] if remaining else None
                 if isinstance(head, dict):
                     request = head.get("request") if isinstance(head.get("request"), dict) else {}
                     operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
                     self.transition_product_session("request_approval", str(head.get("request_id") or head.get("id") or ""), operation)
                 self.session.metadata["session_contract"] = product_session.read_model.as_dict()
+            if remaining: self.session.metadata["pending_permissions"] = remaining
+            else: self.session.metadata.pop("pending_permissions", None)
         self._persist_metadata_snapshot_threadsafe()
     def _rehydrate_pending_permissions(
         self, event_type: str, payload: Dict[str, Any],
