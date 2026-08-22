@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest, SessionStatus
-from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord, SessionRegistry
-from agentic_coder_prototype.api.cli_bridge.session_runner import SessionRunner
+from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
+from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 
 
 @pytest.mark.asyncio

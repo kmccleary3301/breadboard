@@ -1,5 +1,5 @@
-from agentic_coder_prototype.compilation.system_prompt_compiler import SystemPromptCompiler
-from agentic_coder_prototype.tool_calling import ToolDefinition, ToolParameter
+from breadboard_engine.compilation.system_prompt_compiler import SystemPromptCompiler
+from breadboard_engine.tool_calling import ToolDefinition, ToolParameter
 
 
 def test_compile_v2_prompts_uses_tpsl_when_enabled(tmp_path, monkeypatch):

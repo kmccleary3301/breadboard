@@ -5,14 +5,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.ctrees.invocation_first_contract import build_invocation_first_contract
-from agentic_coder_prototype.ctrees.invocation_first_state import (
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.ctrees.invocation_first_contract import build_invocation_first_contract
+from breadboard_engine.ctrees.invocation_first_state import (
     current_invocation_tool_allowlist,
     record_invocation_tool_result,
 )
-from agentic_coder_prototype.ctrees.live_benchmark_adapter import build_phase16_invocation_first_protocol_payload
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.ctrees.live_benchmark_adapter import build_phase16_invocation_first_protocol_payload
+from breadboard_engine.state.session_state import SessionState
 
 
 def test_phase16_invocation_first_contract_builds_execution_first_family() -> None:

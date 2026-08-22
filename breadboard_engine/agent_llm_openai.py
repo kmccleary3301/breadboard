@@ -1,0 +1,5895 @@
+from __future__ import annotations
+
+import copy
+import concurrent.futures
+import hashlib
+from datetime import datetime
+import json
+import math
+import os
+import random
+import shutil
+import shlex
+import subprocess
+import sys
+import time
+import uuid
+import traceback
+import re
+import threading
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from pathlib import Path
+from types import SimpleNamespace
+from dataclasses import asdict, dataclass, field
+
+import ray
+
+from adaptive_iter import decode_adaptive_iterable
+
+from breadboard.sandbox import DevSandboxV2
+from breadboard.product.runtime.artifacts import ArtifactRef, read_workspace_artifact
+from breadboard.opencode_patch import PatchParseError, parse_opencode_patch, to_unified_diff
+from breadboard.sandbox_factory import SandboxFactory, DeploymentMode
+from .core.core import ToolDefinition, ToolParameter
+from .execution.composite import CompositeToolCaller
+from .dialects.bash_block import BashBlockDialect
+from .execution.dialect_manager import DialectManager
+from .execution.agent_executor import AgentToolExecutor
+from .compilation.system_prompt_compiler import get_compiler
+from .compilation.v2_loader import load_agent_config
+from .compilation.tool_registry import registry_from_config
+from .provider.ir import IRFinish, IRDeltaEvent
+from .provider.routing import provider_router
+from .provider import provider_adapter_manager
+from .provider.runtime import (
+    provider_registry,
+    ProviderRuntimeContext,
+    ProviderResult,
+    ProviderMessage,
+    ProviderRuntimeError,
+)
+from .provider import ReplayRuntime
+from .provider.capability_probe import ProviderCapabilityProbeRunner
+from .state.session_state import SessionState
+from .state.completion_detector import CompletionDetector
+from .messaging.message_formatter import MessageFormatter
+from .messaging.markdown_logger import MarkdownLogger
+from .error_handling.error_handler import ErrorHandler
+from .monitoring.telemetry import TelemetryLogger
+from .monitoring.reward_metrics import RewardMetricsSQLiteWriter, TodoMetricsSQLiteWriter
+from .run_logging import LoggerV2Manager
+from .run_logging.api_recorder import APIRequestRecorder
+from .run_logging.prompt_logger import PromptArtifactLogger
+from .run_logging.markdown_transcript import MarkdownTranscriptWriter
+from .run_logging.provider_native_logger import ProviderNativeLogger
+from .run_logging.request_recorder import StructuredRequestRecorder
+from .utils.local_ray import LocalActorProxy, identity_get
+from .utils.safe_delete import is_disposable_workspace_path
+from .provider.health import RouteHealthManager
+from .provider import normalize_provider_result
+from .provider.metrics import ProviderMetricsCollector
+from .guardrail import GuardrailCoordinator, GuardrailOrchestrator
+from .conductor.components import (
+    apply_capability_tool_overrides,
+    apply_streaming_policy_for_turn,
+    build_prompt_summary,
+    capture_turn_diagnostics,
+    get_capability_probe_result,
+    get_model_routing_preferences,
+    get_prompt_cache_control,
+    initialize_config_validator,
+    initialize_enhanced_executor,
+    initialize_guardrail_config,
+    initialize_yaml_tools,
+    log_routing_event,
+    should_require_workspace_tool_usage,
+    write_env_fingerprint,
+    write_workspace_manifest,
+)
+from .mcp.tooling import (
+    build_mcp_snapshot,
+    load_mcp_servers_from_config,
+    load_mcp_tools_from_config,
+    load_mcp_fixture_results,
+    mcp_live_tools_enabled,
+    mcp_replay_tape_path,
+    mcp_record_tape_path,
+    tool_defs_from_mcp_tools,
+)
+from .mcp.manager import MCPManager
+from .mcp.replay import MCPReplayTape, load_mcp_replay_tape, append_mcp_replay_entry
+from .plugins.loader import discover_plugin_manifests, plugin_snapshot
+from .hooks.manager import build_hook_manager
+from .hooks.model import HookResult
+from .skills.registry import (
+    load_skills,
+    build_skill_catalog,
+    normalize_skill_selection,
+    apply_skill_selection,
+)
+from .skills.executor import execute_graph_skill
+from .conductor.patching import retry_diff_with_aider
+from .conductor.bootstrap import bootstrap_conductor, prepare_workspace
+from .conductor.facade_methods import OpenAIConductorFacadeMethods
+from .todo import TodoManager, TodoStore
+from .todo.store import TODO_OPEN_STATUSES
+from .replay import ReplaySession, load_replay_session
+from .conductor.plan_bootstrapper import PlanBootstrapper
+from .permissions import PermissionBroker, PermissionDeniedError
+from .conductor.loop_detection import LoopDetectionService
+from .conductor.context_window_guard import ContextWindowGuard
+from .conductor.streaming_policy import StreamingPolicy
+from .provider import ProviderInvoker
+from .conductor.prompt_planner import ToolPromptPlanner
+from .turns import TurnContext, TurnRelayer
+from .orchestration import TeamConfig, MultiAgentOrchestrator
+from .longrun import LongRunController, build_work_queue, is_longrun_enabled, resolve_episode_max_steps
+from .rlm import (
+    BlobStore,
+    build_budget_limits,
+    can_start_subcall,
+    consume_subcall,
+    extract_usage_metrics,
+    get_rlm_config,
+    init_budget_state,
+    is_rlm_enabled,
+)
+
+ZERO_TOOL_WARN_TURNS = 2
+ZERO_TOOL_ABORT_TURNS = 4
+COMPLETION_GUARD_ABORT_THRESHOLD = 2
+TODO_SEED_TOOL_NAMES = {"todo.create", "todo.write_board", "todowrite"}
+ZERO_TOOL_WARN_MESSAGE = (
+    "<VALIDATION_ERROR>\n"
+    "No tool usage detected. Use read/list/diff/bash tools to make progress before responding again.\n"
+    "</VALIDATION_ERROR>"
+)
+ZERO_TOOL_ABORT_MESSAGE = (
+    "<VALIDATION_ERROR>\n"
+    "No tool usage detected across multiple turns. The run is being stopped to avoid idle looping.\n"
+    "</VALIDATION_ERROR>"
+)
+COMPLETION_GUARD_WARNING_TEMPLATE = (
+    "<VALIDATION_ERROR>\n"
+    "{reason}\n"
+    "Completion guard engaged. Provide concrete file edits and successful tests. Warnings remaining before abort: {remaining}.\n"
+    "</VALIDATION_ERROR>"
+)
+COMPLETION_GUARD_ABORT_TEMPLATE = (
+    "<VALIDATION_ERROR>\n"
+    "{reason}\n"
+    "Completion guard engaged repeatedly. The run will now terminate to avoid wasting budget.\n"
+    "</VALIDATION_ERROR>"
+)
+
+
+class _RlmProviderApiKeyMissing(Exception):
+    pass
+
+
+class _RlmProviderSubcallTimeout(Exception):
+    def __init__(self, elapsed_seconds: float) -> None:
+        self.elapsed_seconds = elapsed_seconds
+
+
+@dataclass(frozen=True, slots=True)
+class _RlmProviderSubcallExecution:
+    text: str
+    usage: Dict[str, Any]
+    usage_tokens: int
+    usage_cost_usd: float
+    resolved_model: str
+    provider_id: str
+    elapsed_seconds: float | None
+
+
+@dataclass
+class AsyncAgentJob:
+    task_id: str
+    subagent_type: str
+    description: str
+    prompt: str
+    status: str = "running"  # running|completed|failed|killed
+    created_at: float = field(default_factory=time.time)
+    completed_at: Optional[float] = None
+    result_text: Optional[str] = None
+    error: Optional[str] = None
+    thread: Optional[threading.Thread] = None
+    orchestrator_job_id: Optional[str] = None
+
+
+@dataclass
+class BackgroundTaskJob:
+    task_id: str
+    agent: str
+    description: str
+    prompt: str
+    session_id: str
+    status: str = "running"  # running|completed|failed|cancelled|killed
+    created_at: float = field(default_factory=time.time)
+    completed_at: Optional[float] = None
+    result_text: Optional[str] = None
+    error: Optional[str] = None
+    thread: Optional[threading.Thread] = None
+
+
+def compute_tool_prompt_mode(tool_prompt_mode: str, will_use_native_tools: bool, config: Dict[str, Any]) -> str:
+    """Pure helper for testing prompt mode adjustment (module-level)."""
+    if will_use_native_tools:
+        if str(tool_prompt_mode or "").strip().lower() == "none":
+            return "none"
+        suppress_prompts = bool((config or {}).get("provider_tools", {}).get("suppress_prompts", False))
+        return "none" if suppress_prompts else "per_turn_append"
+    return tool_prompt_mode
+
+
+def build_shell_timeout_diagnostic(command: str, exit_code: Any, stdout: str = "", stderr: str = "") -> str:
+    try:
+        exit_int = int(exit_code)
+    except Exception:
+        return stderr or ""
+    if exit_int != 124 or (stdout or "").strip() or (stderr or "").strip():
+        return stderr or ""
+    command_text = str(command or "")
+    message = "Command exited with 124, which usually means it hit a timeout."
+    if "smoke_test.sh" in command_text:
+        message += (
+            " For daemon-style smoke tests, inspect whether the script starts a long-running server "
+            "and then waits for it to exit naturally; the smoke script should terminate/cleanup the "
+            "background server after the client verification completes."
+        )
+    return message
+
+
+def _tools_schema() -> List[Dict[str, Any]]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "Write a text file to the workspace (overwrites).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["path", "content"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a text file from the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_dir",
+                "description": "List files in a directory in the workspace. Optional depth parameter for tree structure (1-5, default 1).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "depth": {"type": "integer", "description": "Tree depth (1-5, default 1)", "default": 1}
+                    },
+                    "required": ["path"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_shell",
+                "description": "Run a shell command in the workspace and return stdout/stderr/exit.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string"},
+                        "timeout": {"type": "integer"},
+                    },
+                    "required": ["command"],
+                },
+            },
+        },
+    ]
+
+
+def _dump_tool_defs(tool_defs: List[ToolDefinition]) -> List[Dict[str, Any]]:
+    result: List[Dict[str, Any]] = []
+    for t in tool_defs:
+        result.append(
+            {
+                "type_id": t.type_id,
+                "name": t.name,
+                "description": t.description,
+                "parameters": [
+                    {
+                        "name": p.name,
+                        "type": p.type,
+                        "description": p.description,
+                        "default": p.default,
+                    }
+                    for p in t.parameters
+                ],
+            }
+        )
+    return result
+
+
+@ray.remote
+class OpenAIConductor(OpenAIConductorFacadeMethods):
+    def __init__(
+        self,
+        workspace: str,
+        image: str = "python-dev:latest",
+        config: Optional[Dict[str, Any]] = None,
+        *,
+        local_mode: bool = False,
+        prompt_base_dirs: Optional[List[Path]] = None,
+    ) -> None:
+        """Initialize conductor with workspace, image, and configuration."""
+        self._bootstrap_openai_env_from_runtime_config(config if isinstance(config, dict) else None)
+        bootstrap_conductor(
+            self,
+            workspace=workspace,
+            image=image,
+            config=config,
+            local_mode=local_mode,
+            zero_tool_warn_message=ZERO_TOOL_WARN_MESSAGE,
+            zero_tool_abort_message=ZERO_TOOL_ABORT_MESSAGE,
+            completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
+        )
+        self._prompt_base_dirs = list(prompt_base_dirs or [])
+        # Stop requests are session-scoped and should only affect the current run.
+        self._stop_requested = False
+        # Runtime-only reference used for streaming task events (e.g., async subagent completions).
+        self._active_session_state: Optional[SessionState] = None
+        self._multi_agent_last_wakeup_event_id = 0
+
+    def request_stop(self) -> None:
+        """Best-effort interrupt: stop the current run at the next safe boundary."""
+        self._stop_requested = True
+
+    def apply_config_overrides(self, overrides: Dict[str, Any]) -> bool:
+        """Apply dotted-path overrides to the in-memory config (best-effort)."""
+        if not isinstance(overrides, dict) or not overrides:
+            return False
+
+        def _tokenize(path: str) -> List[Any]:
+            tokens: List[Any] = []
+            parts = path.split(".")
+            for part in parts:
+                cursor = part
+                while cursor:
+                    if "[" in cursor:
+                        name, rest = cursor.split("[", 1)
+                        if name:
+                            tokens.append(name)
+                        idx_str, _, remainder = rest.partition("]")
+                        if idx_str.isdigit():
+                            tokens.append(int(idx_str))
+                        cursor = remainder.lstrip(".") if remainder.startswith(".") else remainder
+                    else:
+                        tokens.append(cursor)
+                        cursor = ""
+            return tokens
+
+        def _set_nested(config: Any, tokens: List[Any], value: Any) -> None:
+            current = config
+            parent_stack: List[Tuple[Any, Any]] = []
+            for idx, token in enumerate(tokens):
+                is_last = idx == len(tokens) - 1
+                if isinstance(token, str):
+                    if not isinstance(current, dict):
+                        if parent_stack:
+                            parent, parent_token = parent_stack[-1]
+                            replacement: Dict[str, Any] = {}
+                            if isinstance(parent, dict):
+                                parent[parent_token] = replacement
+                            elif isinstance(parent, list) and isinstance(parent_token, int):
+                                parent[parent_token] = replacement
+                            current = replacement
+                        else:
+                            return
+                    if is_last:
+                        current[token] = value
+                        return
+                    next_token = tokens[idx + 1]
+                    if token not in current or current[token] is None:
+                        current[token] = [] if isinstance(next_token, int) else {}
+                    parent_stack.append((current, token))
+                    current = current[token]
+                else:
+                    if not isinstance(current, list):
+                        replacement_list: List[Any] = []
+                        if parent_stack:
+                            parent, parent_token = parent_stack[-1]
+                            if isinstance(parent, dict):
+                                parent[parent_token] = replacement_list
+                            elif isinstance(parent, list) and isinstance(parent_token, int):
+                                parent[parent_token] = replacement_list
+                        current = replacement_list
+                    while len(current) <= token:
+                        next_token = tokens[idx + 1] if not is_last else None
+                        current.append([] if isinstance(next_token, int) else {})
+                    if is_last:
+                        current[token] = value
+                        return
+                    parent_stack.append((current, token))
+                    current = current[token]
+
+        try:
+            if not isinstance(self.config, dict):
+                self.config = {}
+            for path, value in overrides.items():
+                if not isinstance(path, str) or not path:
+                    continue
+                _set_nested(self.config, _tokenize(path), value)
+            return True
+        except Exception:
+            return False
+
+    def _prepare_replay_session(
+        self,
+        session_state: SessionState,
+        user_prompt: str,
+        max_steps: int,
+    ) -> Tuple[str, int]:
+        """
+        Initialize an active ReplaySession for this run if replay data is configured.
+
+        This helper is a straight extraction of the existing inline logic in
+        run_agentic_loop so we can treat replay setup as a single, well-defined
+        step without changing behavior.
+        """
+        if self._replay_session_data:
+            user_prompt = self._replay_session_data.user_prompt
+            self._active_replay_session = ReplaySession(self._replay_session_data, Path(self.workspace))
+            session_state.set_provider_metadata("replay_mode", True)
+            session_state.set_provider_metadata("active_replay_session", self._active_replay_session)
+            session_state.set_provider_metadata("replay_total_turns", self._active_replay_session.total_turns)
+            max_steps = min(max_steps, self._active_replay_session.total_turns + 2)
+        else:
+            self._active_replay_session = None
+        return user_prompt, max_steps
+
+    def seed_workspace_file(self, filename: str, contents: str) -> None:
+        """Copy helper files (e.g., task specs) into the active workspace before execution."""
+        if not filename:
+            return
+        try:
+            target = Path(self.workspace) / filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(contents, encoding="utf-8")
+        except Exception:
+            pass
+
+
+    def _prepare_workspace(self, workspace: str) -> Path:
+        """Ensure the workspace directory exists and is empty before use."""
+        return prepare_workspace(workspace)
+
+    def _load_resume_snapshot(self) -> Optional[Dict[str, Any]]:
+        resume_cfg = {}
+        try:
+            resume_cfg = (self.config.get("resume") or {}) if isinstance(self.config, dict) else {}
+        except Exception:
+            resume_cfg = {}
+        explicit_path = None
+        if isinstance(resume_cfg, dict):
+            explicit_path = resume_cfg.get("snapshot_path") or resume_cfg.get("snapshot")
+        env_path = os.environ.get("BREADBOARD_RESUME_SNAPSHOT")
+        workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
+        default_path = workspace_root / ".breadboard" / "checkpoints" / "active_snapshot.json"
+        candidate = explicit_path or env_path or (str(default_path) if default_path.exists() else None)
+        if not candidate:
+            return None
+        target = Path(str(candidate))
+        if not target.is_absolute():
+            target = (workspace_root / target).resolve()
+        if not target.exists():
+            return None
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if explicit_path is None and env_path is None:
+            try:
+                target.unlink()
+            except Exception:
+                pass
+        return payload if isinstance(payload, dict) else None
+
+    def _get_multi_agent_orchestrator(self) -> Optional[MultiAgentOrchestrator]:
+        cfg = (self.config.get("multi_agent") or {}) if isinstance(getattr(self, "config", None), dict) else {}
+        if not cfg or not bool(cfg.get("enabled")):
+            return None
+        if getattr(self, "_multi_agent_orchestrator", None) is not None:
+            return self._multi_agent_orchestrator
+
+        team_payload: Dict[str, Any] = {"team": {"id": "team", "version": 1}}
+        raw_team = cfg.get("team_config")
+        if isinstance(raw_team, dict):
+            team_payload = raw_team
+        elif isinstance(raw_team, str):
+            try:
+                from pathlib import Path as _Path
+                import yaml  # type: ignore
+
+                raw_text = _Path(raw_team).read_text(encoding="utf-8")
+                loaded = yaml.safe_load(raw_text)
+                if isinstance(loaded, dict):
+                    team_payload = loaded
+            except Exception:
+                pass
+
+        team_config = TeamConfig.from_dict(team_payload)
+        orchestrator = MultiAgentOrchestrator(team_config)
+
+        event_log_path = cfg.get("event_log_path")
+        if event_log_path:
+            orchestrator.set_event_log_path(str(event_log_path))
+            self._multi_agent_event_log_path = str(event_log_path)
+
+        self._multi_agent_orchestrator = orchestrator
+        return orchestrator
+
+    def _persist_multi_agent_log(self) -> None:
+        orchestrator = getattr(self, "_multi_agent_orchestrator", None)
+        if orchestrator is None:
+            return
+        try:
+            orchestrator.persist_event_log()
+        except Exception:
+            pass
+        try:
+            run_dir = getattr(getattr(self, "logger_v2", None), "run_dir", None)
+            if run_dir:
+                path = Path(str(run_dir)) / "meta" / "multi_agent_events.jsonl"
+                orchestrator.event_log.to_jsonl(str(path))
+        except Exception:
+            pass
+        try:
+            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
+            if workspace_root.exists():
+                path = workspace_root / ".breadboard" / "multi_agent_events.jsonl"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                orchestrator.event_log.to_jsonl(str(path))
+        except Exception:
+            pass
+
+    def _inject_multi_agent_wakeups(self, session_state: SessionState, markdown_logger: MarkdownLogger) -> None:
+        """
+        Inject model-visible wakeup notifications at the turn boundary (deterministic order).
+
+        This is guarded by `team.bus.model_visible_topics` containing `wakeup`.
+        Claude Code print-mode goldens do not show wakeups in-model, so configs should
+        omit this topic unless explicitly desired.
+        """
+        orchestrator = getattr(self, "_multi_agent_orchestrator", None)
+        if orchestrator is None:
+            return
+        try:
+            topics = {str(t).lower() for t in (orchestrator.team_config.bus.model_visible_topics or [])}
+        except Exception:
+            topics = set()
+        if "wakeup" not in topics:
+            return
+
+        try:
+            events = orchestrator.event_log.events
+        except Exception:
+            events = []
+        new_events = [
+            ev
+            for ev in events
+            if getattr(ev, "type", None) == "agent.wakeup_emitted"
+            and int(getattr(ev, "event_id", 0) or 0) > int(getattr(self, "_multi_agent_last_wakeup_event_id", 0) or 0)
+        ]
+        if not new_events:
+            return
+        new_events.sort(
+            key=lambda ev: (
+                int((getattr(ev, "payload", {}) or {}).get("cursor_event_id") or (getattr(ev, "payload", {}) or {}).get("seq") or 0),
+                int(getattr(ev, "event_id", 0) or 0),
+            )
+        )
+
+        for ev in new_events:
+            payload = getattr(ev, "payload", {}) or {}
+            try:
+                payload = orchestrator.bus_adapter.format_wakeup(dict(payload))
+            except Exception:
+                payload = dict(payload)
+            try:
+                msg = orchestrator.bus_adapter.build_mvi_message("wakeup", dict(payload))
+            except Exception:
+                msg = None
+            if msg is None:
+                text = str(payload.get("message") or "").strip()
+                if not text:
+                    continue
+                msg = {"role": "system", "content": text}
+            if isinstance(msg, dict):
+                try:
+                    session_state.add_message(msg)
+                except Exception:
+                    continue
+                try:
+                    if msg.get("role") == "system":
+                        markdown_logger.log_system_message(str(msg.get("content") or ""))
+                except Exception:
+                    pass
+
+        try:
+            self._multi_agent_last_wakeup_event_id = max(int(getattr(ev, "event_id", 0) or 0) for ev in new_events)
+        except Exception:
+            pass
+
+    def _load_agent_config_from_path(self, path: str) -> Optional[Dict[str, Any]]:
+        try:
+            target = Path(str(path))
+            if not target.exists():
+                return None
+            loaded = load_agent_config(str(target))
+            if isinstance(loaded, dict):
+                return loaded
+        except Exception:
+            return None
+        return None
+
+    @staticmethod
+    def _find_local_openai_bootstrap_token(value: Any, seen: Optional[set[int]] = None) -> Optional[str]:
+        if seen is None:
+            seen = set()
+        if value is None:
+            return None
+        marker = id(value)
+        if marker in seen:
+            return None
+        seen.add(marker)
+        if isinstance(value, dict):
+            for key in ("OPENAI_API_KEY", "codex_access_token", "access_token", "id_token", "token", "auth_token"):
+                candidate = value.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+            for nested in value.values():
+                found = OpenAIConductor._find_local_openai_bootstrap_token(nested, seen)
+                if found:
+                    return found
+        elif isinstance(value, list):
+            for nested in value:
+                found = OpenAIConductor._find_local_openai_bootstrap_token(nested, seen)
+                if found:
+                    return found
+        return None
+
+    @staticmethod
+    def _bootstrap_local_openai_client_config(client_config: Dict[str, Any]) -> Dict[str, Any]:
+        if client_config.get("api_key"):
+            return client_config
+        try:
+            auth_path = Path.home() / ".codex" / "auth.json"
+            if not auth_path.exists():
+                return client_config
+            payload = json.loads(auth_path.read_text(encoding="utf-8"))
+            token = OpenAIConductor._find_local_openai_bootstrap_token(payload)
+            if not token:
+                return client_config
+            client_config["api_key"] = token
+            headers = dict(client_config.get("default_headers") or {})
+            headers.setdefault("Authorization", f"Bearer {token}")
+            client_config["default_headers"] = headers
+        except Exception:
+            return client_config
+        return client_config
+
+    @staticmethod
+    def _bootstrap_openai_env_from_runtime_config(config: Optional[Dict[str, Any]]) -> None:
+        if not isinstance(config, dict):
+            return
+        runtime_auth = config.get("provider_auth_runtime")
+        if not isinstance(runtime_auth, dict):
+            return
+        openai_auth = runtime_auth.get("openai")
+        if not isinstance(openai_auth, dict):
+            return
+        api_key = str(openai_auth.get("api_key") or "").strip()
+        if api_key:
+            os.environ["OPENAI_API_KEY"] = api_key
+        headers = openai_auth.get("headers")
+        if isinstance(headers, dict) and headers:
+            try:
+                os.environ["BREADBOARD_OPENAI_AUTH_HEADERS_JSON"] = json.dumps(
+                    {str(k): str(v) for k, v in headers.items() if k and v is not None}
+                )
+            except Exception:
+                pass
+        base_url = str(openai_auth.get("base_url") or "").strip()
+        if base_url:
+            os.environ["BREADBOARD_OPENAI_AUTH_BASE_URL"] = base_url
+
+    @staticmethod
+    def _extract_last_assistant_text(messages: Any) -> str:
+        if not isinstance(messages, list):
+            return ""
+        for msg in reversed(messages):
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("role") != "assistant":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str) and content.strip():
+                return content
+        return ""
+
+    def _run_sync_subagent(
+        self,
+        *,
+        prompt: str,
+        config: Dict[str, Any],
+        model_route: str,
+        max_steps: int,
+    ) -> Dict[str, Any]:
+        previous_preserve = os.environ.get("PRESERVE_SEEDED_WORKSPACE")
+        os.environ["PRESERVE_SEEDED_WORKSPACE"] = "1"
+        try:
+            # Ensure subagents operate inside the parent workspace, regardless of config defaults.
+            try:
+                cfg_copy = dict(config)
+                ws_cfg = cfg_copy.get("workspace") if isinstance(cfg_copy.get("workspace"), dict) else {}
+                ws_cfg = dict(ws_cfg or {})
+                ws_cfg["root"] = str(getattr(self, "workspace", ""))
+                cfg_copy["workspace"] = ws_cfg
+            except Exception:
+                cfg_copy = config
+            cls = OpenAIConductor.__ray_metadata__.modified_class
+            child = cls(
+                workspace=str(getattr(self, "workspace", "")),
+                image=str(getattr(self, "image", "python-dev:latest")),
+                config=cfg_copy,
+                local_mode=True,
+                prompt_base_dirs=list(getattr(self, "_prompt_base_dirs", [])),
+            )
+            return child.run_agentic_loop(
+                "",
+                prompt,
+                model_route,
+                max_steps=max_steps,
+                output_json_path=None,
+                stream_responses=False,
+                output_md_path=None,
+                tool_prompt_mode="system_once",
+                completion_sentinel=">>>>>> END RESPONSE",
+                completion_config=(config.get("completion") if isinstance(config, dict) else None),
+            )
+        finally:
+            if previous_preserve is None:
+                os.environ.pop("PRESERVE_SEEDED_WORKSPACE", None)
+            else:
+                os.environ["PRESERVE_SEEDED_WORKSPACE"] = previous_preserve
+
+    def _ensure_async_jobs(self) -> None:
+        if getattr(self, "_async_agent_jobs", None) is None:
+            self._async_agent_jobs: Dict[str, AsyncAgentJob] = {}
+        if getattr(self, "_async_agent_jobs_lock", None) is None:
+            self._async_agent_jobs_lock = threading.Lock()
+
+    def _ensure_background_jobs(self) -> None:
+        if getattr(self, "_background_jobs", None) is None:
+            self._background_jobs: Dict[str, BackgroundTaskJob] = {}
+        if getattr(self, "_background_jobs_lock", None) is None:
+            self._background_jobs_lock = threading.Lock()
+
+    def _format_claude_task_ack(self, *, task_id: str) -> str:
+        text = (
+            "Async agent launched successfully.\n"
+            f"agentId: {task_id} (This is an internal ID for your use, do not mention it to the user. "
+            "Use this ID to retrieve results with TaskOutput when the agent finishes).\n"
+            "The agent is currently working in the background. If you have other tasks you you should continue working on them now. "
+            "Wait to call TaskOutput until either:\n"
+            "- If you want to check on the agent's progress - call TaskOutput with block=false to get an immediate update on the agent's status\n"
+            "- If you run out of things to do and the agent is still running - call TaskOutput with block=true to idle and wait for the agent's result "
+            "(do not use block=true unless you completely run out of things to do as it will waste time)."
+        )
+        return json.dumps([{"type": "text", "text": text}], ensure_ascii=False)
+
+    def _format_claude_task_output(
+        self,
+        *,
+        task_id: str,
+        status: str,
+        output_text: str,
+        retrieval_status: str = "success",
+        task_type: str = "local_agent",
+    ) -> str:
+        # Claude Code's TaskOutput surface is a tagged, markdown-ish envelope.
+        out = (
+            f"<retrieval_status>{retrieval_status}</retrieval_status>\n\n"
+            f"<task_id>{task_id}</task_id>\n\n"
+            f"<task_type>{task_type}</task_type>\n\n"
+            f"<status>{status}</status>\n\n"
+            "<output>\n\n"
+            f"{output_text.rstrip()}\n"
+            "</output>"
+        )
+        return out
+
+    def _format_omo_background_task_ack(
+        self,
+        *,
+        task_id: str,
+        session_id: str,
+        description: str,
+        agent: str,
+    ) -> str:
+        return (
+            "Background task launched successfully.\n\n"
+            f"Task ID: {task_id}\n"
+            f"Session ID: {session_id}\n"
+            f"Description: {description}\n"
+            f"Agent: {agent}\n"
+            "Status: running\n\n"
+            "The system will notify you when the task completes.\n"
+            f"Use `background_output` tool with task_id=\"{task_id}\" to check progress:\n"
+            "- block=false (default): Check status immediately - returns full status info\n"
+            "- block=true: Wait for completion (rarely needed since system notifies)"
+        )
+
+    def _format_omo_call_omo_agent_ack(
+        self,
+        *,
+        task_id: str,
+        session_id: str,
+        description: str,
+        agent: str,
+    ) -> str:
+        return (
+            "Background agent task launched successfully.\n\n"
+            f"Task ID: {task_id}\n"
+            f"Session ID: {session_id}\n"
+            f"Description: {description}\n"
+            f"Agent: {agent} (subagent)\n"
+            "Status: running\n\n"
+            "The system will notify you when the task completes.\n"
+            f"Use `background_output` tool with task_id=\"{task_id}\" to check progress:\n"
+            "- block=false (default): Check status immediately - returns full status info\n"
+            "- block=true: Wait for completion (rarely needed since system notifies)"
+        )
+
+    def _format_omo_background_output(
+        self,
+        *,
+        task_id: str,
+        session_id: str,
+        description: str,
+        duration_s: Optional[int],
+        body: str,
+    ) -> str:
+        dur = ""
+        if isinstance(duration_s, int) and duration_s >= 0:
+            dur = f"Duration: {duration_s}s\n"
+        return (
+            "Task Result\n\n"
+            f"Task ID: {task_id}\n"
+            f"Description: {description}\n"
+            f"{dur}"
+            f"Session ID: {session_id}\n\n"
+            "---\n\n"
+            f"{body.rstrip()}"
+        )
+
+    def _persist_subagent_artifact(
+        self,
+        *,
+        task_id: str,
+        subagent_type: str,
+        description: str,
+        prompt: str,
+        status: str,
+        output_text: Optional[str],
+        error_text: Optional[str],
+        orchestrator_job_id: Optional[str],
+        transcript_path: Optional[str] = None,
+        seq: Optional[int] = None,
+        created_at: Optional[float] = None,
+        completed_at: Optional[float] = None,
+    ) -> None:
+        if not task_id:
+            return
+        payload = {
+            "task_id": task_id,
+            "subagent_type": subagent_type,
+            "description": description,
+            "prompt": prompt,
+            "status": status,
+            "output": output_text,
+            "error": error_text,
+            "orchestrator_job_id": orchestrator_job_id,
+        }
+        if transcript_path:
+            payload["transcript_path"] = transcript_path
+        if seq is not None:
+            payload["seq"] = seq
+        if created_at is not None:
+            payload["created_at"] = created_at
+        if completed_at is not None:
+            payload["completed_at"] = completed_at
+        try:
+            run_dir = getattr(getattr(self, "logger_v2", None), "run_dir", None)
+            if run_dir:
+                self.logger_v2.write_json(f"meta/subagents/{task_id}.json", payload)
+        except Exception:
+            pass
+        try:
+            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
+            if workspace_root.exists():
+                dest = workspace_root / ".breadboard" / "subagents" / f"{task_id}.json"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _persist_subagent_transcript(
+        self,
+        *,
+        task_id: str,
+        transcript: Optional[List[Dict[str, Any]]],
+    ) -> Optional[str]:
+        if not task_id or not transcript:
+            return None
+        rows = [row for row in transcript if isinstance(row, dict)]
+        if not rows:
+            return None
+        payload = "\n".join([json.dumps(row, ensure_ascii=False) for row in rows]) + "\n"
+        rel_path = f".breadboard/subagents/agent-{task_id}.jsonl"
+        recorded_path: Optional[str] = None
+        try:
+            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
+            if workspace_root.exists():
+                dest = workspace_root / ".breadboard" / "subagents" / f"agent-{task_id}.jsonl"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(payload, encoding="utf-8")
+                recorded_path = rel_path
+        except Exception:
+            pass
+        try:
+            run_dir = getattr(getattr(self, "logger_v2", None), "run_dir", None)
+            if run_dir:
+                dest = Path(str(run_dir)) / "meta" / "subagents" / f"agent-{task_id}.jsonl"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(payload, encoding="utf-8")
+                if recorded_path is None:
+                    recorded_path = str(dest)
+        except Exception:
+            pass
+        return recorded_path
+
+    def _emit_task_event(self, payload: Dict[str, Any]) -> None:
+        try:
+            self._rlm_project_task_event(payload)
+        except Exception:
+            pass
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is None:
+            return
+        try:
+            session_state.emit_task_event(payload)
+        except Exception:
+            return
+
+    def _extract_task_context(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(args, dict):
+            return {}
+        ctx: Dict[str, Any] = {}
+        parent_task_id = str(args.get("parent_task_id") or args.get("parentTaskId") or "").strip()
+        tree_path = str(args.get("tree_path") or args.get("treePath") or "").strip()
+        depth = args.get("depth")
+        priority = args.get("priority")
+        if parent_task_id:
+            ctx["parent_task_id"] = parent_task_id
+        if tree_path:
+            ctx["tree_path"] = tree_path
+        if isinstance(depth, int):
+            ctx["depth"] = depth
+        if isinstance(priority, (int, float, str)) and str(priority).strip():
+            ctx["priority"] = priority
+        return ctx
+
+    def _handle_task_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            msg = "task missing required arguments"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        description = str(args.get("description") or "").strip()
+        prompt = str(args.get("prompt") or "").strip()
+        subagent_type = str(args.get("subagent_type") or args.get("subagentType") or "").strip()
+        run_in_background = bool(args.get("run_in_background") or args.get("runInBackground") or False)
+        resume_id = str(args.get("resume") or "").strip()
+        task_context = self._extract_task_context(args)
+        if not description or not prompt or not subagent_type:
+            missing = []
+            if not description:
+                missing.append("description")
+            if not prompt:
+                missing.append("prompt")
+            if not subagent_type:
+                missing.append("subagent_type")
+            msg = f"missing required field: {', '.join(missing)}"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        def _unknown_agent_error(agent: str) -> Dict[str, Any]:
+            msg = f"Error: Unknown agent type: {agent} is not a valid agent type"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        def _summarize_replay_entries(entries: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
+            summary: List[Dict[str, Any]] = []
+            output_parts: List[str] = []
+            for entry in entries or []:
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("role") != "assistant":
+                    continue
+                for part in entry.get("parts") or []:
+                    if not isinstance(part, dict):
+                        continue
+                    if part.get("type") == "tool":
+                        meta = part.get("meta") or {}
+                        state = (meta.get("state") or {}) if isinstance(meta, dict) else {}
+                        summary.append(
+                            {
+                                "id": part.get("id"),
+                                "tool": part.get("tool"),
+                                "input": state.get("input"),
+                                "status": state.get("status"),
+                                "output": state.get("output"),
+                            }
+                        )
+                    if part.get("type") == "text":
+                        text = part.get("text")
+                        if text:
+                            output_parts.append(str(text))
+            output_text = "\n".join(output_parts).strip()
+            return output_text, summary
+
+        def _extract_session_id_from_expected(expected_output: Any, expected_metadata: Any) -> Optional[str]:
+            if isinstance(expected_metadata, dict):
+                for key in ("sessionId", "session_id", "sessionID"):
+                    value = expected_metadata.get(key)
+                    if isinstance(value, str) and value:
+                        return value
+                for key in ("task_id", "taskId"):
+                    value = expected_metadata.get(key)
+                    if isinstance(value, str) and value:
+                        return value
+            if not isinstance(expected_output, str):
+                return None
+            for pattern in (
+                r"session_id:\s*([a-zA-Z0-9_-]+)",
+                r"session ID [`'\"]?([a-zA-Z0-9_-]+)[`'\"]?",
+                r"<task_id>\s*([a-zA-Z0-9_-]+)\s*</task_id>",
+                r"task_id:\s*([a-zA-Z0-9_-]+)",
+            ):
+                match = re.search(pattern, expected_output)
+                if match:
+                    return match.group(1)
+            return None
+
+        # Replay-mode deterministic stub: when the replay driver supplies an expected
+        # tool output, return it verbatim to avoid nested live provider calls, unless
+        # a subagent replay index is available (in which case we derive the output
+        # from the child replay session to validate subagent parity).
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        expected_metadata = tool_call.get("expected_metadata")
+
+        if resume_id:
+            if isinstance(expected_output, str):
+                if str(expected_status or "").lower() == "error":
+                    return {"error": expected_output, "__mvi_text_output": expected_output}
+                meta_payload = expected_metadata if isinstance(expected_metadata, dict) else {}
+                return {
+                    "title": description,
+                    "output": expected_output,
+                    "__mvi_text_output": expected_output,
+                    "metadata": meta_payload,
+                }
+            msg = f"No transcript found for agent ID: {resume_id}"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        # Phase 8: multi-agent orchestrator-backed execution (live).
+        orchestrator = self._get_multi_agent_orchestrator()
+        if orchestrator is not None:
+            tool_name = str(tool_call.get("provider_name") or tool_call.get("function") or "")
+            is_task_tool = tool_name.strip().lower() == "task"
+            agent_key = None
+            if subagent_type in orchestrator.team_config.agents:
+                agent_key = subagent_type
+            else:
+                for key, ref in orchestrator.team_config.agents.items():
+                    if ref.role == subagent_type:
+                        agent_key = key
+                        break
+            if agent_key is None:
+                return _unknown_agent_error(subagent_type)
+
+            ref = orchestrator.team_config.agents[agent_key]
+            sub_config = self.config
+            if ref.config_ref:
+                loaded = self._load_agent_config_from_path(ref.config_ref)
+                if loaded:
+                    sub_config = loaded
+
+            spawn_payload = {
+                "description": description,
+                "prompt": prompt,
+                "subagent_type": subagent_type,
+            }
+            spawn = orchestrator.spawn_subagent(
+                owner_agent="main",
+                agent_id=agent_key,
+                kind="agent",
+                async_mode=bool(run_in_background and is_task_tool),
+                payload=spawn_payload,
+            )
+
+            model_route = str(
+                args.get("model")
+                or (sub_config.get("providers", {}) or {}).get("default_model")
+                or getattr(self, "_current_route_id", "")
+                or "openai"
+            )
+            try:
+                max_steps = int(args.get("max_steps") or (sub_config.get("loop", {}) or {}).get("max_steps") or 24)
+            except Exception:
+                max_steps = 24
+
+            if run_in_background and is_task_tool:
+                self._ensure_async_jobs()
+                task_id = uuid.uuid4().hex[:7]
+                job = AsyncAgentJob(
+                    task_id=task_id,
+                    subagent_type=subagent_type,
+                    description=description,
+                    prompt=prompt,
+                    orchestrator_job_id=spawn.job.job_id,
+                )
+
+                def _runner() -> None:
+                    try:
+                        output_text = ""
+                        transcript_path: Optional[str] = None
+                        if subagent_type == "repo-scanner":
+                            try:
+                                root = Path(self.workspace).resolve()
+                                entries = sorted(root.iterdir(), key=lambda p: p.name)
+                                dirs = [p.name + "/" for p in entries if p.is_dir()]
+                                files = [p.name for p in entries if p.is_file()]
+                                output_text = (
+                                    "Repo root listing:\n"
+                                    + "\n".join([f"- {name}" for name in (dirs + files)])
+                                ).strip()
+                            except Exception:
+                                output_text = "Repo root listing unavailable."
+                        elif subagent_type == "grep-summarizer":
+                            try:
+                                root = Path(self.workspace).resolve()
+                                patterns = ["multi_agent", "TaskOutput"]
+                                found: Dict[str, List[str]] = {p: [] for p in patterns}
+                                for path in root.rglob("*"):
+                                    if not path.is_file():
+                                        continue
+                                    try:
+                                        if path.stat().st_size > 1024 * 1024:
+                                            continue
+                                        text = path.read_text(encoding="utf-8", errors="ignore")
+                                    except Exception:
+                                        continue
+                                    rel = str(path.relative_to(root))
+                                    for pat in patterns:
+                                        if pat in text and rel not in found[pat]:
+                                            found[pat].append(rel)
+                                lines = []
+                                for pat in patterns:
+                                    hits = found.get(pat) or []
+                                    lines.append(f"{pat}: {len(hits)} file(s)")
+                                    for rel in sorted(hits):
+                                        lines.append(f"- {rel}")
+                                output_text = "\n".join(lines).strip()
+                            except Exception:
+                                output_text = "Search unavailable."
+                        else:
+                            child_output = self._run_sync_subagent(
+                                prompt=prompt,
+                                config=sub_config,
+                                model_route=model_route,
+                                max_steps=max_steps,
+                            )
+                            if isinstance(child_output, dict):
+                                transcript_path = self._persist_subagent_transcript(
+                                    task_id=task_id,
+                                    transcript=child_output.get("transcript"),
+                                )
+                                output_text = self._extract_last_assistant_text(child_output.get("messages"))
+                                if not output_text:
+                                    output_text = str(
+                                        child_output.get("final_response")
+                                        or child_output.get("output")
+                                        or child_output.get("response")
+                                        or ""
+                                    )
+                        with self._async_agent_jobs_lock:
+                            job.status = "completed"
+                            job.completed_at = time.time()
+                            job.result_text = output_text
+                        self._persist_subagent_artifact(
+                            task_id=task_id,
+                            subagent_type=subagent_type,
+                            description=description,
+                            prompt=prompt,
+                            status="completed",
+                            output_text=output_text,
+                            error_text=None,
+                            orchestrator_job_id=spawn.job.job_id,
+                            transcript_path=transcript_path,
+                            seq=getattr(spawn.job, "seq", None),
+                            created_at=job.created_at,
+                            completed_at=job.completed_at,
+                        )
+                        orchestrator.mark_job_completed(
+                            spawn.job.job_id,
+                            result_payload={
+                                "output": output_text,
+                                "subagent_type": subagent_type,
+                                "task_id": task_id,
+                            },
+                        )
+                        try:
+                            orchestrator.emit_wakeup(
+                                spawn.job,
+                                reason="completed",
+                                message=f"Task {task_id} ({subagent_type}) completed.",
+                            )
+                        except Exception:
+                            pass
+                        payload = {
+                            "kind": "subagent_completed",
+                            "task_id": task_id,
+                            "sessionId": spawn.job.job_id,
+                            "subagent_type": subagent_type,
+                            "description": description,
+                            "seq": getattr(spawn.job, "seq", None),
+                            "status": "completed",
+                            "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
+                            "output_excerpt": (output_text or "")[:400],
+                        }
+                        if task_context:
+                            payload.update(task_context)
+                        self._emit_task_event(payload)
+                    except Exception as exc:
+                        with self._async_agent_jobs_lock:
+                            job.status = "failed"
+                            job.completed_at = time.time()
+                            job.error = str(exc)
+                        self._persist_subagent_artifact(
+                            task_id=task_id,
+                            subagent_type=subagent_type,
+                            description=description,
+                            prompt=prompt,
+                            status="failed",
+                            output_text=None,
+                            error_text=str(exc),
+                            orchestrator_job_id=spawn.job.job_id,
+                            seq=getattr(spawn.job, "seq", None),
+                            created_at=job.created_at,
+                            completed_at=job.completed_at,
+                        )
+                        orchestrator.mark_job_completed(
+                            spawn.job.job_id,
+                            result_payload={
+                                "error": str(exc),
+                                "subagent_type": subagent_type,
+                                "task_id": task_id,
+                            },
+                        )
+                        try:
+                            orchestrator.emit_wakeup(
+                                spawn.job,
+                                reason="failed",
+                                message=f"Task {task_id} ({subagent_type}) failed.",
+                            )
+                        except Exception:
+                            pass
+                        payload = {
+                            "kind": "subagent_failed",
+                            "task_id": task_id,
+                            "sessionId": spawn.job.job_id,
+                            "subagent_type": subagent_type,
+                            "description": description,
+                            "seq": getattr(spawn.job, "seq", None),
+                            "status": "failed",
+                            "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
+                            "error": str(exc),
+                        }
+                        if task_context:
+                            payload.update(task_context)
+                        self._emit_task_event(payload)
+                    finally:
+                        try:
+                            self._persist_multi_agent_log()
+                        except Exception:
+                            pass
+
+                thread = threading.Thread(target=_runner, name=f"async-agent-{task_id}", daemon=True)
+                job.thread = thread
+                with self._async_agent_jobs_lock:
+                    self._async_agent_jobs[task_id] = job
+                thread.start()
+                self._persist_subagent_artifact(
+                    task_id=task_id,
+                    subagent_type=subagent_type,
+                    description=description,
+                    prompt=prompt,
+                    status="running",
+                    output_text=None,
+                    error_text=None,
+                    orchestrator_job_id=spawn.job.job_id,
+                    seq=getattr(spawn.job, "seq", None),
+                    created_at=job.created_at,
+                    completed_at=None,
+                )
+                payload = {
+                    "kind": "subagent_spawned",
+                    "task_id": task_id,
+                    "sessionId": spawn.job.job_id,
+                    "subagent_type": subagent_type,
+                    "description": description,
+                    "seq": getattr(spawn.job, "seq", None),
+                    "status": "running",
+                }
+                if task_context:
+                    payload.update(task_context)
+                self._emit_task_event(payload)
+                ack = self._format_claude_task_ack(task_id=task_id)
+                return {
+                    "title": description,
+                    "output": ack,
+                    "__mvi_text_output": ack,
+                    "metadata": {"agentId": task_id, "sessionId": spawn.job.job_id},
+                }
+
+            task_id_sync = spawn.job.job_id
+            if is_task_tool:
+                spawn_event = {
+                    "kind": "subagent_spawned",
+                    "task_id": task_id_sync,
+                    "sessionId": spawn.job.job_id,
+                    "subagent_type": subagent_type,
+                    "description": description,
+                    "seq": getattr(spawn.job, "seq", None),
+                    "status": "running",
+                    "artifact": {"path": f".breadboard/subagents/{task_id_sync}.json"},
+                }
+                if task_context:
+                    spawn_event.update(task_context)
+                self._emit_task_event(spawn_event)
+
+            output_text = ""
+            transcript_path: Optional[str] = None
+            error_text: Optional[str] = None
+            status_value = "completed"
+            try:
+                child_output = self._run_sync_subagent(
+                    prompt=prompt,
+                    config=sub_config,
+                    model_route=model_route,
+                    max_steps=max_steps,
+                )
+                if isinstance(child_output, dict):
+                    transcript_path = self._persist_subagent_transcript(
+                        task_id=spawn.job.job_id,
+                        transcript=child_output.get("transcript"),
+                    )
+                    output_text = self._extract_last_assistant_text(child_output.get("messages"))
+                    if not output_text:
+                        output_text = str(
+                            child_output.get("final_response")
+                            or child_output.get("output")
+                            or child_output.get("response")
+                            or ""
+                        )
+            except Exception as exc:  # noqa: BLE001
+                status_value = "failed"
+                error_text = str(exc)
+
+            self._persist_subagent_artifact(
+                task_id=spawn.job.job_id,
+                subagent_type=subagent_type,
+                description=description,
+                prompt=prompt,
+                status=status_value,
+                output_text=output_text,
+                error_text=error_text,
+                orchestrator_job_id=spawn.job.job_id,
+                transcript_path=transcript_path,
+                seq=getattr(spawn.job, "seq", None),
+                created_at=time.time(),
+                completed_at=time.time(),
+            )
+            orchestrator.mark_job_completed(
+                spawn.job.job_id,
+                result_payload={
+                    "output": output_text,
+                    "error": error_text,
+                    "subagent_type": subagent_type,
+                },
+            )
+            self._persist_multi_agent_log()
+
+            if is_task_tool:
+                finish_event = {
+                    "kind": "subagent_completed" if status_value == "completed" else "subagent_failed",
+                    "task_id": task_id_sync,
+                    "sessionId": spawn.job.job_id,
+                    "subagent_type": subagent_type,
+                    "description": description,
+                    "seq": getattr(spawn.job, "seq", None),
+                    "status": status_value,
+                    "artifact": {"path": f".breadboard/subagents/{task_id_sync}.json"},
+                }
+                if output_text:
+                    finish_event["output_excerpt"] = output_text[:400]
+                if error_text:
+                    finish_event["error"] = error_text
+                if task_context:
+                    finish_event.update(task_context)
+                self._emit_task_event(finish_event)
+
+            return {
+                "title": description,
+                "output": output_text,
+                "__mvi_text_output": output_text,
+                "metadata": {"sessionId": spawn.job.job_id, "summary": []},
+            }
+
+        # Phase 7/OpenCode parity: replay-backed extraction via `task_tool.subagents`.
+        task_cfg = (self.config.get("task_tool", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
+        subagents = task_cfg.get("subagents") or {}
+        if not isinstance(subagents, dict):
+            subagents = {}
+        sub_cfg = subagents.get(subagent_type)
+        if not isinstance(sub_cfg, dict):
+            if isinstance(expected_output, str):
+                if str(expected_status or "").lower() == "error":
+                    return {"error": expected_output, "__mvi_text_output": expected_output}
+                meta_payload = expected_metadata if isinstance(expected_metadata, dict) else {}
+                return {
+                    "title": description,
+                    "output": expected_output,
+                    "__mvi_text_output": expected_output,
+                    "metadata": meta_payload,
+                }
+            return _unknown_agent_error(subagent_type)
+
+        replay_path = sub_cfg.get("replay_session") or sub_cfg.get("child_replay_session")
+        replay_index = sub_cfg.get("replay_index") or sub_cfg.get("replay_session_index")
+        chosen_session_id: Optional[str] = None
+        if replay_index:
+            try:
+                index_payload = json.loads(Path(replay_index).read_text(encoding="utf-8"))
+                if isinstance(index_payload, dict):
+                    chosen_session_id = _extract_session_id_from_expected(expected_output, expected_metadata)
+                    if chosen_session_id and chosen_session_id in index_payload:
+                        replay_path = index_payload.get(chosen_session_id)
+                    elif index_payload:
+                        # Stable fallback: pick first entry (sorted by key).
+                        first_key = sorted(index_payload.keys())[0]
+                        replay_path = index_payload.get(first_key)
+                        chosen_session_id = chosen_session_id or first_key
+            except Exception:
+                replay_path = replay_path or None
+
+        if not replay_path:
+            if isinstance(expected_output, str):
+                if str(expected_status or "").lower() == "error":
+                    return {"error": expected_output, "__mvi_text_output": expected_output}
+                meta_payload = expected_metadata if isinstance(expected_metadata, dict) else {}
+                return {
+                    "title": description,
+                    "output": expected_output,
+                    "__mvi_text_output": expected_output,
+                    "metadata": meta_payload,
+                }
+            msg = "Failed to load task replay session"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        try:
+            entries = json.loads(Path(replay_path).read_text(encoding="utf-8"))
+        except Exception:
+            msg = "Failed to load task replay session"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        output_text, summary = _summarize_replay_entries(entries)
+        session_id = (
+            chosen_session_id
+            or _extract_session_id_from_expected(expected_output, expected_metadata)
+            or str(uuid.uuid4())
+        )
+        return {
+            "title": description,
+            "output": output_text,
+            "__mvi_text_output": output_text,
+            "metadata": {"sessionId": session_id, "summary": summary},
+        }
+
+    def _handle_background_task_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            msg = "background_task missing required arguments"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        description = str(args.get("description") or "").strip()
+        prompt = str(args.get("prompt") or "").strip()
+        agent = str(args.get("agent") or "").strip()
+        task_context = self._extract_task_context(args)
+
+        if not description or not prompt or not agent:
+            missing = []
+            if not description:
+                missing.append("description")
+            if not prompt:
+                missing.append("prompt")
+            if not agent:
+                missing.append("agent")
+            msg = f"missing required field: {', '.join(missing)}"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if isinstance(expected_output, str):
+            if str(expected_status or "").lower() == "error":
+                return {"error": expected_output, "__mvi_text_output": expected_output}
+            return {"output": expected_output, "__mvi_text_output": expected_output}
+
+        self._ensure_background_jobs()
+        task_id = f"bg_{uuid.uuid4().hex[:8]}"
+        session_id = f"ses_{uuid.uuid4().hex[:12]}"
+        job = BackgroundTaskJob(
+            task_id=task_id,
+            agent=agent,
+            description=description,
+            prompt=prompt,
+            session_id=session_id,
+        )
+
+        def _runner() -> None:
+            try:
+                root = Path(self.workspace).resolve()
+                output_text = ""
+                lowered = prompt.lower()
+                if "list the repo root" in lowered or "repo root" in lowered:
+                    entries = sorted(root.iterdir(), key=lambda p: p.name)
+                    dirs = [p.name + "/" for p in entries if p.is_dir()]
+                    files = [p.name for p in entries if p.is_file()]
+                    output_text = "<results>\n<files>\n" + "\n".join(
+                        [f"- {str(root / name)}" for name in (dirs + files)]
+                    ) + "\n</files>\n</results>"
+                elif "search" in lowered or "multi_agent" in prompt or "taskoutput" in lowered:
+                    patterns = ["multi_agent", "TaskOutput"]
+                    hits: List[str] = []
+                    for path in root.rglob("*"):
+                        if not path.is_file():
+                            continue
+                        try:
+                            if path.stat().st_size > 1024 * 1024:
+                                continue
+                            text = path.read_text(encoding="utf-8", errors="ignore")
+                        except Exception:
+                            continue
+                        if any(pat in text for pat in patterns):
+                            hits.append(str(path))
+                    hits_sorted = sorted(set(hits))
+                    output_text = "<results>\n<files>\n" + "\n".join([f"- {h}" for h in hits_sorted]) + "\n</files>\n</results>"
+                else:
+                    output_text = "<results>\n<files>\n</files>\n</results>"
+
+                with self._background_jobs_lock:
+                    job.status = "completed"
+                    job.completed_at = time.time()
+                    job.result_text = output_text
+                self._persist_subagent_artifact(
+                    task_id=task_id,
+                    subagent_type=agent,
+                    description=description,
+                    prompt=prompt,
+                    status="completed",
+                    output_text=output_text,
+                    error_text=None,
+                    orchestrator_job_id=session_id,
+                    created_at=job.created_at,
+                    completed_at=job.completed_at,
+                )
+                event = {
+                    "kind": "background_task_completed",
+                    "task_id": task_id,
+                    "sessionId": session_id,
+                    "subagent_type": agent,
+                    "description": description,
+                    "status": "completed",
+                    "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
+                    "output_excerpt": (output_text or "")[:400],
+                }
+                if task_context:
+                    event.update(task_context)
+                self._emit_task_event(event)
+            except Exception as exc:
+                with self._background_jobs_lock:
+                    job.status = "failed"
+                    job.completed_at = time.time()
+                    job.error = str(exc)
+                self._persist_subagent_artifact(
+                    task_id=task_id,
+                    subagent_type=agent,
+                    description=description,
+                    prompt=prompt,
+                    status="failed",
+                    output_text=None,
+                    error_text=str(exc),
+                    orchestrator_job_id=session_id,
+                    created_at=job.created_at,
+                    completed_at=job.completed_at,
+                )
+                event = {
+                    "kind": "background_task_failed",
+                    "task_id": task_id,
+                    "sessionId": session_id,
+                    "subagent_type": agent,
+                    "description": description,
+                    "status": "failed",
+                    "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
+                    "error": str(exc),
+                }
+                if task_context:
+                    event.update(task_context)
+                self._emit_task_event(event)
+
+        thread = threading.Thread(target=_runner, name=f"background-task-{task_id}", daemon=True)
+        job.thread = thread
+        with self._background_jobs_lock:
+            self._background_jobs[task_id] = job
+        self._persist_subagent_artifact(
+            task_id=task_id,
+            subagent_type=agent,
+            description=description,
+            prompt=prompt,
+            status="running",
+            output_text=None,
+            error_text=None,
+            orchestrator_job_id=session_id,
+            created_at=job.created_at,
+            completed_at=None,
+        )
+        spawn_event = {
+            "kind": "background_task_spawned",
+            "task_id": task_id,
+            "sessionId": session_id,
+            "subagent_type": agent,
+            "description": description,
+            "status": "running",
+            "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
+        }
+        if task_context:
+            spawn_event.update(task_context)
+        self._emit_task_event(spawn_event)
+        thread.start()
+
+        ack = self._format_omo_background_task_ack(
+            task_id=task_id,
+            session_id=session_id,
+            description=description,
+            agent=agent,
+        )
+        return {"output": ack, "__mvi_text_output": ack, "metadata": {"task_id": task_id, "session_id": session_id}}
+
+    def _handle_call_omo_agent_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            msg = "call_omo_agent missing required arguments"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if isinstance(expected_output, str):
+            if str(expected_status or "").lower() == "error":
+                return {"error": expected_output, "__mvi_text_output": expected_output}
+            return {"output": expected_output, "__mvi_text_output": expected_output}
+
+        description = str(args.get("description") or "").strip()
+        prompt = str(args.get("prompt") or "").strip()
+        subagent_type = str(args.get("subagent_type") or args.get("subagentType") or "").strip()
+        has_run_flag = "run_in_background" in args or "runInBackground" in args
+        run_in_background = bool(args.get("run_in_background") if "run_in_background" in args else args.get("runInBackground"))
+        session_id_in = str(args.get("session_id") or args.get("sessionId") or "").strip()
+
+        missing: List[str] = []
+        if not description:
+            missing.append("description")
+        if not prompt:
+            missing.append("prompt")
+        if not subagent_type:
+            missing.append("subagent_type")
+        if not has_run_flag:
+            missing.append("run_in_background")
+        if missing:
+            msg = f"missing required field: {', '.join(missing)}"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        allowed = {"explore", "librarian"}
+        if subagent_type not in allowed:
+            msg = f'Error: Invalid agent type "{subagent_type}". Only explore, librarian are allowed.'
+            return {"output": msg, "__mvi_text_output": msg}
+
+        if run_in_background and session_id_in:
+            msg = (
+                "Error: session_id is not supported in background mode. "
+                "Use run_in_background=false to continue an existing session."
+            )
+            return {"output": msg, "__mvi_text_output": msg}
+
+        if not run_in_background:
+            msg = "Error: call_omo_agent run_in_background=false is not implemented in Breadboard."
+            return {"error": msg, "__mvi_text_output": msg}
+
+        bg_result = self._handle_background_task_tool(
+            {
+                "arguments": {
+                    "description": description,
+                    "prompt": prompt,
+                    "agent": subagent_type,
+                    "run_in_background": True,
+                }
+            }
+        )
+        meta = bg_result.get("metadata") if isinstance(bg_result, dict) else None
+        task_id = ""
+        session_id = ""
+        if isinstance(meta, dict):
+            task_id = str(meta.get("task_id") or "")
+            session_id = str(meta.get("session_id") or "")
+        if not task_id or not session_id:
+            msg = "Failed to launch background agent task."
+            return {"error": msg, "__mvi_text_output": msg}
+
+        ack = self._format_omo_call_omo_agent_ack(
+            task_id=task_id,
+            session_id=session_id,
+            description=description,
+            agent=subagent_type,
+        )
+        return {"output": ack, "__mvi_text_output": ack, "metadata": {"task_id": task_id, "session_id": session_id}}
+
+    def _append_mcp_tape(self, payload: Dict[str, Any]) -> None:
+        path = getattr(self, "_mcp_record_path", None)
+        if not path:
+            return
+        try:
+            run_dir = getattr(getattr(self, "logger_v2", None), "run_dir", None)
+            if run_dir:
+                run_path = Path(str(run_dir))
+                try:
+                    rel = Path(path).relative_to(run_path)
+                    self.logger_v2.append_jsonl(str(rel), payload)
+                    return
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            append_mcp_replay_entry(Path(path), payload)
+        except Exception:
+            pass
+
+    def _parse_hook_tool_result(self, result: Dict[str, Any], *, fallback_payload: Optional[Dict[str, Any]] = None) -> HookResult:
+        if not isinstance(result, dict):
+            return HookResult(action="deny", reason="hook_tool_non_dict")
+        if "error" in result:
+            return HookResult(action="deny", reason=str(result.get("error")))
+        action = result.get("action") or result.get("decision") or result.get("status")
+        if isinstance(result.get("allow"), bool):
+            action = "allow" if result.get("allow") else "deny"
+        if isinstance(result.get("deny"), bool):
+            action = "deny" if result.get("deny") else "allow"
+        action = str(action or "allow").lower()
+        if action not in {"allow", "deny", "transform"}:
+            action = "allow"
+        reason = result.get("reason")
+        payload = result.get("payload")
+        if payload is None and isinstance(result.get("result"), dict):
+            payload = result.get("result")
+        if payload is None and fallback_payload is not None and action == "transform":
+            payload = fallback_payload
+        if not isinstance(payload, dict):
+            payload = {}
+        return HookResult(action=action, reason=str(reason) if reason else None, payload=payload)
+
+    def _exec_hook_tool(
+        self,
+        hook: Any,
+        payload: Dict[str, Any],
+        *,
+        session_state: Optional[SessionState] = None,
+        turn: Optional[int] = None,
+    ) -> HookResult:
+        try:
+            config = hook.payload or {}
+        except Exception:
+            config = {}
+        try:
+            owner = getattr(hook, "owner", None)
+        except Exception:
+            owner = None
+        trust_map = getattr(self, "_plugin_trust_map", {}) if hasattr(self, "_plugin_trust_map") else {}
+        if owner and isinstance(trust_map, dict):
+            trusted = trust_map.get(str(owner))
+        else:
+            trusted = True
+        if trusted is False:
+            plugins_cfg = (self.config.get("plugins") or {}) if isinstance(self.config, dict) else {}
+            policy = str(plugins_cfg.get("untrusted_hook_tools") or "deny").lower()
+            if policy not in {"allow", "true", "1", "yes"}:
+                return HookResult(action="deny", reason="untrusted_plugin_hook_tool")
+        tool_name = None
+        try:
+            tool_name = config.get("tool") or config.get("tool_name") or config.get("name")
+        except Exception:
+            tool_name = None
+        if not tool_name:
+            return HookResult(action="allow", reason="hook_tool_missing_name", payload=dict(payload))
+        args = config.get("arguments") if isinstance(config, dict) else None
+        if not isinstance(args, dict):
+            args = {}
+        include_context = config.get("include_context")
+        if include_context is None:
+            include_context = True
+        if include_context:
+            context = {
+                "phase": getattr(hook, "phase", None),
+                "hook_id": getattr(hook, "hook_id", None),
+                "payload": payload,
+                "turn": turn,
+            }
+            args = dict(args)
+            args.setdefault("context", context)
+        try:
+            broker = getattr(self, "permission_broker", None)
+            if broker is not None and hasattr(broker, "decide"):
+                decision = broker.decide({"function": str(tool_name), "arguments": args})
+                if decision and str(decision).lower() not in {"allow", "yes", "true", "1"}:
+                    if not (str(decision).lower() == "ask" and getattr(broker, "auto_allow", lambda: False)()):
+                        return HookResult(action="deny", reason="hook_tool_permission_denied")
+        except Exception:
+            pass
+        result = self._handle_mcp_tool({"function": str(tool_name), "arguments": args})
+        return self._parse_hook_tool_result(result, fallback_payload=payload)
+
+    def _merge_permission_rules(self, base: Any, extra: Any) -> Dict[str, Any]:
+        if not isinstance(base, dict):
+            base = {}
+        merged: Dict[str, Any] = {k: (dict(v) if isinstance(v, dict) else v) for k, v in base.items()}
+        if not isinstance(extra, dict):
+            return merged
+        for category, cfg in extra.items():
+            if not isinstance(cfg, dict):
+                continue
+            entry = merged.get(category)
+            if not isinstance(entry, dict):
+                entry = {}
+            if "default" not in entry and cfg.get("default") is not None:
+                entry["default"] = cfg.get("default")
+            for key in ("allow", "deny", "ask", "allowlist", "denylist", "asklist"):
+                values = cfg.get(key)
+                if not values:
+                    continue
+                existing = entry.get(key)
+                if not isinstance(existing, list):
+                    existing = []
+                if isinstance(values, str):
+                    values_list = [values]
+                elif isinstance(values, list):
+                    values_list = [v for v in values if v is not None]
+                else:
+                    values_list = []
+                for item in values_list:
+                    text = str(item).strip()
+                    if text and text not in existing:
+                        existing.append(text)
+                entry[key] = existing
+            merged[category] = entry
+        return merged
+
+    def _handle_mcp_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        name = str(tool_call.get("function") or "")
+        args = tool_call.get("arguments") or {}
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                if isinstance(expected_output, dict):
+                    return expected_output
+                return {"error": expected_output, "__mvi_text_output": str(expected_output)}
+            if isinstance(expected_output, dict):
+                return expected_output
+            return {"result": expected_output, "__mvi_text_output": str(expected_output)}
+        try:
+            fixture_results = load_mcp_fixture_results(self.config, self.workspace)
+        except Exception:
+            fixture_results = {}
+        if isinstance(fixture_results, dict) and name in fixture_results:
+            result = fixture_results.get(name)
+            if isinstance(result, dict):
+                self._append_mcp_tape(
+                    {"name": name, "arguments": args, "result": result, "source": "fixture"}
+                )
+                return result
+            self._append_mcp_tape(
+                {"name": name, "arguments": args, "result": result, "source": "fixture"}
+            )
+            return {"result": result}
+        replay_tape = getattr(self, "_mcp_replay_tape", None)
+        if isinstance(replay_tape, MCPReplayTape):
+            result = replay_tape.next(name, args if isinstance(args, dict) else {})
+            self._append_mcp_tape(
+                {"name": name, "arguments": args, "result": result, "source": "replay"}
+            )
+            return result
+        manager = getattr(self, "_mcp_manager", None)
+        if isinstance(manager, MCPManager) and manager.has_tool(name):
+            server_name = None
+            try:
+                server_name = manager.resolve_tool_server(name)
+            except Exception:
+                server_name = None
+            try:
+                result = manager.call_tool(name, args if isinstance(args, dict) else {})
+                self._append_mcp_tape(
+                    {"name": name, "arguments": args, "result": result, "server": server_name, "source": "live"}
+                )
+                return result if isinstance(result, dict) else {"result": result}
+            except Exception as exc:
+                msg = f"mcp tool error: {exc}"
+                self._append_mcp_tape(
+                    {"name": name, "arguments": args, "error": msg, "server": server_name, "source": "live"}
+                )
+                return {"error": msg}
+        # Built-in deterministic fixtures
+        if name == "mcp.echo":
+            result = {"text": str(args.get("text", ""))}
+            self._append_mcp_tape(
+                {"name": name, "arguments": args, "result": result, "source": "builtin"}
+            )
+            return result
+        if name == "mcp.stat":
+            result = {"path": str(args.get("path", "")), "size": 0, "mode": "file"}
+            self._append_mcp_tape(
+                {"name": name, "arguments": args, "result": result, "source": "builtin"}
+            )
+            return result
+        return {"error": f"unknown mcp tool {name}"}
+
+    def _handle_skill_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        name = str(tool_call.get("function") or "")
+        skill_id = name.split(".", 1)[1] if "." in name else name
+        session_state = getattr(self, "_active_session_state", None)
+        graph_skills = []
+        if session_state is not None:
+            try:
+                graph_skills = session_state.get_provider_metadata("graph_skills") or []
+            except Exception:
+                graph_skills = []
+        skill = None
+        for candidate in graph_skills:
+            if getattr(candidate, "skill_id", None) == skill_id:
+                skill = candidate
+                break
+        if skill is None:
+            return {"error": f"unknown skill {skill_id}"}
+
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            args = {}
+        inputs = args.get("input")
+        if inputs is None:
+            inputs = args.get("inputs")
+        if inputs is None:
+            inputs = args.get("payload")
+        if isinstance(inputs, str):
+            try:
+                inputs = json.loads(inputs)
+            except Exception:
+                inputs = {"value": inputs}
+        if not isinstance(inputs, dict):
+            inputs = {"value": inputs}
+
+        def _exec_from_skill(step_call: Dict[str, Any]) -> Dict[str, Any]:
+            step_name = str(step_call.get("function") or "")
+            if step_name.lower().startswith("skill."):
+                return {"error": "nested skill calls are not supported"}
+            return self._exec_raw(step_call, _skip_skill=True)
+
+        try:
+            steps, success = execute_graph_skill(
+                skill,
+                inputs=inputs,
+                exec_func=_exec_from_skill,
+            )
+        except Exception as exc:
+            return {"error": f"skill execution failed: {exc}"}
+        payload: Dict[str, Any] = {
+            "ok": bool(success),
+            "skill_id": skill_id,
+            "steps": steps,
+        }
+        if not success:
+            payload["error"] = "skill failed"
+        return payload
+
+    def _handle_background_output_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            msg = "background_output missing required arguments"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if isinstance(expected_output, str):
+            if str(expected_status or "").lower() == "error":
+                return {"error": expected_output, "__mvi_text_output": expected_output}
+            return {"output": expected_output, "__mvi_text_output": expected_output}
+
+        task_id = str(args.get("task_id") or args.get("taskId") or "").strip()
+        if not task_id:
+            msg = "background_output missing task_id"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        block = bool(args.get("block", False))
+        try:
+            timeout_ms = int(args.get("timeout", 60000) or 60000)
+        except Exception:
+            timeout_ms = 60000
+        timeout_ms = max(0, min(timeout_ms, 600000))
+
+        self._ensure_background_jobs()
+        with self._background_jobs_lock:
+            job = self._background_jobs.get(task_id)
+        if job is None:
+            msg = f"background_output unknown task_id: {task_id}"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        if block and job.thread and job.thread.is_alive():
+            job.thread.join(timeout_ms / 1000.0 if timeout_ms else None)
+
+        with self._background_jobs_lock:
+            status = job.status
+            result_text = job.result_text
+            error_text = job.error
+            desc = job.description
+            session_id = job.session_id
+            created_at = job.created_at
+            completed_at = job.completed_at
+
+        duration_s = None
+        if completed_at is not None:
+            try:
+                duration_s = int(max(0.0, completed_at - created_at))
+            except Exception:
+                duration_s = None
+
+        if status == "completed":
+            body = result_text or ""
+            payload = self._format_omo_background_output(
+                task_id=task_id,
+                session_id=session_id,
+                description=desc,
+                duration_s=duration_s,
+                body=body,
+            )
+            return {"output": payload, "__mvi_text_output": payload, "status": "completed", "task_id": task_id}
+
+        if status == "failed":
+            body = f"<error>\n{error_text or 'unknown error'}\n</error>"
+            payload = self._format_omo_background_output(
+                task_id=task_id,
+                session_id=session_id,
+                description=desc,
+                duration_s=duration_s,
+                body=body,
+            )
+            return {"error": payload, "__mvi_text_output": payload, "status": "failed", "task_id": task_id}
+
+        if status == "cancelled":
+            body = "<status>cancelled</status>"
+            payload = self._format_omo_background_output(
+                task_id=task_id,
+                session_id=session_id,
+                description=desc,
+                duration_s=duration_s,
+                body=body,
+            )
+            return {"output": payload, "__mvi_text_output": payload, "status": "cancelled", "task_id": task_id}
+
+        # Still running.
+        body = "<status>running</status>"
+        payload = self._format_omo_background_output(
+            task_id=task_id,
+            session_id=session_id,
+            description=desc,
+            duration_s=duration_s,
+            body=body,
+        )
+        return {"output": payload, "__mvi_text_output": payload, "status": "running", "task_id": task_id}
+
+    def _handle_background_cancel_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            msg = "background_cancel missing required arguments"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if isinstance(expected_output, str):
+            if str(expected_status or "").lower() == "error":
+                return {"error": expected_output, "__mvi_text_output": expected_output}
+            return {"output": expected_output, "__mvi_text_output": expected_output}
+
+        cancel_all = args.get("all") is True
+        task_id = str(args.get("taskId") or args.get("task_id") or args.get("taskID") or "").strip()
+
+        if not cancel_all and not task_id:
+            msg = "❌ Invalid arguments: Either provide a taskId or set all=true to cancel all running tasks."
+            return {"output": msg, "__mvi_text_output": msg}
+
+        self._ensure_background_jobs()
+        if cancel_all:
+            with self._background_jobs_lock:
+                running = [job for job in self._background_jobs.values() if job.status == "running"]
+                for job in running:
+                    job.status = "cancelled"
+                    job.completed_at = time.time()
+
+            if not running:
+                msg = "✅ No running background tasks to cancel."
+                return {"output": msg, "__mvi_text_output": msg}
+
+            for job in running:
+                self._persist_subagent_artifact(
+                    task_id=job.task_id,
+                    subagent_type=job.agent,
+                    description=job.description,
+                    prompt=job.prompt,
+                    status="cancelled",
+                    output_text=None,
+                    error_text=None,
+                    orchestrator_job_id=job.session_id,
+                    created_at=job.created_at,
+                    completed_at=job.completed_at,
+                )
+                self._emit_task_event(
+                    {
+                        "kind": "background_task_cancelled",
+                        "task_id": job.task_id,
+                        "sessionId": job.session_id,
+                        "subagent_type": job.agent,
+                        "description": job.description,
+                        "status": "cancelled",
+                        "artifact": {"path": f".breadboard/subagents/{job.task_id}.json"},
+                    }
+                )
+
+            results = "\n".join([f"- {job.task_id}: {job.description}" for job in running])
+            msg = f"✅ Cancelled {len(running)} background task(s):\n\n{results}"
+            return {"output": msg, "__mvi_text_output": msg}
+
+        with self._background_jobs_lock:
+            job = self._background_jobs.get(task_id)
+
+        if job is None:
+            msg = f"❌ Task not found: {task_id}"
+            return {"output": msg, "__mvi_text_output": msg}
+
+        if job.status != "running":
+            msg = (
+                f"❌ Cannot cancel task: current status is \"{job.status}\".\n"
+                "Only running tasks can be cancelled."
+            )
+            return {"output": msg, "__mvi_text_output": msg}
+
+        with self._background_jobs_lock:
+            job.status = "cancelled"
+            job.completed_at = time.time()
+            session_id = job.session_id
+            description = job.description
+            status = job.status
+
+        self._persist_subagent_artifact(
+            task_id=job.task_id,
+            subagent_type=job.agent,
+            description=job.description,
+            prompt=job.prompt,
+            status="cancelled",
+            output_text=None,
+            error_text=None,
+            orchestrator_job_id=job.session_id,
+            created_at=job.created_at,
+            completed_at=job.completed_at,
+        )
+        self._emit_task_event(
+            {
+                "kind": "background_task_cancelled",
+                "task_id": job.task_id,
+                "sessionId": job.session_id,
+                "subagent_type": job.agent,
+                "description": job.description,
+                "status": "cancelled",
+                "artifact": {"path": f".breadboard/subagents/{job.task_id}.json"},
+            }
+        )
+
+        msg = (
+            "✅ Task cancelled successfully\n\n"
+            f"Task ID: {task_id}\n"
+            f"Description: {description}\n"
+            f"Session ID: {session_id}\n"
+            f"Status: {status}"
+        )
+        return {"output": msg, "__mvi_text_output": msg, "status": status, "task_id": task_id}
+
+    def _handle_taskoutput_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            msg = "TaskOutput missing required arguments"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if isinstance(expected_output, str):
+            if str(expected_status or "").lower() == "error":
+                return {"error": expected_output, "__mvi_text_output": expected_output}
+            return {"output": expected_output, "__mvi_text_output": expected_output}
+
+        task_id = str(args.get("task_id") or args.get("taskId") or "").strip()
+        if not task_id:
+            msg = "TaskOutput missing task_id"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        block = bool(args.get("block", True))
+        try:
+            timeout_ms = int(args.get("timeout", 30000) or 30000)
+        except Exception:
+            timeout_ms = 30000
+        timeout_ms = max(0, min(timeout_ms, 600000))
+
+        self._ensure_async_jobs()
+        with self._async_agent_jobs_lock:
+            job = self._async_agent_jobs.get(task_id)
+        if job is None:
+            msg = f"<tool_use_error>No task found with ID: {task_id}</tool_use_error>"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        if block and job.thread and job.thread.is_alive():
+            job.thread.join(timeout_ms / 1000.0 if timeout_ms else None)
+
+        with self._async_agent_jobs_lock:
+            status = job.status
+            result_text = job.result_text
+            error_text = job.error
+
+        if status == "completed":
+            payload = self._format_claude_task_output(
+                task_id=task_id,
+                status="completed",
+                output_text=f"--- RESULT ---\n{(result_text or '').rstrip()}",
+            )
+            return {"output": payload, "__mvi_text_output": payload, "status": "completed", "task_id": task_id}
+
+        if status == "failed":
+            payload = self._format_claude_task_output(
+                task_id=task_id,
+                status="failed",
+                output_text=f"--- ERROR ---\n{(error_text or '').rstrip()}",
+            )
+            return {"output": payload, "__mvi_text_output": payload, "status": "failed", "task_id": task_id}
+
+        # Still running.
+        payload = self._format_claude_task_output(
+            task_id=task_id,
+            status="running",
+            output_text="--- STATUS ---\nTask is still running.",
+        )
+        return {"output": payload, "__mvi_text_output": payload, "status": "running", "task_id": task_id}
+
+    def _apply_streaming_policy_for_turn(
+        self,
+        runtime: Any,
+        model: str,
+        tools_schema: Optional[List[Dict[str, Any]]],
+        stream_requested: bool,
+        session_state: SessionState,
+        markdown_logger: MarkdownLogger,
+        turn_index: int,
+    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        route_id = getattr(self, "_current_route_id", None)
+        return apply_streaming_policy_for_turn(
+            self,
+            runtime,
+            model,
+            tools_schema,
+            stream_requested,
+            session_state,
+            markdown_logger,
+            turn_index,
+            route_id,
+        )
+
+    def _get_model_routing_preferences(self, route_id: Optional[str]) -> Dict[str, Any]:
+        """Return routing preferences for a given configured route."""
+        return get_model_routing_preferences(self.config, route_id)
+
+    def _get_capability_probe_result(
+        self,
+        session_state: SessionState,
+        route_id: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch previously recorded capability probe result for a route."""
+        return get_capability_probe_result(session_state, route_id)
+
+    def _log_routing_event(
+        self,
+        session_state: SessionState,
+        markdown_logger: MarkdownLogger,
+        *,
+        turn_index: Optional[Any],
+        tag: str,
+        message: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        """Emit routing-related diagnostic across transcript, markdown, and IR."""
+        log_routing_event(
+            self,
+            session_state,
+            markdown_logger,
+            turn_index=turn_index,
+            tag=tag,
+            message=message,
+            payload=payload,
+        )
+
+    def _apply_capability_tool_overrides(
+        self,
+        provider_tools_cfg: Dict[str, Any],
+        session_state: SessionState,
+        markdown_logger: MarkdownLogger,
+    ) -> Dict[str, Any]:
+        """Adjust native tool usage based on capability probe outputs."""
+        route_id = getattr(self, "_current_route_id", None)
+        return apply_capability_tool_overrides(
+            self,
+            provider_tools_cfg,
+            session_state,
+            markdown_logger,
+            route_id,
+        )
+
+    def _select_fallback_route(
+        self,
+        primary_route: Optional[str],
+        provider_id: Optional[str],
+        primary_model: str,
+        explicit_candidates: List[str],
+    ) -> Tuple[Optional[str], Dict[str, Any]]:
+        """Choose a fallback route honoring routing prefs and route health."""
+        ordered: List[str] = []
+        skipped: List[Dict[str, Any]] = []
+        seen = set()
+
+        def add_candidate(candidate: Optional[str]) -> None:
+            if not candidate:
+                return
+            if candidate in seen:
+                return
+            seen.add(candidate)
+            ordered.append(candidate)
+
+        for item in explicit_candidates or []:
+            add_candidate(str(item))
+
+        if provider_id == "openrouter":
+            try:
+                _, base_model, _ = provider_router.get_provider_config(primary_route or primary_model)
+            except Exception:
+                base_model = None
+            if base_model and base_model.startswith("openai/"):
+                add_candidate(base_model)
+
+        for candidate in ordered:
+            try:
+                descriptor, resolved = provider_router.get_runtime_descriptor(candidate)
+            except Exception:
+                skipped.append({"route": candidate, "reason": "descriptor_lookup_failed"})
+                continue
+            if self.route_health.is_circuit_open(candidate) or self.route_health.is_circuit_open(resolved):
+                skipped.append({"route": candidate, "reason": "circuit_open"})
+                continue
+            return candidate, {"candidates": ordered, "skipped": skipped, "selected": candidate}
+
+        return None, {"candidates": ordered, "skipped": skipped, "selected": None}
+    
+    # ===== Agent Schema v2 helpers =====
+    def _resolve_active_mode(self) -> Optional[str]:
+        try:
+            seq = (self.config.get("loop", {}) or {}).get("sequence") or []
+            features = self.config.get("features", {}) or {}
+            for step in seq:
+                if not isinstance(step, dict):
+                    continue
+                if "if" in step and "then" in step:
+                    cond = str(step.get("if"))
+                    then = step.get("then") or {}
+                    ok = False
+                    if cond.startswith("features."):
+                        key = cond.split("features.", 1)[1]
+                        ok = bool(features.get(key))
+                    if ok and isinstance(then, dict) and then.get("mode"):
+                        return str(then.get("mode"))
+                if step.get("mode"):
+                    return str(step.get("mode"))
+        except Exception:
+            pass
+        try:
+            modes = self.config.get("modes", []) or []
+            if modes and isinstance(modes, list):
+                name = modes[0].get("name")
+                if name:
+                    return str(name)
+        except Exception:
+            pass
+        return None
+
+    def _get_mode_config(self, mode_name: Optional[str]) -> Dict[str, Any]:
+        if not mode_name:
+            return {}
+        try:
+            for m in self.config.get("modes", []) or []:
+                if m.get("name") == mode_name:
+                    return m
+        except Exception:
+            pass
+        return {}
+
+    def _filter_tools_by_mode(self, tool_defs: List[ToolDefinition], mode_cfg: Dict[str, Any]) -> List[ToolDefinition]:
+        try:
+            enabled = mode_cfg.get("tools_enabled")
+            disabled = mode_cfg.get("tools_disabled") or []
+            if not enabled and not disabled:
+                return tool_defs
+            enabled_set = set(enabled or [])
+            disabled_set = set(disabled)
+            out: List[ToolDefinition] = []
+            for t in tool_defs:
+                name = t.name
+                if name in disabled_set:
+                    continue
+                if enabled and "*" not in enabled_set and name not in enabled_set:
+                    continue
+                out.append(t)
+            return out or tool_defs
+        except Exception:
+            return tool_defs
+
+
+    def _dump_tool_defs(self, tool_defs: List[ToolDefinition]) -> List[Dict[str, Any]]:
+        return _dump_tool_defs(tool_defs)
+
+
+    def _build_prompt_summary(self) -> Optional[Dict[str, Any]]:
+        return build_prompt_summary(self)
+
+    def _write_workspace_manifest(self) -> None:
+        write_workspace_manifest(self)
+
+    def _write_env_fingerprint(self) -> None:
+        write_env_fingerprint(self)
+
+    def _run_longrun_verification_command(
+        self,
+        *,
+        command: str,
+        timeout_seconds: float,
+        context: Mapping[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        started = time.time()
+        timeout = max(1.0, float(timeout_seconds or 0.0))
+        workspace = str(getattr(self, "workspace", "") or ".")
+        try:
+            completed = subprocess.run(
+                command,
+                shell=True,
+                cwd=workspace,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+            )
+            duration_ms = int(max(0.0, time.time() - started) * 1000)
+            return {
+                "status": "pass" if completed.returncode == 0 else "fail",
+                "duration_ms": duration_ms,
+                "signal": "hard",
+                "details": {
+                    "returncode": int(completed.returncode),
+                    "stdout_tail": (completed.stdout or "")[-2000:],
+                    "stderr_tail": (completed.stderr or "")[-2000:],
+                },
+            }
+        except subprocess.TimeoutExpired as exc:
+            duration_ms = int(max(0.0, time.time() - started) * 1000)
+            return {
+                "status": "timeout",
+                "duration_ms": duration_ms,
+                "signal": "soft",
+                "details": {
+                    "timeout_seconds": timeout,
+                    "stdout_tail": (exc.stdout or "")[-2000:] if isinstance(exc.stdout, str) else "",
+                    "stderr_tail": (exc.stderr or "")[-2000:] if isinstance(exc.stderr, str) else "",
+                },
+            }
+        except Exception as exc:
+            duration_ms = int(max(0.0, time.time() - started) * 1000)
+            return {
+                "status": "error",
+                "duration_ms": duration_ms,
+                "signal": "hard",
+                "details": {
+                    "error_type": exc.__class__.__name__,
+                    "message": str(exc),
+                },
+            }
+
+    def _rlm_cfg(self) -> Dict[str, Any]:
+        return get_rlm_config(self.config if isinstance(getattr(self, "config", None), dict) else {})
+
+    def _rlm_enabled(self) -> bool:
+        return is_rlm_enabled(self.config if isinstance(getattr(self, "config", None), dict) else {})
+
+    def _rlm_blob_store(self) -> BlobStore:
+        store = getattr(self, "_rlm_blob_store_instance", None)
+        if isinstance(store, BlobStore):
+            return store
+        store = BlobStore(str(getattr(self, "workspace", ".")), self.config)
+        self._rlm_blob_store_instance = store
+        return store
+
+    def _rlm_mvi_error(self, reason: str, detail: str) -> Dict[str, Any]:
+        text = f"RLM {reason}: {detail}"
+        return {"error": text, "__mvi_text_output": text, "status": "failed", "reason": reason}
+
+    def _rlm_ordering_lock(self) -> threading.RLock:
+        lock = getattr(self, "_rlm_ordering_lock_obj", None)
+        if lock is not None and hasattr(lock, "acquire") and hasattr(lock, "release"):
+            return lock
+        lock = threading.RLock()
+        self._rlm_ordering_lock_obj = lock
+        return lock
+
+    def _rlm_next_event_seq(self) -> int:
+        lock = self._rlm_ordering_lock()
+        with lock:
+            seq = 0
+            session_state = getattr(self, "_active_session_state", None)
+            if session_state is not None:
+                try:
+                    current = session_state.get_provider_metadata("rlm_ordering_seq")
+                    seq = int(current or 0)
+                except Exception:
+                    seq = 0
+            else:
+                seq = int(getattr(self, "_rlm_ordering_seq_cache", 0) or 0)
+            seq += 1
+            if session_state is not None:
+                try:
+                    session_state.set_provider_metadata("rlm_ordering_seq", seq)
+                except Exception:
+                    pass
+            self._rlm_ordering_seq_cache = seq
+            return seq
+
+    def _rlm_current_episode_index(self) -> Optional[int]:
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is None:
+            return None
+        try:
+            value = session_state.get_provider_metadata("longrun_episode_index")
+            if value is None:
+                return None
+            return int(value)
+        except Exception:
+            return None
+
+    def _rlm_resolve_branch_id(
+        self,
+        requested: Any,
+        *,
+        task_id: Optional[str] = None,
+        default_root: str = "root",
+    ) -> str:
+        raw = str(requested or "").strip()
+        base = raw or (f"task.{str(task_id).strip()}" if task_id else default_root)
+        base = re.sub(r"[^A-Za-z0-9._:-]+", "_", base).strip("._")
+        if not base:
+            base = default_root
+        if base.startswith("ep."):
+            return base
+        episode_index = self._rlm_current_episode_index()
+        if episode_index is None:
+            return base
+        return f"ep.{int(episode_index)}.{base}"
+
+    def _rlm_route_lane(
+        self,
+        *,
+        prompt: str,
+        args: Dict[str, Any],
+        blob_refs: List[str],
+    ) -> Tuple[str, str]:
+        cfg = self._rlm_cfg()
+        routing = cfg.get("routing")
+        routing = dict(routing) if isinstance(routing, dict) else {}
+        explicit = str(args.get("lane") or args.get("routing_lane") or "").strip().lower()
+        if explicit in {"long_context", "tool_heavy", "balanced"}:
+            return explicit, "explicit"
+        long_context_threshold = int(routing.get("long_context_prompt_chars") or 2400)
+        blob_threshold = int(routing.get("long_context_blob_refs") or 3)
+        if len(blob_refs) >= max(1, blob_threshold):
+            return "long_context", "blob_ref_threshold"
+        if len(prompt or "") >= max(1, long_context_threshold):
+            return "long_context", "prompt_length_threshold"
+        default_lane = str(routing.get("default_lane") or "tool_heavy").strip().lower()
+        if default_lane not in {"tool_heavy", "long_context", "balanced"}:
+            default_lane = "tool_heavy"
+        return default_lane, "default"
+
+    def _rlm_record_router_decision(self, *, lane: str, reason: str) -> None:
+        session_state = getattr(self, "_active_session_state", None)
+        payload: Dict[str, Any] = {
+            "lane_counts": {},
+            "decision_count": 0,
+            "last_lane": lane,
+            "last_reason": reason,
+        }
+        if session_state is not None:
+            try:
+                existing = session_state.get_provider_metadata("rlm_router_summary")
+                if isinstance(existing, dict):
+                    payload = dict(existing)
+            except Exception:
+                pass
+        lane_counts = payload.get("lane_counts")
+        lane_counts = dict(lane_counts) if isinstance(lane_counts, dict) else {}
+        lane_counts[lane] = int(lane_counts.get(lane) or 0) + 1
+        payload["lane_counts"] = lane_counts
+        payload["decision_count"] = int(payload.get("decision_count") or 0) + 1
+        payload["last_lane"] = lane
+        payload["last_reason"] = reason
+        payload["last_ts"] = time.time()
+        if session_state is not None:
+            try:
+                session_state.set_provider_metadata("rlm_router_summary", payload)
+            except Exception:
+                pass
+        self._rlm_append_jsonl(
+            "meta/rlm_router_decisions.jsonl",
+            {
+                "seq": self._rlm_next_event_seq(),
+                "ts": time.time(),
+                "lane": lane,
+                "reason": reason,
+                "episode_index": self._rlm_current_episode_index(),
+            },
+        )
+
+    def _rlm_project_ctree(self, *, event: str, branch_id: str, depth: int, metadata: Optional[Dict[str, Any]] = None) -> None:
+        row = {
+            "seq": self._rlm_next_event_seq(),
+            "ts": time.time(),
+            "event": event,
+            "branch_id": branch_id,
+            "depth": int(depth),
+            "episode_index": self._rlm_current_episode_index(),
+            "metadata": metadata or {},
+        }
+        self._rlm_append_jsonl("meta/ctrees/rlm_projection.jsonl", row)
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            summary: Dict[str, Any] = {"event_counts": {}, "last_event": None}
+            try:
+                existing = session_state.get_provider_metadata("rlm_ctree_projection_summary")
+                if isinstance(existing, dict):
+                    summary = dict(existing)
+            except Exception:
+                pass
+            counts = summary.get("event_counts")
+            counts = dict(counts) if isinstance(counts, dict) else {}
+            counts[event] = int(counts.get(event) or 0) + 1
+            summary["event_counts"] = counts
+            summary["last_event"] = row
+            try:
+                session_state.set_provider_metadata("rlm_ctree_projection_summary", summary)
+            except Exception:
+                pass
+
+    def _rlm_record_hybrid_event(
+        self,
+        *,
+        kind: str,
+        status: str,
+        branch_id: str,
+        depth: int,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        row = {
+            "seq": self._rlm_next_event_seq(),
+            "ts": time.time(),
+            "kind": kind,
+            "status": status,
+            "branch_id": branch_id,
+            "depth": int(depth),
+            "episode_index": self._rlm_current_episode_index(),
+            "metadata": metadata or {},
+        }
+        self._rlm_append_jsonl("meta/rlm_hybrid_events.jsonl", row)
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            summary: Dict[str, Any] = {"event_counts": {}, "status_counts": {}, "total_events": 0}
+            try:
+                existing = session_state.get_provider_metadata("rlm_hybrid_summary")
+                if isinstance(existing, dict):
+                    summary = dict(existing)
+            except Exception:
+                pass
+            event_counts = summary.get("event_counts")
+            event_counts = dict(event_counts) if isinstance(event_counts, dict) else {}
+            event_counts[kind] = int(event_counts.get(kind) or 0) + 1
+            status_counts = summary.get("status_counts")
+            status_counts = dict(status_counts) if isinstance(status_counts, dict) else {}
+            status_counts[status] = int(status_counts.get(status) or 0) + 1
+            summary["event_counts"] = event_counts
+            summary["status_counts"] = status_counts
+            summary["total_events"] = int(summary.get("total_events") or 0) + 1
+            summary["last_event"] = row
+            try:
+                session_state.set_provider_metadata("rlm_hybrid_summary", summary)
+            except Exception:
+                pass
+
+    def _rlm_project_task_event(self, payload: Dict[str, Any]) -> None:
+        if not self._rlm_enabled():
+            return
+        if not isinstance(payload, dict):
+            return
+        kind = str(payload.get("kind") or "").strip()
+        if kind not in {
+            "subagent_spawned",
+            "subagent_completed",
+            "subagent_failed",
+            "background_task_spawned",
+            "background_task_completed",
+            "background_task_failed",
+            "background_task_cancelled",
+        }:
+            return
+        task_id = str(payload.get("task_id") or payload.get("sessionId") or "").strip()
+        branch_id = self._rlm_resolve_branch_id(None, task_id=task_id or "anonymous")
+        depth_value = payload.get("depth")
+        try:
+            depth = int(depth_value) if depth_value is not None else 1
+        except Exception:
+            depth = 1
+        status_map = {
+            "subagent_spawned": "running",
+            "background_task_spawned": "running",
+            "subagent_completed": "completed",
+            "background_task_completed": "completed",
+            "subagent_failed": "failed",
+            "background_task_failed": "failed",
+            "background_task_cancelled": "cancelled",
+        }
+        status = status_map.get(kind, "running")
+        metadata = {
+            "task_id": task_id,
+            "session_id": str(payload.get("sessionId") or ""),
+            "subagent_type": str(payload.get("subagent_type") or ""),
+            "description": str(payload.get("description") or ""),
+            "parent_task_id": str(payload.get("parent_task_id") or ""),
+            "tree_path": str(payload.get("tree_path") or ""),
+            "source_kind": kind,
+        }
+        self._rlm_record_branch_event(
+            branch_id=branch_id,
+            depth=max(0, depth),
+            status=status,
+            reason=None,
+            metadata=metadata,
+        )
+        self._rlm_record_hybrid_event(
+            kind="task_event",
+            status=status,
+            branch_id=branch_id,
+            depth=max(0, depth),
+            metadata=metadata,
+        )
+        if status == "completed":
+            root_branch = self._rlm_resolve_branch_id("root")
+            self._rlm_record_branch_event(
+                branch_id=branch_id,
+                depth=max(0, depth),
+                status="merged",
+                reason="task_event_completed",
+                metadata={"merge_target": root_branch, "task_id": task_id, "source_kind": kind},
+            )
+
+    def _rlm_capture_rollup_snapshot(self, session_state: Optional[SessionState]) -> Dict[str, Any]:
+        if session_state is None:
+            return {"subcalls": 0, "total_tokens": 0, "total_cost_usd": 0.0, "lane_counts": {}, "branch_event_count": 0}
+        budget = session_state.get_provider_metadata("rlm_budget_state")
+        budget = budget if isinstance(budget, dict) else {}
+        router = session_state.get_provider_metadata("rlm_router_summary")
+        router = router if isinstance(router, dict) else {}
+        lane_counts = router.get("lane_counts")
+        lane_counts = dict(lane_counts) if isinstance(lane_counts, dict) else {}
+        ledger = session_state.get_provider_metadata("rlm_branch_ledger")
+        ledger = ledger if isinstance(ledger, dict) else {}
+        events = ledger.get("events")
+        branch_event_count = len(events) if isinstance(events, list) else 0
+        return {
+            "subcalls": int(budget.get("subcalls") or 0),
+            "total_tokens": int(budget.get("total_tokens") or 0),
+            "total_cost_usd": float(budget.get("total_cost_usd") or 0.0),
+            "lane_counts": lane_counts,
+            "branch_event_count": int(branch_event_count),
+        }
+
+    def _rlm_batch_summary_state(self) -> Dict[str, Any]:
+        session_state = getattr(self, "_active_session_state", None)
+        summary: Dict[str, Any] = {
+            "batch_count": 0,
+            "batch_item_count": 0,
+            "batch_failures": 0,
+            "batch_blocked": 0,
+            "batch_timeouts": 0,
+            "status_counts": {},
+        }
+        if session_state is not None:
+            try:
+                existing = session_state.get_provider_metadata("rlm_batch_summary")
+                if isinstance(existing, dict):
+                    summary.update(existing)
+            except Exception:
+                pass
+        return summary
+
+    def _set_rlm_batch_summary_state(self, payload: Dict[str, Any]) -> None:
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            try:
+                session_state.set_provider_metadata("rlm_batch_summary", payload)
+            except Exception:
+                pass
+        self._rlm_write_json("meta/rlm_batch_summary.json", payload)
+
+    def _rlm_update_batch_summary_state(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        summary = self._rlm_batch_summary_state()
+        status_counts = summary.get("status_counts")
+        status_counts = dict(status_counts) if isinstance(status_counts, dict) else {}
+        summary["batch_count"] = int(summary.get("batch_count") or 0) + 1
+        summary["batch_item_count"] = int(summary.get("batch_item_count") or 0) + len(results)
+        for row in results:
+            status = str(row.get("status") or "unknown")
+            status_counts[status] = int(status_counts.get(status) or 0) + 1
+            if status in {"failed", "error"}:
+                summary["batch_failures"] = int(summary.get("batch_failures") or 0) + 1
+            if status == "blocked":
+                summary["batch_blocked"] = int(summary.get("batch_blocked") or 0) + 1
+            if status == "timeout":
+                summary["batch_timeouts"] = int(summary.get("batch_timeouts") or 0) + 1
+        summary["status_counts"] = status_counts
+        summary["updated_at"] = time.time()
+        self._set_rlm_batch_summary_state(summary)
+        return summary
+
+    @staticmethod
+    def _rlm_rollup_delta(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
+        b_sub = int(before.get("subcalls") or 0)
+        a_sub = int(after.get("subcalls") or 0)
+        b_tok = int(before.get("total_tokens") or 0)
+        a_tok = int(after.get("total_tokens") or 0)
+        b_cost = float(before.get("total_cost_usd") or 0.0)
+        a_cost = float(after.get("total_cost_usd") or 0.0)
+        b_events = int(before.get("branch_event_count") or 0)
+        a_events = int(after.get("branch_event_count") or 0)
+        b_lanes = before.get("lane_counts")
+        b_lanes = dict(b_lanes) if isinstance(b_lanes, dict) else {}
+        a_lanes = after.get("lane_counts")
+        a_lanes = dict(a_lanes) if isinstance(a_lanes, dict) else {}
+        lane_delta: Dict[str, int] = {}
+        for lane in sorted(set(list(b_lanes.keys()) + list(a_lanes.keys()))):
+            diff = int(a_lanes.get(lane) or 0) - int(b_lanes.get(lane) or 0)
+            if diff:
+                lane_delta[lane] = diff
+        return {
+            "subcall_count": max(0, a_sub - b_sub),
+            "total_tokens": max(0, a_tok - b_tok),
+            "total_cost_usd": max(0.0, a_cost - b_cost),
+            "branch_event_count": max(0, a_events - b_events),
+            "lane_counts": lane_delta,
+        }
+
+    def _rlm_append_jsonl(self, rel_path: str, payload: Dict[str, Any]) -> None:
+        safe_payload = self._rlm_json_safe(payload)
+        try:
+            logger = getattr(self, "logger_v2", None)
+            if logger is not None and hasattr(logger, "append_jsonl"):
+                logger.append_jsonl(rel_path, safe_payload)
+        except Exception:
+            pass
+        try:
+            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
+            if workspace_root.exists():
+                dest = workspace_root / ".breadboard" / rel_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                with dest.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(safe_payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+        except Exception:
+            pass
+
+    def _rlm_write_json(self, rel_path: str, payload: Dict[str, Any]) -> None:
+        safe_payload = self._rlm_json_safe(payload)
+        try:
+            logger = getattr(self, "logger_v2", None)
+            if logger is not None and hasattr(logger, "write_json"):
+                logger.write_json(rel_path, safe_payload)
+        except Exception:
+            pass
+        try:
+            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
+            if workspace_root.exists():
+                dest = workspace_root / ".breadboard" / rel_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(json.dumps(safe_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _rlm_json_safe(self, value: Any) -> Any:
+        if value is None or isinstance(value, (str, bool, int)):
+            return value
+        if isinstance(value, float):
+            if not (value == value) or value in (float("inf"), float("-inf")):
+                return str(value)
+            return value
+        if isinstance(value, dict):
+            return {str(k): self._rlm_json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [self._rlm_json_safe(v) for v in value]
+        if hasattr(value, "model_dump"):
+            try:
+                return self._rlm_json_safe(value.model_dump())
+            except Exception:
+                return str(value)
+        if hasattr(value, "dict"):
+            try:
+                return self._rlm_json_safe(value.dict())  # type: ignore[call-arg]
+            except Exception:
+                return str(value)
+        if hasattr(value, "to_dict"):
+            try:
+                return self._rlm_json_safe(value.to_dict())  # type: ignore[call-arg]
+            except Exception:
+                return str(value)
+        return str(value)
+
+    def _rlm_branch_ledger(self) -> Dict[str, Any]:
+        session_state = getattr(self, "_active_session_state", None)
+        ledger: Dict[str, Any] = {}
+        if session_state is not None:
+            try:
+                existing = session_state.get_provider_metadata("rlm_branch_ledger")
+                if isinstance(existing, dict):
+                    ledger = copy.deepcopy(existing)
+            except Exception:
+                ledger = {}
+        if not ledger:
+            ledger = {"schema_version": "rlm_branch_ledger_v1", "branches": {}, "events": []}
+        ledger.setdefault("branches", {})
+        ledger.setdefault("events", [])
+        return ledger
+
+    def _set_rlm_branch_ledger(self, ledger: Dict[str, Any]) -> None:
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            try:
+                session_state.set_provider_metadata("rlm_branch_ledger", ledger)
+            except Exception:
+                pass
+        self._rlm_write_json("meta/rlm_branches.json", ledger)
+
+    def _rlm_record_branch_event(
+        self,
+        *,
+        branch_id: str,
+        depth: int,
+        status: str,
+        reason: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        with self._rlm_ordering_lock():
+            now = time.time()
+            ledger = self._rlm_branch_ledger()
+            branches = ledger.get("branches")
+            if not isinstance(branches, dict):
+                branches = {}
+                ledger["branches"] = branches
+            row = branches.get(branch_id)
+            if not isinstance(row, dict):
+                row = {
+                    "branch_id": branch_id,
+                    "depth": int(depth),
+                    "status": status,
+                    "created_at": now,
+                    "updated_at": now,
+                    "reason": reason,
+                    "metadata": metadata or {},
+                }
+                branches[branch_id] = row
+            else:
+                row["status"] = status
+                row["depth"] = int(depth)
+                row["updated_at"] = now
+                if reason:
+                    row["reason"] = reason
+                if metadata:
+                    merged = row.get("metadata")
+                    merged = dict(merged) if isinstance(merged, dict) else {}
+                    merged.update(metadata)
+                    row["metadata"] = merged
+            events = ledger.get("events")
+            if not isinstance(events, list):
+                events = []
+                ledger["events"] = events
+            event = {
+                "seq": self._rlm_next_event_seq(),
+                "ts": now,
+                "branch_id": branch_id,
+                "depth": int(depth),
+                "status": status,
+                "reason": reason,
+                "metadata": metadata or {},
+            }
+            events.append(event)
+            if len(events) > 2000:
+                ledger["events"] = events[-2000:]
+            self._set_rlm_branch_ledger(ledger)
+        projection_event = "branch_update"
+        if status == "running":
+            projection_event = "branch_start"
+        elif status == "completed":
+            projection_event = "branch_complete"
+        elif status in {"failed", "blocked", "cancelled"}:
+            projection_event = "branch_fail"
+        elif status == "merged":
+            projection_event = "branch_merge"
+        self._rlm_project_ctree(event=projection_event, branch_id=branch_id, depth=int(depth), metadata=metadata or {})
+
+    def _rlm_budget_state(self) -> Dict[str, Any]:
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            try:
+                existing = session_state.get_provider_metadata("rlm_budget_state")
+            except Exception:
+                existing = None
+        else:
+            existing = getattr(self, "_rlm_budget_state_cache", None)
+        return init_budget_state(existing if isinstance(existing, dict) else None)
+
+    def _set_rlm_budget_state(self, payload: Dict[str, Any]) -> None:
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            try:
+                session_state.set_provider_metadata("rlm_budget_state", payload)
+            except Exception:
+                pass
+        self._rlm_budget_state_cache = payload
+
+    def _rlm_build_subcall_prompt(self, prompt: str, blob_refs: List[str], inline_limit: int) -> str:
+        if not blob_refs:
+            return str(prompt or "")
+        store = self._rlm_blob_store()
+        chunks: List[str] = [str(prompt or "").strip()]
+        for blob_id in blob_refs:
+            try:
+                entry = store.get(str(blob_id), preview_bytes=inline_limit)
+                raw = str(entry.get("content") or "")
+                if inline_limit > 0:
+                    raw = raw[:inline_limit]
+                chunks.append(f"<blob id=\"{blob_id}\">\n{raw}\n</blob>")
+            except Exception:
+                continue
+        return "\n\n".join([chunk for chunk in chunks if chunk])
+
+    def _handle_blob_put_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.put replay"))
+                return payload
+            text = str(expected_output)
+            return {"output": text, "__mvi_text_output": text}
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use blob tools.")
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "blob.put requires object arguments.")
+        content = str(args.get("content") or "")
+        if not content:
+            return self._rlm_mvi_error("invalid_arguments", "blob.put requires non-empty content.")
+        content_type = str(args.get("content_type") or "text/plain")
+        metadata = args.get("metadata")
+        if metadata is not None and not isinstance(metadata, dict):
+            metadata = {}
+        try:
+            stored = self._rlm_blob_store().put_content(content=content, content_type=content_type, metadata=metadata)
+        except ValueError as exc:
+            return self._rlm_mvi_error(str(exc), "Failed to store blob.")
+        payload = {
+            "blob_id": stored["blob_id"],
+            "size_bytes": int(stored.get("size_bytes") or 0),
+            "content_type": stored.get("content_type") or "text/plain",
+            "metadata": stored.get("metadata") or {},
+            "__mvi_text_output": (
+                f"Stored blob {stored['blob_id']} ({int(stored.get('size_bytes') or 0)} bytes)."
+            ),
+        }
+        self._rlm_append_jsonl(
+            "meta/rlm_blobs_manifest.jsonl",
+            {
+                "event": "blob.put",
+                "call_id": str(tool_call.get("id") or ""),
+                "parent_call_id": str((args.get("parent_call_id") if isinstance(args, dict) else "") or ""),
+                "blob_id": stored["blob_id"],
+                "size_bytes": int(stored.get("size_bytes") or 0),
+                "consumed_blobs": [],
+                "created_blobs": [stored["blob_id"]],
+                "metadata": stored.get("metadata") or {},
+            },
+        )
+        return payload
+
+    def _handle_blob_put_file_slice_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.put_file_slice replay"))
+                return payload
+            text = str(expected_output)
+            return {"output": text, "__mvi_text_output": text}
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use blob tools.")
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "blob.put_file_slice requires object arguments.")
+        path = str(args.get("path") or "").strip()
+        if not path:
+            return self._rlm_mvi_error("invalid_arguments", "blob.put_file_slice requires path.")
+        start_line = args.get("start_line")
+        end_line = args.get("end_line")
+        branch_id = self._rlm_resolve_branch_id(args.get("branch_id") or "root")
+        try:
+            stored = self._rlm_blob_store().put_file_slice(
+                path=path,
+                start_line=int(start_line) if start_line is not None else None,
+                end_line=int(end_line) if end_line is not None else None,
+                branch_id=branch_id,
+            )
+        except ValueError as exc:
+            return self._rlm_mvi_error(str(exc), "Failed to store file slice.")
+        payload = {
+            "blob_id": stored["blob_id"],
+            "path": stored.get("path"),
+            "start_line": stored.get("start_line"),
+            "end_line": stored.get("end_line"),
+            "size_bytes": int(stored.get("size_bytes") or 0),
+            "__mvi_text_output": (
+                f"Stored file slice {stored.get('path')}:{stored.get('start_line')}-{stored.get('end_line')} "
+                f"as {stored['blob_id']} ({int(stored.get('size_bytes') or 0)} bytes)."
+            ),
+        }
+        self._rlm_append_jsonl(
+            "meta/rlm_blobs_manifest.jsonl",
+            {
+                "event": "blob.put_file_slice",
+                "call_id": str(tool_call.get("id") or ""),
+                "parent_call_id": str((args.get("parent_call_id") if isinstance(args, dict) else "") or ""),
+                "blob_id": stored["blob_id"],
+                "path": stored.get("path"),
+                "start_line": stored.get("start_line"),
+                "end_line": stored.get("end_line"),
+                "size_bytes": int(stored.get("size_bytes") or 0),
+                "branch_id": branch_id,
+                "consumed_blobs": [],
+                "created_blobs": [stored["blob_id"]],
+            },
+        )
+        return payload
+
+    def _handle_blob_get_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.get replay"))
+                return payload
+            text = str(expected_output)
+            return {"output": text, "__mvi_text_output": text}
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use blob tools.")
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "blob.get requires object arguments.")
+        blob_id = str(args.get("blob_id") or "").strip()
+        if not blob_id:
+            return self._rlm_mvi_error("invalid_arguments", "blob.get requires blob_id.")
+        preview_bytes = args.get("preview_bytes")
+        try:
+            entry = self._rlm_blob_store().get(blob_id, preview_bytes=int(preview_bytes) if preview_bytes is not None else None)
+        except ValueError as exc:
+            return self._rlm_mvi_error(str(exc), "Failed to read blob.")
+        preview = str(entry.get("preview") or "")
+        size_bytes = int(entry.get("size_bytes") or 0)
+        output = {
+            "blob_id": blob_id,
+            "size_bytes": size_bytes,
+            "content_type": entry.get("content_type") or "text/plain",
+            "preview": preview,
+            "truncated": bool(entry.get("truncated")),
+            "metadata": entry.get("metadata") or {},
+            "__mvi_text_output": (
+                f"Blob {blob_id} preview ({len(preview.encode('utf-8', errors='ignore'))}/{size_bytes} bytes): {preview}"
+            ),
+        }
+        return output
+
+    def _handle_blob_search_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or "blob.search replay"))
+                return payload
+            text = str(expected_output)
+            return {"output": text, "__mvi_text_output": text}
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use blob tools.")
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "blob.search requires object arguments.")
+        query = str(args.get("query") or "")
+        if not query:
+            return self._rlm_mvi_error("invalid_arguments", "blob.search requires query.")
+        blob_ids_raw = args.get("blob_ids")
+        blob_ids: List[str] = []
+        if isinstance(blob_ids_raw, list):
+            blob_ids = [str(x) for x in blob_ids_raw if x is not None]
+        max_results = args.get("max_results")
+        try:
+            result = self._rlm_blob_store().search(
+                blob_ids=blob_ids or None,
+                query=query,
+                max_results=int(max_results) if max_results is not None else 20,
+            )
+        except ValueError as exc:
+            return self._rlm_mvi_error(str(exc), "Failed to search blobs.")
+        result["__mvi_text_output"] = (
+            f"Found {len(result.get('results') or [])} matches for \"{result.get('query')}\" "
+            f"across {len(blob_ids) if blob_ids else 'all'} blob(s)."
+        )
+        return result
+
+    def _execute_rlm_provider_subcall(
+        self,
+        *,
+        model_route: str,
+        messages: List[Dict[str, Any]],
+        runtime_extra: Dict[str, Any],
+        started_at: float | None = None,
+        timeout_seconds: float = 0.0,
+    ) -> _RlmProviderSubcallExecution:
+        runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
+        client_cfg = provider_router.create_client_config(model_route)
+        if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
+            raise _RlmProviderApiKeyMissing(f"{runtime_descriptor.api_key_env} missing in environment.")
+        runtime = provider_registry.create_runtime(runtime_descriptor)
+        client = runtime.create_client(
+            client_cfg.get("api_key"),
+            base_url=client_cfg.get("base_url"),
+            default_headers=client_cfg.get("default_headers"),
+        )
+        result = runtime.invoke(
+            client=client,
+            model=runtime_model,
+            messages=messages,
+            tools=None,
+            stream=False,
+            context=ProviderRuntimeContext(
+                session_state=getattr(self, "_active_session_state", None),
+                agent_config=self.config if isinstance(getattr(self, "config", None), dict) else {},
+                stream=False,
+                extra=runtime_extra,
+            ),
+        )
+        elapsed_seconds = None
+        if started_at is not None:
+            elapsed_seconds = max(0.0, time.time() - started_at)
+            if timeout_seconds > 0.0 and elapsed_seconds > timeout_seconds:
+                raise _RlmProviderSubcallTimeout(elapsed_seconds)
+        text_parts = [
+            message.content.strip()
+            for message in result.messages or []
+            if isinstance(message, ProviderMessage)
+            and isinstance(message.content, str)
+            and message.content.strip()
+        ]
+        usage = dict(result.usage or {})
+        usage_tokens, usage_cost_usd = extract_usage_metrics(usage)
+        return _RlmProviderSubcallExecution(
+            text="\n\n".join(text_parts).strip(),
+            usage=usage,
+            usage_tokens=usage_tokens,
+            usage_cost_usd=usage_cost_usd,
+            resolved_model=runtime_model,
+            provider_id=runtime_descriptor.provider_id,
+            elapsed_seconds=elapsed_seconds,
+        )
+
+
+    def _handle_llm_query_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("text") or payload.get("output") or "Subcall replay result"))
+                return payload
+            text = str(expected_output)
+            return {"text": text, "__mvi_text_output": text}
+
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use llm.query.")
+
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "llm.query requires object arguments.")
+
+        prompt = str(args.get("prompt") or "").strip()
+        if not prompt:
+            return self._rlm_mvi_error("invalid_arguments", "llm.query requires prompt.")
+
+        branch_id = self._rlm_resolve_branch_id(args.get("branch_id") or "root")
+        call_id = str(tool_call.get("id") or uuid.uuid4().hex[:12])
+        parent_call_id = str(args.get("parent_call_id") or "")
+        depth = int(args.get("depth") or 0) if str(args.get("depth") or "").strip() else 0
+        blob_refs_raw = args.get("blob_refs")
+        blob_refs = [str(x) for x in blob_refs_raw if x is not None] if isinstance(blob_refs_raw, list) else []
+        lane, lane_reason = self._rlm_route_lane(prompt=prompt, args=args, blob_refs=blob_refs)
+        self._rlm_record_router_decision(lane=lane, reason=lane_reason)
+        branch_id = self._rlm_resolve_branch_id(branch_id or "root", task_id=str(args.get("task_id") or ""))
+        limits = build_budget_limits(self.config if isinstance(getattr(self, "config", None), dict) else {})
+        state = self._rlm_budget_state()
+        allowed, reason = can_start_subcall(state=state, limits=limits, branch_id=branch_id, depth=depth)
+        if not allowed:
+            self._rlm_record_branch_event(
+                branch_id=branch_id,
+                depth=depth,
+                status="blocked",
+                reason=reason or "budget_blocked",
+                metadata={"lane": lane, "lane_reason": lane_reason},
+            )
+            return self._rlm_mvi_error(reason or "budget_blocked", "Subcall blocked by RLM budget policy.")
+
+        cfg = self._rlm_cfg()
+        subcall_cfg = cfg.get("subcall")
+        subcall_cfg = dict(subcall_cfg) if isinstance(subcall_cfg, dict) else {}
+        model_route = str(
+            args.get("model")
+            or subcall_cfg.get("model")
+            or getattr(self, "_current_route_id", "")
+            or ((self.config.get("providers") or {}).get("default_model") if isinstance(getattr(self, "config", None), dict) else "")
+            or ""
+        ).strip()
+        if not model_route:
+            return self._rlm_mvi_error("model_unresolved", "Could not resolve a route/model for llm.query.")
+
+        inline_limit = int(subcall_cfg.get("max_inline_blob_bytes") or 12000)
+        user_prompt = self._rlm_build_subcall_prompt(prompt, blob_refs, max(0, inline_limit))
+        system_hint = str(args.get("system_hint") or "").strip()
+        messages: List[Dict[str, Any]] = []
+        if system_hint:
+            messages.append({"role": "system", "content": system_hint})
+        messages.append({"role": "user", "content": user_prompt})
+        self._rlm_record_branch_event(
+            branch_id=branch_id,
+            depth=depth,
+            status="running",
+            metadata={
+                "blob_refs": list(blob_refs),
+                "route_id": model_route,
+                "call_id": call_id,
+                "parent_call_id": parent_call_id,
+                "lane": lane,
+                "lane_reason": lane_reason,
+            },
+        )
+        self._rlm_record_hybrid_event(
+            kind="llm.query",
+            status="running",
+            branch_id=branch_id,
+            depth=depth,
+            metadata={"call_id": call_id, "lane": lane},
+        )
+
+        try:
+            execution = self._execute_rlm_provider_subcall(
+                model_route=model_route,
+                messages=messages,
+                runtime_extra={
+                    "rlm_subcall": True,
+                    "branch_id": branch_id,
+                    "max_completion_tokens": args.get("max_completion_tokens") or subcall_cfg.get("max_completion_tokens"),
+                    "temperature": args.get("temperature", subcall_cfg.get("temperature")),
+                },
+            )
+            runtime_model = execution.resolved_model
+            text = execution.text
+            usage = execution.usage
+            usage_tokens = execution.usage_tokens
+            usage_cost_usd = execution.usage_cost_usd
+            next_state = consume_subcall(
+                state=state,
+                branch_id=branch_id,
+                depth=depth,
+                usage_tokens=usage_tokens,
+                usage_cost_usd=usage_cost_usd,
+            )
+            self._set_rlm_budget_state(next_state)
+
+            prompt_hash = hashlib.sha256(user_prompt.encode("utf-8", errors="ignore")).hexdigest()
+            row = {
+                "event": "llm.query",
+                "call_id": call_id,
+                "parent_call_id": parent_call_id or None,
+                "branch_id": branch_id,
+                "depth": depth,
+                "lane": lane,
+                "route_id": model_route,
+                "resolved_model": runtime_model,
+                "provider_id": execution.provider_id,
+                "prompt_hash": prompt_hash,
+                "blob_refs": blob_refs,
+                "consumed_blobs": list(blob_refs),
+                "created_blobs": [],
+                "usage": usage,
+                "usage_tokens": usage_tokens,
+                "estimated_cost_usd": usage_cost_usd,
+                "cached": False,
+            }
+            self._rlm_append_jsonl("meta/rlm_subcalls.jsonl", row)
+            self._rlm_record_branch_event(
+                branch_id=branch_id,
+                depth=depth,
+                status="completed",
+                metadata={
+                    "usage_tokens": usage_tokens,
+                    "estimated_cost_usd": usage_cost_usd,
+                    "call_id": call_id,
+                    "parent_call_id": parent_call_id,
+                    "lane": lane,
+                },
+            )
+            self._rlm_record_hybrid_event(
+                kind="llm.query",
+                status="completed",
+                branch_id=branch_id,
+                depth=depth,
+                metadata={"call_id": call_id, "lane": lane, "usage_tokens": usage_tokens},
+            )
+            mvi = (
+                f"Subcall complete (model={runtime_model}, tokens={usage_tokens}, cost=${usage_cost_usd:.4f})."
+            )
+            return {
+                "text": text,
+                "usage": usage,
+                "usage_tokens": usage_tokens,
+                "estimated_cost_usd": usage_cost_usd,
+                "model": runtime_model,
+                "route_id": model_route,
+                "provider_id": execution.provider_id,
+                "branch_id": branch_id,
+                "lane": lane,
+                "cached": False,
+                "__mvi_text_output": mvi,
+            }
+        except _RlmProviderApiKeyMissing as exc:
+            return self._rlm_mvi_error("api_key_missing", str(exc))
+        except ProviderRuntimeError as exc:
+            self._rlm_record_branch_event(
+                branch_id=branch_id,
+                depth=depth,
+                status="failed",
+                reason="subcall_provider_error",
+                metadata={"error": str(exc), "lane": lane},
+            )
+            self._rlm_record_hybrid_event(
+                kind="llm.query",
+                status="failed",
+                branch_id=branch_id,
+                depth=depth,
+                metadata={"call_id": call_id, "lane": lane, "error": str(exc)},
+            )
+            return self._rlm_mvi_error("subcall_provider_error", str(exc))
+        except Exception as exc:
+            self._rlm_record_branch_event(
+                branch_id=branch_id,
+                depth=depth,
+                status="failed",
+                reason="subcall_exception",
+                metadata={"error": str(exc), "lane": lane},
+            )
+            self._rlm_record_hybrid_event(
+                kind="llm.query",
+                status="failed",
+                branch_id=branch_id,
+                depth=depth,
+                metadata={"call_id": call_id, "lane": lane, "error": str(exc)},
+            )
+            return self._rlm_mvi_error("subcall_exception", str(exc))
+
+    def _handle_llm_batch_query_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or "Batch replay result"))
+                return payload
+            if isinstance(expected_output, list):
+                rows: List[Dict[str, Any]] = []
+                for idx, row in enumerate(expected_output):
+                    if isinstance(row, dict):
+                        out = dict(row)
+                    else:
+                        out = {"text": str(row)}
+                    out.setdefault("request_index", idx)
+                    out.setdefault("status", "completed")
+                    rows.append(out)
+                return {
+                    "batch_id": str(tool_call.get("id") or uuid.uuid4().hex[:12]),
+                    "results": rows,
+                    "item_count": len(rows),
+                    "__mvi_text_output": f"Batch replay returned {len(rows)} item(s).",
+                }
+            text = str(expected_output)
+            return {"output": text, "__mvi_text_output": text}
+
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use llm.batch_query.")
+
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "llm.batch_query requires object arguments.")
+
+        raw_queries = args.get("queries")
+        if not isinstance(raw_queries, list) or not raw_queries:
+            return self._rlm_mvi_error("invalid_arguments", "llm.batch_query requires non-empty queries[].")
+        if len(raw_queries) > 64:
+            return self._rlm_mvi_error("invalid_arguments", "llm.batch_query currently supports at most 64 queries per batch.")
+
+        cfg = self._rlm_cfg()
+        scheduling = cfg.get("scheduling")
+        scheduling = dict(scheduling) if isinstance(scheduling, dict) else {}
+        batch_cfg = scheduling.get("batch")
+        batch_cfg = dict(batch_cfg) if isinstance(batch_cfg, dict) else {}
+        mode = str(scheduling.get("mode") or "sync").strip().lower()
+        batch_enabled = bool(batch_cfg.get("enabled", mode == "batch"))
+        if not batch_enabled and mode != "batch":
+            return self._rlm_mvi_error("batch_disabled", "Enable features.rlm.scheduling.mode=batch or scheduling.batch.enabled=true.")
+
+        max_concurrency_cfg = int(batch_cfg.get("max_concurrency") or 4)
+        max_concurrency = max(1, min(16, max_concurrency_cfg))
+        per_branch_cap_cfg = batch_cfg.get("max_concurrency_per_branch")
+        if per_branch_cap_cfg is None:
+            per_branch_cap_cfg = batch_cfg.get("per_branch_max_concurrency")
+        per_branch_cap = max(1, int(per_branch_cap_cfg)) if per_branch_cap_cfg is not None else 0
+        retries_default = int(batch_cfg.get("retries") or 0)
+        timeout_default = float(batch_cfg.get("timeout_seconds") or 45.0)
+        fail_fast_default = bool(batch_cfg.get("fail_fast", False))
+        fail_fast = bool(args.get("fail_fast", fail_fast_default))
+
+        root_branch_id = self._rlm_resolve_branch_id(args.get("branch_id") or "root")
+        batch_id = str(tool_call.get("id") or uuid.uuid4().hex[:12])
+
+        limits = build_budget_limits(self.config if isinstance(getattr(self, "config", None), dict) else {})
+        budget_state = self._rlm_budget_state()
+        reservation_state = dict(budget_state)
+        prepared: List[Dict[str, Any]] = []
+        blocked_rows: List[Dict[str, Any]] = []
+        user_model_override = args.get("model")
+        parent_call_id = str(args.get("parent_call_id") or "")
+        default_depth = int(args.get("depth") or 0) if str(args.get("depth") or "").strip() else 0
+
+        # Preflight + reservation pass in deterministic request-index order.
+        for request_index, raw in enumerate(raw_queries):
+            if not isinstance(raw, dict):
+                blocked_rows.append(
+                    {
+                        "request_index": request_index,
+                        "status": "blocked",
+                        "reason": "invalid_query_item",
+                        "error": "queries[] entries must be objects.",
+                    }
+                )
+                continue
+            prompt = str(raw.get("prompt") or "").strip()
+            if not prompt:
+                blocked_rows.append(
+                    {
+                        "request_index": request_index,
+                        "status": "blocked",
+                        "reason": "invalid_prompt",
+                        "error": "query.prompt is required and must be non-empty.",
+                    }
+                )
+                continue
+            depth = int(raw.get("depth") or default_depth) if str(raw.get("depth") or default_depth).strip() else 0
+            task_id = str(raw.get("task_id") or f"batch_{request_index}")
+            branch_id = self._rlm_resolve_branch_id(raw.get("branch_id") or root_branch_id, task_id=task_id)
+            blob_refs_raw = raw.get("blob_refs")
+            blob_refs = [str(x) for x in blob_refs_raw if x is not None] if isinstance(blob_refs_raw, list) else []
+            lane, lane_reason = self._rlm_route_lane(prompt=prompt, args=raw, blob_refs=blob_refs)
+            self._rlm_record_router_decision(lane=lane, reason=f"batch:{lane_reason}")
+            can_start, block_reason = can_start_subcall(
+                state=reservation_state,
+                limits=limits,
+                branch_id=branch_id,
+                depth=depth,
+            )
+            if not can_start:
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="blocked",
+                    reason=block_reason or "budget_blocked",
+                    metadata={"batch_id": batch_id, "request_index": request_index, "lane": lane},
+                )
+                blocked_rows.append(
+                    {
+                        "request_index": request_index,
+                        "status": "blocked",
+                        "reason": block_reason or "budget_blocked",
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": lane,
+                    }
+                )
+                continue
+            reservation_state = consume_subcall(
+                state=reservation_state,
+                branch_id=branch_id,
+                depth=depth,
+                usage_tokens=0,
+                usage_cost_usd=0.0,
+            )
+            prepared.append(
+                {
+                    "request_index": request_index,
+                    "prompt": prompt,
+                    "branch_id": branch_id,
+                    "depth": depth,
+                    "blob_refs": blob_refs,
+                    "lane": lane,
+                    "lane_reason": lane_reason,
+                    "system_hint": str(raw.get("system_hint") or ""),
+                    "max_completion_tokens": raw.get("max_completion_tokens"),
+                    "temperature": raw.get("temperature"),
+                    "model": raw.get("model") or user_model_override,
+                    "task_id": task_id,
+                    "timeout_seconds": float(raw.get("timeout_seconds") or timeout_default),
+                    "retries": int(raw.get("retries") if raw.get("retries") is not None else retries_default),
+                    "parent_call_id": str(raw.get("parent_call_id") or parent_call_id),
+                }
+            )
+
+        prepared_by_index: Dict[int, Dict[str, Any]] = {int(row["request_index"]): dict(row) for row in prepared}
+
+        def _with_item_defaults(item: Dict[str, Any], row: Dict[str, Any]) -> Dict[str, Any]:
+            out = dict(row)
+            out.setdefault("request_index", int(item.get("request_index") or 0))
+            out.setdefault("branch_id", str(item.get("branch_id") or root_branch_id))
+            out.setdefault("depth", int(item.get("depth") or 0))
+            out.setdefault("lane", item.get("lane"))
+            out.setdefault("parent_call_id", str(item.get("parent_call_id") or ""))
+            blob_refs = item.get("blob_refs")
+            out.setdefault("blob_refs", list(blob_refs) if isinstance(blob_refs, list) else [])
+            return out
+
+        def _invoke_prepared(item: Dict[str, Any]) -> Dict[str, Any]:
+            request_index = int(item["request_index"])
+            prompt = str(item["prompt"])
+            branch_id = str(item["branch_id"])
+            depth = int(item["depth"])
+            model_route = str(
+                item.get("model")
+                or (cfg.get("subcall", {}) or {}).get("model")
+                or getattr(self, "_current_route_id", "")
+                or ((self.config.get("providers") or {}).get("default_model") if isinstance(getattr(self, "config", None), dict) else "")
+                or ""
+            ).strip()
+            if not model_route:
+                return {
+                    "request_index": request_index,
+                    "status": "failed",
+                    "reason": "model_unresolved",
+                    "error": "Could not resolve route/model.",
+                    "branch_id": branch_id,
+                    "depth": depth,
+                    "lane": item.get("lane"),
+                    "attempt_count": 0,
+                }
+            inline_limit = int((cfg.get("subcall", {}) or {}).get("max_inline_blob_bytes") or 12000)
+            user_prompt = self._rlm_build_subcall_prompt(prompt, list(item.get("blob_refs") or []), max(0, inline_limit))
+            messages: List[Dict[str, Any]] = []
+            if str(item.get("system_hint") or "").strip():
+                messages.append({"role": "system", "content": str(item["system_hint"])})
+            messages.append({"role": "user", "content": user_prompt})
+
+            retries = max(0, int(item.get("retries") or 0))
+            timeout_seconds = max(0.0, float(item.get("timeout_seconds") or 0.0))
+            attempts: List[Dict[str, Any]] = []
+            for attempt in range(retries + 1):
+                started = time.time()
+                try:
+                    execution = self._execute_rlm_provider_subcall(
+                        model_route=model_route,
+                        messages=messages,
+                        runtime_extra={
+                            "rlm_subcall": True,
+                            "rlm_batch_subcall": True,
+                            "branch_id": branch_id,
+                            "batch_id": batch_id,
+                            "request_index": request_index,
+                            "max_completion_tokens": item.get("max_completion_tokens"),
+                            "temperature": item.get("temperature"),
+                        },
+                        started_at=started,
+                        timeout_seconds=timeout_seconds,
+                    )
+                    return {
+                        "request_index": request_index,
+                        "status": "completed",
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "text": execution.text,
+                        "usage": execution.usage,
+                        "usage_tokens": execution.usage_tokens,
+                        "estimated_cost_usd": execution.usage_cost_usd,
+                        "route_id": model_route,
+                        "resolved_model": execution.resolved_model,
+                        "provider_id": execution.provider_id,
+                        "prompt_hash": hashlib.sha256(user_prompt.encode("utf-8", errors="ignore")).hexdigest(),
+                        "attempt_count": attempt + 1,
+                        "attempts": attempts + [{"attempt": attempt + 1, "status": "completed", "duration_seconds": execution.elapsed_seconds}],
+                    }
+                except _RlmProviderSubcallTimeout as exc:
+                    elapsed = exc.elapsed_seconds
+                    attempts.append({"attempt": attempt + 1, "status": "timeout", "duration_seconds": elapsed})
+                    if attempt < retries:
+                        continue
+                    return {
+                        "request_index": request_index,
+                        "status": "timeout",
+                        "reason": "timeout",
+                        "error": f"subcall exceeded timeout_seconds={timeout_seconds}",
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "attempt_count": attempt + 1,
+                        "attempts": attempts,
+                    }
+                except _RlmProviderApiKeyMissing as exc:
+                    return {
+                        "request_index": request_index,
+                        "status": "failed",
+                        "reason": "api_key_missing",
+                        "error": str(exc),
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "attempt_count": attempt + 1,
+                    }
+                except ProviderRuntimeError as exc:
+                    attempts.append({"attempt": attempt + 1, "status": "provider_error", "error": str(exc)})
+                    if attempt < retries:
+                        continue
+                    return {
+                        "request_index": request_index,
+                        "status": "failed",
+                        "reason": "subcall_provider_error",
+                        "error": str(exc),
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "attempt_count": attempt + 1,
+                        "attempts": attempts,
+                    }
+                except Exception as exc:
+                    attempts.append({"attempt": attempt + 1, "status": "exception", "error": str(exc)})
+                    if attempt < retries:
+                        continue
+                    return {
+                        "request_index": request_index,
+                        "status": "failed",
+                        "reason": "subcall_exception",
+                        "error": str(exc),
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "attempt_count": attempt + 1,
+                        "attempts": attempts,
+                    }
+            return {
+                "request_index": request_index,
+                "status": "failed",
+                "reason": "retry_exhausted",
+                "error": "exhausted retries",
+                "branch_id": branch_id,
+                "depth": depth,
+                "lane": item.get("lane"),
+                "attempt_count": retries + 1,
+                "attempts": attempts,
+            }
+
+        results_by_index: Dict[int, Dict[str, Any]] = {int(row["request_index"]): dict(row) for row in blocked_rows}
+        if prepared:
+            if fail_fast:
+                halted = False
+                for item in sorted(prepared, key=lambda row: int(row.get("request_index") or 0)):
+                    idx = int(item["request_index"])
+                    if halted:
+                        results_by_index[idx] = _with_item_defaults(
+                            item,
+                            {
+                                "request_index": idx,
+                                "status": "blocked",
+                                "reason": "fail_fast_short_circuit",
+                                "error": "batch halted after first failed item due to fail_fast=true",
+                                "attempt_count": 0,
+                            },
+                        )
+                        continue
+                    try:
+                        row = _invoke_prepared(item)
+                    except Exception as exc:  # defensive
+                        row = {
+                            "request_index": idx,
+                            "status": "failed",
+                            "reason": "executor_exception",
+                            "error": str(exc),
+                            "attempt_count": 1,
+                        }
+                    row = _with_item_defaults(item, row)
+                    results_by_index[idx] = row
+                    if str(row.get("status") or "").lower() != "completed":
+                        halted = True
+            else:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as pool:
+                    pending = sorted(prepared, key=lambda row: int(row.get("request_index") or 0))
+                    inflight: Dict[concurrent.futures.Future, Dict[str, Any]] = {}
+                    branch_inflight: Dict[str, int] = {}
+                    while pending or inflight:
+                        submitted_any = False
+                        while pending and len(inflight) < max_concurrency:
+                            pick_index: Optional[int] = None
+                            for i, candidate in enumerate(pending):
+                                branch_key = str(candidate.get("branch_id") or root_branch_id)
+                                if per_branch_cap <= 0 or int(branch_inflight.get(branch_key) or 0) < per_branch_cap:
+                                    pick_index = i
+                                    break
+                            if pick_index is None:
+                                break
+                            item = pending.pop(pick_index)
+                            future = pool.submit(_invoke_prepared, item)
+                            inflight[future] = item
+                            branch_key = str(item.get("branch_id") or root_branch_id)
+                            branch_inflight[branch_key] = int(branch_inflight.get(branch_key) or 0) + 1
+                            submitted_any = True
+                        if not inflight:
+                            if pending and not submitted_any:
+                                item = pending.pop(0)
+                                future = pool.submit(_invoke_prepared, item)
+                                inflight[future] = item
+                                branch_key = str(item.get("branch_id") or root_branch_id)
+                                branch_inflight[branch_key] = int(branch_inflight.get(branch_key) or 0) + 1
+                            continue
+                        done, _ = concurrent.futures.wait(
+                            list(inflight.keys()),
+                            return_when=concurrent.futures.FIRST_COMPLETED,
+                        )
+                        for future in done:
+                            item = inflight.pop(future, {})
+                            idx = int(item.get("request_index") or 0)
+                            branch_key = str(item.get("branch_id") or root_branch_id)
+                            branch_inflight[branch_key] = max(0, int(branch_inflight.get(branch_key) or 0) - 1)
+                            if int(branch_inflight.get(branch_key) or 0) == 0:
+                                branch_inflight.pop(branch_key, None)
+                            try:
+                                row = future.result()
+                            except Exception as exc:  # defensive
+                                row = {
+                                    "request_index": idx,
+                                    "status": "failed",
+                                    "reason": "executor_exception",
+                                    "error": str(exc),
+                                    "attempt_count": 1,
+                                }
+                            results_by_index[idx] = _with_item_defaults(item, row)
+
+        # Commit outputs and artifacts strictly in request index order.
+        ordered_results: List[Dict[str, Any]] = []
+        budget_state_live = self._rlm_budget_state()
+        for idx in sorted(results_by_index.keys()):
+            row = dict(results_by_index[idx])
+            branch_id = self._rlm_resolve_branch_id(row.get("branch_id") or root_branch_id)
+            depth = int(row.get("depth") or 0)
+            status = str(row.get("status") or "failed")
+            lane = str(row.get("lane") or "tool_heavy")
+            call_id = f"{batch_id}:{idx}"
+            if status in {"completed", "failed", "timeout"}:
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="running",
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "call_id": call_id},
+                )
+            if status == "completed":
+                usage_tokens = int(row.get("usage_tokens") or 0)
+                usage_cost_usd = float(row.get("estimated_cost_usd") or 0.0)
+                budget_state_live = consume_subcall(
+                    state=budget_state_live,
+                    branch_id=branch_id,
+                    depth=depth,
+                    usage_tokens=usage_tokens,
+                    usage_cost_usd=usage_cost_usd,
+                )
+                self._set_rlm_budget_state(budget_state_live)
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="completed",
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "usage_tokens": usage_tokens},
+                )
+            elif status == "blocked":
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="blocked",
+                    reason=str(row.get("reason") or "budget_blocked"),
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane},
+                )
+            elif status == "timeout":
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="failed",
+                    reason="timeout",
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "error": row.get("error")},
+                )
+            else:
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="failed",
+                    reason=str(row.get("reason") or "failed"),
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "error": row.get("error")},
+                )
+            if status == "completed":
+                self._rlm_record_hybrid_event(
+                    kind="llm.batch_query_item",
+                    status="completed",
+                    branch_id=branch_id,
+                    depth=depth,
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane},
+                )
+            elif status == "blocked":
+                self._rlm_record_hybrid_event(
+                    kind="llm.batch_query_item",
+                    status="blocked",
+                    branch_id=branch_id,
+                    depth=depth,
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "reason": row.get("reason")},
+                )
+            else:
+                self._rlm_record_hybrid_event(
+                    kind="llm.batch_query_item",
+                    status="failed" if status != "timeout" else "timeout",
+                    branch_id=branch_id,
+                    depth=depth,
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "reason": row.get("reason")},
+                )
+            artifact_row = {
+                "event": "llm.batch_query",
+                "batch_id": batch_id,
+                "request_index": idx,
+                "call_id": call_id,
+                "parent_call_id": row.get("parent_call_id"),
+                "branch_id": branch_id,
+                "depth": depth,
+                "lane": lane,
+                "status": status,
+                "reason": row.get("reason"),
+                "route_id": row.get("route_id"),
+                "resolved_model": row.get("resolved_model"),
+                "provider_id": row.get("provider_id"),
+                "prompt_hash": row.get("prompt_hash"),
+                "consumed_blobs": list(row.get("blob_refs") or []),
+                "created_blobs": [],
+                "usage": row.get("usage") or {},
+                "usage_tokens": int(row.get("usage_tokens") or 0),
+                "estimated_cost_usd": float(row.get("estimated_cost_usd") or 0.0),
+                "attempt_count": int(row.get("attempt_count") or 0),
+            }
+            self._rlm_append_jsonl("meta/rlm_batch_subcalls.jsonl", artifact_row)
+            row["branch_id"] = branch_id
+            row["call_id"] = call_id
+            ordered_results.append(row)
+
+        batch_summary = self._rlm_update_batch_summary_state(ordered_results)
+        completed_n = len([row for row in ordered_results if str(row.get("status")) == "completed"])
+        blocked_n = len([row for row in ordered_results if str(row.get("status")) == "blocked"])
+        failed_n = len([row for row in ordered_results if str(row.get("status")) in {"failed", "error"}])
+        timeout_n = len([row for row in ordered_results if str(row.get("status")) == "timeout"])
+        mvi = (
+            f"Batch complete: {completed_n} completed, {blocked_n} blocked, "
+            f"{failed_n} failed, {timeout_n} timeout (n={len(ordered_results)})."
+        )
+        return {
+            "batch_id": batch_id,
+            "item_count": len(ordered_results),
+            "results": ordered_results,
+            "summary": {
+                "completed": completed_n,
+                "blocked": blocked_n,
+                "failed": failed_n,
+                "timeout": timeout_n,
+                "max_concurrency": max_concurrency,
+                "max_concurrency_per_branch": per_branch_cap if per_branch_cap > 0 else None,
+                "fail_fast": bool(fail_fast),
+            },
+            "batch_rollup": batch_summary,
+            "__mvi_text_output": mvi,
+        }
+
+    def _append_environment_prompt(self, system_prompt: str) -> str:
+        prompts_cfg = self.config.get("prompts") or {}
+        env_cfg = prompts_cfg.get("environment") or {}
+        if not isinstance(env_cfg, dict) or not env_cfg.get("enabled"):
+            return system_prompt
+        if str(env_cfg.get("format") or "").lower() != "opencode":
+            return system_prompt
+        file_limit = env_cfg.get("file_limit")
+        file_limit = int(file_limit) if isinstance(file_limit, int) or str(file_limit).isdigit() else 200
+        env_block = self._build_opencode_environment_block(file_limit=file_limit)
+        if not env_block:
+            return system_prompt
+        if system_prompt:
+            sep = "\n" if system_prompt.endswith("\n") else "\n\n"
+            return f"{system_prompt}{sep}{env_block}"
+        return env_block
+
+    def _build_opencode_environment_block(self, file_limit: int = 200) -> str:
+        workspace = Path(str(self.workspace)).resolve()
+        git_root = self._find_git_root(workspace)
+        is_git = bool(git_root)
+        platform = sys.platform
+        date_str = datetime.now().strftime("%a %b %d %Y")
+        tree_text = self._opencode_tree(workspace, limit=file_limit) if is_git else ""
+        lines = [
+            "Here is some useful information about the environment you are running in:",
+            "<env>",
+            f"  Working directory: {workspace}",
+            f"  Is directory a git repo: {'yes' if is_git else 'no'}",
+            f"  Platform: {platform}",
+            f"  Today's date: {date_str}",
+            "</env>",
+            "<files>",
+            f"  {tree_text}",
+            "</files>",
+        ]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _find_git_root(start: Path) -> Optional[Path]:
+        current = start
+        while True:
+            if (current / ".git").exists():
+                return current
+            if current.parent == current:
+                return None
+            current = current.parent
+
+    def _opencode_tree(self, root: Path, limit: int = 200) -> str:
+        files = []
+        for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=True):
+            dirnames[:] = [d for d in dirnames if d != ".git"]
+            for name in filenames:
+                rel = os.path.relpath(os.path.join(dirpath, name), root)
+                if ".git" in rel.split(os.sep):
+                    continue
+                if ".opencode" in rel:
+                    continue
+                files.append(rel)
+
+        class Node:
+            def __init__(self, path_parts: List[str]):
+                self.path = path_parts
+                self.children: List["Node"] = []
+
+        def get_path(node: Node, parts: List[str], create: bool) -> Optional[Node]:
+            if not parts:
+                return node
+            current = node
+            for part in parts:
+                existing = next((x for x in current.children if x.path[-1] == part), None)
+                if existing is None:
+                    if not create:
+                        return None
+                    existing = Node(current.path + [part])
+                    current.children.append(existing)
+                current = existing
+            return current
+
+        root_node = Node([])
+        for file in files:
+            if ".opencode" in file:
+                continue
+            parts = file.split(os.sep)
+            get_path(root_node, parts, True)
+
+        def sort_node(node: Node) -> None:
+            node.children.sort(
+                key=lambda x: (0 if x.children else 1, x.path[-1])
+            )
+            for child in node.children:
+                sort_node(child)
+
+        sort_node(root_node)
+
+        current = [root_node]
+        result = Node([])
+        processed = 0
+        limit = limit if isinstance(limit, int) and limit > 0 else 50
+        while current:
+            next_level: List[Node] = []
+            for node in current:
+                if node.children:
+                    next_level.extend(node.children)
+            max_children = max([len(x.children) for x in current], default=0)
+            for i in range(max_children):
+                for node in current:
+                    if processed >= limit:
+                        break
+                    if i >= len(node.children):
+                        continue
+                    child = node.children[i]
+                    get_path(result, child.path, True)
+                    processed += 1
+                if processed >= limit:
+                    break
+            if processed >= limit:
+                for node in current + next_level:
+                    compare = get_path(result, node.path, False)
+                    if not compare:
+                        continue
+                    if len(compare.children) != len(node.children):
+                        diff = len(node.children) - len(compare.children)
+                        compare.children.append(Node(compare.path + [f"[{diff} truncated]"]))
+                break
+            current = next_level
+
+        lines: List[str] = []
+
+        def render(node: Node, depth: int) -> None:
+            indent = "\t" * depth
+            name = node.path[-1]
+            suffix = "/" if node.children else ""
+            lines.append(f"{indent}{name}{suffix}")
+            for child in node.children:
+                render(child, depth + 1)
+
+        for child in result.children:
+            render(child, 0)
+
+        return "\n".join(lines)
+
+    def _capture_turn_diagnostics(
+        self,
+        session_state: SessionState,
+        provider_result: Optional[ProviderResult],
+        allowed_tools: Optional[List[str]],
+    ) -> Dict[str, Any]:
+        diag = capture_turn_diagnostics(
+            self,
+            session_state,
+            provider_result,
+            allowed_tools,
+            todo_seed_names=list(TODO_SEED_TOOL_NAMES),
+        )
+        if diag.get("has_todo_seed"):
+            session_state.set_provider_metadata("todo_seed_completed", True)
+        self._turn_diagnostics.append(diag)
+        if len(self._turn_diagnostics) > 400:
+            self._turn_diagnostics = self._turn_diagnostics[-400:]
+        # Delegate plan bootstrap warning to guardrail orchestrator
+        try:
+            self.guardrail_orchestrator.maybe_emit_plan_bootstrap_warning(session_state, diag)
+        except Exception:
+            pass
+        return diag
+
+
+    def _todo_config(self) -> Dict[str, Any]:
+        return self.guardrail_coordinator.todo_config()
+
+
+    def _prompts_config_with_todos(self) -> Dict[str, Any]:
+        todos_cfg = self._todo_config()
+        if not todos_cfg["enabled"]:
+            return self.config
+        cfg = copy.deepcopy(self.config)
+        prompts_cfg = cfg.setdefault("prompts", {})
+        packs = prompts_cfg.setdefault("packs", {})
+        base_pack = packs.setdefault("base", {})
+        base_pack.setdefault("todo_plan", "implementations/prompts/todos/plan.md")
+        base_pack.setdefault("todo_build", "implementations/prompts/todos/build.md")
+        injection = prompts_cfg.setdefault("injection", {})
+        system_order = injection.setdefault("system_order", [])
+        if "@pack(base).todo_plan" not in system_order:
+            system_order.append("@pack(base).todo_plan")
+        if "@pack(base).todo_build" not in system_order:
+            system_order.append("@pack(base).todo_build")
+        return cfg
+
+    def _completion_guard_check(self, session_state: SessionState) -> Tuple[bool, Optional[str]]:
+        return self.guardrail_orchestrator.completion_guard_check(session_state)
+
+    def _emit_completion_guard_feedback(
+        self,
+        session_state: SessionState,
+        markdown_logger: MarkdownLogger,
+        reason: str,
+        stream_responses: bool,
+    ) -> bool:
+        return self.guardrail_orchestrator.emit_completion_guard_feedback(
+            session_state,
+            markdown_logger,
+            reason,
+            stream_responses,
+        )
+
+    @staticmethod
+    def _is_test_command(command: str) -> bool:
+        if not command:
+            return False
+        normalized = command.lower()
+        if re.search(r"(^|[;&|]\s*)(make)(\s|$)", normalized):
+            return True
+        if re.search(r"(^|[;&|]\s*)(?:timeout\s+\d+s?\s+)?(?:(?:bash|sh)\s+)?(?:\./)?smoke_test\.sh(?:\s|$)", normalized):
+            return True
+        test_keywords = (
+            "pytest",
+            "npm test",
+            "yarn test",
+            "pnpm test",
+            "go test",
+            "cargo test",
+            "mvn test",
+            "gradle test",
+            "bundle exec rspec",
+            "tox",
+        )
+        return any(keyword in normalized for keyword in test_keywords)
+
+    def _record_usage_reward_metrics(
+        self,
+        session_state: SessionState,
+        turn_index: int,
+        usage_raw: Optional[Dict[str, Any]],
+    ) -> None:
+        if not isinstance(usage_raw, dict):
+            return
+        prompt_tokens = usage_raw.get("prompt_tokens") or usage_raw.get("input_tokens")
+        completion_tokens = usage_raw.get("completion_tokens") or usage_raw.get("output_tokens")
+        try:
+            prompt_value = float(prompt_tokens) if prompt_tokens is not None else 0.0
+        except (TypeError, ValueError):
+            prompt_value = 0.0
+        try:
+            completion_value = float(completion_tokens) if completion_tokens is not None else 0.0
+        except (TypeError, ValueError):
+            completion_value = 0.0
+        total_tokens = prompt_value + completion_value
+        try:
+            session_state.add_reward_metric(turn_index, "TE", total_tokens)
+            if total_tokens > 0:
+                toe_value = completion_value / total_tokens
+                session_state.add_reward_metric(turn_index, "TOE", toe_value)
+        except Exception:
+            pass
+        latency = getattr(self, "_last_runtime_latency", None)
+        if latency is not None:
+            try:
+                session_state.add_reward_metric(turn_index, "LE", float(latency))
+            except Exception:
+                pass
+        try:
+            spa_value = 0.0 if getattr(self, "_last_html_detected", False) else 1.0
+            session_state.add_reward_metric(turn_index, "SPA", spa_value)
+        except Exception:
+            pass
+
+
+    def create_file(self, path: str) -> Dict[str, Any]:
+        return self._ray_get(self.sandbox.write_text.remote(path, ""))
+
+    def read_file(self, path: str) -> Dict[str, Any]:
+        return self._ray_get(self.sandbox.read_text.remote(path))
+    def _private_workspace_path(self, path: str) -> bool: relative = Path(self._normalize_workspace_path(path)).relative_to(Path(self.workspace).resolve()).parts; return relative[:2] in {(".breadboard", "artifacts"), (".breadboard", "attachments")}
+    def _patch_touches_private_workspace(self, patch: str) -> bool: return any(self._private_workspace_path(match.group(1).strip().strip('"')) for match in re.finditer(r'^(?:\*\*\* (?:Add|Update|Delete) File:|\*\*\* Move to:|---|\+\+\+|(?:rename|copy) (?:from|to))\s+(?:[ab]/)?("?[^"\t\n]+"?)(?:\t.*)?$', str(patch), re.MULTILINE))
+
+    def list_dir(self, path: str, depth: int = 1) -> Dict[str, Any]:
+        # Always pass virtual paths when using VirtualizedSandbox; else pass normalized absolute
+        if getattr(self, 'using_virtualized', False):
+            return self._ray_get(self.sandbox.ls.remote(path, depth))
+        target = self._normalize_workspace_path(str(path))
+        return self._ray_get(self.sandbox.ls.remote(target, depth))
+
+    def run_shell(self, command: str, timeout: Optional[int] = None) -> Dict[str, Any]:
+        def _maybe_append_system_reminder(text: str) -> str:
+            if not text:
+                return text
+            if "<system-reminder>" in text:
+                return text
+            try:
+                tools_cfg = (self.config.get("provider_tools", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
+                anthropic_cfg = (tools_cfg.get("anthropic", {}) or {}) if isinstance(tools_cfg, dict) else {}
+                reminders_cfg = (anthropic_cfg.get("system_reminders", {}) or {}) if isinstance(anthropic_cfg, dict) else {}
+                if not isinstance(reminders_cfg, dict) or not bool(reminders_cfg.get("enabled")):
+                    return text
+                budget = reminders_cfg.get("usd_budget_limit")
+                try:
+                    budget_f = float(budget) if budget is not None else 0.0
+                except Exception:
+                    budget_f = 0.0
+                spent_f = 0.0
+                remaining_f = max(0.0, budget_f - spent_f)
+                return (
+                    f"{text.rstrip(chr(10))}\n\n"
+                    "<system-reminder>\n"
+                    f"USD budget: ${spent_f}/${budget_f}; ${remaining_f} remaining\n"
+                    "</system-reminder>"
+                )
+            except Exception:
+                return text
+
+        if not timeout:
+            # A hard 30s default silently kills long-running legitimate tools
+            # (builds, test suites, remote evals); profiles can raise it via
+            # tools.run_shell_timeout_s without models having to pass timeouts.
+            try:
+                timeout = int((self.config.get("tools") or {}).get("run_shell_timeout_s") or 30)
+            except Exception:
+                timeout = 30
+        result = self._ray_get(self.sandbox.run.remote(command, timeout=timeout, stream=True))
+
+        # Newer sandbox implementations return a dict payload directly.
+        if isinstance(result, dict):
+            stdout = str(result.get("stdout") or "")
+            stderr = str(result.get("stderr") or "")
+            exit_code = result.get("exit")
+            stderr = build_shell_timeout_diagnostic(command, exit_code, stdout, stderr)
+            if stderr and (exit_code not in (0, "0", None) or not stdout):
+                parts = []
+                if stdout:
+                    parts.append(stdout)
+                parts.append(stderr)
+                mvi_text = "\n".join(parts)
+            else:
+                mvi_text = stdout if stdout else stderr
+            mvi_text = _maybe_append_system_reminder(mvi_text)
+            payload: Dict[str, Any] = {"stdout": stdout, "exit": exit_code, "__mvi_text_output": mvi_text}
+            if stderr:
+                payload["stderr"] = stderr
+            return payload
+
+        # Legacy/virtualized sandboxes may return an adaptive stream list where
+        # the last element is {"exit": code}.
+        if not isinstance(result, list):
+            text = str(result)
+            return {"stdout": text, "exit": None, "__mvi_text_output": text}
+
+        exit_obj = result[-1] if result else {"exit": None}
+        lines: list[str] = []
+        for x in result[:-1]:
+            if not isinstance(x, str):
+                continue
+            if x.startswith(">>>>>"):
+                continue
+            lines.append(x)
+        stdout = "\n".join(lines)
+        timeout_stderr = build_shell_timeout_diagnostic(command, exit_obj.get("exit"), stdout, "")
+        if timeout_stderr:
+            lines.append(timeout_stderr)
+            stdout = "\n".join(lines)
+        mvi_text = _maybe_append_system_reminder(stdout)
+        return {"stdout": stdout, "exit": exit_obj.get("exit"), "__mvi_text_output": mvi_text}
+
+    def vcs(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        return self._ray_get(self.sandbox.vcs.remote(request))
+
+    
+    def _exec_raw(self, tool_call: Dict[str, Any], *, _skip_skill: bool = False) -> Dict[str, Any]:
+        """Raw tool execution without enhanced features (for compatibility)"""
+        name = tool_call["function"]
+        args = tool_call["arguments"]
+
+        normalized = registry_from_config(getattr(self, "config", None)).resolve_name(name.lower())
+
+        if normalized.startswith("mcp."):
+            return self._handle_mcp_tool(tool_call)
+        if normalized.startswith("skill."):
+            if _skip_skill:
+                return {"error": f"nested skill call blocked: {name}"}
+            return self._handle_skill_tool(tool_call)
+
+        if normalized == "task":
+            replay_expected = tool_call.get("expected_output") is not None or tool_call.get("expected_status") is not None
+            args = tool_call.get("arguments") or {}
+            resume_requested = isinstance(args, dict) and bool(str(args.get("resume") or "").strip())
+            allow_task = replay_expected or resume_requested or self._get_multi_agent_orchestrator() is not None
+            if not allow_task:
+                try:
+                    allow_task = bool(self.config.get("task_tool")) if isinstance(getattr(self, "config", None), dict) else False
+                except Exception:
+                    allow_task = False
+            if not allow_task:
+                return {"error": f"unknown tool {name}"}
+            return self._handle_task_tool(tool_call)
+
+        if normalized == "background_task":
+            return self._handle_background_task_tool(tool_call)
+
+        if normalized == "call_omo_agent":
+            return self._handle_call_omo_agent_tool(tool_call)
+
+        if normalized == "background_output":
+            return self._handle_background_output_tool(tool_call)
+
+        if normalized == "background_cancel":
+            return self._handle_background_cancel_tool(tool_call)
+
+        if normalized == "taskoutput":
+            return self._handle_taskoutput_tool(tool_call)
+
+        if normalized == "blob.put":
+            return self._handle_blob_put_tool(tool_call)
+        if normalized == "blob.put_file_slice":
+            return {"error": "private workspace storage is unavailable to model tools"} if tool_call.get("expected_output") is None and self._private_workspace_path(str(args.get("path") or "")) else self._handle_blob_put_file_slice_tool(tool_call)
+        if normalized == "blob.get":
+            return self._handle_blob_get_tool(tool_call)
+        if normalized == "blob.search":
+            return self._handle_blob_search_tool(tool_call)
+        if normalized == "llm.query":
+            return self._handle_llm_query_tool(tool_call)
+        if normalized == "llm.batch_query":
+            return self._handle_llm_batch_query_tool(tool_call)
+
+        if normalized == "create_file":
+            target = self._normalize_workspace_path(str(args.get("path", "")))
+            return {"error": "private workspace storage is unavailable to model tools"} if self._private_workspace_path(target) else self.create_file(target)
+        if normalized == "todo.write_board":
+            return self._execute_todo_tool("todo.write_board", args)
+        if normalized == "todo.list":
+            return self._execute_todo_tool("todo.list", args)
+        if normalized == "update_plan":
+            explanation = str(args.get("explanation") or "")
+            plan = args.get("plan")
+            try:
+                setattr(self, "_codex_update_plan_state", {"explanation": explanation, "plan": plan})
+            except Exception:
+                pass
+            return {
+                "ok": True,
+                "explanation": explanation,
+                "plan": plan,
+                "__mvi_text_output": "Plan updated",
+            }
+        if normalized == "create_file_from_block":
+            target = self._normalize_workspace_path(str(args.get("file_name", ""))); content = str(args.get("content", ""))
+            return {"error": "private workspace storage is unavailable to model tools"} if self._private_workspace_path(target) else self._ray_get(self.sandbox.write_text.remote(target, content))
+        if normalized == "read_file":
+            requested = str(args.get("path", ""))
+            if requested.startswith("attachment://"):
+                if not re.fullmatch(r"attachment://sha256:[0-9a-f]{64}", requested): return {"error": "invalid attachment URI"}
+                state = getattr(self, "_active_session_state", None); capabilities = state.get_provider_metadata("attachment_capabilities", {}) if state is not None else {}; trusted = capabilities.get(requested) if isinstance(capabilities, dict) else None
+                if not isinstance(trusted, dict): return {"error": "attachment URI is not authorized for this turn"}
+                try:
+                    ref = ArtifactRef(digest=str(trusted["digest"]), size_bytes=int(trusted["size_bytes"]), media_type=str(trusted["media_type"])); content = read_workspace_artifact(self.workspace, ref)
+                except Exception as exc: return {"error": f"attachment read failed: {exc}"}
+                return {"path": requested, "content": content.decode("utf-8", errors="replace"), "truncated": False, "offset": 0, "limit": None}
+            target = self._normalize_workspace_path(requested)
+            return {"error": "artifact store is private; use an authorized attachment URI"} if self._private_workspace_path(target) else self.read_file(target)
+        if normalized == "glob":
+            pattern = str(args.get("pattern") or "")
+            root = str(args.get("path") or ".")
+            limit = args.get("limit")
+            matches = self._ray_get(self.sandbox.glob.remote(pattern, root, None)); visible = [match for match in matches if not self._private_workspace_path(str(Path(root) / match))]; return visible[:int(limit)] if limit is not None and int(limit) >= 0 else visible
+        if normalized == "grep":
+            pattern = str(args.get("pattern") or "")
+            root = str(args.get("path") or ".")
+            include = args.get("include")
+            limit = int(args.get("limit") or 100)
+            result = self._ray_get(self.sandbox.grep.remote(pattern, root, include, 0)); result["matches"] = [row for row in result.get("matches", []) if not self._private_workspace_path(str(Path(root) / str(row.get("path", ""))))][:limit]; return result
+        if normalized == "list_dir":
+            target = self._normalize_workspace_path(str(args.get("path", ""))); depth = int(args.get("depth", 1)); result = self.list_dir(target, depth); visible = [row for row in result.get("items", []) if not self._private_workspace_path(str(Path(target) / str(row.get("path", ""))))]; result["items"] = result["entries"] = visible; return result
+        if normalized == "run_shell":
+            expected_output = tool_call.get("expected_output")
+            expected_status = tool_call.get("expected_status")
+            if isinstance(expected_output, str):
+                if str(expected_status or "").lower() == "error":
+                    return {"error": expected_output, "__mvi_text_output": expected_output}
+                return {"stdout": expected_output, "exit": 0, "__mvi_text_output": expected_output}
+            command = str(args.get("command") or args.get("input") or "")
+            if not command:
+                return {"error": "missing shell command"}
+            if re.search(r"(^|[;&|]\s*)apply_patch\s*<<", command):
+                msg = (
+                    "shell command rejected: use the native apply_patch tool for patches; "
+                    "do not invoke apply_patch through shell_command"
+                )
+                return {"error": msg, "exit": 126, "__mvi_text_output": msg}
+            workdir = str(args.get("workdir") or "").strip()
+            if workdir:
+                scoped_workdir = self._normalize_workspace_path(workdir)
+                command = f"cd {shlex.quote(scoped_workdir)} && {command}"
+            shell_scope_cfg = {}
+            try:
+                workspace_cfg = (self.config.get("workspace", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
+                shell_scope_cfg = (workspace_cfg.get("shell_scope", {}) or {}) if isinstance(workspace_cfg, dict) else {}
+            except Exception:
+                shell_scope_cfg = {}
+            if isinstance(shell_scope_cfg, dict) and bool(shell_scope_cfg.get("reject_parent_traversal")):
+                parent_traversal = re.search(r"(^|[;&|]\s*|\s)(?:find|rg|grep|ls|cat|sed)\s+\.\.(?:\s|/|$)", command)
+                cd_parent = re.search(r"(^|[;&|]\s*)cd\s+\.\.(?:\s|/|$)", command)
+                if parent_traversal or cd_parent:
+                    return {
+                        "error": "shell command rejected: parent-directory traversal is disabled for this workspace",
+                        "exit": 126,
+                        "__mvi_text_output": "shell command rejected: parent-directory traversal is disabled for this workspace",
+                    }
+            timeout = args.get("timeout")
+            if timeout is None:
+                timeout_ms = args.get("timeout_ms")
+                if isinstance(timeout_ms, (int, float)):
+                    timeout = max(1, int(math.ceil(float(timeout_ms) / 1000.0)))
+            return self.run_shell(command, timeout)
+        if normalized == "apply_search_replace":
+            target = self._normalize_workspace_path(str(args.get("file_name", "")))
+            if self._private_workspace_path(target): return {"error": "private workspace storage is unavailable to model tools"}
+            search_text = str(args.get("search", ""))
+            replace_text = str(args.get("replace", ""))
+            try:
+                exists = self._ray_get(self.sandbox.exists.remote(target))
+            except Exception:
+                exists = False
+            if not exists or search_text.strip() == "":
+                return self._ray_get(self.sandbox.write_text.remote(target, replace_text))
+            return self._ray_get(self.sandbox.edit_replace.remote(target, search_text, replace_text, 1))
+        if normalized == "apply_unified_patch":
+            patch_source_text = str(args.get("patch") or args.get("input") or "")
+            if self._patch_touches_private_workspace(patch_source_text): return {"error": "private workspace storage is unavailable to model tools"}
+            patch_text = patch_source_text
+            if (
+                "*** Add File:" in patch_text
+                or "*** Update File:" in patch_text
+                or "*** Delete File:" in patch_text
+                or "*** Begin Patch" in patch_text
+            ):
+                converted = self._convert_patch_to_unified(patch_text)
+                if converted:
+                    patch_text = converted
+                    try:
+                        tool_call["arguments"]["patch"] = patch_text
+                    except Exception:
+                        pass
+            result = self.vcs({
+                "action": "apply_patch",
+                "params": {
+                    "patch": patch_text,
+                    "three_way": True,
+                    "index": True,
+                    "whitespace": "fix",
+                },
+            })
+            if not result.get("ok"):
+                manual_result = self._apply_patch_operations_direct(patch_source_text or patch_text)
+                if manual_result:
+                    result = manual_result
+            if not result.get("ok"):
+                rejects = (result.get("data") or {}).get("rejects") or {}
+                has_rejects = any(bool(v) for v in rejects.values())
+                if has_rejects:
+                    retries = self._retry_diff_with_aider(patch_text)
+                    if retries is not None:
+                        return retries
+            return result
+        if name == "TodoWrite":
+            # Claude Code's TodoWrite is a separate surface from KyleCode's internal
+            # todo.* tools. For Claude parity configs we keep todo.* disabled but
+            # still need TodoWrite to work and return the exact success message.
+            payload = args if isinstance(args, dict) else {}
+            todos = payload.get("todos")
+            if not isinstance(todos, list):
+                msg = "Error: TodoWrite missing required todos"
+                return {"error": msg, "__mvi_text_output": msg}
+            try:
+                # Session-scoped, in-memory todo board (Claude Code does not persist into workspace).
+                setattr(self, "_claude_todowrite_state", list(todos))
+            except Exception:
+                pass
+            msg = (
+                "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. "
+                "Please proceed with the current tasks if applicable"
+            )
+            return {"ok": True, "__mvi_text_output": msg}
+        if name == "todowrite":
+            return self._execute_todo_tool("todo.write_board", args)
+        if name == "todoread":
+            return self._execute_todo_tool("todo.list", args)
+        if name in {"create_file_from_block", "Write"}:
+            path = self._normalize_workspace_path(str(args.get("file_name", "")))
+            content = str(args.get("content", ""))
+            return self._ray_get(self.sandbox.write_text.remote(path, content))
+        if name == "mark_task_complete":
+            return {"action": "complete"}
+        if name.startswith("todo."):
+            try:
+                return self._execute_todo_tool(name, args)
+            except ValueError as exc:
+                return {"error": str(exc)}
+        if name in {"run_shell", "Bash"}:
+            command = args.get("command") or args.get("input")
+            timeout = args.get("timeout")
+            if not timeout:
+                try:
+                    timeout = int((self.config.get("tools") or {}).get("run_shell_timeout_s") or 30)
+                except Exception:
+                    timeout = 30
+            return self._ray_get(self.sandbox.run_shell.remote(command, timeout=timeout))
+        return {"error": f"unknown tool {name}"}
+
+    def _execute_todo_tool(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        manager = getattr(self, "todo_manager", None)
+        if manager is None:
+            raise ValueError("Todo tools are disabled for this configuration.")
+        payload = args if isinstance(args, dict) else {}
+        if name == "todo.create":
+            return manager.handle_create(payload)
+        if name == "todo.update":
+            return manager.handle_update(payload)
+        if name == "todo.complete":
+            return manager.handle_complete(payload)
+        if name == "todo.cancel":
+            return manager.handle_cancel(payload)
+        if name == "todo.reorder":
+            return manager.handle_reorder(payload)
+        if name == "todo.attach":
+            return manager.handle_attach(payload)
+        if name == "todo.note":
+            return manager.handle_note(payload)
+        if name == "todo.list":
+            return manager.handle_list(payload)
+        if name == "todo.write_board":
+            todos_payload = payload.get("todos")
+            if isinstance(todos_payload, str):
+                try:
+                    payload["todos"] = json.loads(todos_payload)
+                except Exception:
+                    pass
+            if isinstance(payload.get("todos"), list):
+                normalized_list = []
+                status_map = {
+                    "todo": "pending",
+                    "pending": "pending",
+                    "in_progress": "in_progress",
+                    "blocked": "blocked",
+                    "complete": "completed",
+                    "completed": "completed",
+                    "done": "completed",
+                    "canceled": "canceled",
+                    "cancelled": "canceled",
+                }
+                for entry in payload["todos"]:
+                    if not isinstance(entry, dict):
+                        normalized_list.append(entry)
+                        continue
+                    normalized = dict(entry)
+                    if "content" not in normalized:
+                        for alias in ("description", "task", "item"):
+                            value = normalized.get(alias)
+                            if value:
+                                normalized["content"] = value
+                                if alias != "content":
+                                    normalized.pop(alias, None)
+                                break
+                    status = normalized.get("status")
+                    if isinstance(status, str):
+                        normalized["status"] = status_map.get(status.lower(), status)
+                    normalized_list.append(normalized)
+                payload["todos"] = normalized_list
+            return manager.handle_write_board(payload)
+        raise ValueError(f"Unsupported todo tool: {name}")
+
+    def run_agentic_loop(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str,
+        max_steps: int = 12,
+        output_json_path: Optional[str] = None,
+        stream_responses: bool = False,
+        output_md_path: Optional[str] = None,
+        tool_prompt_mode: str = "system_once",  # system_once | per_turn_append | system_and_per_turn | none
+        completion_sentinel: Optional[str] = ">>>>>> END RESPONSE",
+        completion_config: Optional[Dict[str, Any]] = None,
+        event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
+        event_queue: Optional[Any] = None,
+        permission_queue: Optional[Any] = None,
+        control_queue: Optional[Any] = None,
+        context: Optional[Dict[str, Any]] = None,
+        kernel_emitter_run_dir: Optional[str] = None,
+        kernel_emitter_mode: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        # Clear any prior stop request from earlier runs (Esc in the TUI should only
+        # interrupt the current in-flight run, not permanently disable the session).
+        self._stop_requested = False
+        # Initialize components
+        emitter = event_emitter
+        if emitter is None and event_queue is not None:
+            def queue_emitter(event_type: str, payload: Dict[str, Any], turn: Optional[int] = None) -> None:
+                try:
+                    event_queue.put((event_type, payload, turn))
+                except Exception:
+                    pass
+            emitter = queue_emitter
+        self.todo_manager = None
+        kernel_emitter = None
+        if kernel_emitter_run_dir:
+            try:
+                from pathlib import Path as _Path
+
+                from .runtime.kernel_emitter import JsonlKernelEmitter
+
+                mode = str(kernel_emitter_mode or "strict").strip().lower()
+                if mode not in {"strict", "quarantine", "off"}:
+                    mode = "strict"
+                kernel_emitter = JsonlKernelEmitter(_Path(kernel_emitter_run_dir), mode=mode)  # type: ignore[arg-type]
+            except Exception:
+                kernel_emitter = None
+        session_state = SessionState(self.workspace, self.image, self.config, event_emitter=emitter, kernel_emitter=kernel_emitter)
+        self._active_session_state = session_state
+        kernel_emitter_closed = False
+
+        def _close_kernel_emitter(reason: str = "session_end") -> None:
+            nonlocal kernel_emitter_closed
+            if kernel_emitter is None or kernel_emitter_closed:
+                return
+            try:
+                session_state.emit_session_transcript_snapshot(reason=reason)
+            finally:
+                kernel_emitter.close()
+                kernel_emitter_closed = True
+        try:
+            session_state.record_lifecycle_event(
+                "session_started",
+                {"model": str(model), "user_prompt": user_prompt or ""},
+            )
+        except Exception:
+            pass
+        self._multi_agent_last_wakeup_event_id = 0
+        self._prompt_hashes = {"system": None, "per_turn": {}}
+        self._turn_diagnostics = []
+        session_state.set_provider_metadata("permission_queue", permission_queue)
+        session_state.set_provider_metadata("control_queue", control_queue)
+        if isinstance(context, dict):
+            task_type = context.get("task_type") or context.get("taskType")
+            if task_type:
+                session_state.set_provider_metadata("task_type", str(task_type))
+            latency_budget = context.get("latency_budget_ms") or context.get("latencyBudgetMs")
+            if latency_budget is not None:
+                session_state.set_provider_metadata("latency_budget_ms", latency_budget)
+            initial_tpf = context.get("initial_tpf") or context.get("initialTpf")
+            if initial_tpf is not None:
+                session_state.set_provider_metadata("initial_tpf", initial_tpf)
+            winrate = context.get("winrate_vs_baseline") or context.get("winrateVsBaseline")
+            if winrate is not None:
+                session_state.set_provider_metadata("winrate_vs_baseline", winrate)
+            for key, value in context.items():
+                if isinstance(key, str) and (key.startswith("phase15_") or key.startswith("phase16_")):
+                    session_state.set_provider_metadata(key, value)
+            capabilities = context.get("attachment_capabilities")
+            if isinstance(capabilities, dict): session_state.set_provider_metadata("attachment_capabilities", capabilities)
+        session_state.set_provider_metadata("initial_user_prompt", user_prompt or "")
+        session_state.set_provider_metadata(
+            "requires_build_guard",
+            self._should_require_build_guard(user_prompt or ""),
+        )
+        session_state.set_provider_metadata(
+            "require_workspace_tool_usage",
+            should_require_workspace_tool_usage(user_prompt or ""),
+        )
+        session_state.set_provider_metadata("workspace_context_initialized", False)
+        session_state.set_provider_metadata("workspace_context_required", False)
+        session_state.set_provider_metadata("workspace_pending_todo_update_allowed", False)
+        todos_cfg = self._todo_config()
+        if todos_cfg["enabled"]:
+            todo_store = TodoStore(self.workspace)
+            todo_manager = TodoManager(todo_store, session_state.emit_todo_event)
+            session_state.set_todo_manager(todo_manager)
+            session_state.set_provider_metadata("todos_config", todos_cfg)
+            session_state.set_provider_metadata("todo_snapshot", todo_manager.snapshot())
+            self.todo_manager = todo_manager
+        orchestrator = self._get_multi_agent_orchestrator()
+        if orchestrator is not None:
+            try:
+                session_state.set_provider_metadata(
+                    "completion_owner_role",
+                    orchestrator.team_config.coordination.mission_owner_role,
+                )
+                session_state.set_provider_metadata(
+                    "coordination_legacy_completion_sources",
+                    list(orchestrator.team_config.coordination.legacy_completion_sources),
+                )
+                session_state.set_provider_metadata(
+                    "coordination_preserve_legacy_wake_conditions",
+                    bool(orchestrator.team_config.coordination.preserve_legacy_wake_conditions),
+                )
+                session_state.set_provider_metadata("multi_agent_ordering", "total_event_id")
+                orchestrator.event_log.add(
+                    "run.started",
+                    agent_id="main",
+                    payload={"model": str(model), "user_prompt": user_prompt or ""},
+                )
+                orchestrator.persist_event_log()
+            except Exception:
+                pass
+        completion_detector = CompletionDetector(
+            config=completion_config or self.config.get("completion", {}),
+            completion_sentinel=completion_sentinel
+        )
+        markdown_logger = MarkdownLogger(output_md_path)
+        # Also seed conversation.md under logging v2 if enabled
+        try:
+            if self.logger_v2.run_dir:
+                self.logger_v2.write_text("conversation/conversation.md", "# Conversation Transcript\n")
+        except Exception:
+            pass
+        telemetry_path = os.environ.get("RAYCODE_TELEMETRY_PATH")
+        if not telemetry_path and getattr(self.logger_v2, "run_dir", None):
+            telemetry_path = str(Path(self.logger_v2.run_dir) / "meta" / "telemetry.jsonl")
+        telemetry = TelemetryLogger(telemetry_path)
+        self._active_telemetry_logger = telemetry
+        self._mcp_manager = None
+        self._mcp_replay_tape = None
+        self._mcp_record_path = None
+        error_handler = ErrorHandler(output_json_path)
+
+        telemetry_cfg = self.config.get("telemetry", {}) or {}
+        db_path = telemetry_cfg.get("database_path") or os.environ.get("KC_TELEMETRY_DB")
+        self._reward_metrics_sqlite = None
+        self._todo_metrics_sqlite = None
+        if db_path:
+            try:
+                self._reward_metrics_sqlite = RewardMetricsSQLiteWriter(str(db_path))
+                self._todo_metrics_sqlite = TodoMetricsSQLiteWriter(str(db_path))
+            except Exception:
+                self._reward_metrics_sqlite = None
+                self._todo_metrics_sqlite = None
+
+        self._ensure_capability_probes(session_state, markdown_logger)
+        self.provider_metrics.reset()
+        user_prompt, max_steps = self._prepare_replay_session(session_state, user_prompt, max_steps)
+        
+        # Clear existing log files
+        for del_path in [output_md_path, output_json_path]:
+            if del_path and os.path.exists(del_path):
+                os.remove(del_path)
+        
+        # Initialize provider and client
+        requested_route_id = model
+        if self._active_replay_session:
+            requested_route_id = "replay"
+
+        runtime = None
+        client = None
+        provider_tools_cfg = dict((self.config.get("provider_tools") or {}))
+        
+        # Initialize runtime (ReplayRuntime if replay, else standard)
+        provider_config, resolved_model, supports_native_tools_for_model = provider_router.get_provider_config(requested_route_id)
+        runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(requested_route_id)
+        client_config = provider_router.create_client_config(requested_route_id)
+        if runtime_descriptor.provider_id == "openai" and not client_config.get("api_key"):
+            client_config = self._bootstrap_local_openai_client_config(dict(client_config))
+
+        # Fix for client_config usage in replay mode
+        if runtime_descriptor.provider_id == "replay":
+            client_config.setdefault("api_key", "mock")
+
+        api_variant_override = provider_tools_cfg.get("api_variant")
+        if api_variant_override and runtime_descriptor.provider_id == "openai":
+            variant = str(api_variant_override).lower()
+            if variant == "responses":
+                runtime_descriptor.runtime_id = "openai_responses"
+                runtime_descriptor.default_api_variant = "responses"
+            elif variant == "chat":
+                runtime_descriptor.runtime_id = "openai_chat"
+                runtime_descriptor.default_api_variant = "chat"
+
+        if not client_config["api_key"] and runtime_descriptor.provider_id != "replay":
+            raise RuntimeError(f"{provider_config.api_key_env} missing in environment")
+
+        runtime = provider_registry.create_runtime(runtime_descriptor)
+
+        # Create client with provider-specific configuration
+        client = runtime.create_client(
+            client_config["api_key"],
+            base_url=client_config.get("base_url"),
+            default_headers=client_config.get("default_headers"),
+        )
+
+        self._current_route_id = requested_route_id
+        try:
+            session_state.set_provider_metadata("route_id", requested_route_id)
+        except Exception:
+            pass
+        model = runtime_model  # Update model to resolved version for API calls
+        session_state.set_provider_metadata("provider_id", runtime_descriptor.provider_id)
+        session_state.set_provider_metadata("runtime_id", runtime_descriptor.runtime_id)
+        session_state.set_provider_metadata("api_variant", runtime_descriptor.default_api_variant)
+        session_state.set_provider_metadata("resolved_model", runtime_model)
+        try:
+            capabilities = provider_router.get_capabilities(model)
+            session_state.set_provider_metadata("capabilities", asdict(capabilities))
+        except Exception:
+            pass
+        
+        # Defer initial message creation until after tool/dialect resolution so we can compile prompts correctly
+        per_turn_prompt = ""
+        
+        # Setup tool definitions and dialects
+        tool_defs_yaml = self._tool_defs_from_yaml()
+        tool_defs = tool_defs_yaml or self._get_default_tool_definitions()
+
+        # MCP baseline + live stdio tool provider (optional)
+        try:
+            mcp_servers = load_mcp_servers_from_config(self.config, self.workspace)
+            mcp_tools = load_mcp_tools_from_config(self.config, self.workspace)
+            mcp_fixture_results = load_mcp_fixture_results(self.config, self.workspace)
+            live_tools: List[Dict[str, Any]] = []
+            mcp_manager = None
+            if mcp_live_tools_enabled(self.config) and mcp_servers:
+                mcp_manager = MCPManager(mcp_servers)
+                try:
+                    live = mcp_manager.list_tools()
+                    for tool in live:
+                        live_tools.append(
+                            {
+                                "name": tool.name,
+                                "description": tool.description,
+                                "schema": tool.schema,
+                                "server": tool.server,
+                                "source": "live",
+                            }
+                        )
+                except Exception:
+                    live_tools = []
+            if mcp_tools:
+                tool_defs = tool_defs + tool_defs_from_mcp_tools(mcp_tools)
+            if live_tools:
+                tool_defs = tool_defs + tool_defs_from_mcp_tools(live_tools)
+            tools_snapshot: List[Dict[str, Any]] = []
+            if mcp_tools:
+                tools_snapshot.extend(mcp_tools)
+            if live_tools:
+                tools_snapshot.extend(live_tools)
+            if mcp_servers or tools_snapshot or mcp_fixture_results:
+                session_state.set_provider_metadata(
+                    "mcp_snapshot",
+                    build_mcp_snapshot(mcp_servers, tools_snapshot, mcp_fixture_results),
+                )
+            self._mcp_manager = mcp_manager
+            tape_path = mcp_replay_tape_path(self.config, self.workspace)
+            if tape_path:
+                self._mcp_replay_tape = load_mcp_replay_tape(tape_path)
+            record_path = None
+            if mcp_servers or tools_snapshot or mcp_fixture_results or mcp_live_tools_enabled(self.config):
+                record_path = mcp_record_tape_path(
+                    self.config,
+                    self.workspace,
+                    Path(self.logger_v2.run_dir) if getattr(self.logger_v2, "run_dir", None) else None,
+                )
+            self._mcp_record_path = record_path
+        except Exception:
+            pass
+
+        # Plugins + skills (deterministic load order; explicit invocation only)
+        try:
+            plugin_manifests = discover_plugin_manifests(self.config, self.workspace)
+            if plugin_manifests:
+                session_state.set_provider_metadata("plugin_snapshot", plugin_snapshot(plugin_manifests))
+            plugin_permissions: Dict[str, Any] = {}
+            plugin_trust_map: Dict[str, bool] = {}
+            for manifest in plugin_manifests:
+                perms = getattr(manifest, "permissions", None)
+                if isinstance(perms, dict) and perms:
+                    plugin_permissions = self._merge_permission_rules(plugin_permissions, perms)
+                runtime = getattr(manifest, "runtime", {}) if hasattr(manifest, "runtime") else {}
+                trusted = None
+                if isinstance(runtime, dict):
+                    if "trusted" in runtime:
+                        trusted = bool(runtime.get("trusted"))
+                    elif "sandbox" in runtime:
+                        sandbox = str(runtime.get("sandbox") or "").lower()
+                        if sandbox in {"none", "disabled", "trusted"}:
+                            trusted = True
+                        elif sandbox:
+                            trusted = False
+                if trusted is None:
+                    trusted = True
+                plugin_trust_map[str(manifest.plugin_id)] = bool(trusted)
+            if plugin_permissions:
+                session_state.set_provider_metadata("plugin_permissions_requested", plugin_permissions)
+            self._plugin_trust_map = plugin_trust_map
+            plugins_cfg = (self.config.get("plugins") or {}) if isinstance(self.config, dict) else {}
+            auto_grant = bool(plugins_cfg.get("auto_grant_permissions"))
+            if plugin_permissions and auto_grant:
+                merged_permissions = self._merge_permission_rules(self.config.get("permissions"), plugin_permissions)
+                try:
+                    self.config["permissions"] = merged_permissions
+                except Exception:
+                    pass
+                try:
+                    from breadboard_engine.permissions.policy_pack import PolicyPack
+
+                    self.permission_broker = PermissionBroker(
+                        merged_permissions,
+                        policy_pack=PolicyPack.from_config(self.config),
+                    )
+                except Exception:
+                    pass
+            hook_manager = build_hook_manager(
+                self.config,
+                self.workspace,
+                plugin_manifests=plugin_manifests,
+            )
+            if hook_manager:
+                self.hook_manager = hook_manager
+                session_state.set_provider_metadata("hook_snapshot", hook_manager.snapshot())
+            else:
+                self.hook_manager = None
+            plugin_skill_paths: List[Path] = []
+            for manifest in plugin_manifests:
+                for rel in manifest.skills_paths:
+                    try:
+                        base = getattr(manifest, "root", None) or self.workspace
+                        plugin_skill_paths.append(Path(str(base)) / rel)
+                    except Exception:
+                        continue
+            prompt_skills, graph_skills = load_skills(
+                self.config,
+                self.workspace,
+                plugin_skill_paths=plugin_skill_paths,
+            )
+            selection = normalize_skill_selection(
+                self.config,
+                session_state.get_provider_metadata("skill_selection"),
+            )
+            selected_prompts, selected_graphs, enabled_map = apply_skill_selection(
+                prompt_skills,
+                graph_skills,
+                selection,
+            )
+            if prompt_skills or graph_skills:
+                session_state.set_provider_metadata("skill_selection", selection)
+                session_state.set_provider_metadata(
+                    "skill_catalog",
+                    build_skill_catalog(prompt_skills, graph_skills, selection=selection, enabled_map=enabled_map),
+                )
+                session_state.set_provider_metadata("prompt_skills", selected_prompts)
+                session_state.set_provider_metadata("graph_skills", selected_graphs)
+                # Append GraphSkill tool defs (explicit invocation)
+                for skill in selected_graphs:
+                    tool_def = ToolDefinition(
+                        type_id="skill",
+                        name=f"skill.{skill.skill_id}",
+                        description=skill.description or f"Execute skill {skill.skill_id}",
+                        parameters=[ToolParameter(name="input", type="object", description="Skill input payload")],
+                        blocking=True,
+                    )
+                    try:
+                        tool_def.provider_settings = {
+                            "openai": {"native_primary": True},
+                        }
+                    except Exception:
+                        pass
+                    tool_defs.append(tool_def)
+                    try:
+                        yaml_tools = getattr(self, "yaml_tools", None)
+                        if isinstance(yaml_tools, list):
+                            existing = any(getattr(t, "name", None) == tool_def.name for t in yaml_tools)
+                            if not existing:
+                                yaml_tools.append(tool_def)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        completion_tool_enabled = self._completion_tool_config_enabled()
+        if completion_tool_enabled:
+            tool_defs = self._ensure_completion_tool(tool_defs)
+        mark_tool_present = any(getattr(t, "name", None) == "mark_task_complete" for t in tool_defs)
+        session_state.set_provider_metadata("mark_task_complete_available", bool(completion_tool_enabled and mark_tool_present))
+        if not completion_tool_enabled or not mark_tool_present:
+            session_state.set_provider_metadata("completion_sentinel_required", True)
+        
+        # Create dialect mapping and filter based on model configuration
+        dialect_mapping = self._create_dialect_mapping()
+        active_dialect_names = self.dialect_manager.get_dialects_for_model(
+            model, list(dialect_mapping.keys())
+        )
+        
+        # Initialize caller for all modes (needed for parsing)
+        # Apply v2 selection ordering (by_model/by_tool_kind) if v2 config detected
+        try:
+            from .compilation.v2_loader import is_v2_config
+            if is_v2_config(self.config):
+                active_dialect_names = self._apply_v2_dialect_selection(active_dialect_names, model, tool_defs)
+        except Exception:
+            pass
+
+        filtered_dialects = [dialect_mapping[name] for name in active_dialect_names if name in dialect_mapping]
+        caller = CompositeToolCaller(filtered_dialects)
+
+        prompt_compile_key: Optional[str] = None
+        prompt_compiler_version: Optional[str] = None
+        try:
+            if int(self.config.get("version", 0)) == 2 and self.config.get("prompts"):
+                mode_name = self._resolve_active_mode()
+                comp = get_compiler()
+                prompts_cfg = self._prompts_config_with_todos()
+                compiler_choice = str(prompts_cfg.get("compiler") or "v3").lower()
+                extra_blocks = {"system": [], "per_turn": []}
+                user_prompt_extra: List[str] = []
+                try:
+                    prompt_skills = session_state.get_provider_metadata("prompt_skills") or []
+                    for skill in prompt_skills:
+                        slot = getattr(skill, "slot", "system")
+                        blocks = getattr(skill, "blocks", []) or []
+                        if not blocks:
+                            continue
+                        text = "\n".join(str(b) for b in blocks if b is not None).strip()
+                        if not text:
+                            continue
+                        if slot in {"system", "developer"}:
+                            header = f"\n\n# Skill: {getattr(skill, 'skill_id', 'unknown')}\n"
+                            extra_blocks["system"].append(header + text)
+                        elif slot == "per_turn":
+                            extra_blocks["per_turn"].append(text)
+                        elif slot == "user":
+                            user_prompt_extra.append(text)
+                except Exception:
+                    user_prompt_extra = []
+                v2 = comp.compile_v2_prompts(
+                    prompts_cfg,
+                    mode_name,
+                    tool_defs,
+                    active_dialect_names,
+                    extra_blocks=extra_blocks,
+                    prompt_base_dirs=list(getattr(self, "_prompt_base_dirs", [])),
+                )
+                session_state.set_provider_metadata("current_mode", mode_name)
+                system_prompt = v2.get("system") or system_prompt
+                per_turn_prompt = v2.get("per_turn") or ""
+                prompt_compile_key = v2.get("cache_key")
+                prompt_compiler_version = "v2"
+                if user_prompt_extra:
+                    user_prompt = (user_prompt or "") + "\n\n" + "\n\n".join(user_prompt_extra)
+                if compiler_choice == "v3":
+                    try:
+                        from .compilation.prompt_compiler_v2_adapter import shadow_compile_v2_bundle
+                        from .compilation.prompt_compiler_v3 import write_prompt_bundle_artifacts
+
+                        compile_inputs = {
+                            "mode": mode_name,
+                            "dialects": list(active_dialect_names or []),
+                            "cache_key": v2.get("cache_key"),
+                        }
+                        bundle = shadow_compile_v2_bundle(
+                            config=prompts_cfg,
+                            mode_name=mode_name,
+                            tool_defs=tool_defs,
+                            dialects=active_dialect_names,
+                            compile_inputs=compile_inputs,
+                        )
+                        prompt_compile_key = bundle.compile_key
+                        prompt_compiler_version = bundle.compiler_version
+                        if self.logger_v2.run_dir:
+                            write_prompt_bundle_artifacts(bundle, Path(self.logger_v2.run_dir))
+                    except Exception:
+                        pass
+                try:
+                    shadow_flag = (prompts_cfg.get("compiler_shadow") or "").lower()
+                except Exception:
+                    shadow_flag = ""
+                if shadow_flag in {"v3", "true", "1"}:
+                    try:
+                        from .compilation.prompt_compiler_v2_adapter import shadow_compile_v2_bundle
+                        from .compilation.prompt_compiler_v3 import hash_payload, write_prompt_bundle_artifacts
+
+                        compile_inputs = {
+                            "mode": mode_name,
+                            "dialects": list(active_dialect_names or []),
+                            "cache_key": v2.get("cache_key"),
+                        }
+                        bundle = shadow_compile_v2_bundle(
+                            config=prompts_cfg,
+                            mode_name=mode_name,
+                            tool_defs=tool_defs,
+                            dialects=active_dialect_names,
+                            compile_inputs=compile_inputs,
+                        )
+                        v2_hashes = {
+                            "system": hash_payload(system_prompt or ""),
+                            "per_turn": hash_payload(per_turn_prompt or ""),
+                        }
+                        v3_hashes = {
+                            "system": bundle.slots.get("system").slot_hash if bundle.slots.get("system") else None,
+                            "per_turn": bundle.slots.get("per_turn").slot_hash if bundle.slots.get("per_turn") else None,
+                        }
+                        shadow_payload = {
+                            "v2_hashes": v2_hashes,
+                            "v3_hashes": v3_hashes,
+                            "matches": {
+                                "system": v2_hashes.get("system") == v3_hashes.get("system"),
+                                "per_turn": v2_hashes.get("per_turn") == v3_hashes.get("per_turn"),
+                            },
+                            "compile_key": bundle.compile_key,
+                        }
+                        if self.logger_v2.run_dir:
+                            self.logger_v2.write_json("prompts/shadow_v2_v3.json", shadow_payload)
+                            write_prompt_bundle_artifacts(bundle, Path(self.logger_v2.run_dir))
+                    except Exception:
+                        pass
+                # Persist TPSL catalogs if available
+                try:
+                    if self.logger_v2.run_dir and isinstance(v2.get("tpsl"), dict):
+                        tpsl_meta = v2["tpsl"]
+                        # Choose a stable catalog id from template ids (hash part)
+                        def _catalog_id(meta: dict) -> str:
+                            tid = str(meta.get("template_id", "fallback"))
+                            return tid.split("::")[-1].replace("/", "_")
+                        files = []
+                        # System catalog
+                        if isinstance(tpsl_meta.get("system"), dict):
+                            cid = _catalog_id(tpsl_meta["system"]) or "tpsl"
+                            path = f"prompts/catalogs/{cid}/system_full.md"
+                            self.logger_v2.write_text(path, str(tpsl_meta["system"].get("text", "")))
+                            files.append({
+                                "path": path,
+                                "dialect": tpsl_meta["system"].get("dialect"),
+                                "detail": tpsl_meta["system"].get("detail"),
+                                "template_id": tpsl_meta["system"].get("template_id"),
+                            })
+                        # Per-turn catalog
+                        if isinstance(tpsl_meta.get("per_turn"), dict):
+                            cid = _catalog_id(tpsl_meta["per_turn"]) or "tpsl"
+                            path = f"prompts/catalogs/{cid}/per_turn_short.md"
+                            self.logger_v2.write_text(path, str(tpsl_meta["per_turn"].get("text", "")))
+                            files.append({
+                                "path": path,
+                                "dialect": tpsl_meta["per_turn"].get("dialect"),
+                                "detail": tpsl_meta["per_turn"].get("detail"),
+                                "template_id": tpsl_meta["per_turn"].get("template_id"),
+                            })
+                        if files:
+                            # Use first catalog id as manifest name
+                            name = (files[0]["template_id"] or "tpsl").split("::")[-1]
+                            self.prompt_logger.save_catalog(name, files)
+                except Exception:
+                    pass
+        except Exception:
+            per_turn_prompt = per_turn_prompt or ""
+
+        if str(tool_prompt_mode or "").strip().lower() == "none":
+            per_turn_prompt = ""
+
+        system_prompt = self._append_environment_prompt(system_prompt)
+        # Persist compiled system prompt after environment + skills
+        try:
+            if system_prompt and self.logger_v2.run_dir:
+                self.prompt_logger.save_compiled_system(system_prompt)
+            self._register_prompt_hash("system", system_prompt)
+            from .compilation.prompt_compiler_v3 import hash_payload
+            self._prompt_blocks_hash = hash_payload({"system": system_prompt or "", "per_turn": per_turn_prompt or ""})
+            self._prompt_compile_key = prompt_compile_key
+            self._prompt_compiler_version = prompt_compiler_version
+        except Exception:
+            pass
+
+        enhanced_system_msg = {"role": "system", "content": system_prompt}
+        require_workspace_tool_usage = bool(session_state.get_provider_metadata("require_workspace_tool_usage"))
+        workspace_tool_requirement_block = ""
+        if require_workspace_tool_usage:
+            workspace_tool_requirement_block = (
+                "<WORKSPACE_TOOL_REQUIRED>\n"
+                "This turn requires real workspace interaction.\n"
+                "Use the available tools and answer from the observed result.\n"
+                "Do not reply with a promise such as \"I'll run ...\" or \"Running ...\".\n"
+                "Emit the actual tool call instead.\n"
+                "If no real tool result is observed, the turn will be rejected.\n"
+                "</WORKSPACE_TOOL_REQUIRED>"
+            )
+        initial_user_parts = [user_prompt]
+        if per_turn_prompt:
+            initial_user_parts.append(per_turn_prompt)
+        if workspace_tool_requirement_block:
+            initial_user_parts.append(workspace_tool_requirement_block)
+        initial_user_content = "\n\n".join(part for part in initial_user_parts if isinstance(part, str) and part.strip())
+        enhanced_user_msg = {"role": "user", "content": initial_user_content}
+        resume_snapshot = self._load_resume_snapshot()
+        resume_has_system = False
+        if isinstance(resume_snapshot, dict):
+            seed_messages = resume_snapshot.get("messages")
+            if isinstance(seed_messages, list):
+                cleaned = [msg for msg in seed_messages if isinstance(msg, dict)]
+                if cleaned:
+                    session_state.messages = list(cleaned)
+                    session_state.provider_messages = list(cleaned)
+                    resume_has_system = any(m.get("role") == "system" for m in cleaned if isinstance(m, dict))
+            seed_transcript = resume_snapshot.get("transcript")
+            if isinstance(seed_transcript, list):
+                session_state.transcript = [entry for entry in seed_transcript if isinstance(entry, dict)]
+            meta = resume_snapshot.get("provider_metadata")
+            if isinstance(meta, dict):
+                session_state.provider_metadata.update(meta)
+            session_state.set_provider_metadata("resume_snapshot_applied", True)
+        # Resume metadata is session-scoped, but these fields are turn-scoped.
+        # Carrying them into a fresh user request makes the conductor believe the
+        # new turn has already satisfied its required workspace-tool contract.
+        session_state.set_provider_metadata("recent_tool_activity", False)
+        session_state.set_provider_metadata("post_required_tool_extra_call_blocks", 0)
+        if not resume_has_system:
+            session_state.add_message(enhanced_system_msg)
+        session_state.add_message(enhanced_user_msg)
+        
+        # Configure native tools and tool prompt mode
+        native_pref_hint = getattr(self, "_native_preference_hint", None)
+        provider_tools_cfg = dict(provider_tools_cfg)
+        if provider_tools_cfg.get("use_native") is None and native_pref_hint is not None:
+            provider_tools_cfg["use_native"] = native_pref_hint
+        provider_tools_cfg = self._apply_capability_tool_overrides(
+            provider_tools_cfg,
+            session_state,
+            markdown_logger,
+        )
+        effective_config = dict(self.config)
+        effective_config["provider_tools"] = provider_tools_cfg
+        self._provider_tools_effective = provider_tools_cfg
+        use_native_tools = provider_router.should_use_native_tools(model, effective_config)
+        will_use_native_tools = self._setup_native_tools(model, use_native_tools)
+        tool_prompt_mode = self._adjust_tool_prompt_mode(tool_prompt_mode, will_use_native_tools)
+        session_state.last_tool_prompt_mode = tool_prompt_mode
+        
+        # Setup tool prompts and system messages
+        local_tools_prompt = self._setup_tool_prompts(
+            tool_prompt_mode, tool_defs, active_dialect_names, 
+            session_state, markdown_logger, caller
+        )
+        
+        # Add enhanced descriptive fields to initial messages after tool setup
+        self._add_enhanced_message_fields(
+            tool_prompt_mode, tool_defs, active_dialect_names, 
+            session_state, will_use_native_tools, local_tools_prompt, user_prompt
+        )
+        
+        # Initialize markdown log and snapshot
+        markdown_logger.log_system_message(system_prompt)
+        try:
+            if self.logger_v2.run_dir:
+                self.logger_v2.append_text("conversation/conversation.md", self.md_writer.system(system_prompt))
+        except Exception:
+            pass
+        if session_state.get_provider_metadata("current_mode") is None:
+            session_state.set_provider_metadata("current_mode", self._resolve_active_mode())
+        # Use enhanced user content for markdown log
+        initial_user_content = session_state.messages[1].get("content", user_prompt)
+        markdown_logger.log_user_message(initial_user_content)
+        try:
+            if self.logger_v2.run_dir:
+                self.logger_v2.append_text("conversation/conversation.md", self.md_writer.user(initial_user_content))
+        except Exception:
+            pass
+        session_state.write_snapshot(output_json_path, model)
+        
+        # Main agentic loop - significantly simplified
+        run_result = None
+        run_loop_error: Optional[Dict[str, Any]] = None
+        try:
+            if is_longrun_enabled(getattr(self, "config", None)):
+                work_queue = build_work_queue(
+                    getattr(self, "config", None),
+                    workspace=str(getattr(self, "workspace", "")),
+                    todo_manager=getattr(self, "todo_manager", None),
+                )
+                controller = LongRunController(
+                    getattr(self, "config", None),
+                    logger_v2=getattr(self, "logger_v2", None),
+                    work_queue=work_queue,
+                    macro_event_emitter=lambda event_type, payload: session_state.record_lifecycle_event(
+                        event_type,
+                        payload,
+                        turn=session_state.get_provider_metadata("current_turn_index"),
+                    ),
+                    verification_executor=lambda command, timeout_seconds, context: self._run_longrun_verification_command(
+                        command=command,
+                        timeout_seconds=timeout_seconds,
+                        context=context,
+                    ),
+                    coordination_signal_emitter=lambda payload: session_state.record_coordination_signal(payload),
+                    coordination_review_verdict_emitter=lambda payload: session_state.record_coordination_review_verdict(
+                        payload
+                    ),
+                    coordination_directive_emitter=lambda payload: session_state.record_coordination_directive(payload),
+                )
+
+                def _episode_runner(episode_index: int) -> Dict[str, Any]:
+                    try:
+                        session_state.set_provider_metadata("longrun_episode_index", int(episode_index))
+                    except Exception:
+                        pass
+                    rlm_before = self._rlm_capture_rollup_snapshot(session_state)
+                    episode_max_steps = resolve_episode_max_steps(
+                        getattr(self, "config", None),
+                        max_steps,
+                    )
+                    try:
+                        session_state.set_provider_metadata("longrun_episode_max_steps", int(episode_max_steps))
+                    except Exception:
+                        pass
+                    episode_result = self._run_main_loop(
+                        runtime,
+                        client,
+                        model,
+                        int(episode_max_steps),
+                        output_json_path,
+                        tool_prompt_mode,
+                        tool_defs,
+                        active_dialect_names,
+                        caller,
+                        session_state,
+                        completion_detector,
+                        markdown_logger,
+                        error_handler,
+                        stream_responses,
+                        local_tools_prompt,
+                        client_config,
+                    )
+                    rlm_after = self._rlm_capture_rollup_snapshot(session_state)
+                    rlm_delta = self._rlm_rollup_delta(rlm_before, rlm_after)
+                    if isinstance(episode_result, dict):
+                        if any(
+                            bool(rlm_delta.get(key))
+                            for key in ("subcall_count", "total_tokens", "total_cost_usd", "branch_event_count")
+                        ) or bool(rlm_delta.get("lane_counts")):
+                            episode_result["rlm"] = rlm_delta
+                            try:
+                                session_state.set_provider_metadata("rlm_last_episode_delta", rlm_delta)
+                            except Exception:
+                                pass
+                    return episode_result
+
+                controller_out = controller.run(_episode_runner)
+                run_result = controller_out.get("result") if isinstance(controller_out, dict) else None
+                if not isinstance(run_result, dict):
+                    run_result = {
+                        "completed": False,
+                        "completion_reason": "longrun_invalid_result",
+                        "messages": session_state.messages,
+                        "transcript": session_state.transcript,
+                    }
+                if isinstance(controller_out, dict):
+                    macro_state = controller_out.get("macro_state")
+                    macro_summary = controller_out.get("macro_summary")
+                    if isinstance(macro_state, dict):
+                        run_result["longrun_state"] = macro_state
+                        try:
+                            session_state.set_provider_metadata("longrun_state", macro_state)
+                        except Exception:
+                            pass
+                    if isinstance(macro_summary, dict):
+                        run_result["longrun"] = macro_summary
+                        try:
+                            session_state.set_provider_metadata("longrun_summary", macro_summary)
+                        except Exception:
+                            pass
+            else:
+                run_result = self._run_main_loop(
+                    runtime,
+                    client,
+                    model,
+                    max_steps,
+                    output_json_path,
+                    tool_prompt_mode,
+                    tool_defs,
+                    active_dialect_names,
+                    caller,
+                    session_state,
+                    completion_detector,
+                    markdown_logger,
+                    error_handler,
+                    stream_responses,
+                    local_tools_prompt,
+                    client_config,
+                )
+        except Exception as exc:
+            run_loop_error = {
+                "type": exc.__class__.__name__,
+                "message": str(exc),
+                "traceback": traceback.format_exc(),
+            }
+            session_state.add_transcript_entry({"run_loop_exception": run_loop_error})
+            try:
+                session_state.set_provider_metadata("run_loop_exception", run_loop_error)
+            except Exception:
+                pass
+            try:
+                if self.logger_v2.run_dir:
+                    self.logger_v2.write_json("errors/run_loop_exception.json", run_loop_error)
+            except Exception:
+                pass
+        finally:
+            self._persist_final_workspace()
+            try:
+                self._persist_multi_agent_log()
+            except Exception:
+                pass
+            try:
+                active_logger = getattr(self, "_active_telemetry_logger", None)
+                if active_logger:
+                    active_logger.close()
+            except Exception:
+                pass
+            self._active_telemetry_logger = None
+            try:
+                _close_kernel_emitter("session_error" if run_loop_error is not None else "session_end")
+            except Exception:
+                pass
+            self._active_session_state = None
+        # Defensive: always return a dict result
+        if not isinstance(run_result, dict):
+            completion_summary = session_state.completion_summary or {}
+            completion_summary.setdefault("completed", False)
+            if run_loop_error is not None:
+                completion_summary["reason"] = "run_loop_exception"
+                completion_summary["error"] = run_loop_error
+            else:
+                completion_summary.setdefault("reason", "no_result")
+            session_state.completion_summary = completion_summary
+            run_result = {
+                "messages": session_state.messages,
+                "transcript": session_state.transcript,
+                "completion_summary": completion_summary,
+                "completion_reason": completion_summary.get("reason", "no_result"),
+                "completed": bool(completion_summary.get("completed", False)),
+            }
+        try:
+            run_dir = getattr(self.logger_v2, "run_dir", None)
+            if run_dir and isinstance(run_result, dict):
+                run_result.setdefault("run_dir", str(run_dir))
+                run_result.setdefault("logging_dir", str(run_dir))
+        except Exception:
+            pass
+
+        # Populate finish metadata for IR and persist conversation snapshot
+        usage_payload = session_state.get_provider_metadata("usage")
+        if not isinstance(usage_payload, dict):
+            usage_payload = {}
+        finish_reason = "stop" if run_result.get("completed") else "error"
+        finish_meta = session_state.get_provider_metadata("raw_finish_meta")
+        if isinstance(run_result, dict) and isinstance(finish_meta, dict):
+            run_result.setdefault("provider_finish_meta", copy.deepcopy(finish_meta))
+            runtime_timing = finish_meta.get("provider_runtime_timing")
+            if isinstance(runtime_timing, dict):
+                run_result.setdefault("provider_runtime_timing", copy.deepcopy(runtime_timing))
+        agent_summary = copy.deepcopy(session_state.completion_summary or {})
+        session_state.set_ir_finish(
+            IRFinish(
+                reason=finish_reason,
+                usage=usage_payload,
+                provider_meta=finish_meta,
+                agent_summary=agent_summary,
+            )
+        )
+
+        try:
+            if self.logger_v2.run_dir:
+                conv_id = os.path.basename(self.logger_v2.run_dir)
+                conversation_ir = session_state.build_conversation_ir(conversation_id=conv_id)
+                self.logger_v2.write_json("meta/conversation_ir.json", asdict(conversation_ir))
+        except Exception:
+            pass
+        if orchestrator is not None:
+            try:
+                orchestrator.event_log.add(
+                    "run.finished",
+                    agent_id="main",
+                    payload={
+                        "completed": bool(run_result.get("completed", False)),
+                        "completion_reason": run_result.get("completion_reason"),
+                    },
+                )
+                orchestrator.persist_event_log()
+            except Exception:
+                pass
+
+        try:
+            _close_kernel_emitter("session_end")
+        except Exception:
+            pass
+        return run_result
+    
+    def _persist_final_workspace(self) -> None:
+        """Copy the final workspace into the run's log directory if available."""
+        run_dir = getattr(self.logger_v2, "run_dir", None)
+        if not run_dir:
+            return
+        try:
+            workspace_path = Path(self.workspace)
+        except Exception:
+            return
+        if not workspace_path.exists() or not workspace_path.is_dir():
+            return
+        dest = Path(run_dir) / "final_container_dir"
+        capture_meta: Dict[str, Any] = {
+            "workspace_path": str(workspace_path),
+        }
+        persist_requested = os.environ.get("BREADBOARD_PERSIST_FINAL_WORKSPACE", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        try:
+            logging_cfg = self.config.get("logging") if isinstance(getattr(self, "config", None), dict) else None
+            if isinstance(logging_cfg, dict) and "persist_final_workspace" in logging_cfg:
+                persist_requested = bool(logging_cfg.get("persist_final_workspace"))
+        except Exception:
+            pass
+        is_disposable = False
+        try:
+            is_disposable = is_disposable_workspace_path(workspace_path, repo_root=Path(__file__).resolve().parents[1])
+        except Exception:
+            is_disposable = False
+        capture_meta["is_disposable_workspace"] = bool(is_disposable)
+        if not persist_requested and not is_disposable:
+            capture_meta.update(
+                {
+                    "persisted": False,
+                    "reason": "nondisposable_workspace_skipped",
+                    "strategy": "metadata_only",
+                }
+            )
+            try:
+                self.logger_v2.write_json("meta/final_workspace_capture.json", capture_meta)
+            except Exception:
+                pass
+            return
+        try:
+            workspace_resolved = workspace_path.resolve()
+            dest_resolved = dest.resolve(strict=False)
+            if str(dest_resolved).startswith(str(workspace_resolved)):
+                capture_meta.update(
+                    {
+                        "persisted": False,
+                        "reason": "destination_within_workspace",
+                        "strategy": "metadata_only",
+                    }
+                )
+                try:
+                    self.logger_v2.write_json("meta/final_workspace_capture.json", capture_meta)
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+        try:
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(workspace_path, dest)
+            capture_meta.update(
+                {
+                    "persisted": True,
+                    "reason": "copied",
+                    "strategy": "copytree",
+                    "destination": str(dest),
+                }
+            )
+        except Exception:
+            capture_meta.update(
+                {
+                    "persisted": False,
+                    "reason": "copy_failed",
+                    "strategy": "copytree",
+                    "destination": str(dest),
+                }
+            )
+        try:
+            self.logger_v2.write_json("meta/final_workspace_capture.json", capture_meta)
+        except Exception:
+            pass
+
+
+    def _persist_error_artifacts(self, turn_index: int, payload: Dict[str, Any]) -> None:
+        """Persist error payload and associated diagnostics artifacts."""
+
+        run_dir = getattr(self.logger_v2, "run_dir", None)
+        if not run_dir:
+            return
+
+        try:
+            self.logger_v2.write_json(f"errors/turn_{turn_index}.json", payload)
+            details = payload.get("details")
+            if not isinstance(details, dict):
+                return
+            headers = details.get("response_headers")
+            if headers:
+                self.logger_v2.write_json(
+                    f"raw/responses/turn_{turn_index}.headers.json",
+                    headers,
+                )
+            raw_b64 = details.get("raw_body_b64")
+            if raw_b64:
+                self.logger_v2.write_text(
+                    f"raw/responses/turn_{turn_index}.body.b64",
+                    raw_b64,
+                )
+            raw_excerpt = details.get("raw_excerpt")
+            if raw_excerpt:
+                self.logger_v2.write_text(
+                    f"raw/responses/turn_{turn_index}.raw_excerpt.txt",
+                    raw_excerpt,
+                )
+            html_excerpt = details.get("html_excerpt")
+            if html_excerpt:
+                self.logger_v2.write_text(
+                    f"raw/responses/turn_{turn_index}.html_excerpt.txt",
+                    html_excerpt,
+                )
+        except Exception:
+            pass
+
+
+    def _ensure_capability_probes(self, session_state: SessionState, markdown_logger: MarkdownLogger) -> None:
+        if self._capability_probes_ran:
+            return
+        try:
+            self.capability_probe_runner.markdown_logger = markdown_logger
+            self.capability_probe_runner.run(self.config, session_state)
+        except Exception:
+            pass
+        finally:
+            self._capability_probes_ran = True
+
+    def _update_health_metadata(self, session_state: SessionState) -> None:
+        try:
+            session_state.set_provider_metadata("route_health", self.route_health.snapshot())
+        except Exception:
+            pass
+
+    def _invoke_runtime_with_streaming(
+        self,
+        runtime,
+        client,
+        model: str,
+        send_messages: List[Dict[str, Any]],
+        tools_schema: Optional[List[Dict[str, Any]]],
+        stream_responses: bool,
+        runtime_context: ProviderRuntimeContext,
+        session_state: SessionState,
+        markdown_logger: MarkdownLogger,
+        turn_index: int,
+    ) -> Tuple[ProviderResult, bool]:
+        """Invoke provider runtime, falling back to non-streaming on failure."""
+
+        return self.provider_invoker.invoke(
+            runtime=runtime,
+            client=client,
+            model=model,
+            send_messages=send_messages,
+            tools_schema=tools_schema,
+            stream_responses=stream_responses,
+            runtime_context=runtime_context,
+            session_state=session_state,
+            markdown_logger=markdown_logger,
+            turn_index=turn_index,
+            route_id=getattr(self, "_current_route_id", None),
+        )
+
+    def _retry_diff_with_aider(self, patch_text: str) -> Optional[Dict[str, Any]]:
+        payload = retry_diff_with_aider(patch_text)
+        if not payload:
+            return None
+        result = self._exec_raw(payload)
+        result = {"action": "apply_search_replace", **result}
+        self._record_diff_metrics(
+            SimpleNamespace(function="apply_search_replace", arguments=payload["arguments"], dialect="aider_retry"),
+            result,
+        )
+        return result

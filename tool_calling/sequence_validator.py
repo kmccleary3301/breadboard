@@ -1,3 +1,3 @@
-from agentic_coder_prototype.execution.sequence_validator import SequenceValidator  # shim
+from breadboard_engine.execution.sequence_validator import SequenceValidator  # shim
 
 

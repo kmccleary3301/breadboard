@@ -94,7 +94,7 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
             "-c",
             (
                 "import importlib.util, json; "
-                "names=['adaptive_iter','agentic_coder_prototype','breadboard','breadboard_sdk','conformance','scripts.authoring','scripts.e4_parity']; "
+                "names=['adaptive_iter','breadboard_engine','breadboard','breadboard_sdk','conformance','scripts.authoring','scripts.e4_parity']; "
                 "specs=[importlib.util.find_spec(name) for name in names]; "
                 "assert all(spec is not None for spec in specs); "
                 "print(json.dumps([spec.origin for spec in specs[:5]]))"

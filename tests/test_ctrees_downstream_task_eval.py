@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from agentic_coder_prototype.ctrees.downstream_task_eval import run_phase11_downstream_pilot_proxy
+from breadboard_engine.ctrees.downstream_task_eval import run_phase11_downstream_pilot_proxy
 
 
 def test_phase11_downstream_proxy_exposes_practical_baseline_contract() -> None:

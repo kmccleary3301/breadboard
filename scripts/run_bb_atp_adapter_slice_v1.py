@@ -402,7 +402,7 @@ def _start_local_engine(*, repo_root: Path, host: str, port: int, log_level: str
     env.setdefault("BREADBOARD_CLI_PORT", str(port))
     env.setdefault("BREADBOARD_CLI_LOG_LEVEL", log_level)
     env.setdefault("BREADBOARD_LOAD_DOTENV", "1")
-    cmd = [sys.executable, "-m", "agentic_coder_prototype.api.cli_bridge.server"]
+    cmd = [sys.executable, "-m", "breadboard_engine.api.cli_bridge.server"]
     return subprocess.Popen(
         cmd,
         cwd=str(repo_root),

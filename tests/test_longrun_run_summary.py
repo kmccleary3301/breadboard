@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.conductor_loop import build_longrun_parity_audit
+from breadboard_engine.conductor_loop import build_longrun_parity_audit
 
 
 def test_build_longrun_parity_audit_reports_enabled_and_artifacts(tmp_path: Path) -> None:

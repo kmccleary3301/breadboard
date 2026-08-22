@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.helper_summary_coupling_canary import evaluate_helper_summary_coupling_canary
+from breadboard_engine.ctrees.helper_summary_coupling_canary import evaluate_helper_summary_coupling_canary
 
 
 def test_ctree_helper_summary_coupling_canary_improves_over_helper_only_baseline() -> None:

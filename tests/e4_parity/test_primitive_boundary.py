@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation import primitive_records
-from agentic_coder_prototype.compilation.primitive_records import (
+from breadboard_engine.compilation import primitive_records
+from breadboard_engine.compilation.primitive_records import (
     CORE_SPEC_REGISTRY,
     E4_SPEC_REGISTRY,
     PrimitiveCompileError,
@@ -17,7 +17,7 @@ from agentic_coder_prototype.compilation.primitive_records import (
     get_spec,
     sha256_ref,
 )
-from agentic_coder_prototype.compilation.visibility_adapters import (
+from breadboard_engine.compilation.visibility_adapters import (
     from_config_graph_class,
     from_registry_enum,
     from_resource_ref_enum,

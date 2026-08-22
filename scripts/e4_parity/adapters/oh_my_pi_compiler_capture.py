@@ -53,7 +53,8 @@ SUPPORT_CLAIM_GENERATED_AT_UTC = "2026-07-04T00:00:00Z"
 SOURCE_FREEZE_PATH = ROOT / "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json"
 FREEZE_MANIFEST_PATH = ROOT / "config/e4_target_freeze_manifest.yaml"
 LEDGER_PATH = WORKSPACE / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
-HELPER_MODULE_PATH = ROOT / "agentic_coder_prototype/compilation/effective_config_graph.py"
+HELPER_MODULE_PATH = ROOT / "breadboard_engine/compilation/effective_config_graph.py"
+HELPER_MODULE_REF = ROOT / "agentic_coder_prototype/compilation/effective_config_graph.py"
 HELPER_TEST_PATH = ROOT / "tests/compilation/test_effective_config_graph.py"
 PROJECTION_BUILDER_PATH = ROOT / "scripts/e4_parity/build_primitive_projection.py"
 CATALOG_PATH = ROOT / "docs/conformance/e4_artifact_catalog.json"
@@ -991,7 +992,7 @@ def capture(
         ("parity_results_written", parity_path, logical_parity_path),
         ("secret_scan_passed", secret_scan_path, logical_secret_scan_path),
         ("effective_config_graph_emitted", graph_path, logical_graph_path),
-        ("compiler_module_present", HELPER_MODULE_PATH, None),
+        ("compiler_module_present", HELPER_MODULE_PATH, HELPER_MODULE_REF),
         ("compiler_tests_present", HELPER_TEST_PATH, None),
     ]
     prevalidation_payload = {

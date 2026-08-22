@@ -2,8 +2,8 @@ import types
 
 import pytest
 
-from agentic_coder_prototype.provider_routing import provider_router
-from agentic_coder_prototype.provider_runtime import (
+from breadboard_engine.provider_routing import provider_router
+from breadboard_engine.provider_runtime import (
     ProviderRuntimeContext,
     ProviderRuntimeError,
     provider_registry,
@@ -86,7 +86,7 @@ def test_anthropic_runtime_stream_success(monkeypatch):
             self.messages = FakeMessages()
 
     monkeypatch.setattr(
-        "agentic_coder_prototype.provider_runtime.Anthropic",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.anthropic",
         FakeAnthropic,
     )
 
@@ -129,7 +129,7 @@ def test_anthropic_runtime_stream_error(monkeypatch):
             self.messages = FakeMessages()
 
     monkeypatch.setattr(
-        "agentic_coder_prototype.provider_runtime.Anthropic",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.anthropic",
         FakeAnthropic,
     )
 
@@ -227,11 +227,11 @@ def test_anthropic_runtime_retries_on_overload(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "agentic_coder_prototype.provider_runtime.time.sleep",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.sleep",
         lambda seconds: None,
     )
     monkeypatch.setattr(
-        "agentic_coder_prototype.provider_runtime.AnthropicOverloadedError",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.anthropic_overloaded_error",
         FakeOverloadError,
         raising=False,
     )

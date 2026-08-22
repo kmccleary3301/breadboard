@@ -1,5 +1,5 @@
 import chalk from "chalk"
-import type { Highlighter } from "shiki"
+import { bundledLanguages, type BundledLanguage, type Highlighter } from "shiki"
 
 export const DEFAULT_SHIKI_THEME = "andromeeda"
 const MAX_SHIKI_LINES = 500
@@ -37,9 +37,9 @@ type ShikiToken = {
 }
 
 type ShikiStatus = "idle" | "loading" | "ready" | "failed"
-type ShikiLoadLanguage = Parameters<Highlighter["loadLanguage"]>[0]
-type CodeToTokensOptions = NonNullable<Parameters<Highlighter["codeToTokens"]>[1]>
-type ShikiLang = CodeToTokensOptions["lang"]
+
+const isBundledLanguage = (lang: string): lang is BundledLanguage =>
+  Object.prototype.hasOwnProperty.call(bundledLanguages, lang)
 
 let status: ShikiStatus = "idle"
 let highlighter: Highlighter | null = null
@@ -121,15 +121,14 @@ const normalizeLang = (lang?: string): string | null => {
   return normalized
 }
 
-const requestLanguage = (lang: ShikiLoadLanguage): void => {
+const requestLanguage = (lang: BundledLanguage): void => {
   if (!highlighter) return
-  if (typeof lang !== "string") return
   if (unsupportedLanguages.has(lang)) return
   try {
     if (highlighter.getLanguage(lang)) return
   } catch {
-    unsupportedLanguages.add(lang)
-    return
+    // An unloaded language may still be a valid bundled alias. Let Shiki's
+    // public loader resolve it instead of classifying it as unsupported.
   }
   if (languageLoads.has(lang)) return
   const promise = highlighter
@@ -174,22 +173,20 @@ export const maybeHighlightCode = (code: string, lang?: string): string[] | null
 
   if (!highlighter) return null
 
-  try {
-    const resolved = highlighter.resolveLangAlias(normalized)
-    const langId = resolved ?? normalized
-    let loaded = false
-    try {
-      loaded = Boolean(highlighter.getLanguage(langId))
-    } catch {
-      unsupportedLanguages.add(langId)
-      return null
-    }
-    if (!loaded) {
-      requestLanguage(langId as ShikiLoadLanguage)
-      return null
-    }
+  if (!isBundledLanguage(normalized)) {
+    unsupportedLanguages.add(normalized)
+    return null
+  }
 
-    const result = highlighter.codeToTokens(code, { lang: langId as ShikiLang, theme: currentTheme })
+  try {
+    highlighter.getLanguage(normalized)
+  } catch {
+    requestLanguage(normalized)
+    return null
+  }
+
+  try {
+    const result = highlighter.codeToTokens(code, { lang: normalized, theme: currentTheme })
     return tokensToAnsiLines(result.tokens as ShikiToken[][])
   } catch {
     unsupportedLanguages.add(normalized)

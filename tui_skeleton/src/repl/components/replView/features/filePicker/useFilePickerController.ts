@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { SessionFileInfo } from "../../../../../api/types.js"
+import type { SessionFileInfo } from "@breadboard/sdk"
 import type { FileMentionConfig } from "../../../../fileMentions.js"
 import type { FilePickerConfig, FilePickerResource } from "../../../../filePicker.js"
 import { rankFuzzyFileItems } from "../../../../fileRanking.js"

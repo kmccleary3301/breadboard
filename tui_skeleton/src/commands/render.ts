@@ -1,7 +1,7 @@
 import { Command, Args, Options } from "@effect/cli"
 import { Effect } from "effect"
 import { runResume } from "./resumeLogic.js"
-import type { SessionEvent, SessionSummary } from "../api/types.js"
+import type { SessionEvent, SessionSummary } from "@breadboard/sdk"
 import { getCliApi, reportCommandWarning } from "./commandRuntime.js"
 import { normalizeTextJsonOutputMode } from "./commandOutput.js"
 import { renderLabeledLine } from "./commandText.js"

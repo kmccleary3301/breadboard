@@ -70,7 +70,7 @@ def test_wheel_import_loads_template_from_distribution_data_root(tmp_path: Path)
         f"import sys; sys.path.insert(0, {str(install_root)!r}); import json; "
         "from breadboard.product.harness.templates import "
         "load_minimal_harness, minimal_template_path, minimal_template_text; from breadboard.product.coordination.work_items import WorkItem; "
-        "from agentic_coder_prototype.compilation.primitive_records import get_spec, _validator; candidate = _validator(get_spec('bb.work_item.v2').schema_path); "
+        "from breadboard_engine.compilation.primitive_records import get_spec, _validator; candidate = _validator(get_spec('bb.work_item.v2').schema_path); "
         "print(json.dumps({'path': str(minimal_template_path()), 'text': minimal_template_text(), 'document': load_minimal_harness().as_dict(), 'work_status': WorkItem.create('wheel').read_model.status, 'schema_id': candidate.schema['$id']}))"
     )
     payload = json.loads(run(sys.executable, "-I", "-c", script))

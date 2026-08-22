@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.extensions.spine import MiddlewareSpec, PHASE_ORDER, order_middleware
+from breadboard_engine.extensions.spine import MiddlewareSpec, PHASE_ORDER, order_middleware
 
 
 def test_extension_spine_orders_by_phase_and_priority() -> None:

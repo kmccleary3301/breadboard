@@ -10,7 +10,7 @@ A change is in danger-zone scope if it touches one or more of:
 
 1. Core runtime and orchestration modules in:
    - `breadboard/**`
-   - `agentic_coder_prototype/**`
+   - `breadboard_engine/**`
    - `breadboard_sdk/**`
    - `tool_calling/**`
 2. Contract schema sets in:

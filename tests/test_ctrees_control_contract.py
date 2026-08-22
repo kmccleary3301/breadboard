@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.ctrees.control_contract import build_control_contract
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.ctrees.control_contract import build_control_contract
 
 
 def test_control_contract_disabled_by_default() -> None:

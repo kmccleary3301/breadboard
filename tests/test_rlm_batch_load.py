@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.provider_routing import ProviderDescriptor
-from agentic_coder_prototype.provider_runtime import ProviderMessage, ProviderResult, ProviderRuntimeError
+from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.provider_routing import ProviderDescriptor
+from breadboard_engine.provider_runtime import ProviderMessage, ProviderResult, ProviderRuntimeError
 
 
 def _make_conductor(config: dict, workspace: Path) -> OpenAIConductor:
@@ -78,8 +78,8 @@ class _StubRegistry:
 def _install_stub_provider(monkeypatch: Any, handler: Any) -> _StubRegistry:
     router = _StubRouter()
     registry = _StubRegistry(handler)
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.provider_router", router)
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.provider_registry", registry)
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_router", router)
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_registry", registry)
     return registry
 
 

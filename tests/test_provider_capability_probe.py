@@ -2,9 +2,9 @@ import types
 
 import pytest
 
-from agentic_coder_prototype.provider.capability_probe import ProviderCapabilityProbeRunner
-from agentic_coder_prototype.provider_runtime import ProviderResult, ProviderMessage
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.provider.capability_probe import ProviderCapabilityProbeRunner
+from breadboard_engine.provider_runtime import ProviderResult, ProviderMessage
+from breadboard_engine.state.session_state import SessionState
 
 
 class _StubLogger:

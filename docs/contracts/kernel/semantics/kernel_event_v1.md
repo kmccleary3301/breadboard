@@ -34,13 +34,13 @@ The kernel event log is not a UI event stream and not a logging convenience form
 
 Primary current owners and related surfaces:
 
-- `agentic_coder_prototype/engine.py`
-- `agentic_coder_prototype/agent_session.py`
-- `agentic_coder_prototype/turn_context.py`
-- `agentic_coder_prototype/run_logging/run_logger.py`
-- `agentic_coder_prototype/run_logging/request_recorder.py`
-- `agentic_coder_prototype/run_logging/api_recorder.py`
-- `agentic_coder_prototype/ctrees/events.py`
+- `breadboard_engine/engine.py`
+- `breadboard_engine/agent_session.py`
+- `breadboard_engine/turn_context.py`
+- `breadboard_engine/run_logging/run_logger.py`
+- `breadboard_engine/run_logging/request_recorder.py`
+- `breadboard_engine/run_logging/api_recorder.py`
+- `breadboard_engine/ctrees/events.py`
 - task and CLI bridge event normalizers tested elsewhere
 
 These owners imply that event semantics are currently distributed across runtime, logging, replay, and projection-adjacent paths.

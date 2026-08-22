@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.dialects.pythonic02 import Pythonic02Dialect
+from breadboard_engine.dialects.pythonic02 import Pythonic02Dialect
 
 
 class Pythonic02(Pythonic02Dialect):

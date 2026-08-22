@@ -12,7 +12,7 @@ on:
     - cron: "30 9 * * *"
   pull_request:
     paths:
-      - "agentic_coder_prototype/longrun/**"
+      - "breadboard_engine/longrun/**"
       - "scripts/run_longrun_phase1_pilot.py"
       - "scripts/audit_longrun_parity_disabled.py"
       - "scripts/evaluate_longrun_phase2_go_no_go.py"

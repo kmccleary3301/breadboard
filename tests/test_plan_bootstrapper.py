@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.plan_bootstrapper import PlanBootstrapper
+from breadboard_engine.plan_bootstrapper import PlanBootstrapper
 
 
 class FakeSessionState:

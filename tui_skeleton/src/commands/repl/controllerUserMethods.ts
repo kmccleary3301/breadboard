@@ -1,11 +1,12 @@
-import type { ReadSessionFileOptions } from "../../api/internalClient.js"
-import { ApiError } from "../../api/internalClient.js"
-import type { SessionFileContent, SessionFileInfo, SessionSummary } from "../../api/types.js"
+import type { ReadSessionFileOptions } from "@breadboard/sdk"
+import { ApiError } from "@breadboard/sdk"
+import type { SessionFileContent, SessionFileInfo, SessionSummary } from "@breadboard/sdk"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { DEFAULT_MODEL_ID } from "../../config/appConfig.js"
 import { getModelCatalog } from "../../providers/modelCatalog.js"
-import { listCachedSessions, rememberSession } from "../../cache/sessionCache.js"
+import { normalizeModeValue } from "./controllerUtils.js"
+import { listCachedSessions, loadSessionCache, rememberSession } from "../../cache/sessionCache.js"
 import type {
   ModelMenuItem,
   SkillCatalog,
@@ -152,15 +153,16 @@ const mergeRecentSessions = async (backend: ReadonlyArray<SessionSummary>): Prom
   if (backend.length > 0) {
     await Promise.all(backend.map((summary) => rememberSession(summary)))
   }
+  const cache = await loadSessionCache()
   const rows: RecentSessionRow[] = []
   const seen = new Set<string>()
   for (const summary of backend) {
     rows.push({
       sessionId: summary.session_id,
       status: summary.status,
-      createdAt: summary.created_at,
-      lastActivityAt: summary.last_activity_at,
-      model: summary.model ?? (summary.metadata?.model as string | undefined) ?? null,
+      createdAt: summary.created_at ?? cache.sessions[summary.session_id]?.createdAt ?? "",
+      lastActivityAt: summary.last_activity_at ?? cache.sessions[summary.session_id]?.lastActivityAt ?? "",
+      model: summary.model ?? (summary.metadata?.model as string | undefined) ?? cache.sessions[summary.session_id]?.model ?? null,
       name: (summary.metadata?.name as string | undefined) ?? null,
       loggingDir: summary.logging_dir ?? null,
       source: "backend",
@@ -361,15 +363,19 @@ export async function attachExistingSession(this: any, sessionId: string): Promi
   try {
     const summary = await this.api().getSession(target)
     await rememberSession(summary)
+    const cached = (await loadSessionCache()).sessions[target]
     this.stats.model =
       summary.model ??
       (summary.metadata?.model as string | undefined) ??
-      this.stats.model ??
+      cached?.model ??
       DEFAULT_MODEL_ID
+    this.mode =
+      summary.mode && typeof summary.mode === "string"
+        ? summary.mode
+        : cached?.mode && typeof cached.mode === "string"
+          ? cached.mode
+          : normalizeModeValue(process.env.BREADBOARD_DEFAULT_MODE) ?? "build"
     this.resolveProviderCapabilitiesSnapshot(this.stats.model)
-    if (summary.mode && typeof summary.mode === "string") {
-      this.mode = summary.mode
-    }
     try {
       const ctree = await this.api().getCtreeSnapshot(target)
       this.ctreeSnapshot = (ctree ?? null) as unknown as any
@@ -789,11 +795,14 @@ export async function waitForCompletion(
       attempts += 1
       try {
         const summary = await this.api().getSession(this.sessionId)
-        if (summary.completion_summary) {
+        if (summary.completion_summary || ["completed", "failed", "canceled", "stopped"].includes(summary.status)) {
           this.completionSeen = true
+          const cs = summary.completion_summary
           this.lastCompletion = {
-            completed: summary.completion_summary.completed === true,
-            summary: summary.completion_summary,
+            completed: cs ? cs.completed === true : summary.status === "completed",
+            summary:
+              (cs as Record<string, unknown> | undefined) ??
+              ((summary.terminal_outcome as Record<string, unknown> | null | undefined) ?? null),
           }
           if (DEBUG_WAIT) {
             console.log(

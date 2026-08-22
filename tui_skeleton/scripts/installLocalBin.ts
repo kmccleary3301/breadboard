@@ -66,7 +66,7 @@ const writeWrapper = async (binDir: string) => {
     launcherMode === "source"
       ? `#!/usr/bin/env bash
 set -euo pipefail
-if [ ! -f ${JSON.stringify(path.join(projectRoot, "package.json"))} ] || [ ! -f ${JSON.stringify(path.join(repoRoot, "agentic_coder_prototype", "utils", "safe_delete.py"))} ] || [ ! -f ${JSON.stringify(srcMain)} ]; then
+if [ ! -f ${JSON.stringify(path.join(projectRoot, "package.json"))} ] || [ ! -f ${JSON.stringify(path.join(repoRoot, "breadboard_engine", "utils", "safe_delete.py"))} ] || [ ! -f ${JSON.stringify(srcMain)} ]; then
   echo "BreadBoard launcher target is incomplete or corrupted: ${projectRoot}" >&2
   exit 1
 fi
@@ -75,7 +75,7 @@ node --import tsx ${JSON.stringify(srcMain)} \"$@\"
 `
       : `#!/usr/bin/env bash
 set -euo pipefail
-if [ ! -f ${JSON.stringify(path.join(projectRoot, "package.json"))} ] || [ ! -f ${JSON.stringify(path.join(repoRoot, "agentic_coder_prototype", "utils", "safe_delete.py"))} ] || [ ! -f ${JSON.stringify(distMain)} ]; then
+if [ ! -f ${JSON.stringify(path.join(projectRoot, "package.json"))} ] || [ ! -f ${JSON.stringify(path.join(repoRoot, "breadboard_engine", "utils", "safe_delete.py"))} ] || [ ! -f ${JSON.stringify(distMain)} ]; then
   echo "BreadBoard launcher target is incomplete or corrupted: ${projectRoot}" >&2
   exit 1
 fi

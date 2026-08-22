@@ -16,7 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import ray
 from dotenv import load_dotenv
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard.sandbox_factory import DeploymentMode, SandboxFactory
 
 

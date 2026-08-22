@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.candidate_a_pilot import run_candidate_a_pilot
+from breadboard_engine.ctrees.candidate_a_pilot import run_candidate_a_pilot
 
 
 def test_candidate_a_pilot_beats_deterministic_on_support_economy_without_regression() -> None:

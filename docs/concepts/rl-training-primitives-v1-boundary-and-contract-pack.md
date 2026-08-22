@@ -1,16 +1,16 @@
 RL Training Primitives V1 is an overlay architecture, not a kernel rewrite.
 
-The canonical runtime truth remains the existing BreadBoard event and DAG/search truth surfaces. RL V1 adds a trainer-neutral contract pack in `agentic_coder_prototype.rl` that projects from that truth instead of redefining it.
+The canonical runtime truth remains the existing BreadBoard event and DAG/search truth surfaces. RL V1 adds a trainer-neutral contract pack in `breadboard_engine.rl` that projects from that truth instead of redefining it.
 
 The first tranche settles three reconciliation points:
 
-- `agentic_coder_prototype/search/export.py`
+- `breadboard_engine/search/export.py`
   - remains useful as a search-study export surface
   - is not the native RL truth surface
-- `agentic_coder_prototype/optimize/trajectory_ir.py`
+- `breadboard_engine/optimize/trajectory_ir.py`
   - remains a shallow legacy stub
   - is superseded for RL truth by the graph-native RL overlay
-- `agentic_coder_prototype/rlm`
+- `breadboard_engine/rlm`
   - remains a tool/budget subsystem
   - is not promoted into RL training truth
 

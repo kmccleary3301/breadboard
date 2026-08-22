@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.orchestration.coordination import (
+from breadboard_engine.orchestration.coordination import (
     build_blocked_signal_proposal,
     build_signal_proposal,
     is_accepted_signal,

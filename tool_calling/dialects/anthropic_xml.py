@@ -1,3 +1,3 @@
-from agentic_coder_prototype.dialects.anthropic_xml import AnthropicXMLDialect  # shim
+from breadboard_engine.dialects.anthropic_xml import AnthropicXMLDialect  # shim
 
 

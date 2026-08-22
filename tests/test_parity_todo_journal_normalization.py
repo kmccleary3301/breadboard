@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.parity import compare_todo_journal
+from breadboard_engine.parity import compare_todo_journal
 
 
 def test_compare_todo_journal_normalizes_reorder_ids() -> None:

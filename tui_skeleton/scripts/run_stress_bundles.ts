@@ -308,7 +308,7 @@ const spawnLiveBridge = (baseUrl: string): ChildProcess => {
     BREADBOARD_CLI_HOST: host,
     BREADBOARD_CLI_PORT: String(port),
   }
-  return spawn("python", ["-m", "agentic_coder_prototype.api.cli_bridge.server"], {
+  return spawn("python", ["-m", "breadboard_engine.api.cli_bridge.server"], {
     cwd: path.resolve(ROOT_DIR, ".."),
     env,
     stdio: "inherit",

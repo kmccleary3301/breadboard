@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from agentic_coder_prototype.optimize import (
+from breadboard_engine.optimize import (
     ArtifactRef,
     CandidateBundle,
     CandidateChange,

@@ -39,8 +39,8 @@ import type {
   RewindMenuState,
   CheckpointSummary,
 } from "../../repl/types.js"
-import { ApiError } from "../../api/internalClient.js"
-import type { ReadSessionFileOptions } from "../../api/internalClient.js"
+import { ApiError } from "@breadboard/sdk"
+import type { ReadSessionFileOptions } from "@breadboard/sdk"
 import type {
   SessionEvent,
   SessionFileInfo,
@@ -48,7 +48,7 @@ import type {
   CTreeTreeResponse,
   CTreeTreeStage,
   CTreeTreeSource,
-} from "../../api/types.js"
+} from "@breadboard/sdk"
 import { createEmptyCTreeModel, type CTreeModel } from "../../repl/ctrees/reducer.js"
 import { DEFAULT_MODEL_ID } from "../../config/appConfig.js"
 import { getModelCatalog } from "../../providers/modelCatalog.js"

@@ -24,11 +24,11 @@ The transcript contract should answer:
 
 Primary current owners and related surfaces:
 
-- `agentic_coder_prototype/agent_session.py`
-- `agentic_coder_prototype/turn_context.py`
-- `agentic_coder_prototype/run_logging/markdown_transcript.py`
-- `agentic_coder_prototype/reasoning_trace_store.py`
-- `agentic_coder_prototype/todo/store.py`
+- `breadboard_engine/agent_session.py`
+- `breadboard_engine/turn_context.py`
+- `breadboard_engine/run_logging/markdown_transcript.py`
+- `breadboard_engine/reasoning_trace_store.py`
+- `breadboard_engine/todo/store.py`
 - longrun/checkpoint paths that snapshot session state
 
 ---

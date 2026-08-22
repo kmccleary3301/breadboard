@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.compilation.tool_registry import registry_from_config
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.compilation.tool_registry import registry_from_config
 
 
 def test_v2_loader_extends_and_validation(tmp_path, monkeypatch):

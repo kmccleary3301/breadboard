@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { SessionEvent } from "../src/api/types.js"
+import type { SessionEvent } from "@breadboard/sdk"
 import {
   defaultShouldRenderOneShotEvent,
   normalizeOneShotOutputMode,

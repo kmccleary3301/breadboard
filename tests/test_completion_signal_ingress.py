@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.orchestration.coordination import (
+from breadboard_engine.orchestration.coordination import (
     build_completion_signal_proposal,
     build_tool_completion_signal_proposal,
     infer_completion_signal_source_kind,
     validate_signal_proposal,
 )
-from agentic_coder_prototype.state.completion_detector import CompletionDetector
+from breadboard_engine.state.completion_detector import CompletionDetector
 
 
 def test_completion_detector_emits_text_sentinel_signal_metadata() -> None:

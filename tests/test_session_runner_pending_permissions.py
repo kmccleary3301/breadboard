@@ -1,8 +1,8 @@
 from __future__ import annotations
-import asyncio, json, multiprocessing, os, queue, stat, threading, pytest; from pathlib import Path; from breadboard.product.harness.lock import EffectiveHarnessLock; from breadboard.product.runtime import Session as ProductSession
-from agentic_coder_prototype.api.cli_bridge.events import EventType; from agentic_coder_prototype.permissions import load_permission_rules, upsert_permission_rule; from agentic_coder_prototype.permissions import rules_store; from agentic_coder_prototype.permissions.broker import PermissionBroker; from agentic_coder_prototype.permissions.rules_store import RULES_REL_PATH, _locked_rules
-from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest, SessionStatus; from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord, SessionRegistry; from agentic_coder_prototype.api.cli_bridge.session_runner import SessionRunner, _PauseAwareControlQueue, _canonical_permission_resolution
-from agentic_coder_prototype.api.cli_bridge.service import SessionService
+import asyncio, json, multiprocessing, os, pickle, queue, stat, threading, pytest; from pathlib import Path; from breadboard.product.harness.lock import EffectiveHarnessLock; from breadboard.product.runtime import Session as ProductSession
+from breadboard_engine.api.cli_bridge.events import EventType; from breadboard_engine.permissions import load_permission_rules, upsert_permission_rule; from breadboard_engine.permissions import rules_store; from breadboard_engine.permissions.broker import PermissionBroker; from breadboard_engine.permissions.rules_store import RULES_REL_PATH, _locked_rules
+from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus; from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry; from breadboard_engine.api.cli_bridge.session_runner import SessionRunner, _PauseAwareControlQueue, _canonical_permission_resolution
+from breadboard_engine.api.cli_bridge.service import SessionService
 def _runner(session_id: str = "session") -> SessionRunner: runner = SessionRunner(session=SessionRecord(session_id=session_id, status=SessionStatus.RUNNING), registry=SessionRegistry(), request=SessionCreateRequest(config_path="dummy.yml", task="task", stream=False)); runner._base_config_cache = {}; return runner
 def _product_runner(session_id: str) -> tuple[SessionRunner, ProductSession]: runner = _runner(session_id); session = ProductSession.start(EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}), "task", session_id=session_id); runner.session.product_session = session; return runner, session
 async def _initialized() -> None: pass
@@ -42,10 +42,73 @@ async def test_durable_rule_remains_authoritative_when_metadata_projection_fails
     assert fsyncs and result["decision"] == "always" and [(rule.pattern, rule.decision) for rule in load_permission_rules(tmp_path)] == [("safe.sh", "allow"), ("*.sh", "allow")]
     assert runner.session.metadata["permission_rules"][0]["rule"] == "*.sh" and session.read_model.status == "running" and runner._permission_queue.qsize() == 1
     runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-2", "category": "shell"}); runner._permission_queue = None; failure = (await asyncio.gather(runner.handle_command("permission_decision", {"request_id": "permission-2", "decision": "always", "rule": "missing.sh"}), return_exceptions=True))[0]
-    assert isinstance(failure, RuntimeError) and session.read_model.status == "failed"
+    assert isinstance(failure, ValueError) and session.read_model.status == "running" and [rule.pattern for rule in load_permission_rules(tmp_path)] == ["safe.sh", "*.sh"]
     workers = [threading.Thread(target=upsert_permission_rule, kwargs={"workspace_dir": tmp_path, "category": "shell", "pattern": f"parallel-{index}.sh", "decision": "allow"}) for index in range(4)]; [worker.start() for worker in workers]; [worker.join() for worker in workers]; assert {rule.pattern for rule in load_permission_rules(tmp_path)}.issuperset({f"parallel-{index}.sh" for index in range(4)})
     processes = [multiprocessing.get_context("spawn").Process(target=_upsert_process, args=(str(tmp_path), f"process-{index}.sh")) for index in range(4)]; [process.start() for process in processes]; [process.join(10) for process in processes]; assert all(process.exitcode == 0 for process in processes) and {rule.pattern for rule in load_permission_rules(tmp_path)}.issuperset({f"process-{index}.sh" for index in range(4)})
     context = multiprocessing.get_context("spawn"); entered, release = context.Event(), context.Event(); holder = context.Process(target=_hold_rule_lock, args=(str(tmp_path), entered, release)); holder.start(); assert entered.wait(5); writer = context.Process(target=_upsert_process, args=(str(tmp_path), "blocked.sh")); writer.start(); writer.join(.2); assert writer.is_alive(); release.set(); holder.join(10); writer.join(10); assert holder.exitcode == writer.exitcode == 0
+@pytest.mark.asyncio
+async def test_stray_decision_resolves_head_and_promotes_sibling() -> None:
+    runner, session = _product_runner("always"); runner._permission_queue = None
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-1", "category": "shell"})
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-2", "category": "shell"}); assert session.read_model.pending_approval == "permission-1"
+    failure = (await asyncio.gather(runner.handle_command("permission_decision", {"request_id": "permission-1", "decision": "always"}), return_exceptions=True))[0]
+    assert isinstance(failure, ValueError)
+    assert session.read_model.status == "awaiting_approval" and session.read_model.pending_approval == "permission-2"
+    assert [entry["request_id"] for entry in runner.session.metadata["pending_permissions"]] == ["permission-2"]
+
+@pytest.mark.asyncio
+async def test_stray_decision_tolerates_malformed_pending_entries() -> None:
+    runner, session = _product_runner("always"); runner._permission_queue = None
+    runner.session.metadata["pending_permissions"] = ["junk", {"request_id": "permission-x", "category": "shell"}]
+    failure = (await asyncio.gather(runner.handle_command("respond_permission", {"request_id": "permission-x", "response": "always"}), return_exceptions=True))[0]
+    assert isinstance(failure, ValueError) and session.read_model.status == "running"
+
+@pytest.mark.asyncio
+async def test_stray_decision_for_sibling_preserves_active_head() -> None:
+    runner, session = _product_runner("always"); runner._permission_queue = None
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-1", "category": "shell"})
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-2", "category": "shell"})
+    failure = (await asyncio.gather(runner.handle_command("respond_permission", {"request_id": "permission-2", "response": "always"}), return_exceptions=True))[0]
+    assert isinstance(failure, ValueError)
+    assert session.read_model.status == "awaiting_approval" and session.read_model.pending_approval == "permission-1"
+    assert [entry["request_id"] for entry in runner.session.metadata["pending_permissions"]] == ["permission-1"]
+
+@pytest.mark.asyncio
+async def test_head_discard_promotes_next_valid_sibling_past_malformed() -> None:
+    runner, session = _product_runner("always"); runner._permission_queue = None
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-1", "category": "shell"})
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-3", "category": "shell"})
+    entries = runner.session.metadata["pending_permissions"]; assert session.read_model.pending_approval == "permission-1"
+    runner.session.metadata["pending_permissions"] = [entries[0], "junk", entries[1]]
+    failure = (await asyncio.gather(runner.handle_command("respond_permission", {"request_id": "permission-1", "response": "always"}), return_exceptions=True))[0]
+    assert isinstance(failure, ValueError)
+    assert session.read_model.status == "awaiting_approval" and session.read_model.pending_approval == "permission-3"
+    assert [entry["request_id"] for entry in runner.session.metadata["pending_permissions"]] == ["permission-3"]
+
+@pytest.mark.asyncio
+async def test_head_discard_treats_first_valid_entry_as_active() -> None:
+    runner, session = _product_runner("always"); runner._permission_queue = None
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-1", "category": "shell"})
+    runner.session.metadata["pending_permissions"] = ["junk", dict(runner.session.metadata["pending_permissions"][0])]
+    assert session.read_model.pending_approval == "permission-1"
+    failure = (await asyncio.gather(runner.handle_command("respond_permission", {"request_id": "permission-1", "response": "always"}), return_exceptions=True))[0]
+    assert isinstance(failure, ValueError)
+    assert session.read_model.status == "running" and "pending_permissions" not in runner.session.metadata
+
+@pytest.mark.asyncio
+async def test_head_discard_skips_entries_without_request_ids() -> None:
+    runner, session = _product_runner("always"); runner._permission_queue = None
+    runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-1", "category": "shell"})
+    runner.session.metadata["pending_permissions"] = [{}, dict(runner.session.metadata["pending_permissions"][0])]
+    assert session.read_model.pending_approval == "permission-1"
+    failure = (await asyncio.gather(runner.handle_command("respond_permission", {"request_id": "permission-1", "response": "always"}), return_exceptions=True))[0]
+    assert isinstance(failure, ValueError)
+    assert session.read_model.status == "running" and "pending_permissions" not in runner.session.metadata
+
+def test_control_queue_unpickles_without_recursive_delegation() -> None:
+    control = pickle.loads(pickle.dumps(_PauseAwareControlQueue([])))
+    control.append({"kind": "resume"})
+    assert control._queue == [{"kind": "resume"}]
 @pytest.mark.skipif(os.name == "nt", reason="symlink creation requires privileges on Windows")
 def test_permission_rules_reject_workspace_metadata_symlink(monkeypatch, tmp_path) -> None:
     outside = tmp_path / "outside"; outside.mkdir(); metadata = tmp_path / ".breadboard"; metadata.symlink_to(outside, target_is_directory=True); assert load_permission_rules(tmp_path) == []; pytest.raises(OSError, upsert_permission_rule, tmp_path, category="shell", pattern="escape.sh", decision="allow"); assert not list(outside.iterdir()); metadata.unlink(); metadata.mkdir(); lock_target = outside / "lock"; lock_path = metadata / "permission_rules.json.lock"; lock_path.symlink_to(lock_target); pytest.raises(OSError, upsert_permission_rule, tmp_path, category="shell", pattern="lock.sh", decision="allow"); assert not lock_target.exists(); lock_path.unlink()
@@ -164,8 +227,8 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
     def load(path): calls.append(path); return source  # type: ignore[no-untyped-def]
     def enable_primitives() -> bool: source["tools"]["enabled"] = {"read": True}; source["policies"]["tools"] = {"allow": ["read"], "deny": []}; source["policies"]["models"] = {"deny": []}; return True
     async def start(_runner) -> None: return None  # type: ignore[no-untyped-def]
-    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.session_runner.load_agent_config", load); monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.runtime_emission.load_agent_config", lambda _: pytest.fail("emitter reloaded mutable source")); monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.primitive_emission_enabled", enable_primitives)
-    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.uuid.uuid4", lambda: "frozen-session"); monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.session_runner.SessionRunner.start", start); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records")); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events"))
+    monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_runner.load_agent_config", load); monkeypatch.setattr("breadboard_engine.api.cli_bridge.runtime_emission.load_agent_config", lambda _: pytest.fail("emitter reloaded mutable source")); monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.primitive_emission_enabled", enable_primitives)
+    monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.uuid.uuid4", lambda: "frozen-session"); monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_runner.SessionRunner.start", start); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records")); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events"))
     service = SessionService(); response = await service.create_session(SessionCreateRequest(config_path="mutating.json", task="test")); record = await service.ensure_session(response.session_id); root = tmp_path / "records" / response.session_id; names = ("effective_config_graph", "capability_registry", "effective_tool_surface", "effective_operation_policy"); payloads = {name: json.loads((root / f"{name}.json").read_text()) for name in names}
     graph, policy = payloads["effective_config_graph"], payloads["effective_operation_policy"]; tool_ids = {item["capability_id"] for item in payloads["capability_registry"]["capabilities"] if item["capability_type"] == "tool"}; assert calls == ["mutating.json"] and graph["graph_hash"] == record.product_session.events[0].payload["effective_lock_hash"]
     assert tool_ids == {"tool.list"} == set(payloads["effective_tool_surface"]["tool_ids"]) and [(rule["decision"], rule["match"]["pattern"]) for rule in policy["tool_policy"]["rules"]] == [("allow", "list"), ("deny", "blocked_tool")]

@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { loadAppConfig } from "../config/appConfig.js"
-import type { SessionSummary } from "../api/types.js"
+import type { SessionSummary } from "@breadboard/sdk"
 
 const CACHE_VERSION = 1
 const MAX_RECENT = 50
@@ -13,6 +13,7 @@ export interface CachedSessionEntry {
   readonly lastActivityAt: string
   readonly status: string
   readonly model?: string
+  readonly mode?: string
   readonly loggingDir?: string | null
   readonly metadata?: Record<string, unknown> | null
   readonly draft?: DraftState | null
@@ -87,16 +88,17 @@ export const rememberSession = async (
   options: { name?: string; model?: string } = {},
 ): Promise<void> => {
   const cache = await loadSessionCache()
+  const previous = cache.sessions[summary.session_id]
   const entry: CachedSessionEntry = {
     sessionId: summary.session_id,
-    name: options.name,
-    createdAt: summary.created_at,
-    lastActivityAt: summary.last_activity_at,
+    name: options.name ?? previous?.name,
+    createdAt: summary.created_at ?? previous?.createdAt ?? "",
+    lastActivityAt: summary.last_activity_at ?? previous?.lastActivityAt ?? "",
     status: summary.status,
-    model: options.model ?? (summary.metadata?.model as string | undefined),
-    loggingDir: summary.logging_dir ?? null,
-    metadata: normalizeMetadata(summary.metadata ?? null),
-    draft: cache.sessions[summary.session_id]?.draft ?? null,
+    model: options.model ?? (summary.metadata?.model as string | undefined) ?? previous?.model,
+    loggingDir: summary.logging_dir ?? previous?.loggingDir ?? null,
+    mode: summary.mode ?? previous?.mode,
+    draft: previous?.draft ?? null,
   }
   cache.sessions[entry.sessionId] = entry
   cache.recent = [entry.sessionId, ...cache.recent.filter((id) => id !== entry.sessionId)].slice(0, MAX_RECENT)

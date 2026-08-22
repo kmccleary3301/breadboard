@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.historical_bridge_summary import load_prompt_centric_bridge_summary
+from breadboard_engine.ctrees.historical_bridge_summary import load_prompt_centric_bridge_summary
 
 
 def test_ctree_historical_bridge_summary_loads_three_scenario_pack() -> None:

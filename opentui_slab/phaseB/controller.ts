@@ -171,7 +171,7 @@ const main = async () => {
 
   const engineRoot = resolveEngineRoot(process.cwd()) ?? resolveEngineRoot(path.dirname(process.cwd()))
   if (!engineRoot) {
-    throw new Error("Unable to locate engine root (agentic_coder_prototype/).")
+    throw new Error("Unable to locate engine root (breadboard_engine/).")
   }
 
   const resolveConfigPath = (value: string): string => {

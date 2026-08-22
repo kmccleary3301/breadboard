@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.longrun.recovery import RecoveryPolicy
+from breadboard_engine.longrun.recovery import RecoveryPolicy
 
 
 def test_recovery_policy_rollback_then_stop() -> None:

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.compiler import compile_ctree
-from agentic_coder_prototype.ctrees.evaluation_metrics import (
+from breadboard_engine.ctrees.compiler import compile_ctree
+from breadboard_engine.ctrees.evaluation_metrics import (
     build_evaluation_prompt_planes,
     evaluate_support_result,
 )
-from agentic_coder_prototype.ctrees.microprobes import build_false_neighbor_store
-from agentic_coder_prototype.ctrees.policy import build_rehydration_plan
+from breadboard_engine.ctrees.microprobes import build_false_neighbor_store
+from breadboard_engine.ctrees.policy import build_rehydration_plan
 
 
 def test_ctree_evaluation_metrics_emits_standardized_payload() -> None:

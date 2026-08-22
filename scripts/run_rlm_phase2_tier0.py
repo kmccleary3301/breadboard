@@ -17,9 +17,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.provider.routing import provider_router
-from agentic_coder_prototype.provider.runtime import ProviderRuntimeContext, provider_registry
+from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.provider.routing import provider_router
+from breadboard_engine.provider.runtime import ProviderRuntimeContext, provider_registry
 from scripts.validate_rlm_artifacts import validate as validate_rlm_artifacts
 
 

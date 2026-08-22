@@ -31,7 +31,7 @@ def deterministic_self_capture_context(generated_at_utc: str) -> Iterator[None]:
 
     with (
         patch("time.time", deterministic_time),
-        patch("agentic_coder_prototype.runtime.kernel_emitter._utc_now", deterministic_utc_now),
-        patch("agentic_coder_prototype.orchestration.coordination.uuid.uuid4", deterministic_uuid4),
+        patch("breadboard_engine.runtime.kernel_emitter._utc_now", deterministic_utc_now),
+        patch("breadboard_engine.orchestration.coordination.uuid.uuid4", deterministic_uuid4),
     ):
         yield

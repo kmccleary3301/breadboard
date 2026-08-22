@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ApiClient, ApiError } from "../../../api/internalClient.js"
-import type { SessionEvent } from "../../../api/types.js"
+import { ApiError } from "@breadboard/sdk"
+import type { SessionEvent } from "@breadboard/sdk"
 import { CliProviders } from "../../../providers/cliProviders.js"
 import { ReplSessionController } from "../controller.js"
 
@@ -10,18 +10,18 @@ afterEach(() => {
 
 describe("todo stale semantics", () => {
   it("marks existing scopes stale when the public session lifecycle resets a lost resume window", async () => {
-    vi.spyOn(ApiClient, "createSession").mockResolvedValue({
+    vi.spyOn(CliProviders.sdk.api(), "createSession").mockResolvedValue({
       created_at: "2026-07-13T00:00:00Z",
       session_id: "session-reconnect",
       status: "running",
     })
-    vi.spyOn(ApiClient, "getSession").mockResolvedValue({
+    vi.spyOn(CliProviders.sdk.api(), "getSession").mockResolvedValue({
       created_at: "2026-07-13T00:00:00Z",
       last_activity_at: "2026-07-13T00:00:00Z",
       session_id: "session-reconnect",
       status: "running",
     })
-    vi.spyOn(ApiClient, "getCtreeSnapshot").mockResolvedValue({})
+    vi.spyOn(CliProviders.sdk.api(), "getCtreeSnapshot").mockResolvedValue({})
     vi.spyOn(CliProviders.sdk, "stream").mockImplementation(
       async function* reconnectingStream(): AsyncGenerator<SessionEvent> {
         throw new ApiError("resume window expired", 409)

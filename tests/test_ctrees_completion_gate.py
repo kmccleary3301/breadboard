@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.completion_gate import evaluate_completion_gate
+from breadboard_engine.ctrees.completion_gate import evaluate_completion_gate
 
 
 def test_completion_gate_marks_ungrounded_stop_as_not_satisfied() -> None:

@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH, catalog_segment_hash, stable_entries_hash
+from breadboard_engine.conformance.catalog_binding import CATALOG_PATH, catalog_segment_hash, stable_entries_hash
 from scripts.e4_parity.validators.registries import schema_generation_default
 
 

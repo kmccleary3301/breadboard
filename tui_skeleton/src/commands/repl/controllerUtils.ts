@@ -1,4 +1,4 @@
-import type { CTreeSnapshotSummary } from "../../api/types.js"
+import type { CTreeSnapshotSummary } from "@breadboard/sdk"
 import type { TodoItem, UsageMetrics } from "../../repl/types.js"
 import { normalizeTodoStatus } from "../../repl/todos/todoStatus.js"
 

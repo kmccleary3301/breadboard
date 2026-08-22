@@ -8,7 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_ROOT = Path("scripts/e4_parity")
 ALLOWED_HASHLIB_FILES = {
     Path("scripts/e4_parity/build_artifact_catalog.py"),
-    Path("agentic_coder_prototype/compilation/primitive_records.py"),
+    Path("breadboard_engine/compilation/primitive_records.py"),
 }
 ALLOWED_HASHLIB_PREFIXES = (Path("scripts/e4_parity/validators"),)
 

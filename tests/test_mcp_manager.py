@@ -9,7 +9,7 @@ import pytest
 
 @pytest.mark.skipif(importlib.util.find_spec("mcp") is None, reason="mcp optional dependency not installed")
 def test_mcp_manager_stdio_roundtrip(tmp_path: Path) -> None:
-    from agentic_coder_prototype.mcp.manager import MCPManager
+    from breadboard_engine.mcp.manager import MCPManager
 
     server_script = tmp_path / "mcp_server.py"
     server_script.write_text(

@@ -1,6 +1,6 @@
-import { ApiError } from "../../api/internalClient.js"
-import type { SessionEvent } from "../../api/types.js"
-import type { SessionFileInfo } from "../../api/types.js"
+import { ApiError } from "@breadboard/sdk"
+import type { SessionEvent } from "@breadboard/sdk"
+import type { SessionFileInfo } from "@breadboard/sdk"
 import { BRAND_COLORS, resolveIcons } from "../../repl/designSystem.js"
 import { SLASH_COMMANDS } from "../../repl/slashCommands.js"
 import { computeDiffPreview } from "../../repl/transcriptUtils.js"
@@ -151,7 +151,7 @@ export function slashHandlers(this: any): Record<string, SlashHandler> {
     status: async () => {
       try {
         const summary = await this.api().getSession(this.sessionId)
-        this.pushHint(`Status: ${summary.status}, last activity ${summary.last_activity_at}`)
+        this.pushHint(summary.last_activity_at ? `Status: ${summary.status}, last activity ${summary.last_activity_at}` : `Status: ${summary.status}`)
         this.status = `Status: ${summary.status}`
         if (summary.completion_summary) {
           this.addTool("status", `[status] completion ${JSON.stringify(summary.completion_summary)}`)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Mapping
 
-from agentic_coder_prototype.compilation import helper_runtime_primitives as helper
+from breadboard_engine.compilation import helper_runtime_primitives as helper
 from scripts.e4_parity.fixtures import p3_lane_fixtures
 
 LOGICAL_WORKSPACE_ROOT = "workspace://"
@@ -10,19 +10,19 @@ Projection = Callable[[Mapping[str, Any]], dict[str, Any]]
 ProjectionResult = dict[str, Any]
 
 HELPER_COMPILER_BY_PROJECTION: dict[str, str] = {
-    "p3_2_context_resource_pack": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_context_resource_pack",
-    "p3_3_capability_registry": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_capability_registry",
-    "p3_4_extension_hook_execution": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_extension_hook_execution",
-    "p3_5_resource_ref": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_resource_access_bundle",
-    "p3_5_blob_ref": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_resource_access_bundle",
-    "p3_5_resource_access": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_resource_access_bundle",
-    "p3_5_write_resource_access": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_resource_access_bundle",
-    "p3_5_truncated_redacted_access": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_resource_access_bundle",
-    "p3_6_external_protocol_session": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_protocol_provider_policy_bundle",
-    "p3_6_provider_route": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_protocol_provider_policy_bundle",
-    "p3_6_effective_operation_policy": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_protocol_provider_policy_bundle",
-    "p3_8_projection_event": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_projection_broker_bundle",
-    "p3_8_side_effect_broker": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_projection_broker_bundle",
+    "p3_2_context_resource_pack": "breadboard_engine.compilation.helper_runtime_primitives.compile_context_resource_pack",
+    "p3_3_capability_registry": "breadboard_engine.compilation.helper_runtime_primitives.compile_capability_registry",
+    "p3_4_extension_hook_execution": "breadboard_engine.compilation.helper_runtime_primitives.compile_extension_hook_execution",
+    "p3_5_resource_ref": "breadboard_engine.compilation.helper_runtime_primitives.compile_resource_access_bundle",
+    "p3_5_blob_ref": "breadboard_engine.compilation.helper_runtime_primitives.compile_resource_access_bundle",
+    "p3_5_resource_access": "breadboard_engine.compilation.helper_runtime_primitives.compile_resource_access_bundle",
+    "p3_5_write_resource_access": "breadboard_engine.compilation.helper_runtime_primitives.compile_resource_access_bundle",
+    "p3_5_truncated_redacted_access": "breadboard_engine.compilation.helper_runtime_primitives.compile_resource_access_bundle",
+    "p3_6_external_protocol_session": "breadboard_engine.compilation.helper_runtime_primitives.compile_protocol_provider_policy_bundle",
+    "p3_6_provider_route": "breadboard_engine.compilation.helper_runtime_primitives.compile_protocol_provider_policy_bundle",
+    "p3_6_effective_operation_policy": "breadboard_engine.compilation.helper_runtime_primitives.compile_protocol_provider_policy_bundle",
+    "p3_8_projection_event": "breadboard_engine.compilation.helper_runtime_primitives.compile_projection_broker_bundle",
+    "p3_8_side_effect_broker": "breadboard_engine.compilation.helper_runtime_primitives.compile_projection_broker_bundle",
 }
 
 

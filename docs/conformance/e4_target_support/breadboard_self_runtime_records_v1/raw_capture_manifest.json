@@ -20,9 +20,9 @@
   "source_hashes": {
     "agent_configs/atp_hilbert_like_gpt54_v1.yaml": "sha256:210358b767fae2ba93f7c22100980b4335c99456b8d29fe2fabbf665972fc470",
     "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json": "sha256:691e22260f4a083e88469c155658afa0e4681a83b2e2f68f199abca8147c7548",
-    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl": "sha256:4a4fe71c21e31c96bbc0213858c01575973f9ef8f5a2993b358fc5fdc0b41758",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl": "sha256:3fa1a973be3c8fe8f0fcc148f052180389df8ab844ff9b915889391594c67b95",
     "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.session_transcript.v2.jsonl": "sha256:af6e3902fbfa9bcd14781c7e619eb3134e62fa7f8f1cf00b6a419a8d3d3d8672",
-    "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json": "sha256:09e75fb80cecb0d2394f218780654d523b2e0db5315dd27841861656add94141"
+    "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json": "sha256:07878ca51a206834f68d35a641d05fb18257289a845f1f1679b5886f15e48dac"
   },
   "target_family": "breadboard",
   "target_version": "breadboard runtime_records strict kernel emission"

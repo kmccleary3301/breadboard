@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.historical_runner_bridge import (
+from breadboard_engine.ctrees.historical_runner_bridge import (
     build_prompt_centric_historical_runner_manifest,
     load_historical_runner_result,
     render_prompt_centric_historical_runner_commands,

@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.conformance import c4_chain
-from agentic_coder_prototype.conformance.c4_chain import validate_c4_chain
-from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH, stable_entries_hash
+from breadboard_engine.conformance import c4_chain
+from breadboard_engine.conformance.c4_chain import validate_c4_chain
+from breadboard_engine.conformance.catalog_binding import CATALOG_PATH, stable_entries_hash
 from scripts.e4_parity.validators import registries
 
 

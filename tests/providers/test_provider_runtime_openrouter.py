@@ -2,8 +2,8 @@ import types
 
 import pytest
 
-from agentic_coder_prototype.provider_routing import provider_router
-from agentic_coder_prototype.provider_runtime import (
+from breadboard_engine.provider_routing import provider_router
+from breadboard_engine.provider_runtime import (
     ProviderRuntimeContext,
     ProviderRuntimeError,
     provider_registry,
@@ -52,7 +52,7 @@ def test_openrouter_runtime_uses_openai_client(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "agentic_coder_prototype.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -115,7 +115,7 @@ def test_openrouter_gpt5_responses_injects_provider_routing_preferences(monkeypa
             self.chat = types.SimpleNamespace(completions=None)
 
     monkeypatch.setattr(
-        "agentic_coder_prototype.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -206,7 +206,7 @@ def test_openrouter_runtime_injects_accept_headers_on_request(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "agentic_coder_prototype.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -294,7 +294,7 @@ def test_openrouter_runtime_parses_event_stream_response(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "agentic_coder_prototype.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -377,7 +377,7 @@ def test_openrouter_runtime_event_stream_parse_failure_records_base64(monkeypatc
             )
 
     monkeypatch.setattr(
-        "agentic_coder_prototype.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -462,7 +462,7 @@ def test_openrouter_runtime_html_error_includes_base64(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "agentic_coder_prototype.provider_runtime.OpenAI",
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
         FakeOpenAI,
     )
 
@@ -493,3 +493,262 @@ def test_openrouter_runtime_html_error_includes_base64(monkeypatch):
     assert details["html_detected"] is True
     assert details["content_type"] == "text/html"
     assert "raw_body_b64" in details and isinstance(details["raw_body_b64"], str)
+
+
+class _CapturingSessionState:
+    def __init__(self) -> None:
+        self._active_turn_index = 7
+        self.events = []
+
+    def _emit_event(self, event_type, payload, *, turn=None):
+        self.events.append((event_type, payload, turn))
+
+
+class _FakeChatStream:
+    def __init__(self, events, final_response):
+        self._events = events
+        self._final_response = final_response
+        self.finalized = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def __iter__(self):
+        return iter(self._events)
+
+    def get_final_completion(self):
+        self.finalized = True
+        return self._final_response
+
+
+def _chat_chunk(*, content=None, reasoning_content=None, tool_calls=None):
+    delta = types.SimpleNamespace(
+        content=content,
+        reasoning_content=reasoning_content,
+        reasoning=None,
+        reasoning_details=None,
+        tool_calls=tool_calls,
+    )
+    choice = types.SimpleNamespace(index=0, delta=delta)
+    chunk = types.SimpleNamespace(id="chatcmpl-1", choices=[choice])
+    return types.SimpleNamespace(type="chunk", chunk=chunk)
+
+
+def _chat_response(*, content="ok", tool_calls=None, reasoning_content=None):
+    message = types.SimpleNamespace(
+        role="assistant",
+        content=content,
+        tool_calls=tool_calls or [],
+        reasoning_content=reasoning_content,
+        reasoning=None,
+        reasoning_details=None,
+    )
+    choice = types.SimpleNamespace(
+        index=0, message=message, finish_reason="tool_calls" if tool_calls else "stop"
+    )
+    return types.SimpleNamespace(
+        choices=[choice], usage={}, model="deepseek/deepseek-v4-flash-0731"
+    )
+
+
+def test_openrouter_chat_stream_omits_absent_tools_and_uses_chat_finalizer():
+    descriptor, model = provider_router.get_runtime_descriptor(
+        "openrouter/deepseek/deepseek-v4-flash-0731"
+    )
+    runtime = provider_registry.create_runtime(descriptor)
+    captured = {}
+    response = _chat_response(content="hello")
+    stream = _FakeChatStream([_chat_chunk(content="hello")], response)
+
+    def open_stream(**kwargs):
+        captured.update(kwargs)
+        return stream
+
+    client = types.SimpleNamespace(
+        chat=types.SimpleNamespace(
+            completions=types.SimpleNamespace(stream=open_stream)
+        )
+    )
+    session_state = _CapturingSessionState()
+    result = runtime.invoke(
+        client=client,
+        model=model,
+        messages=[{"role": "user", "content": "hello"}],
+        tools=None,
+        stream=True,
+        context=ProviderRuntimeContext(
+            session_state=session_state, agent_config={}, stream=True
+        ),
+    )
+
+    assert "tools" not in captured
+    assert stream.finalized is True
+    assert result.messages[0].content == "hello"
+    assert [event[0] for event in session_state.events] == [
+        "assistant.message.start",
+        "assistant.message.delta",
+        "assistant.message.end",
+    ]
+
+
+def test_openrouter_chat_stream_projects_reasoning_and_tool_deltas_into_result():
+    descriptor, model = provider_router.get_runtime_descriptor(
+        "openrouter/deepseek/deepseek-v4-flash-0731"
+    )
+    runtime = provider_registry.create_runtime(descriptor)
+    first_tool_delta = types.SimpleNamespace(
+        index=0,
+        id="call-1",
+        function=types.SimpleNamespace(name="read", arguments='{"path":'),
+    )
+    second_tool_delta = types.SimpleNamespace(
+        index=0,
+        id=None,
+        function=types.SimpleNamespace(name=None, arguments='"README.md"}'),
+    )
+    final_tool = types.SimpleNamespace(
+        id="call-1",
+        type="function",
+        function=types.SimpleNamespace(name="read", arguments='{"path":"README.md"}'),
+    )
+    response = _chat_response(content=None, tool_calls=[final_tool])
+    stream = _FakeChatStream(
+        [
+            _chat_chunk(reasoning_content="inspect "),
+            _chat_chunk(tool_calls=[first_tool_delta]),
+            _chat_chunk(tool_calls=[second_tool_delta]),
+        ],
+        response,
+    )
+    captured = {}
+    client = types.SimpleNamespace(
+        chat=types.SimpleNamespace(
+            completions=types.SimpleNamespace(
+                stream=lambda **kwargs: captured.update(kwargs) or stream
+            )
+        )
+    )
+    session_state = _CapturingSessionState()
+
+    result = runtime.invoke(
+        client=client,
+        model=model,
+        messages=[{"role": "user", "content": "inspect"}],
+        tools=[
+            {
+                "type": "function",
+                "function": {"name": "read", "parameters": {"type": "object"}},
+            }
+        ],
+        stream=True,
+        context=ProviderRuntimeContext(
+            session_state=session_state, agent_config={}, stream=True
+        ),
+    )
+
+    assert captured["tools"][0]["function"]["name"] == "read"
+    assert result.messages[0].reasoning == "inspect "
+    assert result.messages[0].annotations["reasoning_content"] == "inspect "
+    assert result.messages[0].tool_calls[0].id == "call-1"
+    assert result.messages[0].tool_calls[0].arguments == '{"path":"README.md"}'
+    event_types = [event[0] for event in session_state.events]
+    assert event_types == [
+        "assistant.message.start",
+        "assistant.reasoning.delta",
+        "assistant.tool_call.start",
+        "assistant.tool_call.delta",
+        "assistant.tool_call.delta",
+        "assistant.tool_call.end",
+        "assistant.message.end",
+    ]
+    assert session_state.events[1][1]["text"] == "inspect "
+    assert session_state.events[3][1]["arguments_delta"] == '{"path":'
+    assert session_state.events[5][1]["arguments"] == '{"path":"README.md"}'
+    assert "text" not in session_state.events[6][1]
+
+
+def test_openrouter_chat_replays_tool_and_reasoning_fields():
+    descriptor, _ = provider_router.get_runtime_descriptor(
+        "openrouter/deepseek/deepseek-v4-flash-0731"
+    )
+    runtime = provider_registry.create_runtime(descriptor)
+    tool_calls = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": "read", "arguments": "{}"},
+        }
+    ]
+
+    converted = runtime._convert_messages_to_chat(
+        [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": tool_calls,
+                "reasoning_content": "private chain",
+            },
+            {"role": "tool", "tool_call_id": "call-1", "content": "ok"},
+        ]
+    )
+
+    assert converted[0]["tool_calls"] == tool_calls
+    assert converted[0]["reasoning_content"] == "private chain"
+    assert converted[1]["tool_call_id"] == "call-1"
+
+
+def test_openrouter_deepseek_uses_model_specific_chat_capabilities():
+    descriptor, model = provider_router.get_runtime_descriptor(
+        "openrouter/deepseek/deepseek-v4-flash-0731"
+    )
+    capabilities = provider_router.get_capabilities(
+        "openrouter/deepseek/deepseek-v4-flash-0731"
+    )
+
+    assert model == "deepseek/deepseek-v4-flash-0731"
+    assert descriptor.runtime_id == "openrouter_chat"
+    assert descriptor.default_api_variant == "chat"
+    assert descriptor.supports_native_tools is True
+    assert capabilities.tool_calls == "parallel"
+    assert capabilities.streaming == "event_deltas"
+    assert capabilities.reasoning == "openrouter"
+
+
+def test_openrouter_chat_stream_classifies_sdk_shape_errors_as_adapter_faults():
+    descriptor, model = provider_router.get_runtime_descriptor(
+        "openrouter/deepseek/deepseek-v4-flash-0731"
+    )
+    runtime = provider_registry.create_runtime(descriptor)
+
+    class BrokenStream:
+        def __enter__(self):
+            raise TypeError("local sdk shape mismatch")
+
+        def __exit__(self, *_args):
+            return None
+
+    client = types.SimpleNamespace(
+        chat=types.SimpleNamespace(
+            completions=types.SimpleNamespace(stream=lambda **_kwargs: BrokenStream())
+        )
+    )
+
+    with pytest.raises(ProviderRuntimeError) as exc_info:
+        runtime.invoke(
+            client=client,
+            model=model,
+            messages=[{"role": "user", "content": "hello"}],
+            tools=None,
+            stream=True,
+            context=ProviderRuntimeContext(
+                session_state=_CapturingSessionState(),
+                agent_config={},
+                stream=True,
+            ),
+        )
+
+    assert exc_info.value.kind == "adapter"
+    assert exc_info.value.replay_safe is True

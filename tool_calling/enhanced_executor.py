@@ -1,3 +1,3 @@
-from agentic_coder_prototype.execution.enhanced_executor import EnhancedToolExecutor  # shim
+from breadboard_engine.execution.enhanced_executor import EnhancedToolExecutor  # shim
 
 

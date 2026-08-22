@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.orchestration.coordination import (
+from breadboard_engine.orchestration.coordination import (
     build_review_verdict,
     validate_review_verdict,
 )

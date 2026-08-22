@@ -37,8 +37,8 @@ That is the right level of honesty for the current repo state.
 
 ```bash
 sed -n '1,220p' docs/contracts/atp/README.md
-sed -n '1,220p' agentic_coder_prototype/api/cli_bridge/atp_router.py
-sed -n '1,220p' agentic_coder_prototype/api/cli_bridge/atp_diagnostics.py
+sed -n '1,220p' breadboard_engine/api/cli_bridge/atp_router.py
+sed -n '1,220p' breadboard_engine/api/cli_bridge/atp_diagnostics.py
 ```
 
 ### Inspect the current ATP runners
@@ -68,7 +68,7 @@ sed -n '1,220p' scripts/build_atp_hilbert_scoreboard_v1.py
 ### Inspect the public optimization surface
 
 ```bash
-sed -n '1,260p' agentic_coder_prototype/optimize/__init__.py
+sed -n '1,260p' breadboard_engine/optimize/__init__.py
 ```
 
 ### Inspect the current main test surfaces
@@ -106,7 +106,7 @@ PYTHONPATH=. pytest -q tests/test_optimize_substrate.py \
 ### Inspect the current DAG export surface
 
 ```bash
-sed -n '1,260p' agentic_coder_prototype/search/__init__.py
+sed -n '1,260p' breadboard_engine/search/__init__.py
 ```
 
 ### Inspect the runtime and fidelity helper docs
@@ -140,7 +140,7 @@ PYTHONPATH=. pytest -q tests/test_search_runtime.py
 ### Inspect the RL surface
 
 ```bash
-sed -n '1,260p' agentic_coder_prototype/rl/__init__.py
+sed -n '1,260p' breadboard_engine/rl/__init__.py
 ```
 
 ### Inspect the RL docs that define the current maturity line
@@ -181,16 +181,16 @@ PYTHONPATH=. pytest -q tests/test_search_runtime.py tests/test_rl_training_primi
 ### Inspect the package shape
 
 ```bash
-sed -n '1,220p' agentic_coder_prototype/ctrees/schema.py
-sed -n '1,220p' agentic_coder_prototype/ctrees/phase_machine.py
-sed -n '1,220p' agentic_coder_prototype/ctrees/branch_receipt_contract.py
-sed -n '1,220p' agentic_coder_prototype/ctrees/finish_closure_contract.py
+sed -n '1,220p' breadboard_engine/ctrees/schema.py
+sed -n '1,220p' breadboard_engine/ctrees/phase_machine.py
+sed -n '1,220p' breadboard_engine/ctrees/branch_receipt_contract.py
+sed -n '1,220p' breadboard_engine/ctrees/finish_closure_contract.py
 ```
 
 ### Then inspect the broader family
 
 ```bash
-ls agentic_coder_prototype/ctrees
+ls breadboard_engine/ctrees
 ```
 
 ### What this tells you
@@ -276,7 +276,7 @@ Read:
 ### One hour on optimization
 
 1. read the overview and playbook
-2. inspect `agentic_coder_prototype/optimize/__init__.py`
+2. inspect `breadboard_engine/optimize/__init__.py`
 3. run the focused optimization tests
 
 ### One hour on DAG + RL

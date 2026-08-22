@@ -59,6 +59,16 @@ jobs:
       - name: Verify CLI bridge contract exports
         run: pytest -q tests/test_cli_bridge_contract_exports.py
 
+      - name: Verify generated TS SDK is current
+        run: |
+          python scripts/dev/generate_ts_sdk.py --check
+          pytest -q tests/test_ts_sdk_codegen.py
+
+      - name: Script index guard (live-count report, not a cap)
+        run: |
+          python scripts/dev/build_script_index.py --check
+          pytest -q tests/test_script_index_guard.py
+
       - name: Enforce Phase 20 freeze
         run: python scripts/check_phase20_freeze.py
 
@@ -82,29 +92,29 @@ jobs:
             const bodyCompatReviewed = /Compat reviewed:\s*non-breaking/i.test(body);
 
             const patterns = [
-              "agentic_coder_prototype/state/session_state.py",
-              "agentic_coder_prototype/api/cli_bridge/events.py",
-              "agentic_coder_prototype/api/cli_bridge/service.py",
-              "agentic_coder_prototype/api/cli_bridge/app.py",
+              "breadboard_engine/state/session_state.py",
+              "breadboard_engine/api/cli_bridge/events.py",
+              "breadboard_engine/api/cli_bridge/service.py",
+              "breadboard_engine/api/cli_bridge/app.py",
               "implementations/tools/defs/",
               "implementations/system_prompts/",
               "agent_configs/",
-              "agentic_coder_prototype/tools.py",
-              "agentic_coder_prototype/tool_calling/",
-              "agentic_coder_prototype/tool_prompt_planner.py",
-              "agentic_coder_prototype/guardrail_orchestrator.py",
-              "agentic_coder_prototype/permission_broker.py",
-              "agentic_coder_prototype/guardrails/",
-              "agentic_coder_prototype/provider_runtime.py",
-              "agentic_coder_prototype/provider_ir.py",
-              "agentic_coder_prototype/agent_llm_openai.py",
-              "agentic_coder_prototype/compilation/system_prompt_compiler.py",
-              "agentic_coder_prototype/parity.py",
+              "breadboard_engine/tools.py",
+              "breadboard_engine/tool_calling/",
+              "breadboard_engine/tool_prompt_planner.py",
+              "breadboard_engine/guardrail_orchestrator.py",
+              "breadboard_engine/permission_broker.py",
+              "breadboard_engine/guardrails/",
+              "breadboard_engine/provider_runtime.py",
+              "breadboard_engine/provider_ir.py",
+              "breadboard_engine/agent_llm_openai.py",
+              "breadboard_engine/compilation/system_prompt_compiler.py",
+              "breadboard_engine/parity.py",
               "scripts/run_parity_replays.py",
               "scripts/replay_opencode_session.py",
               "breadboard/ext/interfaces.py",
               "breadboard/ext/registry.py",
-              "agentic_coder_prototype/api/cli_bridge/extension_loader.py",
+              "breadboard_engine/api/cli_bridge/extension_loader.py",
               "tests/fixtures/compat/",
             ];
 
@@ -1491,7 +1501,10 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: tui_skeleton/package-lock.json
+          cache-dependency-path: |
+            tui_skeleton/package-lock.json
+            sdk/ts/package-lock.json
+            sdk/ts-kernel-contracts/package-lock.json
 
       - uses: actions/setup-python@v5
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -1502,6 +1515,12 @@ jobs:
 
       - name: Build kernel contracts package
         working-directory: sdk/ts-kernel-contracts
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build canonical SDK package
+        working-directory: sdk/ts
         run: |
           npm ci
           npm run build
@@ -1775,10 +1794,18 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: tui_skeleton/package-lock.json
+          cache-dependency-path: |
+            tui_skeleton/package-lock.json
+            sdk/ts/package-lock.json
 
       - name: Build kernel contracts package
         working-directory: sdk/ts-kernel-contracts
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build canonical SDK package
+        working-directory: sdk/ts
         run: |
           npm ci
           npm run build

@@ -1,7 +1,7 @@
 import { Command, Options } from "@effect/cli"
 import { Console, Effect, Option } from "effect"
 import { forgetSession } from "../cache/sessionCache.js"
-import type { SessionSummary } from "../api/types.js"
+import type { SessionSummary } from "@breadboard/sdk"
 import { listCachedSessions, rememberSession, loadSessionCache } from "../cache/sessionCache.js"
 import { getCliApi, reportApiCommandErrorEffect } from "./commandRuntime.js"
 import { normalizeTableJsonOutputMode } from "./commandOutput.js"
@@ -36,8 +36,8 @@ export const mergeSessions = async (backend: SessionSummary[]): Promise<SessionR
     rows.push({
       sessionId: summary.session_id,
       status: summary.status,
-      createdAt: summary.created_at,
-      lastActivityAt: summary.last_activity_at,
+      createdAt: summary.created_at ?? cache.sessions[summary.session_id]?.createdAt ?? "",
+      lastActivityAt: summary.last_activity_at ?? cache.sessions[summary.session_id]?.lastActivityAt ?? "",
       model: (summary.metadata?.model as string | undefined) ?? undefined,
       source: "backend",
     })

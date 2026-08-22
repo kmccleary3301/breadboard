@@ -433,6 +433,10 @@ def load_existing_capture() -> tuple[dict[str, Any], dict[str, Any]] | None:
     return probe, setup
 
 
+def _target_probe_argv() -> list[str]:
+    return ["npx", "tsx", TARGET_PROBE_SCRIPT_PATH.resolve().as_posix()]
+
+
 def run_target_capture() -> tuple[dict[str, Any], dict[str, Any]]:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     TARGET_PROBE_SCRIPT_PATH.write_text(PROBE_SOURCE + "\n", encoding="utf-8")
@@ -454,7 +458,7 @@ def run_target_capture() -> tuple[dict[str, Any], dict[str, Any]]:
         probe_env["PI_REPO_ROOT"] = str(repo)
         probe_env["P5_FIXTURE_ROOT"] = str(tmp / "fixture_workspace")
         probe_env["P5_AGENT_DIR"] = str(tmp / "agent")
-        commands["module_probe"] = run_cmd(["npx", "tsx", str(TARGET_PROBE_SCRIPT_PATH)], repo, probe_env, timeout=180)
+        commands["module_probe"] = run_cmd(_target_probe_argv(), repo, probe_env, timeout=180)
         for name, result in commands.items():
             write_text(RAW_DIR / f"{name}.stdout.txt", str(result.get("stdout", "")))
             write_text(RAW_DIR / f"{name}.stderr.txt", str(result.get("stderr", "")))

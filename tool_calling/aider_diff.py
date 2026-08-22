@@ -1,4 +1,4 @@
-from agentic_coder_prototype.dialects.aider_diff import AiderDiffDialect  # shim
+from breadboard_engine.dialects.aider_diff import AiderDiffDialect  # shim
 
 
 

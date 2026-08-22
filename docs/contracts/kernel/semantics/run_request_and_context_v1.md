@@ -134,11 +134,11 @@ First-pass stable fields should include:
 
 The relevant current Python ownership is split across:
 
-- `agentic_coder_prototype/conductor_bootstrap.py`
-- `agentic_coder_prototype/runtime_context.py`
-- `agentic_coder_prototype/conductor_context.py`
-- `agentic_coder_prototype/agent_llm_openai.py`
-- `agentic_coder_prototype/state/session_state.py`
+- `breadboard_engine/conductor_bootstrap.py`
+- `breadboard_engine/runtime_context.py`
+- `breadboard_engine/conductor_context.py`
+- `breadboard_engine/agent_llm_openai.py`
+- `breadboard_engine/state/session_state.py`
 - replay and CLI/session runner entrypoints
 
 This ownership is still more implicit than ideal. The contract program should make the resulting `RunContext` explicit even if the Python implementation continues to assemble it in stages.

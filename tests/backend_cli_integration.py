@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from agentic_coder_prototype.api.cli_bridge.app import create_app
-from agentic_coder_prototype.api.cli_bridge.events import EventType, SessionEvent
+from breadboard_engine.api.cli_bridge.app import create_app
+from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 
 try:
     from tui_skeleton.src.commands.askLogic import runAsk

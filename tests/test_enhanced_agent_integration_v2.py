@@ -1,10 +1,10 @@
 import importlib
 import warnings
 
-from agentic_coder_prototype.integration.enhanced_agent_integration import (
+from breadboard_engine.integration.enhanced_agent_integration import (
     EnhancedAgentIntegrationV2 as CanonicalIntegration,
 )
-from agentic_coder_prototype.integration.enhanced_agent_integration_v2 import (
+from breadboard_engine.integration.enhanced_agent_integration_v2 import (
     EnhancedAgentIntegrationV2 as CompatIntegration,
 )
 from tool_calling.enhanced_agent_integration import (
@@ -25,7 +25,7 @@ def test_integration_v2_wrappers_emit_deprecation_warnings():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", DeprecationWarning)
         integration_module = importlib.import_module(
-            "agentic_coder_prototype.integration.enhanced_agent_integration_v2"
+            "breadboard_engine.integration.enhanced_agent_integration_v2"
         )
         tool_calling_module = importlib.import_module(
             "tool_calling.enhanced_agent_integration_v2"

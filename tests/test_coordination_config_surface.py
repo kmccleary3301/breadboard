@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_coder_prototype.orchestration.schema import TeamConfig
+from breadboard_engine.orchestration.schema import TeamConfig
 
 
 def test_team_config_parses_minimal_coordination_surface() -> None:

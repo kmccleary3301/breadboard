@@ -6,22 +6,22 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict
 
-from agentic_coder_prototype.checkpointing.checkpoint_manager import CheckpointSummary, build_checkpoint_metadata_record
-from agentic_coder_prototype.longrun.checkpoint import build_longrun_checkpoint_metadata_record
-from agentic_coder_prototype.conductor_execution import (
+from breadboard_engine.checkpointing.checkpoint_manager import CheckpointSummary, build_checkpoint_metadata_record
+from breadboard_engine.longrun.checkpoint import build_longrun_checkpoint_metadata_record
+from breadboard_engine.conductor_execution import (
     build_tool_execution_outcome_record,
     build_tool_model_render_record,
 )
-from agentic_coder_prototype.orchestration.coordination import (
+from breadboard_engine.orchestration.coordination import (
     build_blocked_signal_proposal,
     build_signal_proposal,
     validate_signal_proposal,
 )
-from agentic_coder_prototype.orchestration.orchestrator import MultiAgentOrchestrator
-from agentic_coder_prototype.orchestration.schema import TeamConfig
-from agentic_coder_prototype.provider import ProviderInvoker
-from agentic_coder_prototype.provider.runtime import ProviderResult
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.orchestration.orchestrator import MultiAgentOrchestrator
+from breadboard_engine.orchestration.schema import TeamConfig
+from breadboard_engine.provider import ProviderInvoker
+from breadboard_engine.provider.runtime import ProviderResult
+from breadboard_engine.state.session_state import SessionState
 from scripts.e4_parity.validators.registries import schema_generation_default
 
 ROOT = Path(__file__).resolve().parents[1]

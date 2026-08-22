@@ -3,7 +3,7 @@ name: run_shell
 description: Execute a shell command in the project workspace
 type_id: python
 binding:
-  module: agentic_coder_prototype.tools.shell
+  module: breadboard_engine.tools.shell
   callable: run_shell
 aliases:
   - bash

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agentic_coder_prototype.tool_prompt_planner import ToolPromptPlanner
+from breadboard_engine.tool_prompt_planner import ToolPromptPlanner
 
 
 class DummySessionState:

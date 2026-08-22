@@ -10,7 +10,7 @@ runs:
    preamble) is treated as completion.
 """
 
-from agentic_coder_prototype.state.completion_detector import CompletionDetector
+from breadboard_engine.state.completion_detector import CompletionDetector
 
 
 def _detector(**completion_cfg):
@@ -87,6 +87,19 @@ def test_custom_sentinel_standalone_only():
         recent_tool_activity={"tools": [{"name": "run_shell"}]},
     )
     assert standalone["completed"] is True
+
+def test_custom_sentinel_from_direct_completion_config_completes():
+    detector = CompletionDetector(
+        config={"threshold": 0.6, "text_sentinels": ["BREADBOARD-RC-CODEX-OK"]}
+    )
+    out = detector.detect_completion(
+        "BREADBOARD-RC-CODEX-OK",
+        "stop",
+        None,
+        agent_config={},
+    )
+    assert out["completed"] is True
+    assert out["reason"] == "explicit_completion_marker"
 
 
 def test_bare_stop_without_tool_activity_guard_opt_in():

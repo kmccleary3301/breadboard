@@ -3,16 +3,16 @@ import types
 
 import pytest
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.provider.capability_probe import CapabilityProbeResult
-from agentic_coder_prototype.provider_runtime import (
+from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.provider.capability_probe import CapabilityProbeResult
+from breadboard_engine.provider_runtime import (
     MockRuntime,
     ProviderRuntimeError,
     ProviderResult,
     ProviderMessage,
 )
-from agentic_coder_prototype.provider_routing import provider_router
+from breadboard_engine.provider_routing import provider_router
 
 
 REGRESSION_SCENARIOS = [

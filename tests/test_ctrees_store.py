@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.ctrees.store import CTreeStore
+from breadboard_engine.ctrees.store import CTreeStore
 
 
 def test_ctree_hashes_ignore_volatiles() -> None:

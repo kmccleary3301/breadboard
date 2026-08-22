@@ -42,6 +42,6 @@ See:
 
 - `scripts/ops/preflight_workspace_safety.py` returns non-zero on unsafe roots and reports whether a
   workspace is disposable or preserved.
-- `agentic_coder_prototype/agent.py` contains matching runtime guards and only auto-cleans disposable
+- `breadboard_engine/agent.py` contains matching runtime guards and only auto-cleans disposable
   workspaces under `repo/tmp/...`.
 - `scripts/run_parity_replays.py` uses safe-delete rails and workspace validation.

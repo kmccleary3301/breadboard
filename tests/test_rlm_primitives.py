@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.rlm.primitives import (
+from breadboard_engine.rlm.primitives import (
     BlobStore,
     build_budget_limits,
     can_start_subcall,

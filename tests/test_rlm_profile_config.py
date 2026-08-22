@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from breadboard_engine.compilation.v2_loader import load_agent_config
 
 
 def test_rlm_base_profile_loads_and_enables_rlm(monkeypatch) -> None:

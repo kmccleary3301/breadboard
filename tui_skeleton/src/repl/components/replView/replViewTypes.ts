@@ -24,7 +24,7 @@ import type {
   PermissionDecision,
   RewindMenuState,
 } from "../../types.js"
-import type { SessionFileInfo, SessionFileContent, CTreeTreeResponse } from "../../../api/types.js"
+import type { SessionFileInfo, SessionFileContent, CTreeTreeResponse } from "@breadboard/sdk"
 import type {
   WorkingTreeDiffSummary,
   WorkingTreePatchCopyResult,

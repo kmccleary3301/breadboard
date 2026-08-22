@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from agentic_coder_prototype.policy_pack import PolicyPack, sign_policy_payload
+from breadboard_engine.policy_pack import PolicyPack, sign_policy_payload
 
 
 def test_signed_policy_pack_verifies_and_applies(monkeypatch: pytest.MonkeyPatch) -> None:

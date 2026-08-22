@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.phase10_judgment_stack import build_phase10_judgment_stack
+from breadboard_engine.ctrees.phase10_judgment_stack import build_phase10_judgment_stack
 
 
 def test_ctree_phase10_judgment_stack_combines_pilot_and_bridge() -> None:

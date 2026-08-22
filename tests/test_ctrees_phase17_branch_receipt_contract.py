@@ -5,14 +5,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.ctrees.branch_receipt_contract import build_branch_receipt_contract
-from agentic_coder_prototype.ctrees.branch_receipt_state import (
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.ctrees.branch_receipt_contract import build_branch_receipt_contract
+from breadboard_engine.ctrees.branch_receipt_state import (
     current_branch_receipt_allowlist,
     record_branch_receipt_tool_result,
 )
-from agentic_coder_prototype.ctrees.live_benchmark_adapter import build_phase17_branch_receipt_protocol_payload
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.ctrees.live_benchmark_adapter import build_phase17_branch_receipt_protocol_payload
+from breadboard_engine.state.session_state import SessionState
 
 
 def _config_path(rel_path: str) -> str:

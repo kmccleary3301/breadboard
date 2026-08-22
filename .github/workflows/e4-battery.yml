@@ -66,10 +66,17 @@ jobs:
         run: python scripts/e4_parity/provision_immutable_inputs.py --repo-root "$GITHUB_WORKSPACE" --workspace-root "$GITHUB_WORKSPACE/.."
       - name: Generate fixed-point report
         run: python scripts/e4_parity/regen.py fixed-point --expected-points 1000 --expected-target-claims 10 --expected-non-target-claims 8 --json artifacts/conformance/e4_regen_fixed_point_${{ matrix.pass }}.json
+      - name: Materialize fixed-point watch-set entries
+        run: |
+          jq '{schema_version: "bb.e4.watch_set.v1", first_pass: .first_pass_watch_set, second_pass: .second_pass_watch_set}' \
+            artifacts/conformance/e4_regen_fixed_point_${{ matrix.pass }}.json \
+            > artifacts/conformance/e4_watch_set_${{ matrix.pass }}.json
       - uses: actions/upload-artifact@v4
         with:
           name: e4-fixed-point-${{ matrix.pass }}
-          path: artifacts/conformance/e4_regen_fixed_point_${{ matrix.pass }}.json
+          path: |
+            artifacts/conformance/e4_regen_fixed_point_${{ matrix.pass }}.json
+            artifacts/conformance/e4_watch_set_${{ matrix.pass }}.json
           if-no-files-found: error
 
   fixed-point-clean-checkout-compare:

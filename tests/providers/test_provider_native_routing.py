@@ -1,4 +1,4 @@
-from agentic_coder_prototype.agent_llm_openai import compute_tool_prompt_mode
+from breadboard_engine.agent_llm_openai import compute_tool_prompt_mode
 
 
 def test_compute_tool_prompt_mode_native_enabled():

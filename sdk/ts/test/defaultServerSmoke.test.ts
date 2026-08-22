@@ -76,6 +76,13 @@ test(
       "start-smoke",
     )
     const session = started.data.session as { session_id: string }
+    for (let attempts = 0; attempts < 100; attempts += 1) {
+      const snapshot = await client.getSession(session.session_id)
+      const status = snapshot.status
+      if (status === "running") break
+      assert.ok(attempts < 99, `session did not become running: ${status}`)
+      await Promise.resolve()
+    }
     const sent = await client.sendInputSession(session.session_id, "Continue", "input-smoke")
     const canceled = await client.cancelSession(session.session_id, "smoke complete", "cancel-smoke")
     const events = []

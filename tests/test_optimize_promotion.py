@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.optimize import (
+from breadboard_engine.optimize import (
     BenchmarkRunManifest,
     CandidateComparisonResult,
     EvaluationRecord,

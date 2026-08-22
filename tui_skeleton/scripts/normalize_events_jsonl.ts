@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { normalizeSessionEvent } from "../src/repl/transcript/normalizeSessionEvent.js"
-import type { SessionEvent } from "../src/api/types.js"
+import type { SessionEvent } from "@breadboard/sdk"
 
 type CliOptions = {
   inputPath: string

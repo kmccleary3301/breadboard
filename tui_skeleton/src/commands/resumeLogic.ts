@@ -1,4 +1,4 @@
-import type { SessionEvent } from "../api/types.js"
+import type { SessionEvent } from "@breadboard/sdk"
 import { rememberSession } from "../cache/sessionCache.js"
 import { getCliSdk } from "./commandRuntime.js"
 import { collectSessionStream } from "./sessionStream.js"

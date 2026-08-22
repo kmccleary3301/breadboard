@@ -8,8 +8,8 @@ The goal is simple: optimization should not be driven by vague taste or scalar s
 
 The Phase B records live in:
 
-- `agentic_coder_prototype/optimize/dataset.py`
-- `agentic_coder_prototype/optimize/examples.py`
+- `breadboard_engine/optimize/dataset.py`
+- `breadboard_engine/optimize/examples.py`
 
 The main records are:
 
@@ -127,7 +127,7 @@ Instead, prefer:
 
 ## Canonical example
 
-The canonical Phase B example is the codex dossier dataset example in `agentic_coder_prototype/optimize/examples.py`.
+The canonical Phase B example is the codex dossier dataset example in `breadboard_engine/optimize/examples.py`.
 
 It models a narrow sample that optimizes two declared overlay loci while requiring:
 
@@ -138,7 +138,7 @@ It models a narrow sample that optimizes two declared overlay loci while requiri
 Minimal usage:
 
 ```python
-from agentic_coder_prototype.optimize import build_codex_dossier_dataset_example
+from breadboard_engine.optimize import build_codex_dossier_dataset_example
 
 example = build_codex_dossier_dataset_example()
 dataset = example["dataset"]
@@ -153,7 +153,7 @@ assert truth.rationale_refs == [rationale.rationale_id]
 If you want serialized fixture-like payloads:
 
 ```python
-from agentic_coder_prototype.optimize import build_codex_dossier_dataset_example_payload
+from breadboard_engine.optimize import build_codex_dossier_dataset_example_payload
 
 payload = build_codex_dossier_dataset_example_payload()
 ```

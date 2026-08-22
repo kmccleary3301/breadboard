@@ -1,4 +1,4 @@
-import type { CTreeNode, CTreeSnapshotSummary } from "../../api/types.js"
+import type { CTreeNode, CTreeSnapshotSummary } from "@breadboard/sdk"
 
 export interface CTreeModel {
   readonly nodesById: Record<string, CTreeNode>

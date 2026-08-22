@@ -1,0 +1,54 @@
+{
+  "schema_version": "bb.model_roles.v1",
+  "defaults": {
+    "role": "main",
+    "known_but_unbound_role": "use_default",
+    "unknown_role": "error"
+  },
+  "roles": {
+    "main": {
+      "primary": {
+        "provider_id": "openai",
+        "model_id": "gpt-5.5",
+        "model_revision": null,
+        "endpoint_id": null,
+        "auth_scheme_id": "api_key",
+        "account_selector": {
+          "mode": "default",
+          "pin": "session"
+        }
+      },
+      "fallbacks": [],
+      "fallback_on": [
+        "provider_unavailable",
+        "rate_limited"
+      ],
+      "reasoning": {
+        "mode": "effort",
+        "effort": "high"
+      },
+      "generation": {
+        "temperature": 0.2,
+        "max_output_tokens": 8192
+      },
+      "requires": {
+        "tools": true,
+        "streaming": true
+      },
+      "service_tier": "default"
+    }
+  },
+  "dispatch": {
+    "subagents": {
+      "Scout": "main"
+    },
+    "lanes": {
+      "default": "main"
+    }
+  },
+  "policy": {
+    "allow_environment_overrides": false,
+    "cross_provider_fallback": "forbidden",
+    "account_failover": "forbidden"
+  }
+}

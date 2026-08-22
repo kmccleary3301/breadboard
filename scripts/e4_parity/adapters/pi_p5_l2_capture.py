@@ -501,6 +501,10 @@ def load_existing_capture() -> tuple[dict[str, Any], dict[str, Any]] | None:
     return probe, setup
 
 
+def _target_probe_argv() -> list[str]:
+    return ["npx", "tsx", TARGET_PROBE_SCRIPT_PATH.resolve().as_posix()]
+
+
 def run_target_capture() -> tuple[dict[str, Any], dict[str, Any]]:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     TARGET_PROBE_SCRIPT_PATH.write_text(PROBE_SOURCE + "\n", encoding="utf-8")
@@ -520,7 +524,7 @@ def run_target_capture() -> tuple[dict[str, Any], dict[str, Any]]:
         probe_env["PI_REPO_ROOT"] = str(repo)
         probe_env["P5_FIXTURE_ROOT"] = str(tmp / "fixture_workspace")
         probe_env["P5_AGENT_DIR"] = str(tmp / "agent")
-        commands["module_probe"] = run_cmd(["npx", "tsx", str(TARGET_PROBE_SCRIPT_PATH)], repo, probe_env, timeout=180)
+        commands["module_probe"] = run_cmd(_target_probe_argv(), repo, probe_env, timeout=180)
         for name, result in commands.items():
             write_text(RAW_DIR / f"{name}.stdout.txt", str(result.get("stdout", "")))
             write_text(RAW_DIR / f"{name}.stderr.txt", str(result.get("stderr", "")))
@@ -665,6 +669,32 @@ def comparator_assertions(probe: Mapping[str, Any], replay_records: Mapping[str,
         assertion_eq("patch_schema_replay", replay_records["transcript_continuation_patch"]["post_state_digest"], session["hashes"]["forked_session"]),
         assertion_eq("no_provider_secrets", probe["no_secret_env"], {"ANTHROPIC_API_KEY": False, "OPENAI_API_KEY": False, "GEMINI_API_KEY": False, "PI_OFFLINE": "1"}),
     ]
+
+def scratch_capture_assertions(
+    probe: Mapping[str, Any],
+    replay_records: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    assertions = [
+        assertion
+        for assertion in comparator_assertions(probe, replay_records)
+        if assertion["name"] != "patch_schema_replay"
+    ]
+    accepted_digest = replay_records["transcript_continuation_patch"][
+        "post_state_digest"
+    ]
+    fresh_digest = probe["session"]["hashes"]["forked_session"]
+    digest_pattern = re.compile(r"sha256:[0-9a-f]{64}")
+    assertions.append(
+        assertion_eq(
+            "patch_digest_shapes",
+            {
+                "accepted": bool(digest_pattern.fullmatch(str(accepted_digest))),
+                "fresh": bool(digest_pattern.fullmatch(str(fresh_digest))),
+            },
+            {"accepted": True, "fresh": True},
+        )
+    )
+    return assertions
 
 
 def write_capture_replay_compare(*, recapture: bool = False) -> str:
@@ -859,6 +889,11 @@ def _scratch_paths(out_dir: Path):
         if source.is_file():
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
+    catalog_source = ROOT / CATALOG_BINDING_PATH
+    catalog_destination = out_dir / CATALOG_BINDING_PATH
+    if catalog_source.is_file():
+        catalog_destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(catalog_source, catalog_destination)
 
     def logical_display(path: Path) -> str:
         resolved = path.resolve()
@@ -887,11 +922,52 @@ def capture(
     promote_accepted: bool,
     out_dir: Path | None = None,
 ) -> dict[str, Any]:
-    del lane_def, inventory_lane, promote_accepted, out_dir
-    raise RuntimeError(IMMUTABLE_EVIDENCE_ERROR)
+    del lane_def, inventory_lane
+    if promote_accepted:
+        raise RuntimeError(IMMUTABLE_EVIDENCE_ERROR)
+    if out_dir is None:
+        raise ValueError("Pi P5 L2 scratch capture requires out_dir")
+    with _scratch_paths(Path(out_dir)):
+        replay_records = load_accepted_replay_records()
+        probe, _setup = run_target_capture()
+        assertions = scratch_capture_assertions(probe, replay_records)
+        failed_assertions = [
+            str(assertion["name"])
+            for assertion in assertions
+            if assertion["status"] != "passed"
+        ]
+        report_path = LANE_DIR / "scratch_capture_validation.json"
+        report = {
+            "schema_version": "bb.e4.scratch_capture_validation.v1",
+            "ok": not failed_assertions,
+            "accepted": False,
+            "promotion_eligible": False,
+            "lane_id": LANE_ID,
+            "config_id": CONFIG_ID,
+            "run_id": RUN_ID,
+            "capture_mode": "live",
+            "accepted_replay_sha256": f"sha256:{ACCEPTED_REPLAY_SHA256}",
+            "ephemeral_comparison_exclusions": [
+                "transcript_continuation_patch.post_state_digest equality"
+            ],
+            "target_probe_ref": ref(TARGET_PROBE_OUTPUT_PATH),
+            "target_setup_ref": ref(SETUP_REPORT_PATH),
+            "assertions": assertions,
+            "passed": len(assertions) - len(failed_assertions),
+            "failed": len(failed_assertions),
+            "errors": failed_assertions,
+        }
+        write_json(report_path, report)
+        return {
+            "ok": report["ok"],
+            "config_id": CONFIG_ID,
+            "capture_mode": "live",
+            "report_ref": display_path(report_path),
+            "errors": failed_assertions,
+        }
 
 
-capture.supports_scratch_out_dir = False
+capture.supports_scratch_out_dir = True
 
 
 def main(argv: list[str] | None = None) -> int:

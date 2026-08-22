@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Protocol, runtime_checkable
 
-from agentic_coder_prototype.provider.routing import ProviderDescriptor
-from agentic_coder_prototype.provider.runtime import ProviderResult, ProviderRuntime, ProviderRuntimeContext
+from breadboard_engine.provider.routing import ProviderDescriptor
+from breadboard_engine.provider.runtime import ProviderResult, ProviderRuntime, ProviderRuntimeContext
 
 from .catalog import IntegrationDescriptor, ProbeReport, probe_for
 

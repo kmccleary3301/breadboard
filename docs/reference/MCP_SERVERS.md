@@ -99,6 +99,6 @@ mcp:
 ## Implementation notes
 
 Key modules:
-- `agentic_coder_prototype/mcp/manager.py` (stdio server manager + tool listing)
-- `agentic_coder_prototype/mcp/tooling.py` (config parsing + tool schema conversion)
+- `breadboard_engine/mcp/manager.py` (stdio server manager + tool listing)
+- `breadboard_engine/mcp/tooling.py` (config parsing + tool schema conversion)
 
