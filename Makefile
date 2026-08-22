@@ -1,19 +1,19 @@
-.PHONY: help setup setup-fast setup-engine setup-fast-engine setup-refresh-python setup-tui setup-smoke setup-sdk-live setup-all doctor doctor-full doctor-tui quickstart cli-capabilities onboarding-contract e4-target-manifest e4-snapshot-coverage e4-target-refresh-plan e4-target-drift-audit e4-postrestore-strict-probe e4-claude-legacy-strict-probe disk-report disk-prune repair-cli build-tui typecheck-tui smoke sdk-hello sdk-hello-live devx-smoke devx-smoke-engine devx-smoke-live devx-full-pass devx-full-pass-engine devx-timing
+.PHONY: help setup setup-fast setup-engine setup-fast-engine setup-refresh-python setup-tui setup-smoke setup-sdk-live setup-all doctor doctor-full doctor-tui quickstart cli-capabilities onboarding-contract e4-target-manifest e4-snapshot-coverage e4-target-refresh-plan e4-target-drift-audit e4-postrestore-strict-probe e4-claude-legacy-strict-probe disk-report disk-prune repair-cli build-tui-contract-harness typecheck-tui-contract-harness smoke sdk-hello sdk-hello-live devx-smoke devx-smoke-engine devx-smoke-live devx-full-pass devx-full-pass-engine devx-timing
 
 help:
 	@echo "BreadBoard dev shortcuts"
-	@echo "  make setup           # full bootstrap (python + sdk/ts + tui)"
+	@echo "  make setup           # full bootstrap (python + sdk/ts + legacy TUI contract harness)"
 	@echo "  make setup-fast      # full bootstrap without doctor (fast repeat runs)"
 	@echo "  make setup-engine    # python/engine-only bootstrap"
 	@echo "  make setup-fast-engine # engine bootstrap without doctor (fast repeat runs)"
 	@echo "  make setup-refresh-python # force Python dependency reinstall in existing .venv"
-	@echo "  make setup-tui       # node/tui-only bootstrap"
+	@echo "  make setup-tui       # legacy TUI contract-harness bootstrap"
 	@echo "  make setup-smoke     # bootstrap + unit smoke"
 	@echo "  make setup-sdk-live  # bootstrap + live sdk hello verification"
 	@echo "  make setup-all       # bootstrap + unit smoke + live sdk hello verification"
 	@echo "  make doctor          # strict first-time doctor (engine profile)"
 	@echo "  make doctor-full     # strict first-time doctor (full profile)"
-	@echo "  make doctor-tui      # strict first-time doctor (tui profile)"
+	@echo "  make doctor-tui      # strict legacy TUI contract-harness doctor"
 	@echo "  make quickstart      # show recommended next commands (CLI-independent)"
 	@echo "  make cli-capabilities # detect active breadboard CLI feature support"
 	@echo "  make onboarding-contract # check onboarding script/docs contract drift"
@@ -25,7 +25,7 @@ help:
 	@echo "  make e4-claude-legacy-strict-probe # strict Claude legacy replay bundle (phase8 + protofs)"
 	@echo "  make disk-report    # dry-run ~/.breadboard cleanup plan + JSON report"
 	@echo "  make disk-prune     # apply ~/.breadboard cleanup with safe defaults"
-	@echo "  make repair-cli      # rebuild and validate local breadboard CLI wrapper"
+	@echo "  make repair-cli      # reinstall the Python-owned breadboard CLI in .venv"
 	@echo "  make smoke           # unit-only switcher smoke"
 	@echo "  make sdk-hello-live  # live python+ts sdk hello check"
 	@echo "  make devx-smoke      # verify onboarding/devx command paths"
@@ -125,13 +125,13 @@ disk-prune:
 	python scripts/prune_breadboard_home.py --apply --json-out artifacts/maintenance/prune_breadboard_home.latest.json
 
 repair-cli:
-	bash scripts/dev/repair_cli_wrapper.sh
+	bash scripts/dev/bootstrap_first_time.sh --profile engine --refresh-python-deps --no-doctor
 
-build-tui:
+build-tui-contract-harness:
 	npm -C tui_skeleton ci
 	npm -C tui_skeleton run build
 
-typecheck-tui:
+typecheck-tui-contract-harness:
 	npm -C tui_skeleton run typecheck
 
 smoke:

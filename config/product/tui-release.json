@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "bb.product-tui-authority.v1",
+  "status": "primary",
+  "repository": "https://github.com/kmccleary3301/breadboard-tui",
+  "defaultBranch": "main",
+  "sourceCommit": "bc1ef04b40aef375c3986918398b72a83a2a2ab6",
+  "sourceTree": "3095a0ad152c8c5e84e3049b8f22da79325a815b",
+  "productVersion": "0.1.0-rc.1",
+  "binary": "bb",
+  "upstream": {
+    "repository": "https://github.com/can1357/oh-my-pi",
+    "tag": "v18.0.0",
+    "commit": "96f42809764f0907f7d6b115eab5710de28941de",
+    "tree": "36ecb17efff14e1120dbf93c7f9fd0769e44626c"
+  },
+  "sdk": {
+    "name": "@breadboard/sdk",
+    "version": "0.3.0",
+    "artifactSha256": "c5f3ca334a475cd4fcb638336aa447c05066136641bd9e56572ec0a65516975a",
+    "backendCommit": "64c2a012aff77e7cdbf6ca35c0f81322f00897d8",
+    "backendTree": "f45e0fd314e731a6110c90d733c49d420a97e992",
+    "engineInterfaceRange": ">=0.1.0 <0.4.0"
+  },
+  "legacyHarness": {
+    "path": "tui_skeleton",
+    "packageName": "breadboard-tui-contract-harness",
+    "role": "contract-replay-golden-validation",
+    "distributable": false
+  },
+  "contributionFork": {
+    "repository": "https://github.com/kmccleary3301/oh-my-pi",
+    "role": "upstream-contributions-only",
+    "releaseAuthority": false
+  }
+}

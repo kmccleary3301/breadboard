@@ -1,6 +1,6 @@
-# BreadBoard CLI
+# Legacy TUI contract harness
 
-Agentic terminal client for the BreadBoard engine. The CLI streams live sessions, exposes file and artifact operations, and mirrors the Ink-based REPL used during development.
+This Ink client is retained for BreadBoard engine contract, replay, projection, and golden validation. It is not the product TUI and does not own the `bb` or `breadboard` commands. The canonical end-user TUI is [`kmccleary3301/breadboard-tui`](https://github.com/kmccleary3301/breadboard-tui).
 
 ## Stack
 
@@ -8,12 +8,12 @@ Agentic terminal client for the BreadBoard engine. The CLI streams live sessions
 - `Ink` + `react` for the multi-pane REPL interface
 - Shared HTTP/SSE client (`fetch`, `eventsource-parser`) layered on the Effect runtime
 
-## Core Features
+## Validation coverage
 
-- `breadboard ask`, `breadboard resume`, `breadboard sessions` — non-interactive workflows built on the shared streaming helper.
-- `breadboard repl` — Ink TUI with conversation/tool panes, status bar, and slash commands (`/mode`, `/plan`, `/model`, `/test`, `/files`, `/remote`, `/status`, `/retry`, ...).
-- File utilities: `breadboard files ls|cat|apply`. `cat` supports `--out` for local export; `apply` accepts `--diff`, `--diff-file <path>`, or `--diff-file -` (stdin) and summarizes affected files before applying.
-- Artifact access plus enhanced transcript rendering via `breadboard render <session>` (text or `--output json`), including tool events and reward summaries.
+- HTTP/SSE engine contracts and resume behavior.
+- Session, file, artifact, and projection fixtures.
+- Ink transcript, layout, and interaction goldens.
+- Deterministic tmux and terminal replay scenarios.
 
 ## SSE Event Contract (Engine)
 
@@ -32,12 +32,11 @@ npm run dev -- ask "list repo modules"
 npm run dev -- repl --config agent_configs/misc/opencode_openrouter_grok4fast_cli_default.yaml
 npm run dev -- render <session-id> --output json
 
-# Compile the CLI
+# Compile the contract harness
 npm run build
 
-# Link binary locally (optional)
-npm link
-breadboard --help
+# Run it directly when validating a contract
+npm start -- --help
 ```
 
 ## Testing

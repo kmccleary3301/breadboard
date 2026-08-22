@@ -30,14 +30,15 @@ def test_quickstart_first_time_json_contract() -> None:
     assert isinstance(payload, dict)
     assert isinstance(payload.get("repo_root"), str)
     assert isinstance(payload.get("venv_python"), str)
-    assert isinstance(payload.get("has_tui_source"), bool)
+    assert isinstance(payload.get("has_legacy_tui_harness"), bool)
     assert isinstance(payload.get("breadboard_cli_usable"), bool)
+    assert isinstance(payload.get("bb_cli_usable"), bool)
     caps = payload.get("cli_capabilities")
-    assert isinstance(caps, dict)
-    assert isinstance(caps.get("breadboard_on_path"), bool)
-    assert isinstance(caps.get("breadboard_runnable"), bool)
-    assert isinstance(caps.get("doctor_first_time_supported"), bool)
-    assert isinstance(caps.get("setup_profile_supported"), bool)
+    assert isinstance(caps.get("breadboard_available"), bool)
+    assert isinstance(caps.get("system_health_supported"), bool)
+    assert isinstance(caps.get("bb_available"), bool)
+    assert isinstance(caps.get("detail"), str)
+    assert isinstance(caps.get("bb_detail"), str)
     actions = payload.get("recommended_actions")
     assert isinstance(actions, list) and actions
     assert any(isinstance(a, dict) and a.get("step") == "doctor" for a in actions)
@@ -56,8 +57,27 @@ def test_quickstart_first_time_forced_cli_broken_includes_fix_step() -> None:
     assert payload.get("breadboard_cli_usable") is False
     actions = payload.get("recommended_actions")
     assert isinstance(actions, list)
-    if payload.get("has_tui_source"):
-        assert any(isinstance(a, dict) and a.get("step") == "cli_fix" for a in actions)
+    assert any(isinstance(a, dict) and a.get("step") == "cli_fix" for a in actions)
+
+
+def test_quickstart_separates_engine_cli_from_product_tui() -> None:
+    proc = _run(
+        "python3",
+        "scripts/dev/quickstart_first_time.py",
+        "--json",
+        env_overrides={
+            "BREADBOARD_QUICKSTART_ASSUME_CLI": "ok",
+            "BREADBOARD_QUICKSTART_ASSUME_BB": "broken",
+        },
+    )
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    actions = payload["recommended_actions"]
+    commands = [action["command"] for action in actions]
+    assert any(action["step"] == "cli_health" for action in actions)
+    assert all("breadboard run" not in command for command in commands)
+    assert all("breadboard ui" not in command for command in commands)
+    assert all(action["step"] != "tui" for action in actions)
 
 
 def test_quickstart_first_time_include_advanced_contains_engine_full_pass_step() -> None:
@@ -88,12 +108,11 @@ def test_cli_capabilities_json_contract() -> None:
     proc = _run("python3", "scripts/dev/cli_capabilities.py", "--json")
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
-    assert isinstance(payload, dict)
-    assert isinstance(payload.get("breadboard_on_path"), bool)
-    assert isinstance(payload.get("breadboard_runnable"), bool)
-    assert isinstance(payload.get("doctor_first_time_supported"), bool)
-    assert isinstance(payload.get("setup_profile_supported"), bool)
+    assert isinstance(payload.get("breadboard_available"), bool)
+    assert isinstance(payload.get("system_health_supported"), bool)
+    assert isinstance(payload.get("bb_available"), bool)
     assert isinstance(payload.get("detail"), str)
+    assert isinstance(payload.get("bb_detail"), str)
 
 
 def test_onboarding_contract_drift_checker_json_contract() -> None:

@@ -101,9 +101,11 @@ def _check_quickstart_contract(checks: list[Check]) -> None:
     required_keys: dict[str, type] = {
         "repo_root": str,
         "venv_python": str,
-        "has_tui_source": bool,
+        "has_legacy_tui_harness": bool,
         "breadboard_cli_usable": bool,
         "breadboard_cli_detail": str,
+        "bb_cli_usable": bool,
+        "bb_cli_detail": str,
         "cli_capabilities": dict,
         "recommended_actions": list,
     }
@@ -120,11 +122,11 @@ def _check_quickstart_contract(checks: list[Check]) -> None:
     cap_missing = [
         key
         for key, kind in {
-            "breadboard_on_path": bool,
-            "breadboard_runnable": bool,
-            "doctor_first_time_supported": bool,
-            "setup_profile_supported": bool,
+            "breadboard_available": bool,
+            "system_health_supported": bool,
+            "bb_available": bool,
             "detail": str,
+            "bb_detail": str,
         }.items()
         if not isinstance(caps.get(key), kind)
     ]
@@ -223,11 +225,11 @@ def _check_cli_capabilities_contract(checks: list[Check]) -> None:
     missing = [
         key
         for key, kind in {
-            "breadboard_on_path": bool,
-            "breadboard_runnable": bool,
-            "doctor_first_time_supported": bool,
-            "setup_profile_supported": bool,
+            "breadboard_available": bool,
+            "system_health_supported": bool,
+            "bb_available": bool,
             "detail": str,
+            "bb_detail": str,
         }.items()
         if not isinstance(payload.get(key), kind)
     ]

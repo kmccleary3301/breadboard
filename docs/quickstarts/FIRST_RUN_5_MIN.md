@@ -112,11 +112,11 @@ python scripts/dev/quickstart_first_time.py --include-advanced
 python scripts/dev/first_time_doctor.py --strict
 make doctor
 
-# stricter TUI-inclusive checks
+# stricter legacy TUI contract-harness checks
 make doctor-full
 make doctor-tui
 
-# repair the local CLI wrapper if broken
+# reinstall the Python-owned breadboard CLI in .venv
 make repair-cli
 
 # unit-only advanced smoke
@@ -145,11 +145,9 @@ make disk-report
 
 ```bash
 make repair-cli
-# or
-bash scripts/dev/repair_cli_wrapper.sh
+source .venv/bin/activate
+breadboard --help
 ```
-
-Ensure `~/.local/bin` is on `PATH`, then run `hash -r`.
 
 **`.venv` missing or stale**
 

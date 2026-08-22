@@ -844,11 +844,6 @@ entries:
     owner: kmccleary3301
     callers: [.github/workflows/legacy_path_guard.yml, scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
-  - path: scripts/cli_pack_smoke.mjs
-    class: live-wired
-    owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, docs/getting-started/INSTALL_AND_DEV_QUICKSTART.md, scripts/SCRIPT_INDEX.yaml]
-    expiry: none (durable tooling)
   - path: scripts/cli_session_health.py
     class: live-wired
     owner: kmccleary3301

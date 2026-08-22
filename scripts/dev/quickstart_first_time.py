@@ -6,7 +6,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -26,15 +25,14 @@ def _breadboard_cli_usable() -> tuple[bool, str]:
         if normalized in {"0", "false", "broken"}:
             return False, "forced broken via BREADBOARD_QUICKSTART_ASSUME_CLI"
         if normalized in {"1", "true", "ok"}:
-            return True, "forced ok via BREADBOARD_QUICKSTART_ASSUME_CLI"
-    cli = shutil.which("breadboard")
+            return True, "breadboard"
+    venv_cli = ROOT_DIR / ".venv" / ("Scripts/breadboard.exe" if os.name == "nt" else "bin/breadboard")
+    cli = str(venv_cli) if venv_cli.is_file() else shutil.which("breadboard")
     if not cli:
-        return False, "breadboard not found on PATH"
+        return False, "Python-owned breadboard CLI not found"
     try:
-        import subprocess
-
         proc = subprocess.run(
-            [cli, "--help"],
+            [cli, "--json", "system", "health"],
             check=False,
             capture_output=True,
             text=True,
@@ -48,50 +46,54 @@ def _breadboard_cli_usable() -> tuple[bool, str]:
     return True, cli
 
 
-def _cli_capabilities() -> dict:
-    cli = shutil.which("breadboard")
+def _bb_cli_usable() -> tuple[bool, str]:
+    override = os.environ.get("BREADBOARD_QUICKSTART_ASSUME_BB")
+    if override:
+        normalized = override.strip().lower()
+        if normalized in {"0", "false", "broken"}:
+            return False, "forced broken via BREADBOARD_QUICKSTART_ASSUME_BB"
+        if normalized in {"1", "true", "ok"}:
+            return True, "bb"
+    cli = shutil.which("bb")
     if not cli:
-        return {
-            "breadboard_on_path": False,
-            "breadboard_runnable": False,
-            "doctor_first_time_supported": False,
-            "setup_profile_supported": False,
-            "detail": "breadboard not found on PATH",
-        }
-    ok, detail = _breadboard_cli_usable()
-    if not ok:
-        return {
-            "breadboard_on_path": True,
-            "breadboard_runnable": False,
-            "doctor_first_time_supported": False,
-            "setup_profile_supported": False,
-            "detail": detail,
-        }
-    proc_doctor = subprocess.run([cli, "doctor", "--help"], check=False, capture_output=True, text=True, timeout=8)
-    proc_setup = subprocess.run([cli, "setup", "--help"], check=False, capture_output=True, text=True, timeout=8)
-    doctor_text = (proc_doctor.stdout or "") + "\n" + (proc_doctor.stderr or "")
-    setup_text = (proc_setup.stdout or "") + "\n" + (proc_setup.stderr or "")
+        return False, "canonical bb product TUI not found on PATH"
+    try:
+        proc = subprocess.run(
+            [cli, "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        return False, str(exc)
+    version = proc.stdout.strip()
+    if proc.returncode != 0 or not version.startswith("bb/"):
+        detail = proc.stderr.strip() or version or f"exit={proc.returncode}"
+        return False, detail
+    return True, cli
+
+
+def _cli_capabilities() -> dict:
+    breadboard_ok, breadboard_detail = _breadboard_cli_usable()
+    bb_ok, bb_detail = _bb_cli_usable()
     return {
-        "breadboard_on_path": True,
-        "breadboard_runnable": True,
-        "doctor_first_time_supported": bool(proc_doctor.returncode == 0 and "--first-time" in doctor_text),
-        "setup_profile_supported": bool(proc_setup.returncode == 0 and "--profile" in setup_text),
-        "detail": cli,
+        "breadboard_available": breadboard_ok,
+        "system_health_supported": breadboard_ok,
+        "bb_available": bb_ok,
+        "detail": breadboard_detail,
+        "bb_detail": bb_detail,
     }
 
 
 def _build_payload(include_advanced: bool) -> dict:
-    has_tui = (ROOT_DIR / "tui_skeleton" / "package.json").exists()
+    has_legacy_tui_harness = (ROOT_DIR / "tui_skeleton" / "package.json").exists()
     venv_python = str(_venv_python_path())
     cli_ok, cli_detail = _breadboard_cli_usable()
-
-    bootstrap_cmd = "bash scripts/dev/bootstrap_first_time.sh"
-    profile_cmd = "bash scripts/dev/bootstrap_first_time.sh --profile engine"
-    ui_cmd = "breadboard ui --config agent_configs/misc/opencode_mock_c_fs.yaml"
-    run_cmd = "breadboard run --config agent_configs/misc/opencode_mock_c_fs.yaml \"Say hi and exit.\""
+    bb_ok, bb_detail = _bb_cli_usable()
 
     actions = [
-        {"step": "bootstrap", "command": profile_cmd if not has_tui else bootstrap_cmd},
+        {"step": "bootstrap", "command": "bash scripts/dev/bootstrap_first_time.sh"},
         {"step": "doctor", "command": "python scripts/dev/first_time_doctor.py --strict"},
         {"step": "onboarding_contract", "command": "make onboarding-contract"},
         {
@@ -105,16 +107,22 @@ def _build_payload(include_advanced: bool) -> dict:
     ]
 
     if cli_ok:
-        actions.append({"step": "cli_run", "command": run_cmd})
-        if has_tui:
-            actions.append({"step": "ui", "command": ui_cmd})
-    elif has_tui:
+        actions.append(
+            {
+                "step": "cli_health",
+                "command": f"{cli_detail} --json system health",
+            }
+        )
+    else:
         actions.append(
             {
                 "step": "cli_fix",
-                "command": "bash scripts/dev/repair_cli_wrapper.sh",
+                "command": "make repair-cli",
             }
         )
+
+    if bb_ok:
+        actions.append({"step": "tui", "command": bb_detail})
 
     if include_advanced:
         actions.extend(
@@ -132,9 +140,11 @@ def _build_payload(include_advanced: bool) -> dict:
     return {
         "repo_root": str(ROOT_DIR),
         "venv_python": venv_python,
-        "has_tui_source": has_tui,
+        "has_legacy_tui_harness": has_legacy_tui_harness,
         "breadboard_cli_usable": cli_ok,
         "breadboard_cli_detail": cli_detail,
+        "bb_cli_usable": bb_ok,
+        "bb_cli_detail": bb_detail,
         "cli_capabilities": _cli_capabilities(),
         "recommended_actions": actions,
     }
@@ -153,11 +163,14 @@ def main() -> int:
 
     print("[quickstart] repo:", payload["repo_root"])
     print("[quickstart] venv python:", payload["venv_python"])
-    print("[quickstart] tui source present:", payload["has_tui_source"])
-    print("[quickstart] breadboard cli usable:", payload["breadboard_cli_usable"])
-    print("[quickstart] cli capabilities:", json.dumps(payload["cli_capabilities"]))
+    print("[quickstart] legacy TUI harness present:", payload["has_legacy_tui_harness"])
+    print("[quickstart] breadboard engine CLI usable:", payload["breadboard_cli_usable"])
+    print("[quickstart] bb product TUI usable:", payload["bb_cli_usable"])
+    print("[quickstart] engine CLI capabilities:", json.dumps(payload["cli_capabilities"]))
     if not payload["breadboard_cli_usable"]:
-        print("[quickstart] cli detail:", payload["breadboard_cli_detail"])
+        print("[quickstart] breadboard CLI detail:", payload["breadboard_cli_detail"])
+    if not payload["bb_cli_usable"]:
+        print("[quickstart] bb TUI detail:", payload["bb_cli_detail"])
     print("[quickstart] recommended actions:")
     for idx, item in enumerate(payload["recommended_actions"], start=1):
         print(f"  {idx}. {item['step']}: {item['command']}")
