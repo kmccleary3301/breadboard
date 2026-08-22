@@ -161,7 +161,7 @@ const mergeRecentSessions = async (backend: ReadonlyArray<SessionSummary>): Prom
       status: summary.status,
       createdAt: summary.created_at ?? cache.sessions[summary.session_id]?.createdAt ?? "",
       lastActivityAt: summary.last_activity_at ?? cache.sessions[summary.session_id]?.lastActivityAt ?? "",
-      model: summary.model ?? (summary.metadata?.model as string | undefined) ?? null,
+      model: summary.model ?? (summary.metadata?.model as string | undefined) ?? cache.sessions[summary.session_id]?.model ?? null,
       name: (summary.metadata?.name as string | undefined) ?? null,
       loggingDir: summary.logging_dir ?? null,
       source: "backend",

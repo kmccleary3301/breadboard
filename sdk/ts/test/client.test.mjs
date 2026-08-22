@@ -61,6 +61,14 @@ test("session readers unwrap the canonical public result", async (t) => {
   assert.deepEqual(await client.getSession("session-1"), summary)
 })
 
+test("session readers reject canonical envelopes missing the key", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  globalThis.fetch = async () => new Response(JSON.stringify({ ok: true, data: {} }), { headers: { "content-type": "application/json" } })
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+  await assert.rejects(() => client.getSession("session-1"), /Public result missing data\.session/)
+})
+
 
 test("broker and model-role methods use canonical typed routes", async (t) => {
   const originalFetch = globalThis.fetch

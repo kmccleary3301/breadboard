@@ -120,7 +120,7 @@ const publicData = async <T>(config: BreadboardClientConfig, route: string, key:
     if (envelope.data && typeof envelope.data === "object") {
       const value = envelope.data[key]
       if (value !== undefined) return value as T
-      if (envelope.ok === false) throw new ApiError(`Public result missing data.${key}`, 502, result)
+      if ("ok" in envelope || "data" in envelope) throw new ApiError(`Public result missing data.${key}`, 502, result)
     }
   }
   return result as T
