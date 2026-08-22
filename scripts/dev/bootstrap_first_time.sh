@@ -21,9 +21,9 @@ Usage: scripts/dev/bootstrap_first_time.sh [options]
 
 Options:
   --profile <full|engine|tui>
-                   full: python + sdk/ts + tui (default)
-                   engine: python-only setup (skip node/tui)
-                   tui: node/tui-only setup (skip python)
+                   full: python + sdk/ts + legacy TUI contract harness (default)
+                   engine: python-only setup (skip node and legacy harness)
+                   tui: legacy TUI contract-harness setup (skip python; retained profile name)
   --all-checks      Run both unit smoke and live SDK hello verification.
   --smoke           Run unit-only switcher smoke after setup.
   --sdk-hello-live  Run live python+ts SDK hello verification after setup.
@@ -437,7 +437,7 @@ if [[ "${SKIP_PYTHON}" == "0" ]]; then
   echo "  1) Activate Python env:"
   echo "     source ${VENV_DIR}/bin/activate"
 else
-  echo "  1) Python setup was skipped (--profile tui or --skip-python)."
+  echo "  1) Python setup was skipped (--profile tui legacy harness or --skip-python)."
   echo "     If needed later: bash scripts/dev/bootstrap_first_time.sh --profile engine"
 fi
 if [[ "${SKIP_PYTHON}" == "0" && -x "${VENV_DIR}/bin/breadboard" ]]; then

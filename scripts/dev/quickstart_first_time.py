@@ -93,7 +93,7 @@ def _build_payload(include_advanced: bool) -> dict:
     bb_ok, bb_detail = _bb_cli_usable()
 
     actions = [
-        {"step": "bootstrap", "command": "bash scripts/dev/bootstrap_first_time.sh --profile engine"},
+        {"step": "bootstrap", "command": "bash scripts/dev/bootstrap_first_time.sh"},
         {"step": "doctor", "command": "python scripts/dev/first_time_doctor.py --strict"},
         {"step": "onboarding_contract", "command": "make onboarding-contract"},
         {
