@@ -79,6 +79,22 @@ describe("recent session re-entry helpers", () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  it("preserves every session across concurrent cache refreshes", async () => {
+    const dir = await withTempSessionCache()
+    const summaries = Array.from({ length: 20 }, (_, index) => ({
+      session_id: `concurrent-session-${index}`,
+      status: "completed",
+    }))
+
+    await Promise.all(summaries.map((summary) => rememberSession(summary)))
+
+    expect(Object.keys((await loadSessionCache()).sessions).sort()).toEqual(
+      summaries.map((summary) => summary.session_id).sort(),
+    )
+
+    await rm(dir, { recursive: true, force: true })
+  })
+
   it("attaches to an existing session and restarts the stream loop", async () => {
     const dir = await withTempSessionCache()
     const controller = createController()

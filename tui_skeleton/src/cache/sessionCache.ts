@@ -50,15 +50,42 @@ const readJson = async (filePath: string): Promise<SessionCache> => {
   }
 }
 
+const writeJson = async (filePath: string, cache: SessionCache): Promise<void> => {
+  await ensureDir(filePath)
+  await fs.writeFile(filePath, JSON.stringify(cache, null, 2), "utf8")
+}
+
+let cacheOperationTail: Promise<void> = Promise.resolve()
+
+const enqueueCacheOperation = <T>(operation: () => Promise<T>): Promise<T> => {
+  const result = cacheOperationTail.then(operation, operation)
+  cacheOperationTail = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  return result
+}
+
+const mutateSessionCache = async (
+  mutation: (cache: SessionCache) => boolean | Promise<boolean>,
+): Promise<void> => {
+  const { sessionCachePath } = loadAppConfig()
+  await enqueueCacheOperation(async () => {
+    const cache = await readJson(sessionCachePath)
+    if (await mutation(cache)) {
+      await writeJson(sessionCachePath, cache)
+    }
+  })
+}
+
 export const loadSessionCache = async (): Promise<SessionCache> => {
   const { sessionCachePath } = loadAppConfig()
-  return readJson(sessionCachePath)
+  return enqueueCacheOperation(() => readJson(sessionCachePath))
 }
 
 export const writeSessionCache = async (cache: SessionCache): Promise<void> => {
   const { sessionCachePath } = loadAppConfig()
-  await ensureDir(sessionCachePath)
-  await fs.writeFile(sessionCachePath, JSON.stringify(cache, null, 2), "utf8")
+  await enqueueCacheOperation(() => writeJson(sessionCachePath, cache))
 }
 
 const normalizeMetadata = (value: unknown): Record<string, unknown> | null => {
@@ -87,23 +114,24 @@ export const rememberSession = async (
   summary: SessionSummary,
   options: { name?: string; model?: string } = {},
 ): Promise<void> => {
-  const cache = await loadSessionCache()
-  const previous = cache.sessions[summary.session_id]
-  const entry: CachedSessionEntry = {
-    sessionId: summary.session_id,
-    name: options.name ?? previous?.name,
-    createdAt: summary.created_at ?? previous?.createdAt ?? "",
-    lastActivityAt: summary.last_activity_at ?? previous?.lastActivityAt ?? "",
-    status: summary.status,
-    model: options.model ?? (summary.metadata?.model as string | undefined) ?? previous?.model,
-    loggingDir: summary.logging_dir ?? previous?.loggingDir ?? null,
-    mode: summary.mode ?? previous?.mode,
-    metadata: normalizeMetadata(summary.metadata ?? previous?.metadata ?? null),
-    draft: previous?.draft ?? null,
-  }
-  cache.sessions[entry.sessionId] = entry
-  cache.recent = [entry.sessionId, ...cache.recent.filter((id) => id !== entry.sessionId)].slice(0, MAX_RECENT)
-  await writeSessionCache(cache)
+  await mutateSessionCache((cache) => {
+    const previous = cache.sessions[summary.session_id]
+    const entry: CachedSessionEntry = {
+      sessionId: summary.session_id,
+      name: options.name ?? previous?.name,
+      createdAt: summary.created_at ?? previous?.createdAt ?? "",
+      lastActivityAt: summary.last_activity_at ?? previous?.lastActivityAt ?? "",
+      status: summary.status,
+      model: options.model ?? (summary.metadata?.model as string | undefined) ?? previous?.model,
+      loggingDir: summary.logging_dir ?? previous?.loggingDir ?? null,
+      mode: summary.mode ?? previous?.mode,
+      metadata: normalizeMetadata(summary.metadata ?? previous?.metadata ?? null),
+      draft: previous?.draft ?? null,
+    }
+    cache.sessions[entry.sessionId] = entry
+    cache.recent = [entry.sessionId, ...cache.recent.filter((id) => id !== entry.sessionId)].slice(0, MAX_RECENT)
+    return true
+  })
 }
 
 export const listCachedSessions = async (): Promise<CachedSessionEntry[]> => {
@@ -112,13 +140,14 @@ export const listCachedSessions = async (): Promise<CachedSessionEntry[]> => {
 }
 
 export const forgetSession = async (sessionId: string): Promise<void> => {
-  const cache = await loadSessionCache()
-  if (!(sessionId in cache.sessions)) {
-    return
-  }
-  delete cache.sessions[sessionId]
-  cache.recent = cache.recent.filter((id) => id !== sessionId)
-  await writeSessionCache(cache)
+  await mutateSessionCache((cache) => {
+    if (!(sessionId in cache.sessions)) {
+      return false
+    }
+    delete cache.sessions[sessionId]
+    cache.recent = cache.recent.filter((id) => id !== sessionId)
+    return true
+  })
 }
 
 export const getMostRecentSessionId = async (): Promise<string | null> => {
@@ -132,19 +161,20 @@ export const getSessionDraft = async (sessionId: string): Promise<DraftState | n
 }
 
 export const updateSessionDraft = async (sessionId: string, draft: DraftState | null): Promise<void> => {
-  const cache = await loadSessionCache()
-  const entry = ensureSessionEntry(cache, sessionId)
-  const current = entry.draft ?? null
-  const nextDraft = draft ?? null
-  if (
-    current &&
-    nextDraft &&
-    current.text === nextDraft.text &&
-    current.cursor === nextDraft.cursor &&
-    current.updatedAt === nextDraft.updatedAt
-  ) {
-    return
-  }
-  cache.sessions[sessionId] = { ...entry, draft: nextDraft }
-  await writeSessionCache(cache)
+  await mutateSessionCache((cache) => {
+    const entry = ensureSessionEntry(cache, sessionId)
+    const current = entry.draft ?? null
+    const nextDraft = draft ?? null
+    if (
+      current &&
+      nextDraft &&
+      current.text === nextDraft.text &&
+      current.cursor === nextDraft.cursor &&
+      current.updatedAt === nextDraft.updatedAt
+    ) {
+      return false
+    }
+    cache.sessions[sessionId] = { ...entry, draft: nextDraft }
+    return true
+  })
 }
