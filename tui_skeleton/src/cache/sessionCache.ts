@@ -98,6 +98,7 @@ export const rememberSession = async (
     model: options.model ?? (summary.metadata?.model as string | undefined) ?? previous?.model,
     loggingDir: summary.logging_dir ?? previous?.loggingDir ?? null,
     mode: summary.mode ?? previous?.mode,
+    metadata: normalizeMetadata(summary.metadata ?? previous?.metadata ?? null),
     draft: previous?.draft ?? null,
   }
   cache.sessions[entry.sessionId] = entry
