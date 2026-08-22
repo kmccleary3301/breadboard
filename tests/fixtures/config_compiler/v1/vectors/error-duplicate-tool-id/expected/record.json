@@ -1,0 +1,1 @@
+{"code":"TOOL_DUPLICATE_ID","details":{"tool_id":"duplicate"},"instance_path":null,"logical_path":null,"outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"semantic_validation","vector_id":"error-duplicate-tool-id"}

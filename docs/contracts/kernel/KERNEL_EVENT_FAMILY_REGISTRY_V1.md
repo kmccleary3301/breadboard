@@ -28,7 +28,16 @@ it is treated as kernel truth.
   host-facing lifecycle/control surface, but not a kernel event-family truth
   surface.
 
+| Runtime event type | Projection family | Actor | Visibility |
+| --- | --- | --- | --- |
+| `todo_event` | `projection.todo_snapshot` | `service` | `host` |
+| `ctree_snapshot` | `projection.ctree_snapshot` | `service` | `host` |
+| `rl.run.event` | `projection.rl_run_event` | `service` | `host` |
+
+`rl.run.event` covers the `/rl/runs/{run_id}/events` stream exposed by the Phase 3 RL API. It is a host-facing run-status projection, not a kernel event envelope and not a replay/conformance truth surface. The stream may carry convenience lifecycle strings such as `run.submitted`, `run.start`, `run.end`, and `cancel.requested`; those strings must not be promoted to canonical kernel event families without a separate schema, semantic dossier, and fixture update.
+
 ## Notes on current owners
+
 
 - `limits_update` is emitted as a best-effort host-facing bridge event from
   provider runtime code when provider rate-limit headers are parsed. It is

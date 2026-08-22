@@ -1,0 +1,2318 @@
+{
+  "artifact_selection": {
+    "admitted_set_receipt_digests": [
+      "sha256:12babc4f5d2c44e4bd00fadccb5ebdc2c6117dc272ff84fa20354359ebbea4b4",
+      "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    ],
+    "canonical_hex": "7b22626173655f636f6d70696c65645f6d616e69666573745f646967657374223a227368613235363a39393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939222c2265787065637465645f61667465725f73656d616e7469635f646967657374223a227368613235363a30666234366464623434333439353734386563636466306466353131343733346430663135303662336564306638353565666634653765623064353035613733222c2265787065637465645f6265666f72655f73656d616e7469635f646967657374223a227368613235363a66623763633439373838303930306632376162373138623433646537666238363131343730393036613864666539663266313735376339326531306663613862222c2265787065637465645f7472616e736974696f6e73223a5b7b2261667465725f73656d616e7469635f646967657374223a227368613235363a30666234366464623434333439353734386563636466306466353131343733346430663135303662336564306638353565666634653765623064353035613733222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a66623763633439373838303930306632376162373138623433646537666238363131343730393036613864666539663266313735376339326531306663613862222c226f7065726174696f6e5f696e646578223a307d5d2c226f7065726174696f6e73223a5b7b226f70223a227265706c616365222c2270617468223a222f6172746966616374732f73656c6563746564222c2276616c7565223a2261727469666163742d62227d5d2c22706172656e745f726563656970745f646967657374223a227368613235363a34343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434222c2270726f76656e616e6365223a7b22617574686f725f7375626a6563745f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c22726174696f6e616c655f636f6465223a2261727469666163742d73656c656374696f6e222c22736f757263655f61727469666163745f646967657374223a227368613235363a64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464222c22736f757263655f6b696e64223a226f70657261746f72227d2c22736368656d615f76657273696f6e223a2262622e726c2e6d75746174696f6e2d6f7665726c61792e7631227d",
+    "derived_receipt_projection": {
+      "base_compiled_manifest_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "derived_semantic_digest": "sha256:0fb46ddb443495748eccdf0df5114734d0f1506b3ed0f855eff4e7eb0d505a73",
+      "overlay_chain_digest": "sha256:4a28132e1cee41906d3ed20ba74ad6c323feaab2dbf6a7475c5e18735fd8c9ef",
+      "parent_receipt_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "schema_version": "bb.rl.overlay-derived-receipt-identity.v1"
+    },
+    "manifest": {
+      "base_compiled_manifest_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "expected_after_semantic_digest": "sha256:0fb46ddb443495748eccdf0df5114734d0f1506b3ed0f855eff4e7eb0d505a73",
+      "expected_before_semantic_digest": "sha256:fb7cc497880900f27ab718b43de7fb8611470906a8dfe9f2f1757c92e10fca8b",
+      "expected_transitions": [
+        {
+          "after_semantic_digest": "sha256:0fb46ddb443495748eccdf0df5114734d0f1506b3ed0f855eff4e7eb0d505a73",
+          "before_semantic_digest": "sha256:fb7cc497880900f27ab718b43de7fb8611470906a8dfe9f2f1757c92e10fca8b",
+          "operation_index": 0
+        }
+      ],
+      "operations": [
+        {
+          "op": "replace",
+          "path": "/artifacts/selected",
+          "value": "artifact-b"
+        }
+      ],
+      "parent_receipt_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "provenance": {
+        "author_subject_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "rationale_code": "artifact-selection",
+        "source_artifact_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "source_kind": "operator"
+      },
+      "schema_version": "bb.rl.mutation-overlay.v1"
+    },
+    "overlay_chain_digest": "sha256:4a28132e1cee41906d3ed20ba74ad6c323feaab2dbf6a7475c5e18735fd8c9ef",
+    "overlay_digest": "sha256:4a97447b085dc90a6dd95ae8dbb4aa758ca0ee918ec7788fd30b3f39d8ca086a",
+    "result_receipt_digest": "sha256:12babc4f5d2c44e4bd00fadccb5ebdc2c6117dc272ff84fa20354359ebbea4b4",
+    "result_semantic_digest": "sha256:0fb46ddb443495748eccdf0df5114734d0f1506b3ed0f855eff4e7eb0d505a73",
+    "result_semantics": {
+      "a/b": {
+        "value": 1
+      },
+      "array": [
+        "zero",
+        "one",
+        "two"
+      ],
+      "artifacts": {
+        "selected": "artifact-b"
+      },
+      "a~b": {
+        "value": 2
+      },
+      "limits": {
+        "max_turns": 8
+      },
+      "mode": "build",
+      "optional": {},
+      "policy": {
+        "route_id": "policy-route"
+      },
+      "runtime": {
+        "abi": "breadboard.conductor.v1"
+      },
+      "sampling": {
+        "temperature": 1,
+        "top_p": 0.9
+      },
+      "sandbox": {
+        "network_mode": "none"
+      },
+      "secrets": {
+        "handle_id": "policy-credential"
+      },
+      "tools": {
+        "enabled": [
+          "read",
+          "write",
+          "search"
+        ]
+      }
+    }
+  },
+  "base": {
+    "compiled_manifest_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "compiler_mutable_rules": [
+      {
+        "allowed_operations": [
+          "remove"
+        ],
+        "authority_effect": "reduce_only",
+        "pointer": "/array/1",
+        "removable": true,
+        "value_schema_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+        "allowed_operations": [
+          "replace"
+        ],
+        "authority_effect": "none",
+        "pointer": "/artifacts/selected",
+        "removable": false,
+        "value_schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      {
+        "allowed_operations": [
+          "replace"
+        ],
+        "authority_effect": "none",
+        "pointer": "/a~0b/value",
+        "removable": false,
+        "value_schema_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      {
+        "allowed_operations": [
+          "replace"
+        ],
+        "authority_effect": "none",
+        "pointer": "/a~1b/value",
+        "removable": false,
+        "value_schema_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      {
+        "allowed_operations": [
+          "replace"
+        ],
+        "authority_effect": "reduce_only",
+        "pointer": "/limits/max_turns",
+        "removable": false,
+        "value_schema_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      {
+        "allowed_operations": [
+          "add"
+        ],
+        "authority_effect": "none",
+        "pointer": "/optional/note",
+        "removable": false,
+        "value_schema_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      {
+        "allowed_operations": [
+          "replace"
+        ],
+        "authority_effect": "none",
+        "pointer": "/sampling/temperature",
+        "removable": false,
+        "value_schema_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      {
+        "allowed_operations": [
+          "remove"
+        ],
+        "authority_effect": "reduce_only",
+        "pointer": "/tools/enabled/1",
+        "removable": true,
+        "value_schema_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+      }
+    ],
+    "operator_mutable_rules": [
+      {
+        "allowed_operations": [
+          "remove"
+        ],
+        "authority_effect": "reduce_only",
+        "pointer": "/array/1",
+        "removable": true,
+        "value_schema_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+        "allowed_operations": [
+          "replace"
+        ],
+        "authority_effect": "none",
+        "pointer": "/artifacts/selected",
+        "removable": false,
+        "value_schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      {
+        "allowed_operations": [
+          "replace"
+        ],
+        "authority_effect": "none",
+        "pointer": "/a~0b/value",
+        "removable": false,
+        "value_schema_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      {
+        "allowed_operations": [
+          "replace"
+        ],
+        "authority_effect": "none",
+        "pointer": "/a~1b/value",
+        "removable": false,
+        "value_schema_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      {
+        "allowed_operations": [
+          "replace"
+        ],
+        "authority_effect": "reduce_only",
+        "pointer": "/limits/max_turns",
+        "removable": false,
+        "value_schema_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      {
+        "allowed_operations": [
+          "add"
+        ],
+        "authority_effect": "none",
+        "pointer": "/optional/note",
+        "removable": false,
+        "value_schema_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      {
+        "allowed_operations": [
+          "replace"
+        ],
+        "authority_effect": "none",
+        "pointer": "/sampling/temperature",
+        "removable": false,
+        "value_schema_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      {
+        "allowed_operations": [
+          "remove"
+        ],
+        "authority_effect": "reduce_only",
+        "pointer": "/tools/enabled/1",
+        "removable": true,
+        "value_schema_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+      }
+    ],
+    "receipt_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "semantic_canonical_hex": "7b22612f62223a7b2276616c7565223a317d2c226172726179223a5b227a65726f222c226f6e65222c2274776f225d2c22617274696661637473223a7b2273656c6563746564223a2261727469666163742d61227d2c22617e62223a7b2276616c7565223a327d2c226c696d697473223a7b226d61785f7475726e73223a387d2c226d6f6465223a226275696c64222c226f7074696f6e616c223a7b7d2c22706f6c696379223a7b22726f7574655f6964223a22706f6c6963792d726f757465227d2c2272756e74696d65223a7b22616269223a226272656164626f6172642e636f6e647563746f722e7631227d2c2273616d706c696e67223a7b2274656d7065726174757265223a312c22746f705f70223a302e397d2c2273616e64626f78223a7b226e6574776f726b5f6d6f6465223a226e6f6e65227d2c2273656372657473223a7b2268616e646c655f6964223a22706f6c6963792d63726564656e7469616c227d2c22746f6f6c73223a7b22656e61626c6564223a5b2272656164222c227772697465222c22736561726368225d7d7d",
+    "semantic_digest": "sha256:fb7cc497880900f27ab718b43de7fb8611470906a8dfe9f2f1757c92e10fca8b",
+    "semantics": {
+      "a/b": {
+        "value": 1
+      },
+      "array": [
+        "zero",
+        "one",
+        "two"
+      ],
+      "artifacts": {
+        "selected": "artifact-a"
+      },
+      "a~b": {
+        "value": 2
+      },
+      "limits": {
+        "max_turns": 8
+      },
+      "mode": "build",
+      "optional": {},
+      "policy": {
+        "route_id": "policy-route"
+      },
+      "runtime": {
+        "abi": "breadboard.conductor.v1"
+      },
+      "sampling": {
+        "temperature": 1,
+        "top_p": 0.9
+      },
+      "sandbox": {
+        "network_mode": "none"
+      },
+      "secrets": {
+        "handle_id": "policy-credential"
+      },
+      "tools": {
+        "enabled": [
+          "read",
+          "write",
+          "search"
+        ]
+      }
+    }
+  },
+  "canonicalizer_id": "rfc8785-jcs-v1",
+  "denials": [
+    {
+      "case_id": "malformed_escape_trailing",
+      "expected": {
+        "code": "noncanonical_pointer",
+        "operation_index": 0,
+        "pointer": "/a~",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "path": "/a~"
+      }
+    },
+    {
+      "case_id": "malformed_escape_digit",
+      "expected": {
+        "code": "noncanonical_pointer",
+        "operation_index": 0,
+        "pointer": "/a~2b",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "path": "/a~2b"
+      }
+    },
+    {
+      "case_id": "root_pointer",
+      "expected": {
+        "code": "noncanonical_pointer",
+        "operation_index": 0,
+        "pointer": "",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "path": ""
+      }
+    },
+    {
+      "case_id": "empty_token",
+      "expected": {
+        "code": "noncanonical_pointer",
+        "operation_index": 0,
+        "pointer": "/sampling//temperature",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "path": "/sampling//temperature"
+      }
+    },
+    {
+      "case_id": "non_nfc_token",
+      "expected": {
+        "code": "noncanonical_pointer",
+        "operation_index": 0,
+        "pointer": "/café",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "path": "/café"
+      }
+    },
+    {
+      "case_id": "sibling_pointer",
+      "expected": {
+        "code": "pointer_not_mutable",
+        "operation_index": 0,
+        "pointer": "/sampling/top_p",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "path": "/sampling/top_p"
+      }
+    },
+    {
+      "case_id": "prefix_pointer",
+      "expected": {
+        "code": "pointer_not_mutable",
+        "operation_index": 0,
+        "pointer": "/sampling",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "path": "/sampling"
+      }
+    },
+    {
+      "case_id": "ancestor_pointer",
+      "expected": {
+        "code": "pointer_not_mutable",
+        "operation_index": 0,
+        "pointer": "/tools",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "path": "/tools"
+      }
+    },
+    {
+      "case_id": "descendant_pointer",
+      "expected": {
+        "code": "pointer_not_mutable",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature/value",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "path": "/sampling/temperature/value"
+      }
+    },
+    {
+      "case_id": "leading_zero_array_index",
+      "expected": {
+        "code": "noncanonical_pointer",
+        "operation_index": 0,
+        "pointer": "/array/01",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "path": "/array/01"
+      }
+    },
+    {
+      "case_id": "array_dash_append",
+      "expected": {
+        "code": "array_add_forbidden",
+        "operation_index": 0,
+        "pointer": "/array/-",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "malicious_rule": true,
+        "op": "add",
+        "path": "/array/-",
+        "value": "three"
+      }
+    },
+    {
+      "case_id": "add_existing_member",
+      "expected": {
+        "code": "add_target_exists",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "malicious_rule": true,
+        "op": "add",
+        "path": "/sampling/temperature",
+        "value": 0.5
+      }
+    },
+    {
+      "case_id": "add_missing_parent",
+      "expected": {
+        "code": "add_parent_missing",
+        "operation_index": 0,
+        "pointer": "/missing/leaf",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "malicious_rule": true,
+        "op": "add",
+        "path": "/missing/leaf",
+        "value": 1
+      }
+    },
+    {
+      "case_id": "replace_missing_member",
+      "expected": {
+        "code": "replace_target_missing",
+        "operation_index": 0,
+        "pointer": "/optional/missing",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "malicious_rule": true,
+        "op": "replace",
+        "path": "/optional/missing",
+        "value": "x"
+      }
+    },
+    {
+      "case_id": "remove_missing_member",
+      "expected": {
+        "code": "remove_target_missing",
+        "operation_index": 0,
+        "pointer": "/optional/missing",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "malicious_rule": true,
+        "op": "remove",
+        "path": "/optional/missing"
+      }
+    },
+    {
+      "case_id": "remove_without_grant",
+      "expected": {
+        "code": "remove_not_allowed",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "malicious_rule": true,
+        "op": "remove",
+        "path": "/sampling/temperature"
+      }
+    },
+    {
+      "case_id": "remove_activates_default",
+      "expected": {
+        "code": "implicit_default_forbidden",
+        "operation_index": 0,
+        "pointer": "/mode",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "malicious_rule": true,
+        "op": "remove",
+        "path": "/mode"
+      }
+    },
+    {
+      "case_id": "duplicate_path",
+      "expected": {
+        "code": "overlapping_operations",
+        "operation_index": 1,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "operations": [
+          {
+            "op": "replace",
+            "path": "/sampling/temperature",
+            "value": 0.5
+          },
+          {
+            "op": "replace",
+            "path": "/sampling/temperature",
+            "value": 0.4
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "ancestor_overlap",
+      "expected": {
+        "code": "overlapping_operations",
+        "operation_index": 1,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_rule": true,
+        "operations": [
+          {
+            "op": "replace",
+            "path": "/sampling",
+            "value": {
+              "temperature": 0.5,
+              "top_p": 0.9
+            }
+          },
+          {
+            "op": "replace",
+            "path": "/sampling/temperature",
+            "value": 0.4
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "descendant_overlap",
+      "expected": {
+        "code": "overlapping_operations",
+        "operation_index": 1,
+        "pointer": "/sampling",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_rule": true,
+        "operations": [
+          {
+            "op": "replace",
+            "path": "/sampling/temperature",
+            "value": 0.5
+          },
+          {
+            "op": "replace",
+            "path": "/sampling",
+            "value": {
+              "temperature": 0.4,
+              "top_p": 0.9
+            }
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "wrong_operation",
+      "expected": {
+        "code": "operation_not_allowed",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "remove",
+        "path": "/sampling/temperature"
+      }
+    },
+    {
+      "case_id": "type_bool_for_number",
+      "expected": {
+        "code": "overlay_type_mismatch",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "op": "replace",
+        "path": "/sampling/temperature",
+        "value": true
+      }
+    },
+    {
+      "case_id": "type_string_for_number",
+      "expected": {
+        "code": "overlay_type_mismatch",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "op": "replace",
+        "path": "/sampling/temperature",
+        "value": "0.5"
+      }
+    },
+    {
+      "case_id": "temperature_below_bound",
+      "expected": {
+        "code": "overlay_bounds_violation",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "op": "replace",
+        "path": "/sampling/temperature",
+        "value": -0.1
+      }
+    },
+    {
+      "case_id": "turns_above_parent",
+      "expected": {
+        "code": "capability_increase",
+        "operation_index": 0,
+        "pointer": "/limits/max_turns",
+        "stage": "capability_intersection"
+      },
+      "mutation": {
+        "op": "replace",
+        "path": "/limits/max_turns",
+        "value": 9
+      }
+    },
+    {
+      "case_id": "post_schema_unknown_field",
+      "expected": {
+        "code": "post_overlay_schema_invalid",
+        "operation_index": 0,
+        "pointer": "/optional/unknown",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "malicious_rule": true,
+        "op": "add",
+        "path": "/optional/unknown",
+        "value": 1
+      }
+    },
+    {
+      "case_id": "post_invariant_invalid",
+      "expected": {
+        "code": "post_overlay_invariant_invalid",
+        "operation_index": 0,
+        "pointer": "/sampling/top_p",
+        "stage": "overlay_application"
+      },
+      "mutation": {
+        "malicious_rule": true,
+        "op": "replace",
+        "path": "/sampling/top_p",
+        "value": 0
+      }
+    },
+    {
+      "case_id": "transition_before_mismatch",
+      "expected": {
+        "code": "overlay_transition_mismatch",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "transition": "before"
+      }
+    },
+    {
+      "case_id": "transition_after_mismatch",
+      "expected": {
+        "code": "overlay_transition_mismatch",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "transition": "after"
+      }
+    },
+    {
+      "case_id": "raw_url_value",
+      "expected": {
+        "code": "overlay_value_forbidden",
+        "operation_index": 0,
+        "pointer": "/optional/note",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/optional/note",
+        "value": "https://169.254.169.254/latest"
+      }
+    },
+    {
+      "case_id": "raw_header_value",
+      "expected": {
+        "code": "overlay_value_forbidden",
+        "operation_index": 0,
+        "pointer": "/optional/note",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/optional/note",
+        "value": "Authorization: Bearer MARKER_SECRET"
+      }
+    },
+    {
+      "case_id": "raw_secret_value",
+      "expected": {
+        "code": "overlay_value_forbidden",
+        "operation_index": 0,
+        "pointer": "/optional/note",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/optional/note",
+        "value": "sk-MARKER_SECRET"
+      }
+    },
+    {
+      "case_id": "environment_value",
+      "expected": {
+        "code": "overlay_value_forbidden",
+        "operation_index": 0,
+        "pointer": "/optional/note",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/optional/note",
+        "value": "${HOME}"
+      }
+    },
+    {
+      "case_id": "shell_value",
+      "expected": {
+        "code": "overlay_value_forbidden",
+        "operation_index": 0,
+        "pointer": "/optional/note",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/optional/note",
+        "value": "sh -c id"
+      }
+    },
+    {
+      "case_id": "import_path_value",
+      "expected": {
+        "code": "overlay_value_forbidden",
+        "operation_index": 0,
+        "pointer": "/optional/note",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/optional/note",
+        "value": "pkg.module:callable"
+      }
+    },
+    {
+      "case_id": "raw_host_path_value",
+      "expected": {
+        "code": "overlay_value_forbidden",
+        "operation_index": 0,
+        "pointer": "/optional/note",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/optional/note",
+        "value": "/etc/passwd"
+      }
+    },
+    {
+      "case_id": "nan_raw_json",
+      "expected": {
+        "code": "overlay_value_forbidden",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "replace",
+        "path": "/sampling/temperature",
+        "raw_value": "NaN"
+      }
+    },
+    {
+      "case_id": "infinity_raw_json",
+      "expected": {
+        "code": "overlay_value_forbidden",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "replace",
+        "path": "/sampling/temperature",
+        "raw_value": "Infinity"
+      }
+    },
+    {
+      "case_id": "negative_zero_raw_json",
+      "expected": {
+        "code": "overlay_value_forbidden",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "replace",
+        "path": "/sampling/temperature",
+        "raw_value": "-0"
+      }
+    },
+    {
+      "case_id": "noncanonical_exponent_raw_json",
+      "expected": {
+        "code": "overlay_value_forbidden",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "replace",
+        "path": "/sampling/temperature",
+        "raw_value": "1e+00"
+      }
+    },
+    {
+      "case_id": "protected_0",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/runtime/abi",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_compiler_rule": true,
+        "malicious_operator_rule": true,
+        "op": "replace",
+        "path": "/runtime/abi",
+        "value": "malicious"
+      }
+    },
+    {
+      "case_id": "protected_1",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/policy/route_id",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_compiler_rule": true,
+        "malicious_operator_rule": true,
+        "op": "replace",
+        "path": "/policy/route_id",
+        "value": "malicious"
+      }
+    },
+    {
+      "case_id": "protected_2",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/secrets/handle_id",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_compiler_rule": true,
+        "malicious_operator_rule": true,
+        "op": "replace",
+        "path": "/secrets/handle_id",
+        "value": "malicious"
+      }
+    },
+    {
+      "case_id": "protected_3",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/sandbox/network_mode",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_compiler_rule": true,
+        "malicious_operator_rule": true,
+        "op": "replace",
+        "path": "/sandbox/network_mode",
+        "value": "malicious"
+      }
+    },
+    {
+      "case_id": "protected_4",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/runner/implementation_digest",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_compiler_rule": true,
+        "malicious_operator_rule": true,
+        "op": "replace",
+        "path": "/runner/implementation_digest",
+        "value": "malicious"
+      }
+    },
+    {
+      "case_id": "protected_5",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/verifier/implementation_digest",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_compiler_rule": true,
+        "malicious_operator_rule": true,
+        "op": "replace",
+        "path": "/verifier/implementation_digest",
+        "value": "malicious"
+      }
+    },
+    {
+      "case_id": "protected_6",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/evidence/policy_id",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_compiler_rule": true,
+        "malicious_operator_rule": true,
+        "op": "replace",
+        "path": "/evidence/policy_id",
+        "value": "malicious"
+      }
+    },
+    {
+      "case_id": "protected_7",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/retention/policy_id",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_compiler_rule": true,
+        "malicious_operator_rule": true,
+        "op": "replace",
+        "path": "/retention/policy_id",
+        "value": "malicious"
+      }
+    },
+    {
+      "case_id": "protected_8",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/task/task_binding_digest",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_compiler_rule": true,
+        "malicious_operator_rule": true,
+        "op": "replace",
+        "path": "/task/task_binding_digest",
+        "value": "malicious"
+      }
+    },
+    {
+      "case_id": "protected_9",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/repository/snapshot_digest",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_compiler_rule": true,
+        "malicious_operator_rule": true,
+        "op": "replace",
+        "path": "/repository/snapshot_digest",
+        "value": "malicious"
+      }
+    },
+    {
+      "case_id": "protected_10",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/image/digest",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "malicious_compiler_rule": true,
+        "malicious_operator_rule": true,
+        "op": "replace",
+        "path": "/image/digest",
+        "value": "malicious"
+      }
+    },
+    {
+      "case_id": "compiler_operator_rule_mismatch",
+      "expected": {
+        "code": "pointer_not_mutable",
+        "operation_index": 0,
+        "pointer": "/sampling/temperature",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "operator_rule_mutation": {
+          "authority_effect": "reduce_only"
+        }
+      }
+    },
+    {
+      "case_id": "overlay_base_mismatch",
+      "expected": {
+        "code": "overlay_base_mismatch",
+        "operation_index": 0,
+        "pointer": "/base_compiled_manifest_digest",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "manifest_field": "base_compiled_manifest_digest",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "case_id": "overlay_parent_receipt_mismatch",
+      "expected": {
+        "code": "overlay_receipt_mismatch",
+        "operation_index": 0,
+        "pointer": "/parent_receipt_digest",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "manifest_field": "parent_receipt_digest",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "case_id": "derived_receipt_mismatch",
+      "expected": {
+        "code": "derived_receipt_mismatch",
+        "operation_index": 0,
+        "pointer": "/result_receipt_digest",
+        "stage": "readmission"
+      },
+      "mutation": {
+        "result_receipt_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "case_id": "provenance_digest_mismatch",
+      "expected": {
+        "code": "overlay_digest_mismatch",
+        "operation_index": 0,
+        "pointer": "/provenance/source_artifact_digest",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "provenance_field": "source_artifact_digest",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "case_id": "operation_reorder",
+      "expected": {
+        "code": "overlay_transition_mismatch",
+        "operation_index": 0,
+        "pointer": "/operations/0",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "reorder": true
+      }
+    },
+    {
+      "case_id": "layer_skip",
+      "expected": {
+        "code": "overlay_receipt_mismatch",
+        "operation_index": 0,
+        "pointer": "/parent_receipt_digest",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "skip_candidate_layer": true
+      }
+    },
+    {
+      "case_id": "protected_artifact_allowed_roles",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/artifacts/allowed_roles",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/artifacts/allowed_roles",
+        "value": [
+          "unadmitted-role"
+        ]
+      }
+    },
+    {
+      "case_id": "protected_artifact_max_each_bytes",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/artifacts/max_each_bytes",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/artifacts/max_each_bytes",
+        "value": 9999999
+      }
+    },
+    {
+      "case_id": "protected_artifact_max_total_bytes",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/artifacts/max_total_bytes",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/artifacts/max_total_bytes",
+        "value": 9999999
+      }
+    },
+    {
+      "case_id": "protected_artifact_authority",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/artifacts/authority",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/artifacts/authority",
+        "value": {
+          "grant": "forged"
+        }
+      }
+    },
+    {
+      "case_id": "protected_artifact_policy",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/artifacts/policy",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/artifacts/policy",
+        "value": {
+          "revision": "forged"
+        }
+      }
+    },
+    {
+      "case_id": "protected_artifact_policy_digest",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/artifacts/policy_digest",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/artifacts/policy_digest",
+        "value": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    },
+    {
+      "case_id": "protected_artifact_security",
+      "expected": {
+        "code": "protected_pointer",
+        "operation_index": 0,
+        "pointer": "/artifacts/security",
+        "stage": "overlay_validation"
+      },
+      "mutation": {
+        "op": "add",
+        "path": "/artifacts/security",
+        "value": {
+          "isolation": "none"
+        }
+      }
+    }
+  ],
+  "overlay_chain_digest_equation": {
+    "fields": [
+      "overlay_digest",
+      "parent_chain_digest",
+      "schema_version"
+    ],
+    "first_parent_chain_digest": null,
+    "schema_version": "bb.rl.overlay-chain.v1"
+  },
+  "positive_chain": {
+    "admitted_set_receipt_digests": [
+      "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "sha256:5f77b00c709267b6fa695abdec3b930ff017b08e7bc39f775c1d3a2f945a060c",
+      "sha256:cebe45edbf389c7da094c75f9437120cd07e1bada84251746619a1e4a1dca1cd"
+    ],
+    "final_effective_capabilities": {
+      "artifacts": {
+        "allowed_roles": [
+          "patch",
+          "transcript"
+        ],
+        "max_each_bytes": 1048576,
+        "max_total_bytes": 4194304
+      },
+      "evidence": {
+        "policy_id": "evidence-full",
+        "revision_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "limits": {
+        "action_timeout_ms": 30000,
+        "artifact_bytes_each": 1048576,
+        "artifact_bytes_total": 4194304,
+        "max_turns": 4,
+        "observation_bytes": 65536,
+        "response_bytes": 32768,
+        "setup_timeout_ms": 60000,
+        "transcript_bytes": 8388608,
+        "verifier_timeout_ms": 120000
+      },
+      "mutable_pointers": [
+        {
+          "allowed_operations": [
+            "remove"
+          ],
+          "authority_effect": "reduce_only",
+          "pointer": "/array/1",
+          "removable": true,
+          "value_schema_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        {
+          "allowed_operations": [
+            "replace"
+          ],
+          "authority_effect": "none",
+          "pointer": "/a~0b/value",
+          "removable": false,
+          "value_schema_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        {
+          "allowed_operations": [
+            "replace"
+          ],
+          "authority_effect": "none",
+          "pointer": "/a~1b/value",
+          "removable": false,
+          "value_schema_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        {
+          "allowed_operations": [
+            "replace"
+          ],
+          "authority_effect": "reduce_only",
+          "pointer": "/limits/max_turns",
+          "removable": false,
+          "value_schema_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        {
+          "allowed_operations": [
+            "add"
+          ],
+          "authority_effect": "none",
+          "pointer": "/optional/note",
+          "removable": false,
+          "value_schema_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        },
+        {
+          "allowed_operations": [
+            "replace"
+          ],
+          "authority_effect": "none",
+          "pointer": "/sampling/temperature",
+          "removable": false,
+          "value_schema_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        {
+          "allowed_operations": [
+            "remove"
+          ],
+          "authority_effect": "reduce_only",
+          "pointer": "/tools/enabled/1",
+          "removable": true,
+          "value_schema_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      ],
+      "policy_slots": [
+        {
+          "checkpoint_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "model_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "protocol_abi": "responses-v1",
+          "required_policy_capabilities_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "route_id": "policy-route",
+          "secret_handle_id": "policy-credential",
+          "slot_id": "primary",
+          "tokenizer_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      ],
+      "resources": {
+        "cpu_millis": 2000,
+        "memory_bytes": 1073741824,
+        "open_files": 256,
+        "pids": 128,
+        "storage_bytes": 2147483648,
+        "wall_time_ms": 600000
+      },
+      "retention": {
+        "policy_id": "retention-30d",
+        "revision_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "routes": [
+        {
+          "credential_handle_id": "policy-credential",
+          "protocol_abi": "responses-v1",
+          "route_id": "policy-route",
+          "route_revision_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      ],
+      "runner": {
+        "adapter_id": "breadboard.conductor.v1",
+        "implementation_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "runtime_abi": "breadboard.conductor.v1"
+      },
+      "sandbox": {
+        "driver_implementation_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "egress_route_ids": [
+          "policy-route"
+        ],
+        "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "mounts": [
+          {
+            "access": "ro",
+            "max_bytes": 4096,
+            "source_artifact_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "target_logical_path": "workspace/input"
+          }
+        ],
+        "network_policy_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "runtime_binary_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+        "runtime_class": "hardened_docker",
+        "runtime_id": "sandbox-runtime",
+        "security_policy_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      },
+      "secret_handles": [
+        {
+          "handle_id": "policy-credential",
+          "handle_version_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "scope_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      ],
+      "setup_plans": [
+        {
+          "implementation_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "plan_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "setup_id": "workspace-prepare"
+        }
+      ],
+      "task": {
+        "dataset_digests": [
+          "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "input_artifact_digests": [
+          "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        ],
+        "repository_snapshot_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "task_binding_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "task_contract_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "tools": [],
+      "verifier": {
+        "code_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+        "executable_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "image_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "implementation_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "input_schema_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+        "network_policy_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "result_schema_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "secret_handle_ids": [],
+        "verifier_id": "unit-verifier"
+      }
+    },
+    "final_effective_capability_digest": "sha256:c9f13f5c316b52aebe904de96996c2382e8130cb34f24975acb4ed80dbfd8f28",
+    "final_plan": {
+      "canonical_hex": "7b2261646d69747465645f7365745f726f6f74223a227368613235363a66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666222c22617274696661637473223a7b22616c6c6f7765645f726f6c6573223a5b227061746368222c227472616e736372697074225d2c226d61785f656163685f6279746573223a313034383537362c226d61785f746f74616c5f6279746573223a343139343330347d2c22626173655f636f6d70696c6564223a7b2262756e646c655f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c22636c6f737572655f646967657374223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c22636f6d70696c6572223a7b2263616e6f6e6963616c697a65725f6964223a22726663383738352d6a63732d7631222c22636f64655f646967657374223a227368613235363a36363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636222c22636f6d70696c65725f6964223a226272656164626f6172642e7365727665722d636f6e6669672d636f6d70696c6572222c226d616e69666573745f736368656d615f646967657374223a227368613235363a38383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838222c2272756e74696d655f616269223a226272656164626f6172642e636f6e647563746f722e7631222c2273656d616e7469635f76657273696f6e223a22312e302e30222c22736f757263655f736368656d615f646967657374223a227368613235363a37373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737222c22736f757263655f736368656d615f6964223a226272656164626f6172642e6167656e742d636f6e6669672e7632227d2c22636f6d70696c65725f696e7075745f646967657374223a227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c22646961676e6f73746963735f646967657374223a227368613235363a66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666222c226d616e69666573745f646967657374223a227368613235363a39393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939222c2270726f76656e616e63655f646967657374223a227368613235363a65656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565222c2273656d616e7469635f646967657374223a227368613235363a66623763633439373838303930306632376162373138623433646537666238363131343730393036613864666539663266313735376339326531306663613862227d2c22626173655f726563656970745f646967657374223a227368613235363a34343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434222c22636f6e6669675f7365745f646967657374223a6e756c6c2c226566666563746976655f6361706162696c6974696573223a7b22617274696661637473223a7b22616c6c6f7765645f726f6c6573223a5b227061746368222c227472616e736372697074225d2c226d61785f656163685f6279746573223a313034383537362c226d61785f746f74616c5f6279746573223a343139343330347d2c2265766964656e6365223a7b22706f6c6963795f6964223a2265766964656e63652d66756c6c222c227265766973696f6e5f646967657374223a227368613235363a64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464227d2c226c696d697473223a7b22616374696f6e5f74696d656f75745f6d73223a33303030302c2261727469666163745f62797465735f65616368223a313034383537362c2261727469666163745f62797465735f746f74616c223a343139343330342c226d61785f7475726e73223a342c226f62736572766174696f6e5f6279746573223a36353533362c22726573706f6e73655f6279746573223a33323736382c2273657475705f74696d656f75745f6d73223a36303030302c227472616e7363726970745f6279746573223a383338383630382c2276657269666965725f74696d656f75745f6d73223a3132303030307d2c226d757461626c655f706f696e74657273223a5b7b22616c6c6f7765645f6f7065726174696f6e73223a5b2272656d6f7665225d2c22617574686f726974795f656666656374223a227265647563655f6f6e6c79222c22706f696e746572223a222f61727261792f31222c2272656d6f7661626c65223a747275652c2276616c75655f736368656d615f646967657374223a227368613235363a32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232227d2c7b22616c6c6f7765645f6f7065726174696f6e73223a5b227265706c616365225d2c22617574686f726974795f656666656374223a226e6f6e65222c22706f696e746572223a222f617e30622f76616c7565222c2272656d6f7661626c65223a66616c73652c2276616c75655f736368656d615f646967657374223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131227d2c7b22616c6c6f7765645f6f7065726174696f6e73223a5b227265706c616365225d2c22617574686f726974795f656666656374223a226e6f6e65222c22706f696e746572223a222f617e31622f76616c7565222c2272656d6f7661626c65223a66616c73652c2276616c75655f736368656d615f646967657374223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131227d2c7b22616c6c6f7765645f6f7065726174696f6e73223a5b227265706c616365225d2c22617574686f726974795f656666656374223a227265647563655f6f6e6c79222c22706f696e746572223a222f6c696d6974732f6d61785f7475726e73222c2272656d6f7661626c65223a66616c73652c2276616c75655f736368656d615f646967657374223a227368613235363a33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333227d2c7b22616c6c6f7765645f6f7065726174696f6e73223a5b22616464225d2c22617574686f726974795f656666656374223a226e6f6e65222c22706f696e746572223a222f6f7074696f6e616c2f6e6f7465222c2272656d6f7661626c65223a66616c73652c2276616c75655f736368656d615f646967657374223a227368613235363a34343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434227d2c7b22616c6c6f7765645f6f7065726174696f6e73223a5b227265706c616365225d2c22617574686f726974795f656666656374223a226e6f6e65222c22706f696e746572223a222f73616d706c696e672f74656d7065726174757265222c2272656d6f7661626c65223a66616c73652c2276616c75655f736368656d615f646967657374223a227368613235363a35353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535227d2c7b22616c6c6f7765645f6f7065726174696f6e73223a5b2272656d6f7665225d2c22617574686f726974795f656666656374223a227265647563655f6f6e6c79222c22706f696e746572223a222f746f6f6c732f656e61626c65642f31222c2272656d6f7661626c65223a747275652c2276616c75655f736368656d615f646967657374223a227368613235363a36363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636227d5d2c22706f6c6963795f736c6f7473223a5b7b22636865636b706f696e745f646967657374223a227368613235363a33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333222c226d6f64656c5f646967657374223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131222c2270726f746f636f6c5f616269223a22726573706f6e7365732d7631222c2272657175697265645f706f6c6963795f6361706162696c69746965735f646967657374223a227368613235363a34343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434222c22726f7574655f6964223a22706f6c6963792d726f757465222c227365637265745f68616e646c655f6964223a22706f6c6963792d63726564656e7469616c222c22736c6f745f6964223a227072696d617279222c22746f6b656e697a65725f646967657374223a227368613235363a32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232227d5d2c227265736f7572636573223a7b226370755f6d696c6c6973223a323030302c226d656d6f72795f6279746573223a313037333734313832342c226f70656e5f66696c6573223a3235362c2270696473223a3132382c2273746f726167655f6279746573223a323134373438333634382c2277616c6c5f74696d655f6d73223a3630303030307d2c22726574656e74696f6e223a7b22706f6c6963795f6964223a22726574656e74696f6e2d333064222c227265766973696f6e5f646967657374223a227368613235363a65656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565227d2c22726f75746573223a5b7b2263726564656e7469616c5f68616e646c655f6964223a22706f6c6963792d63726564656e7469616c222c2270726f746f636f6c5f616269223a22726573706f6e7365732d7631222c22726f7574655f6964223a22706f6c6963792d726f757465222c22726f7574655f7265766973696f6e5f646967657374223a227368613235363a34343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434227d5d2c2272756e6e6572223a7b22616461707465725f6964223a226272656164626f6172642e636f6e647563746f722e7631222c22696d706c656d656e746174696f6e5f646967657374223a227368613235363a30303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030222c2272756e74696d655f616269223a226272656164626f6172642e636f6e647563746f722e7631227d2c2273616e64626f78223a7b226472697665725f696d706c656d656e746174696f6e5f646967657374223a227368613235363a37373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737222c226567726573735f726f7574655f696473223a5b22706f6c6963792d726f757465225d2c22696d6167655f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226d6f756e7473223a5b7b22616363657373223a22726f222c226d61785f6279746573223a343039362c22736f757263655f61727469666163745f646967657374223a227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c227461726765745f6c6f676963616c5f70617468223a22776f726b73706163652f696e707574227d5d2c226e6574776f726b5f706f6c6963795f646967657374223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c2272756e74696d655f62696e6172795f646967657374223a227368613235363a38383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838222c2272756e74696d655f636c617373223a2268617264656e65645f646f636b6572222c2272756e74696d655f6964223a2273616e64626f782d72756e74696d65222c2273656375726974795f706f6c6963795f646967657374223a227368613235363a39393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939227d2c227365637265745f68616e646c6573223a5b7b2268616e646c655f6964223a22706f6c6963792d63726564656e7469616c222c2268616e646c655f76657273696f6e5f646967657374223a227368613235363a35353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535222c2273636f70655f646967657374223a227368613235363a36363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636227d5d2c2273657475705f706c616e73223a5b7b22696d706c656d656e746174696f6e5f646967657374223a227368613235363a32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232222c22706c616e5f646967657374223a227368613235363a33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333222c2273657475705f6964223a22776f726b73706163652d70726570617265227d5d2c227461736b223a7b22646174617365745f64696765737473223a5b227368613235363a30303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030225d2c22696e7075745f61727469666163745f64696765737473223a5b227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363225d2c227265706f7369746f72795f736e617073686f745f646967657374223a227368613235363a66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666222c227461736b5f62696e64696e675f646967657374223a227368613235363a65656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565222c227461736b5f636f6e74726163745f646967657374223a227368613235363a64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464227d2c22746f6f6c73223a5b5d2c227665726966696572223a7b22636f64655f646967657374223a227368613235363a38383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838222c2265786563757461626c655f646967657374223a227368613235363a37373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737222c22696d6167655f646967657374223a227368613235363a36363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636222c22696d706c656d656e746174696f6e5f646967657374223a227368613235363a35353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535222c22696e7075745f736368656d615f646967657374223a227368613235363a39393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939222c226e6574776f726b5f706f6c6963795f646967657374223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c22726573756c745f736368656d615f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c227365637265745f68616e646c655f696473223a5b5d2c2276657269666965725f6964223a22756e69742d7665726966696572227d7d2c226566666563746976655f6361706162696c6974795f646967657374223a227368613235363a63396631336635633331366235326165626539303464653936393936633233383265383133306362333466323439373561636234656438306462666438663238222c226566666563746976655f73656d616e74696373223a7b22612f62223a7b2276616c7565223a337d2c226172726179223a5b227a65726f222c2274776f225d2c22617274696661637473223a7b2273656c6563746564223a2261727469666163742d61227d2c22617e62223a7b2276616c7565223a347d2c226c696d697473223a7b226d61785f7475726e73223a347d2c226d6f6465223a226275696c64222c226f7074696f6e616c223a7b226e6f7465223a22626f756e646564227d2c22706f6c696379223a7b22726f7574655f6964223a22706f6c6963792d726f757465227d2c2272756e74696d65223a7b22616269223a226272656164626f6172642e636f6e647563746f722e7631227d2c2273616d706c696e67223a7b2274656d7065726174757265223a302e352c22746f705f70223a302e397d2c2273616e64626f78223a7b226e6574776f726b5f6d6f6465223a226e6f6e65227d2c2273656372657473223a7b2268616e646c655f6964223a22706f6c6963792d63726564656e7469616c227d2c22746f6f6c73223a7b22656e61626c6564223a5b2272656164222c22736561726368225d7d7d2c2265766964656e6365223a7b22706f6c6963795f6964223a2265766964656e63652d66756c6c222c227265766973696f6e5f646967657374223a227368613235363a64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464227d2c2266696e616c5f726563656970745f646967657374223a227368613235363a63656265343565646266333839633764613039346337356639343337313230636430376531626164613834323531373436363139613165346131646361316364222c2266696e616c5f73656d616e7469635f646967657374223a227368613235363a37386335623565313261373938663066313962393462656631373263303761636262333239373266626263396266333932376633613038613166316637383834222c226f7665726c61795f6170706c69636174696f6e73223a5b7b2261667465725f73656d616e7469635f646967657374223a227368613235363a30666638366137626265396338646636383735373937623231373666636130646237326131613864613435663535303765383938316166363064376663616633222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a66623763633439373838303930306632376162373138623433646537666238363131343730393036613864666539663266313735376339326531306663613862222c226f7665726c61795f646967657374223a227368613235363a30646231626165656436616465346136343430666435343266326665373639396336326337396231323837313834333736636566643233316661633333663438222c22706172656e745f726563656970745f646967657374223a227368613235363a34343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434222c2270726f76656e616e63655f646967657374223a227368613235363a30626638393131626466656438616637323065646631383938653539333862653864343636643264396335356334333837356639653339656530366332393730222c22726573756c745f726563656970745f646967657374223a227368613235363a35663737623030633730393236376236666136393561626465633362393330666630313762303865376263333966373735633164336132663934356130363063222c227472616e736974696f6e73223a5b7b2261667465725f73656d616e7469635f646967657374223a227368613235363a66353330373730306632396331613565636162386663653034653637353766366539646265666331393463653035636561383937366166643832316465656237222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a66623763633439373838303930306632376162373138623433646537666238363131343730393036613864666539663266313735376339326531306663613862222c226f7065726174696f6e5f696e646578223a307d2c7b2261667465725f73656d616e7469635f646967657374223a227368613235363a64633161333066376633333162333362613266373763356234643862316432346535386632363736633536313232303063343733373339363261303762626535222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a66353330373730306632396331613565636162386663653034653637353766366539646265666331393463653035636561383937366166643832316465656237222c226f7065726174696f6e5f696e646578223a317d2c7b2261667465725f73656d616e7469635f646967657374223a227368613235363a30666638366137626265396338646636383735373937623231373666636130646237326131613864613435663535303765383938316166363064376663616633222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a64633161333066376633333162333362613266373763356234643862316432346535386632363736633536313232303063343733373339363261303762626535222c226f7065726174696f6e5f696e646578223a327d5d7d2c7b2261667465725f73656d616e7469635f646967657374223a227368613235363a37386335623565313261373938663066313962393462656631373263303761636262333239373266626263396266333932376633613038613166316637383834222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a30666638366137626265396338646636383735373937623231373666636130646237326131613864613435663535303765383938316166363064376663616633222c226f7665726c61795f646967657374223a227368613235363a64353362353239623633666663366238656630383632383839396366363064383662643732633962333236336231313162356135323532366665623438316630222c22706172656e745f726563656970745f646967657374223a227368613235363a35663737623030633730393236376236666136393561626465633362393330666630313762303865376263333966373735633164336132663934356130363063222c2270726f76656e616e63655f646967657374223a227368613235363a36326165643138656563396639396164336463326538636264386535396538616130356536636236666431326232666135393564633130393738343962346535222c22726573756c745f726563656970745f646967657374223a227368613235363a63656265343565646266333839633764613039346337356639343337313230636430376531626164613834323531373436363139613165346131646361316364222c227472616e736974696f6e73223a5b7b2261667465725f73656d616e7469635f646967657374223a227368613235363a36363435346538636238336231366537346333643165303035323631633466313335616434633639356135643465663861366266666261356531396534636430222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a30666638366137626265396338646636383735373937623231373666636130646237326131613864613435663535303765383938316166363064376663616633222c226f7065726174696f6e5f696e646578223a307d2c7b2261667465725f73656d616e7469635f646967657374223a227368613235363a65383366363935363466373637663231656561626465653837626130393961626531386539313137313634336233636236303633333737303063666462353532222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a36363435346538636238336231366537346333643165303035323631633466313335616434633639356135643465663861366266666261356531396534636430222c226f7065726174696f6e5f696e646578223a317d2c7b2261667465725f73656d616e7469635f646967657374223a227368613235363a37333831663232303866363834373835323865343030663762376366316534326637386264366132663361326632353861366561666339626638373662653330222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a65383366363935363466373637663231656561626465653837626130393961626531386539313137313634336233636236303633333737303063666462353532222c226f7065726174696f6e5f696e646578223a327d2c7b2261667465725f73656d616e7469635f646967657374223a227368613235363a37386335623565313261373938663066313962393462656631373263303761636262333239373266626263396266333932376633613038613166316637383834222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a37333831663232303866363834373835323865343030663762376366316534326637386264366132663361326632353861366561666339626638373662653330222c226f7065726174696f6e5f696e646578223a337d5d7d5d2c2270696e73223a5b7b22636f6e74656e745f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a2262756e646c65222c226c6f676963616c5f6964223a2262756e646c65222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333222c226b696e64223a22636865636b706f696e74222c226c6f676963616c5f6964223a227072696d617279222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c226b696e64223a22636c6f73757265222c226c6f676963616c5f6964223a22636c6f73757265222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a39393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939222c226b696e64223a22636f6d70696c65645f6d616e6966657374222c226c6f676963616c5f6964223a226d616e6966657374222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a37386335623565313261373938663066313962393462656631373263303761636262333239373266626263396266333932376633613038613166316637383834222c226b696e64223a22636f6d70696c65645f73656d616e746963222c226c6f676963616c5f6964223a2273656d616e746963222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a36363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636222c226b696e64223a22636f6d70696c65725f636f6465222c226c6f676963616c5f6964223a226272656164626f6172642e7365727665722d636f6e6669672d636f6d70696c6572222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a30303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030222c226b696e64223a2264617461736574222c226c6f676963616c5f6964223a22646174617365743a30222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464222c226b696e64223a2265766964656e63655f706f6c696379222c226c6f676963616c5f6964223a2265766964656e63652d66756c6c222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c226b696e64223a22696e7075745f6172746966616374222c226c6f676963616c5f6964223a22696e7075743a30222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131222c226b696e64223a226d6f64656c222c226c6f676963616c5f6964223a227072696d617279222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a65643132646533653630303162646330376335643530333166613939633234333533303461336536323531663231626662343332613162353665396664653536222c226b696e64223a226d6f756e745f706c616e222c226c6f676963616c5f6964223a2273616e64626f785f6d6f756e7473222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a38643637393764356338386131353432633037646566376436323563396336616561663038663561383232376163313035626338343633626438323263373763222c226b696e64223a226d757461626c655f706f696e7465725f706f6c696379222c226c6f676963616c5f6964223a226d757461626c655f706f696e74657273222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c226b696e64223a226e6574776f726b5f706f6c696379222c226c6f676963616c5f6964223a2273616e64626f782d72756e74696d65222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a38303438393461666164393537323964663231653939613634343663376632363466343236383761646331376365323431313835303932316639656134666366222c226b696e64223a22706f6c6963795f6361706162696c6974795f6174746573746174696f6e222c226c6f676963616c5f6964223a22706f6c6963792d726f757465222c227175616c69666965725f646967657374223a227368613235363a37386436623438383262646665633061393434623832313964323433396561396630386163613937383763643462626532343661663462383366353162663732227d2c7b22636f6e74656e745f646967657374223a227368613235363a66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666222c226b696e64223a227265706f7369746f72795f736e617073686f74222c226c6f676963616c5f6964223a227265706f7369746f7279222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a65656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565222c226b696e64223a22726574656e74696f6e5f706f6c696379222c226c6f676963616c5f6964223a22726574656e74696f6e2d333064222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a61393236353032356366326532383839376465323063366230313732373935393662383661613530383435363562363865306261356334666439626539363835222c226b696e64223a22726f7574655f7265766973696f6e222c226c6f676963616c5f6964223a22706f6c6963792d726f757465222c227175616c69666965725f646967657374223a227368613235363a63346561616561346532346131393764653030366239643563653538636562623732326661303839363431323635633436623737626439363564333333373639227d2c7b22636f6e74656e745f646967657374223a227368613235363a30303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030222c226b696e64223a2272756e6e65725f696d706c656d656e746174696f6e222c226c6f676963616c5f6964223a226272656164626f6172642e636f6e647563746f722e7631222c227175616c69666965725f646967657374223a227368613235363a62333933666564316636626534626339343330633538323864633763616566323663383638636439303930343962353738316530376439366533396234626435227d2c7b22636f6e74656e745f646967657374223a227368613235363a37373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737222c226b696e64223a2273616e64626f785f647269766572222c226c6f676963616c5f6964223a2273616e64626f782d72756e74696d65222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a2273616e64626f785f696d616765222c226c6f676963616c5f6964223a2273616e64626f782d72756e74696d65222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a38383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838222c226b696e64223a2273616e64626f785f72756e74696d65222c226c6f676963616c5f6964223a2273616e64626f782d72756e74696d65222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a35353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535222c226b696e64223a227365637265745f68616e646c655f76657273696f6e222c226c6f676963616c5f6964223a22706f6c6963792d63726564656e7469616c222c227175616c69666965725f646967657374223a227368613235363a35666339383638313633333536663331333433646162633662343231353061623730646464396639353965626633323032323236356134323239613635383564227d2c7b22636f6e74656e745f646967657374223a227368613235363a32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232222c226b696e64223a2273657475705f696d706c656d656e746174696f6e222c226c6f676963616c5f6964223a22776f726b73706163652d70726570617265222c227175616c69666965725f646967657374223a227368613235363a30656166663630323737653164366537633964346161353164656262336161333839356266363432336361396164383936656563333733613138366439393139227d2c7b22636f6e74656e745f646967657374223a227368613235363a34666231623064653836346166323134306563333338353861343066343531663635323262313365356631396335656264376437633632396336653765643430222c226b696e64223a227461736b222c226c6f676963616c5f6964223a2261727469666163745f706f6c696379222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a65656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565222c226b696e64223a227461736b222c226c6f676963616c5f6964223a227461736b5f62696e64696e67222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464222c226b696e64223a227461736b222c226c6f676963616c5f6964223a227461736b5f636f6e7472616374222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232222c226b696e64223a22746f6b656e697a6572222c226c6f676963616c5f6964223a227072696d617279222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a35353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535222c226b696e64223a2276657269666965725f636f6465222c226c6f676963616c5f6964223a22756e69742d7665726966696572222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a38383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838222c226b696e64223a2276657269666965725f636f6465222c226c6f676963616c5f6964223a22756e69742d7665726966696572222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a37373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737222c226b696e64223a2276657269666965725f65786563757461626c65222c226c6f676963616c5f6964223a22756e69742d7665726966696572222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a36363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636222c226b696e64223a2276657269666965725f696d616765222c226c6f676963616c5f6964223a22756e69742d7665726966696572222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a39393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939222c226b696e64223a2276657269666965725f696e7075745f736368656d61222c226c6f676963616c5f6964223a22756e69742d7665726966696572222c227175616c69666965725f646967657374223a6e756c6c7d2c7b22636f6e74656e745f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a2276657269666965725f726573756c745f736368656d61222c226c6f676963616c5f6964223a22756e69742d7665726966696572222c227175616c69666965725f646967657374223a6e756c6c7d5d2c22706f6c6963795f6361706162696c6974795f646967657374223a227368613235363a33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333222c22706f6c6963795f6361706162696c6974795f6f62736572766174696f6e5f646967657374223a227368613235363a32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232222c22706f6c6963795f736c6f7473223a5b7b22636865636b706f696e745f646967657374223a227368613235363a33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333222c226d6f64656c5f646967657374223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131222c2270726f746f636f6c5f616269223a22726573706f6e7365732d7631222c2272657175697265645f706f6c6963795f6361706162696c69746965735f646967657374223a227368613235363a34343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434222c22726f7574655f6964223a22706f6c6963792d726f757465222c227365637265745f68616e646c655f6964223a22706f6c6963792d63726564656e7469616c222c22736c6f745f6964223a227072696d617279222c22746f6b656e697a65725f646967657374223a227368613235363a32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232227d5d2c22726574656e74696f6e223a7b22706f6c6963795f6964223a22726574656e74696f6e2d333064222c227265766973696f6e5f646967657374223a227368613235363a65656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565227d2c227265766f636174696f6e223a7b2265706f6368223a372c2273636f70655f646967657374223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131222c2273746174655f646967657374223a227368613235363a33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333227d2c2272756e6e6572223a7b22616461707465725f6964223a226272656164626f6172642e636f6e647563746f722e7631222c22696d706c656d656e746174696f6e5f646967657374223a227368613235363a30303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030222c2272756e74696d655f616269223a226272656164626f6172642e636f6e647563746f722e7631227d2c2273616e64626f78223a7b226472697665725f696d706c656d656e746174696f6e5f646967657374223a227368613235363a37373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737222c226567726573735f726f7574655f696473223a5b22706f6c6963792d726f757465225d2c22696d6167655f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226d6f756e7473223a5b7b22616363657373223a22726f222c226d61785f6279746573223a343039362c22736f757263655f61727469666163745f646967657374223a227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c227461726765745f6c6f676963616c5f70617468223a22776f726b73706163652f696e707574227d5d2c226e6574776f726b5f706f6c6963795f646967657374223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c2272756e74696d655f62696e6172795f646967657374223a227368613235363a38383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838222c2272756e74696d655f636c617373223a2268617264656e65645f646f636b6572222c2272756e74696d655f6964223a2273616e64626f782d72756e74696d65222c2273656375726974795f706f6c6963795f646967657374223a227368613235363a39393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939227d2c22736368656d615f76657273696f6e223a2262622e726c2e6566666563746976652d657865637574696f6e2d706c616e2e7631222c2273656c656374696f6e5f7265636f72645f646967657374223a227368613235363a30303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030222c2273656c6563746f725f646967657374223a227368613235363a65656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565222c227375626a6563745f646967657374223a227368613235363a64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464222c227461736b223a7b22646174617365745f64696765737473223a5b227368613235363a30303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030225d2c22696e7075745f61727469666163745f64696765737473223a5b227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363225d2c227265706f7369746f72795f736e617073686f745f646967657374223a227368613235363a66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666222c227461736b5f62696e64696e675f646967657374223a227368613235363a65656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565222c227461736b5f636f6e74726163745f646967657374223a227368613235363a64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464227d2c227461736b5f656c69676962696c6974795f646967657374223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131222c227665726966696572223a7b22636f64655f646967657374223a227368613235363a38383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838222c2265786563757461626c655f646967657374223a227368613235363a37373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737373737222c22696d6167655f646967657374223a227368613235363a36363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636222c22696d706c656d656e746174696f6e5f646967657374223a227368613235363a35353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535222c22696e7075745f736368656d615f646967657374223a227368613235363a39393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939222c226e6574776f726b5f706f6c6963795f646967657374223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c22726573756c745f736368656d615f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c227365637265745f68616e646c655f696473223a5b5d2c2276657269666965725f6964223a22756e69742d7665726966696572227d7d",
+      "digest": "sha256:4ed2859ef8783bccf0a24e7200e875afcb5f4f57c69a3131be868e21e661c7a4",
+      "payload": {
+        "admitted_set_root": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "artifacts": {
+          "allowed_roles": [
+            "patch",
+            "transcript"
+          ],
+          "max_each_bytes": 1048576,
+          "max_total_bytes": 4194304
+        },
+        "base_compiled": {
+          "bundle_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "closure_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "compiler": {
+            "canonicalizer_id": "rfc8785-jcs-v1",
+            "code_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+            "compiler_id": "breadboard.server-config-compiler",
+            "manifest_schema_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            "runtime_abi": "breadboard.conductor.v1",
+            "semantic_version": "1.0.0",
+            "source_schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+            "source_schema_id": "breadboard.agent-config.v2"
+          },
+          "compiler_input_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "diagnostics_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "manifest_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "provenance_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "semantic_digest": "sha256:fb7cc497880900f27ab718b43de7fb8611470906a8dfe9f2f1757c92e10fca8b"
+        },
+        "base_receipt_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "config_set_digest": null,
+        "effective_capabilities": {
+          "artifacts": {
+            "allowed_roles": [
+              "patch",
+              "transcript"
+            ],
+            "max_each_bytes": 1048576,
+            "max_total_bytes": 4194304
+          },
+          "evidence": {
+            "policy_id": "evidence-full",
+            "revision_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          "limits": {
+            "action_timeout_ms": 30000,
+            "artifact_bytes_each": 1048576,
+            "artifact_bytes_total": 4194304,
+            "max_turns": 4,
+            "observation_bytes": 65536,
+            "response_bytes": 32768,
+            "setup_timeout_ms": 60000,
+            "transcript_bytes": 8388608,
+            "verifier_timeout_ms": 120000
+          },
+          "mutable_pointers": [
+            {
+              "allowed_operations": [
+                "remove"
+              ],
+              "authority_effect": "reduce_only",
+              "pointer": "/array/1",
+              "removable": true,
+              "value_schema_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+            },
+            {
+              "allowed_operations": [
+                "replace"
+              ],
+              "authority_effect": "none",
+              "pointer": "/a~0b/value",
+              "removable": false,
+              "value_schema_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "allowed_operations": [
+                "replace"
+              ],
+              "authority_effect": "none",
+              "pointer": "/a~1b/value",
+              "removable": false,
+              "value_schema_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "allowed_operations": [
+                "replace"
+              ],
+              "authority_effect": "reduce_only",
+              "pointer": "/limits/max_turns",
+              "removable": false,
+              "value_schema_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+            },
+            {
+              "allowed_operations": [
+                "add"
+              ],
+              "authority_effect": "none",
+              "pointer": "/optional/note",
+              "removable": false,
+              "value_schema_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+            },
+            {
+              "allowed_operations": [
+                "replace"
+              ],
+              "authority_effect": "none",
+              "pointer": "/sampling/temperature",
+              "removable": false,
+              "value_schema_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+            },
+            {
+              "allowed_operations": [
+                "remove"
+              ],
+              "authority_effect": "reduce_only",
+              "pointer": "/tools/enabled/1",
+              "removable": true,
+              "value_schema_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+            }
+          ],
+          "policy_slots": [
+            {
+              "checkpoint_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+              "model_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "protocol_abi": "responses-v1",
+              "required_policy_capabilities_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+              "route_id": "policy-route",
+              "secret_handle_id": "policy-credential",
+              "slot_id": "primary",
+              "tokenizer_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+            }
+          ],
+          "resources": {
+            "cpu_millis": 2000,
+            "memory_bytes": 1073741824,
+            "open_files": 256,
+            "pids": 128,
+            "storage_bytes": 2147483648,
+            "wall_time_ms": 600000
+          },
+          "retention": {
+            "policy_id": "retention-30d",
+            "revision_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          "routes": [
+            {
+              "credential_handle_id": "policy-credential",
+              "protocol_abi": "responses-v1",
+              "route_id": "policy-route",
+              "route_revision_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+            }
+          ],
+          "runner": {
+            "adapter_id": "breadboard.conductor.v1",
+            "implementation_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "runtime_abi": "breadboard.conductor.v1"
+          },
+          "sandbox": {
+            "driver_implementation_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+            "egress_route_ids": [
+              "policy-route"
+            ],
+            "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mounts": [
+              {
+                "access": "ro",
+                "max_bytes": 4096,
+                "source_artifact_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "target_logical_path": "workspace/input"
+              }
+            ],
+            "network_policy_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "runtime_binary_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            "runtime_class": "hardened_docker",
+            "runtime_id": "sandbox-runtime",
+            "security_policy_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+          },
+          "secret_handles": [
+            {
+              "handle_id": "policy-credential",
+              "handle_version_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+              "scope_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+            }
+          ],
+          "setup_plans": [
+            {
+              "implementation_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+              "plan_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+              "setup_id": "workspace-prepare"
+            }
+          ],
+          "task": {
+            "dataset_digests": [
+              "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ],
+            "input_artifact_digests": [
+              "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            ],
+            "repository_snapshot_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "task_binding_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "task_contract_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          "tools": [],
+          "verifier": {
+            "code_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            "executable_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+            "image_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+            "implementation_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "input_schema_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "network_policy_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "result_schema_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "secret_handle_ids": [],
+            "verifier_id": "unit-verifier"
+          }
+        },
+        "effective_capability_digest": "sha256:c9f13f5c316b52aebe904de96996c2382e8130cb34f24975acb4ed80dbfd8f28",
+        "effective_semantics": {
+          "a/b": {
+            "value": 3
+          },
+          "array": [
+            "zero",
+            "two"
+          ],
+          "artifacts": {
+            "selected": "artifact-a"
+          },
+          "a~b": {
+            "value": 4
+          },
+          "limits": {
+            "max_turns": 4
+          },
+          "mode": "build",
+          "optional": {
+            "note": "bounded"
+          },
+          "policy": {
+            "route_id": "policy-route"
+          },
+          "runtime": {
+            "abi": "breadboard.conductor.v1"
+          },
+          "sampling": {
+            "temperature": 0.5,
+            "top_p": 0.9
+          },
+          "sandbox": {
+            "network_mode": "none"
+          },
+          "secrets": {
+            "handle_id": "policy-credential"
+          },
+          "tools": {
+            "enabled": [
+              "read",
+              "search"
+            ]
+          }
+        },
+        "evidence": {
+          "policy_id": "evidence-full",
+          "revision_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "final_receipt_digest": "sha256:cebe45edbf389c7da094c75f9437120cd07e1bada84251746619a1e4a1dca1cd",
+        "final_semantic_digest": "sha256:78c5b5e12a798f0f19b94bef172c07acbb32972fbbc9bf3927f3a08a1f1f7884",
+        "overlay_applications": [
+          {
+            "after_semantic_digest": "sha256:0ff86a7bbe9c8df6875797b2176fca0db72a1a8da45f5507e8981af60d7fcaf3",
+            "before_semantic_digest": "sha256:fb7cc497880900f27ab718b43de7fb8611470906a8dfe9f2f1757c92e10fca8b",
+            "overlay_digest": "sha256:0db1baeed6ade4a6440fd542f2fe7699c62c79b1287184376cefd231fac33f48",
+            "parent_receipt_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "provenance_digest": "sha256:0bf8911bdfed8af720edf1898e5938be8d466d2d9c55c43875f9e39ee06c2970",
+            "result_receipt_digest": "sha256:5f77b00c709267b6fa695abdec3b930ff017b08e7bc39f775c1d3a2f945a060c",
+            "transitions": [
+              {
+                "after_semantic_digest": "sha256:f5307700f29c1a5ecab8fce04e6757f6e9dbefc194ce05cea8976afd821deeb7",
+                "before_semantic_digest": "sha256:fb7cc497880900f27ab718b43de7fb8611470906a8dfe9f2f1757c92e10fca8b",
+                "operation_index": 0
+              },
+              {
+                "after_semantic_digest": "sha256:dc1a30f7f331b33ba2f77c5b4d8b1d24e58f2676c5612200c47373962a07bbe5",
+                "before_semantic_digest": "sha256:f5307700f29c1a5ecab8fce04e6757f6e9dbefc194ce05cea8976afd821deeb7",
+                "operation_index": 1
+              },
+              {
+                "after_semantic_digest": "sha256:0ff86a7bbe9c8df6875797b2176fca0db72a1a8da45f5507e8981af60d7fcaf3",
+                "before_semantic_digest": "sha256:dc1a30f7f331b33ba2f77c5b4d8b1d24e58f2676c5612200c47373962a07bbe5",
+                "operation_index": 2
+              }
+            ]
+          },
+          {
+            "after_semantic_digest": "sha256:78c5b5e12a798f0f19b94bef172c07acbb32972fbbc9bf3927f3a08a1f1f7884",
+            "before_semantic_digest": "sha256:0ff86a7bbe9c8df6875797b2176fca0db72a1a8da45f5507e8981af60d7fcaf3",
+            "overlay_digest": "sha256:d53b529b63ffc6b8ef08628899cf60d86bd72c9b3263b111b5a52526feb481f0",
+            "parent_receipt_digest": "sha256:5f77b00c709267b6fa695abdec3b930ff017b08e7bc39f775c1d3a2f945a060c",
+            "provenance_digest": "sha256:62aed18eec9f99ad3dc2e8cbd8e59e8aa05e6cb6fd12b2fa595dc1097849b4e5",
+            "result_receipt_digest": "sha256:cebe45edbf389c7da094c75f9437120cd07e1bada84251746619a1e4a1dca1cd",
+            "transitions": [
+              {
+                "after_semantic_digest": "sha256:66454e8cb83b16e74c3d1e005261c4f135ad4c695a5d4ef8a6bffba5e19e4cd0",
+                "before_semantic_digest": "sha256:0ff86a7bbe9c8df6875797b2176fca0db72a1a8da45f5507e8981af60d7fcaf3",
+                "operation_index": 0
+              },
+              {
+                "after_semantic_digest": "sha256:e83f69564f767f21eeabdee87ba099abe18e91171643b3cb606337700cfdb552",
+                "before_semantic_digest": "sha256:66454e8cb83b16e74c3d1e005261c4f135ad4c695a5d4ef8a6bffba5e19e4cd0",
+                "operation_index": 1
+              },
+              {
+                "after_semantic_digest": "sha256:7381f2208f68478528e400f7b7cf1e42f78bd6a2f3a2f258a6eafc9bf876be30",
+                "before_semantic_digest": "sha256:e83f69564f767f21eeabdee87ba099abe18e91171643b3cb606337700cfdb552",
+                "operation_index": 2
+              },
+              {
+                "after_semantic_digest": "sha256:78c5b5e12a798f0f19b94bef172c07acbb32972fbbc9bf3927f3a08a1f1f7884",
+                "before_semantic_digest": "sha256:7381f2208f68478528e400f7b7cf1e42f78bd6a2f3a2f258a6eafc9bf876be30",
+                "operation_index": 3
+              }
+            ]
+          }
+        ],
+        "pins": [
+          {
+            "content_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "bundle",
+            "logical_id": "bundle",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "kind": "checkpoint",
+            "logical_id": "primary",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "kind": "closure",
+            "logical_id": "closure",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "kind": "compiled_manifest",
+            "logical_id": "manifest",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:78c5b5e12a798f0f19b94bef172c07acbb32972fbbc9bf3927f3a08a1f1f7884",
+            "kind": "compiled_semantic",
+            "logical_id": "semantic",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+            "kind": "compiler_code",
+            "logical_id": "breadboard.server-config-compiler",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "kind": "dataset",
+            "logical_id": "dataset:0",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "kind": "evidence_policy",
+            "logical_id": "evidence-full",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "kind": "input_artifact",
+            "logical_id": "input:0",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "kind": "model",
+            "logical_id": "primary",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:ed12de3e6001bdc07c5d5031fa99c2435304a3e6251f21bfb432a1b56e9fde56",
+            "kind": "mount_plan",
+            "logical_id": "sandbox_mounts",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:8d6797d5c88a1542c07def7d625c9c6aeaf08f5a8227ac105bc8463bd822c77c",
+            "kind": "mutable_pointer_policy",
+            "logical_id": "mutable_pointers",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "kind": "network_policy",
+            "logical_id": "sandbox-runtime",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:804894afad95729df21e99a6446c7f264f42687adc17ce2411850921f9ea4fcf",
+            "kind": "policy_capability_attestation",
+            "logical_id": "policy-route",
+            "qualifier_digest": "sha256:78d6b4882bdfec0a944b8219d2439ea9f08aca9787cd4bbe246af4b83f51bf72"
+          },
+          {
+            "content_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "kind": "repository_snapshot",
+            "logical_id": "repository",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "kind": "retention_policy",
+            "logical_id": "retention-30d",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:a9265025cf2e28897de20c6b017279596b86aa5084565b68e0ba5c4fd9be9685",
+            "kind": "route_revision",
+            "logical_id": "policy-route",
+            "qualifier_digest": "sha256:c4eaaea4e24a197de006b9d5ce58cebb722fa089641265c46b77bd965d333769"
+          },
+          {
+            "content_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "kind": "runner_implementation",
+            "logical_id": "breadboard.conductor.v1",
+            "qualifier_digest": "sha256:b393fed1f6be4bc9430c5828dc7caef26c868cd909049b5781e07d96e39b4bd5"
+          },
+          {
+            "content_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+            "kind": "sandbox_driver",
+            "logical_id": "sandbox-runtime",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "sandbox_image",
+            "logical_id": "sandbox-runtime",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            "kind": "sandbox_runtime",
+            "logical_id": "sandbox-runtime",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "kind": "secret_handle_version",
+            "logical_id": "policy-credential",
+            "qualifier_digest": "sha256:5fc9868163356f31343dabc6b42150ab70ddd9f959ebf32022265a4229a6585d"
+          },
+          {
+            "content_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "kind": "setup_implementation",
+            "logical_id": "workspace-prepare",
+            "qualifier_digest": "sha256:0eaff60277e1d6e7c9d4aa51debb3aa3895bf6423ca9ad896eec373a186d9919"
+          },
+          {
+            "content_digest": "sha256:4fb1b0de864af2140ec33858a40f451f6522b13e5f19c5ebd7d7c629c6e7ed40",
+            "kind": "task",
+            "logical_id": "artifact_policy",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "kind": "task",
+            "logical_id": "task_binding",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "kind": "task",
+            "logical_id": "task_contract",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "kind": "tokenizer",
+            "logical_id": "primary",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "kind": "verifier_code",
+            "logical_id": "unit-verifier",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            "kind": "verifier_code",
+            "logical_id": "unit-verifier",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+            "kind": "verifier_executable",
+            "logical_id": "unit-verifier",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+            "kind": "verifier_image",
+            "logical_id": "unit-verifier",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "kind": "verifier_input_schema",
+            "logical_id": "unit-verifier",
+            "qualifier_digest": null
+          },
+          {
+            "content_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "verifier_result_schema",
+            "logical_id": "unit-verifier",
+            "qualifier_digest": null
+          }
+        ],
+        "policy_capability_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "policy_capability_observation_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "policy_slots": [
+          {
+            "checkpoint_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "model_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "protocol_abi": "responses-v1",
+            "required_policy_capabilities_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "route_id": "policy-route",
+            "secret_handle_id": "policy-credential",
+            "slot_id": "primary",
+            "tokenizer_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        ],
+        "retention": {
+          "policy_id": "retention-30d",
+          "revision_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "revocation": {
+          "epoch": 7,
+          "scope_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "state_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "runner": {
+          "adapter_id": "breadboard.conductor.v1",
+          "implementation_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "runtime_abi": "breadboard.conductor.v1"
+        },
+        "sandbox": {
+          "driver_implementation_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "egress_route_ids": [
+            "policy-route"
+          ],
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mounts": [
+            {
+              "access": "ro",
+              "max_bytes": 4096,
+              "source_artifact_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "target_logical_path": "workspace/input"
+            }
+          ],
+          "network_policy_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "runtime_binary_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "runtime_class": "hardened_docker",
+          "runtime_id": "sandbox-runtime",
+          "security_policy_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+        },
+        "schema_version": "bb.rl.effective-execution-plan.v1",
+        "selection_record_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "selector_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "subject_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "task": {
+          "dataset_digests": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "input_artifact_digests": [
+            "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          ],
+          "repository_snapshot_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "task_binding_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "task_contract_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "task_eligibility_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "verifier": {
+          "code_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "executable_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "image_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "implementation_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "input_schema_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "network_policy_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "result_schema_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "secret_handle_ids": [],
+          "verifier_id": "unit-verifier"
+        }
+      }
+    },
+    "final_semantic_digest": "sha256:78c5b5e12a798f0f19b94bef172c07acbb32972fbbc9bf3927f3a08a1f1f7884",
+    "final_semantics": {
+      "a/b": {
+        "value": 3
+      },
+      "array": [
+        "zero",
+        "two"
+      ],
+      "artifacts": {
+        "selected": "artifact-a"
+      },
+      "a~b": {
+        "value": 4
+      },
+      "limits": {
+        "max_turns": 4
+      },
+      "mode": "build",
+      "optional": {
+        "note": "bounded"
+      },
+      "policy": {
+        "route_id": "policy-route"
+      },
+      "runtime": {
+        "abi": "breadboard.conductor.v1"
+      },
+      "sampling": {
+        "temperature": 0.5,
+        "top_p": 0.9
+      },
+      "sandbox": {
+        "network_mode": "none"
+      },
+      "secrets": {
+        "handle_id": "policy-credential"
+      },
+      "tools": {
+        "enabled": [
+          "read",
+          "search"
+        ]
+      }
+    },
+    "layer_order": [
+      "candidate-layer",
+      "episode-layer"
+    ],
+    "layers": [
+      {
+        "canonical_hex": "7b22626173655f636f6d70696c65645f6d616e69666573745f646967657374223a227368613235363a39393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939222c2265787065637465645f61667465725f73656d616e7469635f646967657374223a227368613235363a30666638366137626265396338646636383735373937623231373666636130646237326131613864613435663535303765383938316166363064376663616633222c2265787065637465645f6265666f72655f73656d616e7469635f646967657374223a227368613235363a66623763633439373838303930306632376162373138623433646537666238363131343730393036613864666539663266313735376339326531306663613862222c2265787065637465645f7472616e736974696f6e73223a5b7b2261667465725f73656d616e7469635f646967657374223a227368613235363a66353330373730306632396331613565636162386663653034653637353766366539646265666331393463653035636561383937366166643832316465656237222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a66623763633439373838303930306632376162373138623433646537666238363131343730393036613864666539663266313735376339326531306663613862222c226f7065726174696f6e5f696e646578223a307d2c7b2261667465725f73656d616e7469635f646967657374223a227368613235363a64633161333066376633333162333362613266373763356234643862316432346535386632363736633536313232303063343733373339363261303762626535222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a66353330373730306632396331613565636162386663653034653637353766366539646265666331393463653035636561383937366166643832316465656237222c226f7065726174696f6e5f696e646578223a317d2c7b2261667465725f73656d616e7469635f646967657374223a227368613235363a30666638366137626265396338646636383735373937623231373666636130646237326131613864613435663535303765383938316166363064376663616633222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a64633161333066376633333162333362613266373763356234643862316432346535386632363736633536313232303063343733373339363261303762626535222c226f7065726174696f6e5f696e646578223a327d5d2c226f7065726174696f6e73223a5b7b226f70223a227265706c616365222c2270617468223a222f73616d706c696e672f74656d7065726174757265222c2276616c7565223a302e357d2c7b226f70223a2272656d6f7665222c2270617468223a222f746f6f6c732f656e61626c65642f31227d2c7b226f70223a227265706c616365222c2270617468223a222f617e31622f76616c7565222c2276616c7565223a337d5d2c22706172656e745f726563656970745f646967657374223a227368613235363a34343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434222c2270726f76656e616e6365223a7b22617574686f725f7375626a6563745f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c22726174696f6e616c655f636f6465223a227265647563652d7365617263682d7370616365222c22736f757263655f61727469666163745f646967657374223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c22736f757263655f6b696e64223a226f7074696d697a6572227d2c22736368656d615f76657273696f6e223a2262622e726c2e6d75746174696f6e2d6f7665726c61792e7631227d",
+        "case_id": "candidate-layer",
+        "derived_receipt_projection": {
+          "base_compiled_manifest_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "derived_semantic_digest": "sha256:0ff86a7bbe9c8df6875797b2176fca0db72a1a8da45f5507e8981af60d7fcaf3",
+          "overlay_chain_digest": "sha256:0a7deee48f53c294b81de47dbad7c74504a440c8942bb8f57bbf1a305221aea8",
+          "parent_receipt_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "schema_version": "bb.rl.overlay-derived-receipt-identity.v1"
+        },
+        "manifest": {
+          "base_compiled_manifest_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "expected_after_semantic_digest": "sha256:0ff86a7bbe9c8df6875797b2176fca0db72a1a8da45f5507e8981af60d7fcaf3",
+          "expected_before_semantic_digest": "sha256:fb7cc497880900f27ab718b43de7fb8611470906a8dfe9f2f1757c92e10fca8b",
+          "expected_transitions": [
+            {
+              "after_semantic_digest": "sha256:f5307700f29c1a5ecab8fce04e6757f6e9dbefc194ce05cea8976afd821deeb7",
+              "before_semantic_digest": "sha256:fb7cc497880900f27ab718b43de7fb8611470906a8dfe9f2f1757c92e10fca8b",
+              "operation_index": 0
+            },
+            {
+              "after_semantic_digest": "sha256:dc1a30f7f331b33ba2f77c5b4d8b1d24e58f2676c5612200c47373962a07bbe5",
+              "before_semantic_digest": "sha256:f5307700f29c1a5ecab8fce04e6757f6e9dbefc194ce05cea8976afd821deeb7",
+              "operation_index": 1
+            },
+            {
+              "after_semantic_digest": "sha256:0ff86a7bbe9c8df6875797b2176fca0db72a1a8da45f5507e8981af60d7fcaf3",
+              "before_semantic_digest": "sha256:dc1a30f7f331b33ba2f77c5b4d8b1d24e58f2676c5612200c47373962a07bbe5",
+              "operation_index": 2
+            }
+          ],
+          "operations": [
+            {
+              "op": "replace",
+              "path": "/sampling/temperature",
+              "value": 0.5
+            },
+            {
+              "op": "remove",
+              "path": "/tools/enabled/1"
+            },
+            {
+              "op": "replace",
+              "path": "/a~1b/value",
+              "value": 3
+            }
+          ],
+          "parent_receipt_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "provenance": {
+            "author_subject_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "rationale_code": "reduce-search-space",
+            "source_artifact_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "source_kind": "optimizer"
+          },
+          "schema_version": "bb.rl.mutation-overlay.v1"
+        },
+        "overlay_digest": "sha256:0db1baeed6ade4a6440fd542f2fe7699c62c79b1287184376cefd231fac33f48",
+        "result_receipt_digest": "sha256:5f77b00c709267b6fa695abdec3b930ff017b08e7bc39f775c1d3a2f945a060c",
+        "result_semantic_digest": "sha256:0ff86a7bbe9c8df6875797b2176fca0db72a1a8da45f5507e8981af60d7fcaf3",
+        "result_semantics": {
+          "a/b": {
+            "value": 3
+          },
+          "array": [
+            "zero",
+            "one",
+            "two"
+          ],
+          "artifacts": {
+            "selected": "artifact-a"
+          },
+          "a~b": {
+            "value": 2
+          },
+          "limits": {
+            "max_turns": 8
+          },
+          "mode": "build",
+          "optional": {},
+          "policy": {
+            "route_id": "policy-route"
+          },
+          "runtime": {
+            "abi": "breadboard.conductor.v1"
+          },
+          "sampling": {
+            "temperature": 0.5,
+            "top_p": 0.9
+          },
+          "sandbox": {
+            "network_mode": "none"
+          },
+          "secrets": {
+            "handle_id": "policy-credential"
+          },
+          "tools": {
+            "enabled": [
+              "read",
+              "search"
+            ]
+          }
+        }
+      },
+      {
+        "canonical_hex": "7b22626173655f636f6d70696c65645f6d616e69666573745f646967657374223a227368613235363a39393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939222c2265787065637465645f61667465725f73656d616e7469635f646967657374223a227368613235363a37386335623565313261373938663066313962393462656631373263303761636262333239373266626263396266333932376633613038613166316637383834222c2265787065637465645f6265666f72655f73656d616e7469635f646967657374223a227368613235363a30666638366137626265396338646636383735373937623231373666636130646237326131613864613435663535303765383938316166363064376663616633222c2265787065637465645f7472616e736974696f6e73223a5b7b2261667465725f73656d616e7469635f646967657374223a227368613235363a36363435346538636238336231366537346333643165303035323631633466313335616434633639356135643465663861366266666261356531396534636430222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a30666638366137626265396338646636383735373937623231373666636130646237326131613864613435663535303765383938316166363064376663616633222c226f7065726174696f6e5f696e646578223a307d2c7b2261667465725f73656d616e7469635f646967657374223a227368613235363a65383366363935363466373637663231656561626465653837626130393961626531386539313137313634336233636236303633333737303063666462353532222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a36363435346538636238336231366537346333643165303035323631633466313335616434633639356135643465663861366266666261356531396534636430222c226f7065726174696f6e5f696e646578223a317d2c7b2261667465725f73656d616e7469635f646967657374223a227368613235363a37333831663232303866363834373835323865343030663762376366316534326637386264366132663361326632353861366561666339626638373662653330222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a65383366363935363466373637663231656561626465653837626130393961626531386539313137313634336233636236303633333737303063666462353532222c226f7065726174696f6e5f696e646578223a327d2c7b2261667465725f73656d616e7469635f646967657374223a227368613235363a37386335623565313261373938663066313962393462656631373263303761636262333239373266626263396266333932376633613038613166316637383834222c226265666f72655f73656d616e7469635f646967657374223a227368613235363a37333831663232303866363834373835323865343030663762376366316534326637386264366132663361326632353861366561666339626638373662653330222c226f7065726174696f6e5f696e646578223a337d5d2c226f7065726174696f6e73223a5b7b226f70223a227265706c616365222c2270617468223a222f6c696d6974732f6d61785f7475726e73222c2276616c7565223a347d2c7b226f70223a22616464222c2270617468223a222f6f7074696f6e616c2f6e6f7465222c2276616c7565223a22626f756e646564227d2c7b226f70223a2272656d6f7665222c2270617468223a222f61727261792f31227d2c7b226f70223a227265706c616365222c2270617468223a222f617e30622f76616c7565222c2276616c7565223a347d5d2c22706172656e745f726563656970745f646967657374223a227368613235363a35663737623030633730393236376236666136393561626465633362393330666630313762303865376263333966373735633164336132663934356130363063222c2270726f76656e616e6365223a7b22617574686f725f7375626a6563745f646967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c22726174696f6e616c655f636f6465223a22657069736f64652d626f756e6473222c22736f757263655f61727469666163745f646967657374223a227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c22736f757263655f6b696e64223a226578706572696d656e74227d2c22736368656d615f76657273696f6e223a2262622e726c2e6d75746174696f6e2d6f7665726c61792e7631227d",
+        "case_id": "episode-layer",
+        "derived_receipt_projection": {
+          "base_compiled_manifest_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "derived_semantic_digest": "sha256:78c5b5e12a798f0f19b94bef172c07acbb32972fbbc9bf3927f3a08a1f1f7884",
+          "overlay_chain_digest": "sha256:8ddcd9c4275b0b498147923aa190ec511b73b3262a429733d539429b8ad6cd5d",
+          "parent_receipt_digest": "sha256:5f77b00c709267b6fa695abdec3b930ff017b08e7bc39f775c1d3a2f945a060c",
+          "schema_version": "bb.rl.overlay-derived-receipt-identity.v1"
+        },
+        "manifest": {
+          "base_compiled_manifest_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "expected_after_semantic_digest": "sha256:78c5b5e12a798f0f19b94bef172c07acbb32972fbbc9bf3927f3a08a1f1f7884",
+          "expected_before_semantic_digest": "sha256:0ff86a7bbe9c8df6875797b2176fca0db72a1a8da45f5507e8981af60d7fcaf3",
+          "expected_transitions": [
+            {
+              "after_semantic_digest": "sha256:66454e8cb83b16e74c3d1e005261c4f135ad4c695a5d4ef8a6bffba5e19e4cd0",
+              "before_semantic_digest": "sha256:0ff86a7bbe9c8df6875797b2176fca0db72a1a8da45f5507e8981af60d7fcaf3",
+              "operation_index": 0
+            },
+            {
+              "after_semantic_digest": "sha256:e83f69564f767f21eeabdee87ba099abe18e91171643b3cb606337700cfdb552",
+              "before_semantic_digest": "sha256:66454e8cb83b16e74c3d1e005261c4f135ad4c695a5d4ef8a6bffba5e19e4cd0",
+              "operation_index": 1
+            },
+            {
+              "after_semantic_digest": "sha256:7381f2208f68478528e400f7b7cf1e42f78bd6a2f3a2f258a6eafc9bf876be30",
+              "before_semantic_digest": "sha256:e83f69564f767f21eeabdee87ba099abe18e91171643b3cb606337700cfdb552",
+              "operation_index": 2
+            },
+            {
+              "after_semantic_digest": "sha256:78c5b5e12a798f0f19b94bef172c07acbb32972fbbc9bf3927f3a08a1f1f7884",
+              "before_semantic_digest": "sha256:7381f2208f68478528e400f7b7cf1e42f78bd6a2f3a2f258a6eafc9bf876be30",
+              "operation_index": 3
+            }
+          ],
+          "operations": [
+            {
+              "op": "replace",
+              "path": "/limits/max_turns",
+              "value": 4
+            },
+            {
+              "op": "add",
+              "path": "/optional/note",
+              "value": "bounded"
+            },
+            {
+              "op": "remove",
+              "path": "/array/1"
+            },
+            {
+              "op": "replace",
+              "path": "/a~0b/value",
+              "value": 4
+            }
+          ],
+          "parent_receipt_digest": "sha256:5f77b00c709267b6fa695abdec3b930ff017b08e7bc39f775c1d3a2f945a060c",
+          "provenance": {
+            "author_subject_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "rationale_code": "episode-bounds",
+            "source_artifact_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_kind": "experiment"
+          },
+          "schema_version": "bb.rl.mutation-overlay.v1"
+        },
+        "overlay_digest": "sha256:d53b529b63ffc6b8ef08628899cf60d86bd72c9b3263b111b5a52526feb481f0",
+        "result_receipt_digest": "sha256:cebe45edbf389c7da094c75f9437120cd07e1bada84251746619a1e4a1dca1cd",
+        "result_semantic_digest": "sha256:78c5b5e12a798f0f19b94bef172c07acbb32972fbbc9bf3927f3a08a1f1f7884",
+        "result_semantics": {
+          "a/b": {
+            "value": 3
+          },
+          "array": [
+            "zero",
+            "two"
+          ],
+          "artifacts": {
+            "selected": "artifact-a"
+          },
+          "a~b": {
+            "value": 4
+          },
+          "limits": {
+            "max_turns": 4
+          },
+          "mode": "build",
+          "optional": {
+            "note": "bounded"
+          },
+          "policy": {
+            "route_id": "policy-route"
+          },
+          "runtime": {
+            "abi": "breadboard.conductor.v1"
+          },
+          "sampling": {
+            "temperature": 0.5,
+            "top_p": 0.9
+          },
+          "sandbox": {
+            "network_mode": "none"
+          },
+          "secrets": {
+            "handle_id": "policy-credential"
+          },
+          "tools": {
+            "enabled": [
+              "read",
+              "search"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "schema_version": "bb.rl.overlay-vectors.v1",
+  "semantic_digest_equation": {
+    "projection": "effective-semantic-config-root",
+    "schema": "bb.compiled-config-semantic.v1"
+  }
+}

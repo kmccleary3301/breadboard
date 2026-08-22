@@ -1,0 +1,1 @@
+{"code":"FORBIDDEN_AUTHORITY","details":{"field":"token"},"instance_path":"/loop/limits/max_iterations/token","logical_path":null,"outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"schema","vector_id":"error-loop-authority"}

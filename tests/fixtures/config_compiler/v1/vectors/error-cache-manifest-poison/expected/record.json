@@ -1,0 +1,1 @@
+{"code":"MANIFEST_IDENTITY_MISMATCH","details":{"reason":"cached_manifest_invalid"},"instance_path":null,"logical_path":null,"outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"identity","vector_id":"error-cache-manifest-poison"}

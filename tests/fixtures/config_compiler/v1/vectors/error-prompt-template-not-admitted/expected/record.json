@@ -1,0 +1,1 @@
+{"code":"REFERENCE_UNDECLARED","details":{},"instance_path":null,"logical_path":"config.yaml","outcome":"error","raw_reference":"templates/catalog.j2","reference_kind":"prompt_template","related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"dependency_resolution","vector_id":"error-prompt-template-not-admitted"}

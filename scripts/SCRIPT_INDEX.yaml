@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 397
+live_script_count: 435
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -17,7 +17,7 @@ entries:
   - path: scripts/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [docs/reference/ENGINE_RENAME_MIGRATION.md, docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_provider_runtime_import_direction.py]
+    callers: [docs/reference/ENGINE_RENAME_MIGRATION.md, docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, scripts/rl_phase3/target_verl_smoke_train.py]
     expiry: none (durable tooling)
   - path: scripts/_cross_system_eval_v1.py
     class: campaign
@@ -644,6 +644,11 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/check_phase20_freeze.py, tests/e4_parity/test_phase20_contract_tiers.py]
     expiry: none (durable tooling)
+  - path: scripts/check_danger_zone_acr.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [.github/workflows/ci.yml]
+    expiry: none (durable tooling)
   - path: scripts/check_darwin_lane_readiness_v0.py
     class: live-wired
     owner: kmccleary3301
@@ -693,6 +698,11 @@ entries:
     class: live-wired
     owner: kmccleary3301
     callers: [.github/workflows/ink-reference-manifest-check.yml, scripts/SCRIPT_INDEX.yaml]
+    expiry: none (durable tooling)
+  - path: scripts/check_kernel_contract_pack_v1.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [.github/workflows/ci.yml]
     expiry: none (durable tooling)
   - path: scripts/check_kernel_primitive_ct.py
     class: live-wired
@@ -1655,9 +1665,9 @@ entries:
     callers: [scripts/SCRIPT_INDEX.yaml, tests/rl/m12/test_m12_evidence_consistency.py, tests/rl/m12/test_m12_final_report.py, tests/rl/m12/test_m12_transfer_pack.py]
     expiry: none (durable tooling)
   - path: scripts/rl_phase1/build_m12_transfer_archive.py
-    class: live-owned
+    class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml]
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/rl/m12/test_m12_transfer_pack.py]
     expiry: none (durable tooling)
   - path: scripts/rl_phase1/build_m12_transfer_pack.py
     class: live-owned
@@ -1667,7 +1677,7 @@ entries:
   - path: scripts/rl_phase1/check_m12_evidence_consistency.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, tests/rl/m12/test_m12_evidence_consistency.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/rl/m12/test_m12_evidence_consistency.py, tests/rl/m12/test_m12_transfer_pack.py]
     expiry: none (durable tooling)
   - path: scripts/rl_phase1/export_verl_probe.py
     class: live-owned
@@ -1802,7 +1812,7 @@ entries:
   - path: scripts/rl_phase3/run_phase3_target_command.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/rl_phase3/run_phase3_direct_node_preflight.py, tests/rl/phase3/test_target_command_runner.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/rl_phase5/build_phase5_v2_freeze_pack.py, tests/rl/phase3/test_target_command_runner.py, tests/rl/phase5/test_f1_preflight.py, tests/rl/phase5/test_f2_terminal.py, tests/rl/phase5/test_f7_target_operations.py]
     expiry: none (durable tooling)
   - path: scripts/rl_phase3/run_phase3_target_validation.py
     class: live-owned
@@ -1810,9 +1820,9 @@ entries:
     callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/rl_phase3/run_verl_trainer_update.py
-    class: live-owned
+    class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/rl_phase3/target_verl_smoke_train.py, scripts/rl_phase5/build_f8_target_launch_packet.py, scripts/rl_phase5/finalize_f8_target_input.py, scripts/rl_phase5/run_f8_grpo_evidence_gate.py, tests/rl/phase5/test_f8_target_operations.py]
     expiry: none (durable tooling)
   - path: scripts/rl_phase3/target_phase4_native_inference_lane.py
     class: live-owned
@@ -1820,14 +1830,324 @@ entries:
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/rl_phase3/build_phase4_native_inference_payload.py]
     expiry: none (durable tooling)
   - path: scripts/rl_phase3/target_verl_smoke_train.py
-    class: live-owned
+    class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/rl_phase3/run_verl_trainer_update.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/rl_phase3/run_verl_trainer_update.py, scripts/rl_phase5/build_f8_target_launch_packet.py, scripts/rl_phase5/finalize_f8_target_input.py, scripts/rl_phase5/run_f8_grpo_evidence_gate.py, scripts/rl_phase5/run_f8_target_slurm.py]
     expiry: none (durable tooling)
   - path: scripts/rl_phase3/validate_phase3_component.py
     class: live-owned
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/author_f2_target_dynamic_packet.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f2_source_bundle.py, tests/rl/phase5/test_f2_transport.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/bootstrap_phase5.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/harness/test_runner_source_guards.py, tests/rl/phase5/test_bootstrap.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/build_f1_phase3_payload.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/build_f1_preflight_bundle.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f1_phase3_payload.py, scripts/rl_phase5/validate_f1_preflight.py]
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/build_f2_phase3_payload.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/build_f2_private_broker_probe_payload.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/build_f2_production_composition.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/build_f2_source_bundle.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f2_phase3_payload.py, scripts/rl_phase5/build_f2_private_broker_probe_payload.py]
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/build_f3_authority.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/build_f4_campaign.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_f4_campaign.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/build_f4_target_input.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/build_f5_fault_campaign.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_f5_fault_campaign.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/build_f6_restart_replay_input.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_f6_restart_replay_authoring.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/build_f7_target_launch_packet.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_phase5_v2_freeze_pack.py, scripts/rl_phase5/run_f7_target_workload.py, tests/rl/phase5/test_f7_target_operations.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/build_f8_target_launch_packet.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/run_f8_target_slurm.py, tests/rl/phase5/test_f8_target_operations.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/build_g2_g3_contract_report.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_g2_g3_evidence_controls.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/build_phase5_private_capsule.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_g2_g3_evidence_controls.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/build_phase5_public_wheel.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_g2_g3_evidence_controls.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/build_phase5_v2_freeze_pack.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/build_runtime_capability_payload.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/build_transport_smoke_payload.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_runtime_capability_payload.py, tests/rl/phase5/test_transport_smoke_payload.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/f1_container_entry.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f1_preflight_bundle.py]
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/f1_requirements.in
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/f1_requirements.lock]
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/f1_requirements.lock
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f1_preflight_bundle.py, scripts/rl_phase5/f1_container_entry.py]
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/f2_container_entry.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f2_source_bundle.py, scripts/rl_phase5/run_f2_target_command.py]
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/f2_private_broker_lifecycle_probe.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f2_source_bundle.py]
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/finalize_f8_target_input.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f8_target_launch_packet.py, scripts/rl_phase5/run_f8_target_slurm.py, tests/rl/phase5/test_f8_target_operations.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/g4_bind_mount_attack.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_revocation_publication.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/ingest_f1_phase3_attempt.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/ingest_f2_phase3_attempt.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/phase5_authority_evidence.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_phase5_private_capsule.py, scripts/rl_phase5/phase5_private_capsule_manifest.json]
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/phase5_authority_score.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_phase5_private_capsule.py, scripts/rl_phase5/phase5_private_capsule_manifest.json]
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/phase5_authority_service.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_phase5_private_capsule.py, scripts/rl_phase5/phase5_private_capsule_manifest.json, tests/rl/phase5/test_g2_g3_evidence_controls.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/phase5_authority_store.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_phase5_private_capsule.py, scripts/rl_phase5/phase5_private_capsule_manifest.json]
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/phase5_private_capsule_manifest.json
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_phase5_private_capsule.py, tests/rl/phase5/test_g2_g3_evidence_controls.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/phase5_public_wheel_manifest.json
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_phase5_public_wheel.py, tests/rl/phase5/test_g2_g3_evidence_controls.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/prepare_phase5_v2_migration.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/validate_phase5_v2_migration_preparation.py, tests/rl/phase5/test_prepare_phase5_v2_migration.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/probe_phase5_v2_rc4_runtime.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/replay_phase5_v2_prepared_handoff.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/prepare_phase5_v2_migration.py, scripts/rl_phase5/validate_phase5_v2_migration_preparation.py, tests/rl/phase5/test_prepare_phase5_v2_migration.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f10_isolation_decision.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/run_f10_target_adapter.py, tests/rl/phase5/test_run_f10_isolation_decision.py, tests/rl/phase5/test_run_f10_target_adapter.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f10_target_adapter.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_run_f10_target_adapter.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f1_target_command.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f1_preflight_bundle.py, scripts/rl_phase5/ingest_f1_phase3_attempt.py, scripts/rl_phase5/validate_f1_preflight.py, tests/rl/phase5/test_f1_preflight.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f2_target_command.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f2_phase3_payload.py, scripts/rl_phase5/build_f2_source_bundle.py, scripts/rl_phase5/ingest_f2_phase3_attempt.py]
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/run_f3_target_episode.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_run_f3_target_episode.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f4_target_canaries.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f7_target_launch_packet.py, scripts/rl_phase5/run_f7_target_workload.py, tests/rl/phase5/test_f4_authority_authoring.py, tests/rl/phase5/test_run_f4_target_canaries.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f5_target_faults.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_run_f5_target_faults.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f6_restart_replay.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_f6_restart_replay_authoring.py, tests/rl/phase5/test_rollback_store.py, tests/rl/phase5/test_run_f6_restart_replay.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f7_target_workload.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f7_target_launch_packet.py, scripts/rl_phase5/build_phase5_v2_freeze_pack.py, tests/rl/phase5/test_f7_target_operations.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f7_topology_gate.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase5/build_f7_target_launch_packet.py, scripts/rl_phase5/build_phase5_v2_freeze_pack.py, scripts/rl_phase5/run_f7_target_workload.py, tests/rl/phase5/test_f7_target_operations.py, tests/rl/phase5/test_run_f7_topology_gate.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f8_grpo_evidence_gate.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/rl_phase3/target_verl_smoke_train.py, scripts/rl_phase5/build_f8_target_launch_packet.py, scripts/rl_phase5/finalize_f8_target_input.py, scripts/rl_phase5/run_f8_target_slurm.py, scripts/rl_phase5/run_f9_estimator_truth_gate.py, tests/rl/phase5/test_f8_target_operations.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f8_target_slurm.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_f8_target_operations.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_f9_estimator_truth_gate.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_run_f9_estimator_truth_gate.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_phase5_do_target_command.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_run_phase5_do_target_command.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/run_wp10_local_launcher_callback.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_wp10_local_callback.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/scan_phase5_artifact_secrets.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_run_phase5_do_target_command.py, tests/rl/phase5/test_scan_phase5_artifact_secrets.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/validate_f1_preflight.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/validate_f2_terminal.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/validate_phase5_v2_freeze_pack.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/validate_phase5_v2_migration_preparation.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_prepare_phase5_v2_migration.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/validate_phase5_v2_rc4_safety.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/rl_phase5/verify_phase5_v2_fresh_worker_replay.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/fixtures/phase5_v2_spec_freeze_row.json]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/wp10_launcher_evidence.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/phase5/test_wp10_launcher_evidence.py, tests/rl/phase5/test_wp10_local_callback.py]
     expiry: none (durable tooling)
   - path: scripts/run_bb_atp_adapter_slice_v1.py
     class: live-wired

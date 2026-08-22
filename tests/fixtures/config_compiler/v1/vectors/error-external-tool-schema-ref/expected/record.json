@@ -1,0 +1,1 @@
+{"code":"TOOL_INVALID","details":{"reason":"external_schema_reference_forbidden"},"instance_path":"/parameters/0/schema/$ref","logical_path":"tools/schema.yaml","outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"reference_resolution","vector_id":"error-external-tool-schema-ref"}

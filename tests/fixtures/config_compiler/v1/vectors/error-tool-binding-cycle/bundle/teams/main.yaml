@@ -1,0 +1,5 @@
+team_id: test-team
+agents:
+  - id: reviewer
+    config_node_id: root
+coordination: {strategy: sequential}

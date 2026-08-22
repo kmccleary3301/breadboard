@@ -119,6 +119,8 @@ def test_probe_collects_live_endpoint_metrics(monkeypatch: pytest.MonkeyPatch, p
     assert object_store["object_store_writes"] == 1
     assert object_store["artifact_bytes"] > 0
     assert object_store["write_read_verified"] is True
+    assert object_store["written_sha256"] == object_store["artifact_sha256"]
+    assert object_store["readback_sha256"] == object_store["artifact_sha256"]
     assert scheduler["scheduler_control"]["endpoint_present"] is True
     assert scheduler["scheduler_control"]["token_present"] is True
     assert scheduler["scheduler_control"]["status"] == "ready"

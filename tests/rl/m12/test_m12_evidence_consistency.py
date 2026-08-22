@@ -59,13 +59,13 @@ def test_m12_evidence_consistency_current_target_validated_state_passes() -> Non
     assert report["counts"]["scorecard_current_verified_points"] == 1000
     assert report["counts"]["m12_verified_points"] == 80
     assert report["counts"]["transfer_artifacts"] == 28
-    assert report["counts"]["archive_entries"] == 213
-    assert report["counts"]["overlay_would_write"] == 213
-    assert report["counts"]["bootstrap_overlay_would_write"] == 213
+    assert report["counts"]["archive_entries"] == 277
+    assert report["counts"]["overlay_would_write"] == 277
+    assert report["counts"]["bootstrap_overlay_would_write"] == 277
     assert report["counts"]["overlay_existing_destinations"] > 0
     assert report["counts"]["transfer_commands"] == 10
     assert report["counts"]["transfer_expected_outputs"] == 15
-    assert report["counts"]["archive_verify_entries"] == 213
+    assert report["counts"]["archive_verify_entries"] == 277
     assert report["counts"]["local_final_missing_gates"] == 0
     assert report["counts"]["local_remediation_summary_actions"] == 0
     assert report["counts"]["local_promotion_missing_requirements"] == 0

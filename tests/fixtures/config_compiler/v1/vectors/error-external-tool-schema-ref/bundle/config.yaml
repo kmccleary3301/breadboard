@@ -1,0 +1,22 @@
+version: 2
+workspace:
+  root: workspace
+providers:
+  default_model: test-model
+  models:
+    - id: test-model
+      adapter: openai
+prompts:
+  injection:
+    system_order: []
+    per_turn_order: []
+tools:
+  registry:
+    paths: [tools]
+    include: [schema_tool]
+    exclude: []
+modes:
+  - id: build
+    prompt: ''
+loop:
+  sequence: [build]

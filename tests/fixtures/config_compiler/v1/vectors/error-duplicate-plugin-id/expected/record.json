@@ -1,0 +1,1 @@
+{"code":"PLUGIN_DUPLICATE_ID","details":{"plugin_id":"same.plugin"},"instance_path":null,"logical_path":null,"outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"semantic_validation","vector_id":"error-duplicate-plugin-id"}

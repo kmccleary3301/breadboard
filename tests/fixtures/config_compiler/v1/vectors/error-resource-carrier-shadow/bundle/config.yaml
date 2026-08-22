@@ -1,0 +1,20 @@
+version: 2
+workspace:
+  root: workspace
+  resources: {cpu: 1}
+sandbox:
+  resource_request: {cpu: '1', surprise: 1}
+providers:
+  default_model: test-model
+  models:
+    - id: test-model
+      adapter: openai
+prompts:
+  injection:
+    system_order: []
+    per_turn_order: []
+modes:
+  - id: build
+    prompt: ''
+loop:
+  sequence: [build]

@@ -1,0 +1,5 @@
+features:
+  nested: {kept: base, overwritten: base}
+  null_target: {value: base}
+  empty_target: {value: base}
+  list_target: [base]

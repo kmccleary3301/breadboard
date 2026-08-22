@@ -1,0 +1,1 @@
+{"code":"NUMBER_OUT_OF_RANGE","details":{},"instance_path":"/providers/models/0/params/max_tokens","logical_path":"config.yaml","outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"parse","vector_id":"error-number-out-of-range"}

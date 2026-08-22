@@ -1,0 +1,1 @@
+{"code":"RUNTIME_SLOT_INVALID","details":{"minimum":1,"reason":"invalid_resource_quantity"},"instance_path":"/runtime/sandbox/resource_request/cpu","logical_path":null,"outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"schema","vector_id":"error-sandbox-resource-zero"}

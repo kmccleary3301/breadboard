@@ -1,0 +1,99 @@
+version: 2
+profile:
+  name: rich-manifest-vector
+workspace:
+  root: workspace
+  sandbox:
+    driver_id: docker
+    options: {read_only_root: true}
+    mount_requests: []
+    network_request: {mode: none}
+    image_request: {image_id: image:test}
+    resource_request: {cpu: 2, memory_mb: 1024}
+providers:
+  default_model: test-model
+  models:
+    - id: test-model
+      adapter: openai_responses
+      context_length: 32000
+      params: {temperature: 0.2}
+      route_handle_id: route:test
+      credential_handle_id: credential:test
+      trainable_json_pointers: [/params/temperature]
+provider_tools:
+  use_native: true
+  api_variant: responses
+prompts:
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  packs:
+    base:
+      system: {source: prompts/system.txt}
+      shared: {literal: Shared rules.}
+  injection:
+    system_order: ['@pack(base).system', '@pack(base).shared']
+    per_turn_order: [mode_specific, '@pack(base).shared']
+  dialects:
+    default: [pythonic, json]
+  dedupe: true
+tools:
+  registry:
+    paths: [tools]
+    include: [read_file]
+    exclude: []
+  overlays:
+    - rename: {read-file: read_file}
+      descriptions: {read-file: Read a declared file exactly.}
+      syntax_style: {read-file: json}
+      provider_preference: {read-file: {openai: {strict: true}}}
+  aliases: {read: read_file}
+tool_packs:
+  core:
+    description: Core read tools
+    tools: [read_file]
+    exposure: model
+    support_status: supported
+tool_bindings:
+  - id: binding:read
+    tool_id: read_file
+    binding_kind: server
+    execution_profile: sandboxed
+    placement: server
+    exposure: model
+    support_status: supported
+modes:
+  - id: plan
+    prompt: {source: prompts/plan.txt}
+    tools_enabled: [read_file]
+    dialects: [pythonic, json]
+  - id: build
+    prompt: '@pack(base).shared'
+    tools_enabled: ['*']
+loop:
+  sequence: [plan, build]
+  limits: {max_iterations: 20}
+  turn_strategy: {flow: tool_role}
+turn_strategy: {relay: continuation, allow_multiple_per_turn: false}
+features: {plan: true, todos: {enabled: true}}
+completion: {confidence_threshold: 0.7, allow_zero_tool_completion: true}
+concurrency: {max_parallel_tools: 2}
+permissions: {default: ask}
+enhanced_tools: {enabled: true}
+guardrails:
+  include: [{source: guardrails/base.yaml}]
+plugins:
+  enabled: true
+  manifest_refs: [{source: plugins/demo.yaml}]
+  trust_requests: {demo.plugin: untrusted}
+multi_agent:
+  enabled: true
+  team_config: {source: teams/main.yaml}
+task_tool:
+  id: task
+  description_template_path: {source: templates/task.txt}
+  subagents: {reviewer: {role: review}, worker: {role: edit}}
+terminal_sessions: {enabled: true, max_sessions: 2}
+long_running: {enabled: true, budget: {turns: 100}}
+replay: {strict: true}
+logging: {level: info}
+telemetry: {sink_slot_id: telemetry:events}
+optimizer_mutable_pointers: [/completion/confidence_threshold, /providers/models/0/params/temperature]

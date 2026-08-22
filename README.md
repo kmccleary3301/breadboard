@@ -136,8 +136,10 @@ The stable top-level zone model is documented in
 ## Repository map
 
 ```text
-├── agent_configs/                 product harness definitions and supporting configs
-│   └── misc/                      scenario-specific and historical configs
+├── agent_configs/                 product harness definitions + public top-level E4 dossier configs
+│   └── misc/                      scenario-specific, historical, and supporting configs
+├── breadboard/
+│   └── rl/harness/                profile-driven RL episode, sandbox, verifier, and HTTP module
 ├── agentic_coder_prototype/       temporary compat shim (legacy imports -> breadboard_engine)
 ├── breadboard_engine/             canonical Python engine and runtime substrate
 │   ├── api/                       CLI bridge server, session runner, protocol surfaces
@@ -297,6 +299,21 @@ Run the engine directly from source:
 python -m breadboard_engine.api.cli_bridge.server
 ```
 
+### RL episode harness
+
+`breadboard.rl.harness` runs SWE and terminal training episodes for external trainers. The wrapper creates an episode, runs it through the versioned HTTP interface, and closes it when NeMo returns or cancels the rollout. BreadBoard selects the trusted profile, drives policy turns, executes tools in the admitted sandbox image, runs the verifier in a separate copied lease, records artifacts, and closes both leases.
+
+Profiles come from `BREADBOARD_HARNESS_PROFILES_FILE` or `BREADBOARD_HARNESS_PROFILES_JSON`. A profile must admit immutable image digests and named verifier commands. SWE profiles set `require_repository_binding: true` and map each repository snapshot digest to its approved image with `repository_images`. The process driver requires `trusted_process: true` and reports `network: host`; use it only for local tests because it executes on the host without network isolation.
+
+```bash
+BREADBOARD_HARNESS_PROFILES_FILE=/secure/breadboard-harness-profiles.json \
+BREADBOARD_HARNESS_TOKEN="$(cat /secure/breadboard-harness.token)" \
+BREADBOARD_POLICY_ALLOWED_HOSTS=policy-model.internal \
+python -m breadboard.rl.harness.api
+```
+
+The server binds to `127.0.0.1:8097` by default. A non-loopback bind requires `BREADBOARD_HARNESS_TOKEN`, and custom ASGI launchers must opt into unauthenticated loopback mode explicitly. Artifacts persist under `BREADBOARD_HARNESS_ARTIFACT_ROOT` (default `~/.breadboard/rl-harness/artifacts`) and are available through the authenticated retrieval paths returned in each artifact reference. The token-only policy bridge rejects policy-visible image content; sandbox images and repository snapshots travel as immutable digests.
+
 ### Python SDK
 
 ```python
@@ -374,6 +391,25 @@ Relevant package docs:
 - [sdk/ts-transport-ai-sdk/README.md](sdk/ts-transport-ai-sdk/README.md)
 
 ---
+
+## Public E4 dossiers
+
+One of the strongest features in this repo is that the top-level public E4 configs are inspectable harness dossiers rather than opaque overlays.
+
+| Harness | Public dossier | What it gives you |
+|---|---|---|
+| Codex | [codex_0-107-0_e4_3-6-2026.yaml](agent_configs/codex_0-107-0_e4_3-6-2026.yaml) | current Codex public dossier with tracked target package refs |
+| Claude Code | [claude_code_2-1-63_e4_3-6-2026.yaml](agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml) | replay-focused Claude dossier with explicit policy surfaces |
+| OpenCode | [opencode_1-2-17_e4_3-6-2026.yaml](agent_configs/opencode_1-2-17_e4_3-6-2026.yaml) | shared OpenCode dossier with replay bundles in `misc/` |
+| oh-my-opencode | [oh_my_opencode_3-10-0_e4_3-6-2026.yaml](agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml) | async/background-task-oriented dossier surface |
+
+Supporting docs:
+
+- [docs/conformance/E4_COOKBOOK_V1.md](docs/conformance/E4_COOKBOOK_V1.md)
+- [docs/conformance/E4_TARGET_PACKAGES.md](docs/conformance/E4_TARGET_PACKAGES.md)
+- [docs/conformance/E4_DOSSIER_STYLE_GUIDE_V1.md](docs/conformance/E4_DOSSIER_STYLE_GUIDE_V1.md)
+
+> Public dossier readability does **not** mean perfect parity everywhere. Use the evidence docs and replay bundles for exact claim boundaries.
 
 ## Conformance, replay, and evidence
 

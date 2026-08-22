@@ -1,0 +1,40 @@
+{
+  "authority_after_decision": {
+    "active": false,
+    "checkpoint": false,
+    "completion": false,
+    "external_acceptance": false,
+    "migration_cutover": false,
+    "migration_preparation": true,
+    "promotion": false,
+    "quiescence": false,
+    "score": false,
+    "selector_mutation": false,
+    "spec_freeze": true,
+    "target_execution": false
+  },
+  "candidate": {
+    "artifact_manifest_sha256": "sha256:0feeafccb4f17be777fd815824844cb65173abb64d75203aed79bf83f09bd5bf",
+    "revision_id": "v2.0.0-rc5-20260717"
+  },
+  "decision": "SPEC_FREEZE",
+  "decision_maker": "Kyle McCleary",
+  "decision_packet_sha256": "sha256:ef0bb7cd29e83fa9219bcd1e820e375e9d46a63f897efc0065e45ffcac5876de",
+  "decision_scope": "Freeze only the exact RC5 specification bytes and authorize preparation of an exact migration bundle under those frozen contracts.",
+  "forbidden_without_separate_authority": [
+    "quiescence",
+    "migration_cutover",
+    "store_mutation",
+    "root_selector_mutation",
+    "target_or_ibm_execution",
+    "score_or_completion_award",
+    "checkpoint_or_promotion",
+    "external_acceptance"
+  ],
+  "next_required_gate": "Validate and independently review the exact prepared migration bundle, require fresh RC5-bound runtime evidence, then obtain a separate typed MIGRATION_CUTOVER decision before quiescence or mutation.",
+  "prior_rc4_spec_freeze_grants_rc5_authority": false,
+  "program_id": "bb-zyphra-rl-phase5-v2",
+  "root_active_selector_mutated": false,
+  "schema_version": "bb.rl.phase5.spec_freeze_decision.v1",
+  "zero_runtime_authority": true
+}

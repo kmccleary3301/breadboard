@@ -1,0 +1,1 @@
+{"code":"V1_TRANSLATION_UNSUPPORTED","details":{"reason":"v2_document_on_v1_shadow_path"},"instance_path":"/version","logical_path":"config.yaml","outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"translation","vector_id":"error-v2-on-v1-shadow"}

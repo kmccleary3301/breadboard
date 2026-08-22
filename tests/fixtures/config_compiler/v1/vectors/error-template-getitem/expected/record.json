@@ -1,0 +1,1 @@
+{"code":"PROMPT_TEMPLATE_INVALID","details":{"node":"Getitem","reason":"template_capability_forbidden"},"instance_path":"/prompts/tool_catalog","logical_path":"templates/catalog.j2","outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"render","vector_id":"error-template-getitem"}

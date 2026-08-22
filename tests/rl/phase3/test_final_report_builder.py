@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from breadboard.rl.phase3.final_report import PHASE3_CORE_CLAIM_BOUNDARY, PHASE3_CORE_READINESS_SCHEMA, PHASE3_FINAL_CLAIM_BOUNDARY, PHASE3_FINAL_REPORT_ID, PHASE3_MILESTONE_BLOCKED_CLAIM_BOUNDARIES, PHASE3_MILESTONE_CLAIM_BOUNDARIES, PHASE3_MILESTONES, build_phase3_core_readiness, build_phase3_final_report, validate_phase3_final_report
+from breadboard.rl.phase3.final_report import PHASE3_CORE_CLAIM_BOUNDARY, PHASE3_CORE_READINESS_SCHEMA, PHASE3_FINAL_CLAIM_BOUNDARY, PHASE3_FINAL_REPORT_ID, PHASE3_MILESTONE_BLOCKED_CLAIM_BOUNDARIES, PHASE3_MILESTONE_CLAIM_BOUNDARIES, PHASE3_MILESTONE_POINTS, PHASE3_MILESTONES, build_phase3_core_readiness, build_phase3_final_report, validate_phase3_final_report
 from scripts.rl_phase3.build_phase3_final_report import _collect_milestone_reports, _load_json, _scorecard
 
 
@@ -21,6 +21,7 @@ def valid_final_report(tmp_path: Path) -> dict:
     for milestone in PHASE3_MILESTONES:
         report_path = tmp_path / f"{milestone}.json"
         report_path.write_text("{}")
+        artifact_hash = "sha256:" + hashlib.sha256(report_path.read_bytes()).hexdigest()
         reports[milestone] = {
             "schema_version": "bb.rl.phase3.component_report.v1",
             "report_id": f"report-{milestone}",
@@ -30,7 +31,7 @@ def valid_final_report(tmp_path: Path) -> dict:
             "target_run_id": target,
             "points": 1,
             "passed": True,
-            "input_hashes": {"input": "sha256:abc"},
+            "input_hashes": {"artifact": artifact_hash},
             "artifact_paths": {"artifact": str(report_path)},
             "required_artifact_keys": ["artifact"],
             "scorecard_update_allowed": False,
@@ -82,8 +83,35 @@ def valid_final_report(tmp_path: Path) -> dict:
         "errors": [],
         "verifier_latency": 0.1,
         "metric_sections": {
+            "verifier_metrics": {
+                "source": "verifier_client",
+                "endpoint": "https://verifier.example/ready",
+                "env_presence": {"BREADBOARD_VERIFIER_TOKEN": True},
+            },
             "object_store_metrics": {
-                "object_store": "production_object_store",
+                "source": "object_store",
+                "object_store": "configured_http_object_store",
+                "object_store_writes": 1,
+                "artifact_bytes": 128,
+                "written_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "readback_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "endpoint": "https://object-store.example",
+                "put_endpoint": "https://object-store.example/objects/phase3-put",
+                "get_endpoint": "https://object-store.example/objects/phase3-get",
+                "delete_endpoint": "https://object-store.example/objects/phase3-delete",
+                "put_status": 201,
+                "get_status": 200,
+                "delete_status": 204,
+                "write_read_verified": True,
+                "delete_verified": True,
+                "env_presence": {
+                    "BREADBOARD_OBJECT_STORE_BASE_URL": True,
+                    "BREADBOARD_OBJECT_STORE_BUCKET": True,
+                    "BREADBOARD_OBJECT_STORE_TOKEN": True,
+                    "BREADBOARD_OBJECT_STORE_PUT_URL_TEMPLATE": True,
+                    "BREADBOARD_OBJECT_STORE_GET_URL_TEMPLATE": True,
+                    "BREADBOARD_OBJECT_STORE_DELETE_URL_TEMPLATE": True,
+                },
             },
             "scheduler_metrics": {
                 "source": "scheduler_control",
@@ -254,6 +282,23 @@ def test_final_report_embeds_core_readiness_without_promoting_scorecard(tmp_path
     assert report["scorecard_update_allowed"] is False
 
 
+
+def test_final_report_active_scope_accounts_for_milestone_points(tmp_path: Path) -> None:
+    report = valid_final_report(tmp_path)
+    core = report["core_readiness"]
+    expected_total = sum(PHASE3_MILESTONE_POINTS[milestone_id] for milestone_id in core["core_milestones"])
+
+    assert report["active_scope"]["core_raw_points_total"] == expected_total
+    assert report["active_scope"]["core_raw_points_verified"] == expected_total
+    assert core["core_raw_points_total"] == expected_total
+    assert core["core_raw_points_verified"] == expected_total
+
+    _defer_milestone(report, "P3-M11", "missing_live_observability_scheduler_store")
+    blocked_core = build_phase3_core_readiness(report["milestone_reports"])
+
+    assert blocked_core["core_raw_points_total"] == expected_total
+    assert blocked_core["core_raw_points_verified"] == expected_total - PHASE3_MILESTONE_POINTS["P3-M11"]
+
 def test_final_report_core_readiness_blocks_when_a_milestone_is_deferred(tmp_path: Path) -> None:
     report = valid_final_report(tmp_path)
     _defer_milestone(report, "P3-M11", "missing_live_observability_scheduler_store")
@@ -373,6 +418,47 @@ def test_final_report_cli_handles_directory_inputs(tmp_path: Path) -> None:
         "commands must contain at least one command row",
     }.issubset(set(report["validation_errors"]))
     assert report["command_log_manifest"] == {}
+
+def test_final_report_cli_require_ready_rejects_schema_valid_incomplete_active_scope(tmp_path: Path) -> None:
+    evidence_root = tmp_path / "docs_tmp"
+    phase_dir = evidence_root / "ZYPHRA" / "RL_PHASE_3"
+    runs = phase_dir / "runs"
+    milestone_dir = runs / "milestone_reports"
+    milestone_dir.mkdir(parents=True)
+    report = valid_final_report(evidence_root)
+    _defer_milestone(report, "P3-M11", "missing_live_observability_scheduler_store")
+    for milestone_id, milestone_report in report["milestone_reports"].items():
+        (milestone_dir / f"{milestone_id}.json").write_text(json.dumps(milestone_report, sort_keys=True) + "\n")
+    (runs / "phase3_command_log_manifest.json").write_text(json.dumps(report["command_log_manifest"], sort_keys=True) + "\n")
+    (phase_dir / "BB_ZYPHRA_RL_PHASE_3_CLAIM_LEDGER.md").write_text(report["claim_ledger_text"])
+    (phase_dir / "BB_ZYPHRA_RL_PHASE_3_SCORECARD.yaml").write_text(f"reviewed_final_report_id: {PHASE3_FINAL_REPORT_ID}\n")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/rl_phase3/build_phase3_final_report.py",
+            "--phase-dir",
+            str(phase_dir),
+            "--require-ready",
+        ],
+        check=False,
+        cwd=Path(__file__).resolve().parents[3],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    cli_payload = json.loads(result.stdout)
+    assert cli_payload["validation_errors"] == []
+    assert cli_payload["readiness_errors"] == [
+        "active_scope.ready must be true for --require-ready",
+        "core_raw_points_verified must equal core_raw_points_total for --require-ready",
+    ]
+    generated_report = json.loads((runs / "p3_m12_final_report.json").read_text())
+    assert generated_report["validation_errors"] == []
+    assert generated_report["active_scope"]["ready"] is False
+    assert generated_report["active_scope"]["core_raw_points_verified"] != generated_report["active_scope"]["core_raw_points_total"]
+
 
 def test_scorecard_malformed_total_points_defaults_to_zero(tmp_path: Path) -> None:
     phase_dir = tmp_path / "docs_tmp" / "ZYPHRA" / "RL_PHASE_3"
@@ -642,6 +728,51 @@ def test_final_report_validator_rejects_p3m11_missing_scheduler_token(tmp_path: 
     errors = validate_phase3_final_report(report, repo_root=tmp_path, evidence_root=tmp_path)
 
     assert "P3-M11 observability_evidence.metric_sections.scheduler_metrics.scheduler_control_token_missing" in errors
+
+
+
+def test_final_report_validator_rejects_p3m11_missing_object_store_token_proof(tmp_path: Path) -> None:
+    report = valid_final_report(tmp_path)
+    object_store_metrics = report["milestone_reports"]["P3-M11"]["observability_evidence"]["metric_sections"]["object_store_metrics"]
+    object_store_metrics["env_presence"]["BREADBOARD_OBJECT_STORE_TOKEN"] = False
+
+    errors = validate_phase3_final_report(report, repo_root=tmp_path, evidence_root=tmp_path)
+
+    assert any("object_store" in error and "token" in error.lower() for error in errors)
+
+
+def test_final_report_validator_rejects_p3m11_missing_write_read_round_trip_proof(tmp_path: Path) -> None:
+    report = valid_final_report(tmp_path)
+    object_store_metrics = report["milestone_reports"]["P3-M11"]["observability_evidence"]["metric_sections"]["object_store_metrics"]
+    object_store_metrics.pop("write_read_verified")
+    object_store_metrics.pop("readback_sha256")
+
+    errors = validate_phase3_final_report(report, repo_root=tmp_path, evidence_root=tmp_path)
+
+    assert any("write_read_verified" in error for error in errors)
+    assert any("readback_sha256" in error or "round" in error.lower() for error in errors)
+
+
+def test_final_report_validator_rejects_p3m11_legacy_artifact_hash_without_readback_hash(tmp_path: Path) -> None:
+    report = valid_final_report(tmp_path)
+    object_store_metrics = report["milestone_reports"]["P3-M11"]["observability_evidence"]["metric_sections"]["object_store_metrics"]
+    object_store_metrics["artifact_sha256"] = object_store_metrics["written_sha256"]
+    object_store_metrics.pop("readback_sha256")
+
+    errors = validate_phase3_final_report(report, repo_root=tmp_path, evidence_root=tmp_path)
+
+    assert any("readback_sha256" in error for error in errors)
+
+
+def test_final_report_validator_rejects_p3m11_failed_delete_proof(tmp_path: Path) -> None:
+    report = valid_final_report(tmp_path)
+    object_store_metrics = report["milestone_reports"]["P3-M11"]["observability_evidence"]["metric_sections"]["object_store_metrics"]
+    object_store_metrics["delete_status"] = 500
+    object_store_metrics["delete_verified"] = False
+
+    errors = validate_phase3_final_report(report, repo_root=tmp_path, evidence_root=tmp_path)
+
+    assert any("delete" in error.lower() for error in errors)
 
 def test_final_report_validator_rejects_misfiled_milestone_id(tmp_path: Path) -> None:
     report = valid_final_report(tmp_path)

@@ -39,6 +39,12 @@ from breadboard.rl.m12.transfer import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ARCHIVE_ROOT = Path("workspace") / REPO_ROOT.name
+
+
+def _overlay_repo_root(workspace_root: Path) -> Path:
+    return workspace_root / REPO_ROOT.name
+
 FINAL_REPORT_TARGET_ARGUMENTS = (
     "--output ../docs_tmp/ZYPHRA/RL_PHASE_1/runs/m12_final_report/m12_final_report.json",
     "--archive-verify-report ../docs_tmp/ZYPHRA/RL_PHASE_1/runs/m12_archive_verify/m12_archive_verify_report.json",
@@ -787,14 +793,14 @@ def test_m12_transfer_archive_is_portable_non_scoring_evidence_pack(tmp_path) ->
     assert int.from_bytes(archive_path.read_bytes()[4:8], "little") == 0
 
     archived_paths = {entry["archive_path"] for entry in archive_manifest["included_entries"]}
-    assert "workspace/breadboard_repo_integration_main_20260326/scripts/rl_phase1/build_m12_transfer_archive.py" in archived_paths
-    assert "workspace/breadboard_repo_integration_main_20260326/scripts/rl_phase1/audit_m12_score_promotion.py" in archived_paths
-    assert "workspace/breadboard_repo_integration_main_20260326/scripts/rl_phase1/check_m12_evidence_consistency.py" in archived_paths
-    assert "workspace/breadboard_repo_integration_main_20260326/breadboard/rl/m12/promotion_audit.py" in archived_paths
-    assert "workspace/breadboard_repo_integration_main_20260326/breadboard/rl/m12/evidence_consistency.py" in archived_paths
-    assert "workspace/breadboard_repo_integration_main_20260326/tests/rl/m12/test_m12_transfer_pack.py" in archived_paths
-    assert "workspace/breadboard_repo_integration_main_20260326/tests/test_rl_phase1_scorecard_schema.py" in archived_paths
-    assert "workspace/breadboard_repo_integration_main_20260326/docs/rl_phase1/m12_transfer_pack.md" in archived_paths
+    assert (REPO_ARCHIVE_ROOT / "scripts/rl_phase1/build_m12_transfer_archive.py").as_posix() in archived_paths
+    assert (REPO_ARCHIVE_ROOT / "scripts/rl_phase1/audit_m12_score_promotion.py").as_posix() in archived_paths
+    assert (REPO_ARCHIVE_ROOT / "scripts/rl_phase1/check_m12_evidence_consistency.py").as_posix() in archived_paths
+    assert (REPO_ARCHIVE_ROOT / "breadboard/rl/m12/promotion_audit.py").as_posix() in archived_paths
+    assert (REPO_ARCHIVE_ROOT / "breadboard/rl/m12/evidence_consistency.py").as_posix() in archived_paths
+    assert (REPO_ARCHIVE_ROOT / "tests/rl/m12/test_m12_transfer_pack.py").as_posix() in archived_paths
+    assert (REPO_ARCHIVE_ROOT / "tests/test_rl_phase1_scorecard_schema.py").as_posix() in archived_paths
+    assert (REPO_ARCHIVE_ROOT / "docs/rl_phase1/m12_transfer_pack.md").as_posix() in archived_paths
     assert not any("__pycache__" in path or path.endswith(".pyc") for path in archived_paths)
     assert "workspace/docs_tmp/ZYPHRA/RL_PHASE_1/BB_ZYPHRA_RL_PHASE_1_M12_VALIDATION_REPORT.md" in archived_paths
     assert "workspace/docs_tmp/ZYPHRA/RL_PHASE_1/runs/m6_controlled_swe_toy/run_summary.json" in archived_paths
@@ -870,7 +876,7 @@ def test_m12_transfer_overlay_dry_run_is_non_scoring_and_safe(tmp_path) -> None:
     assert report["existing_destination_count"] == 0
     assert report["errors"] == []
     assert validate_m12_transfer_overlay_report(report) == []
-    assert not (workspace_root / "breadboard_repo_integration_main_20260326" / "breadboard" / "rl" / "m12" / "transfer.py").exists()
+    assert not (_overlay_repo_root(workspace_root) / "breadboard" / "rl" / "m12" / "transfer.py").exists()
 
 
 def test_m12_transfer_overlay_report_validator_rejects_stale_or_ambiguous_summaries(tmp_path) -> None:
@@ -929,7 +935,7 @@ def test_m12_transfer_overlay_apply_writes_verified_workspace_members(tmp_path) 
     assert report["written_count"] == archive_manifest["included_entry_count"]
     assert report["errors"] == []
     assert validate_m12_transfer_overlay_report(report) == []
-    assert (workspace_root / "breadboard_repo_integration_main_20260326" / "scripts" / "rl_phase1" / "apply_m12_transfer_overlay.py").exists()
+    assert (_overlay_repo_root(workspace_root) / "scripts" / "rl_phase1" / "apply_m12_transfer_overlay.py").exists()
     assert (workspace_root / "docs_tmp" / "ZYPHRA" / "RL_PHASE_1" / "BB_ZYPHRA_RL_PHASE_1_SCORECARD.yaml").exists()
 
 
@@ -1035,7 +1041,7 @@ def test_generated_m12_overlay_script_runs_without_repo_imports(tmp_path) -> Non
     applied = json.loads(report_path.read_text(encoding="utf-8"))
     assert applied["dry_run"] is False
     assert applied["written_count"] == archive_manifest["included_entry_count"]
-    assert (workspace_root / "breadboard_repo_integration_main_20260326" / "scripts" / "rl_phase1" / "apply_m12_transfer_overlay.py").exists()
+    assert (_overlay_repo_root(workspace_root) / "scripts" / "rl_phase1" / "apply_m12_transfer_overlay.py").exists()
     assert (workspace_root / "docs_tmp" / "ZYPHRA" / "RL_PHASE_1" / "runs" / "m12_transfer_prep" / "m12_test_commands.sh").exists()
 
 
@@ -1950,7 +1956,7 @@ def test_generated_m12_overlay_script_reports_apply_time_write_failure(tmp_path)
     script_path = tmp_path / "prep" / "m12_apply_overlay.py"
     report_path = tmp_path / "overlay_report.json"
     workspace_root = tmp_path / "target_workspace"
-    unwritable_parent = workspace_root / "breadboard_repo_integration_main_20260326" / "breadboard" / "rl"
+    unwritable_parent = _overlay_repo_root(workspace_root) / "breadboard" / "rl"
     unwritable_parent.mkdir(parents=True)
     unwritable_parent.chmod(0o500)
     try:

@@ -13,6 +13,12 @@ Total inventoried Python scripts: `260`
 - `release`: `8`
 - `research`: `229`
 
+
+## Post-inventory canonical campaign families
+
+- `scripts/rl_phase1/`: canonical Phase 1 RL evidence, transfer, and target-validation command family added after the 2026-04-01 inventory snapshot.
+- `scripts/rl_phase3/`: canonical Phase 3/4 RL evidence, promotion, target-runner, and bounded target-validation command family added after the 2026-04-01 inventory snapshot.
+
 ## Canonicalized moved script paths
 
 - `guardrail_metrics.py` -> `ops/guardrail_metrics.py`
