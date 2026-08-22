@@ -78,7 +78,7 @@ test(
     const session = started.data.session as { session_id: string }
     for (let attempts = 0; attempts < 100; attempts += 1) {
       const snapshot = await client.getSession(session.session_id)
-      const status = snapshot.data.session.status
+      const status = snapshot.status
       if (status === "running") break
       assert.ok(attempts < 99, `session did not become running: ${status}`)
       await Promise.resolve()

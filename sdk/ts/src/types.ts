@@ -212,7 +212,7 @@ export interface SessionCreateRequest {
   readonly stream?: boolean
 }
 
-export type SessionStatus = "starting" | "running" | "completed" | "failed" | "stopped"
+export type SessionStatus = "starting" | "running" | "awaiting_approval" | "paused" | "completed" | "failed" | "canceled" | "stopped"
 
 export interface SessionCreateResponse {
   readonly session_id: string
@@ -224,8 +224,14 @@ export interface SessionCreateResponse {
 export interface SessionSummary {
   readonly session_id: string
   readonly status: SessionStatus | string
-  readonly created_at: string
-  readonly last_activity_at: string
+  readonly created_at?: string
+  readonly last_activity_at?: string
+  readonly event_count?: number
+  readonly schema_version?: string
+  readonly effective_lock_hash?: string
+  readonly task_hash?: string
+  readonly pending_approval?: Record<string, unknown> | null
+  readonly terminal_outcome?: Record<string, unknown> | null
   readonly model?: string | null
   readonly mode?: string | null
   readonly completion_summary?: Record<string, unknown> | null
