@@ -362,10 +362,11 @@ export async function attachExistingSession(this: any, sessionId: string): Promi
   try {
     const summary = await this.api().getSession(target)
     await rememberSession(summary)
+    const cached = (await loadSessionCache()).sessions[target]
     this.stats.model =
       summary.model ??
       (summary.metadata?.model as string | undefined) ??
-      this.stats.model ??
+      cached?.model ??
       DEFAULT_MODEL_ID
     this.resolveProviderCapabilitiesSnapshot(this.stats.model)
     if (summary.mode && typeof summary.mode === "string") {
@@ -790,11 +791,14 @@ export async function waitForCompletion(
       attempts += 1
       try {
         const summary = await this.api().getSession(this.sessionId)
-        if (summary.completion_summary) {
+        if (summary.completion_summary || ["completed", "failed", "canceled", "stopped"].includes(summary.status)) {
           this.completionSeen = true
+          const cs = summary.completion_summary
           this.lastCompletion = {
-            completed: summary.completion_summary.completed === true,
-            summary: summary.completion_summary,
+            completed: cs ? cs.completed === true : summary.status === "completed",
+            summary:
+              (cs as Record<string, unknown> | undefined) ??
+              ((summary.terminal_outcome as Record<string, unknown> | null | undefined) ?? null),
           }
           if (DEBUG_WAIT) {
             console.log(
