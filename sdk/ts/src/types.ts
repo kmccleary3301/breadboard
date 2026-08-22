@@ -230,7 +230,7 @@ export interface SessionSummary {
   readonly schema_version?: string
   readonly effective_lock_hash?: string
   readonly task_hash?: string
-  readonly pending_approval?: Record<string, unknown> | null
+  readonly pending_approval?: string | null
   readonly terminal_outcome?: Record<string, unknown> | null
   readonly model?: string | null
   readonly mode?: string | null

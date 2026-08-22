@@ -87,16 +87,17 @@ export const rememberSession = async (
   options: { name?: string; model?: string } = {},
 ): Promise<void> => {
   const cache = await loadSessionCache()
+  const previous = cache.sessions[summary.session_id]
   const entry: CachedSessionEntry = {
     sessionId: summary.session_id,
-    name: options.name,
-    createdAt: summary.created_at ?? cache.sessions[summary.session_id]?.createdAt ?? "",
-    lastActivityAt: summary.last_activity_at ?? cache.sessions[summary.session_id]?.lastActivityAt ?? "",
+    name: options.name ?? previous?.name,
+    createdAt: summary.created_at ?? previous?.createdAt ?? "",
+    lastActivityAt: summary.last_activity_at ?? previous?.lastActivityAt ?? "",
     status: summary.status,
-    model: options.model ?? (summary.metadata?.model as string | undefined),
-    loggingDir: summary.logging_dir ?? null,
-    metadata: normalizeMetadata(summary.metadata ?? null),
-    draft: cache.sessions[summary.session_id]?.draft ?? null,
+    model: options.model ?? (summary.metadata?.model as string | undefined) ?? previous?.model,
+    loggingDir: summary.logging_dir ?? previous?.loggingDir ?? null,
+    metadata: normalizeMetadata(summary.metadata ?? previous?.metadata ?? null),
+    draft: previous?.draft ?? null,
   }
   cache.sessions[entry.sessionId] = entry
   cache.recent = [entry.sessionId, ...cache.recent.filter((id) => id !== entry.sessionId)].slice(0, MAX_RECENT)
