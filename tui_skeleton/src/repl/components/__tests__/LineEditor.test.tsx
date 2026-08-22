@@ -68,7 +68,6 @@ describe("LineEditor", () => {
       await vi.waitFor(() => expect(handleChange).toHaveBeenLastCalledWith(expectedValue, expectedCursor))
     }
 
-    view.unmount()
   })
 
   it("routes fake clipboard images to attachment handling on Ctrl+V", async () => {
