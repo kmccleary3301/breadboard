@@ -11,6 +11,8 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
+CliProbe = tuple[bool, str]
+
 
 def _venv_python_path() -> Path:
     unix = ROOT_DIR / ".venv" / "bin" / "python"
@@ -18,7 +20,7 @@ def _venv_python_path() -> Path:
     return unix if unix.exists() else windows
 
 
-def _breadboard_cli_usable() -> tuple[bool, str]:
+def _breadboard_cli_usable() -> CliProbe:
     override = os.environ.get("BREADBOARD_QUICKSTART_ASSUME_CLI")
     if override:
         normalized = override.strip().lower()
@@ -46,7 +48,7 @@ def _breadboard_cli_usable() -> tuple[bool, str]:
     return True, cli
 
 
-def _bb_cli_usable() -> tuple[bool, str]:
+def _bb_cli_usable() -> CliProbe:
     override = os.environ.get("BREADBOARD_QUICKSTART_ASSUME_BB")
     if override:
         normalized = override.strip().lower()
@@ -74,9 +76,12 @@ def _bb_cli_usable() -> tuple[bool, str]:
     return True, cli
 
 
-def _cli_capabilities() -> dict:
-    breadboard_ok, breadboard_detail = _breadboard_cli_usable()
-    bb_ok, bb_detail = _bb_cli_usable()
+def _cli_capabilities_from(
+    breadboard: CliProbe,
+    bb: CliProbe,
+) -> dict[str, bool | str]:
+    breadboard_ok, breadboard_detail = breadboard
+    bb_ok, bb_detail = bb
     return {
         "breadboard_available": breadboard_ok,
         "system_health_supported": breadboard_ok,
@@ -86,11 +91,17 @@ def _cli_capabilities() -> dict:
     }
 
 
-def _build_payload(include_advanced: bool) -> dict:
+def _cli_capabilities() -> dict[str, bool | str]:
+    return _cli_capabilities_from(_breadboard_cli_usable(), _bb_cli_usable())
+
+
+def _build_payload(include_advanced: bool) -> dict[str, object]:
     has_legacy_tui_harness = (ROOT_DIR / "tui_skeleton" / "package.json").exists()
     venv_python = str(_venv_python_path())
-    cli_ok, cli_detail = _breadboard_cli_usable()
-    bb_ok, bb_detail = _bb_cli_usable()
+    breadboard_probe = _breadboard_cli_usable()
+    bb_probe = _bb_cli_usable()
+    cli_ok, cli_detail = breadboard_probe
+    bb_ok, bb_detail = bb_probe
 
     actions = [
         {"step": "bootstrap", "command": "bash scripts/dev/bootstrap_first_time.sh"},
@@ -145,7 +156,7 @@ def _build_payload(include_advanced: bool) -> dict:
         "breadboard_cli_detail": cli_detail,
         "bb_cli_usable": bb_ok,
         "bb_cli_detail": bb_detail,
-        "cli_capabilities": _cli_capabilities(),
+        "cli_capabilities": _cli_capabilities_from(breadboard_probe, bb_probe),
         "recommended_actions": actions,
     }
 

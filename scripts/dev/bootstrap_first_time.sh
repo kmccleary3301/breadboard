@@ -11,7 +11,7 @@ RUN_SDK_HELLO_LIVE=0
 SKIP_PYTHON=0
 SKIP_NODE=0
 RECREATE_VENV=0
-HAS_TUI_SOURCE=0
+HAS_LEGACY_TUI_HARNESS=0
 HAS_TS_SDK_SOURCE=0
 REFRESH_PYTHON_DEPS=0
 
@@ -29,7 +29,7 @@ Options:
   --sdk-hello-live  Run live python+ts SDK hello verification after setup.
   --no-doctor       Skip first-time doctor checks.
   --skip-python     Skip Python venv + dependency install.
-  --skip-node       Skip Node deps + TUI build.
+  --skip-node       Skip Node dependencies and legacy contract-harness build.
   --recreate-venv   Remove and recreate .venv.
   --refresh-python-deps
                    Force reinstall of Python dependencies even if unchanged.
@@ -96,7 +96,7 @@ if [[ ! -f "${ROOT_DIR}/requirements.txt" || ! -f "${ROOT_DIR}/sdk/ts/package.js
 fi
 
 if [[ -f "${ROOT_DIR}/tui_skeleton/package.json" ]]; then
-  HAS_TUI_SOURCE=1
+  HAS_LEGACY_TUI_HARNESS=1
 fi
 if [[ -f "${ROOT_DIR}/sdk/ts/package.json" ]]; then
   HAS_TS_SDK_SOURCE=1
@@ -118,11 +118,11 @@ case "${PROFILE}" in
     ;;
 esac
 
-if [[ "${PROFILE}" == "full" && "${HAS_TUI_SOURCE}" == "0" ]]; then
+if [[ "${PROFILE}" == "full" && "${HAS_LEGACY_TUI_HARNESS}" == "0" ]]; then
   echo "[bootstrap] note: tui_skeleton/package.json not found; downgrading profile full -> engine"
   SKIP_NODE=1
   EFFECTIVE_PROFILE="engine"
-elif [[ "${PROFILE}" == "tui" && "${HAS_TUI_SOURCE}" == "0" ]]; then
+elif [[ "${PROFILE}" == "tui" && "${HAS_LEGACY_TUI_HARNESS}" == "0" ]]; then
   echo "[bootstrap] tui profile requested, but tui_skeleton/package.json is missing." >&2
   echo "[bootstrap] if this is an engine-only checkout, use --profile engine." >&2
   exit 2
@@ -354,7 +354,7 @@ install_node_deps_and_build() {
       "${ROOT_DIR}/sdk/ts/package-lock.json" \
       "${ROOT_DIR}/sdk/ts/tsconfig.json"
   fi
-  if [[ "${HAS_TUI_SOURCE}" == "1" ]]; then
+  if [[ "${HAS_LEGACY_TUI_HARNESS}" == "1" ]]; then
     npm_ci_if_needed "${ROOT_DIR}/tui_skeleton" "tui_skeleton"
     npm_build_if_needed \
       "${ROOT_DIR}/tui_skeleton" \
@@ -415,7 +415,7 @@ fi
 if [[ "${SKIP_NODE}" == "0" ]]; then
   install_node_deps_and_build
 else
-  echo "[bootstrap] skipping node/tui setup"
+  echo "[bootstrap] skipping Node and legacy contract-harness setup"
 fi
 
 if [[ "${RUN_DOCTOR}" == "1" ]]; then
@@ -460,6 +460,6 @@ fi
 echo "  4) Run the canonical product TUI from its standalone repository:"
 echo "     bb"
 echo "     Source: https://github.com/kmccleary3301/breadboard-tui"
-if [[ "${SKIP_NODE}" == "0" && "${HAS_TUI_SOURCE}" == "1" ]]; then
+if [[ "${SKIP_NODE}" == "0" && "${HAS_LEGACY_TUI_HARNESS}" == "1" ]]; then
   echo "     The in-repo tui_skeleton build is a legacy contract harness only."
 fi

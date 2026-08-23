@@ -7,7 +7,7 @@ PROFILE="full"
 SKIP_ONBOARDING_CONTRACT=0
 SKIP_QUICKSTART_HELPER=0
 BREADBOARD_OK=1
-HAS_TUI_SOURCE=0
+HAS_LEGACY_TUI_HARNESS=0
 DOCTOR_FIRST_TIME_OK=0
 SETUP_PROFILE_OK=0
 
@@ -74,7 +74,7 @@ fi
 echo "[devx-smoke] profile=${PROFILE}"
 
 if [[ -f "${ROOT_DIR}/tui_skeleton/package.json" ]]; then
-  HAS_TUI_SOURCE=1
+  HAS_LEGACY_TUI_HARNESS=1
 fi
 
 if ! breadboard --help >/tmp/breadboard_devx_help.txt 2>&1; then
@@ -92,13 +92,13 @@ fi
 
 echo "[devx-smoke] first-time doctor profiles"
 python scripts/dev/first_time_doctor.py --profile engine --strict
-if [[ "${PROFILE}" == "full" && "${HAS_TUI_SOURCE}" == "1" && "${BREADBOARD_OK}" == "1" ]]; then
+if [[ "${PROFILE}" == "full" && "${HAS_LEGACY_TUI_HARNESS}" == "1" && "${BREADBOARD_OK}" == "1" ]]; then
   if python scripts/dev/first_time_doctor.py --profile full --strict; then
     python scripts/dev/first_time_doctor.py --profile tui --strict
   else
     echo "[devx-smoke] warning: full profile strict doctor failed; continuing with engine-first checks"
   fi
-elif [[ "${PROFILE}" == "full" && "${HAS_TUI_SOURCE}" == "1" ]]; then
+elif [[ "${PROFILE}" == "full" && "${HAS_LEGACY_TUI_HARNESS}" == "1" ]]; then
   echo "[devx-smoke] skipping full/tui doctor profiles: breadboard CLI is unavailable"
 fi
 
@@ -113,7 +113,7 @@ if [[ "${BREADBOARD_OK}" == "1" ]]; then
   if [[ "${DOCTOR_FIRST_TIME_OK}" == "1" ]]; then
     echo "[devx-smoke] doctor first-time command variants"
     breadboard doctor --first-time --first-time-profile engine
-    if [[ "${PROFILE}" == "full" && "${HAS_TUI_SOURCE}" == "1" ]]; then
+    if [[ "${PROFILE}" == "full" && "${HAS_LEGACY_TUI_HARNESS}" == "1" ]]; then
       breadboard doctor --first-time --first-time-profile full
       breadboard doctor --first-time --first-time-profile tui
     fi
@@ -124,7 +124,7 @@ if [[ "${BREADBOARD_OK}" == "1" ]]; then
   if [[ "${SETUP_PROFILE_OK}" == "1" ]]; then
     echo "[devx-smoke] setup profile passthrough"
     breadboard setup --profile engine --skip-node --no-doctor
-    if [[ "${PROFILE}" == "full" && "${HAS_TUI_SOURCE}" == "1" ]]; then
+    if [[ "${PROFILE}" == "full" && "${HAS_LEGACY_TUI_HARNESS}" == "1" ]]; then
       breadboard setup --profile tui --skip-python --no-doctor
     fi
   else

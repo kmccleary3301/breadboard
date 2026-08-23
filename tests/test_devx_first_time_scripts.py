@@ -5,6 +5,10 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from scripts.dev import quickstart_first_time
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -78,6 +82,33 @@ def test_quickstart_separates_engine_cli_from_product_tui() -> None:
     assert all("breadboard run" not in command for command in commands)
     assert all("breadboard ui" not in command for command in commands)
     assert all(action["step"] != "tui" for action in actions)
+
+
+def test_quickstart_payload_uses_one_consistent_cli_probe_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = {"breadboard": 0, "bb": 0}
+
+    def probe_breadboard() -> tuple[bool, str]:
+        calls["breadboard"] += 1
+        return calls["breadboard"] == 1, f"breadboard-call-{calls['breadboard']}"
+
+    def probe_bb() -> tuple[bool, str]:
+        calls["bb"] += 1
+        return calls["bb"] == 1, f"bb-call-{calls['bb']}"
+
+    monkeypatch.setattr(quickstart_first_time, "_breadboard_cli_usable", probe_breadboard)
+    monkeypatch.setattr(quickstart_first_time, "_bb_cli_usable", probe_bb)
+
+    payload = quickstart_first_time._build_payload(include_advanced=False)
+    capabilities = payload["cli_capabilities"]
+
+    assert calls == {"breadboard": 1, "bb": 1}
+    assert isinstance(capabilities, dict)
+    assert payload["breadboard_cli_usable"] is capabilities["breadboard_available"] is True
+    assert payload["bb_cli_usable"] is capabilities["bb_available"] is True
+    assert payload["breadboard_cli_detail"] == capabilities["detail"] == "breadboard-call-1"
+    assert payload["bb_cli_detail"] == capabilities["bb_detail"] == "bb-call-1"
 
 
 def test_quickstart_first_time_include_advanced_contains_engine_full_pass_step() -> None:
