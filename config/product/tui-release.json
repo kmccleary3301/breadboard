@@ -3,9 +3,9 @@
   "status": "primary",
   "repository": "https://github.com/kmccleary3301/breadboard-tui",
   "defaultBranch": "main",
-  "sourceCommit": "bc1ef04b40aef375c3986918398b72a83a2a2ab6",
-  "sourceTree": "3095a0ad152c8c5e84e3049b8f22da79325a815b",
-  "productVersion": "0.1.0-rc.1",
+  "sourceCommit": "7e3e1b2b9bbca97af94901984d12e826219872b3",
+  "sourceTree": "c18fedf5eb8e2c0dc9da8eaf10a03ac89a8227b0",
+  "productVersion": "0.1.0-rc.2",
   "binary": "bb",
   "upstream": {
     "repository": "https://github.com/can1357/oh-my-pi",
