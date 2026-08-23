@@ -72,19 +72,6 @@ make setup-tui          # retained legacy contract-harness profile
 make setup-all          # full bootstrap + confidence pass
 ```
 
-### Via the Python engine CLI (if already installed)
-
-```bash
-breadboard setup
-breadboard setup --sdk-hello-live
-breadboard setup --all-checks
-breadboard setup --profile engine
-breadboard setup --profile tui
-```
-
-The retained `tui` profile name means the in-repo legacy contract harness, not
-the standalone BreadBoard product TUI.
-
 ### Bootstrap flags
 
 ```bash

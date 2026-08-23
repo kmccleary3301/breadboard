@@ -8,8 +8,6 @@ SKIP_ONBOARDING_CONTRACT=0
 SKIP_QUICKSTART_HELPER=0
 BREADBOARD_OK=1
 HAS_LEGACY_TUI_HARNESS=0
-DOCTOR_FIRST_TIME_OK=0
-SETUP_PROFILE_OK=0
 
 usage() {
   cat <<'EOF'
@@ -81,14 +79,6 @@ if ! breadboard --help >/tmp/breadboard_devx_help.txt 2>&1; then
   BREADBOARD_OK=0
 fi
 
-if [[ "${BREADBOARD_OK}" == "1" ]]; then
-  if breadboard doctor --help 2>/tmp/breadboard_doctor_help.err | grep -q -- "--first-time"; then
-    DOCTOR_FIRST_TIME_OK=1
-  fi
-  if breadboard setup --help 2>/tmp/breadboard_setup_help.err | grep -q -- "--profile"; then
-    SETUP_PROFILE_OK=1
-  fi
-fi
 
 echo "[devx-smoke] first-time doctor profiles"
 python scripts/dev/first_time_doctor.py --profile engine --strict
@@ -109,28 +99,7 @@ else
   echo "[devx-smoke] quickstart helper skipped (--skip-quickstart-helper)"
 fi
 
-if [[ "${BREADBOARD_OK}" == "1" ]]; then
-  if [[ "${DOCTOR_FIRST_TIME_OK}" == "1" ]]; then
-    echo "[devx-smoke] doctor first-time command variants"
-    breadboard doctor --first-time --first-time-profile engine
-    if [[ "${PROFILE}" == "full" && "${HAS_LEGACY_TUI_HARNESS}" == "1" ]]; then
-      breadboard doctor --first-time --first-time-profile full
-      breadboard doctor --first-time --first-time-profile tui
-    fi
-  else
-    echo "[devx-smoke] skipping doctor --first-time variants: CLI does not support these flags"
-  fi
-
-  if [[ "${SETUP_PROFILE_OK}" == "1" ]]; then
-    echo "[devx-smoke] setup profile passthrough"
-    breadboard setup --profile engine --skip-node --no-doctor
-    if [[ "${PROFILE}" == "full" && "${HAS_LEGACY_TUI_HARNESS}" == "1" ]]; then
-      breadboard setup --profile tui --skip-python --no-doctor
-    fi
-  else
-    echo "[devx-smoke] skipping setup --profile passthrough: CLI does not support this command/flags"
-  fi
-else
+if [[ "${BREADBOARD_OK}" == "0" ]]; then
   echo "[devx-smoke] breadboard CLI unavailable; validating bootstrap script directly"
   bash scripts/dev/bootstrap_first_time.sh --profile engine --no-doctor
 fi
