@@ -39,18 +39,19 @@ package is now a compatibility shim that resolves to `breadboard_engine`
 bash scripts/dev/bootstrap_first_time.sh
 ```
 
-Engine-only (if `tui_skeleton` sources are absent or not needed):
+Engine-only (skip the TypeScript SDK and legacy contract harness):
 
 ```bash
 bash scripts/dev/bootstrap_first_time.sh --profile engine
 ```
 
-What it does:
+The default full profile:
 
 - creates or reuses `.venv` (prefers `uv` when available)
-- installs Python dependencies from `requirements.txt`
-- builds `sdk/ts` and `tui_skeleton` when sources are present
-- installs the local `breadboard`/`bb` CLI wrapper
+- installs Python dependencies and the Python-owned `breadboard` engine CLI
+- builds `sdk/ts` and the legacy `tui_skeleton` contract harness when present
+- does not install `bb`; obtain the product TUI separately from
+  [`kmccleary3301/breadboard-tui`](https://github.com/kmccleary3301/breadboard-tui)
 - runs the first-time setup doctor
 
 The script is incremental on repeat runs:
@@ -67,18 +68,8 @@ make setup-fast         # full bootstrap, skip doctor checks
 make setup-engine       # engine only
 make setup-fast-engine  # engine only, skip doctor checks
 make setup-refresh-python   # force Python dependency reinstall in existing .venv
-make setup-tui          # TUI side only
+make setup-tui          # retained legacy contract-harness profile
 make setup-all          # full bootstrap + confidence pass
-```
-
-### Via the CLI wrapper (if already installed)
-
-```bash
-breadboard setup
-breadboard setup --sdk-hello-live
-breadboard setup --all-checks
-breadboard setup --profile engine
-breadboard setup --profile tui
 ```
 
 ### Bootstrap flags
@@ -93,7 +84,7 @@ bash scripts/dev/bootstrap_first_time.sh --recreate-venv
 # Force reinstall Python dependencies
 bash scripts/dev/bootstrap_first_time.sh --refresh-python-deps
 
-# Skip one side if you only need engine or only TUI
+# Skip Python or Node/legacy-harness setup
 bash scripts/dev/bootstrap_first_time.sh --skip-node
 bash scripts/dev/bootstrap_first_time.sh --skip-python
 

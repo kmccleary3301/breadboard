@@ -20,18 +20,19 @@ From the repo root:
 bash scripts/dev/bootstrap_first_time.sh
 ```
 
-Engine-only (if you don't need the TUI):
+Engine-only (skip the TypeScript SDK and legacy contract harness):
 
 ```bash
 bash scripts/dev/bootstrap_first_time.sh --profile engine
 ```
 
-What this does:
+The default full profile:
 
 - creates or reuses `.venv` (prefers `uv` when available)
-- installs Python dependencies from `requirements.txt`
-- builds `sdk/ts` and `tui_skeleton`
-- installs the local `breadboard`/`bb` CLI wrapper
+- installs Python dependencies and the Python-owned `breadboard` engine CLI
+- builds `sdk/ts` and the legacy `tui_skeleton` contract harness
+- does not install `bb`; obtain the product TUI separately from
+  [`kmccleary3301/breadboard-tui`](https://github.com/kmccleary3301/breadboard-tui)
 - runs first-time doctor
 
 Subsequent runs are incremental—Python and Node installs are skipped when lockfiles and outputs are unchanged.
@@ -44,7 +45,7 @@ Subsequent runs are incremental—Python and Node installs are skipped when lock
 python scripts/dev/first_time_doctor.py --strict
 ```
 
-Verify the installed product catalog:
+Verify the installed engine catalog:
 
 ```bash
 breadboard --json system describe
