@@ -325,6 +325,26 @@ class TestChildEnvironmentBoundary:
         assert is_provider_credential_env_key("BREADBOARD_CREDENTIAL_STORE_PATH")
         assert is_provider_credential_env_key("BREADBOARD_CREDENTIAL_DB")
 
+    def test_ray_runtime_controls_survive_sanitization(self):
+        from breadboard_engine.security import build_child_environment
+
+        ray_environment = {
+            "RAY_BACKEND_LOG_LEVEL": "error",
+            "RAY_LOG_TO_DRIVER": "0",
+            "RAY_LOG_TO_STDERR": "1",
+            "RAY_ROTATION_BACKUP_COUNT": "1",
+            "RAY_ROTATION_MAX_BYTES": "262144",
+            "RAY_TMPDIR": "/private/ephemeral-ray",
+        }
+        child = build_child_environment(
+            source={
+                **ray_environment,
+                "OPENAI_API_KEY": "ambient-openai-canary",
+            }
+        )
+
+        assert child == ray_environment
+
     def test_hidden_credentials_restore_after_exception(self):
         from breadboard_engine.security import provider_credentials_hidden
 
