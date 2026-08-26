@@ -331,7 +331,8 @@ class TestChildEnvironmentBoundary:
         ray_environment = {
             "RAY_BACKEND_LOG_LEVEL": "error",
             "RAY_LOG_TO_DRIVER": "0",
-            "RAY_LOG_TO_STDERR": "1",
+            "RAY_LOGGER_LEVEL": "error",
+            "RAY_LOG_TO_STDERR": "0",
             "RAY_ROTATION_BACKUP_COUNT": "1",
             "RAY_ROTATION_MAX_BYTES": "262144",
             "RAY_TMPDIR": "/private/ephemeral-ray",
