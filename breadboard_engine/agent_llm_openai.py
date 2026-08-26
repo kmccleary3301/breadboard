@@ -7,17 +7,16 @@ from datetime import datetime
 import json
 import math
 import os
+from contextlib import contextmanager
 import random
-import shutil
 import shlex
 import subprocess
 import sys
 import time
 import uuid
-import traceback
 import re
 import threading
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from pathlib import Path
 from types import SimpleNamespace
 from dataclasses import asdict, dataclass, field
@@ -28,7 +27,9 @@ from adaptive_iter import decode_adaptive_iterable
 
 from breadboard.sandbox import DevSandboxV2
 from breadboard.product.runtime.artifacts import ArtifactRef, read_workspace_artifact
-from breadboard.opencode_patch import PatchParseError, parse_opencode_patch, to_unified_diff
+from breadboard.opencode_patch import (
+    PatchParseError, parse_opencode_patch, to_unified_diff,
+)
 from breadboard.sandbox_factory import SandboxFactory, DeploymentMode
 from .core.core import ToolDefinition, ToolParameter
 from .execution.composite import CompositeToolCaller
@@ -48,15 +49,22 @@ from .provider.runtime import (
     ProviderMessage,
     ProviderRuntimeError,
 )
+from .provider.contracts import (
+    ProviderContractError,
+    normalize_content,
+    strip_provider_exchange_completion_sentinels,
+)
 from .provider import ReplayRuntime
 from .provider.capability_probe import ProviderCapabilityProbeRunner
 from .state.session_state import SessionState
 from .state.completion_detector import CompletionDetector
 from .messaging.message_formatter import MessageFormatter
 from .messaging.markdown_logger import MarkdownLogger
-from .error_handling.error_handler import ErrorHandler
+from .error_handling.error_handler import ErrorHandler, public_error_projection
 from .monitoring.telemetry import TelemetryLogger
-from .monitoring.reward_metrics import RewardMetricsSQLiteWriter, TodoMetricsSQLiteWriter
+from .monitoring.reward_metrics import (
+    RewardMetricsSQLiteWriter, TodoMetricsSQLiteWriter,
+)
 from .run_logging import LoggerV2Manager
 from .run_logging.api_recorder import APIRequestRecorder
 from .run_logging.prompt_logger import PromptArtifactLogger
@@ -64,7 +72,19 @@ from .run_logging.markdown_transcript import MarkdownTranscriptWriter
 from .run_logging.provider_native_logger import ProviderNativeLogger
 from .run_logging.request_recorder import StructuredRequestRecorder
 from .utils.local_ray import LocalActorProxy, identity_get
-from .utils.safe_delete import is_disposable_workspace_path
+from .security import (
+    WorkspaceFilesystem,
+    WorkspacePathError,
+    build_child_environment,
+    build_restricted_process_command,
+    contains_provider_credential_value,
+    provider_credential_values,
+    protected_credential_paths,
+    register_protected_credential_path,
+    purge_provider_credentials,
+    redaction,
+    validate_workspace_credential_boundary,
+)
 from .provider.health import RouteHealthManager
 from .provider import normalize_provider_result
 from .provider.metrics import ProviderMetricsCollector
@@ -114,7 +134,10 @@ from .conductor.facade_methods import OpenAIConductorFacadeMethods
 from .todo import TodoManager, TodoStore
 from .todo.store import TODO_OPEN_STATUSES
 from .replay import ReplaySession, load_replay_session
-from .conductor.plan_bootstrapper import PlanBootstrapper
+from .model_roles import (
+    credential_origin_matches_binding,
+    select_role_target,
+)
 from .permissions import PermissionBroker, PermissionDeniedError
 from .conductor.loop_detection import LoopDetectionService
 from .conductor.context_window_guard import ContextWindowGuard
@@ -123,7 +146,9 @@ from .provider import ProviderInvoker
 from .conductor.prompt_planner import ToolPromptPlanner
 from .turns import TurnContext, TurnRelayer
 from .orchestration import TeamConfig, MultiAgentOrchestrator
-from .longrun import LongRunController, build_work_queue, is_longrun_enabled, resolve_episode_max_steps
+from .longrun import (
+    LongRunController, build_work_queue, is_longrun_enabled, resolve_episode_max_steps,
+)
 from .rlm import (
     BlobStore,
     build_budget_limits,
@@ -181,6 +206,7 @@ class _RlmProviderSubcallExecution:
     resolved_model: str
     provider_id: str
     elapsed_seconds: float | None
+    provider_exchange: Dict[str, Any]
 
 
 @dataclass
@@ -279,7 +305,8 @@ def _tools_schema() -> List[Dict[str, Any]]:
                     "type": "object",
                     "properties": {
                         "path": {"type": "string"},
-                        "depth": {"type": "integer", "description": "Tree depth (1-5, default 1)", "default": 1}
+                        "depth": {"type": "integer", "description": "Tree depth (1-5, default 1)", "default": 1,
+                        },
                     },
                     "required": ["path"],
                 },
@@ -335,19 +362,45 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         *,
         local_mode: bool = False,
         prompt_base_dirs: Optional[List[Path]] = None,
+        protected_paths: Optional[Sequence[str]] = None,
     ) -> None:
         """Initialize conductor with workspace, image, and configuration."""
-        self._bootstrap_openai_env_from_runtime_config(config if isinstance(config, dict) else None)
+        captured_protected_paths = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        for protected_path in captured_protected_paths:
+            register_protected_credential_path(protected_path)
+        if not local_mode:
+            purge_provider_credentials()
         bootstrap_conductor(
             self,
             workspace=workspace,
             image=image,
             config=config,
             local_mode=local_mode,
+            protected_paths=captured_protected_paths,
             zero_tool_warn_message=ZERO_TOOL_WARN_MESSAGE,
             zero_tool_abort_message=ZERO_TOOL_ABORT_MESSAGE,
             completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
         )
+        self._model_role_lock = (
+            dict(self.config.get("model_role_lock"))
+            if isinstance(self.config, dict) and isinstance(self.config.get("model_role_lock"), dict)
+            else None
+        )
+        self._active_model_role = (
+            str(self.config.get("active_model_role") or "").strip()
+            if isinstance(self.config, dict)
+            else ""
+        )
+        self._workspace_filesystem: Optional[WorkspaceFilesystem] = None
+        self._workspace_filesystem_lock = threading.RLock()
+        self._workspace_persistence_lock = threading.RLock()
         self._prompt_base_dirs = list(prompt_base_dirs or [])
         # Stop requests are session-scoped and should only affect the current run.
         self._stop_requested = False
@@ -377,7 +430,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         idx_str, _, remainder = rest.partition("]")
                         if idx_str.isdigit():
                             tokens.append(int(idx_str))
-                        cursor = remainder.lstrip(".") if remainder.startswith(".") else remainder
+                        cursor = (
+                            remainder.lstrip(".") if remainder.startswith(".") else remainder
+                        )
                     else:
                         tokens.append(cursor)
                         cursor = ""
@@ -434,6 +489,13 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 if not isinstance(path, str) or not path:
                     continue
                 _set_nested(self.config, _tokenize(path), value)
+            lock_value = self.config.get("model_role_lock")
+            self._model_role_lock = (
+                dict(lock_value) if isinstance(lock_value, dict) else None
+            )
+            self._active_model_role = str(
+                self.config.get("active_model_role") or ""
+            ).strip()
             return True
         except Exception:
             return False
@@ -462,16 +524,167 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             self._active_replay_session = None
         return user_prompt, max_steps
 
+    def _workspace_filesystem_for_persistence(self) -> Optional[WorkspaceFilesystem]:
+        filesystem = getattr(self, "_workspace_filesystem", None)
+        if filesystem is not None:
+            return filesystem
+        lock = getattr(self, "_workspace_filesystem_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._workspace_filesystem_lock = lock
+        with lock:
+            filesystem = getattr(self, "_workspace_filesystem", None)
+            if filesystem is not None:
+                return filesystem
+            workspace = getattr(self, "workspace", None)
+            if not workspace:
+                return None
+            try:
+                filesystem = WorkspaceFilesystem.open_anchored_root(
+                    str(workspace),
+                    create=False,
+                )
+                validate_workspace_credential_boundary(
+                    filesystem.root,
+                    protected_paths=getattr(
+                        self,
+                        "_protected_credential_paths",
+                        (),
+                    ),
+                )
+            except Exception:
+                if filesystem is not None:
+                    filesystem.close()
+                return None
+            self._workspace_filesystem = filesystem
+            return filesystem
+
+    def _workspace_persistence_lock_for(self) -> threading.RLock:
+        lock = getattr(self, "_workspace_persistence_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._workspace_persistence_lock = lock
+        return lock
+
+    def _write_workspace_text(self, relative_path: str, content: str) -> bool:
+        filesystem = self._workspace_filesystem_for_persistence()
+        if filesystem is None:
+            return False
+        try:
+            with self._workspace_persistence_lock_for():
+                filesystem.write_text(relative_path, content)
+            return True
+        except Exception:
+            return False
+
+    def _append_workspace_text(self, relative_path: str, content: str) -> bool:
+        filesystem = self._workspace_filesystem_for_persistence()
+        if filesystem is None:
+            return False
+        try:
+            with self._workspace_persistence_lock_for():
+                filesystem.append_text(relative_path, content)
+            return True
+        except Exception:
+            return False
+
+    def _persist_workspace_event_log(self, relative_path: str, event_log: Any) -> bool:
+        try:
+            events = event_log.events
+        except Exception:
+            return False
+        payload = "".join(
+            json.dumps(event.__dict__, ensure_ascii=False) + "\n"
+            for event in events
+        )
+        return self._write_workspace_text(relative_path, payload)
+    def _classify_workspace_path(self, path: str | os.PathLike[str]) -> Tuple[bool, Optional[str]]:
+        workspace = getattr(self, "workspace", None)
+        if not workspace:
+            return True, None
+        try:
+            root = Path(os.path.abspath(os.fspath(workspace)))
+            candidate = Path(os.path.abspath(os.fspath(path)))
+            try:
+                relative = candidate.relative_to(root)
+                return True, str(relative)
+            except ValueError:
+                pass
+            resolved = candidate.resolve(strict=False)
+            try:
+                resolved.relative_to(root)
+            except ValueError:
+                return False, None
+            return True, None
+        except Exception:
+            return True, None
+
+    def _path_is_protected_input(self, path: Path) -> bool:
+        lexical = Path(os.path.abspath(path))
+        try:
+            resolved = lexical.resolve(strict=False)
+        except OSError:
+            resolved = lexical
+        protected = tuple(
+            dict.fromkeys(
+                (
+                    *getattr(self, "_protected_credential_paths", ()),
+                    *(str(item) for item in protected_credential_paths()),
+                )
+            )
+        )
+        for raw_boundary in protected:
+            boundary = Path(os.path.abspath(raw_boundary))
+            try:
+                resolved_boundary = boundary.resolve(strict=False)
+            except OSError:
+                resolved_boundary = boundary
+            try:
+                lexical.relative_to(boundary)
+                return True
+            except ValueError:
+                pass
+            try:
+                resolved.relative_to(resolved_boundary)
+                return True
+            except ValueError:
+                pass
+        return False
+
+    def _read_host_text(
+        self,
+        path: str | os.PathLike[str],
+        *,
+        errors: str = "strict",
+    ) -> str:
+        candidate = Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
+        inside_workspace, relative = self._classify_workspace_path(candidate)
+        if inside_workspace:
+            if relative is None:
+                raise WorkspacePathError("workspace_path_ambiguous")
+            filesystem = self._workspace_filesystem_for_persistence()
+            if filesystem is None:
+                raise WorkspacePathError("workspace_root_unavailable")
+            return filesystem.read_text(relative, errors=errors)
+        if self._path_is_protected_input(candidate):
+            raise WorkspacePathError("protected_input_rejected")
+        with WorkspaceFilesystem.open_anchored_root(
+            candidate.parent,
+            create=False,
+        ) as filesystem:
+            return filesystem.read_text(candidate.name, errors=errors)
+
     def seed_workspace_file(self, filename: str, contents: str) -> None:
         """Copy helper files (e.g., task specs) into the active workspace before execution."""
         if not filename:
             return
         try:
-            target = Path(self.workspace) / filename
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(contents, encoding="utf-8")
+            logical_path = Path(filename)
+            if logical_path.is_absolute() or ".." in logical_path.parts:
+                return
         except Exception:
-            pass
+            return
+        self._write_workspace_text(filename, contents)
 
 
     def _prepare_workspace(self, workspace: str) -> Path:
@@ -481,36 +694,81 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
     def _load_resume_snapshot(self) -> Optional[Dict[str, Any]]:
         resume_cfg = {}
         try:
-            resume_cfg = (self.config.get("resume") or {}) if isinstance(self.config, dict) else {}
+            resume_cfg = (
+                (self.config.get("resume") or {}) if isinstance(self.config, dict) else {}
+            )
         except Exception:
             resume_cfg = {}
         explicit_path = None
         if isinstance(resume_cfg, dict):
             explicit_path = resume_cfg.get("snapshot_path") or resume_cfg.get("snapshot")
         env_path = os.environ.get("BREADBOARD_RESUME_SNAPSHOT")
-        workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
-        default_path = workspace_root / ".breadboard" / "checkpoints" / "active_snapshot.json"
-        candidate = explicit_path or env_path or (str(default_path) if default_path.exists() else None)
+        filesystem = self._workspace_filesystem_for_persistence()
+        workspace_root = (
+            Path(filesystem.root)
+            if filesystem is not None
+            else Path(str(getattr(self, "workspace", ""))).absolute()
+        )
+        default_rel_path = ".breadboard/checkpoints/active_snapshot.json"
+        default_available = False
+        if filesystem is not None:
+            try:
+                default_available = filesystem.exists(default_rel_path)
+            except Exception:
+                default_available = False
+        candidate = (
+            explicit_path or env_path or (
+            str(workspace_root / default_rel_path) if default_available else None)
+        )
         if not candidate:
             return None
-        target = Path(str(candidate))
-        if not target.is_absolute():
-            target = (workspace_root / target).resolve()
-        if not target.exists():
-            return None
+
+        candidate_path = Path(str(candidate))
+        relative_path: Optional[str] = None
+        if candidate_path.is_absolute():
+            try:
+                relative_path = str(candidate_path.relative_to(workspace_root))
+            except ValueError:
+                relative_path = None
+        else:
+            try:
+                relative_path = str(candidate_path)
+                (workspace_root / candidate_path).relative_to(workspace_root)
+            except ValueError:
+                relative_path = None
+
+        if relative_path is not None:
+            if filesystem is None:
+                return None
+            try:
+                raw_payload = filesystem.read_text(relative_path)
+            except Exception:
+                return None
+            if explicit_path is None and env_path is None:
+                try:
+                    filesystem.unlink(relative_path)
+                except Exception:
+                    pass
+        else:
+            target = (
+                candidate_path
+                if candidate_path.is_absolute()
+                else workspace_root / candidate_path
+            )
+            try:
+                raw_payload = self._read_host_text(target)
+            except Exception:
+                return None
         try:
-            payload = json.loads(target.read_text(encoding="utf-8"))
+            payload = json.loads(raw_payload)
         except Exception:
             return None
-        if explicit_path is None and env_path is None:
-            try:
-                target.unlink()
-            except Exception:
-                pass
         return payload if isinstance(payload, dict) else None
 
     def _get_multi_agent_orchestrator(self) -> Optional[MultiAgentOrchestrator]:
-        cfg = (self.config.get("multi_agent") or {}) if isinstance(getattr(self, "config", None), dict) else {}
+        cfg = (
+            (self.config.get("multi_agent") or {}) if isinstance(getattr(self, "config", None), dict) else {}
+        )
         if not cfg or not bool(cfg.get("enabled")):
             return None
         if getattr(self, "_multi_agent_orchestrator", None) is not None:
@@ -522,10 +780,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             team_payload = raw_team
         elif isinstance(raw_team, str):
             try:
-                from pathlib import Path as _Path
                 import yaml  # type: ignore
 
-                raw_text = _Path(raw_team).read_text(encoding="utf-8")
+                raw_text = self._read_host_text(raw_team)
                 loaded = yaml.safe_load(raw_text)
                 if isinstance(loaded, dict):
                     team_payload = loaded
@@ -548,24 +805,32 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if orchestrator is None:
             return
         try:
-            orchestrator.persist_event_log()
+            event_log_path = getattr(self, "_multi_agent_event_log_path", None)
+            if event_log_path:
+                inside_workspace, relative = self._classify_workspace_path(
+                    Path(str(event_log_path))
+                )
+                if not inside_workspace:
+                    orchestrator.persist_event_log()
+                elif relative is not None:
+                    self._persist_workspace_event_log(relative, orchestrator.event_log)
         except Exception:
             pass
         try:
             run_dir = getattr(getattr(self, "logger_v2", None), "run_dir", None)
             if run_dir:
-                path = Path(str(run_dir)) / "meta" / "multi_agent_events.jsonl"
-                orchestrator.event_log.to_jsonl(str(path))
+                destination = Path(str(run_dir)) / "meta" / "multi_agent_events.jsonl"
+                inside_workspace, relative = self._classify_workspace_path(destination)
+                if not inside_workspace:
+                    orchestrator.event_log.to_jsonl(str(destination))
+                elif relative is not None:
+                    self._persist_workspace_event_log(relative, orchestrator.event_log)
         except Exception:
             pass
-        try:
-            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
-            if workspace_root.exists():
-                path = workspace_root / ".breadboard" / "multi_agent_events.jsonl"
-                path.parent.mkdir(parents=True, exist_ok=True)
-                orchestrator.event_log.to_jsonl(str(path))
-        except Exception:
-            pass
+        self._persist_workspace_event_log(
+            ".breadboard/multi_agent_events.jsonl",
+            orchestrator.event_log,
+        )
 
     def _inject_multi_agent_wakeups(self, session_state: SessionState, markdown_logger: MarkdownLogger) -> None:
         """
@@ -648,77 +913,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         return None
 
     @staticmethod
-    def _find_local_openai_bootstrap_token(value: Any, seen: Optional[set[int]] = None) -> Optional[str]:
-        if seen is None:
-            seen = set()
-        if value is None:
-            return None
-        marker = id(value)
-        if marker in seen:
-            return None
-        seen.add(marker)
-        if isinstance(value, dict):
-            for key in ("OPENAI_API_KEY", "codex_access_token", "access_token", "id_token", "token", "auth_token"):
-                candidate = value.get(key)
-                if isinstance(candidate, str) and candidate.strip():
-                    return candidate.strip()
-            for nested in value.values():
-                found = OpenAIConductor._find_local_openai_bootstrap_token(nested, seen)
-                if found:
-                    return found
-        elif isinstance(value, list):
-            for nested in value:
-                found = OpenAIConductor._find_local_openai_bootstrap_token(nested, seen)
-                if found:
-                    return found
-        return None
-
-    @staticmethod
-    def _bootstrap_local_openai_client_config(client_config: Dict[str, Any]) -> Dict[str, Any]:
-        if client_config.get("api_key"):
-            return client_config
-        try:
-            auth_path = Path.home() / ".codex" / "auth.json"
-            if not auth_path.exists():
-                return client_config
-            payload = json.loads(auth_path.read_text(encoding="utf-8"))
-            token = OpenAIConductor._find_local_openai_bootstrap_token(payload)
-            if not token:
-                return client_config
-            client_config["api_key"] = token
-            headers = dict(client_config.get("default_headers") or {})
-            headers.setdefault("Authorization", f"Bearer {token}")
-            client_config["default_headers"] = headers
-        except Exception:
-            return client_config
-        return client_config
-
-    @staticmethod
-    def _bootstrap_openai_env_from_runtime_config(config: Optional[Dict[str, Any]]) -> None:
-        if not isinstance(config, dict):
-            return
-        runtime_auth = config.get("provider_auth_runtime")
-        if not isinstance(runtime_auth, dict):
-            return
-        openai_auth = runtime_auth.get("openai")
-        if not isinstance(openai_auth, dict):
-            return
-        api_key = str(openai_auth.get("api_key") or "").strip()
-        if api_key:
-            os.environ["OPENAI_API_KEY"] = api_key
-        headers = openai_auth.get("headers")
-        if isinstance(headers, dict) and headers:
-            try:
-                os.environ["BREADBOARD_OPENAI_AUTH_HEADERS_JSON"] = json.dumps(
-                    {str(k): str(v) for k, v in headers.items() if k and v is not None}
-                )
-            except Exception:
-                pass
-        base_url = str(openai_auth.get("base_url") or "").strip()
-        if base_url:
-            os.environ["BREADBOARD_OPENAI_AUTH_BASE_URL"] = base_url
-
-    @staticmethod
     def _extract_last_assistant_text(messages: Any) -> str:
         if not isinstance(messages, list):
             return ""
@@ -746,7 +940,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             # Ensure subagents operate inside the parent workspace, regardless of config defaults.
             try:
                 cfg_copy = dict(config)
-                ws_cfg = cfg_copy.get("workspace") if isinstance(cfg_copy.get("workspace"), dict) else {}
+                ws_cfg = (
+                    cfg_copy.get("workspace") if isinstance(cfg_copy.get("workspace"), dict) else {}
+                )
                 ws_cfg = dict(ws_cfg or {})
                 ws_cfg["root"] = str(getattr(self, "workspace", ""))
                 cfg_copy["workspace"] = ws_cfg
@@ -771,6 +967,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 tool_prompt_mode="system_once",
                 completion_sentinel=">>>>>> END RESPONSE",
                 completion_config=(config.get("completion") if isinstance(config, dict) else None),
+                context={
+                    "session_id": f"subagent-{uuid.uuid4().hex}",
+                    "input_id": f"input-{uuid.uuid4().hex}",
+                    "turn_id": f"turn-{uuid.uuid4().hex}",
+                },
             )
         finally:
             if previous_preserve is None:
@@ -840,7 +1041,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             f"Agent: {agent}\n"
             "Status: running\n\n"
             "The system will notify you when the task completes.\n"
-            f"Use `background_output` tool with task_id=\"{task_id}\" to check progress:\n"
+            f'Use `background_output` tool with task_id="{task_id}" to check progress:\n'
             "- block=false (default): Check status immediately - returns full status info\n"
             "- block=true: Wait for completion (rarely needed since system notifies)"
         )
@@ -861,7 +1062,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             f"Agent: {agent} (subagent)\n"
             "Status: running\n\n"
             "The system will notify you when the task completes.\n"
-            f"Use `background_output` tool with task_id=\"{task_id}\" to check progress:\n"
+            f'Use `background_output` tool with task_id="{task_id}" to check progress:\n'
             "- block=false (default): Check status immediately - returns full status info\n"
             "- block=true: Wait for completion (rarely needed since system notifies)"
         )
@@ -927,17 +1128,26 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         try:
             run_dir = getattr(getattr(self, "logger_v2", None), "run_dir", None)
             if run_dir:
-                self.logger_v2.write_json(f"meta/subagents/{task_id}.json", payload)
+                destination = (
+                    Path(str(run_dir)) / "meta" / "subagents" / f"{task_id}.json"
+                )
+                inside_workspace, relative = self._classify_workspace_path(destination)
+                if not inside_workspace:
+                    self.logger_v2.write_json(
+                        f"meta/subagents/{task_id}.json",
+                        payload,
+                    )
+                elif relative is not None:
+                    self._write_workspace_text(
+                        relative,
+                        json.dumps(payload, indent=2, ensure_ascii=False),
+                    )
         except Exception:
             pass
-        try:
-            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
-            if workspace_root.exists():
-                dest = workspace_root / ".breadboard" / "subagents" / f"{task_id}.json"
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-        except Exception:
-            pass
+        self._write_workspace_text(
+            f".breadboard/subagents/{task_id}.json",
+            json.dumps(payload, indent=2, ensure_ascii=False),
+        )
 
     def _persist_subagent_transcript(
         self,
@@ -950,26 +1160,31 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         rows = [row for row in transcript if isinstance(row, dict)]
         if not rows:
             return None
-        payload = "\n".join([json.dumps(row, ensure_ascii=False) for row in rows]) + "\n"
+        payload = (
+            "\n".join([json.dumps(row, ensure_ascii=False) for row in rows]) + "\n"
+        )
         rel_path = f".breadboard/subagents/agent-{task_id}.jsonl"
         recorded_path: Optional[str] = None
-        try:
-            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
-            if workspace_root.exists():
-                dest = workspace_root / ".breadboard" / "subagents" / f"agent-{task_id}.jsonl"
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_text(payload, encoding="utf-8")
-                recorded_path = rel_path
-        except Exception:
-            pass
+        if self._write_workspace_text(rel_path, payload):
+            recorded_path = rel_path
         try:
             run_dir = getattr(getattr(self, "logger_v2", None), "run_dir", None)
             if run_dir:
-                dest = Path(str(run_dir)) / "meta" / "subagents" / f"agent-{task_id}.jsonl"
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_text(payload, encoding="utf-8")
-                if recorded_path is None:
-                    recorded_path = str(dest)
+                destination = (
+                    Path(str(run_dir)) / "meta" / "subagents" / f"agent-{task_id}.jsonl"
+                )
+                inside_workspace, relative = self._classify_workspace_path(destination)
+                if not inside_workspace:
+                    self.logger_v2.write_text(
+                        f"meta/subagents/agent-{task_id}.jsonl",
+                        payload,
+                    )
+                    if recorded_path is None:
+                        recorded_path = str(destination)
+                elif relative is not None:
+                    self._write_workspace_text(relative, payload)
+                    if recorded_path is None:
+                        recorded_path = str(destination)
         except Exception:
             pass
         return recorded_path
@@ -1032,7 +1247,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             msg = f"Error: Unknown agent type: {agent} is not a valid agent type"
             return {"error": msg, "__mvi_text_output": msg}
 
-        def _summarize_replay_entries(entries: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
+        def _summarize_replay_entries(entries: List[Dict[str, Any]],
+        ) -> Tuple[str, List[Dict[str, Any]]]:
             summary: List[Dict[str, Any]] = []
             output_parts: List[str] = []
             for entry in entries or []:
@@ -1045,7 +1261,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         continue
                     if part.get("type") == "tool":
                         meta = part.get("meta") or {}
-                        state = (meta.get("state") or {}) if isinstance(meta, dict) else {}
+                        state = (
+                            (meta.get("state") or {}) if isinstance(meta, dict) else {}
+                        )
                         summary.append(
                             {
                                 "id": part.get("id"),
@@ -1096,8 +1314,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if resume_id:
             if isinstance(expected_output, str):
                 if str(expected_status or "").lower() == "error":
-                    return {"error": expected_output, "__mvi_text_output": expected_output}
-                meta_payload = expected_metadata if isinstance(expected_metadata, dict) else {}
+                    return {"error": expected_output, "__mvi_text_output": expected_output,
+                    }
+                meta_payload = (
+                    expected_metadata if isinstance(expected_metadata, dict) else {}
+                )
                 return {
                     "title": description,
                     "output": expected_output,
@@ -1143,12 +1364,32 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 payload=spawn_payload,
             )
 
-            model_route = str(
-                args.get("model")
-                or (sub_config.get("providers", {}) or {}).get("default_model")
-                or getattr(self, "_current_route_id", "")
-                or "openai"
-            )
+            dispatch_role = self._locked_subagent_role(subagent_type)
+            if dispatch_role:
+                target = self._locked_target_for_role(dispatch_role)
+                if not isinstance(target, dict) or not target.get("route_id"):
+                    raise ProviderContractError(
+                        "subagent dispatch role has no exact route"
+                    )
+                model_route = str(target["route_id"])
+                sub_config = copy.deepcopy(sub_config)
+                sub_config["model_role_lock"] = copy.deepcopy(
+                    self._model_role_lock
+                )
+                sub_config["active_model_role"] = dispatch_role
+                sub_config["providers"] = dict(
+                    sub_config.get("providers") or {}
+                )
+                sub_config["providers"]["default_model"] = model_route
+            else:
+                model_route = str(
+                    args.get("model")
+                    or (sub_config.get("providers", {}) or {}).get(
+                        "default_model"
+                    )
+                    or getattr(self, "_current_route_id", "")
+                    or "openai"
+                )
             try:
                 max_steps = int(args.get("max_steps") or (sub_config.get("loop", {}) or {}).get("max_steps") or 24)
             except Exception:
@@ -1171,10 +1412,14 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         transcript_path: Optional[str] = None
                         if subagent_type == "repo-scanner":
                             try:
-                                root = Path(self.workspace).resolve()
-                                entries = sorted(root.iterdir(), key=lambda p: p.name)
-                                dirs = [p.name + "/" for p in entries if p.is_dir()]
-                                files = [p.name for p in entries if p.is_file()]
+                                filesystem = (
+                                    self._workspace_filesystem_for_persistence()
+                                )
+                                if filesystem is None:
+                                    raise WorkspacePathError("workspace_root_unavailable")
+                                entries = filesystem.list_entries(depth=1)
+                                dirs = [entry.path + "/" for entry in entries if entry.kind == "dir"]
+                                files = [entry.path for entry in entries if entry.kind == "file"]
                                 output_text = (
                                     "Repo root listing:\n"
                                     + "\n".join([f"- {name}" for name in (dirs + files)])
@@ -1183,19 +1428,25 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                                 output_text = "Repo root listing unavailable."
                         elif subagent_type == "grep-summarizer":
                             try:
-                                root = Path(self.workspace).resolve()
+                                filesystem = (
+                                    self._workspace_filesystem_for_persistence()
+                                )
+                                if filesystem is None:
+                                    raise WorkspacePathError("workspace_root_unavailable")
                                 patterns = ["multi_agent", "TaskOutput"]
                                 found: Dict[str, List[str]] = {p: [] for p in patterns}
-                                for path in root.rglob("*"):
-                                    if not path.is_file():
-                                        continue
+                                for rel in filesystem.glob("**/*"):
                                     try:
-                                        if path.stat().st_size > 1024 * 1024:
+                                        metadata = filesystem.inspect_file(rel)
+                                        if metadata.size > 1024 * 1024:
                                             continue
-                                        text = path.read_text(encoding="utf-8", errors="ignore")
+                                        text = filesystem.read_text(
+                                            rel,
+                                            encoding="utf-8",
+                                            errors="ignore",
+                                        )
                                     except Exception:
                                         continue
-                                    rel = str(path.relative_to(root))
                                     for pat in patterns:
                                         if pat in text and rel not in found[pat]:
                                             found[pat].append(rel)
@@ -1277,10 +1528,14 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                             payload.update(task_context)
                         self._emit_task_event(payload)
                     except Exception as exc:
+                        error_code = public_error_projection(
+                            exc,
+                            default_code="subagent_error",
+                        )["error"]
                         with self._async_agent_jobs_lock:
                             job.status = "failed"
                             job.completed_at = time.time()
-                            job.error = str(exc)
+                            job.error = error_code
                         self._persist_subagent_artifact(
                             task_id=task_id,
                             subagent_type=subagent_type,
@@ -1288,7 +1543,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                             prompt=prompt,
                             status="failed",
                             output_text=None,
-                            error_text=str(exc),
+                            error_text=error_code,
                             orchestrator_job_id=spawn.job.job_id,
                             seq=getattr(spawn.job, "seq", None),
                             created_at=job.created_at,
@@ -1297,7 +1552,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         orchestrator.mark_job_completed(
                             spawn.job.job_id,
                             result_payload={
-                                "error": str(exc),
+                                "error": error_code,
                                 "subagent_type": subagent_type,
                                 "task_id": task_id,
                             },
@@ -1319,7 +1574,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                             "seq": getattr(spawn.job, "seq", None),
                             "status": "failed",
                             "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
-                            "error": str(exc),
+                            "error": error_code,
                         }
                         if task_context:
                             payload.update(task_context)
@@ -1410,7 +1665,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         )
             except Exception as exc:  # noqa: BLE001
                 status_value = "failed"
-                error_text = str(exc)
+                error_text = public_error_projection(
+                    exc,
+                    default_code="subagent_error",
+                )["error"]
 
             self._persist_subagent_artifact(
                 task_id=spawn.job.job_id,
@@ -1438,7 +1696,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
             if is_task_tool:
                 finish_event = {
-                    "kind": "subagent_completed" if status_value == "completed" else "subagent_failed",
+                    "kind": (
+                        "subagent_completed" if status_value == "completed" else "subagent_failed"
+                    ),
                     "task_id": task_id_sync,
                     "sessionId": spawn.job.job_id,
                     "subagent_type": subagent_type,
@@ -1463,7 +1723,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             }
 
         # Phase 7/OpenCode parity: replay-backed extraction via `task_tool.subagents`.
-        task_cfg = (self.config.get("task_tool", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
+        task_cfg = (
+            (self.config.get("task_tool", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
+        )
         subagents = task_cfg.get("subagents") or {}
         if not isinstance(subagents, dict):
             subagents = {}
@@ -1471,8 +1733,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if not isinstance(sub_cfg, dict):
             if isinstance(expected_output, str):
                 if str(expected_status or "").lower() == "error":
-                    return {"error": expected_output, "__mvi_text_output": expected_output}
-                meta_payload = expected_metadata if isinstance(expected_metadata, dict) else {}
+                    return {"error": expected_output, "__mvi_text_output": expected_output,
+                    }
+                meta_payload = (
+                    expected_metadata if isinstance(expected_metadata, dict) else {}
+                )
                 return {
                     "title": description,
                     "output": expected_output,
@@ -1502,8 +1767,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if not replay_path:
             if isinstance(expected_output, str):
                 if str(expected_status or "").lower() == "error":
-                    return {"error": expected_output, "__mvi_text_output": expected_output}
-                meta_payload = expected_metadata if isinstance(expected_metadata, dict) else {}
+                    return {"error": expected_output, "__mvi_text_output": expected_output,
+                    }
+                meta_payload = (
+                    expected_metadata if isinstance(expected_metadata, dict) else {}
+                )
                 return {
                     "title": description,
                     "output": expected_output,
@@ -1574,32 +1842,39 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
         def _runner() -> None:
             try:
-                root = Path(self.workspace).resolve()
+                filesystem = self._workspace_filesystem_for_persistence()
+                if filesystem is None:
+                    raise WorkspacePathError("workspace_root_unavailable")
+                root = Path(filesystem.root)
                 output_text = ""
                 lowered = prompt.lower()
                 if "list the repo root" in lowered or "repo root" in lowered:
-                    entries = sorted(root.iterdir(), key=lambda p: p.name)
-                    dirs = [p.name + "/" for p in entries if p.is_dir()]
-                    files = [p.name for p in entries if p.is_file()]
-                    output_text = "<results>\n<files>\n" + "\n".join(
+                    entries = filesystem.list_entries(depth=1)
+                    dirs = [Path(entry.path).name + "/" for entry in entries if entry.kind == "dir"]
+                    files = [Path(entry.path).name for entry in entries if entry.kind == "file"]
+                    output_text = (
+                        "<results>\n<files>\n" + "\n".join(
                         [f"- {str(root / name)}" for name in (dirs + files)]
                     ) + "\n</files>\n</results>"
-                elif "search" in lowered or "multi_agent" in prompt or "taskoutput" in lowered:
+                    )
+                elif (
+                    "search" in lowered or "multi_agent" in prompt or "taskoutput" in lowered
+                ):
                     patterns = ["multi_agent", "TaskOutput"]
                     hits: List[str] = []
-                    for path in root.rglob("*"):
-                        if not path.is_file():
-                            continue
+                    for rel in filesystem.glob("**/*"):
                         try:
-                            if path.stat().st_size > 1024 * 1024:
+                            if filesystem.inspect_file(rel).size > 1024 * 1024:
                                 continue
-                            text = path.read_text(encoding="utf-8", errors="ignore")
+                            text = filesystem.read_text(rel, encoding="utf-8", errors="ignore")
                         except Exception:
                             continue
                         if any(pat in text for pat in patterns):
-                            hits.append(str(path))
+                            hits.append(str(root / rel))
                     hits_sorted = sorted(set(hits))
-                    output_text = "<results>\n<files>\n" + "\n".join([f"- {h}" for h in hits_sorted]) + "\n</files>\n</results>"
+                    output_text = (
+                        "<results>\n<files>\n" + "\n".join([f"- {h}" for h in hits_sorted]) + "\n</files>\n</results>"
+                    )
                 else:
                     output_text = "<results>\n<files>\n</files>\n</results>"
 
@@ -1633,10 +1908,14 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     event.update(task_context)
                 self._emit_task_event(event)
             except Exception as exc:
+                error_code = public_error_projection(
+                    exc,
+                    default_code="subagent_error",
+                )["error"]
                 with self._background_jobs_lock:
                     job.status = "failed"
                     job.completed_at = time.time()
-                    job.error = str(exc)
+                    job.error = error_code
                 self._persist_subagent_artifact(
                     task_id=task_id,
                     subagent_type=agent,
@@ -1644,7 +1923,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     prompt=prompt,
                     status="failed",
                     output_text=None,
-                    error_text=str(exc),
+                    error_text=error_code,
                     orchestrator_job_id=session_id,
                     created_at=job.created_at,
                     completed_at=job.completed_at,
@@ -1657,7 +1936,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     "description": description,
                     "status": "failed",
                     "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
-                    "error": str(exc),
+                    "error": error_code,
                 }
                 if task_context:
                     event.update(task_context)
@@ -1699,7 +1978,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             description=description,
             agent=agent,
         )
-        return {"output": ack, "__mvi_text_output": ack, "metadata": {"task_id": task_id, "session_id": session_id}}
+        return {"output": ack, "__mvi_text_output": ack, "metadata": {"task_id": task_id, "session_id": session_id},
+        }
 
     def _handle_call_omo_agent_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
         args = tool_call.get("arguments") or {}
@@ -1776,7 +2056,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             description=description,
             agent=subagent_type,
         )
-        return {"output": ack, "__mvi_text_output": ack, "metadata": {"task_id": task_id, "session_id": session_id}}
+        return {"output": ack, "__mvi_text_output": ack, "metadata": {"task_id": task_id, "session_id": session_id},
+        }
 
     def _append_mcp_tape(self, payload: Dict[str, Any]) -> None:
         path = getattr(self, "_mcp_record_path", None)
@@ -1799,7 +2080,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         except Exception:
             pass
 
-    def _parse_hook_tool_result(self, result: Dict[str, Any], *, fallback_payload: Optional[Dict[str, Any]] = None) -> HookResult:
+    def _parse_hook_tool_result(self, result: Dict[str, Any], *, fallback_payload: Optional[Dict[str, Any]] = None,
+    ) -> HookResult:
         if not isinstance(result, dict):
             return HookResult(action="deny", reason="hook_tool_non_dict")
         if "error" in result:
@@ -1838,19 +2120,25 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             owner = getattr(hook, "owner", None)
         except Exception:
             owner = None
-        trust_map = getattr(self, "_plugin_trust_map", {}) if hasattr(self, "_plugin_trust_map") else {}
+        trust_map = (
+            getattr(self, "_plugin_trust_map", {}) if hasattr(self, "_plugin_trust_map") else {}
+        )
         if owner and isinstance(trust_map, dict):
             trusted = trust_map.get(str(owner))
         else:
             trusted = True
         if trusted is False:
-            plugins_cfg = (self.config.get("plugins") or {}) if isinstance(self.config, dict) else {}
+            plugins_cfg = (
+                (self.config.get("plugins") or {}) if isinstance(self.config, dict) else {}
+            )
             policy = str(plugins_cfg.get("untrusted_hook_tools") or "deny").lower()
             if policy not in {"allow", "true", "1", "yes"}:
                 return HookResult(action="deny", reason="untrusted_plugin_hook_tool")
         tool_name = None
         try:
-            tool_name = config.get("tool") or config.get("tool_name") or config.get("name")
+            tool_name = (
+                config.get("tool") or config.get("tool_name") or config.get("name")
+            )
         except Exception:
             tool_name = None
         if not tool_name:
@@ -1874,7 +2162,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             broker = getattr(self, "permission_broker", None)
             if broker is not None and hasattr(broker, "decide"):
                 decision = broker.decide({"function": str(tool_name), "arguments": args})
-                if decision and str(decision).lower() not in {"allow", "yes", "true", "1"}:
+                if decision and str(decision).lower() not in {"allow", "yes", "true", "1",
+                }:
                     if not (str(decision).lower() == "ask" and getattr(broker, "auto_allow", lambda: False)()):
                         return HookResult(action="deny", reason="hook_tool_permission_denied")
         except Exception:
@@ -1926,10 +2215,12 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if str(expected_status or "").lower() == "error":
                 if isinstance(expected_output, dict):
                     return expected_output
-                return {"error": expected_output, "__mvi_text_output": str(expected_output)}
+                return {"error": expected_output, "__mvi_text_output": str(expected_output),
+                }
             if isinstance(expected_output, dict):
                 return expected_output
-            return {"result": expected_output, "__mvi_text_output": str(expected_output)}
+            return {"result": expected_output, "__mvi_text_output": str(expected_output),
+            }
         try:
             fixture_results = load_mcp_fixture_results(self.config, self.workspace)
         except Exception:
@@ -1938,7 +2229,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             result = fixture_results.get(name)
             if isinstance(result, dict):
                 self._append_mcp_tape(
-                    {"name": name, "arguments": args, "result": result, "source": "fixture"}
+                    {"name": name, "arguments": args, "result": result, "source": "fixture",
+                    }
                 )
                 return result
             self._append_mcp_tape(
@@ -1962,13 +2254,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             try:
                 result = manager.call_tool(name, args if isinstance(args, dict) else {})
                 self._append_mcp_tape(
-                    {"name": name, "arguments": args, "result": result, "server": server_name, "source": "live"}
+                    {"name": name, "arguments": args, "result": result, "server": server_name, "source": "live",
+                    }
                 )
                 return result if isinstance(result, dict) else {"result": result}
             except Exception as exc:
                 msg = f"mcp tool error: {exc}"
                 self._append_mcp_tape(
-                    {"name": name, "arguments": args, "error": msg, "server": server_name, "source": "live"}
+                    {"name": name, "arguments": args, "error": msg, "server": server_name, "source": "live",
+                    }
                 )
                 return {"error": msg}
         # Built-in deterministic fixtures
@@ -2103,7 +2397,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 duration_s=duration_s,
                 body=body,
             )
-            return {"output": payload, "__mvi_text_output": payload, "status": "completed", "task_id": task_id}
+            return {"output": payload, "__mvi_text_output": payload, "status": "completed", "task_id": task_id,
+            }
 
         if status == "failed":
             body = f"<error>\n{error_text or 'unknown error'}\n</error>"
@@ -2114,7 +2409,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 duration_s=duration_s,
                 body=body,
             )
-            return {"error": payload, "__mvi_text_output": payload, "status": "failed", "task_id": task_id}
+            return {"error": payload, "__mvi_text_output": payload, "status": "failed", "task_id": task_id,
+            }
 
         if status == "cancelled":
             body = "<status>cancelled</status>"
@@ -2125,7 +2421,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 duration_s=duration_s,
                 body=body,
             )
-            return {"output": payload, "__mvi_text_output": payload, "status": "cancelled", "task_id": task_id}
+            return {"output": payload, "__mvi_text_output": payload, "status": "cancelled", "task_id": task_id,
+            }
 
         # Still running.
         body = "<status>running</status>"
@@ -2136,7 +2433,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             duration_s=duration_s,
             body=body,
         )
-        return {"output": payload, "__mvi_text_output": payload, "status": "running", "task_id": task_id}
+        return {"output": payload, "__mvi_text_output": payload, "status": "running", "task_id": task_id,
+        }
 
     def _handle_background_cancel_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
         args = tool_call.get("arguments") or {}
@@ -2208,7 +2506,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
         if job.status != "running":
             msg = (
-                f"❌ Cannot cancel task: current status is \"{job.status}\".\n"
+                f'❌ Cannot cancel task: current status is "{job.status}".\n'
                 "Only running tasks can be cancelled."
             )
             return {"output": msg, "__mvi_text_output": msg}
@@ -2251,7 +2549,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             f"Session ID: {session_id}\n"
             f"Status: {status}"
         )
-        return {"output": msg, "__mvi_text_output": msg, "status": status, "task_id": task_id}
+        return {"output": msg, "__mvi_text_output": msg, "status": status, "task_id": task_id,
+        }
 
     def _handle_taskoutput_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
         args = tool_call.get("arguments") or {}
@@ -2299,7 +2598,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 status="completed",
                 output_text=f"--- RESULT ---\n{(result_text or '').rstrip()}",
             )
-            return {"output": payload, "__mvi_text_output": payload, "status": "completed", "task_id": task_id}
+            return {"output": payload, "__mvi_text_output": payload, "status": "completed", "task_id": task_id,
+            }
 
         if status == "failed":
             payload = self._format_claude_task_output(
@@ -2307,7 +2607,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 status="failed",
                 output_text=f"--- ERROR ---\n{(error_text or '').rstrip()}",
             )
-            return {"output": payload, "__mvi_text_output": payload, "status": "failed", "task_id": task_id}
+            return {"output": payload, "__mvi_text_output": payload, "status": "failed", "task_id": task_id,
+            }
 
         # Still running.
         payload = self._format_claude_task_output(
@@ -2315,7 +2616,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             status="running",
             output_text="--- STATUS ---\nTask is still running.",
         )
-        return {"output": payload, "__mvi_text_output": payload, "status": "running", "task_id": task_id}
+        return {"output": payload, "__mvi_text_output": payload, "status": "running", "task_id": task_id,
+        }
 
     def _apply_streaming_policy_for_turn(
         self,
@@ -2379,6 +2681,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         session_state: SessionState,
         markdown_logger: MarkdownLogger,
     ) -> Dict[str, Any]:
+
         """Adjust native tool usage based on capability probe outputs."""
         route_id = getattr(self, "_current_route_id", None)
         return apply_capability_tool_overrides(
@@ -2388,6 +2691,102 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             markdown_logger,
             route_id,
         )
+    def _locked_subagent_role(self, subagent_type: str) -> Optional[str]:
+        lock = getattr(self, "_model_role_lock", None)
+        if not isinstance(lock, dict):
+            return None
+        dispatch = (lock.get("dispatch") or {}).get("subagents") or {}
+        mapped_role = str(
+            dispatch.get(subagent_type) or dispatch.get("*") or ""
+        ).strip()
+        mapped_binding = (
+            (lock.get("roles") or {}).get(mapped_role)
+            if mapped_role
+            else None
+        )
+        metadata = (
+            mapped_binding.get("metadata")
+            if isinstance(mapped_binding, dict)
+            else None
+        )
+        if (
+            mapped_role == "task"
+            and isinstance(metadata, dict)
+            and metadata.get("source_provenance") == "inherited"
+        ):
+            mapped_role = ""
+        role = str(
+            mapped_role
+            or getattr(self, "_active_model_role", "")
+            or (lock.get("defaults") or {}).get("role")
+            or ""
+        ).strip()
+        return role or None
+
+    def _locked_target_for_role(
+        self,
+        role: Optional[str] = None,
+        *,
+        failure_reason: Any = None,
+        current_route_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        lock = getattr(self, "_model_role_lock", None)
+        if not isinstance(lock, dict):
+            return None
+        chosen = str(
+            role
+            or self._active_model_role
+            or (lock.get("defaults") or {}).get("role")
+            or ""
+        ).strip()
+        if not chosen:
+            return None
+        return select_role_target(
+            lock,
+            chosen,
+            failure_reason=failure_reason,
+            current_route_id=current_route_id,
+        )
+
+    def _locked_target_for_route(
+        self, route_id: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        lock = getattr(self, "_model_role_lock", None)
+        if not isinstance(lock, dict):
+            return None
+        route = str(route_id or "").strip()
+        roles = lock.get("roles") or {}
+        active = roles.get(self._active_model_role)
+        if isinstance(active, dict):
+            for target in (
+                active.get("primary"),
+                *(active.get("fallbacks") or ()),
+            ):
+                if (
+                    isinstance(target, dict)
+                    and str(target.get("route_id") or "") == route
+                ):
+                    return dict(target)
+        matches = [
+            dict(target)
+            for binding in roles.values()
+            if isinstance(binding, dict)
+            for target in (
+                binding.get("primary"),
+                *(binding.get("fallbacks") or ()),
+            )
+            if isinstance(target, dict)
+            and str(target.get("route_id") or "") == route
+        ]
+        if len(matches) > 1 and any(
+            match.get("account_binding")
+            != matches[0].get("account_binding")
+            for match in matches[1:]
+        ):
+            raise ProviderContractError(
+                "locked route has ambiguous credential bindings"
+            )
+        return matches[0] if matches else None
 
     def _select_fallback_route(
         self,
@@ -2395,8 +2794,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         provider_id: Optional[str],
         primary_model: str,
         explicit_candidates: List[str],
+        *,
+        failure_reason: Any = None,
     ) -> Tuple[Optional[str], Dict[str, Any]]:
-        """Choose a fallback route honoring routing prefs and route health."""
+        """Choose only a declared locked fallback when a role lock is active."""
         ordered: List[str] = []
         skipped: List[Dict[str, Any]] = []
         seen = set()
@@ -2409,16 +2810,33 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             seen.add(candidate)
             ordered.append(candidate)
 
-        for item in explicit_candidates or []:
-            add_candidate(str(item))
+        if isinstance(getattr(self, "_model_role_lock", None), dict):
+            current_route = str(primary_route or primary_model)
+            target = self._locked_target_for_role(
+                failure_reason=failure_reason,
+                current_route_id=current_route,
+            )
+            route = (
+                str(target.get("route_id") or "")
+                if isinstance(target, dict)
+                else ""
+            )
+            if route and route != current_route:
+                add_candidate(route)
+            explicit_candidates = []
+        else:
+            for item in explicit_candidates or []:
+                add_candidate(str(item))
 
-        if provider_id == "openrouter":
-            try:
-                _, base_model, _ = provider_router.get_provider_config(primary_route or primary_model)
-            except Exception:
-                base_model = None
-            if base_model and base_model.startswith("openai/"):
-                add_candidate(base_model)
+            if provider_id == "openrouter":
+                try:
+                    _, base_model, _ = provider_router.get_provider_config(
+                        primary_route or primary_model
+                    )
+                except Exception:
+                    base_model = None
+                if base_model and base_model.startswith("openai/"):
+                    add_candidate(base_model)
 
         for candidate in ordered:
             try:
@@ -2429,7 +2847,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if self.route_health.is_circuit_open(candidate) or self.route_health.is_circuit_open(resolved):
                 skipped.append({"route": candidate, "reason": "circuit_open"})
                 continue
-            return candidate, {"candidates": ordered, "skipped": skipped, "selected": candidate}
+            return candidate, {"candidates": ordered, "skipped": skipped, "selected": candidate,
+            }
 
         return None, {"candidates": ordered, "skipped": skipped, "selected": None}
     
@@ -2516,52 +2935,96 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         timeout_seconds: float,
         context: Mapping[str, Any] | None = None,
     ) -> Dict[str, Any]:
+        del context
         started = time.time()
         timeout = max(1.0, float(timeout_seconds or 0.0))
         workspace = str(getattr(self, "workspace", "") or ".")
-        try:
-            completed = subprocess.run(
-                command,
-                shell=True,
-                cwd=workspace,
-                text=True,
-                capture_output=True,
-                timeout=timeout,
-            )
-            duration_ms = int(max(0.0, time.time() - started) * 1000)
-            return {
-                "status": "pass" if completed.returncode == 0 else "fail",
-                "duration_ms": duration_ms,
-                "signal": "hard",
-                "details": {
-                    "returncode": int(completed.returncode),
-                    "stdout_tail": (completed.stdout or "")[-2000:],
-                    "stderr_tail": (completed.stderr or "")[-2000:],
-                },
-            }
-        except subprocess.TimeoutExpired as exc:
-            duration_ms = int(max(0.0, time.time() - started) * 1000)
-            return {
-                "status": "timeout",
-                "duration_ms": duration_ms,
-                "signal": "soft",
-                "details": {
-                    "timeout_seconds": timeout,
-                    "stdout_tail": (exc.stdout or "")[-2000:] if isinstance(exc.stdout, str) else "",
-                    "stderr_tail": (exc.stderr or "")[-2000:] if isinstance(exc.stderr, str) else "",
-                },
-            }
-        except Exception as exc:
-            duration_ms = int(max(0.0, time.time() - started) * 1000)
+        ambient_secrets = provider_credential_values()
+        if contains_provider_credential_value(
+            command,
+            values=ambient_secrets,
+        ):
             return {
                 "status": "error",
-                "duration_ms": duration_ms,
+                "duration_ms": int(
+                    max(0.0, time.time() - started) * 1000
+                ),
                 "signal": "hard",
                 "details": {
-                    "error_type": exc.__class__.__name__,
-                    "message": str(exc),
+                    "error_type": "CredentialInProcessInput",
+                    "message": (
+                        "verification command rejected: provider credential "
+                        "in process input"
+                    ),
                 },
             }
+        with redaction.secret_value_scope(*ambient_secrets):
+            try:
+                child_environment = build_child_environment()
+                isolated_command, child_environment = build_restricted_process_command(
+                        command,
+                        workspace=workspace,
+                        working_directory=workspace,
+                        shell=True,
+                        environment=child_environment,
+                        protected_paths=getattr(
+                            self,
+                            "_protected_credential_paths",
+                            (),
+                        ),
+                )
+                completed = subprocess.run(
+                    isolated_command,
+                    shell=False,
+                    cwd=workspace,
+                    env=child_environment,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout,
+                )
+                duration_ms = int(max(0.0, time.time() - started) * 1000)
+                return {
+                    "status": "pass" if completed.returncode == 0 else "fail",
+                    "duration_ms": duration_ms,
+                    "signal": "hard",
+                    "details": {
+                        "returncode": int(completed.returncode),
+                        "stdout_tail": redaction.scrub_text(
+                            (completed.stdout or "")[-2000:]
+                        ),
+                        "stderr_tail": redaction.scrub_text(
+                            (completed.stderr or "")[-2000:]
+                        ),
+                    },
+                }
+            except subprocess.TimeoutExpired as exc:
+                duration_ms = int(max(0.0, time.time() - started) * 1000)
+                stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+                stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+                return {
+                    "status": "timeout",
+                    "duration_ms": duration_ms,
+                    "signal": "soft",
+                    "details": {
+                        "timeout_seconds": timeout,
+                        "stdout_tail": redaction.scrub_text(stdout[-2000:]),
+                        "stderr_tail": redaction.scrub_text(stderr[-2000:]),
+                    },
+                }
+            except Exception as exc:
+                duration_ms = int(max(0.0, time.time() - started) * 1000)
+                return {
+                    "status": "error",
+                    "duration_ms": duration_ms,
+                    "signal": "hard",
+                    "details": {
+                        "error_type": exc.__class__.__name__,
+                        "message": redaction.safe_exception_message(
+                            exc,
+                            operation="verification command",
+                        ),
+                    },
+                }
 
     def _rlm_cfg(self) -> Dict[str, Any]:
         return get_rlm_config(self.config if isinstance(getattr(self, "config", None), dict) else {})
@@ -2579,7 +3042,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
     def _rlm_mvi_error(self, reason: str, detail: str) -> Dict[str, Any]:
         text = f"RLM {reason}: {detail}"
-        return {"error": text, "__mvi_text_output": text, "status": "failed", "reason": reason}
+        return {"error": text, "__mvi_text_output": text, "status": "failed", "reason": reason,
+        }
 
     def _rlm_ordering_lock(self) -> threading.RLock:
         lock = getattr(self, "_rlm_ordering_lock_obj", None)
@@ -2652,7 +3116,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         cfg = self._rlm_cfg()
         routing = cfg.get("routing")
         routing = dict(routing) if isinstance(routing, dict) else {}
-        explicit = str(args.get("lane") or args.get("routing_lane") or "").strip().lower()
+        explicit = (
+            str(args.get("lane") or args.get("routing_lane") or "").strip().lower()
+        )
         if explicit in {"long_context", "tool_heavy", "balanced"}:
             return explicit, "explicit"
         long_context_threshold = int(routing.get("long_context_prompt_chars") or 2400)
@@ -2705,7 +3171,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             },
         )
 
-    def _rlm_project_ctree(self, *, event: str, branch_id: str, depth: int, metadata: Optional[Dict[str, Any]] = None) -> None:
+    def _rlm_project_ctree(self, *, event: str, branch_id: str, depth: int, metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
         row = {
             "seq": self._rlm_next_event_seq(),
             "ts": time.time(),
@@ -2757,7 +3224,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         self._rlm_append_jsonl("meta/rlm_hybrid_events.jsonl", row)
         session_state = getattr(self, "_active_session_state", None)
         if session_state is not None:
-            summary: Dict[str, Any] = {"event_counts": {}, "status_counts": {}, "total_events": 0}
+            summary: Dict[str, Any] = {"event_counts": {}, "status_counts": {}, "total_events": 0,
+            }
             try:
                 existing = session_state.get_provider_metadata("rlm_hybrid_summary")
                 if isinstance(existing, dict):
@@ -2768,7 +3236,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             event_counts = dict(event_counts) if isinstance(event_counts, dict) else {}
             event_counts[kind] = int(event_counts.get(kind) or 0) + 1
             status_counts = summary.get("status_counts")
-            status_counts = dict(status_counts) if isinstance(status_counts, dict) else {}
+            status_counts = (
+                dict(status_counts) if isinstance(status_counts, dict) else {}
+            )
             status_counts[status] = int(status_counts.get(status) or 0) + 1
             summary["event_counts"] = event_counts
             summary["status_counts"] = status_counts
@@ -2842,12 +3312,14 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 depth=max(0, depth),
                 status="merged",
                 reason="task_event_completed",
-                metadata={"merge_target": root_branch, "task_id": task_id, "source_kind": kind},
+                metadata={"merge_target": root_branch, "task_id": task_id, "source_kind": kind,
+                },
             )
 
     def _rlm_capture_rollup_snapshot(self, session_state: Optional[SessionState]) -> Dict[str, Any]:
         if session_state is None:
-            return {"subcalls": 0, "total_tokens": 0, "total_cost_usd": 0.0, "lane_counts": {}, "branch_event_count": 0}
+            return {"subcalls": 0, "total_tokens": 0, "total_cost_usd": 0.0, "lane_counts": {}, "branch_event_count": 0,
+            }
         budget = session_state.get_provider_metadata("rlm_budget_state")
         budget = budget if isinstance(budget, dict) else {}
         router = session_state.get_provider_metadata("rlm_router_summary")
@@ -2950,12 +3422,13 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         except Exception:
             pass
         try:
-            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
-            if workspace_root.exists():
-                dest = workspace_root / ".breadboard" / rel_path
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                with dest.open("a", encoding="utf-8") as handle:
-                    handle.write(json.dumps(safe_payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+            logical_path = Path(rel_path)
+            if logical_path.is_absolute() or ".." in logical_path.parts:
+                return
+            self._append_workspace_text(
+                str(Path(".breadboard") / logical_path),
+                json.dumps(safe_payload, ensure_ascii=False, separators=(",", ":")) + "\n",
+            )
         except Exception:
             pass
 
@@ -2968,11 +3441,13 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         except Exception:
             pass
         try:
-            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
-            if workspace_root.exists():
-                dest = workspace_root / ".breadboard" / rel_path
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_text(json.dumps(safe_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            logical_path = Path(rel_path)
+            if logical_path.is_absolute() or ".." in logical_path.parts:
+                return
+            self._write_workspace_text(
+                str(Path(".breadboard") / logical_path),
+                json.dumps(safe_payload, ensure_ascii=False, indent=2),
+            )
         except Exception:
             pass
 
@@ -3015,7 +3490,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             except Exception:
                 ledger = {}
         if not ledger:
-            ledger = {"schema_version": "rlm_branch_ledger_v1", "branches": {}, "events": []}
+            ledger = {"schema_version": "rlm_branch_ledger_v1", "branches": {}, "events": [],
+            }
         ledger.setdefault("branches", {})
         ledger.setdefault("events", [])
         return ledger
@@ -3094,7 +3570,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             projection_event = "branch_fail"
         elif status == "merged":
             projection_event = "branch_merge"
-        self._rlm_project_ctree(event=projection_event, branch_id=branch_id, depth=int(depth), metadata=metadata or {})
+        self._rlm_project_ctree(event=projection_event, branch_id=branch_id, depth=int(depth), metadata=metadata or {},
+        )
 
     def _rlm_budget_state(self) -> Dict[str, Any]:
         session_state = getattr(self, "_active_session_state", None)
@@ -3127,7 +3604,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 raw = str(entry.get("content") or "")
                 if inline_limit > 0:
                     raw = raw[:inline_limit]
-                chunks.append(f"<blob id=\"{blob_id}\">\n{raw}\n</blob>")
+                chunks.append(f'<blob id="{blob_id}">\n{raw}\n</blob>')
             except Exception:
                 continue
         return "\n\n".join([chunk for chunk in chunks if chunk])
@@ -3141,7 +3618,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 return {"error": text, "__mvi_text_output": text}
             if isinstance(expected_output, dict):
                 payload = dict(expected_output)
-                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.put replay"))
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.put replay"),
+                )
                 return payload
             text = str(expected_output)
             return {"output": text, "__mvi_text_output": text}
@@ -3194,7 +3672,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 return {"error": text, "__mvi_text_output": text}
             if isinstance(expected_output, dict):
                 payload = dict(expected_output)
-                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.put_file_slice replay"))
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.put_file_slice replay"),
+                )
                 return payload
             text = str(expected_output)
             return {"output": text, "__mvi_text_output": text}
@@ -3256,7 +3735,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 return {"error": text, "__mvi_text_output": text}
             if isinstance(expected_output, dict):
                 payload = dict(expected_output)
-                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.get replay"))
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.get replay"),
+                )
                 return payload
             text = str(expected_output)
             return {"output": text, "__mvi_text_output": text}
@@ -3270,7 +3750,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             return self._rlm_mvi_error("invalid_arguments", "blob.get requires blob_id.")
         preview_bytes = args.get("preview_bytes")
         try:
-            entry = self._rlm_blob_store().get(blob_id, preview_bytes=int(preview_bytes) if preview_bytes is not None else None)
+            entry = self._rlm_blob_store().get(blob_id, preview_bytes=int(preview_bytes) if preview_bytes is not None else None,
+            )
         except ValueError as exc:
             return self._rlm_mvi_error(str(exc), "Failed to read blob.")
         preview = str(entry.get("preview") or "")
@@ -3297,7 +3778,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 return {"error": text, "__mvi_text_output": text}
             if isinstance(expected_output, dict):
                 payload = dict(expected_output)
-                payload.setdefault("__mvi_text_output", str(payload.get("output") or "blob.search replay"))
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or "blob.search replay"),
+                )
                 return payload
             text = str(expected_output)
             return {"output": text, "__mvi_text_output": text}
@@ -3337,28 +3819,65 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         started_at: float | None = None,
         timeout_seconds: float = 0.0,
     ) -> _RlmProviderSubcallExecution:
-        runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
-        client_cfg = provider_router.create_client_config(model_route)
-        if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
-            raise _RlmProviderApiKeyMissing(f"{runtime_descriptor.api_key_env} missing in environment.")
-        runtime = provider_registry.create_runtime(runtime_descriptor)
-        client = runtime.create_client(
-            client_cfg.get("api_key"),
-            base_url=client_cfg.get("base_url"),
-            default_headers=client_cfg.get("default_headers"),
+        runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(
+            model_route
         )
-        result = runtime.invoke(
-            client=client,
-            model=runtime_model,
-            messages=messages,
-            tools=None,
-            stream=False,
-            context=ProviderRuntimeContext(
-                session_state=getattr(self, "_active_session_state", None),
-                agent_config=self.config if isinstance(getattr(self, "config", None), dict) else {},
-                stream=False,
-                extra=runtime_extra,
+        runtime = provider_registry.create_runtime(runtime_descriptor)
+        session_state = getattr(self, "_active_session_state", None)
+        if not isinstance(session_state, SessionState):
+            raise ProviderContractError(
+                "RLM provider subcall requires an active admitted session"
+            )
+
+        def exact_correlation_id(field_name: str) -> str:
+            value = session_state.get_provider_metadata(field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ProviderContractError(
+                    f"RLM provider subcall requires exact {field_name}"
+                )
+            return value
+
+        correlation = {
+            "session_id": exact_correlation_id("session_id"),
+            "input_id": exact_correlation_id("input_id"),
+            "turn_id": exact_correlation_id("turn_id"),
+        }
+        credential_origin = provider_router.get_credential_origin(
+            model_route,
+            session_id=correlation["session_id"],
+        )
+        if credential_origin is None:
+            raise _RlmProviderApiKeyMissing(
+                f"No credential resolved for provider '{runtime_descriptor.provider_id}'."
+            )
+        context = ProviderRuntimeContext(
+            session_state=session_state,
+            agent_config=(
+                self.config
+                if isinstance(getattr(self, "config", None), dict)
+                else {}
             ),
+            stream=False,
+            extra={**runtime_extra, **correlation},
+            session_id=correlation["session_id"],
+            input_id=correlation["input_id"],
+            turn_id=correlation["turn_id"],
+        )
+        turn_index = session_state.get_provider_metadata("current_turn_index", 0)
+        if not isinstance(turn_index, int) or isinstance(turn_index, bool):
+            turn_index = 0
+        result, _used_streaming = self.provider_invoker.invoke(
+            runtime=runtime,
+            client=None,
+            model=runtime_model,
+            send_messages=messages,
+            tools_schema=None,
+            stream_responses=False,
+            runtime_context=context,
+            session_state=session_state,
+            markdown_logger=MarkdownLogger(None),
+            turn_index=turn_index,
+            route_id=model_route,
         )
         elapsed_seconds = None
         if started_at is not None:
@@ -3374,6 +3893,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         ]
         usage = dict(result.usage or {})
         usage_tokens, usage_cost_usd = extract_usage_metrics(usage)
+        provider_exchange = (
+            result.metadata.get("provider_exchange")
+            if isinstance(result.metadata, dict)
+            else None
+        )
+        if not isinstance(provider_exchange, dict):
+            raise ProviderContractError(
+                "RLM provider subcall omitted its provider exchange"
+            )
         return _RlmProviderSubcallExecution(
             text="\n\n".join(text_parts).strip(),
             usage=usage,
@@ -3382,6 +3910,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             resolved_model=runtime_model,
             provider_id=runtime_descriptor.provider_id,
             elapsed_seconds=elapsed_seconds,
+            provider_exchange=copy.deepcopy(provider_exchange),
         )
 
 
@@ -3394,7 +3923,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 return {"error": text, "__mvi_text_output": text}
             if isinstance(expected_output, dict):
                 payload = dict(expected_output)
-                payload.setdefault("__mvi_text_output", str(payload.get("text") or payload.get("output") or "Subcall replay result"))
+                payload.setdefault("__mvi_text_output", str(payload.get("text") or payload.get("output") or "Subcall replay result"),
+                )
                 return payload
             text = str(expected_output)
             return {"text": text, "__mvi_text_output": text}
@@ -3413,9 +3943,13 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         branch_id = self._rlm_resolve_branch_id(args.get("branch_id") or "root")
         call_id = str(tool_call.get("id") or uuid.uuid4().hex[:12])
         parent_call_id = str(args.get("parent_call_id") or "")
-        depth = int(args.get("depth") or 0) if str(args.get("depth") or "").strip() else 0
+        depth = (
+            int(args.get("depth") or 0) if str(args.get("depth") or "").strip() else 0
+        )
         blob_refs_raw = args.get("blob_refs")
-        blob_refs = [str(x) for x in blob_refs_raw if x is not None] if isinstance(blob_refs_raw, list) else []
+        blob_refs = (
+            [str(x) for x in blob_refs_raw if x is not None] if isinstance(blob_refs_raw, list) else []
+        )
         lane, lane_reason = self._rlm_route_lane(prompt=prompt, args=args, blob_refs=blob_refs)
         self._rlm_record_router_decision(lane=lane, reason=lane_reason)
         branch_id = self._rlm_resolve_branch_id(branch_id or "root", task_id=str(args.get("task_id") or ""))
@@ -3442,6 +3976,13 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             or ((self.config.get("providers") or {}).get("default_model") if isinstance(getattr(self, "config", None), dict) else "")
             or ""
         ).strip()
+        if isinstance(getattr(self, "_model_role_lock", None), dict):
+            lane_role = str(
+                ((self._model_role_lock.get("dispatch") or {}).get("lanes") or {}).get(lane) or ""
+            ).strip()
+            if lane_role:
+                target = self._locked_target_for_role(lane_role)
+                model_route = str(target.get("route_id") or "") if isinstance(target, dict) else ""
         if not model_route:
             return self._rlm_mvi_error("model_unresolved", "Could not resolve a route/model for llm.query.")
 
@@ -3517,6 +4058,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "usage_tokens": usage_tokens,
                 "estimated_cost_usd": usage_cost_usd,
                 "cached": False,
+                "provider_exchange": execution.provider_exchange,
             }
             self._rlm_append_jsonl("meta/rlm_subcalls.jsonl", row)
             self._rlm_record_branch_event(
@@ -3536,11 +4078,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 status="completed",
                 branch_id=branch_id,
                 depth=depth,
-                metadata={"call_id": call_id, "lane": lane, "usage_tokens": usage_tokens},
+                metadata={"call_id": call_id, "lane": lane, "usage_tokens": usage_tokens,
+                },
             )
-            mvi = (
-                f"Subcall complete (model={runtime_model}, tokens={usage_tokens}, cost=${usage_cost_usd:.4f})."
-            )
+            mvi = f"Subcall complete (model={runtime_model}, tokens={usage_tokens}, cost=${usage_cost_usd:.4f})."
             return {
                 "text": text,
                 "usage": usage,
@@ -3551,43 +4092,52 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "provider_id": execution.provider_id,
                 "branch_id": branch_id,
                 "lane": lane,
+                "provider_exchange_ref": {
+                    "exchange_id": execution.provider_exchange["exchange_id"],
+                    "schema_version": execution.provider_exchange["schema_version"],
+                },
                 "cached": False,
                 "__mvi_text_output": mvi,
             }
-        except _RlmProviderApiKeyMissing as exc:
-            return self._rlm_mvi_error("api_key_missing", str(exc))
+        except _RlmProviderApiKeyMissing:
+            return self._rlm_mvi_error("api_key_missing", "api_key_missing")
         except ProviderRuntimeError as exc:
+            error_code = exc.safe_code
             self._rlm_record_branch_event(
                 branch_id=branch_id,
                 depth=depth,
                 status="failed",
                 reason="subcall_provider_error",
-                metadata={"error": str(exc), "lane": lane},
+                metadata={"error": error_code, "lane": lane},
             )
             self._rlm_record_hybrid_event(
                 kind="llm.query",
                 status="failed",
                 branch_id=branch_id,
                 depth=depth,
-                metadata={"call_id": call_id, "lane": lane, "error": str(exc)},
+                metadata={"call_id": call_id, "lane": lane, "error": error_code},
             )
-            return self._rlm_mvi_error("subcall_provider_error", str(exc))
+            return self._rlm_mvi_error("subcall_provider_error", error_code)
         except Exception as exc:
+            error_code = public_error_projection(
+                exc,
+                default_code="subcall_error",
+            )["error"]
             self._rlm_record_branch_event(
                 branch_id=branch_id,
                 depth=depth,
                 status="failed",
                 reason="subcall_exception",
-                metadata={"error": str(exc), "lane": lane},
+                metadata={"error": error_code, "lane": lane},
             )
             self._rlm_record_hybrid_event(
                 kind="llm.query",
                 status="failed",
                 branch_id=branch_id,
                 depth=depth,
-                metadata={"call_id": call_id, "lane": lane, "error": str(exc)},
+                metadata={"call_id": call_id, "lane": lane, "error": error_code},
             )
-            return self._rlm_mvi_error("subcall_exception", str(exc))
+            return self._rlm_mvi_error("subcall_exception", error_code)
 
     def _handle_llm_batch_query_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
         expected_output = tool_call.get("expected_output")
@@ -3598,7 +4148,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 return {"error": text, "__mvi_text_output": text}
             if isinstance(expected_output, dict):
                 payload = dict(expected_output)
-                payload.setdefault("__mvi_text_output", str(payload.get("output") or "Batch replay result"))
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or "Batch replay result"),
+                )
                 return payload
             if isinstance(expected_output, list):
                 rows: List[Dict[str, Any]] = []
@@ -3630,7 +4181,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if not isinstance(raw_queries, list) or not raw_queries:
             return self._rlm_mvi_error("invalid_arguments", "llm.batch_query requires non-empty queries[].")
         if len(raw_queries) > 64:
-            return self._rlm_mvi_error("invalid_arguments", "llm.batch_query currently supports at most 64 queries per batch.")
+            return self._rlm_mvi_error("invalid_arguments", "llm.batch_query currently supports at most 64 queries per batch.",
+            )
 
         cfg = self._rlm_cfg()
         scheduling = cfg.get("scheduling")
@@ -3640,14 +4192,17 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         mode = str(scheduling.get("mode") or "sync").strip().lower()
         batch_enabled = bool(batch_cfg.get("enabled", mode == "batch"))
         if not batch_enabled and mode != "batch":
-            return self._rlm_mvi_error("batch_disabled", "Enable features.rlm.scheduling.mode=batch or scheduling.batch.enabled=true.")
+            return self._rlm_mvi_error("batch_disabled", "Enable features.rlm.scheduling.mode=batch or scheduling.batch.enabled=true.",
+            )
 
         max_concurrency_cfg = int(batch_cfg.get("max_concurrency") or 4)
         max_concurrency = max(1, min(16, max_concurrency_cfg))
         per_branch_cap_cfg = batch_cfg.get("max_concurrency_per_branch")
         if per_branch_cap_cfg is None:
             per_branch_cap_cfg = batch_cfg.get("per_branch_max_concurrency")
-        per_branch_cap = max(1, int(per_branch_cap_cfg)) if per_branch_cap_cfg is not None else 0
+        per_branch_cap = (
+            max(1, int(per_branch_cap_cfg)) if per_branch_cap_cfg is not None else 0
+        )
         retries_default = int(batch_cfg.get("retries") or 0)
         timeout_default = float(batch_cfg.get("timeout_seconds") or 45.0)
         fail_fast_default = bool(batch_cfg.get("fail_fast", False))
@@ -3663,7 +4218,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         blocked_rows: List[Dict[str, Any]] = []
         user_model_override = args.get("model")
         parent_call_id = str(args.get("parent_call_id") or "")
-        default_depth = int(args.get("depth") or 0) if str(args.get("depth") or "").strip() else 0
+        default_depth = (
+            int(args.get("depth") or 0) if str(args.get("depth") or "").strip() else 0
+        )
 
         # Preflight + reservation pass in deterministic request-index order.
         for request_index, raw in enumerate(raw_queries):
@@ -3688,11 +4245,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     }
                 )
                 continue
-            depth = int(raw.get("depth") or default_depth) if str(raw.get("depth") or default_depth).strip() else 0
+            depth = (
+                int(raw.get("depth") or default_depth) if str(raw.get("depth") or default_depth).strip() else 0
+            )
             task_id = str(raw.get("task_id") or f"batch_{request_index}")
             branch_id = self._rlm_resolve_branch_id(raw.get("branch_id") or root_branch_id, task_id=task_id)
             blob_refs_raw = raw.get("blob_refs")
-            blob_refs = [str(x) for x in blob_refs_raw if x is not None] if isinstance(blob_refs_raw, list) else []
+            blob_refs = (
+                [str(x) for x in blob_refs_raw if x is not None] if isinstance(blob_refs_raw, list) else []
+            )
             lane, lane_reason = self._rlm_route_lane(prompt=prompt, args=raw, blob_refs=blob_refs)
             self._rlm_record_router_decision(lane=lane, reason=f"batch:{lane_reason}")
             can_start, block_reason = can_start_subcall(
@@ -3707,7 +4268,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     depth=depth,
                     status="blocked",
                     reason=block_reason or "budget_blocked",
-                    metadata={"batch_id": batch_id, "request_index": request_index, "lane": lane},
+                    metadata={"batch_id": batch_id, "request_index": request_index, "lane": lane,
+                    },
                 )
                 blocked_rows.append(
                     {
@@ -3772,6 +4334,13 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 or ((self.config.get("providers") or {}).get("default_model") if isinstance(getattr(self, "config", None), dict) else "")
                 or ""
             ).strip()
+            if isinstance(getattr(self, "_model_role_lock", None), dict):
+                lane_role = str(
+                    ((self._model_role_lock.get("dispatch") or {}).get("lanes") or {}).get(item.get("lane") or "") or ""
+                ).strip()
+                if lane_role:
+                    target = self._locked_target_for_role(lane_role)
+                    model_route = str(target.get("route_id") or "") if isinstance(target, dict) else ""
             if not model_route:
                 return {
                     "request_index": request_index,
@@ -3824,13 +4393,16 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         "route_id": model_route,
                         "resolved_model": execution.resolved_model,
                         "provider_id": execution.provider_id,
+                        "provider_exchange": execution.provider_exchange,
                         "prompt_hash": hashlib.sha256(user_prompt.encode("utf-8", errors="ignore")).hexdigest(),
                         "attempt_count": attempt + 1,
-                        "attempts": attempts + [{"attempt": attempt + 1, "status": "completed", "duration_seconds": execution.elapsed_seconds}],
+                        "attempts": attempts + [{"attempt": attempt + 1, "status": "completed", "duration_seconds": execution.elapsed_seconds,
+                            }],
                     }
                 except _RlmProviderSubcallTimeout as exc:
                     elapsed = exc.elapsed_seconds
-                    attempts.append({"attempt": attempt + 1, "status": "timeout", "duration_seconds": elapsed})
+                    attempts.append({"attempt": attempt + 1, "status": "timeout", "duration_seconds": elapsed,
+                        })
                     if attempt < retries:
                         continue
                     return {
@@ -3844,26 +4416,33 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         "attempt_count": attempt + 1,
                         "attempts": attempts,
                     }
-                except _RlmProviderApiKeyMissing as exc:
+                except _RlmProviderApiKeyMissing:
                     return {
                         "request_index": request_index,
                         "status": "failed",
                         "reason": "api_key_missing",
-                        "error": str(exc),
+                        "error": "api_key_missing",
                         "branch_id": branch_id,
                         "depth": depth,
                         "lane": item.get("lane"),
                         "attempt_count": attempt + 1,
                     }
                 except ProviderRuntimeError as exc:
-                    attempts.append({"attempt": attempt + 1, "status": "provider_error", "error": str(exc)})
+                    error_code = exc.safe_code
+                    attempts.append(
+                        {
+                            "attempt": attempt + 1,
+                            "status": "provider_error",
+                            "error": error_code,
+                        }
+                    )
                     if attempt < retries:
                         continue
                     return {
                         "request_index": request_index,
                         "status": "failed",
                         "reason": "subcall_provider_error",
-                        "error": str(exc),
+                        "error": error_code,
                         "branch_id": branch_id,
                         "depth": depth,
                         "lane": item.get("lane"),
@@ -3871,14 +4450,24 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         "attempts": attempts,
                     }
                 except Exception as exc:
-                    attempts.append({"attempt": attempt + 1, "status": "exception", "error": str(exc)})
+                    error_code = public_error_projection(
+                        exc,
+                        default_code="subcall_error",
+                    )["error"]
+                    attempts.append(
+                        {
+                            "attempt": attempt + 1,
+                            "status": "exception",
+                            "error": error_code,
+                        }
+                    )
                     if attempt < retries:
                         continue
                     return {
                         "request_index": request_index,
                         "status": "failed",
                         "reason": "subcall_exception",
-                        "error": str(exc),
+                        "error": error_code,
                         "branch_id": branch_id,
                         "depth": depth,
                         "lane": item.get("lane"),
@@ -3918,11 +4507,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     try:
                         row = _invoke_prepared(item)
                     except Exception as exc:  # defensive
+                        error_code = public_error_projection(
+                            exc,
+                            default_code="batch_executor_error",
+                        )["error"]
                         row = {
                             "request_index": idx,
                             "status": "failed",
                             "reason": "executor_exception",
-                            "error": str(exc),
+                            "error": error_code,
                             "attempt_count": 1,
                         }
                     row = _with_item_defaults(item, row)
@@ -3940,7 +4533,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                             pick_index: Optional[int] = None
                             for i, candidate in enumerate(pending):
                                 branch_key = str(candidate.get("branch_id") or root_branch_id)
-                                if per_branch_cap <= 0 or int(branch_inflight.get(branch_key) or 0) < per_branch_cap:
+                                if (
+                                    per_branch_cap <= 0 or int(branch_inflight.get(branch_key) or 0) < per_branch_cap
+                                ):
                                     pick_index = i
                                     break
                             if pick_index is None:
@@ -3949,7 +4544,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                             future = pool.submit(_invoke_prepared, item)
                             inflight[future] = item
                             branch_key = str(item.get("branch_id") or root_branch_id)
-                            branch_inflight[branch_key] = int(branch_inflight.get(branch_key) or 0) + 1
+                            branch_inflight[branch_key] = (
+                                int(branch_inflight.get(branch_key) or 0) + 1
+                            )
                             submitted_any = True
                         if not inflight:
                             if pending and not submitted_any:
@@ -3957,7 +4554,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                                 future = pool.submit(_invoke_prepared, item)
                                 inflight[future] = item
                                 branch_key = str(item.get("branch_id") or root_branch_id)
-                                branch_inflight[branch_key] = int(branch_inflight.get(branch_key) or 0) + 1
+                                branch_inflight[branch_key] = (
+                                    int(branch_inflight.get(branch_key) or 0) + 1
+                                )
                             continue
                         done, _ = concurrent.futures.wait(
                             list(inflight.keys()),
@@ -3973,11 +4572,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                             try:
                                 row = future.result()
                             except Exception as exc:  # defensive
+                                error_code = public_error_projection(
+                                    exc,
+                                    default_code="batch_executor_error",
+                                )["error"]
                                 row = {
                                     "request_index": idx,
                                     "status": "failed",
                                     "reason": "executor_exception",
-                                    "error": str(exc),
+                                    "error": error_code,
                                     "attempt_count": 1,
                                 }
                             results_by_index[idx] = _with_item_defaults(item, row)
@@ -3997,7 +4600,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     branch_id=branch_id,
                     depth=depth,
                     status="running",
-                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "call_id": call_id},
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "call_id": call_id,
+                    },
                 )
             if status == "completed":
                 usage_tokens = int(row.get("usage_tokens") or 0)
@@ -4014,7 +4618,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     branch_id=branch_id,
                     depth=depth,
                     status="completed",
-                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "usage_tokens": usage_tokens},
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "usage_tokens": usage_tokens,
+                    },
                 )
             elif status == "blocked":
                 self._rlm_record_branch_event(
@@ -4030,7 +4635,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     depth=depth,
                     status="failed",
                     reason="timeout",
-                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "error": row.get("error")},
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "error": row.get("error"),
+                    },
                 )
             else:
                 self._rlm_record_branch_event(
@@ -4038,7 +4644,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     depth=depth,
                     status="failed",
                     reason=str(row.get("reason") or "failed"),
-                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "error": row.get("error")},
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "error": row.get("error"),
+                    },
                 )
             if status == "completed":
                 self._rlm_record_hybrid_event(
@@ -4054,7 +4661,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     status="blocked",
                     branch_id=branch_id,
                     depth=depth,
-                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "reason": row.get("reason")},
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "reason": row.get("reason"),
+                    },
                 )
             else:
                 self._rlm_record_hybrid_event(
@@ -4062,7 +4670,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     status="failed" if status != "timeout" else "timeout",
                     branch_id=branch_id,
                     depth=depth,
-                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "reason": row.get("reason")},
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "reason": row.get("reason"),
+                    },
                 )
             artifact_row = {
                 "event": "llm.batch_query",
@@ -4085,6 +4694,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "usage_tokens": int(row.get("usage_tokens") or 0),
                 "estimated_cost_usd": float(row.get("estimated_cost_usd") or 0.0),
                 "attempt_count": int(row.get("attempt_count") or 0),
+                "provider_exchange": row.get("provider_exchange"),
             }
             self._rlm_append_jsonl("meta/rlm_batch_subcalls.jsonl", artifact_row)
             row["branch_id"] = branch_id
@@ -4110,7 +4720,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "failed": failed_n,
                 "timeout": timeout_n,
                 "max_concurrency": max_concurrency,
-                "max_concurrency_per_branch": per_branch_cap if per_branch_cap > 0 else None,
+                "max_concurrency_per_branch": (
+                    per_branch_cap if per_branch_cap > 0 else None
+                ),
                 "fail_fast": bool(fail_fast),
             },
             "batch_rollup": batch_summary,
@@ -4125,7 +4737,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if str(env_cfg.get("format") or "").lower() != "opencode":
             return system_prompt
         file_limit = env_cfg.get("file_limit")
-        file_limit = int(file_limit) if isinstance(file_limit, int) or str(file_limit).isdigit() else 200
+        file_limit = (
+            int(file_limit) if isinstance(file_limit, int) or str(file_limit).isdigit() else 200
+        )
         env_block = self._build_opencode_environment_block(file_limit=file_limit)
         if not env_block:
             return system_prompt
@@ -4331,7 +4945,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         normalized = command.lower()
         if re.search(r"(^|[;&|]\s*)(make)(\s|$)", normalized):
             return True
-        if re.search(r"(^|[;&|]\s*)(?:timeout\s+\d+s?\s+)?(?:(?:bash|sh)\s+)?(?:\./)?smoke_test\.sh(?:\s|$)", normalized):
+        if re.search(r"(^|[;&|]\s*)(?:timeout\s+\d+s?\s+)?(?:(?:bash|sh)\s+)?(?:\./)?smoke_test\.sh(?:\s|$)", normalized,
+        ):
             return True
         test_keywords = (
             "pytest",
@@ -4362,7 +4977,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         except (TypeError, ValueError):
             prompt_value = 0.0
         try:
-            completion_value = float(completion_tokens) if completion_tokens is not None else 0.0
+            completion_value = (
+                float(completion_tokens) if completion_tokens is not None else 0.0
+            )
         except (TypeError, ValueError):
             completion_value = 0.0
         total_tokens = prompt_value + completion_value
@@ -4391,12 +5008,20 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
     def read_file(self, path: str) -> Dict[str, Any]:
         return self._ray_get(self.sandbox.read_text.remote(path))
-    def _private_workspace_path(self, path: str) -> bool: relative = Path(self._normalize_workspace_path(path)).relative_to(Path(self.workspace).resolve()).parts; return relative[:2] in {(".breadboard", "artifacts"), (".breadboard", "attachments")}
-    def _patch_touches_private_workspace(self, patch: str) -> bool: return any(self._private_workspace_path(match.group(1).strip().strip('"')) for match in re.finditer(r'^(?:\*\*\* (?:Add|Update|Delete) File:|\*\*\* Move to:|---|\+\+\+|(?:rename|copy) (?:from|to))\s+(?:[ab]/)?("?[^"\t\n]+"?)(?:\t.*)?$', str(patch), re.MULTILINE))
+    def _private_workspace_path(self, path: str) -> bool:
+        relative = (
+            Path(self._normalize_workspace_path(path)).relative_to(Path(self.workspace).resolve()).parts
+        )
+        return relative[:2] in {(".breadboard", "artifacts"), (".breadboard", "attachments"),
+        }
+
+    def _patch_touches_private_workspace(self, patch: str) -> bool:
+        return any(self._private_workspace_path(match.group(1).strip().strip('"')) for match in re.finditer(r'^(?:\*\*\* (?:Add|Update|Delete) File:|\*\*\* Move to:|---|\+\+\+|(?:rename|copy) (?:from|to))\s+(?:[ab]/)?("?[^"\t\n]+"?)(?:\t.*)?$', str(patch), re.MULTILINE,
+            ))
 
     def list_dir(self, path: str, depth: int = 1) -> Dict[str, Any]:
         # Always pass virtual paths when using VirtualizedSandbox; else pass normalized absolute
-        if getattr(self, 'using_virtualized', False):
+        if getattr(self, "using_virtualized", False):
             return self._ray_get(self.sandbox.ls.remote(path, depth))
         target = self._normalize_workspace_path(str(path))
         return self._ray_get(self.sandbox.ls.remote(target, depth))
@@ -4408,9 +5033,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if "<system-reminder>" in text:
                 return text
             try:
-                tools_cfg = (self.config.get("provider_tools", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
-                anthropic_cfg = (tools_cfg.get("anthropic", {}) or {}) if isinstance(tools_cfg, dict) else {}
-                reminders_cfg = (anthropic_cfg.get("system_reminders", {}) or {}) if isinstance(anthropic_cfg, dict) else {}
+                tools_cfg = (
+                    (self.config.get("provider_tools", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
+                )
+                anthropic_cfg = (
+                    (tools_cfg.get("anthropic", {}) or {}) if isinstance(tools_cfg, dict) else {}
+                )
+                reminders_cfg = (
+                    (anthropic_cfg.get("system_reminders", {}) or {}) if isinstance(anthropic_cfg, dict) else {}
+                )
                 if not isinstance(reminders_cfg, dict) or not bool(reminders_cfg.get("enabled")):
                     return text
                 budget = reminders_cfg.get("usd_budget_limit")
@@ -4454,7 +5085,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             else:
                 mvi_text = stdout if stdout else stderr
             mvi_text = _maybe_append_system_reminder(mvi_text)
-            payload: Dict[str, Any] = {"stdout": stdout, "exit": exit_code, "__mvi_text_output": mvi_text}
+            payload: Dict[str, Any] = {"stdout": stdout, "exit": exit_code, "__mvi_text_output": mvi_text,
+            }
             if stderr:
                 payload["stderr"] = stderr
             return payload
@@ -4479,7 +5111,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             lines.append(timeout_stderr)
             stdout = "\n".join(lines)
         mvi_text = _maybe_append_system_reminder(stdout)
-        return {"stdout": stdout, "exit": exit_obj.get("exit"), "__mvi_text_output": mvi_text}
+        return {"stdout": stdout, "exit": exit_obj.get("exit"), "__mvi_text_output": mvi_text,
+        }
 
     def vcs(self, request: Dict[str, Any]) -> Dict[str, Any]:
         return self._ray_get(self.sandbox.vcs.remote(request))
@@ -4500,13 +5133,19 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             return self._handle_skill_tool(tool_call)
 
         if normalized == "task":
-            replay_expected = tool_call.get("expected_output") is not None or tool_call.get("expected_status") is not None
+            replay_expected = (
+                tool_call.get("expected_output") is not None or tool_call.get("expected_status") is not None
+            )
             args = tool_call.get("arguments") or {}
             resume_requested = isinstance(args, dict) and bool(str(args.get("resume") or "").strip())
-            allow_task = replay_expected or resume_requested or self._get_multi_agent_orchestrator() is not None
+            allow_task = (
+                replay_expected or resume_requested or self._get_multi_agent_orchestrator() is not None
+            )
             if not allow_task:
                 try:
-                    allow_task = bool(self.config.get("task_tool")) if isinstance(getattr(self, "config", None), dict) else False
+                    allow_task = (
+                        bool(self.config.get("task_tool")) if isinstance(getattr(self, "config", None), dict) else False
+                    )
                 except Exception:
                     allow_task = False
             if not allow_task:
@@ -4531,7 +5170,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if normalized == "blob.put":
             return self._handle_blob_put_tool(tool_call)
         if normalized == "blob.put_file_slice":
-            return {"error": "private workspace storage is unavailable to model tools"} if tool_call.get("expected_output") is None and self._private_workspace_path(str(args.get("path") or "")) else self._handle_blob_put_file_slice_tool(tool_call)
+            return (
+                {"error": "private workspace storage is unavailable to model tools"} if tool_call.get("expected_output") is None and self._private_workspace_path(str(args.get("path") or "")) else self._handle_blob_put_file_slice_tool(tool_call)
+            )
         if normalized == "blob.get":
             return self._handle_blob_get_tool(tool_call)
         if normalized == "blob.search":
@@ -4543,7 +5184,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
         if normalized == "create_file":
             target = self._normalize_workspace_path(str(args.get("path", "")))
-            return {"error": "private workspace storage is unavailable to model tools"} if self._private_workspace_path(target) else self.create_file(target)
+            return (
+                {"error": "private workspace storage is unavailable to model tools"} if self._private_workspace_path(target) else self.create_file(target)
+            )
         if normalized == "todo.write_board":
             return self._execute_todo_tool("todo.write_board", args)
         if normalized == "todo.list":
@@ -4552,7 +5195,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             explanation = str(args.get("explanation") or "")
             plan = args.get("plan")
             try:
-                setattr(self, "_codex_update_plan_state", {"explanation": explanation, "plan": plan})
+                setattr(self, "_codex_update_plan_state", {"explanation": explanation, "plan": plan},
+                )
             except Exception:
                 pass
             return {
@@ -4562,40 +5206,69 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "__mvi_text_output": "Plan updated",
             }
         if normalized == "create_file_from_block":
-            target = self._normalize_workspace_path(str(args.get("file_name", ""))); content = str(args.get("content", ""))
-            return {"error": "private workspace storage is unavailable to model tools"} if self._private_workspace_path(target) else self._ray_get(self.sandbox.write_text.remote(target, content))
+            target = self._normalize_workspace_path(str(args.get("file_name", "")))
+            content = str(args.get("content", ""))
+            return (
+                {"error": "private workspace storage is unavailable to model tools"} if self._private_workspace_path(target) else self._ray_get(self.sandbox.write_text.remote(target, content)))
         if normalized == "read_file":
             requested = str(args.get("path", ""))
             if requested.startswith("attachment://"):
-                if not re.fullmatch(r"attachment://sha256:[0-9a-f]{64}", requested): return {"error": "invalid attachment URI"}
-                state = getattr(self, "_active_session_state", None); capabilities = state.get_provider_metadata("attachment_capabilities", {}) if state is not None else {}; trusted = capabilities.get(requested) if isinstance(capabilities, dict) else None
-                if not isinstance(trusted, dict): return {"error": "attachment URI is not authorized for this turn"}
+                if not re.fullmatch(r"attachment://sha256:[0-9a-f]{64}", requested):
+                    return {"error": "invalid attachment URI"}
+                state = getattr(self, "_active_session_state", None)
+                capabilities = (
+                    state.get_provider_metadata("attachment_capabilities", {}) if state is not None else {}
+                )
+                trusted = (
+                    capabilities.get(requested) if isinstance(capabilities, dict) else None
+                )
+                if not isinstance(trusted, dict):
+                    return {"error": "attachment URI is not authorized for this turn"}
                 try:
-                    ref = ArtifactRef(digest=str(trusted["digest"]), size_bytes=int(trusted["size_bytes"]), media_type=str(trusted["media_type"])); content = read_workspace_artifact(self.workspace, ref)
-                except Exception as exc: return {"error": f"attachment read failed: {exc}"}
-                return {"path": requested, "content": content.decode("utf-8", errors="replace"), "truncated": False, "offset": 0, "limit": None}
+                    ref = ArtifactRef(digest=str(trusted["digest"]), size_bytes=int(trusted["size_bytes"]), media_type=str(trusted["media_type"]),
+                    )
+                    content = read_workspace_artifact(self.workspace, ref)
+                except Exception as exc:
+                    return {"error": f"attachment read failed: {exc}"}
+                return {"path": requested, "content": content.decode("utf-8", errors="replace"), "truncated": False, "offset": 0, "limit": None,
+                }
             target = self._normalize_workspace_path(requested)
-            return {"error": "artifact store is private; use an authorized attachment URI"} if self._private_workspace_path(target) else self.read_file(target)
+            return (
+                {"error": "artifact store is private; use an authorized attachment URI"} if self._private_workspace_path(target) else self.read_file(target)
+            )
         if normalized == "glob":
             pattern = str(args.get("pattern") or "")
             root = str(args.get("path") or ".")
             limit = args.get("limit")
-            matches = self._ray_get(self.sandbox.glob.remote(pattern, root, None)); visible = [match for match in matches if not self._private_workspace_path(str(Path(root) / match))]; return visible[:int(limit)] if limit is not None and int(limit) >= 0 else visible
+            matches = self._ray_get(self.sandbox.glob.remote(pattern, root, None))
+            visible = [match for match in matches if not self._private_workspace_path(str(Path(root) / match))]
+            return (
+                visible[:int(limit)] if limit is not None and int(limit) >= 0 else visible
+            )
         if normalized == "grep":
             pattern = str(args.get("pattern") or "")
             root = str(args.get("path") or ".")
             include = args.get("include")
             limit = int(args.get("limit") or 100)
-            result = self._ray_get(self.sandbox.grep.remote(pattern, root, include, 0)); result["matches"] = [row for row in result.get("matches", []) if not self._private_workspace_path(str(Path(root) / str(row.get("path", ""))))][:limit]; return result
+            result = self._ray_get(self.sandbox.grep.remote(pattern, root, include, 0))
+            result["matches"] = [row for row in result.get("matches", []) if not self._private_workspace_path(str(Path(root) / str(row.get("path", ""))))][:limit]
+            return result
         if normalized == "list_dir":
-            target = self._normalize_workspace_path(str(args.get("path", ""))); depth = int(args.get("depth", 1)); result = self.list_dir(target, depth); visible = [row for row in result.get("items", []) if not self._private_workspace_path(str(Path(target) / str(row.get("path", ""))))]; result["items"] = result["entries"] = visible; return result
+            target = self._normalize_workspace_path(str(args.get("path", "")))
+            depth = int(args.get("depth", 1))
+            result = self.list_dir(target, depth)
+            visible = [row for row in result.get("items", []) if not self._private_workspace_path(str(Path(target) / str(row.get("path", ""))))]
+            result["items"] = result["entries"] = visible
+            return result
         if normalized == "run_shell":
             expected_output = tool_call.get("expected_output")
             expected_status = tool_call.get("expected_status")
             if isinstance(expected_output, str):
                 if str(expected_status or "").lower() == "error":
-                    return {"error": expected_output, "__mvi_text_output": expected_output}
-                return {"stdout": expected_output, "exit": 0, "__mvi_text_output": expected_output}
+                    return {"error": expected_output, "__mvi_text_output": expected_output,
+                    }
+                return {"stdout": expected_output, "exit": 0, "__mvi_text_output": expected_output,
+                }
             command = str(args.get("command") or args.get("input") or "")
             if not command:
                 return {"error": "missing shell command"}
@@ -4611,12 +5284,17 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 command = f"cd {shlex.quote(scoped_workdir)} && {command}"
             shell_scope_cfg = {}
             try:
-                workspace_cfg = (self.config.get("workspace", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
-                shell_scope_cfg = (workspace_cfg.get("shell_scope", {}) or {}) if isinstance(workspace_cfg, dict) else {}
+                workspace_cfg = (
+                    (self.config.get("workspace", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
+                )
+                shell_scope_cfg = (
+                    (workspace_cfg.get("shell_scope", {}) or {}) if isinstance(workspace_cfg, dict) else {}
+                )
             except Exception:
                 shell_scope_cfg = {}
             if isinstance(shell_scope_cfg, dict) and bool(shell_scope_cfg.get("reject_parent_traversal")):
-                parent_traversal = re.search(r"(^|[;&|]\s*|\s)(?:find|rg|grep|ls|cat|sed)\s+\.\.(?:\s|/|$)", command)
+                parent_traversal = re.search(r"(^|[;&|]\s*|\s)(?:find|rg|grep|ls|cat|sed)\s+\.\.(?:\s|/|$)", command,
+                )
                 cd_parent = re.search(r"(^|[;&|]\s*)cd\s+\.\.(?:\s|/|$)", command)
                 if parent_traversal or cd_parent:
                     return {
@@ -4632,7 +5310,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             return self.run_shell(command, timeout)
         if normalized == "apply_search_replace":
             target = self._normalize_workspace_path(str(args.get("file_name", "")))
-            if self._private_workspace_path(target): return {"error": "private workspace storage is unavailable to model tools"}
+            if self._private_workspace_path(target):
+                return {"error": "private workspace storage is unavailable to model tools"}
             search_text = str(args.get("search", ""))
             replace_text = str(args.get("replace", ""))
             try:
@@ -4644,7 +5323,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             return self._ray_get(self.sandbox.edit_replace.remote(target, search_text, replace_text, 1))
         if normalized == "apply_unified_patch":
             patch_source_text = str(args.get("patch") or args.get("input") or "")
-            if self._patch_touches_private_workspace(patch_source_text): return {"error": "private workspace storage is unavailable to model tools"}
+            if self._patch_touches_private_workspace(patch_source_text):
+                return {"error": "private workspace storage is unavailable to model tools"}
             patch_text = patch_source_text
             if (
                 "*** Add File:" in patch_text
@@ -4833,8 +5513,52 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 kernel_emitter = JsonlKernelEmitter(_Path(kernel_emitter_run_dir), mode=mode)  # type: ignore[arg-type]
             except Exception:
                 kernel_emitter = None
-        session_state = SessionState(self.workspace, self.image, self.config, event_emitter=emitter, kernel_emitter=kernel_emitter)
+        session_state = SessionState(self.workspace, self.image, self.config, event_emitter=emitter, kernel_emitter=kernel_emitter,
+        )
         self._active_session_state = session_state
+        if not isinstance(context, dict):
+            raise ProviderContractError(
+                "run context requires admitted session/input/turn identifiers"
+            )
+
+        def exact_context_id(primary: str, alias: str) -> str:
+            supplied = [
+                context[key] for key in (primary, alias) if key in context
+            ]
+            if not supplied or any(
+                not isinstance(value, str) or not value.strip()
+                for value in supplied
+            ):
+                raise ProviderContractError(
+                    "run context requires admitted session/input/turn identifiers"
+                )
+            if any(value != supplied[0] for value in supplied[1:]):
+                raise ProviderContractError(
+                    f"run context {primary} aliases disagree"
+                )
+            return supplied[0]
+
+        provider_session_id = exact_context_id("session_id", "sessionId")
+        provider_input_id = exact_context_id("input_id", "inputId")
+        provider_turn_id = exact_context_id("turn_id", "turnId")
+        raw_input_media = context.get("input_media") or []
+        if not isinstance(raw_input_media, list):
+            raise ProviderContractError(
+                "run context input_media must be an array"
+            )
+        initial_input_media = normalize_content(
+            raw_input_media, role="user"
+        )
+        if any(block.get("type") != "media" for block in initial_input_media):
+            raise ProviderContractError(
+                "run context input_media accepts only media blocks"
+            )
+        session_state.set_provider_metadata("session_id", provider_session_id)
+        session_state.set_turn_context(
+            input_id=provider_input_id,
+            turn_id=provider_turn_id,
+            turn_index=None,
+        )
         kernel_emitter_closed = False
 
         def _close_kernel_emitter(reason: str = "session_end") -> None:
@@ -4875,7 +5599,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 if isinstance(key, str) and (key.startswith("phase15_") or key.startswith("phase16_")):
                     session_state.set_provider_metadata(key, value)
             capabilities = context.get("attachment_capabilities")
-            if isinstance(capabilities, dict): session_state.set_provider_metadata("attachment_capabilities", capabilities)
+            if isinstance(capabilities, dict):
+                session_state.set_provider_metadata("attachment_capabilities", capabilities)
         session_state.set_provider_metadata("initial_user_prompt", user_prompt or "")
         session_state.set_provider_metadata(
             "requires_build_guard",
@@ -4922,7 +5647,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 pass
         completion_detector = CompletionDetector(
             config=completion_config or self.config.get("completion", {}),
-            completion_sentinel=completion_sentinel
+            completion_sentinel=completion_sentinel,
         )
         markdown_logger = MarkdownLogger(output_md_path)
         # Also seed conversation.md under logging v2 if enabled
@@ -4964,6 +5689,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         
         # Initialize provider and client
         requested_route_id = model
+        if isinstance(getattr(self, "_model_role_lock", None), dict):
+            locked_target = self._locked_target_for_role()
+            if not isinstance(locked_target, dict) or not locked_target.get("route_id"):
+                raise ProviderContractError("active model role has no exact route")
+            requested_route_id = str(locked_target["route_id"])
         if self._active_replay_session:
             requested_route_id = "replay"
 
@@ -4972,15 +5702,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         provider_tools_cfg = dict((self.config.get("provider_tools") or {}))
         
         # Initialize runtime (ReplayRuntime if replay, else standard)
-        provider_config, resolved_model, supports_native_tools_for_model = provider_router.get_provider_config(requested_route_id)
+        provider_config, resolved_model, supports_native_tools_for_model = (
+            provider_router.get_provider_config(requested_route_id)
+        )
         runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(requested_route_id)
         client_config = provider_router.create_client_config(requested_route_id)
-        if runtime_descriptor.provider_id == "openai" and not client_config.get("api_key"):
-            client_config = self._bootstrap_local_openai_client_config(dict(client_config))
-
-        # Fix for client_config usage in replay mode
-        if runtime_descriptor.provider_id == "replay":
-            client_config.setdefault("api_key", "mock")
 
         api_variant_override = provider_tools_cfg.get("api_variant")
         if api_variant_override and runtime_descriptor.provider_id == "openai":
@@ -4992,17 +5718,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 runtime_descriptor.runtime_id = "openai_chat"
                 runtime_descriptor.default_api_variant = "chat"
 
-        if not client_config["api_key"] and runtime_descriptor.provider_id != "replay":
-            raise RuntimeError(f"{provider_config.api_key_env} missing in environment")
-
         runtime = provider_registry.create_runtime(runtime_descriptor)
-
-        # Create client with provider-specific configuration
-        client = runtime.create_client(
-            client_config["api_key"],
-            base_url=client_config.get("base_url"),
-            default_headers=client_config.get("default_headers"),
-        )
+        client = None
 
         self._current_route_id = requested_route_id
         try:
@@ -5015,7 +5732,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         session_state.set_provider_metadata("api_variant", runtime_descriptor.default_api_variant)
         session_state.set_provider_metadata("resolved_model", runtime_model)
         try:
-            capabilities = provider_router.get_capabilities(model)
+            capabilities = provider_router.get_capabilities(requested_route_id)
             session_state.set_provider_metadata("capabilities", asdict(capabilities))
         except Exception:
             pass
@@ -5035,7 +5752,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             live_tools: List[Dict[str, Any]] = []
             mcp_manager = None
             if mcp_live_tools_enabled(self.config) and mcp_servers:
-                mcp_manager = MCPManager(mcp_servers)
+                mcp_manager = MCPManager(
+                    mcp_servers,
+                    workspace=self.workspace,
+                    protected_paths=self._protected_credential_paths,
+                )
                 try:
                     live = mcp_manager.list_tools()
                     for tool in live:
@@ -5069,11 +5790,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if tape_path:
                 self._mcp_replay_tape = load_mcp_replay_tape(tape_path)
             record_path = None
-            if mcp_servers or tools_snapshot or mcp_fixture_results or mcp_live_tools_enabled(self.config):
+            if (
+                mcp_servers or tools_snapshot or mcp_fixture_results or mcp_live_tools_enabled(self.config)
+            ):
                 record_path = mcp_record_tape_path(
                     self.config,
                     self.workspace,
-                    Path(self.logger_v2.run_dir) if getattr(self.logger_v2, "run_dir", None) else None,
+                    (
+                        Path(self.logger_v2.run_dir) if getattr(self.logger_v2, "run_dir", None) else None
+                    ),
                 )
             self._mcp_record_path = record_path
         except Exception:
@@ -5090,7 +5815,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 perms = getattr(manifest, "permissions", None)
                 if isinstance(perms, dict) and perms:
                     plugin_permissions = self._merge_permission_rules(plugin_permissions, perms)
-                runtime = getattr(manifest, "runtime", {}) if hasattr(manifest, "runtime") else {}
+                runtime = (
+                    getattr(manifest, "runtime", {}) if hasattr(manifest, "runtime") else {}
+                )
                 trusted = None
                 if isinstance(runtime, dict):
                     if "trusted" in runtime:
@@ -5107,7 +5834,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if plugin_permissions:
                 session_state.set_provider_metadata("plugin_permissions_requested", plugin_permissions)
             self._plugin_trust_map = plugin_trust_map
-            plugins_cfg = (self.config.get("plugins") or {}) if isinstance(self.config, dict) else {}
+            plugins_cfg = (
+                (self.config.get("plugins") or {}) if isinstance(self.config, dict) else {}
+            )
             auto_grant = bool(plugins_cfg.get("auto_grant_permissions"))
             if plugin_permissions and auto_grant:
                 merged_permissions = self._merge_permission_rules(self.config.get("permissions"), plugin_permissions)
@@ -5160,7 +5889,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 session_state.set_provider_metadata("skill_selection", selection)
                 session_state.set_provider_metadata(
                     "skill_catalog",
-                    build_skill_catalog(prompt_skills, graph_skills, selection=selection, enabled_map=enabled_map),
+                    build_skill_catalog(prompt_skills, graph_skills, selection=selection, enabled_map=enabled_map,
+                    ),
                 )
                 session_state.set_provider_metadata("prompt_skills", selected_prompts)
                 session_state.set_provider_metadata("graph_skills", selected_graphs)
@@ -5170,7 +5900,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         type_id="skill",
                         name=f"skill.{skill.skill_id}",
                         description=skill.description or f"Execute skill {skill.skill_id}",
-                        parameters=[ToolParameter(name="input", type="object", description="Skill input payload")],
+                        parameters=[ToolParameter(name="input", type="object", description="Skill input payload",
+                            )],
                         blocking=True,
                     )
                     try:
@@ -5195,7 +5926,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if completion_tool_enabled:
             tool_defs = self._ensure_completion_tool(tool_defs)
         mark_tool_present = any(getattr(t, "name", None) == "mark_task_complete" for t in tool_defs)
-        session_state.set_provider_metadata("mark_task_complete_available", bool(completion_tool_enabled and mark_tool_present))
+        session_state.set_provider_metadata("mark_task_complete_available", bool(completion_tool_enabled and mark_tool_present),
+        )
         if not completion_tool_enabled or not mark_tool_present:
             session_state.set_provider_metadata("completion_sentinel_required", True)
         
@@ -5228,7 +5960,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 extra_blocks = {"system": [], "per_turn": []}
                 user_prompt_extra: List[str] = []
                 try:
-                    prompt_skills = session_state.get_provider_metadata("prompt_skills") or []
+                    prompt_skills = (
+                        session_state.get_provider_metadata("prompt_skills") or []
+                    )
                     for skill in prompt_skills:
                         slot = getattr(skill, "slot", "system")
                         blocks = getattr(skill, "blocks", []) or []
@@ -5260,11 +5994,17 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 prompt_compile_key = v2.get("cache_key")
                 prompt_compiler_version = "v2"
                 if user_prompt_extra:
-                    user_prompt = (user_prompt or "") + "\n\n" + "\n\n".join(user_prompt_extra)
+                    user_prompt = (
+                        (user_prompt or "") + "\n\n" + "\n\n".join(user_prompt_extra)
+                    )
                 if compiler_choice == "v3":
                     try:
-                        from .compilation.prompt_compiler_v2_adapter import shadow_compile_v2_bundle
-                        from .compilation.prompt_compiler_v3 import write_prompt_bundle_artifacts
+                        from .compilation.prompt_compiler_v2_adapter import (
+                            shadow_compile_v2_bundle,
+                        )
+                        from .compilation.prompt_compiler_v3 import (
+                            write_prompt_bundle_artifacts,
+                        )
 
                         compile_inputs = {
                             "mode": mode_name,
@@ -5290,8 +6030,12 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     shadow_flag = ""
                 if shadow_flag in {"v3", "true", "1"}:
                     try:
-                        from .compilation.prompt_compiler_v2_adapter import shadow_compile_v2_bundle
-                        from .compilation.prompt_compiler_v3 import hash_payload, write_prompt_bundle_artifacts
+                        from .compilation.prompt_compiler_v2_adapter import (
+                            shadow_compile_v2_bundle,
+                        )
+                        from .compilation.prompt_compiler_v3 import (
+                            hash_payload, write_prompt_bundle_artifacts,
+                        )
 
                         compile_inputs = {
                             "mode": mode_name,
@@ -5310,8 +6054,12 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                             "per_turn": hash_payload(per_turn_prompt or ""),
                         }
                         v3_hashes = {
-                            "system": bundle.slots.get("system").slot_hash if bundle.slots.get("system") else None,
-                            "per_turn": bundle.slots.get("per_turn").slot_hash if bundle.slots.get("per_turn") else None,
+                            "system": (
+                                bundle.slots.get("system").slot_hash if bundle.slots.get("system") else None
+                            ),
+                            "per_turn": (
+                                bundle.slots.get("per_turn").slot_hash if bundle.slots.get("per_turn") else None
+                            ),
                         }
                         shadow_payload = {
                             "v2_hashes": v2_hashes,
@@ -5391,7 +6139,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "<WORKSPACE_TOOL_REQUIRED>\n"
                 "This turn requires real workspace interaction.\n"
                 "Use the available tools and answer from the observed result.\n"
-                "Do not reply with a promise such as \"I'll run ...\" or \"Running ...\".\n"
+                'Do not reply with a promise such as "I\'ll run ..." or "Running ...".\n'
                 "Emit the actual tool call instead.\n"
                 "If no real tool result is observed, the turn will be rejected.\n"
                 "</WORKSPACE_TOOL_REQUIRED>"
@@ -5401,8 +6149,21 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             initial_user_parts.append(per_turn_prompt)
         if workspace_tool_requirement_block:
             initial_user_parts.append(workspace_tool_requirement_block)
-        initial_user_content = "\n\n".join(part for part in initial_user_parts if isinstance(part, str) and part.strip())
-        enhanced_user_msg = {"role": "user", "content": initial_user_content}
+        initial_user_text = "\n\n".join(
+            part
+            for part in initial_user_parts
+            if isinstance(part, str) and part.strip()
+        )
+        initial_user_content: Any = initial_user_text
+        if initial_input_media:
+            initial_user_content = [
+                {"type": "text", "text": initial_user_text},
+                *[dict(block) for block in initial_input_media],
+            ]
+        enhanced_user_msg = {
+            "role": "user",
+            "content": initial_user_content,
+        }
         resume_snapshot = self._load_resume_snapshot()
         resume_has_system = False
         if isinstance(resume_snapshot, dict):
@@ -5420,6 +6181,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if isinstance(meta, dict):
                 session_state.provider_metadata.update(meta)
             session_state.set_provider_metadata("resume_snapshot_applied", True)
+        # Resume snapshots are subordinate to the owning product session.
+        session_state.set_provider_metadata("session_id", provider_session_id)
         # Resume metadata is session-scoped, but these fields are turn-scoped.
         # Carrying them into a fresh user request makes the conductor believe the
         # new turn has already satisfied its required workspace-tool contract.
@@ -5432,7 +6195,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         # Configure native tools and tool prompt mode
         native_pref_hint = getattr(self, "_native_preference_hint", None)
         provider_tools_cfg = dict(provider_tools_cfg)
-        if provider_tools_cfg.get("use_native") is None and native_pref_hint is not None:
+        if (
+            provider_tools_cfg.get("use_native") is None and native_pref_hint is not None
+        ):
             provider_tools_cfg["use_native"] = native_pref_hint
         provider_tools_cfg = self._apply_capability_tool_overrides(
             provider_tools_cfg,
@@ -5442,21 +6207,21 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         effective_config = dict(self.config)
         effective_config["provider_tools"] = provider_tools_cfg
         self._provider_tools_effective = provider_tools_cfg
-        use_native_tools = provider_router.should_use_native_tools(model, effective_config)
-        will_use_native_tools = self._setup_native_tools(model, use_native_tools)
+        use_native_tools = provider_router.should_use_native_tools(requested_route_id, effective_config)
+        will_use_native_tools = self._setup_native_tools(requested_route_id, use_native_tools)
         tool_prompt_mode = self._adjust_tool_prompt_mode(tool_prompt_mode, will_use_native_tools)
         session_state.last_tool_prompt_mode = tool_prompt_mode
         
         # Setup tool prompts and system messages
         local_tools_prompt = self._setup_tool_prompts(
             tool_prompt_mode, tool_defs, active_dialect_names, 
-            session_state, markdown_logger, caller
+            session_state, markdown_logger, caller,
         )
         
         # Add enhanced descriptive fields to initial messages after tool setup
         self._add_enhanced_message_fields(
             tool_prompt_mode, tool_defs, active_dialect_names, 
-            session_state, will_use_native_tools, local_tools_prompt, user_prompt
+            session_state, will_use_native_tools, local_tools_prompt, user_prompt,
         )
         
         # Initialize markdown log and snapshot
@@ -5468,12 +6233,31 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             pass
         if session_state.get_provider_metadata("current_mode") is None:
             session_state.set_provider_metadata("current_mode", self._resolve_active_mode())
-        # Use enhanced user content for markdown log
-        initial_user_content = session_state.messages[1].get("content", user_prompt)
-        markdown_logger.log_user_message(initial_user_content)
+        # Log text only; provider media remain in the canonical message.
+        initial_user_message = next(
+            (
+                message
+                for message in reversed(session_state.messages)
+                if message.get("role") == "user"
+            ),
+            enhanced_user_msg,
+        )
+        logged_user_content = initial_user_message.get("content", user_prompt)
+        if isinstance(logged_user_content, list):
+            logged_user_content = "\n".join(
+                str(block.get("text") or "")
+                for block in logged_user_content
+                if isinstance(block, dict) and block.get("type") == "text"
+            )
+        if not isinstance(logged_user_content, str):
+            logged_user_content = str(logged_user_content)
+        markdown_logger.log_user_message(logged_user_content)
         try:
             if self.logger_v2.run_dir:
-                self.logger_v2.append_text("conversation/conversation.md", self.md_writer.user(initial_user_content))
+                self.logger_v2.append_text(
+                    "conversation/conversation.md",
+                    self.md_writer.user(logged_user_content),
+                )
         except Exception:
             pass
         session_state.write_snapshot(output_json_path, model)
@@ -5546,7 +6330,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     if isinstance(episode_result, dict):
                         if any(
                             bool(rlm_delta.get(key))
-                            for key in ("subcall_count", "total_tokens", "total_cost_usd", "branch_event_count")
+                            for key in ("subcall_count", "total_tokens", "total_cost_usd", "branch_event_count",
+                            )
                         ) or bool(rlm_delta.get("lane_counts")):
                             episode_result["rlm"] = rlm_delta
                             try:
@@ -5556,7 +6341,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     return episode_result
 
                 controller_out = controller.run(_episode_runner)
-                run_result = controller_out.get("result") if isinstance(controller_out, dict) else None
+                run_result = (
+                    controller_out.get("result") if isinstance(controller_out, dict) else None
+                )
                 if not isinstance(run_result, dict):
                     run_result = {
                         "completed": False,
@@ -5599,10 +6386,13 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     client_config,
                 )
         except Exception as exc:
+            public_error = public_error_projection(
+                exc,
+                default_code="run_loop_error",
+            )
             run_loop_error = {
-                "type": exc.__class__.__name__,
-                "message": str(exc),
-                "traceback": traceback.format_exc(),
+                "type": public_error["error_type"],
+                "message": public_error["error"],
             }
             session_state.add_transcript_entry({"run_loop_exception": run_loop_error})
             try:
@@ -5657,11 +6447,52 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         except Exception:
             pass
 
-        # Populate finish metadata for IR and persist conversation snapshot
-        usage_payload = session_state.get_provider_metadata("usage")
+        # Project every exact-correlated exchange after removing control-only
+        # completion lines. Tool arguments and admitted request messages remain exact.
+        raw_provider_exchanges = session_state.get_provider_metadata(
+            "provider_exchange_history", []
+        )
+        if not isinstance(raw_provider_exchanges, list):
+            raise ProviderContractError(
+                "provider_exchange_history must be an array"
+            )
+        provider_exchanges = [
+            strip_provider_exchange_completion_sentinels(exchange)
+            for exchange in raw_provider_exchanges
+        ]
+        provider_exchange = session_state.get_provider_metadata(
+            "last_provider_exchange"
+        )
+        if isinstance(provider_exchange, dict):
+            provider_exchange = strip_provider_exchange_completion_sentinels(
+                provider_exchange
+            )
+            run_result["provider_exchange"] = copy.deepcopy(provider_exchange)
+        if provider_exchanges:
+            run_result["provider_exchanges"] = copy.deepcopy(provider_exchanges)
+        provider_terminal = (
+            provider_exchange.get("terminal")
+            if isinstance(provider_exchange, dict)
+            else None
+        )
+        usage_payload = (
+            copy.deepcopy(provider_terminal.get("usage"))
+            if isinstance(provider_terminal, dict)
+            and isinstance(provider_terminal.get("usage"), dict)
+            else session_state.get_provider_metadata("usage")
+        )
         if not isinstance(usage_payload, dict):
             usage_payload = {}
-        finish_reason = "stop" if run_result.get("completed") else "error"
+        if isinstance(provider_terminal, dict):
+            terminal_kind = provider_terminal.get("kind")
+            if terminal_kind == "done":
+                finish_reason = str(provider_terminal.get("finish_reason") or "stop")
+            elif terminal_kind == "cancelled":
+                finish_reason = "aborted"
+            else:
+                finish_reason = "error"
+        else:
+            finish_reason = "stop" if run_result.get("completed") else "error"
         finish_meta = session_state.get_provider_metadata("raw_finish_meta")
         if isinstance(run_result, dict) and isinstance(finish_meta, dict):
             run_result.setdefault("provider_finish_meta", copy.deepcopy(finish_meta))
@@ -5695,7 +6526,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         "completion_reason": run_result.get("completion_reason"),
                     },
                 )
-                orchestrator.persist_event_log()
+                self._persist_multi_agent_log()
             except Exception:
                 pass
 
@@ -5710,12 +6541,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         run_dir = getattr(self.logger_v2, "run_dir", None)
         if not run_dir:
             return
-        try:
-            workspace_path = Path(self.workspace)
-        except Exception:
+        filesystem = self._workspace_filesystem_for_persistence()
+        if filesystem is None:
             return
-        if not workspace_path.exists() or not workspace_path.is_dir():
-            return
+        workspace_path = Path(filesystem.root)
         dest = Path(run_dir) / "final_container_dir"
         capture_meta: Dict[str, Any] = {
             "workspace_path": str(workspace_path),
@@ -5727,14 +6556,20 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             "on",
         }
         try:
-            logging_cfg = self.config.get("logging") if isinstance(getattr(self, "config", None), dict) else None
-            if isinstance(logging_cfg, dict) and "persist_final_workspace" in logging_cfg:
+            logging_cfg = (
+                self.config.get("logging") if isinstance(getattr(self, "config", None), dict) else None
+            )
+            if (
+                isinstance(logging_cfg, dict) and "persist_final_workspace" in logging_cfg
+            ):
                 persist_requested = bool(logging_cfg.get("persist_final_workspace"))
         except Exception:
             pass
         is_disposable = False
         try:
-            is_disposable = is_disposable_workspace_path(workspace_path, repo_root=Path(__file__).resolve().parents[1])
+            repo_tmp_root = (Path(__file__).resolve().parents[1] / "tmp").resolve()
+            workspace_path.relative_to(repo_tmp_root)
+            is_disposable = not filesystem.exists(".git")
         except Exception:
             is_disposable = False
         capture_meta["is_disposable_workspace"] = bool(is_disposable)
@@ -5751,28 +6586,49 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             except Exception:
                 pass
             return
+
+        inside_workspace, _relative = self._classify_workspace_path(dest)
+        if inside_workspace:
+            capture_meta.update(
+                {
+                    "persisted": False,
+                    "reason": "destination_within_workspace",
+                    "strategy": "metadata_only",
+                }
+            )
+            try:
+                self.logger_v2.write_json("meta/final_workspace_capture.json", capture_meta)
+            except Exception:
+                pass
+            return
+
+        run_dir_path = Path(str(run_dir))
+        logger_root = getattr(getattr(self, "logger_v2", None), "root_dir", None)
+        run_dir_owned = False
         try:
-            workspace_resolved = workspace_path.resolve()
-            dest_resolved = dest.resolve(strict=False)
-            if str(dest_resolved).startswith(str(workspace_resolved)):
-                capture_meta.update(
-                    {
-                        "persisted": False,
-                        "reason": "destination_within_workspace",
-                        "strategy": "metadata_only",
-                    }
+            if logger_root:
+                run_dir_path.resolve(strict=False).relative_to(
+                    Path(str(logger_root)).resolve(strict=False)
                 )
-                try:
-                    self.logger_v2.write_json("meta/final_workspace_capture.json", capture_meta)
-                except Exception:
-                    pass
-                return
+                run_dir_owned = True
         except Exception:
-            pass
+            run_dir_owned = False
+
         try:
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.copytree(workspace_path, dest)
+            if not run_dir_owned:
+                raise WorkspacePathError("workspace_destination_unowned")
+            with WorkspaceFilesystem.open_anchored_root(
+                dest.parent,
+                create=False,
+            ) as destination_parent:
+                if destination_parent.exists(dest.name):
+                    destination_parent.remove_tree(dest.name)
+                destination_parent.create_directory(dest.name)
+                with WorkspaceFilesystem.open_anchored_root(
+                    dest,
+                    create=False,
+                ) as destination:
+                    filesystem.copy_tree_to(destination)
             capture_meta.update(
                 {
                     "persisted": True,
@@ -5853,6 +6709,71 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         except Exception:
             pass
 
+    def _provider_session_id(self) -> str:
+        try:
+            return str(
+                self._active_session_state.get_provider_metadata("session_id") or ""
+            )
+        except Exception:
+            return ""
+
+    @contextmanager
+    def _provider_client_lease(self, model_id: str, runtime: Any):
+        session_id = self._provider_session_id()
+        target = self._locked_target_for_route(model_id)
+        if isinstance(getattr(self, "_model_role_lock", None), dict) and target is None:
+            raise ProviderRuntimeError(
+                "route is outside the active model-role lock",
+                details={"code": "policy_rejection"},
+                kind="configuration",
+            )
+        account_selector = None
+        binding = (
+            target.get("account_binding")
+            if isinstance(target, dict)
+            else None
+        )
+        if isinstance(binding, dict):
+            ref = binding.get("binding_ref")
+            locked_session = (
+                str(ref.get("session_id") or "")
+                if isinstance(ref, dict)
+                else ""
+            )
+            if session_id and locked_session and session_id != locked_session:
+                raise ProviderRuntimeError(
+                    "session credential binding does not match the active session",
+                    details={"code": "policy_rejection"},
+                    kind="configuration",
+                )
+            session_id = session_id or locked_session
+            if binding.get("pin") == "lock":
+                account_id = binding.get("account_id")
+                if account_id:
+                    account_selector = {"account_id": str(account_id)}
+        with provider_router.execution_client_config(
+            model_id,
+            session_id=session_id,
+            endpoint_id=model_id,
+            account_selector=account_selector,
+        ) as cfg:
+            origin = cfg.get("credential_origin")
+            if isinstance(binding, dict) and (
+                not isinstance(origin, Mapping)
+                or not credential_origin_matches_binding(origin, binding)
+            ):
+                raise ProviderRuntimeError(
+                    "credential origin does not match the active model-role lock",
+                    details={"code": "policy_rejection"},
+                    kind="configuration",
+                )
+            client = runtime.create_client(
+                cfg.get("api_key"),
+                base_url=cfg.get("base_url"),
+                default_headers=cfg.get("default_headers"),
+            )
+            yield client
+
     def _invoke_runtime_with_streaming(
         self,
         runtime,
@@ -5889,7 +6810,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         result = self._exec_raw(payload)
         result = {"action": "apply_search_replace", **result}
         self._record_diff_metrics(
-            SimpleNamespace(function="apply_search_replace", arguments=payload["arguments"], dialect="aider_retry"),
+            SimpleNamespace(function="apply_search_replace", arguments=payload["arguments"], dialect="aider_retry",
+            ),
             result,
         )
         return result

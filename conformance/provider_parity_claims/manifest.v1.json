@@ -1,0 +1,920 @@
+{
+  "accepted_f6": {
+    "acceptance_record": "beads:bb-ny9w.35",
+    "artifacts": {
+      "artifact.installed_end_to_end_trace": {
+        "sha256": "sha256:b5b7c8e1097ee0cbb14d878b85a8822f7151cfb3752b196f86f64b2e550ad8d6",
+        "source": "observations/artifact.installed_end_to_end_trace.json"
+      },
+      "artifact.sdk_local_responses": {
+        "sha256": "sha256:3121c3c5ccd172dbfb60bacf1af43eefeeaa6d4f6598b465d5c42de7fc4b90fe",
+        "source": "artifacts/breadboard-sdk-0.3.0.tgz"
+      },
+      "artifact.wheel_provider_catalog_auth_role": {
+        "sha256": "sha256:935259a8b425b104e7391fcb78fda557a6f5c66135ab8c30a3ff2a3be0d23b70",
+        "source": "artifacts/breadboard_harness_cli-0.0.0-py3-none-any.whl"
+      }
+    },
+    "breadboard_commit": "145912b8d2a235943f453ae8ac8fe825200c9bbd",
+    "breadboard_tree": "7145ce07950f9384588eafe69f730760d41f4df0",
+    "intentional_divergence_count": 3,
+    "manifest_sha256": "sha256:1d7b41facae20d6c6d39cfc9777867dae514970e19cd7d8e27447b86cbc4714e",
+    "match_count": 42,
+    "row_count": 45
+  },
+  "claims": [
+    {
+      "advancement_gates": [
+        "L1",
+        "L2"
+      ],
+      "api_variant": "openai-codex-responses",
+      "auth_owner": "provider",
+      "auth_schemes": [
+        "provider_managed"
+      ],
+      "breadboard_provider_id": "codex",
+      "contract_state": "declared_supported",
+      "divergence_ids": [
+        "bounded-catalog",
+        "codex-alias",
+        "configured-only-models",
+        "codex-transport",
+        "auth-mechanics",
+        "subscription-material-policy",
+        "exchange-ir",
+        "role-resolution",
+        "fallback-policy",
+        "synthetic-only"
+      ],
+      "exclusions": [
+        "No real provider login or credential-validity claim.",
+        "No live provider network or response-availability claim.",
+        "No cost, latency, rate-limit, or quota claim.",
+        "No model-quality or model-family claim beyond the named representative fixture.",
+        "No release-wide, platform-installation, update, rollback, or signing claim."
+      ],
+      "f6_evidence": [
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:c299525b0718bcaf52405a772607cefa64f73103b24807c03c283888e2c584e8",
+          "oracle_output_sha256": "sha256:008b688a50d6b198fffa16b0bed5f8079b10ec814f2cafe9a4f30c18c23ba01e",
+          "row_id": "codex.catalog_model_route"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:2eb957fd7ecfa951c824a0f131716774d82f28924edb438851d522d9ace5a44c",
+          "oracle_output_sha256": "sha256:222fa4f6ba2d76ceaef4602d3b303b0ee066937521a86d5254c8a161e3ea3ec3",
+          "row_id": "codex.request_ir"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:22205896920378512b9f06c34d3f9520c4f0198ba5b11449606a19bb52d8994f",
+          "oracle_output_sha256": "sha256:106b8795dfb7739f04a9ad571498080d313c587a07fad5d385b9cb0a0b4d5623",
+          "row_id": "codex.text_stream"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:28929b00c8bd11be6328705fd3325bbe6b218a938e57615df58df895ac99ac14",
+          "oracle_output_sha256": "sha256:c87a1eec73c57052da62209438610062b0004a7ea6d917ba88d9ca9a4452fb10",
+          "row_id": "codex.tool_stream"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:8654581e4eea25868c15fb66a9b62b1d1f97f9c7dded16db749da136cdd9e95e",
+          "oracle_output_sha256": "sha256:1f1e7a06247516ef1d32b66d9e01b1545747b6b45f03f933447aa7370a30a889",
+          "row_id": "codex.usage_finish"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:2fc1edb948a8d6b1dd57dd69370e810b47b372b0118789b66dc0e222bab0e033",
+          "oracle_output_sha256": "sha256:114a4556c2e1a554b9cd208a472243b8156dca5900fdfb45d3ceae47a3f46cfe",
+          "row_id": "codex.error_terminal"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:6352feafe51398413833bf83c6129b4a71dd75447372417b1acb5470a6b75b45",
+          "oracle_output_sha256": "sha256:c4dc8005d611d9cc0aa1d11de80fdff60a48260bcefb05c7aaae245131ffb8c2",
+          "row_id": "codex.cancel_terminal"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:9807d8789dbf653834e6bf68fe2f822952b385c6ee52ce2161b37c1fbec3c80f",
+          "oracle_output_sha256": "sha256:97a588377ef68b1213d2ed342eccb61044b423663b1f581ca8c4d1058a1708d4",
+          "row_id": "auth.codex_oauth_precedence"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:7c0aafa95460abfce8983d636ce7fb8624beb1510964083c0214265f9eb99fff",
+          "oracle_output_sha256": "sha256:3f6b0d4d4f50daea273dcfdbfe72ec68064c776827a48059deea5347643242e2",
+          "row_id": "role.public_alias_selection"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:d9b9daf200e1008390b608f7a49dbf64f86a73f28e1ec9cb670c41d9769d4279",
+          "oracle_output_sha256": "sha256:74b4ed583fb559a347b13d408623f5fa336f7c014d2cdc28a27f19fd19eef478",
+          "row_id": "role.unknown_unavailable"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:97b1b8cfcab16721e9a46f413e295f134b48e497498a1d7dc2f3c6a35b72a9a4",
+          "oracle_output_sha256": "sha256:e1eb57b1d4b8a546070396d7268861b22cee05480e3e0d65db9e1c59f22d290f",
+          "row_id": "role.lock_secret_rotation_restart"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:ddff2ef697118c9aec65504eb33d0ba8fd9b74d4e8e59cef01dadfc4c44ef480",
+          "oracle_output_sha256": "sha256:f30e6f19a636ddf77feec095a0c1cd4d27bfc204f30f69da43520cf35d63be90",
+          "row_id": "role.auth_policy_no_fallback"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:33a0a923c4b00637695aef31bd4ccc250e7367d3ae15c53b4bcbc03a45793814",
+          "oracle_output_sha256": "sha256:9eb117021b18e26dee8175239162dd4ef961c95e1a66258d27d57b53a4cf5bf4",
+          "row_id": "role.cross_provider_default_forbidden"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:935259a8b425b104e7391fcb78fda557a6f5c66135ab8c30a3ff2a3be0d23b70",
+            "source": "artifacts/breadboard_harness_cli-0.0.0-py3-none-any.whl"
+          },
+          "classification": "match",
+          "row_id": "artifact.wheel_provider_catalog_auth_role"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:3121c3c5ccd172dbfb60bacf1af43eefeeaa6d4f6598b465d5c42de7fc4b90fe",
+            "source": "artifacts/breadboard-sdk-0.3.0.tgz"
+          },
+          "classification": "match",
+          "row_id": "artifact.sdk_local_responses"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:b5b7c8e1097ee0cbb14d878b85a8822f7151cfb3752b196f86f64b2e550ad8d6",
+            "source": "observations/artifact.installed_end_to_end_trace.json"
+          },
+          "classification": "match",
+          "row_id": "artifact.installed_end_to_end_trace"
+        }
+      ],
+      "f6_snapshot": {
+        "acceptance_record": "beads:bb-ny9w.35",
+        "breadboard_commit": "145912b8d2a235943f453ae8ac8fe825200c9bbd",
+        "breadboard_tree": "7145ce07950f9384588eafe69f730760d41f4df0",
+        "manifest_sha256": "sha256:1d7b41facae20d6c6d39cfc9777867dae514970e19cd7d8e27447b86cbc4714e"
+      },
+      "live_state": "unproved",
+      "model_discovery": "configured_only",
+      "oauth_flow_ids": [
+        "openai-codex"
+      ],
+      "omp_provider_id": "openai-codex",
+      "representative_model": "codex/gpt-5-codex",
+      "runtime_id": "codex_app_server",
+      "scheme_policy_nonclaims": [
+        {
+          "catalog_provider_id": "codex",
+          "local_only": true,
+          "plan_id": "codex_chatgpt_subscription",
+          "policy_provider_id": "openai",
+          "policy_sha256": "sha256:213a2310081dabd8023018fdce703fc8402ba50bdb442c24f4319b97cd8db429",
+          "policy_source": "docs/provider_plans/policy_manifests/openai_codex_chatgpt_plan.json",
+          "requires_explicit_enable": true,
+          "requires_sealed_profile": true,
+          "state": "unsupported",
+          "support_mode": "harness_backed_only"
+        }
+      ],
+      "source_pin": {
+        "commit": "6c1209842323bb4713f127ac303c97fd043d585c",
+        "fixture_sha256": "sha256:8d55c5adac18dacb90d4fce72d52c57745be16d91f8ad4284537c80153788faf",
+        "repository": "can1357/oh-my-pi",
+        "runner_sha256": "sha256:2f1896d905eda9be1425182a77f3e06330238f909a72ed4efe326fa93650db79",
+        "source_blob_set_sha256": "sha256:115682743c02f5230f0accd45284597d4b09f43d8d9895e85d0d07f96dccf112",
+        "tag": "v18.0.1",
+        "tree": "67a19f0d45a71af8c3d9ae83562ffb1fcb579d61"
+      },
+      "verification_state": "synthetic_verified"
+    },
+    {
+      "advancement_gates": [
+        "L1",
+        "L2"
+      ],
+      "api_variant": "openai-responses",
+      "auth_owner": "broker",
+      "auth_schemes": [
+        "api_key"
+      ],
+      "breadboard_provider_id": "openai",
+      "contract_state": "declared_supported",
+      "divergence_ids": [
+        "bounded-catalog",
+        "configured-only-models",
+        "auth-mechanics",
+        "subscription-material-policy",
+        "exchange-ir",
+        "role-resolution",
+        "fallback-policy",
+        "synthetic-only"
+      ],
+      "exclusions": [
+        "No real provider login or credential-validity claim.",
+        "No live provider network or response-availability claim.",
+        "No cost, latency, rate-limit, or quota claim.",
+        "No model-quality or model-family claim beyond the named representative fixture.",
+        "No release-wide, platform-installation, update, rollback, or signing claim."
+      ],
+      "f6_evidence": [
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:86c943f9324b28560afabcb71c582d7afc27e1cccc9f6438b85724cac5c5d1f4",
+          "oracle_output_sha256": "sha256:778da1e2549ed9e1573d85292e1d71231c79839737f8ab74fe7fd7ec9efa5041",
+          "row_id": "openai.catalog_model_route"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:62b26711004a8d5989047e787675e112f361eefb052a635bc210b9f9337f48f7",
+          "oracle_output_sha256": "sha256:ad5234260c1b966b74328b1bce0c2f9afbe5618a0db34ca4b488ef659578e252",
+          "row_id": "openai.request_ir"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:b7357b67219f43f5dabfa0117420061a49489dcc767b177d6108abeb4d50e7f0",
+          "oracle_output_sha256": "sha256:54a39e9b17feb9d8d28ff7969cec16f000a5566c500fac7a13db5360df224487",
+          "row_id": "openai.text_stream"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:57d68492b5d49540e0ac841be16e7efaf1019820daed44c151ce5a21c3337157",
+          "oracle_output_sha256": "sha256:bc37318f2a34e6222c131c0f46b6782a0df7fc1495a6706abb7a370e195460fb",
+          "row_id": "openai.tool_stream"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:6a0811e79ed451aba975bcb92d91c4356b17f150e33f46920507bc148d7b9a04",
+          "oracle_output_sha256": "sha256:820c4c7e809e415e2e3a87ceeb563939b4d88396fdfca8e6fde3263f0d77304a",
+          "row_id": "openai.usage_finish"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:85ee1b3ab3af50c45abb9a8d7b3f61165f0bcc7a8a0176ee9112fe178a292e44",
+          "oracle_output_sha256": "sha256:67941302c012fd950668e65bf86ef1f456cd44238cedaf46e4435cb6aca1d5a5",
+          "row_id": "openai.error_terminal"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:6916f5845cedbf9cf966088850088972edd9e9801d47898012351c247b539570",
+          "oracle_output_sha256": "sha256:272a20eb4d2002a2389f4fc87e3b76282c9c8debabd0d38846f532d393fd530e",
+          "row_id": "openai.cancel_terminal"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:310e56bab909a951b412c63f0b49da0bae71243b8be102d24ad010586847f80b",
+          "oracle_output_sha256": "sha256:7317df2a1cc85f522a83f24467d6f6c7e3a353e193cf4ddd6294bf3aac33b218",
+          "row_id": "auth.api_key_precedence"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:85a7b9fb78dc9c01b69e9cc3ab202d8bc3271df816765e335df83d2bc98aea53",
+          "oracle_output_sha256": "sha256:e9c23d46d2480776e50ae51998c0d6089e4137e2b6901f96ca1eca0ccdcad38c",
+          "row_id": "auth.explicit_account_binding"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:2384c782969359fb54af1b349de982099ba4dcf1f3cdc1b50c6e4d4936f449d7",
+          "oracle_output_sha256": "sha256:cbfd43de68e70400d0779163f71f62daf68bae5e1229ab6a3e97e0a3b0fbcd0b",
+          "row_id": "auth.automatic_affinity_restart_rotation"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:68f5031b115e87aa8a2b66a1667b6e8ec79204fc99e716df36ef74f0f40f199c",
+          "oracle_output_sha256": "sha256:c3b908ed654e821f01fd17043ed4f5ba7890916d53f4834ef7f0d4bbcff4d692",
+          "row_id": "auth.classified_429_rotation"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:7c0aafa95460abfce8983d636ce7fb8624beb1510964083c0214265f9eb99fff",
+          "oracle_output_sha256": "sha256:3f6b0d4d4f50daea273dcfdbfe72ec68064c776827a48059deea5347643242e2",
+          "row_id": "role.public_alias_selection"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:d9b9daf200e1008390b608f7a49dbf64f86a73f28e1ec9cb670c41d9769d4279",
+          "oracle_output_sha256": "sha256:74b4ed583fb559a347b13d408623f5fa336f7c014d2cdc28a27f19fd19eef478",
+          "row_id": "role.unknown_unavailable"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:97b1b8cfcab16721e9a46f413e295f134b48e497498a1d7dc2f3c6a35b72a9a4",
+          "oracle_output_sha256": "sha256:e1eb57b1d4b8a546070396d7268861b22cee05480e3e0d65db9e1c59f22d290f",
+          "row_id": "role.lock_secret_rotation_restart"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:ddff2ef697118c9aec65504eb33d0ba8fd9b74d4e8e59cef01dadfc4c44ef480",
+          "oracle_output_sha256": "sha256:f30e6f19a636ddf77feec095a0c1cd4d27bfc204f30f69da43520cf35d63be90",
+          "row_id": "role.auth_policy_no_fallback"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:33a0a923c4b00637695aef31bd4ccc250e7367d3ae15c53b4bcbc03a45793814",
+          "oracle_output_sha256": "sha256:9eb117021b18e26dee8175239162dd4ef961c95e1a66258d27d57b53a4cf5bf4",
+          "row_id": "role.cross_provider_default_forbidden"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:935259a8b425b104e7391fcb78fda557a6f5c66135ab8c30a3ff2a3be0d23b70",
+            "source": "artifacts/breadboard_harness_cli-0.0.0-py3-none-any.whl"
+          },
+          "classification": "match",
+          "row_id": "artifact.wheel_provider_catalog_auth_role"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:3121c3c5ccd172dbfb60bacf1af43eefeeaa6d4f6598b465d5c42de7fc4b90fe",
+            "source": "artifacts/breadboard-sdk-0.3.0.tgz"
+          },
+          "classification": "match",
+          "row_id": "artifact.sdk_local_responses"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:b5b7c8e1097ee0cbb14d878b85a8822f7151cfb3752b196f86f64b2e550ad8d6",
+            "source": "observations/artifact.installed_end_to_end_trace.json"
+          },
+          "classification": "match",
+          "row_id": "artifact.installed_end_to_end_trace"
+        }
+      ],
+      "f6_snapshot": {
+        "acceptance_record": "beads:bb-ny9w.35",
+        "breadboard_commit": "145912b8d2a235943f453ae8ac8fe825200c9bbd",
+        "breadboard_tree": "7145ce07950f9384588eafe69f730760d41f4df0",
+        "manifest_sha256": "sha256:1d7b41facae20d6c6d39cfc9777867dae514970e19cd7d8e27447b86cbc4714e"
+      },
+      "live_state": "unproved",
+      "model_discovery": "configured_only",
+      "oauth_flow_ids": [],
+      "omp_provider_id": "openai",
+      "representative_model": "openai/gpt-5-mini",
+      "runtime_id": "openai_chat",
+      "scheme_policy_nonclaims": [],
+      "source_pin": {
+        "commit": "6c1209842323bb4713f127ac303c97fd043d585c",
+        "fixture_sha256": "sha256:8d55c5adac18dacb90d4fce72d52c57745be16d91f8ad4284537c80153788faf",
+        "repository": "can1357/oh-my-pi",
+        "runner_sha256": "sha256:2f1896d905eda9be1425182a77f3e06330238f909a72ed4efe326fa93650db79",
+        "source_blob_set_sha256": "sha256:115682743c02f5230f0accd45284597d4b09f43d8d9895e85d0d07f96dccf112",
+        "tag": "v18.0.1",
+        "tree": "67a19f0d45a71af8c3d9ae83562ffb1fcb579d61"
+      },
+      "verification_state": "synthetic_verified"
+    },
+    {
+      "advancement_gates": [
+        "L1",
+        "L2"
+      ],
+      "api_variant": "anthropic-messages",
+      "auth_owner": "broker",
+      "auth_schemes": [
+        "api_key",
+        "oauth2"
+      ],
+      "breadboard_provider_id": "anthropic",
+      "contract_state": "declared_supported",
+      "divergence_ids": [
+        "bounded-catalog",
+        "configured-only-models",
+        "auth-mechanics",
+        "subscription-material-policy",
+        "exchange-ir",
+        "role-resolution",
+        "fallback-policy",
+        "synthetic-only"
+      ],
+      "exclusions": [
+        "No real provider login or credential-validity claim.",
+        "No live provider network or response-availability claim.",
+        "No cost, latency, rate-limit, or quota claim.",
+        "No model-quality or model-family claim beyond the named representative fixture.",
+        "No release-wide, platform-installation, update, rollback, or signing claim."
+      ],
+      "f6_evidence": [
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:a8f8693509826746fe3b97037010c8901328a6a6716ac690e7eaf9a29921670d",
+          "oracle_output_sha256": "sha256:0d9a51815f7fb69b6761a5f4eca1353ec5f825c387c6691763083b540ad6a5d7",
+          "row_id": "anthropic.catalog_model_route"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:26327221d15ec940a420746a08c36cecd62a3d1eaec1cd2b5361e9802111013d",
+          "oracle_output_sha256": "sha256:2bb5e9dfdbd79e956c95dfc3f8da45a203423b189cc40210d12f801ee6944be4",
+          "row_id": "anthropic.request_ir"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:ce1606c3a426386ba62cd9fe7989bc39e6d494e116ef05a418c7b940f5e70ee6",
+          "oracle_output_sha256": "sha256:b079e729afd767e4a1cb4d378a298962de0565383b50a72927bdfbec14aacf72",
+          "row_id": "anthropic.text_stream"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:4db4b9ba80d61a47ea22c6c262828f30e9dcc144915d5d66ac29f7118275ba0f",
+          "oracle_output_sha256": "sha256:85fca4298dd4fcc373bc8d3b0265db2805af76f0cc83bcb64be93f47f072c65a",
+          "row_id": "anthropic.tool_stream"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:646ad1db6efb5298f517d2a7ddfda3cbb8266d90087a76a44a5e58bd98b330bf",
+          "oracle_output_sha256": "sha256:4330c3eddfa73756a504308ab69b61eb328778c813cc46b75edece681357918c",
+          "row_id": "anthropic.usage_finish"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:640d94d447e91689bdac79cc2a1ff4097a924b36d1b5f8e70674de952522b2c8",
+          "oracle_output_sha256": "sha256:92d962981ca5209102a90457e4865bfc798be8e5901dad4cbfb0e4bc43638603",
+          "row_id": "anthropic.error_terminal"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:0d1d2bb59fd7e72db4287f976aaf16c0acd8dd18d2c64ef9777a69455800f59e",
+          "oracle_output_sha256": "sha256:2c235f4bf077987d2220250a2cbf71038d783f2aaa29b9b6565a2d4c55f31624",
+          "row_id": "anthropic.cancel_terminal"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:310e56bab909a951b412c63f0b49da0bae71243b8be102d24ad010586847f80b",
+          "oracle_output_sha256": "sha256:7317df2a1cc85f522a83f24467d6f6c7e3a353e193cf4ddd6294bf3aac33b218",
+          "row_id": "auth.api_key_precedence"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:85a7b9fb78dc9c01b69e9cc3ab202d8bc3271df816765e335df83d2bc98aea53",
+          "oracle_output_sha256": "sha256:e9c23d46d2480776e50ae51998c0d6089e4137e2b6901f96ca1eca0ccdcad38c",
+          "row_id": "auth.explicit_account_binding"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:2384c782969359fb54af1b349de982099ba4dcf1f3cdc1b50c6e4d4936f449d7",
+          "oracle_output_sha256": "sha256:cbfd43de68e70400d0779163f71f62daf68bae5e1229ab6a3e97e0a3b0fbcd0b",
+          "row_id": "auth.automatic_affinity_restart_rotation"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:68f5031b115e87aa8a2b66a1667b6e8ec79204fc99e716df36ef74f0f40f199c",
+          "oracle_output_sha256": "sha256:c3b908ed654e821f01fd17043ed4f5ba7890916d53f4834ef7f0d4bbcff4d692",
+          "row_id": "auth.classified_429_rotation"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:78a825d83b7a9cc4c8a823f29acfbd1b5e6153dd1bbeaac98e684450ab5b9d07",
+          "oracle_output_sha256": "sha256:5dfad47fb7f095f80592b7f837effe4ed00408fc97c429b4c32031514f8280ce",
+          "row_id": "auth.refresh_single_flight"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:26e9f79867dbf8415b02b618db7d92fd1cbacb352528e6f5af5a675b7a35afca",
+          "oracle_output_sha256": "sha256:47fc759cf0e45500fa379ca9e32c5d5984f52b387c2fea773f93c32e43314291",
+          "row_id": "auth.refresh_transient_deferral"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:c177f91cfc82659fab534bb10137884ac00cbaccacfbbada2629f7439c2939fd",
+          "oracle_output_sha256": "sha256:6a9f66c503bdea666675e968e835c1e58a9ffc886fa706bdb6bbcc6fb9320ccc",
+          "row_id": "auth.refresh_definitive_tombstone"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:1234a60511b11b407f3b749fbd42062356ac5f4894fcf60ca435fffa911def80",
+          "oracle_output_sha256": "sha256:5e0e383466e5c395f4eaf34b60f595761545e398bee73de09ec390192dc5861c",
+          "row_id": "auth.revoke_during_refresh"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:7c0aafa95460abfce8983d636ce7fb8624beb1510964083c0214265f9eb99fff",
+          "oracle_output_sha256": "sha256:3f6b0d4d4f50daea273dcfdbfe72ec68064c776827a48059deea5347643242e2",
+          "row_id": "role.public_alias_selection"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:d9b9daf200e1008390b608f7a49dbf64f86a73f28e1ec9cb670c41d9769d4279",
+          "oracle_output_sha256": "sha256:74b4ed583fb559a347b13d408623f5fa336f7c014d2cdc28a27f19fd19eef478",
+          "row_id": "role.unknown_unavailable"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:97b1b8cfcab16721e9a46f413e295f134b48e497498a1d7dc2f3c6a35b72a9a4",
+          "oracle_output_sha256": "sha256:e1eb57b1d4b8a546070396d7268861b22cee05480e3e0d65db9e1c59f22d290f",
+          "row_id": "role.lock_secret_rotation_restart"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:ddff2ef697118c9aec65504eb33d0ba8fd9b74d4e8e59cef01dadfc4c44ef480",
+          "oracle_output_sha256": "sha256:f30e6f19a636ddf77feec095a0c1cd4d27bfc204f30f69da43520cf35d63be90",
+          "row_id": "role.auth_policy_no_fallback"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:33a0a923c4b00637695aef31bd4ccc250e7367d3ae15c53b4bcbc03a45793814",
+          "oracle_output_sha256": "sha256:9eb117021b18e26dee8175239162dd4ef961c95e1a66258d27d57b53a4cf5bf4",
+          "row_id": "role.cross_provider_default_forbidden"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:935259a8b425b104e7391fcb78fda557a6f5c66135ab8c30a3ff2a3be0d23b70",
+            "source": "artifacts/breadboard_harness_cli-0.0.0-py3-none-any.whl"
+          },
+          "classification": "match",
+          "row_id": "artifact.wheel_provider_catalog_auth_role"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:3121c3c5ccd172dbfb60bacf1af43eefeeaa6d4f6598b465d5c42de7fc4b90fe",
+            "source": "artifacts/breadboard-sdk-0.3.0.tgz"
+          },
+          "classification": "match",
+          "row_id": "artifact.sdk_local_responses"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:b5b7c8e1097ee0cbb14d878b85a8822f7151cfb3752b196f86f64b2e550ad8d6",
+            "source": "observations/artifact.installed_end_to_end_trace.json"
+          },
+          "classification": "match",
+          "row_id": "artifact.installed_end_to_end_trace"
+        }
+      ],
+      "f6_snapshot": {
+        "acceptance_record": "beads:bb-ny9w.35",
+        "breadboard_commit": "145912b8d2a235943f453ae8ac8fe825200c9bbd",
+        "breadboard_tree": "7145ce07950f9384588eafe69f730760d41f4df0",
+        "manifest_sha256": "sha256:1d7b41facae20d6c6d39cfc9777867dae514970e19cd7d8e27447b86cbc4714e"
+      },
+      "live_state": "unproved",
+      "model_discovery": "configured_only",
+      "oauth_flow_ids": [
+        "anthropic"
+      ],
+      "omp_provider_id": "anthropic",
+      "representative_model": "anthropic/claude-3-opus",
+      "runtime_id": "anthropic_messages",
+      "scheme_policy_nonclaims": [
+        {
+          "catalog_provider_id": "anthropic",
+          "local_only": true,
+          "plan_id": "consumer_subscription",
+          "policy_provider_id": "anthropic",
+          "policy_sha256": "sha256:f848330dc8314a10e4a98f0dc45c836b3a0fdaff680635f6f9a9466e95d9e6d7",
+          "policy_source": "docs/provider_plans/policy_manifests/anthropic_consumer_subscription.json",
+          "requires_explicit_enable": true,
+          "requires_sealed_profile": false,
+          "state": "unsupported",
+          "support_mode": "unsupported"
+        }
+      ],
+      "source_pin": {
+        "commit": "6c1209842323bb4713f127ac303c97fd043d585c",
+        "fixture_sha256": "sha256:8d55c5adac18dacb90d4fce72d52c57745be16d91f8ad4284537c80153788faf",
+        "repository": "can1357/oh-my-pi",
+        "runner_sha256": "sha256:2f1896d905eda9be1425182a77f3e06330238f909a72ed4efe326fa93650db79",
+        "source_blob_set_sha256": "sha256:115682743c02f5230f0accd45284597d4b09f43d8d9895e85d0d07f96dccf112",
+        "tag": "v18.0.1",
+        "tree": "67a19f0d45a71af8c3d9ae83562ffb1fcb579d61"
+      },
+      "verification_state": "synthetic_verified"
+    },
+    {
+      "advancement_gates": [
+        "L1",
+        "L2"
+      ],
+      "api_variant": "openrouter",
+      "auth_owner": "broker",
+      "auth_schemes": [
+        "api_key"
+      ],
+      "breadboard_provider_id": "openrouter",
+      "contract_state": "declared_supported",
+      "divergence_ids": [
+        "bounded-catalog",
+        "configured-only-models",
+        "auth-mechanics",
+        "subscription-material-policy",
+        "exchange-ir",
+        "role-resolution",
+        "fallback-policy",
+        "synthetic-only"
+      ],
+      "exclusions": [
+        "No real provider login or credential-validity claim.",
+        "No live provider network or response-availability claim.",
+        "No cost, latency, rate-limit, or quota claim.",
+        "No model-quality or model-family claim beyond the named representative fixture.",
+        "No release-wide, platform-installation, update, rollback, or signing claim."
+      ],
+      "f6_evidence": [
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:7490d993c7b18bb6b3959754cab9a24336c9e21cc4ccaa369dec1a022f13b325",
+          "oracle_output_sha256": "sha256:0ab08a9144fc7ea57e4b1cab09717b3f7e903180816dd4bb1cf4a058973787c5",
+          "row_id": "openrouter.catalog_model_route"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:2a272ad6950bf32fea7a330d8179fd40cbd9e813593f48374119d28b5557a9b7",
+          "oracle_output_sha256": "sha256:c5314137fd1d6792460906e15e96890d49aac3f6665e9874d25814031a7f29f8",
+          "row_id": "openrouter.request_ir"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:3f55f3a0a20f194083813e1afcdf166826549604c07a0b2e784d7d803369daaf",
+          "oracle_output_sha256": "sha256:286f1788abe88dfc7c7440ed653ee53cbab6430b5829c9d42cbb16277b2080ca",
+          "row_id": "openrouter.text_stream"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:ee82cf2001feb7a265a78b8b177d3c3237a95e076208b0caa6fe5636983b6685",
+          "oracle_output_sha256": "sha256:fd94fcbe5b283724dda7287b81b958562622bcd82a0c2c49ffe63209fbfb7ea8",
+          "row_id": "openrouter.tool_stream"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:f11bc52e67bc36715f86209657615aa276fd44987305a51e387589464157791c",
+          "oracle_output_sha256": "sha256:882c69b7cfd279c653ec1e1129f29b1be434407adef1dcefa5d173f5f847012d",
+          "row_id": "openrouter.usage_finish"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:f0dc699e51635a6c4e07693e31bd18029e89cec6bd729e948af300571a17f13d",
+          "oracle_output_sha256": "sha256:06f82a1bf96a2ffa2f5f169922232617f67013771ace1fe5bc665ca73714a02a",
+          "row_id": "openrouter.error_terminal"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:e95dd501956a8d2bea1fe0138aa046554c1c55e2840662182e7c7f255fb81d99",
+          "oracle_output_sha256": "sha256:dab66b77c66598fb5fba121b89526d146ef3e650a8ff7b53f84e595b903884e0",
+          "row_id": "openrouter.cancel_terminal"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:310e56bab909a951b412c63f0b49da0bae71243b8be102d24ad010586847f80b",
+          "oracle_output_sha256": "sha256:7317df2a1cc85f522a83f24467d6f6c7e3a353e193cf4ddd6294bf3aac33b218",
+          "row_id": "auth.api_key_precedence"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:85a7b9fb78dc9c01b69e9cc3ab202d8bc3271df816765e335df83d2bc98aea53",
+          "oracle_output_sha256": "sha256:e9c23d46d2480776e50ae51998c0d6089e4137e2b6901f96ca1eca0ccdcad38c",
+          "row_id": "auth.explicit_account_binding"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:2384c782969359fb54af1b349de982099ba4dcf1f3cdc1b50c6e4d4936f449d7",
+          "oracle_output_sha256": "sha256:cbfd43de68e70400d0779163f71f62daf68bae5e1229ab6a3e97e0a3b0fbcd0b",
+          "row_id": "auth.automatic_affinity_restart_rotation"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:68f5031b115e87aa8a2b66a1667b6e8ec79204fc99e716df36ef74f0f40f199c",
+          "oracle_output_sha256": "sha256:c3b908ed654e821f01fd17043ed4f5ba7890916d53f4834ef7f0d4bbcff4d692",
+          "row_id": "auth.classified_429_rotation"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:7c0aafa95460abfce8983d636ce7fb8624beb1510964083c0214265f9eb99fff",
+          "oracle_output_sha256": "sha256:3f6b0d4d4f50daea273dcfdbfe72ec68064c776827a48059deea5347643242e2",
+          "row_id": "role.public_alias_selection"
+        },
+        {
+          "classification": "match",
+          "oracle_input_sha256": "sha256:d9b9daf200e1008390b608f7a49dbf64f86a73f28e1ec9cb670c41d9769d4279",
+          "oracle_output_sha256": "sha256:74b4ed583fb559a347b13d408623f5fa336f7c014d2cdc28a27f19fd19eef478",
+          "row_id": "role.unknown_unavailable"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:97b1b8cfcab16721e9a46f413e295f134b48e497498a1d7dc2f3c6a35b72a9a4",
+          "oracle_output_sha256": "sha256:e1eb57b1d4b8a546070396d7268861b22cee05480e3e0d65db9e1c59f22d290f",
+          "row_id": "role.lock_secret_rotation_restart"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:ddff2ef697118c9aec65504eb33d0ba8fd9b74d4e8e59cef01dadfc4c44ef480",
+          "oracle_output_sha256": "sha256:f30e6f19a636ddf77feec095a0c1cd4d27bfc204f30f69da43520cf35d63be90",
+          "row_id": "role.auth_policy_no_fallback"
+        },
+        {
+          "classification": "intentional_divergence",
+          "oracle_input_sha256": "sha256:33a0a923c4b00637695aef31bd4ccc250e7367d3ae15c53b4bcbc03a45793814",
+          "oracle_output_sha256": "sha256:9eb117021b18e26dee8175239162dd4ef961c95e1a66258d27d57b53a4cf5bf4",
+          "row_id": "role.cross_provider_default_forbidden"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:935259a8b425b104e7391fcb78fda557a6f5c66135ab8c30a3ff2a3be0d23b70",
+            "source": "artifacts/breadboard_harness_cli-0.0.0-py3-none-any.whl"
+          },
+          "classification": "match",
+          "row_id": "artifact.wheel_provider_catalog_auth_role"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:3121c3c5ccd172dbfb60bacf1af43eefeeaa6d4f6598b465d5c42de7fc4b90fe",
+            "source": "artifacts/breadboard-sdk-0.3.0.tgz"
+          },
+          "classification": "match",
+          "row_id": "artifact.sdk_local_responses"
+        },
+        {
+          "artifact": {
+            "sha256": "sha256:b5b7c8e1097ee0cbb14d878b85a8822f7151cfb3752b196f86f64b2e550ad8d6",
+            "source": "observations/artifact.installed_end_to_end_trace.json"
+          },
+          "classification": "match",
+          "row_id": "artifact.installed_end_to_end_trace"
+        }
+      ],
+      "f6_snapshot": {
+        "acceptance_record": "beads:bb-ny9w.35",
+        "breadboard_commit": "145912b8d2a235943f453ae8ac8fe825200c9bbd",
+        "breadboard_tree": "7145ce07950f9384588eafe69f730760d41f4df0",
+        "manifest_sha256": "sha256:1d7b41facae20d6c6d39cfc9777867dae514970e19cd7d8e27447b86cbc4714e"
+      },
+      "live_state": "unproved",
+      "model_discovery": "configured_only",
+      "oauth_flow_ids": [],
+      "omp_provider_id": "openrouter",
+      "representative_model": "openrouter/deepseek/deepseek-v4-flash-0731",
+      "runtime_id": "openrouter_chat",
+      "scheme_policy_nonclaims": [],
+      "source_pin": {
+        "commit": "6c1209842323bb4713f127ac303c97fd043d585c",
+        "fixture_sha256": "sha256:8d55c5adac18dacb90d4fce72d52c57745be16d91f8ad4284537c80153788faf",
+        "repository": "can1357/oh-my-pi",
+        "runner_sha256": "sha256:2f1896d905eda9be1425182a77f3e06330238f909a72ed4efe326fa93650db79",
+        "source_blob_set_sha256": "sha256:115682743c02f5230f0accd45284597d4b09f43d8d9895e85d0d07f96dccf112",
+        "tag": "v18.0.1",
+        "tree": "67a19f0d45a71af8c3d9ae83562ffb1fcb579d61"
+      },
+      "verification_state": "synthetic_verified"
+    }
+  ],
+  "known_divergences": [
+    {
+      "f6_rows": [],
+      "id": "bounded-catalog",
+      "summary": "BreadBoard supports four catalog providers; OMP v18.0.1 has a broader registry. Gemini is deferred and every other OMP entry is outside the product claim."
+    },
+    {
+      "f6_rows": [],
+      "id": "codex-alias",
+      "summary": "BreadBoard's canonical provider id is codex; the pinned OMP provider id is openai-codex."
+    },
+    {
+      "f6_rows": [],
+      "id": "configured-only-models",
+      "summary": "BreadBoard admits explicit configured models only; OMP may discover models dynamically and change defaults."
+    },
+    {
+      "f6_rows": [],
+      "id": "codex-transport",
+      "summary": "BreadBoard uses the Codex app-server runtime; OMP's oracle exercises its Responses transport. Only normalized product-visible semantics are compared."
+    },
+    {
+      "f6_rows": [],
+      "id": "auth-mechanics",
+      "summary": "BreadBoard owns a durable broker, precedence, affinity, refresh, revoke, and tombstones; OMP owns different credential storage and selection mechanics."
+    },
+    {
+      "f6_rows": [],
+      "id": "subscription-material-policy",
+      "summary": "Broker API-key/OAuth schemes do not authorize direct consumer-subscription material; scheme-specific policy manifests remain authoritative."
+    },
+    {
+      "f6_rows": [],
+      "id": "exchange-ir",
+      "summary": "BreadBoard exposes the strict F4 exchange IR and bounded native envelope, not OMP's internal or provider-native stream objects."
+    },
+    {
+      "f6_rows": [
+        "role.lock_secret_rotation_restart"
+      ],
+      "id": "role-resolution",
+      "summary": "BreadBoard exposes a bounded public role subset with exact targets; OMP also has fuzzy aliases and internal roles."
+    },
+    {
+      "f6_rows": [
+        "role.auth_policy_no_fallback",
+        "role.cross_provider_default_forbidden"
+      ],
+      "id": "fallback-policy",
+      "summary": "BreadBoard forbids auth/policy-triggered model fallback and implicit cross-provider fallback; OMP permits fallback behavior."
+    },
+    {
+      "f6_rows": [],
+      "id": "synthetic-only",
+      "summary": "F6 proves deterministic local semantics and provider-free artifacts, not real login, network, cost, latency, quota, quality, or release readiness."
+    }
+  ],
+  "manifest_id": "f7-provider-parity-omp-v18.0.1-f6-145912b8",
+  "nonclaims": [
+    {
+      "auth_schemes": [
+        "oauth2"
+      ],
+      "provider_id": "google-gemini-cli",
+      "reason": "catalog support_tier=deferred; no F6 provider rows",
+      "runtime_id": "openai_chat",
+      "state": "deferred"
+    },
+    {
+      "auth_schemes": [
+        "oauth2"
+      ],
+      "provider_id": "google-antigravity",
+      "reason": "catalog support_tier=deferred; no F6 provider rows",
+      "runtime_id": "openai_chat",
+      "state": "deferred"
+    },
+    {
+      "auth_schemes": [],
+      "provider_id": "mock",
+      "reason": "catalog support_tier=evidence; no F6 provider rows",
+      "runtime_id": "mock_chat",
+      "state": "evidence_only"
+    },
+    {
+      "auth_schemes": [],
+      "provider_id": "cli_mock",
+      "reason": "catalog support_tier=evidence; no F6 provider rows",
+      "runtime_id": "cli_mock_chat",
+      "state": "evidence_only"
+    },
+    {
+      "auth_schemes": [],
+      "provider_id": "smoke",
+      "reason": "catalog support_tier=evidence; no F6 provider rows",
+      "runtime_id": "smoke_chat",
+      "state": "evidence_only"
+    },
+    {
+      "auth_schemes": [],
+      "provider_id": "replay",
+      "reason": "catalog support_tier=evidence; no F6 provider rows",
+      "runtime_id": "replay",
+      "state": "evidence_only"
+    },
+    {
+      "provider_id": "*",
+      "reason": "Any provider/model present in OMP v18.0.1 but absent from the four BreadBoard core rows remains outside the product support claim.",
+      "state": "native_omp_only"
+    },
+    {
+      "evidence_id": "x1_openai_gpt55_product_journey_20260819",
+      "evidence_sha256": "sha256:413830554ef3729c1c1d479cf3bfbe184813a92f7875a6571ff7fd3d4e1128a3",
+      "reason": "One old-wheel, tools-disabled, one-turn Codex app-server journey; its own exclusions forbid current-head or provider-wide promotion.",
+      "source": "docs/conformance/provider_runtime_evidence/x1_openai_gpt55_product_journey_20260819/exact_scope_claim.json",
+      "state": "historical_exact_scope"
+    }
+  ],
+  "policy_nonclaims": [
+    {
+      "catalog_provider_id": "codex",
+      "local_only": true,
+      "plan_id": "codex_chatgpt_subscription",
+      "policy_provider_id": "openai",
+      "policy_sha256": "sha256:213a2310081dabd8023018fdce703fc8402ba50bdb442c24f4319b97cd8db429",
+      "policy_source": "docs/provider_plans/policy_manifests/openai_codex_chatgpt_plan.json",
+      "requires_explicit_enable": true,
+      "requires_sealed_profile": true,
+      "state": "unsupported",
+      "support_mode": "harness_backed_only"
+    },
+    {
+      "catalog_provider_id": "anthropic",
+      "local_only": true,
+      "plan_id": "consumer_subscription",
+      "policy_provider_id": "anthropic",
+      "policy_sha256": "sha256:f848330dc8314a10e4a98f0dc45c836b3a0fdaff680635f6f9a9466e95d9e6d7",
+      "policy_source": "docs/provider_plans/policy_manifests/anthropic_consumer_subscription.json",
+      "requires_explicit_enable": true,
+      "requires_sealed_profile": false,
+      "state": "unsupported",
+      "support_mode": "unsupported"
+    }
+  ],
+  "schema_version": "bb.provider_parity_claims.v1",
+  "source_pin": {
+    "commit": "6c1209842323bb4713f127ac303c97fd043d585c",
+    "fixture_sha256": "sha256:8d55c5adac18dacb90d4fce72d52c57745be16d91f8ad4284537c80153788faf",
+    "repository": "can1357/oh-my-pi",
+    "runner_sha256": "sha256:2f1896d905eda9be1425182a77f3e06330238f909a72ed4efe326fa93650db79",
+    "source_blob_set_sha256": "sha256:115682743c02f5230f0accd45284597d4b09f43d8d9895e85d0d07f96dccf112",
+    "tag": "v18.0.1",
+    "tree": "67a19f0d45a71af8c3d9ae83562ffb1fcb579d61"
+  }
+}

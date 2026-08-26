@@ -1,15 +1,15 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
-// openapi-schema-sha256: cb30fc21b66032b85c13997638f9e9c066ddb29cd4d41acc7b87329a47315c05
-// app-source-sha256: 50c119e5883901a91eb0330c47a4594c22a17c833bfc87b77a623a3444a28d6f
+// openapi-schema-sha256: d776432f53d774d2179a721069a5c6867698712efbd059f0b2be5beb7e334a37
+// app-source-sha256: da0e303ea84ac1d18cf330439f55b440b6996597de886e5cc488d27b73bf8034
 
 export interface AuthActionResponse { "detail"?: { [key: string]: unknown; } | null; "ok": boolean; }
 
-export interface AuthCredentialView { "account_id": string; "alias"?: string | null; "auth_scheme_id": string; "created_at_ms": number; "credential_id": string; "credential_kind"?: string; "expires_at_ms"?: number | null; "has_api_key"?: boolean; "label": string; "metadata"?: { [key: string]: unknown; }; "provider_id": string; "secret_version": number; "source"?: string; "status": string; "updated_at_ms": number; }
+export interface AuthCredentialView { "account_id": string; "alias"?: string | null; "auth_scheme_id": string; "created_at_ms": number; "credential_id": string; "credential_kind"?: string; "expires_at_ms"?: number | null; "has_api_key"?: boolean; "label": string; "metadata"?: { [key: string]: unknown; }; "provider_id": string; "refresh_state"?: { [key: string]: unknown; }; "secret_version": number; "source"?: string; "status": string; "updated_at_ms": number; }
 
-export interface AuthLoginSession { "authorization_url"?: string | null; "created_at_ms"?: number | null; "credential"?: AuthCredentialView | null; "flow_id"?: string | null; "flow_kind"?: string | null; "instructions"?: string | null; "login_session_id": string; "problem"?: { [key: string]: unknown; } | null; "provider_id": string; "redirect_uri"?: string | null; "status": string; "updated_at_ms"?: number | null; "user_code"?: string | null; }
+export interface AuthLoginSession { "authorization_url"?: string | null; "created_at_ms"?: number | null; "credential"?: AuthCredentialView | null; "expires_at_ms"?: number | null; "flow_id"?: string | null; "flow_kind"?: string | null; "instructions"?: string | null; "login_session_id": string; "problem"?: { [key: string]: unknown; } | null; "provider_id": string; "redirect_uri"?: string | null; "status": string; "updated_at_ms"?: number | null; "user_code"?: string | null; }
 
-export interface AuthProviderView { "auth_schemes"?: Array<string>; "base_url"?: string | null; "compatible_protocol"?: string | null; "display_name": string; "login_available"?: boolean; "oauth_flows"?: Array<string>; "provider_id": string; "runtime_id"?: string | null; }
+export interface AuthProviderView { "aliases": Array<string>; "auth_owner": "broker" | "provider"; "auth_schemes": Array<string>; "availability_reason"?: "provider_managed" | "missing_auth" | null; "available": boolean; "base_url"?: string | null; "compatible_protocol"?: string | null; "display_name": string; "login_available"?: boolean; "model_discovery": "configured_only"; "oauth_flows"?: Array<string>; "provider_id": string; "runtime_id"?: string | null; "support_tier": "core"; }
 
 export interface BeginAuthLoginRequest { "auth_scheme_id"?: string | null; "flow"?: string; "provider_id": string; }
 
@@ -67,7 +67,13 @@ export interface HarnessCreateRequest { "directory"?: string; }
 
 export interface HarnessUpdateRequest { "definition": { [key: string]: unknown; }; }
 
-export interface ModelRolesResolveRequest { "model_roles": { [key: string]: unknown; }; "role_overrides"?: { [key: string]: unknown; } | null; "session_started"?: boolean; }
+export interface ModelCatalogEntry { "adapter"?: string | null; "availability_reason"?: "provider_managed" | "missing_auth" | "unsupported_provider" | "deferred_provider" | null; "available": boolean; "canonical_provider"?: string | null; "context_length"?: number | null; "discovery": "configured_only"; "id": string; "metadata"?: { [key: string]: unknown; } | null; "name"?: string | null; "params"?: { [key: string]: unknown; } | null; "provider"?: string | null; "routing"?: { [key: string]: unknown; } | null; "source": "configured"; "support_tier": "core" | "deferred" | "evidence" | "unsupported"; }
+
+export interface ModelCatalogIssue { "code": "invalid_model" | "duplicate_model" | "unsupported_provider" | "deferred_provider" | "stale_dynamic_catalog"; "index"?: number | null; "model_id"?: string | null; "provider_id"?: string | null; "source": "configured" | "dynamic"; }
+
+export interface ModelCatalogResponse { "config_path"?: string | null; "default_model"?: string | null; "discovery_policy": "configured_only"; "issues": Array<ModelCatalogIssue>; "models": Array<ModelCatalogEntry>; }
+
+export interface ModelRolesResolveRequest { "model_catalog"?: Array<{ [key: string]: unknown; }> | null; "model_roles": { [key: string]: unknown; }; "role_overrides"?: { [key: string]: unknown; } | null; "session_started"?: boolean; }
 
 export interface ModelRolesResolveResponse { "lock": { [key: string]: unknown; }; "lock_hash": string; }
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from enum import Enum
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Sequence, Tuple
 
 from .sandbox import new_dev_sandbox_v2
 
@@ -15,7 +15,13 @@ class DeploymentMode(str, Enum):
 class SandboxFactory:
     """Canonical factory for creating runtime sandboxes from deployment config."""
 
-    def create_sandbox(self, mode: DeploymentMode, config: Dict[str, Any]) -> Tuple[Any, str]:
+    def create_sandbox(
+        self,
+        mode: DeploymentMode,
+        config: Dict[str, Any],
+        *,
+        protected_paths: Sequence[str] = (),
+    ) -> Tuple[Any, str]:
         session_id = f"virtual-{uuid.uuid4()}"
         runtime_cfg = (config or {}).get("runtime") or {}
         workspace = (config or {}).get("workspace") or "."
@@ -32,6 +38,7 @@ class SandboxFactory:
             driver=driver,
             driver_options=options,
             lsp_actor=None,
+            protected_paths=tuple(protected_paths),
         )
         return actor, session_id
 

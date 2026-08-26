@@ -70,7 +70,8 @@ class SessionRegistry(OwnerAuthorityMixin, DrainAuthorityMixin, PersistenceMixin
         self._drain: _DrainState | None = None
         self._control_request_ids: set[str] = set()
         self._state_root = Path(state_root).resolve() if state_root is not None else None
-        if self._state_root is not None:
-            self._state_root.mkdir(parents=True, exist_ok=True)
+        if self._state_root is not None and self._state_root.exists():
+            if not self._state_root.is_dir():
+                raise NotADirectoryError(self._state_root)
             self._load_retained_records()
 

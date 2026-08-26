@@ -84,7 +84,12 @@ class MockRuntime(ProviderRuntime):
                 arg_str = json.dumps(args)
             except Exception:
                 arg_str = "{}"
-            ptc = ProviderToolCall(id=None, name=name, arguments=arg_str, type="function")
+            ptc = ProviderToolCall(
+                id=f"mock-call-{prior_calls + 1}-{name}",
+                name=name,
+                arguments=arg_str,
+                type="function",
+            )
             try:
                 from types import SimpleNamespace as _SNS
                 setattr(ptc, "function", _SNS(name=name, arguments=arg_str))
@@ -196,17 +201,23 @@ class SmokeRuntime(ProviderRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
     ) -> ProviderResult:
-        out_messages = [
-            ProviderMessage(
-                role="assistant",
-                content="Hi! All systems nominal.\n\nTASK COMPLETE\n\n>>>>>> END RESPONSE",
-                tool_calls=[],
-                finish_reason="stop",
-                index=0,
-            )
-        ]
+        content = "Hi! All systems nominal.\n\nTASK COMPLETE\n\n>>>>>> END RESPONSE"
+        if stream:
+            event = {"content_index": 0, "message_id": "smoke-message-1"}
+            context.record_provider_event("response_start")
+            context.record_provider_event("text_start", event)
+            context.record_provider_event("text_delta", {**event, "delta": content})
+            context.record_provider_event("text_end", event)
         return ProviderResult(
-            messages=out_messages,
+            messages=[
+                ProviderMessage(
+                    role="assistant",
+                    content=content,
+                    tool_calls=[],
+                    finish_reason="stop",
+                    index=0,
+                )
+            ],
             raw_response={"smoke": True},
             usage=None,
             encrypted_reasoning=None,

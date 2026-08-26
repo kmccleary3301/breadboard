@@ -18,15 +18,17 @@ class CompatibilityBreadboardClient(BreadBoardClient):
     def create_session(
         self,
         *,
-        config_path: str,
-        task: str,
+        config_path: str | None = None,
+        task: str = "",
         metadata: Dict[str, Any] | None = None,
         workspace: str | None = None,
         max_steps: int | None = None,
         permission_mode: str | None = None,
         stream: bool = True,
     ) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {"config_path": config_path, "task": task, "stream": bool(stream)}
+        payload: Dict[str, Any] = {"task": task, "stream": bool(stream)}
+        if config_path is not None:
+            payload["config_path"] = config_path
         if metadata:
             payload["metadata"] = dict(metadata)
         if workspace:

@@ -39,6 +39,11 @@ from .models import (
 
 router = APIRouter(tags=["public-session"])
 _TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "canceled"})
+_OBSERVATION_PAYLOAD_SCHEMAS = {
+    "assistant_message": "bb.payload.message.assistant.v1",
+    "tool_call": "bb.payload.tool.called.v1",
+    "tool_result": "bb.payload.tool.completed.v1",
+}
 class _ProductSessionUnavailable(RuntimeError):
     pass
 def _service(request: Request):
@@ -207,7 +212,10 @@ def _kernel_event(event):
         },
         "kind": event["kind"],
         "payload": event["payload"],
-        "payload_schema_version": event["schema_version"],
+        "payload_schema_version": _OBSERVATION_PAYLOAD_SCHEMAS.get(
+            str(event["kind"]),
+            event["schema_version"],
+        ),
     }
 @router.post("/v1/sessions", operation_id="session.start", response_model=PublicResult, status_code=202)
 async def start(request: SessionStartRequest, context: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):

@@ -76,7 +76,7 @@ class HealthResponse(TypedDict, total=False):
 
 
 class SessionCreateRequest(TypedDict, total=False):
-    config_path: str
+    config_path: Optional[str]
     task: str
     overrides: Dict[str, Any]
     metadata: Dict[str, Any]
@@ -110,6 +110,19 @@ class ModelCatalogEntry(TypedDict, total=False):
     id: str
     adapter: Optional[str]
     provider: Optional[str]
+    canonical_provider: Optional[str]
+    support_tier: Literal["core", "deferred", "evidence", "unsupported"]
+    available: bool
+    availability_reason: Optional[
+        Literal[
+            "provider_managed",
+            "missing_auth",
+            "unsupported_provider",
+            "deferred_provider",
+        ]
+    ]
+    discovery: Literal["configured_only"]
+    source: Literal["configured"]
     name: Optional[str]
     context_length: Optional[int]
     params: Optional[Dict[str, Any]]
@@ -117,10 +130,26 @@ class ModelCatalogEntry(TypedDict, total=False):
     metadata: Optional[Dict[str, Any]]
 
 
+class ModelCatalogIssue(TypedDict, total=False):
+    code: Literal[
+        "invalid_model",
+        "duplicate_model",
+        "unsupported_provider",
+        "deferred_provider",
+        "stale_dynamic_catalog",
+    ]
+    model_id: Optional[str]
+    provider_id: Optional[str]
+    source: Literal["configured", "dynamic"]
+    index: Optional[int]
+
+
 class ModelCatalogResponse(TypedDict, total=False):
     models: List[ModelCatalogEntry]
     default_model: Optional[str]
     config_path: Optional[str]
+    discovery_policy: Literal["configured_only"]
+    issues: List[ModelCatalogIssue]
 
 
 class SessionFileInfo(TypedDict, total=False):

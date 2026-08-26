@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
+import pytest
+
+from breadboard_engine.security import WorkspacePathError
 
 from breadboard_engine.checkpointing.checkpoint_manager import (
     CheckpointManager,
     CheckpointSummary,
     build_checkpoint_metadata_record,
 )
-from breadboard_engine.longrun.checkpoint import build_longrun_checkpoint_metadata_record
+from breadboard_engine.longrun.checkpoint import (
+    build_longrun_checkpoint_metadata_record,
+)
 
 
 def test_checkpoint_snapshot_roundtrip(tmp_path: Path) -> None:
@@ -50,5 +54,23 @@ def test_checkpoint_metadata_record_helpers() -> None:
         updated_at=123.5,
     )
     assert longrun_summary["schema_version"] == "bb.checkpoint_metadata.v1"
-    assert longrun_summary["checkpoint_ref"] == "meta/checkpoints/longrun_state_ep_2_end.json"
+    assert (
+        longrun_summary["checkpoint_ref"]
+        == "meta/checkpoints/longrun_state_ep_2_end.json"
+    )
     assert longrun_summary["summary"]["episode"] == 2
+
+
+def test_checkpoint_metadata_rejects_linked_target(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    state_dir = workspace / ".breadboard" / "checkpoints"
+    state_dir.mkdir(parents=True)
+    secret = tmp_path / "credential"
+    secret.write_text("checkpoint-link-canary", encoding="utf-8")
+    (state_dir / "checkpoints.json").symlink_to(secret)
+
+    manager = CheckpointManager(workspace)
+    with pytest.raises(WorkspacePathError):
+        manager._write_meta([])
+
+    assert secret.read_text(encoding="utf-8") == "checkpoint-link-canary"

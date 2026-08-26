@@ -5,9 +5,13 @@ Provides enhanced LSP capabilities without modifying existing code.
 
 import os
 import ray
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from .lsp_manager import LSPManagerV2
+from breadboard_engine.security import (
+    protected_credential_paths,
+    purge_provider_credentials,
+)
 
 
 @ray.remote
@@ -18,10 +22,25 @@ class LSPEnhancedSandbox:
     canonical sandbox module.
     """
     
-    def __init__(self, base_sandbox: ray.ObjectRef, workspace: str):
+    def __init__(
+        self,
+        base_sandbox: ray.ObjectRef,
+        workspace: str,
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ):
+        captured = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        purge_provider_credentials()
         self.base_sandbox = base_sandbox
         self.workspace = workspace
-        self.lsp_manager = LSPManagerV2.remote()
+        self.lsp_manager = LSPManagerV2.remote(protected_paths=captured)
         ray.get(self.lsp_manager.register_root.remote(workspace))
         
     # Forward all base sandbox methods
@@ -188,20 +207,37 @@ class LSPSandboxFactory:
     """Factory for creating LSP-enhanced sandboxes"""
     
     @staticmethod
-    def create_enhanced_sandbox(image: str, workspace: str, session_id: Optional[str] = None, 
-                               lsp_actor: Optional[ray.actor.ActorHandle] = None) -> ray.ObjectRef:
-        """
-        Create an LSP-enhanced sandbox that's compatible with the agent session actor.
-        """
+    def create_enhanced_sandbox(
+        image: str,
+        workspace: str,
+        session_id: Optional[str] = None,
+        lsp_actor: Optional[ray.actor.ActorHandle] = None,
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ) -> ray.ObjectRef:
+        """Create an LSP-enhanced sandbox with explicit credential boundaries."""
         from .sandbox import DevSandboxV2
-        
-        # Create base sandbox
-        base_sandbox = DevSandboxV2.remote(image, session_id, workspace, lsp_actor)
-        
-        # Wrap with LSP enhancement
-        enhanced_sandbox = LSPEnhancedSandbox.remote(base_sandbox, workspace)
-        
-        return enhanced_sandbox
+
+        captured = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        base_sandbox = DevSandboxV2.remote(
+            image,
+            session_id,
+            workspace,
+            lsp_actor,
+            protected_paths=captured,
+        )
+        return LSPEnhancedSandbox.remote(
+            base_sandbox,
+            workspace,
+            protected_paths=captured,
+        )
 
 
 # Tool definitions for agent integration

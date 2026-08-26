@@ -128,6 +128,11 @@ breadboard --json system health
 breadboard --json system describe
 ```
 
+`system describe` resolves the package-local daily-driver profile and reports
+its definition, lock, and resource identities under `data.default_profile`.
+It fails with a typed profile error instead of consulting campaign, script,
+or E4 resources.
+
 ---
 
 ## Primary TUI
@@ -165,14 +170,21 @@ Create, validate, lock, and run a harness:
 
 ```bash
 breadboard harness create --out ./harness
-breadboard harness validate ./harness/minimal_harness.v2.yaml
-breadboard harness lock ./harness/minimal_harness.v2.yaml \
-  --out ./harness/minimal_harness.lock.json
-breadboard harness run ./harness/minimal_harness.v2.yaml \
-  --lock ./harness/minimal_harness.lock.json \
+breadboard harness validate ./harness/daily_driver.v1.yaml
+breadboard harness lock ./harness/daily_driver.v1.yaml \
+  --out ./harness/daily_driver.lock.json
+breadboard harness run ./harness/daily_driver.v1.yaml \
+  --lock ./harness/daily_driver.lock.json \
   --local \
   --task "Say hi and exit."
 ```
+
+The created public profile is provider-free by default (`mock/reference`) and
+keeps shell execution approval-gated. To use a configured provider, select a
+supported integration, edit the profile's provider declaration, and create a
+fresh lock; see
+[`FIRST_RUN_5_MIN.md`](../quickstarts/FIRST_RUN_5_MIN.md#provider-operation-modes)
+for the exact mode boundary.
 
 Inspect the installed product contract:
 

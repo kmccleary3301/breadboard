@@ -1,61 +1,99 @@
-# Provider Plan Auth (Engine: In-Memory Attach/Detach/Status)
+# Provider Authentication Boundaries
 
-Some provider authentication sources are **compliance-sensitive** (for example, consumer subscription plans). BreadBoard’s engine treats these sources conservatively:
+BreadBoard has two distinct authentication surfaces. They do not share storage,
+lifecycle, or support claims:
 
-- The engine only accepts **short-lived** auth material.
-- The engine stores auth material **in-memory only** (never persisted).
-- When an auth source is compliance-sensitive, the engine can require a **sealed profile** conformance check before accepting it.
+1. The durable provider credential broker is the canonical product mechanism
+   for supported API-key and OAuth schemes.
+2. The legacy `/v1/provider-auth` surface is an ephemeral, in-memory
+   compatibility overlay for explicitly admitted local integrations.
 
-## Endpoints
+The bounded provider and scheme claims live in
+[`conformance/provider_parity_claims/manifest.v1.json`](../../conformance/provider_parity_claims/manifest.v1.json).
+Neither surface proves real login or live-provider behavior; those claims remain
+unproved until the named L1/L2 external gates.
 
-All endpoints are part of the CLI bridge FastAPI service.
+## Durable credential broker
+
+The broker owns a user-private, permission-hardened plaintext SQLite store,
+account selection, session affinity, refresh single-flight, logout, revoke,
+durable tombstones, and restart recovery. Public routes exchange secret-free
+metadata; raw material is issued only to provider routing. This is not
+encryption, and the owning OS account and root remain outside the confidentiality
+boundary.
+
+Canonical routes:
+
+- `GET /v1/auth/providers`
+- `GET /v1/auth/credentials`
+- `PUT /v1/auth/credentials/{provider_id}/{account_label}/api-key`
+- `DELETE /v1/auth/credentials/{credential_ref}`
+- `POST /v1/auth/credentials/{credential_ref}/revoke`
+- `POST /v1/auth/login-sessions`
+- `GET /v1/auth/login-sessions/{login_session_id}`
+- `POST /v1/auth/login-sessions/{login_session_id}/complete`
+- `DELETE /v1/auth/login-sessions/{login_session_id}`
+
+The broker's highest-to-lowest source precedence is `runtime`, `config`,
+`oauth`, `login_api_key`, `env`, `stored_api_key`, then `fallback`. Credential
+origin metadata records the selected source without exposing material. Exact
+storage, permission, migration, redaction, refresh, logout, revoke, and
+tombstone guarantees are defined by
+[`CREDENTIAL_SECURITY_CONTRACT.md`](../reference/CREDENTIAL_SECURITY_CONTRACT.md).
+
+## Ephemeral compatibility overlay
+
+The CLI bridge also exposes:
 
 - `POST /v1/provider-auth/attach`
 - `POST /v1/provider-auth/detach`
 - `GET /v1/provider-auth/status`
 
-All endpoints are protected by the same `BREADBOARD_API_TOKEN` bearer middleware as the rest of the CLI bridge surface (when enabled).
+`attach` stores an `EngineAuthMaterial` overlay in process memory, keyed by
+`provider_id` and the currently reserved alias. It does not create a durable
+broker credential, account identity, refresh record, affinity record, or
+tombstone. Restart discards it.
 
-## Attach
+Within this compatibility surface only, attached material precedes the
+environment/config resolver and provider defaults. That local precedence does
+not replace or redefine the durable broker's `AUTH_SOURCE_PRECEDENCE`.
 
-Attach stores an `EngineAuthMaterial` overlay keyed by `provider_id` (alias is reserved for later multi-account support).
+All `/v1/auth` and `/v1/provider-auth` routes use the CLI bridge's
+`BREADBOARD_API_TOKEN` bearer middleware when enabled.
 
-The engine will apply attached overlays to outgoing provider calls with the following precedence:
+### Local admission and sealed profiles
 
-1. Attached auth material (in-memory)
-2. Environment/config auth resolution (existing behavior)
-3. Provider defaults
+If `material.is_subscription_plan=true`, non-loopback attachment is rejected by
+default. If `required_profile` is supplied, `config_path` is required and the
+engine:
 
-### Local-only gating (subscription-plan sources)
+1. loads the resolved runtime configuration;
+2. applies optional dotted-key overrides;
+3. hashes the locked JSON pointers;
+4. rejects attachment when the conformance hash differs.
 
-If `material.is_subscription_plan=true`, the engine rejects non-loopback requests by default. This prevents accidental forwarding of compliance-sensitive tokens to a remote engine.
+Status returns only sanitized metadata: header names, API-key presence, expiry,
+base URL, and routing-key names. It never returns secret values.
 
-### Sealed profile enforcement (scaffolding)
+## Scheme-specific nonclaims
 
-If `required_profile` is provided, the request must also include `config_path`. The engine will:
+- Anthropic consumer-subscription material is unsupported. Use the cataloged
+  broker API-key or OAuth schemes instead.
+- The `openai` policy id `codex_chatgpt_subscription` corresponds to the
+  product `codex` / OMP `openai-codex` route. Direct subscription material is
+  default-off and harness-backed-only, requires explicit enablement, remains
+  local-only, and requires a sealed profile.
+- Catalog support for broker API-key/OAuth or provider-managed authentication
+  does not imply support for direct consumer-subscription tokens.
+- Mock, replay, smoke, and CLI-mock credentials are evidence-only; they do not
+  establish a live provider claim.
 
-1. Load the resolved runtime config from `config_path`
-2. Apply optional dotted-key `overrides`
-3. Compute a conformance hash over `required_profile.locked_json_pointers`
-4. Reject the attach request if the hash differs
+The authoritative policy records are:
 
-## Detach
+- [`anthropic_consumer_subscription.json`](../provider_plans/policy_manifests/anthropic_consumer_subscription.json)
+- [`openai_codex_chatgpt_plan.json`](../provider_plans/policy_manifests/openai_codex_chatgpt_plan.json)
 
-Detach removes any stored material for `(provider_id, alias)`.
+## Related contracts
 
-## Status
-
-Status returns **sanitized** metadata only:
-
-- header key names (not values)
-- presence/absence of `api_key`
-- expiry timestamps
-- base URL and routing key names
-
-No secrets are returned.
-
-## Related Contract
-
-- `limits_update` event payload schema:
-  - `docs/contracts/cli_bridge/schemas/session_event_payload_limits_update.schema.json`
-
+- [`contracts/cli_bridge/openapi.json`](../contracts/cli_bridge/openapi.json)
+- [`session_event_payload_limits_update.schema.json`](../contracts/cli_bridge/schemas/session_event_payload_limits_update.schema.json)

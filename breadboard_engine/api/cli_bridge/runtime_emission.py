@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 from datetime import datetime, timezone
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Mapping
@@ -22,31 +23,154 @@ from ...auth.enforcer import apply_dotted_overrides
 from ...compilation import compile_capability_registry, compile_effective_config_graph, finalize_record, get_spec
 from ...compilation.effective_operation_policy import compile_effective_operation_policy
 from ...compilation.v2_loader import load_agent_config
+from ...security import redaction
 from .models import SessionCreateRequest
 DEFAULT_INTERACTIVE_SESSION_TITLE = "interactive session awaiting input"
+ENGINE_LAUNCH_ID_ENV = "BREADBOARD_ENGINE_LAUNCH_ID"
+ENGINE_STATE_ROOT_ENV = "BREADBOARD_ENGINE_STATE_ROOT"
+_MANAGED_STATE_ROOT_ERROR = "invalid managed engine state root"
+
+
+class ManagedStateRootError(RuntimeError):
+    """Raised when a supervisor-provided managed state root is unsafe."""
+
+    def __init__(self) -> None:
+        super().__init__(_MANAGED_STATE_ROOT_ERROR)
+
+
+@dataclass(frozen=True)
+class ManagedStatePaths:
+    root: Path
+    runtime_records: Path
+    session_events: Path
+    session_state: Path
+
+
+def _managed_state_root_error() -> ManagedStateRootError:
+    return ManagedStateRootError()
+
+
+def _current_uid() -> int | None:
+    getter = getattr(os, "geteuid", None) or getattr(os, "getuid", None)
+    if getter is None:
+        return None
+    try:
+        return int(getter())
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def _validate_managed_state_root() -> Path:
+    raw = os.environ.get(ENGINE_STATE_ROOT_ENV)
+    if raw is None or not raw.strip():
+        raise _managed_state_root_error()
+    supplied = Path(raw)
+    if not supplied.is_absolute():
+        raise _managed_state_root_error()
+    normalized = Path(os.path.normpath(os.fspath(supplied)))
+    try:
+        canonical = supplied.resolve(strict=True)
+        metadata = os.lstat(normalized)
+    except (OSError, RuntimeError, ValueError):
+        raise _managed_state_root_error() from None
+    if (
+        canonical != normalized
+        or stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o700
+    ):
+        raise _managed_state_root_error()
+    current_uid = _current_uid()
+    if current_uid is not None and getattr(metadata, "st_uid", current_uid) != current_uid:
+        raise _managed_state_root_error()
+    return canonical
+
+
+def managed_state_paths() -> ManagedStatePaths | None:
+    """Return the supervisor-owned state layout, or ``None`` for legacy runs."""
+
+    if ENGINE_LAUNCH_ID_ENV not in os.environ:
+        return None
+    root = _validate_managed_state_root()
+    return ManagedStatePaths(
+        root=root,
+        runtime_records=root / "runtime-records",
+        session_events=root / "session-events",
+        session_state=root / "session-state",
+    )
+
+
+def _ensure_managed_child(path: Path) -> None:
+    try:
+        path.mkdir(mode=0o700, exist_ok=True)
+        metadata = os.lstat(path)
+    except (OSError, RuntimeError, ValueError):
+        raise _managed_state_root_error() from None
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o700
+    ):
+        raise _managed_state_root_error()
+    current_uid = _current_uid()
+    if current_uid is not None and getattr(metadata, "st_uid", current_uid) != current_uid:
+        raise _managed_state_root_error()
+
+
+def prepare_managed_state() -> ManagedStatePaths | None:
+    """Validate a managed launch and materialize its private direct children."""
+
+    paths = managed_state_paths()
+    if paths is None:
+        return None
+    for child in (paths.runtime_records, paths.session_events, paths.session_state):
+        _ensure_managed_child(child)
+    return paths
+
+
+def _managed_output_root(output_root: Path | None, paths: ManagedStatePaths) -> Path:
+    candidate = paths.runtime_records if output_root is None else Path(output_root)
+    try:
+        candidate.resolve().relative_to(paths.runtime_records)
+    except (OSError, RuntimeError, ValueError):
+        raise _managed_state_root_error() from None
+    return candidate
+
 
 def primitive_emission_enabled() -> bool:
     return os.environ.get("BREADBOARD_EMIT_PRIMITIVES", "").strip().lower() in {"1", "true", "yes", "on"}
+
 def config_plane_dialects() -> set[str]:
     value = (os.environ.get("BREADBOARD_CONFIG_PLANE_DIALECT") or "v2").strip().lower()
     return {"v2", "v3"} if value == "both" else {value} if value in {"v2", "v3"} else {"v2"}
 def default_runtime_record_root(repo_root: Path | None = None) -> Path:
+    managed = managed_state_paths()
+    if managed is not None:
+        return managed.runtime_records
     root = repo_root or Path(__file__).resolve().parents[3]
     override = os.environ.get("BREADBOARD_RUNTIME_RECORD_ROOT")
     return Path(override).resolve() if override else (root / "artifacts" / "runtime_records").resolve()
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-def _sanitize_persisted_runtime_config(value: Any) -> Any:
+
+def _json_safe_runtime_config(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return {str(key): _sanitize_persisted_runtime_config(item) for key, item in value.items()
-                if str(key) != "provider_auth_runtime" and not str(key).startswith("provider_auth_runtime.")}
+        return {
+            str(key): _json_safe_runtime_config(item)
+            for key, item in value.items()
+        }
     if isinstance(value, (list, tuple)):
-        return [_sanitize_persisted_runtime_config(item) for item in value]
+        return [_json_safe_runtime_config(item) for item in value]
     try:
         json.dumps(value)
     except TypeError:
         return str(value)
     return value
+
+
+def _sanitize_persisted_runtime_config(value: Any) -> Any:
+    return _json_safe_runtime_config(redaction.strip_provider_auth_runtime(value))
+
 def _config_path(repo_root: Path, config_path: str) -> Path:
     raw = Path(config_path)
     if raw.is_absolute():
@@ -160,6 +284,7 @@ def emit_session_start_records(
     model_role_lock: Any | None = None,
 ) -> dict[str, str]:
     """Emit validating session-start records, failing before partial evidence is written."""
+    managed = prepare_managed_state()
     root = (repo_root or Path(__file__).resolve().parents[3]).resolve()
     generated = generated_at or _utc_now()
     config_path = _config_path(root, request.config_path)
@@ -182,8 +307,9 @@ def emit_session_start_records(
     operation_policy = compile_effective_operation_policy(
         config, session_id=session_id, config_path=str(config_path), generated_at_utc=generated,
     )
-    out_dir = (output_root or default_runtime_record_root(root)) / session_id
-    out_dir.mkdir(parents=True, exist_ok=True)
+    output_base = _managed_output_root(output_root, managed) if managed is not None else (output_root or default_runtime_record_root(root))
+    out_dir = output_base / session_id
+    out_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     artifact_store = ArtifactStore(out_dir / "objects")
     policy_path = out_dir / "effective_operation_policy.json"
     policy_text = json.dumps(operation_policy, indent=2, sort_keys=True) + "\n"
@@ -198,7 +324,7 @@ def emit_session_start_records(
         **_work_item_records(session_id, title=title if title is not None else request.task if request.task.strip() else DEFAULT_INTERACTIVE_SESSION_TITLE, generated_at=generated),
     }
     config_plane_path = out_dir / "records" / "config_plane.jsonl"
-    config_plane_path.parent.mkdir(parents=True, exist_ok=True)
+    config_plane_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     paths: dict[str, str] = {}
     envelopes: list[str] = []
     for name, payload in records.items():

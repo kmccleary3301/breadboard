@@ -16,7 +16,11 @@ from ..messaging.markdown_logger import MarkdownLogger
 from ..provider.ir import IRDeltaEvent
 from ..provider.routing import provider_router
 from ..provider import provider_adapter_manager, sanitize_openai_tool_name
-from ..provider.contracts import ProviderRuntimeContext
+from ..provider.contracts import (
+    ProviderResult,
+    ProviderRuntimeContext,
+    sanitize_provider_result,
+)
 from ..provider import normalize_provider_result
 from .components import (
     apply_streaming_policy_for_turn,
@@ -26,6 +30,25 @@ from .components import (
     log_routing_event,
 )
 from ..surface import record_tool_schema_snapshot
+
+
+def _record_raw_provider_response(
+    conductor: Any,
+    result: ProviderResult,
+    turn_index: int,
+) -> None:
+    """Persist only the normalized, secret-safe provider transport payload."""
+    try:
+        if not conductor.logger_v2.include_raw:
+            return
+        sanitized = sanitize_provider_result(result)
+        if isinstance(sanitized.raw_response, dict):
+            conductor.api_recorder.save_response(
+                turn_index,
+                sanitized.raw_response,
+            )
+    except Exception:
+        pass
 
 
 def get_model_response(
@@ -78,7 +101,9 @@ def get_model_response(
     stub_text = ""
     try:
         descriptor = getattr(runtime, "descriptor", None)
-        if getattr(descriptor, "runtime_id", None) == "openai_responses" or getattr(descriptor, "default_api_variant", None) == "responses":
+        if (
+            getattr(descriptor, "runtime_id", None) == "openai_responses" or getattr(descriptor, "default_api_variant", None) == "responses"
+        ):
             stub_text = "Continue."
     except Exception:
         pass
@@ -150,7 +175,7 @@ def get_model_response(
     if use_native_tools and getattr(conductor, "current_native_tools", None):
         try:
             provider_id = provider_router.parse_model_id(route_hint)[0]
-            native_tools = getattr(conductor, 'current_native_tools', [])
+            native_tools = getattr(conductor, "current_native_tools", [])
             if allowed_tool_names:
                 native_tools = [
                     tool for tool in native_tools
@@ -166,7 +191,10 @@ def get_model_response(
             if hide_invalid:
                 native_tools = [tool for tool in native_tools if getattr(tool, "name", None) != "invalid"]
             if native_tools:
-                tools_schema = provider_adapter_manager.translate_tools_to_native_schema(native_tools, provider_id)
+                tools_schema = (
+                    provider_adapter_manager.translate_tools_to_native_schema(native_tools, provider_id
+                    )
+                )
                 try:
                     if conductor.logger_v2.run_dir and tools_schema:
                         conductor.provider_logger.save_tools_provided(turn_index, tools_schema)
@@ -197,7 +225,10 @@ def get_model_response(
     if tools_schema is None and provider_id == "anthropic":
         try:
             source_defs = getattr(conductor, "yaml_tools", None) or []
-            native_tools, text_based_tools = provider_adapter_manager.filter_tools_for_provider(source_defs, provider_id)
+            native_tools, text_based_tools = (
+                provider_adapter_manager.filter_tools_for_provider(source_defs, provider_id
+                )
+            )
             if allowed_tool_names:
                 native_tools = [
                     tool for tool in native_tools
@@ -213,7 +244,10 @@ def get_model_response(
             if hide_invalid:
                 native_tools = [tool for tool in native_tools if getattr(tool, "name", None) != "invalid"]
             if native_tools:
-                tools_schema = provider_adapter_manager.translate_tools_to_native_schema(native_tools, provider_id)
+                tools_schema = (
+                    provider_adapter_manager.translate_tools_to_native_schema(native_tools, provider_id
+                    )
+                )
                 conductor.current_native_tools = native_tools
                 conductor.current_text_based_tools = text_based_tools
         except Exception:
@@ -295,11 +329,17 @@ def get_model_response(
         agent_config=conductor.config,
         stream=effective_stream_responses,
         extra=runtime_extra,
+        session_id=session_state.get_provider_metadata("session_id")
+        or getattr(session_state, "session_id", None),
+        input_id=session_state.get_provider_metadata("input_id"),
+        turn_id=session_state.get_provider_metadata("turn_id"),
     )
 
     try:
         request_headers = dict(client_config.get("default_headers") or {})
-        if getattr(runtime, "descriptor", None) and getattr(runtime.descriptor, "provider_id", None) == "openrouter":
+        if (
+            getattr(runtime, "descriptor", None) and getattr(runtime.descriptor, "provider_id", None) == "openrouter"
+        ):
             request_headers.setdefault("Accept", "application/json; charset=utf-8")
             request_headers.setdefault("Accept-Encoding", "identity")
     except Exception:
@@ -351,17 +391,14 @@ def get_model_response(
     )
 
     if (conductor.config.get("features", {}) or {}).get("response_normalizer"):
-        try:
-            normalized_events = normalize_provider_result(result)
-            result.metadata.setdefault("normalized_events", normalized_events)
-            session_state.set_provider_metadata("normalized_events", normalized_events)
-            if conductor.logger_v2.run_dir:
-                conductor.logger_v2.write_json(
-                    f"meta/turn_{turn_index}_normalized_events.json",
-                    normalized_events,
-                )
-        except Exception:
-            pass
+        normalized_events = normalize_provider_result(result)
+        result.metadata["normalized_events"] = normalized_events
+        session_state.set_provider_metadata("normalized_events", normalized_events)
+        if conductor.logger_v2.run_dir:
+            conductor.logger_v2.write_json(
+                f"meta/turn_{turn_index}_normalized_events.json",
+                normalized_events,
+            )
 
     usage_raw = result.usage or {}
     normalized_usage: Dict[str, Any] = {}
@@ -432,22 +469,7 @@ def get_model_response(
     except Exception:
         pass
 
-    try:
-        if conductor.logger_v2.include_raw:
-            raw_payload = result.raw_response
-            if hasattr(raw_payload, "model_dump"):
-                serialized = raw_payload.model_dump()  # type: ignore[attr-defined]
-            elif isinstance(raw_payload, dict):
-                serialized = raw_payload
-            else:
-                try:
-                    serialized = dict(raw_payload)
-                except Exception:
-                    serialized = None
-            if serialized is not None:
-                conductor.api_recorder.save_response(turn_index, serialized)
-    except Exception:
-        pass
+    _record_raw_provider_response(conductor, result, turn_index)
 
     return result
 
@@ -477,12 +499,12 @@ def create_dialect_mapping() -> Dict[str, Any]:
 
 def apply_v2_dialect_selection(conductor: Any, current: List[str], model_id: str, tool_defs: List[ToolDefinition]) -> List[str]:
     try:
-        tools_cfg = (conductor.config.get("tools", {}) or {})
-        dialects_cfg = (tools_cfg.get("dialects", {}) or {})
-        selection_cfg = (dialects_cfg.get("selection", {}) or {})
+        tools_cfg = conductor.config.get("tools", {}) or {}
+        dialects_cfg = tools_cfg.get("dialects", {}) or {}
+        selection_cfg = dialects_cfg.get("selection", {}) or {}
         base_order = apply_selection_legacy(current, model_id, tool_defs, selection_cfg)
 
-        preference_cfg = (dialects_cfg.get("preference", {}) or {})
+        preference_cfg = dialects_cfg.get("preference", {}) or {}
         if preference_cfg:
             ordered, native_hint = apply_preference_order(base_order, model_id, tool_defs, preference_cfg)
             conductor._native_preference_hint = native_hint
@@ -528,7 +550,8 @@ def apply_selection_legacy(
     diff_pref_list = [str(x) for x in (by_tool_kind.get("diff", []) or [])]
     bash_pref_list = [str(x) for x in (by_tool_kind.get("bash", []) or [])]
 
-    known_diff_names = set(diff_pref_list) | {"aider_diff", "unified_diff", "opencode_patch"}
+    known_diff_names = set(diff_pref_list) | {"aider_diff", "unified_diff", "opencode_patch",
+    }
     diff_present = ("diff" in present_types) or any(name in current for name in known_diff_names)
     bash_present = any(name in current for name in (bash_pref_list or ["bash_block"]))
 
@@ -651,11 +674,15 @@ def setup_native_tools(conductor: Any, model: str, use_native_tools: bool) -> bo
     if use_native_tools and getattr(conductor, "yaml_tools", None):
         try:
             provider_id = provider_router.parse_model_id(model)[0]
-            native_tools, text_based_tools = provider_adapter_manager.filter_tools_for_provider(conductor.yaml_tools, provider_id)
+            native_tools, text_based_tools = (
+                provider_adapter_manager.filter_tools_for_provider(conductor.yaml_tools, provider_id
+                )
+            )
             will_use_native_tools = bool(native_tools)
             conductor.current_native_tools = native_tools
             conductor.current_text_based_tools = text_based_tools
-            if will_use_native_tools and provider_id in ("openai", "openrouter", "mock", "cli_mock"):
+            if will_use_native_tools and provider_id in ("openai", "openrouter", "mock", "cli_mock",
+            ):
                 try:
                     alias_map = getattr(getattr(conductor, "agent_executor", None), "alias_map", None)
                     if isinstance(alias_map, dict):
@@ -699,7 +726,7 @@ def setup_tool_prompts(
     mode_cfg = None
     if int(conductor.config.get("version", 0)) == 2:
         active_mode = conductor._resolve_active_mode()
-        loop_cfg = (conductor.config.get("loop", {}) or {})
+        loop_cfg = conductor.config.get("loop", {}) or {}
         plan_limit = 0
         try:
             plan_limit = int(loop_cfg.get("plan_turn_limit") or 0)
@@ -715,7 +742,7 @@ def setup_tool_prompts(
         apply_turn_strategy_from_loop(conductor)
 
     active_tool_names: List[str] = []
-    for definition in (prompt_tool_defs or []):
+    for definition in prompt_tool_defs or []:
         name = getattr(definition, "name", None)
         if name:
             active_tool_names.append(name)
@@ -744,7 +771,9 @@ def setup_tool_prompts(
         session_state.messages[0]["content"] = comprehensive_prompt
         session_state.provider_messages[0]["content"] = comprehensive_prompt
 
-        local_tools_prompt = "(using cached comprehensive system prompt with research-based preferences)"
+        local_tools_prompt = (
+            "(using cached comprehensive system prompt with research-based preferences)"
+        )
     else:
         local_tools_prompt = caller.build_prompt(prompt_tool_defs)
 
@@ -784,13 +813,17 @@ def add_enhanced_message_fields(
     local_tools_prompt: str,
     user_prompt: str,
 ) -> None:
-    if tool_prompt_mode in ("system_once", "system_and_per_turn", "system_compiled_and_persistent_per_turn"):
+    if tool_prompt_mode in ("system_once", "system_and_per_turn", "system_compiled_and_persistent_per_turn",
+    ):
         session_state.messages[0]["compiled_tools_available"] = [
             {
                 "name": t.name,
                 "type_id": t.type_id,
                 "description": t.description,
-                "parameters": [{"name": p.name, "type": p.type, "description": p.description, "default": p.default} for p in t.parameters] if t.parameters else []
+                "parameters": (
+                    [{"name": p.name, "type": p.type, "description": p.description, "default": p.default,
+                        } for p in t.parameters] if t.parameters else []
+                ),
             }
             for t in tool_defs
         ]
@@ -808,18 +841,64 @@ def add_enhanced_message_fields(
         try:
             native_tools = getattr(conductor, "current_native_tools", [])
             if native_tools:
-                provider_id = provider_router.parse_model_id(conductor.config.get("model", "gpt-4"))[0]
-                native_tools_spec = provider_adapter_manager.translate_tools_to_native_schema(native_tools, provider_id)
+                route_hint = getattr(conductor, "_current_route_id", None) or conductor.config.get("model", "gpt-4")
+                provider_id = provider_router.parse_model_id(route_hint)[0]
+                native_tools_spec = (
+                    provider_adapter_manager.translate_tools_to_native_schema(native_tools, provider_id
+                    )
+                )
         except Exception:
             pass
 
-    session_state.messages[1]["tools_available_prompt"] = tools_prompt_content
+    user_message = next(
+        (
+            message
+            for message in reversed(session_state.messages)
+            if message.get("role") == "user"
+        ),
+        None,
+    )
+    provider_user_message = next(
+        (
+            message
+            for message in reversed(session_state.provider_messages)
+            if message.get("role") == "user"
+        ),
+        None,
+    )
+    if user_message is None or provider_user_message is None:
+        raise RuntimeError("initial user message is missing")
+    user_message["tools_available_prompt"] = tools_prompt_content
     if native_tools_spec:
-        session_state.messages[1]["tools"] = native_tools_spec
+        user_message["tools"] = native_tools_spec
 
     if tool_prompt_mode == "system_compiled_and_persistent_per_turn":
         enabled_tools = [t.name for t in tool_defs]
-        per_turn_availability = get_compiler().format_per_turn_availability(enabled_tools, active_dialect_names)
+        per_turn_availability = get_compiler().format_per_turn_availability(
+            enabled_tools, active_dialect_names
+        )
         initial_user_content = user_prompt + "\n\n" + per_turn_availability
-        session_state.messages[1]["content"] = initial_user_content
-        session_state.provider_messages[1]["content"] = initial_user_content
+        for message in (user_message, provider_user_message):
+            content = message.get("content")
+            if isinstance(content, list):
+                replaced = False
+                updated = []
+                for block in content:
+                    if (
+                        not replaced
+                        and isinstance(block, dict)
+                        and block.get("type") == "text"
+                    ):
+                        updated.append(
+                            {"type": "text", "text": initial_user_content}
+                        )
+                        replaced = True
+                    else:
+                        updated.append(block)
+                if not replaced:
+                    updated.insert(
+                        0, {"type": "text", "text": initial_user_content}
+                    )
+                message["content"] = updated
+            else:
+                message["content"] = initial_user_content

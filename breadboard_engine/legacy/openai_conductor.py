@@ -4,7 +4,7 @@ import json
 import os
 import shutil
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 from pathlib import Path
 
 import ray
@@ -26,6 +26,7 @@ from .compilation.system_prompt_compiler import get_compiler
 from .execution.sequential_executor import SequentialToolExecutor
 from .provider.routing import provider_router
 from .provider_adapters import provider_adapter_manager
+from ..security import protected_credential_paths, purge_provider_credentials, redaction
 
 try:
     from openai import OpenAI  # type: ignore
@@ -119,9 +120,30 @@ def _dump_tool_defs(tool_defs: List[ToolDefinition]) -> List[Dict[str, Any]]:
 
 @ray.remote
 class OpenAIConductor:
-    def __init__(self, workspace: str, image: str = "python-dev:latest", config: Optional[Dict[str, Any]] = None) -> None:
-        # Local-host fallback unless explicitly using docker by env
-        self.sandbox = DevSandboxV2.options(name=f"oa-sb-{uuid.uuid4()}").remote(image=image, workspace=workspace)
+    def __init__(
+        self,
+        workspace: str,
+        image: str = "python-dev:latest",
+        config: Optional[Dict[str, Any]] = None,
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ) -> None:
+        captured = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        purge_provider_credentials()
+        self.sandbox = DevSandboxV2.options(
+            name=f"oa-sb-{uuid.uuid4()}"
+        ).remote(
+            image=image,
+            workspace=workspace,
+            protected_paths=captured,
+        )
         self.workspace = workspace
         self.image = image
         self.config = config or {}
@@ -162,7 +184,11 @@ class OpenAIConductor:
         if enhanced_config.get("lsp_integration", {}).get("enabled", False):
             try:
                 from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
-                self.sandbox = LSPEnhancedSandbox.remote(self.sandbox, workspace)
+                self.sandbox = LSPEnhancedSandbox.remote(
+                    self.sandbox,
+                    workspace,
+                    protected_paths=captured,
+                )
             except ImportError:
                 pass
         if enhanced_config.get("enabled", False) or enhanced_config.get("lsp_integration", {}).get("enabled", False):
@@ -171,7 +197,11 @@ class OpenAIConductor:
             if enhanced_config.get("lsp_integration", {}).get("enabled", False):
                 try:
                     from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
-                    sandbox_for_executor = LSPEnhancedSandbox.remote(self.sandbox, workspace)
+                    sandbox_for_executor = LSPEnhancedSandbox.remote(
+                        self.sandbox,
+                        workspace,
+                        protected_paths=captured,
+                    )
                 except ImportError:
                     pass  # LSP integration not available, use regular sandbox
             
@@ -587,21 +617,8 @@ class OpenAIConductor:
         if OpenAI is None:
             raise RuntimeError("openai package not installed")
         
-        # Use provider router for client configuration
-        provider_config, resolved_model, supports_native_tools_for_model = provider_router.get_provider_config(model)
-        client_config = provider_router.create_client_config(model)
-        
-        if not client_config["api_key"]:
-            raise RuntimeError(f"{provider_config.api_key_env} missing in environment")
-        
-        # Create client with provider-specific configuration
-        client_kwargs = {"api_key": client_config["api_key"]}
-        if client_config.get("base_url"):
-            client_kwargs["base_url"] = client_config["base_url"]
-        if client_config.get("default_headers"):
-            client_kwargs["default_headers"] = client_config["default_headers"]
-        
-        client = OpenAI(**client_kwargs)
+        requested_route_id = model
+        resolved_model = provider_router.get_provider_config(requested_route_id)[1]
         
         # Update model to resolved version for API calls
         model = resolved_model
@@ -717,13 +734,13 @@ class OpenAIConductor:
         
         # CRITICAL: Detect native tools early and adjust tool_prompt_mode before adding prompts
         # Use provider router to determine native tool capability
-        use_native_tools = provider_router.should_use_native_tools(model, self.config)
+        use_native_tools = provider_router.should_use_native_tools(requested_route_id, self.config)
         will_use_native_tools = False
         
         if use_native_tools and getattr(self, "yaml_tools", None):
             try:
                 # Use provider adapter to filter tools properly
-                provider_id = provider_router.parse_model_id(model)[0]
+                provider_id = provider_router.parse_model_id(requested_route_id)[0]
                 native_tools, text_based_tools = provider_adapter_manager.filter_tools_for_provider(self.yaml_tools, provider_id)
                 will_use_native_tools = bool(native_tools)
                 self.current_native_tools = native_tools
@@ -875,7 +892,7 @@ class OpenAIConductor:
             try:
                 native_tools = getattr(self, 'current_native_tools', [])
                 if native_tools:
-                    provider_id = provider_router.parse_model_id(model)[0]
+                    provider_id = provider_router.parse_model_id(requested_route_id)[0]
                     native_tools_spec = provider_adapter_manager.translate_tools_to_native_schema(native_tools, provider_id)
             except Exception:
                 pass
@@ -939,12 +956,12 @@ class OpenAIConductor:
                 self._write_snapshot(output_json_path, model, messages, transcript)
                 # Always use raw text prompting; do not pass native tools to avoid provider call_id coupling
                 # Optionally pass provider-native tools based on provider capabilities
-                use_native_tools = provider_router.should_use_native_tools(model, self.config)
+                use_native_tools = provider_router.should_use_native_tools(requested_route_id, self.config)
                 tools_schema = None
                 if use_native_tools and getattr(self, "current_native_tools", None):
                     try:
                         # Use provider adapter to translate tools to native schema
-                        provider_id = provider_router.parse_model_id(model)[0]
+                        provider_id = provider_router.parse_model_id(requested_route_id)[0]
                         native_tools = getattr(self, 'current_native_tools', [])
                         if native_tools:
                             tools_schema = provider_adapter_manager.translate_tools_to_native_schema(native_tools, provider_id)
@@ -959,15 +976,21 @@ class OpenAIConductor:
                     create_kwargs["tools"] = tools_schema
                     # Note: tool_prompt_mode was already adjusted earlier based on provider_tools config
 
-                resp = client.chat.completions.create(**create_kwargs)
+                with provider_router.execution_client_config(model, endpoint_id=f"legacy:{model}") as leased_cfg:
+                    client_kwargs = {"api_key": leased_cfg.get("api_key")}
+                    if leased_cfg.get("base_url"):
+                        client_kwargs["base_url"] = leased_cfg["base_url"]
+                    if leased_cfg.get("default_headers"):
+                        client_kwargs["default_headers"] = leased_cfg["default_headers"]
+                    resp = OpenAI(**client_kwargs).chat.completions.create(**create_kwargs)
             except Exception as e:
                 # Surface OpenAI errors without crashing the actor
                 result = {
-                    "error": str(e),
+                    "error": redaction.safe_exception_message(e),
                     "error_type": e.__class__.__name__,
                     "messages": messages,
                     "transcript": transcript,
-                    "hint": "Verify OPENAI_API_KEY and model name; try a known model via --model",
+                    "hint": "Verify broker credentials and model selection; try a known model via --model",
                 }
                 # Write error snapshot
                 try:
@@ -1508,7 +1531,7 @@ class OpenAIConductor:
                             
                             if relay_strategy == "tool_role" and call_id:
                                 # Use provider adapter to create proper tool result message
-                                provider_id = provider_router.parse_model_id(model)[0]
+                                provider_id = provider_router.parse_model_id(requested_route_id)[0]
                                 adapter = provider_adapter_manager.get_adapter(provider_id)
                                 tool_result_msg = adapter.create_tool_result_message(call_id, r["fn"], r["out"])
                                 tool_messages_to_relay.append(tool_result_msg)

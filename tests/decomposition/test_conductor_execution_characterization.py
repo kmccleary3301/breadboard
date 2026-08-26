@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -31,7 +32,7 @@ from breadboard_engine.conductor_execution import (
     _latest_prompt_requests_verification as compat_requests_verification,
     _shell_command_write_targets as compat_shell_targets,
 )
-from breadboard_engine.provider.runtime import ProviderMessage, ProviderResult, ProviderRuntimeContext, ProviderRuntimeError
+from breadboard_engine.provider.runtime import ProviderMessage, ProviderResult, ProviderRuntimeContext, ProviderRuntimeError, ProviderToolCall
 from breadboard_engine.state.session_state import SessionState
 
 
@@ -94,7 +95,7 @@ def test_process_model_output_preserves_text_and_native_dispatch_order(monkeypat
     conductor = SimpleNamespace(config={})
     state = _session()
     text_message = ProviderMessage(role="assistant", content="describe", tool_calls=[], finish_reason="stop")
-    native_message = ProviderMessage(role="assistant", content=None, tool_calls=[SimpleNamespace(id="c1", type="function", name="lookup", arguments="{}")], finish_reason="tool_calls")
+    native_message = ProviderMessage(role="assistant", content=None, tool_calls=[ProviderToolCall(id="c1", name="lookup", arguments="{}")], finish_reason="tool_calls")
     assert execution_module.process_model_output(conductor, text_message, object(), [], state, object(), _logger(), object(), False, "mock/model") is False
     assert execution_module.process_model_output(conductor, native_message, object(), [], state, object(), _logger(), object(), False, "mock/model") is False
     assert events == [("text", "describe"), ("native", "lookup")]
@@ -138,6 +139,13 @@ def test_retry_fallback_sequence_and_provider_logging(monkeypatch: pytest.Monkey
     class Router:
         def get_runtime_descriptor(self, model): return fallback.descriptor, model
         def create_client_config(self, model): return {"api_key": "test"}
+        @contextmanager
+        def execution_client_config(self, model, **_kwargs):
+            config = self.create_client_config(model)
+            try:
+                yield config
+            finally:
+                config.clear()
     class Registry:
         def create_runtime(self, descriptor): return fallback
     conductor = SimpleNamespace(

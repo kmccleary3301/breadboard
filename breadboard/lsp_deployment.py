@@ -6,12 +6,16 @@ Handles scaling, health monitoring, and container orchestration for LSP servers.
 import os
 import time
 import json
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional, Sequence
 from pathlib import Path
 
 import ray
 from .lsp_manager import LSPManagerV2, LSP_SERVER_CONFIGS
-from .sandbox_lsp_integration import LSPSandboxFactory, integrate_lsp_with_agent_session
+from .sandbox_lsp_integration import LSPSandboxFactory
+from breadboard_engine.security import (
+    purge_provider_credentials,
+    sanitized_process_environment,
+)
 
 
 class LSPClusterManager:
@@ -24,7 +28,12 @@ class LSPClusterManager:
         self.broken_servers: set = set()
         self.health_check_interval = 30  # seconds
         
-    def deploy_lsp_cluster(self, workspace_roots: List[str]) -> Dict[str, Any]:
+    def deploy_lsp_cluster(
+        self,
+        workspace_roots: List[str],
+        *,
+        languages: Optional[Sequence[str]] = None,
+    ) -> Dict[str, Any]:
         """Deploy LSP servers across the Ray cluster"""
         deployment_status = {
             "deployed_languages": [],
@@ -33,7 +42,16 @@ class LSPClusterManager:
             "workspace_roots": workspace_roots
         }
         
-        for language_id, config in LSP_SERVER_CONFIGS.items():
+        language_ids = (
+            list(LSP_SERVER_CONFIGS)
+            if languages is None
+            else [
+                language_id
+                for language_id in languages
+                if language_id in LSP_SERVER_CONFIGS
+            ]
+        )
+        for language_id in language_ids:
             try:
                 # Create multiple replicas for each language
                 replicas = []
@@ -182,6 +200,7 @@ class LSPProxyRouter:
     """Routes LSP requests to appropriate server instances with load balancing"""
     
     def __init__(self, cluster_manager: LSPClusterManager):
+        purge_provider_credentials()
         self.cluster_manager = cluster_manager
         self.request_counts = {}
     
@@ -306,10 +325,22 @@ def deploy_lsp_system(config: Dict[str, Any], workspace_roots: List[str]) -> LSP
         container_image=cluster_config.get("container_image", "lsp-universal:latest")
     )
     
-    # Deploy the cluster
-    deployment_status = cluster_manager.deploy_lsp_cluster(workspace_roots)
+    language_config = config.get("languages", {})
+    disabled = set(language_config.get("disabled", ()))
+    enabled = [
+        language_id
+        for language_id in language_config.get(
+            "enabled",
+            tuple(LSP_SERVER_CONFIGS),
+        )
+        if language_id not in disabled
+    ]
+    deployment_status = cluster_manager.deploy_lsp_cluster(
+        workspace_roots,
+        languages=enabled,
+    )
     
-    print(f"Deployment complete:")
+    print("Deployment complete:")
     print(f"  - Successfully deployed: {', '.join(deployment_status['deployed_languages'])}")
     print(f"  - Failed deployments: {', '.join(deployment_status['failed_languages'])}")
     print(f"  - Total servers: {deployment_status['total_servers']}")
@@ -321,9 +352,10 @@ def deploy_lsp_system(config: Dict[str, Any], workspace_roots: List[str]) -> LSP
 def example_usage():
     """Example of how to use the LSP system"""
     
-    # Initialize Ray
+    # Initialize Ray without projecting ambient provider credentials.
     if not ray.is_initialized():
-        ray.init()
+        with sanitized_process_environment():
+            ray.init()
     
     try:
         # Create development configuration

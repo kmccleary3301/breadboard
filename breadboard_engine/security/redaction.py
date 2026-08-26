@@ -7,9 +7,9 @@ Single source of truth for secret handling across durable outputs:
   (``run_logger.py``, ``api_recorder.py``, ``provider_dump.py``).
 - ``SECRET_VALUE_PATTERNS``: well-known credential shapes caught by value,
   independent of key naming.
-- ``register_secret_value``: process-local registry fed by the auth boundary
-  at attach time, so scrubbing no longer depends on secrets being projected
-  into named environment variables.
+- ``secret_value_scope``: reference-counted, operation-local exact-value
+  redaction without projecting secrets into named environment variables or
+  retaining them after the provider operation.
 - ``scrub_text`` / ``scrub_headers`` / ``scrub_structure``: structured scrub
   API returning typed :class:`RedactionProblem` records, never raising.
 
@@ -21,10 +21,91 @@ from __future__ import annotations
 
 import re
 import threading
+import urllib.parse
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Mapping, Tuple
 
 REDACTED = "***REDACTED***"
+
+_AUTH_SECRET_KEYS = frozenset(
+    {
+        "authorization_code",
+        "code",
+        "code_challenge",
+        "code_verifier",
+        "device_auth_id",
+        "id_token",
+        "refresh_token",
+        "state",
+        "user_code",
+        "verifier",
+    }
+)
+_AUTH_URL_KEYS = frozenset({"authorization_url", "callback_url", "redirect_uri"})
+
+
+def scrub_auth_url(value: str) -> str:
+    """Keep an auth endpoint usable while removing one-time query material."""
+    if not isinstance(value, str) or not value:
+        return value
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        cleaned = []
+        for key, item in query:
+            normalized = key.strip().lower().replace("-", "_")
+            cleaned.append(
+                (
+                    key,
+                    REDACTED
+                    if normalized in _AUTH_SECRET_KEYS or is_secret_key(normalized)
+                    else scrub_text(item),
+                )
+            )
+        return scrub_text(
+            urllib.parse.urlunsplit(
+                (
+                    parsed.scheme,
+                    parsed.netloc,
+                    parsed.path,
+                    urllib.parse.urlencode(cleaned),
+                    "",
+                )
+            )
+        )
+    except Exception:
+        return REDACTED
+
+
+def safe_exception_message(error: BaseException, *, operation: str = "provider operation") -> str:
+    """Return actionable exception metadata without copying provider text."""
+    return f"{operation} failed ({error.__class__.__name__})"
+
+def scrub_exception_in_place(error: BaseException) -> BaseException:
+    """Scrub exception fields before an operation releases its secret scope."""
+    try:
+        scrubbed_args, _ = scrub_structure(error.args, path="$.exception.args")
+        error.args = tuple(scrubbed_args)
+    except Exception:
+        pass
+    try:
+        details = getattr(error, "details", None)
+        if isinstance(details, Mapping):
+            scrubbed_details, _ = scrub_structure(
+                details,
+                path="$.exception.details",
+            )
+            error.details = scrubbed_details
+    except Exception:
+        pass
+    try:
+        notes = getattr(error, "__notes__", None)
+        if isinstance(notes, list):
+            error.__notes__ = [scrub_text(str(note)) for note in notes]
+    except Exception:
+        pass
+    return error
 
 # Canonical lowered key names. Comparison normalizes "-" to "_", so each name
 # is written once in underscore form. Reference fields (e.g. ``secret_ref``,
@@ -47,6 +128,12 @@ SECRET_KEY_NAMES = frozenset(
         "access_token",
         "refresh_token",
         "id_token",
+        "authorization_code",
+        "code_challenge",
+        "code_verifier",
+        "device_auth_id",
+        "user_code",
+        "verifier",
         "session_token",
         "token",
         "x_api_key",
@@ -86,7 +173,14 @@ SECRET_VALUE_PATTERNS: Tuple[re.Pattern[str], ...] = (
 _MIN_REGISTERED_LENGTH = 4
 
 _registry_lock = threading.Lock()
-_registered_values: dict[str, None] = {}
+_registered_values: dict[str, int] = {}
+
+
+def _normalized_secret_value(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text if len(text) >= _MIN_REGISTERED_LENGTH else None
 
 
 @dataclass(frozen=True)
@@ -98,15 +192,43 @@ class RedactionProblem:
     detail: str  # human-oriented, never contains the secret itself
 
 
-def register_secret_value(value: Any) -> None:
-    """Register a known secret value (auth boundary feeds this at attach time)."""
-    if not isinstance(value, str):
-        return
-    text = value.strip()
-    if len(text) < _MIN_REGISTERED_LENGTH:
+def _register_secret_value(value: Any) -> None:
+    """Register a known secret value for the active operation."""
+    text = _normalized_secret_value(value)
+    if text is None:
         return
     with _registry_lock:
-        _registered_values[text] = None
+        _registered_values[text] = _registered_values.get(text, 0) + 1
+
+
+def _unregister_secret_value(value: Any) -> None:
+    """Release one registration without disrupting overlapping operations."""
+    text = _normalized_secret_value(value)
+    if text is None:
+        return
+    with _registry_lock:
+        count = _registered_values.get(text, 0)
+        if count <= 1:
+            _registered_values.pop(text, None)
+        else:
+            _registered_values[text] = count - 1
+
+
+@contextmanager
+def secret_value_scope(*values: Any):
+    """Keep exact-value redaction active only while an operation uses secrets."""
+    registered = [
+        text
+        for value in values
+        if (text := _normalized_secret_value(value)) is not None
+    ]
+    for text in registered:
+        _register_secret_value(text)
+    try:
+        yield
+    finally:
+        for text in registered:
+            _unregister_secret_value(text)
 
 
 def iter_registered_secret_values() -> tuple[str, ...]:
@@ -118,6 +240,40 @@ def clear_registered_secret_values() -> None:
     """Test hook; production code never clears the registry."""
     with _registry_lock:
         _registered_values.clear()
+
+
+def _is_provider_auth_runtime_key(value: Any) -> bool:
+    return "provider_auth_runtime" in str(value).split(".")
+
+
+def contains_provider_auth_runtime(value: Any) -> bool:
+    """Return whether a config contains transient provider credential material."""
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            name = str(key)
+            if _is_provider_auth_runtime_key(name):
+                return True
+            if contains_provider_auth_runtime(item):
+                return True
+        return False
+    if isinstance(value, (list, tuple)):
+        return any(contains_provider_auth_runtime(item) for item in value)
+    return False
+
+
+def strip_provider_auth_runtime(value: Any) -> Any:
+    """Copy a config while removing transient provider credential subtrees."""
+    if isinstance(value, Mapping):
+        return {
+            key: strip_provider_auth_runtime(item)
+            for key, item in value.items()
+            if not _is_provider_auth_runtime_key(key)
+        }
+    if isinstance(value, list):
+        return [strip_provider_auth_runtime(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(strip_provider_auth_runtime(item) for item in value)
+    return value
 
 
 def is_secret_key(name: Any) -> bool:
@@ -163,7 +319,13 @@ def _scrub_node(value: Any, path: str, problems: list[RedactionProblem]) -> Any:
         out: dict[Any, Any] = {}
         for key, item in value.items():
             child = f"{path}.{key}"
-            if is_secret_key(key):
+            normalized_key = str(key).strip().lower().replace("-", "_")
+            if normalized_key in _AUTH_URL_KEYS and isinstance(item, str):
+                cleaned = scrub_auth_url(item)
+                out[key] = cleaned
+                if cleaned != item:
+                    problems.append(RedactionProblem("auth_url", child, "auth URL query material redacted"))
+            elif is_secret_key(key):
                 out[key] = REDACTED
                 problems.append(
                     RedactionProblem("secret_key", child, "secret-named key redacted")

@@ -86,4 +86,25 @@ CAPABILITY_MATRIX: Dict[str, ProviderCapabilities] = {
         reasoning="none",
         caching="none",
     ),
+    "cli_mock": ProviderCapabilities(
+        tool_calls="sequential",
+        streaming="none",
+        json_mode="strict",
+        reasoning="none",
+        caching="none",
+    ),
+    "smoke": ProviderCapabilities(
+        tool_calls="sequential",
+        streaming="none",
+        json_mode="strict",
+        reasoning="none",
+        caching="none",
+    ),
+    "replay": ProviderCapabilities(
+        tool_calls="parallel",
+        streaming="none",
+        json_mode="strict",
+        reasoning="summary",
+        caching="none",
+    ),
 }

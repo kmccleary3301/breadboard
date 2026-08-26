@@ -111,7 +111,7 @@ Use `bbh harness ...` for product harness configs and `bbh lane ...` for E4 conf
 | [reference/SAFE_MODE_EXECUTION_POLICY.md](reference/SAFE_MODE_EXECUTION_POLICY.md) | Execution policy for safe-mode sandboxes |
 | [reference/MCP_SERVERS.md](reference/MCP_SERVERS.md) | MCP server inventory and configuration reference |
 | [reference/PLUGIN_SECURITY.md](reference/PLUGIN_SECURITY.md) | Plugin trust and security posture |
-| [reference/LLM_PROVIDER_DETAILS.md](reference/LLM_PROVIDER_DETAILS.md) | Provider behavior and integration details |
+| [reference/LLM_PROVIDER_DETAILS.md](reference/LLM_PROVIDER_DETAILS.md) | Generated bounded provider support/divergence table and protocol reference; [machine manifest](../conformance/provider_parity_claims/manifest.v1.json) |
 | [reference/SCRIPTS_INDEX.md](reference/SCRIPTS_INDEX.md) | Scripts taxonomy, category meanings, and machine-readable inventory entrypoint |
 | [reference/REPOSITORY_ZONE_MODEL.md](reference/REPOSITORY_ZONE_MODEL.md) | Stable meaning of the repo’s top-level roots: product surface, internal runtime substrate, extension space, SDK zones, and support surfaces |
 | [contracts/benchmarks/EVIDENCE_V2_CLAIM_LEDGER_V1.md](contracts/benchmarks/EVIDENCE_V2_CLAIM_LEDGER_V1.md) | Evidence v2 claim ledger |

@@ -2,6 +2,27 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from ..provider.contracts import ProviderRuntimeError
+
+
+def public_error_projection(
+    exc: BaseException,
+    *,
+    default_code: str = "runtime_error",
+) -> Dict[str, Any]:
+    """Return stable public error fields without exception or provider text."""
+    if isinstance(exc, ProviderRuntimeError):
+        return {
+            "error": exc.safe_code,
+            "error_type": exc.kind,
+            "hint": None,
+        }
+    return {
+        "error": default_code,
+        "error_type": "runtime",
+        "hint": None,
+    }
+
 
 class ErrorHandler:
     """Minimal error handler for provider/loop failures."""
@@ -17,12 +38,13 @@ class ErrorHandler:
             "index": getattr(choice, "index", None),
         }
 
-    def handle_provider_error(self, exc: Exception, messages: Any, transcript: Any) -> Dict[str, Any]:
-        return {
-            "error": str(exc),
-            "error_type": exc.__class__.__name__,
-            "hint": None,
-        }
+    def handle_provider_error(
+        self,
+        exc: Exception,
+        messages: Any,
+        transcript: Any,
+    ) -> Dict[str, Any]:
+        return public_error_projection(exc, default_code="provider_runtime_error")
 
     def handle_validation_error(self, payload: Dict[str, Any]) -> str:
         error = str(payload.get("error") or "validation_failed").strip()

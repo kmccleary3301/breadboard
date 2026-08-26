@@ -507,7 +507,8 @@ class SequenceValidator:
             return LSPValidationRule(
                 workspace_root=config.get("workspace_root", self.workspace_root),
                 enabled=config.get("enabled", True),
-                max_errors_shown=config.get("max_errors_shown", 3)
+                max_errors_shown=config.get("max_errors_shown", 3),
+                protected_paths=config.get("protected_paths"),
             )
         except ImportError as e:
             logger.warning(f"LSP validation rule not available: {e}")

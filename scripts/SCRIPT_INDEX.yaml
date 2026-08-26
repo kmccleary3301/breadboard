@@ -1572,7 +1572,7 @@ entries:
   - path: scripts/quality/sync_public_client_manifests.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, tests/contracts/public/test_public_contracts.py]
+    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml, tests/contracts/public/test_public_contracts.py]
     expiry: none (durable tooling)
   - path: scripts/quality/validate_public_contracts.py
     class: live-wired

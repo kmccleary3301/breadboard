@@ -301,6 +301,11 @@
       "schema_version": "bb.memory_compaction_plan.v1"
     },
     {
+      "example_path": "contracts/kernel/examples/effective_model_role_lock_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json",
+      "schema_version": "bb.effective_model_role_lock.v1"
+    },
+    {
       "example_path": "contracts/kernel/examples/model_roles_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.model_roles.v1.schema.json",
       "schema_version": "bb.model_roles.v1"
@@ -319,6 +324,21 @@
       "example_path": "contracts/kernel/examples/provider_exchange_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.provider_exchange.v1.schema.json",
       "schema_version": "bb.provider_exchange.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/provider_exchange_v2_cancelled.json",
+      "schema_path": "contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",
+      "schema_version": "bb.provider_exchange.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/provider_exchange_v2_done.json",
+      "schema_path": "contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",
+      "schema_version": "bb.provider_exchange.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/provider_exchange_v2_error.json",
+      "schema_path": "contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",
+      "schema_version": "bb.provider_exchange.v2"
     },
     {
       "example_path": "contracts/kernel/examples/provider_route_minimal.json",

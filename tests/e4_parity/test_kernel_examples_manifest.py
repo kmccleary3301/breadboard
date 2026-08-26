@@ -50,20 +50,21 @@ def _validator(schema: dict[str, Any]) -> Draft202012Validator:
     return Draft202012Validator(schema, resolver=resolver)
 
 
-def test_examples_manifest_has_one_pair_for_every_kernel_schema() -> None:
+def test_examples_manifest_covers_every_kernel_schema_with_unique_examples() -> None:
     manifest = _load_json(MANIFEST_PATH)
     entries = manifest.get("entries")
     assert manifest.get("schema_version") == "bb.kernel.examples_manifest.v1"
     assert isinstance(entries, list)
 
-    schema_versions = []
-    for schema_path in sorted(SCHEMA_DIR.glob("*.json")):
-        schema_versions.append(_schema_version_for(schema_path, _load_json(schema_path)))
+    schema_versions = {
+        _schema_version_for(schema_path, _load_json(schema_path))
+        for schema_path in SCHEMA_DIR.glob("*.json")
+    }
+    manifest_versions = {entry.get("schema_version") for entry in entries}
+    example_paths = [entry.get("example_path") for entry in entries]
 
-    manifest_versions = [entry.get("schema_version") for entry in entries]
-
-    assert len(manifest_versions) == len(set(manifest_versions)), "manifest schema_version entries must be unique"
-    assert sorted(manifest_versions) == sorted(schema_versions)
+    assert len(example_paths) == len(set(example_paths)), "manifest example_path entries must be unique"
+    assert manifest_versions == schema_versions
 
 
 def test_examples_manifest_paths_resolve_to_checked_in_files() -> None:

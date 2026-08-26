@@ -4,8 +4,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Mapping, Sequence
 
+from breadboard_engine.security import (
+    WorkspaceFilesystem,
+    protected_credential_paths,
+)
+
 from .contracts import ArtifactContract, ArtifactValidationResult, validate_artifact_contract
-from .evaluators import EvaluatorResult, EvaluatorSpec, run_evaluators
+from .evaluators import (
+    EvaluatorResult,
+    EvaluatorSpec,
+    _lexical_absolute,
+    run_evaluators,
+    validate_output_destination,
+)
 from .evidence import EvidenceBundleManifest, write_evidence_bundle
 from .materialize import MaterializationResult, MaterializationSpec, materialize_response_artifact
 
@@ -107,28 +118,90 @@ def _status_from(
 
 
 def run_artifact_task(spec: ArtifactTaskSpec) -> ArtifactTaskResult:
-    task_text = _read_optional_text(spec.task_text, spec.task_file, field_name="task_text")
-    response_text = _read_optional_text(spec.response_text, spec.response_file, field_name="response_text")
-    workspace_root = Path(spec.workspace_root).resolve() if spec.workspace_root else Path(spec.out_dir).resolve() / "workspace"
-    workspace_root.mkdir(parents=True, exist_ok=True)
-    out_dir = Path(spec.out_dir).resolve()
+    task_text = _read_optional_text(
+        spec.task_text,
+        spec.task_file,
+        field_name="task_text",
+    )
+    response_text = _read_optional_text(
+        spec.response_text,
+        spec.response_file,
+        field_name="response_text",
+    )
+    protected_paths = protected_credential_paths()
+    out_dir = _lexical_absolute(spec.out_dir)
+    with WorkspaceFilesystem.open_anchored_root(
+        out_dir,
+        create=True,
+    ) as output:
+        if spec.workspace_root:
+            workspace_root = validate_output_destination(
+                spec.workspace_root,
+                workspace_root=None,
+                protected_paths=protected_paths,
+            )
+            with WorkspaceFilesystem.open_anchored_root(
+                workspace_root,
+                create=True,
+            ):
+                pass
+        else:
+            output.create_directory("workspace")
+            workspace_root = Path(output.display_path("workspace"))
+
     bundle_dir = out_dir / "evidence_bundle"
+    evaluator_root = out_dir / "evaluator_stage"
+    validate_output_destination(
+        bundle_dir,
+        workspace_root=workspace_root,
+        protected_paths=protected_paths,
+    )
+    validate_output_destination(
+        evaluator_root,
+        workspace_root=workspace_root,
+        protected_paths=protected_paths,
+    )
 
     materialization_result: MaterializationResult | None = None
     if spec.artifact_contract.mode == "response_materialize":
         if spec.materialization is None:
-            raise ValueError("materialization spec is required for response_materialize mode")
-        materialization_result = materialize_response_artifact(response_text, spec.materialization, root=workspace_root)
+            raise ValueError(
+                "materialization spec is required for response_materialize mode"
+            )
+        materialization_result = materialize_response_artifact(
+            response_text,
+            spec.materialization,
+            root=workspace_root,
+        )
 
-    validation = validate_artifact_contract(spec.artifact_contract, root=workspace_root)
+    validation = validate_artifact_contract(
+        spec.artifact_contract,
+        root=workspace_root,
+    )
     evaluator_results: tuple[EvaluatorResult, ...] = ()
-    materialization_ok = materialization_result is None or materialization_result.ok
-    if spec.evaluators and (validation.ok and materialization_ok or spec.run_evaluators_on_artifact_failure):
-        evaluator_results = run_evaluators(spec.evaluators, root=workspace_root, output_dir=out_dir / "evaluator_stage")
+    materialization_ok = (
+        materialization_result is None or materialization_result.ok
+    )
+    if spec.evaluators and (
+        validation.ok
+        and materialization_ok
+        or spec.run_evaluators_on_artifact_failure
+    ):
+        evaluator_results = run_evaluators(
+            spec.evaluators,
+            root=workspace_root,
+            output_dir=evaluator_root,
+        )
 
-    status, failures = _status_from(materialization_result, validation, evaluator_results)
+    status, failures = _status_from(
+        materialization_result,
+        validation,
+        evaluator_results,
+    )
     manifest = write_evidence_bundle(
         bundle_dir=bundle_dir,
+        output_root=out_dir,
+        evaluator_root=evaluator_root,
         task_id=spec.task_id,
         candidate_id=spec.candidate_id,
         status=status,

@@ -4,6 +4,7 @@ import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Mapping, Sequence
+from breadboard_engine.security import WorkspaceFilesystem, WorkspacePathError
 
 
 def _require_text(value: Any, field_name: str) -> str:
@@ -182,53 +183,62 @@ def _artifact_root(contract: ArtifactContract, root: Path | None) -> Path:
     return Path.cwd().resolve()
 
 
-def validate_artifact_contract(contract: ArtifactContract, *, root: Path | None = None) -> ArtifactValidationResult:
+def validate_artifact_contract(
+    contract: ArtifactContract,
+    *,
+    root: Path | None = None,
+) -> ArtifactValidationResult:
     root_path = _artifact_root(contract, root)
     checks: list[ArtifactCheck] = []
     aggregate_failures: list[str] = []
-    for requirement in contract.requirements:
-        rel_path = safe_relative_path(requirement.path)
-        full_path = (root_path / rel_path).resolve()
-        try:
-            full_path.relative_to(root_path)
-        except ValueError:
-            raise ValueError(f"artifact path escapes root: {requirement.path}") from None
-
-        failures: list[str] = []
-        exists = full_path.exists()
-        size_bytes: int | None = None
-        digest: str | None = None
-        if not exists:
-            if requirement.required:
-                failures.append("missing_required_artifact")
-        elif not full_path.is_file():
-            failures.append("artifact_is_not_a_regular_file")
-        elif full_path.is_symlink():
-            failures.append("artifact_is_symlink")
-        else:
-            size_bytes = full_path.stat().st_size
-            digest = hash_file(full_path)
-            if requirement.min_bytes is not None and size_bytes < requirement.min_bytes:
-                failures.append("artifact_below_min_bytes")
-            if requirement.max_bytes is not None and size_bytes > requirement.max_bytes:
-                failures.append("artifact_above_max_bytes")
-            if requirement.sha256 and digest != requirement.sha256:
-                failures.append("artifact_sha256_mismatch")
-
-        ok = not failures
-        if requirement.required and failures:
-            aggregate_failures.extend(f"{requirement.path}:{failure}" for failure in failures)
-        checks.append(
-            ArtifactCheck(
-                path=requirement.path,
-                required=requirement.required,
-                exists=exists,
-                ok=ok,
-                size_bytes=size_bytes,
-                sha256=digest,
-                failure_reasons=tuple(failures),
+    with WorkspaceFilesystem(root_path) as workspace:
+        for requirement in contract.requirements:
+            rel_path = safe_relative_path(requirement.path)
+            failures: list[str] = []
+            exists = False
+            size_bytes: int | None = None
+            digest: str | None = None
+            try:
+                info = workspace.inspect_file(rel_path, sha256=True)
+                exists = True
+                size_bytes = info.size
+                digest = info.sha256
+            except FileNotFoundError:
+                if requirement.required:
+                    failures.append("missing_required_artifact")
+            except (WorkspacePathError, OSError):
+                failures.append("artifact_path_unsafe")
+            if exists and not failures:
+                if (
+                    requirement.min_bytes is not None
+                    and size_bytes is not None
+                    and size_bytes < requirement.min_bytes
+                ):
+                    failures.append("artifact_below_min_bytes")
+                if (
+                    requirement.max_bytes is not None
+                    and size_bytes is not None
+                    and size_bytes > requirement.max_bytes
+                ):
+                    failures.append("artifact_above_max_bytes")
+                if requirement.sha256 and digest != requirement.sha256:
+                    failures.append("artifact_sha256_mismatch")
+            ok = not failures
+            if requirement.required and failures:
+                aggregate_failures.extend(
+                    f"{requirement.path}:{failure}" for failure in failures
+                )
+            checks.append(
+                ArtifactCheck(
+                    path=requirement.path,
+                    required=requirement.required,
+                    exists=exists,
+                    ok=ok,
+                    size_bytes=size_bytes,
+                    sha256=digest,
+                    failure_reasons=tuple(failures),
+                )
             )
-        )
     required_failures = [check for check in checks if check.required and not check.ok]
     return ArtifactValidationResult(
         ok=not required_failures,

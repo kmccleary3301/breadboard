@@ -15,20 +15,23 @@ from scripts import breadboard_cli
 from breadboard.product.cli import harness as harness_operations
 from breadboard.product.cli import session as session_operations
 from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.product.harness.templates import daily_driver_model_roles_path,daily_driver_prompt_path,daily_driver_template_path
 from breadboard.product.runtime.events import JsonlEventSink, Session
 
 
-HARNESS_PATH = Path("agent_configs/templates/minimal_harness.v2.yaml")
+HARNESS_PATH = daily_driver_template_path()
+PROMPT_PATH = daily_driver_prompt_path()
+MODEL_ROLES_PATH = daily_driver_model_roles_path()
 
 @pytest.fixture
 def locked_harness(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
-    harness_path = tmp_path / "minimal_harness.v2.yaml"
-    prompt_path = tmp_path / "prompts" / "minimal_system.md"
+    harness_path = tmp_path / HARNESS_PATH.name
+    prompt_path = tmp_path / "prompts" / PROMPT_PATH.name
+    model_roles_path = tmp_path / MODEL_ROLES_PATH.name
     prompt_path.parent.mkdir()
     harness_path.write_bytes(HARNESS_PATH.read_bytes())
-    prompt_path.write_bytes(
-        (HARNESS_PATH.parent / "prompts" / "minimal_system.md").read_bytes()
-    )
+    prompt_path.write_bytes(PROMPT_PATH.read_bytes())
+    model_roles_path.write_bytes(MODEL_ROLES_PATH.read_bytes())
     assert breadboard_cli.main(["harness", "lock", str(harness_path)]) == 0
     capsys.readouterr()
     return harness_path
@@ -156,11 +159,13 @@ def test_harness_run_consumes_custom_lock(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    harness_path = tmp_path / "minimal_harness.v2.yaml"
-    prompt_path = tmp_path / "prompts" / "minimal_system.md"
+    harness_path = tmp_path / HARNESS_PATH.name
+    prompt_path = tmp_path / "prompts" / PROMPT_PATH.name
+    model_roles_path = tmp_path / MODEL_ROLES_PATH.name
     prompt_path.parent.mkdir()
     harness_path.write_bytes(HARNESS_PATH.read_bytes())
-    prompt_path.write_bytes((HARNESS_PATH.parent / "prompts" / "minimal_system.md").read_bytes())
+    prompt_path.write_bytes(PROMPT_PATH.read_bytes())
+    model_roles_path.write_bytes(MODEL_ROLES_PATH.read_bytes())
     custom_lock = tmp_path / "locks" / "effective.json"
     assert breadboard_cli.main(["--json", "harness", "lock", str(harness_path), "--out", str(custom_lock)]) == 0
     lock_result = capsys.readouterr()
@@ -256,6 +261,56 @@ def test_harness_run_maps_sdk_failures_to_runtime_exit(
     assert "bridge unavailable" in captured.err
 
 
+def test_completed_local_run_next_action_uses_public_session_get(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _RunClient.calls = []
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _RunClient)
+    result = harness_operations._server(SimpleNamespace(
+        server="http://127.0.0.1:1234",
+        task="repair the harness",
+        _lock_id="daily_driver.v1.lock.json",
+        local=True,
+        workspace=None,
+        _workspace=tmp_path,
+    ))
+
+    assert result.ok
+    assert result.next_actions == [
+        "breadboard session --workspace . get session-g3"
+    ]
+
+def test_harness_check_and_run_reject_prompt_changed_after_lock(
+    locked_harness: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    prompt_path = locked_harness.parent / "prompts" / PROMPT_PATH.name
+    prompt_path.write_text(
+        prompt_path.read_text(encoding="utf-8") + "\nChanged after lock.\n",
+        encoding="utf-8",
+    )
+
+    assert breadboard_cli.main(
+        ["harness", "lock", str(locked_harness), "--check"]
+    ) == 5
+    checked = capsys.readouterr()
+    assert "lock_drift" in checked.err.lower()
+
+    _RunClient.calls = []
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _RunClient)
+    assert breadboard_cli.main([
+        "harness",
+        "run",
+        str(locked_harness),
+        "--server",
+        "https://breadboard.test/api",
+    ]) == 5
+    run = capsys.readouterr()
+    assert "lock_drift" in run.err.lower()
+    assert _RunClient.calls == []
+
 def test_harness_run_rejects_definition_changed_after_lock(
     locked_harness: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -265,8 +320,8 @@ def test_harness_run_rejects_definition_changed_after_lock(
     monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _RunClient)
     locked_harness.write_text(
         locked_harness.read_text(encoding="utf-8").replace(
-            "idle_turn_limit: 1",
             "idle_turn_limit: 2",
+            "idle_turn_limit: 3",
         ),
         encoding="utf-8",
     )

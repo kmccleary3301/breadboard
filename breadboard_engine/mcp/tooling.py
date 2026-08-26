@@ -13,15 +13,19 @@ def mcp_live_tools_enabled(config: Dict[str, Any]) -> bool:
 
 
 def _expand_path(value: str, workspace: str) -> str:
-    tokenized = value.replace("{workspace}", str(workspace)).replace("{home}", str(Path.home()))
+    tokenized = value.replace("{workspace}", str(workspace)).replace(
+        "{home}", str(Path.home())
+    )
     expanded = os.path.expanduser(os.path.expandvars(tokenized))
     path = Path(expanded)
     if not path.is_absolute():
-        path = (Path(str(workspace)) / path).resolve()
-    return str(path)
+        path = Path(workspace) / path
+    return str(path.absolute())
 
 
-def load_mcp_servers_from_config(config: Dict[str, Any], workspace: str) -> List[Dict[str, Any]]:
+def load_mcp_servers_from_config(
+    config: Dict[str, Any], workspace: str
+) -> List[Dict[str, Any]]:
     mcp_cfg = (config or {}).get("mcp") if isinstance(config, dict) else None
     raw_servers: List[Any] = []
     if isinstance(mcp_cfg, dict):
@@ -33,7 +37,11 @@ def load_mcp_servers_from_config(config: Dict[str, Any], workspace: str) -> List
         if not isinstance(entry, dict):
             continue
         normalized = dict(entry)
-        cwd = normalized.get("cwd") or normalized.get("working_dir") or normalized.get("workdir")
+        cwd = (
+            normalized.get("cwd")
+            or normalized.get("working_dir")
+            or normalized.get("workdir")
+        )
         if isinstance(cwd, str) and cwd.strip():
             normalized["cwd"] = _expand_path(cwd.strip(), workspace)
         command = normalized.get("command") or normalized.get("cmd")
@@ -41,7 +49,9 @@ def load_mcp_servers_from_config(config: Dict[str, Any], workspace: str) -> List
             normalized["command"] = command.strip()
         args = normalized.get("args") or normalized.get("arguments")
         if isinstance(args, list):
-            normalized["args"] = [str(a) for a in args if isinstance(a, (str, int, float))]
+            normalized["args"] = [
+                str(a) for a in args if isinstance(a, (str, int, float))
+            ]
         env = normalized.get("env")
         if isinstance(env, dict):
             normalized["env"] = {str(k): str(v) for k, v in env.items()}
@@ -49,7 +59,9 @@ def load_mcp_servers_from_config(config: Dict[str, Any], workspace: str) -> List
     return servers
 
 
-def load_mcp_tools_from_config(config: Dict[str, Any], workspace: str) -> List[Dict[str, Any]]:
+def load_mcp_tools_from_config(
+    config: Dict[str, Any], workspace: str
+) -> List[Dict[str, Any]]:
     """Load static MCP tools from config (for mocks/replay/baselines).
 
     Format:
@@ -103,17 +115,27 @@ def tool_defs_from_mcp_tools(mcp_tools: List[Dict[str, Any]]) -> List[ToolDefini
             schema = {}
 
         params: List[ToolParameter] = []
-        if schema.get("type") == "object" and isinstance(schema.get("properties"), dict):
+        if schema.get("type") == "object" and isinstance(
+            schema.get("properties"), dict
+        ):
             properties: Dict[str, Any] = schema.get("properties") or {}
-            required = set(schema.get("required") or []) if isinstance(schema.get("required"), list) else set()
+            required = (
+                set(schema.get("required") or [])
+                if isinstance(schema.get("required"), list)
+                else set()
+            )
             for prop_name, prop_schema in properties.items():
                 if not isinstance(prop_name, str) or not prop_name.strip():
                     continue
                 prop_schema = prop_schema if isinstance(prop_schema, dict) else {}
                 param = ToolParameter(
                     name=prop_name,
-                    type=str(prop_schema.get("type")) if prop_schema.get("type") else None,
-                    description=str(prop_schema.get("description")) if isinstance(prop_schema.get("description"), str) else None,
+                    type=str(prop_schema.get("type"))
+                    if prop_schema.get("type")
+                    else None,
+                    description=str(prop_schema.get("description"))
+                    if isinstance(prop_schema.get("description"), str)
+                    else None,
                 )
                 try:
                     setattr(param, "schema", dict(prop_schema))
@@ -126,7 +148,9 @@ def tool_defs_from_mcp_tools(mcp_tools: List[Dict[str, Any]]) -> List[ToolDefini
                         pass
                 params.append(param)
         else:
-            param = ToolParameter(name="input", type="object", description="Tool input payload")
+            param = ToolParameter(
+                name="input", type="object", description="Tool input payload"
+            )
             try:
                 setattr(param, "schema", dict(schema))
                 setattr(param, "required", True)
@@ -134,7 +158,13 @@ def tool_defs_from_mcp_tools(mcp_tools: List[Dict[str, Any]]) -> List[ToolDefini
                 pass
             params.append(param)
 
-        tool_def = ToolDefinition(name=name.strip(), description=description.strip(), parameters=params, type_id="mcp", blocking=True)
+        tool_def = ToolDefinition(
+            name=name.strip(),
+            description=description.strip(),
+            parameters=params,
+            type_id="mcp",
+            blocking=True,
+        )
         try:
             tool_def.provider_settings = {
                 "openai": {"native_primary": True},
@@ -164,7 +194,9 @@ def mcp_replay_tape_path(config: Dict[str, Any], workspace: str) -> Optional[str
     return None
 
 
-def mcp_record_tape_path(config: Dict[str, Any], workspace: str, run_dir: Path | None = None) -> Optional[str]:
+def mcp_record_tape_path(
+    config: Dict[str, Any], workspace: str, run_dir: Path | None = None
+) -> Optional[str]:
     """Return a writable JSONL tape path for recording live MCP calls.
 
     Supported values:
@@ -196,11 +228,33 @@ def build_mcp_snapshot(
     tools: List[Dict[str, Any]],
     fixture_results: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
+    safe_servers: List[Dict[str, Any]] = []
+    for server in servers or []:
+        if not isinstance(server, dict):
+            continue
+        identity = next(
+            (
+                server.get(key)
+                for key in ("name", "id", "server", "label")
+                if isinstance(server.get(key), str) and server.get(key).strip()
+            ),
+            None,
+        )
+        safe_servers.append(
+            {
+                "name": str(identity or "unnamed"),
+                "enabled": server.get("enabled") is not False,
+                "transport": "stdio",
+            }
+        )
     return {
         "enabled": True,
-        "servers": list(servers or []),
+        "servers": safe_servers,
         "tool_count": len(tools or []),
         "tools": list(tools or []),
-        "fixture_keys": sorted(list((fixture_results or {}).keys())) if isinstance(fixture_results, dict) else [],
+        "fixture_keys": (
+            sorted(list((fixture_results or {}).keys()))
+            if isinstance(fixture_results, dict)
+            else []
+        ),
     }
-

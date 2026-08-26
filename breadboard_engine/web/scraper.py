@@ -2,13 +2,162 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import http.client
 import io
+import ipaddress
 import re
+import socket
+import ssl
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from .models import DocumentMetadata, ScrapeOptions, WebDocument
+
+
+class _InvalidURLScheme(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class _ResolvedHTTPDestination:
+    url: str
+    scheme: str
+    hostname: str
+    port: int
+    request_target: str
+    addresses: tuple[tuple[int, int, int, tuple[Any, ...]], ...]
+
+
+def _resolve_http_destination(url: str) -> _ResolvedHTTPDestination:
+    try:
+        parsed = urlsplit(url)
+        scheme = parsed.scheme.lower()
+        hostname = parsed.hostname
+        port = parsed.port or (443 if scheme == "https" else 80)
+    except (TypeError, ValueError):
+        raise _InvalidURLScheme(
+            "Only public http and https URLs are supported"
+        ) from None
+    if (
+        scheme not in {"http", "https"}
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise _InvalidURLScheme("Only public http and https URLs are supported")
+    normalized_host = hostname.rstrip(".").lower()
+    if normalized_host == "localhost" or normalized_host.endswith(".localhost"):
+        raise _InvalidURLScheme("Only public http and https URLs are supported")
+    try:
+        literal = ipaddress.ip_address(normalized_host.split("%", 1)[0])
+    except ValueError:
+        literal = None
+    if literal is not None:
+        if not literal.is_global:
+            raise _InvalidURLScheme("Only public http and https URLs are supported")
+        family = socket.AF_INET6 if literal.version == 6 else socket.AF_INET
+        sockaddr: tuple[Any, ...] = (
+            (str(literal), port, 0, 0) if literal.version == 6 else (str(literal), port)
+        )
+        addresses = (
+            (
+                family,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                sockaddr,
+            ),
+        )
+        peer_addresses = (literal,)
+    else:
+        try:
+            resolved = socket.getaddrinfo(
+                normalized_host,
+                port,
+                type=socket.SOCK_STREAM,
+            )
+            addresses = tuple(
+                dict.fromkeys(
+                    (
+                        int(family),
+                        int(socktype),
+                        int(protocol),
+                        tuple(resolved_sockaddr),
+                    )
+                    for (
+                        family,
+                        socktype,
+                        protocol,
+                        _name,
+                        resolved_sockaddr,
+                    ) in resolved
+                    if resolved_sockaddr
+                )
+            )
+            peer_addresses = tuple(
+                ipaddress.ip_address(str(resolved_sockaddr[0]).split("%", 1)[0])
+                for (
+                    _family,
+                    _socktype,
+                    _protocol,
+                    resolved_sockaddr,
+                ) in addresses
+            )
+        except (OSError, UnicodeError, ValueError):
+            raise _InvalidURLScheme("URL host cannot be resolved safely") from None
+    if not peer_addresses or any(not address.is_global for address in peer_addresses):
+        raise _InvalidURLScheme("Only public http and https URLs are supported")
+    request_target = parsed.path or "/"
+    if parsed.query:
+        request_target = f"{request_target}?{parsed.query}"
+    return _ResolvedHTTPDestination(
+        url=url,
+        scheme=scheme,
+        hostname=normalized_host,
+        port=port,
+        request_target=request_target,
+        addresses=addresses,
+    )
+
+
+def _validate_http_url(url: str) -> str:
+    _resolve_http_destination(url)
+    return url
+
+
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+
+def _header_value(headers: Any, name: str) -> str | None:
+    if headers is None:
+        return None
+    try:
+        value = headers.get(name)
+    except Exception:
+        value = None
+    if value is not None:
+        return str(value)
+    try:
+        for key, candidate in headers.items():
+            if str(key).lower() == name.lower():
+                return str(candidate)
+    except Exception:
+        pass
+    return None
+
+
+def _validated_redirect(
+    *,
+    status_code: int,
+    headers: Any,
+    current_url: str,
+) -> str | None:
+    if int(status_code) not in _REDIRECT_STATUSES:
+        return None
+    location = _header_value(headers, "location")
+    if not location:
+        return None
+    return _validate_http_url(urljoin(current_url, location))
 
 
 @dataclass(frozen=True)
@@ -35,7 +184,9 @@ class WebScraper:
                 pass
 
     def _needs_browser_rendering(self, options: ScrapeOptions) -> bool:
-        return bool(options.render_js or options.wait_for_ms is not None or options.mobile)
+        return bool(
+            options.render_js or options.wait_for_ms is not None or options.mobile
+        )
 
     async def _ensure_browser(self):
         if self._browser is not None:
@@ -43,16 +194,28 @@ class WebScraper:
         try:
             from playwright.async_api import async_playwright  # type: ignore
         except Exception as exc:  # pragma: no cover
-            raise RuntimeError(f"Playwright not available for JS rendering: {exc}") from exc
+            raise RuntimeError(
+                f"Playwright not available for JS rendering: {exc}"
+            ) from exc
 
         pw = await async_playwright().start()
         self._browser = await pw.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
+            args=[
+                "--disable-dev-shm-usage",
+                "--disable-quic",
+                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+                "--host-resolver-rules=MAP * ~NOTFOUND",
+                "--proxy-server=http://127.0.0.1:9",
+                "--proxy-bypass-list=<-loopback>",
+            ],
         )
         return self._browser
 
-    async def scrape_url(self, url: str, *, options: Optional[ScrapeOptions] = None) -> WebDocument:
+    async def scrape_url(
+        self, url: str, *, options: Optional[ScrapeOptions] = None
+    ) -> WebDocument:
+        url = _validate_http_url(url)
         options = options or ScrapeOptions()
         headers: Dict[str, str] = {
             "User-Agent": self.settings.user_agent,
@@ -61,13 +224,17 @@ class WebScraper:
             **(options.headers or {}),
         }
 
-        timeout_s = options.timeout_s if options.timeout_s is not None else self.settings.default_timeout_s
+        timeout_s = (
+            options.timeout_s
+            if options.timeout_s is not None
+            else self.settings.default_timeout_s
+        )
         timeout_s = max(0.0, float(timeout_s))
 
         verify_tls = not bool(options.skip_tls_verification)
 
-        # Try a HEAD to route HTML vs file. Some sites block particular client
-        # TLS/HTTP fingerprints, so we fall back to `requests` when needed.
+        # A pinned-address HEAD distinguishes HTML from file responses without
+        # permitting the HTTP client to resolve the hostname a second time.
         content_type = ""
         try:
             head_status, head_headers = await self._fetch_headers(
@@ -76,22 +243,170 @@ class WebScraper:
                 timeout_s=timeout_s,
                 verify_tls=verify_tls,
             )
+            redirect_location = next(
+                (
+                    value
+                    for key, value in head_headers.items()
+                    if str(key).lower() == "location"
+                ),
+                None,
+            )
+            if redirect_location:
+                try:
+                    _validate_http_url(urljoin(url, str(redirect_location)))
+                except _InvalidURLScheme:
+                    return WebDocument(
+                        url=url,
+                        metadata=DocumentMetadata(
+                            source_url=url,
+                            status_code=head_status,
+                        ),
+                    )
             if 200 <= head_status < 400:
                 content_type = (head_headers.get("content-type") or "").lower()
             else:
                 content_type = ""
+        except _InvalidURLScheme:
+            raise
         except Exception:
             content_type = ""
 
         try:
             if "text/html" in content_type or not content_type:
                 if self._needs_browser_rendering(options):
-                    return await self._scrape_with_browser(url, headers=headers, options=options, timeout_s=timeout_s)
-                return await self._scrape_with_http(url, headers=headers, options=options, timeout_s=timeout_s)
-            return await self._scrape_file(url, headers=headers, options=options, timeout_s=timeout_s, content_type=content_type)
+                    return await self._scrape_with_browser(
+                        url, headers=headers, options=options, timeout_s=timeout_s
+                    )
+                return await self._scrape_with_http(
+                    url, headers=headers, options=options, timeout_s=timeout_s
+                )
+            return await self._scrape_file(
+                url,
+                headers=headers,
+                options=options,
+                timeout_s=timeout_s,
+                content_type=content_type,
+            )
+        except _InvalidURLScheme:
+            raise
         except Exception as exc:
-            meta = DocumentMetadata(source_url=url, status_code=getattr(getattr(exc, "response", None), "status_code", None))
+            meta = DocumentMetadata(
+                source_url=url,
+                status_code=getattr(
+                    getattr(exc, "response", None), "status_code", None
+                ),
+            )
             return WebDocument(url=url, metadata=meta)
+
+    @staticmethod
+    def _request_headers(headers: Dict[str, str]) -> Dict[str, str]:
+        blocked = {
+            "connection",
+            "content-length",
+            "host",
+            "proxy-authorization",
+            "proxy-connection",
+            "transfer-encoding",
+        }
+        safe = {
+            str(key): str(value)
+            for key, value in headers.items()
+            if str(key).lower() not in blocked
+        }
+        safe["Accept-Encoding"] = "identity"
+        safe["Connection"] = "close"
+        return safe
+
+    @staticmethod
+    def _connect_destination(
+        destination: _ResolvedHTTPDestination,
+        *,
+        timeout_s: float,
+        verify_tls: bool,
+    ) -> socket.socket:
+        last_error: OSError | None = None
+        for family, socktype, protocol, sockaddr in destination.addresses:
+            connection = socket.socket(family, socktype, protocol)
+            try:
+                connection.settimeout(max(0.001, timeout_s))
+                connection.connect(sockaddr)
+                peer = ipaddress.ip_address(
+                    str(connection.getpeername()[0]).split("%", 1)[0]
+                )
+                if not peer.is_global:
+                    raise _InvalidURLScheme("Connected peer is not a public address")
+                if destination.scheme == "https":
+                    if verify_tls:
+                        context = ssl.create_default_context()
+                    else:
+                        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                        context.check_hostname = False
+                        context.verify_mode = ssl.CERT_NONE
+                    connection = context.wrap_socket(
+                        connection,
+                        server_hostname=destination.hostname,
+                    )
+                return connection
+            except _InvalidURLScheme:
+                connection.close()
+                raise
+            except OSError as exc:
+                last_error = exc
+                connection.close()
+        if last_error is not None:
+            raise last_error
+        raise OSError("No public address was available")
+
+    def _request_once(
+        self,
+        method: str,
+        destination: _ResolvedHTTPDestination,
+        *,
+        headers: Dict[str, str],
+        timeout_s: float,
+        verify_tls: bool,
+    ) -> tuple[int, Dict[str, str], bytes]:
+        connection = http.client.HTTPConnection(
+            destination.hostname,
+            destination.port,
+            timeout=max(0.001, timeout_s),
+        )
+        connection.sock = self._connect_destination(
+            destination,
+            timeout_s=timeout_s,
+            verify_tls=verify_tls,
+        )
+        try:
+            connection.request(
+                method,
+                destination.request_target,
+                headers=self._request_headers(headers),
+            )
+            response = connection.getresponse()
+            status_code = int(response.status)
+            response_headers = {
+                str(key).lower(): str(value) for key, value in response.getheaders()
+            }
+            content_length = response_headers.get("content-length")
+            if content_length is not None:
+                try:
+                    declared_length = int(content_length)
+                except ValueError:
+                    declared_length = None
+                if (
+                    declared_length is not None
+                    and declared_length > self.settings.max_response_bytes
+                ):
+                    raise ValueError("Response too large")
+            if method == "HEAD" or status_code in _REDIRECT_STATUSES:
+                body = b""
+            else:
+                body = response.read(self.settings.max_response_bytes + 1)
+                if len(body) > self.settings.max_response_bytes:
+                    raise ValueError("Response too large")
+            return status_code, response_headers, body
+        finally:
+            connection.close()
 
     async def _fetch_headers(
         self,
@@ -101,29 +416,27 @@ class WebScraper:
         timeout_s: float,
         verify_tls: bool,
     ) -> tuple[int, Dict[str, str]]:
-        """Return (status_code, headers) for HEAD with a requests fallback."""
-        try:
-            import httpx  # type: ignore
-
-            async with httpx.AsyncClient(
-                timeout=timeout_s,
-                follow_redirects=True,
-                verify=verify_tls,
-            ) as client:
-                resp = await client.head(url, headers=headers)
-                # Some origins return 403 to httpx but 200 to requests.
-                if resp.status_code != 403:
-                    return int(resp.status_code), {k.lower(): v for k, v in resp.headers.items()}
-        except Exception:
-            pass
-
-        def _requests_head() -> tuple[int, Dict[str, str]]:
-            import requests  # type: ignore
-
-            resp = requests.head(url, headers=headers, timeout=timeout_s, allow_redirects=True, verify=verify_tls)
-            return int(resp.status_code), {k.lower(): v for k, v in resp.headers.items()}
-
-        return await asyncio.to_thread(_requests_head)
+        """Return response metadata through a DNS-pinned direct connection."""
+        current_url = url
+        for _redirect in range(11):
+            destination = _resolve_http_destination(current_url)
+            status_code, response_headers, _body = await asyncio.to_thread(
+                self._request_once,
+                "HEAD",
+                destination,
+                headers=headers,
+                timeout_s=timeout_s,
+                verify_tls=verify_tls,
+            )
+            redirect = _validated_redirect(
+                status_code=status_code,
+                headers=response_headers,
+                current_url=current_url,
+            )
+            if redirect is None:
+                return status_code, response_headers
+            current_url = redirect
+        raise _InvalidURLScheme("Too many redirects")
 
     async def _fetch_bytes(
         self,
@@ -133,33 +446,36 @@ class WebScraper:
         timeout_s: float,
         verify_tls: bool,
     ) -> tuple[int, Dict[str, str], bytes]:
-        """Return (status_code, headers, body) for GET with a requests fallback."""
-        try:
-            import httpx  # type: ignore
+        """Return a bounded body through a DNS-pinned direct connection."""
+        current_url = url
+        for _redirect in range(11):
+            destination = _resolve_http_destination(current_url)
+            status_code, response_headers, body = await asyncio.to_thread(
+                self._request_once,
+                "GET",
+                destination,
+                headers=headers,
+                timeout_s=timeout_s,
+                verify_tls=verify_tls,
+            )
+            redirect = _validated_redirect(
+                status_code=status_code,
+                headers=response_headers,
+                current_url=current_url,
+            )
+            if redirect is None:
+                return status_code, response_headers, body
+            current_url = redirect
+        raise _InvalidURLScheme("Too many redirects")
 
-            async with httpx.AsyncClient(
-                timeout=timeout_s,
-                follow_redirects=True,
-                verify=verify_tls,
-            ) as client:
-                resp = await client.get(url, headers=headers)
-                body = await resp.aread()
-                # Some origins (e.g. Wikipedia in this environment) return 403 to
-                # httpx but 200 to requests. Retry with requests on 403.
-                if resp.status_code != 403:
-                    return int(resp.status_code), {k.lower(): v for k, v in resp.headers.items()}, body
-        except Exception:
-            pass
-
-        def _requests_get() -> tuple[int, Dict[str, str], bytes]:
-            import requests  # type: ignore
-
-            resp = requests.get(url, headers=headers, timeout=timeout_s, allow_redirects=True, verify=verify_tls)
-            return int(resp.status_code), {k.lower(): v for k, v in resp.headers.items()}, resp.content
-
-        return await asyncio.to_thread(_requests_get)
-
-    async def _scrape_with_http(self, url: str, *, headers: Dict[str, str], options: ScrapeOptions, timeout_s: float) -> WebDocument:
+    async def _scrape_with_http(
+        self,
+        url: str,
+        *,
+        headers: Dict[str, str],
+        options: ScrapeOptions,
+        timeout_s: float,
+    ) -> WebDocument:
         status_code, resp_headers, body = await self._fetch_bytes(
             url,
             headers=headers,
@@ -171,32 +487,133 @@ class WebScraper:
             raise ValueError("Response too large")
         text = body.decode("utf-8", errors="replace")
         if "text/html" in content_type:
-            return await self._process_html(url, text, status_code=status_code, options=options)
-        meta = DocumentMetadata(source_url=url, status_code=status_code, content_type=content_type)
+            return await self._process_html(
+                url, text, status_code=status_code, options=options
+            )
+        meta = DocumentMetadata(
+            source_url=url, status_code=status_code, content_type=content_type
+        )
         return WebDocument(url=url, metadata=meta, text=text)
 
-    async def _scrape_with_browser(self, url: str, *, headers: Dict[str, str], options: ScrapeOptions, timeout_s: float) -> WebDocument:
+    async def _scrape_with_browser(
+        self,
+        url: str,
+        *,
+        headers: Dict[str, str],
+        options: ScrapeOptions,
+        timeout_s: float,
+    ) -> WebDocument:
+        _validate_http_url(url)
         browser = await self._ensure_browser()
         context = await browser.new_context(
-            user_agent=headers.get("User-Agent", self.settings.user_agent),
+            user_agent=headers.get(
+                "User-Agent",
+                self.settings.user_agent,
+            ),
             viewport={"width": 1920, "height": 10000},
+            service_workers="block",
+        )
+        await context.add_init_script(
+            """
+            for (const name of [
+              "WebSocket",
+              "EventSource",
+              "RTCPeerConnection",
+              "webkitRTCPeerConnection",
+              "WebTransport",
+            ]) {
+              Object.defineProperty(globalThis, name, {
+                configurable: false,
+                value: class {
+                  constructor() {
+                    throw new Error(`${name} is disabled by BreadBoard`);
+                  }
+                }
+              });
+            }
+            """
         )
         page = await context.new_page()
+        blocked_request = False
+
+        async def _proxy_route(route: Any) -> None:
+            nonlocal blocked_request
+            request = route.request
+            method = str(request.method).upper()
+            if method not in {"GET", "HEAD"}:
+                blocked_request = True
+                await route.abort("blockedbyclient")
+                return
+            try:
+                destination = _resolve_http_destination(str(request.url))
+                try:
+                    request_headers = await request.all_headers()
+                except Exception:
+                    request_headers = dict(getattr(request, "headers", {}) or {})
+                status_code, response_headers, body = await asyncio.to_thread(
+                    self._request_once,
+                    method,
+                    destination,
+                    headers=request_headers,
+                    timeout_s=timeout_s,
+                    verify_tls=not options.skip_tls_verification,
+                )
+                response_headers = {
+                    key: value
+                    for key, value in response_headers.items()
+                    if key
+                    not in {
+                        "connection",
+                        "content-length",
+                        "transfer-encoding",
+                    }
+                }
+            except _InvalidURLScheme:
+                blocked_request = True
+                await route.abort("blockedbyclient")
+                return
+            except Exception:
+                await route.abort("failed")
+                return
+            await route.fulfill(
+                status=status_code,
+                headers=response_headers,
+                body=body,
+            )
+
         try:
+            await page.route("**/*", _proxy_route)
             if options.headers:
                 await page.set_extra_http_headers(options.headers)
             timeout_ms = int(max(1, timeout_s * 1000))
-            await page.goto(url, timeout=timeout_ms * 2, wait_until="domcontentloaded")
+            try:
+                response = await page.goto(
+                    url,
+                    timeout=timeout_ms * 2,
+                    wait_until="domcontentloaded",
+                )
+            except Exception:
+                if blocked_request:
+                    raise _InvalidURLScheme(
+                        "Only public http and https URLs are supported"
+                    ) from None
+                raise
+            if blocked_request:
+                raise _InvalidURLScheme("Only public http and https URLs are supported")
+            _validate_http_url(str(page.url))
             if options.wait_for_ms is not None and int(options.wait_for_ms) > 0:
                 await page.wait_for_timeout(int(options.wait_for_ms))
+            if blocked_request:
+                raise _InvalidURLScheme("Only public http and https URLs are supported")
+            _validate_http_url(str(page.url))
+            status_code = int(response.status) if response is not None else None
             html = await page.content()
-            status_code = None
-            try:
-                resp = await page.wait_for_response(lambda r: r.url == url, timeout=1000)
-                status_code = resp.status
-            except Exception:
-                status_code = None
-            return await self._process_html(url, html, status_code=status_code, options=options)
+            return await self._process_html(
+                url,
+                html,
+                status_code=status_code,
+                options=options,
+            )
         finally:
             try:
                 await page.close()
@@ -235,7 +652,12 @@ class WebScraper:
             page_count = await self._pdf_page_count_fast(body)
             if page_count >= 0:
                 file_meta["page_count"] = page_count
-        meta = DocumentMetadata(source_url=url, status_code=status_code, content_type=content_type, file_metadata=file_meta or None)
+        meta = DocumentMetadata(
+            source_url=url,
+            status_code=status_code,
+            content_type=content_type,
+            file_metadata=file_meta or None,
+        )
 
         content_base64 = None
         if options.include_file_body:
@@ -248,7 +670,9 @@ class WebScraper:
         else:
             extracted_text = body.decode("utf-8", errors="replace")
 
-        return WebDocument(url=url, metadata=meta, text=extracted_text, content_base64=content_base64)
+        return WebDocument(
+            url=url, metadata=meta, text=extracted_text, content_base64=content_base64
+        )
 
     async def _pdf_page_count_fast(self, body: bytes) -> int:
         try:
@@ -289,12 +713,16 @@ class WebScraper:
         except Exception:
             return None
 
-    async def _process_html(self, url: str, html: str, *, status_code: Optional[int], options: ScrapeOptions) -> WebDocument:
+    async def _process_html(
+        self, url: str, html: str, *, status_code: Optional[int], options: ScrapeOptions
+    ) -> WebDocument:
         try:
             from bs4 import BeautifulSoup  # type: ignore
             from markdownify import markdownify as md  # type: ignore
         except Exception as exc:  # pragma: no cover
-            raise RuntimeError(f"HTML processing requires bs4+markdownify: {exc}") from exc
+            raise RuntimeError(
+                f"HTML processing requires bs4+markdownify: {exc}"
+            ) from exc
 
         soup = BeautifulSoup(html, "html.parser")
         raw_html = html
@@ -366,11 +794,15 @@ class WebScraper:
             links=links,
         )
 
-    def _extract_metadata(self, soup, *, url: str, status_code: Optional[int]) -> DocumentMetadata:
+    def _extract_metadata(
+        self, soup, *, url: str, status_code: Optional[int]
+    ) -> DocumentMetadata:
         title = None
         # Prefer <h1> if present (more human-friendly than <title> for many pages).
         try:
-            h1 = soup.find("h1", attrs={"id": "firstHeading"}) or soup.find("h1", attrs={"class": re.compile(r"\\bfirstHeading\\b")})
+            h1 = soup.find("h1", attrs={"id": "firstHeading"}) or soup.find(
+                "h1", attrs={"class": re.compile(r"\\bfirstHeading\\b")}
+            )
             if h1 is None:
                 h1 = soup.find("h1")
             if h1 is not None:
@@ -414,7 +846,14 @@ class WebScraper:
         except Exception:
             return soup
 
-        selectors = ["#mw-content-text", "main", "article", "[role='main']", "#main", "#content"]
+        selectors = [
+            "#mw-content-text",
+            "main",
+            "article",
+            "[role='main']",
+            "#main",
+            "#content",
+        ]
         for selector in selectors:
             try:
                 main_container = soup.select_one(selector)
@@ -439,12 +878,19 @@ class WebScraper:
             "![Image content removed - base64 encoded]",
             markdown_content,
         )
-        markdown_content = re.sub(r"\[Skip to Content\]\(#[^\)]*\)", "", markdown_content, flags=re.IGNORECASE)
+        markdown_content = re.sub(
+            r"\[Skip to Content\]\(#[^\)]*\)", "", markdown_content, flags=re.IGNORECASE
+        )
         markdown_content = re.sub(r"\n\s*\n\s*\n", "\n\n", markdown_content)
         return markdown_content.strip()
 
 
-def scrape_url_sync(url: str, *, options: Optional[ScrapeOptions] = None, settings: Optional[WebScraperSettings] = None) -> WebDocument:
+def scrape_url_sync(
+    url: str,
+    *,
+    options: Optional[ScrapeOptions] = None,
+    settings: Optional[WebScraperSettings] = None,
+) -> WebDocument:
     scraper = WebScraper(settings=settings)
     try:
         return asyncio.run(scraper.scrape_url(url, options=options))
@@ -453,4 +899,3 @@ def scrape_url_sync(url: str, *, options: Optional[ScrapeOptions] = None, settin
             asyncio.run(scraper.close())
         except Exception:
             pass
-

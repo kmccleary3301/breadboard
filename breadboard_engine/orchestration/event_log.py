@@ -10,6 +10,8 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from ..security import WorkspaceFilesystem, WorkspacePathError
+
 
 @dataclass(frozen=True)
 class Event:
@@ -74,38 +76,61 @@ class EventLog:
                 self._next_id = max(self._next_id, event.event_id + 1)
 
     def to_jsonl(self, path: str) -> None:
-        target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("w", encoding="utf-8") as handle:
+        target = Path(path).expanduser().absolute()
+        filesystem = WorkspaceFilesystem.open_anchored_root(
+            target.parent,
+            create=True,
+        )
+        try:
             with self._lock:
-                events = list(self._events)
-            for event in events:
-                handle.write(json.dumps(event.__dict__, ensure_ascii=False))
-                handle.write("\n")
+                content = "".join(
+                    json.dumps(event.__dict__, ensure_ascii=False) + "\n"
+                    for event in self._events
+                )
+            filesystem.write_text(target.name, content, encoding="utf-8")
+        finally:
+            filesystem.close()
 
     @staticmethod
     def from_jsonl(path: str) -> "EventLog":
         log = EventLog()
-        target = Path(path)
-        if not target.exists():
-            return log
-        with target.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                payload = json.loads(line)
-                event = Event(
-                    event_id=int(payload.get("event_id") or 0),
-                    type=str(payload.get("type") or ""),
-                    agent_id=str(payload.get("agent_id") or ""),
-                    parent_agent_id=payload.get("parent_agent_id"),
-                    causal_parent_event_id=payload.get("causal_parent_event_id"),
-                    timestamp=payload.get("timestamp"),
-                    payload=dict(payload.get("payload") or {}),
-                    mvi_hash=payload.get("mvi_hash"),
+        target = Path(path).expanduser().absolute()
+        try:
+            filesystem = WorkspaceFilesystem.open_anchored_root(
+                target.parent,
+                create=False,
+            )
+        except WorkspacePathError as exc:
+            if exc.code == "workspace_root_unavailable":
+                return log
+            raise
+        try:
+            try:
+                raw = filesystem.read_text(
+                    target.name,
+                    encoding="utf-8",
+                    errors="strict",
                 )
-                log.extend([event])
+            except FileNotFoundError:
+                return log
+        finally:
+            filesystem.close()
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            payload = json.loads(line)
+            event = Event(
+                event_id=int(payload.get("event_id") or 0),
+                type=str(payload.get("type") or ""),
+                agent_id=str(payload.get("agent_id") or ""),
+                parent_agent_id=payload.get("parent_agent_id"),
+                causal_parent_event_id=payload.get("causal_parent_event_id"),
+                timestamp=payload.get("timestamp"),
+                payload=dict(payload.get("payload") or {}),
+                mvi_hash=payload.get("mvi_hash"),
+            )
+            log.extend([event])
         return log
 
 

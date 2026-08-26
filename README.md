@@ -285,13 +285,32 @@ Create, lock, and run a product harness:
 
 ```bash
 breadboard harness create --out ./harness
-breadboard harness lock ./harness/minimal_harness.v2.yaml \
-  --out ./harness/minimal_harness.lock.json
-breadboard harness run ./harness/minimal_harness.v2.yaml \
-  --lock ./harness/minimal_harness.lock.json \
+breadboard harness lock ./harness/daily_driver.v1.yaml \
+  --out ./harness/daily_driver.lock.json
+breadboard harness run ./harness/daily_driver.v1.yaml \
+  --lock ./harness/daily_driver.lock.json \
   --local \
   --task "Summarize the repository layout in five bullets."
 ```
+
+`harness create` copies the public `bb.harness_definition.v1` daily-driver
+profile, its `bb.model_roles.v1` role map, and its system prompt. As shipped,
+it uses deterministic `mock/reference` behavior and consults no provider
+credential. Configured provider mode is explicit: replace the profile's
+`providers` model declaration and matching role targets with a supported
+integration, create a fresh lock, and retain the profile's prompt-mode shell
+approval policy.
+
+Configured provider mode is bounded by the
+[provider support and known-divergence table](docs/reference/LLM_PROVIDER_DETAILS.md#0-proved-product-scope)
+and its [machine-readable manifest](conformance/provider_parity_claims/manifest.v1.json).
+Those rows are synthetic and provider-free: real login, credential validity,
+live provider network, cost, latency, quota, model quality, and release-wide
+behavior remain unproved until the named external gates.
+
+`breadboard --json system describe` resolves that package-local bundle and
+reports its definition, lock, and resource identities under
+`data.default_profile`.
 
 Run the engine directly from source:
 
@@ -321,7 +340,7 @@ from breadboard_sdk import BreadBoardClient
 
 client = BreadBoardClient(base_url="http://127.0.0.1:9099")
 client.create_harness()
-lock = client.lock_harness("minimal_harness.v2.yaml")
+lock = client.lock_harness("daily_driver.v1.yaml")
 started = client.start_session({
     "lock_id": lock["data"]["path"],
     "task": "List the top-level modules and explain each in one line.",
@@ -332,6 +351,14 @@ for event in client.events_session(session_id):
     print(event["kind"], event["payload"])
 ```
 
+Product session streams persist only stable observation projections:
+`assistant_message` reports `metadata.has_content`, `tool_call` reports the
+public tool name, and `tool_result` reports that name plus whether execution
+failed.
+Assistant content, tool arguments and results, credentials, paths, and backend
+event IDs are not written to the product session log. Completed streams replay
+with the same sequence after a service restart.
+
 ### TypeScript SDK
 
 ```ts
@@ -339,7 +366,7 @@ import { createBreadboardClient } from "@breadboard/sdk"
 
 const client = createBreadboardClient({ baseUrl: "http://127.0.0.1:9099" })
 await client.createHarness()
-const lock = await client.lockHarness("minimal_harness.v2.yaml")
+const lock = await client.lockHarness("daily_driver.v1.yaml")
 const started = await client.startSession({
   lock_id: lock.data.path,
   task: "Explain the purpose of the conformance directory."

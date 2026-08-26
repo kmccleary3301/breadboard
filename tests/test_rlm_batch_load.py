@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict
 
@@ -40,6 +41,14 @@ class _StubRouter:
     def create_client_config(self, model: str) -> Dict[str, Any]:
         _ = model
         return {"api_key": "stub-key", "base_url": None, "default_headers": {}}
+
+    @contextmanager
+    def execution_client_config(self, model: str, **_kwargs: Any):
+        config = self.create_client_config(model)
+        try:
+            yield config
+        finally:
+            config.clear()
 
 
 class _StubRegistry:

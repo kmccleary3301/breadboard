@@ -38,6 +38,7 @@ Status: `active`
 | `bb.credentials.v1` | BreadBoard credential store logical model V1 | `host_protocol` |
 | `bb.directive.v1` | bb.directive.v1 | `host_protocol` |
 | `bb.effective_config_graph.v1` | BreadBoard effective config graph | `runtime_protocol` |
+| `bb.effective_model_role_lock.v1` | BreadBoard effective model role lock V1 | `host_protocol` |
 | `bb.effective_operation_policy.v1` | BreadBoard effective operation policy V1 | `runtime_protocol` |
 | `bb.effective_tool_surface.v1` | bb.effective_tool_surface.v1.schema.json | `runtime_protocol` |
 | `bb.environment_selector.v2` | BreadBoard Environment Selector V2 | `config_algebra` |
@@ -51,7 +52,7 @@ Status: `active`
 | `bb.model_roles.v1` | BreadBoard model roles V1 | `host_protocol` |
 | `bb.permission.v1` | bb.permission.v1 | `host_protocol` |
 | `bb.projection_event.v1` | BreadBoard projection event V1 | `host_protocol` |
-| `bb.provider_exchange.v1` | bb.provider_exchange.v1 | `host_protocol` |
+| `bb.provider_exchange.v2` | BreadBoard Provider Exchange V2 | `host_protocol` |
 | `bb.provider_route.v1` | BreadBoard provider route V1 | `host_protocol` |
 | `bb.registry.v1` | BreadBoard registry V1 | `config_algebra` |
 | `bb.replay_session.v1` | bb.replay_session.v1 | `evidence` |
@@ -146,6 +147,7 @@ Status: `active`
 | `bb.e4.target_coverage.v1` | BreadBoard E4 target coverage matrix V1 | `frozen_legacy` |
 | `bb.environment_selector.v1` | bb.environment_selector.v1.schema.json | `frozen_legacy` |
 | `bb.kernel_event.v1` | BreadBoard Kernel Event V1 | `frozen_legacy` |
+| `bb.provider_exchange.v1` | bb.provider_exchange.v1 | `host_protocol` |
 | `bb.session_transcript.v1` | BreadBoard Session Transcript V1 | `frozen_legacy` |
 | `bb.task.v1` | bb.task.v1 | `frozen_legacy` |
 | `bb.tool_call.v1` | BreadBoard Tool Call V1 | `frozen_legacy` |

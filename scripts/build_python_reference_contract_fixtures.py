@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Dict
 
 from breadboard_engine.checkpointing.checkpoint_manager import CheckpointSummary, build_checkpoint_metadata_record
@@ -19,8 +18,6 @@ from breadboard_engine.orchestration.coordination import (
 )
 from breadboard_engine.orchestration.orchestrator import MultiAgentOrchestrator
 from breadboard_engine.orchestration.schema import TeamConfig
-from breadboard_engine.provider import ProviderInvoker
-from breadboard_engine.provider.runtime import ProviderResult
 from breadboard_engine.state.session_state import SessionState
 from scripts.e4_parity.validators.registries import schema_generation_default
 
@@ -329,45 +326,40 @@ def build_active_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any
         )
     )
 
-    runtime = SimpleNamespace(descriptor=SimpleNamespace(provider_id="openai", runtime_id="responses_api"))
-    request_record = ProviderInvoker._build_exchange_request_record(
-        object(),
-        runtime=runtime,
-        model="openai/gpt-5.2",
-        send_messages=[{"role": "user", "content": "hello"}],
-        tools_schema=[{"name": "bash"}],
-        stream=False,
-        route_id="primary",
-        turn_index=1,
-    )
-    request_record["exchange_id"] = "px-ref-1"
-    provider_result = ProviderResult(
-        messages=[SimpleNamespace(finish_reason="stop")],
-        raw_response={},
-        usage={"input_tokens": 3, "output_tokens": 2},
-        model="openai/gpt-5.2",
-        metadata={"latency_ms": 10},
-        encrypted_reasoning=None,
-    )
-    exchange_record = ProviderInvoker._build_exchange_response_record(
-        object(),
-        exchange_request=request_record,
-        result=provider_result,
-    )
     provider_exchange_contract = {
         "schema_version": "bb.provider_exchange.v1",
-        "exchange_id": exchange_record["exchange_id"],
+        "exchange_id": "px-ref-1",
         "request": {
-            "provider_family": exchange_record["request"]["provider_family"],
-            "runtime_id": exchange_record["request"]["runtime_id"],
-            "route_id": exchange_record["request"].get("route_id"),
-            "model": exchange_record["request"]["model"],
-            "stream": exchange_record["request"]["stream"],
-            "message_count": exchange_record["request"].get("message_count"),
-            "tool_count": exchange_record["request"].get("tool_count"),
-            "metadata": dict(exchange_record["request"].get("metadata") or {}),
+            "provider_family": "openai",
+            "runtime_id": "responses_api",
+            "route_id": "primary",
+            "model": "openai/gpt-5.2",
+            "stream": False,
+            "message_count": 1,
+            "tool_count": 1,
+            "metadata": {
+                "message_roles": ["user"],
+                "tool_names": ["bash"],
+                "route_selected": True,
+                "stream_requested": False,
+                "transport": "provider_runtime.invoke",
+            },
         },
-        "response": dict(exchange_record["response"]),
+        "response": {
+            "message_count": 1,
+            "finish_reasons": ["stop"],
+            "usage": {"input_tokens": 3, "output_tokens": 2},
+            "metadata": {
+                "latency_ms": 10,
+                "finish_reason_count": 1,
+                "stream_requested": False,
+                "route_id": "primary",
+                "provider_family": "openai",
+                "runtime_id": "responses_api",
+                "message_count": 1,
+            },
+            "evidence_refs": [],
+        },
     }
     provider_fallback_exchange_contract = {
         "schema_version": "bb.provider_exchange.v1",

@@ -19,10 +19,12 @@ from ..messaging.markdown_logger import MarkdownLogger
 from ..provider import provider_adapter_manager
 from ..provider.routing import provider_router
 from ..provider.contracts import (
+    ProviderIdentity,
     ProviderMessage,
+    ProviderResult,
     ProviderRuntimeContext,
     ProviderRuntimeError,
-    ProviderResult,
+    sanitize_provider_result,
 )
 from ..provider.registry import provider_registry
 from ..replay import resolve_todo_placeholders
@@ -1376,7 +1378,8 @@ def handle_native_tool_calls(
                 session_state.add_message(tool_result_entry, to_provider=False)
 
                 if relay_strategy == "tool_role" and call_id:
-                    provider_id = provider_router.parse_model_id(model)[0]
+                    route_hint = getattr(conductor, "_current_route_id", None) or model
+                    provider_id = provider_router.parse_model_id(route_hint)[0]
                     adapter = provider_adapter_manager.get_adapter(provider_id)
                     tool_result_msg = adapter.create_tool_result_message(call_id, r.get("provider_fn", r["fn"]), r["out"])
                     tool_messages_to_relay.append(tool_result_msg)
@@ -1415,12 +1418,21 @@ def retry_with_fallback(
     last_error: Optional[ProviderRuntimeError],
     provider_router_override=None,
     provider_registry_override=None,
+    client_lease=None,
+    route_id: Optional[str] = None,
 ) -> Optional[ProviderResult]:
     active_provider_router = provider_router_override or provider_router
     active_provider_registry = provider_registry_override or provider_registry
     descriptor = getattr(runtime, "descriptor", None)
     provider_id = getattr(descriptor, "provider_id", None)
     runtime_id = getattr(descriptor, "runtime_id", None)
+    def _safe_failure_reason(
+        error: Optional[BaseException], default: str = "provider_retry"
+    ) -> str:
+        if isinstance(error, ProviderRuntimeError):
+            return str(error.model_fallback_reason or error.safe_code)
+        return default
+
 
     def _record_degraded(route_model: str, reason: str) -> None:
         try:
@@ -1461,17 +1473,34 @@ def retry_with_fallback(
             pass
 
     def _simplify_result(result: ProviderResult) -> ProviderResult:
-        return result
+        return sanitize_provider_result(result)
 
     def _invoke(target_model: str) -> ProviderResult:
-        return runtime.invoke(
-            client=client,
-            model=target_model,
-            messages=messages,
-            tools=tools_schema,
-            stream=stream_responses,
-            context=runtime_context,
-        )
+        if client_lease is None:
+            return sanitize_provider_result(
+                runtime.invoke(
+                    client=client,
+                    model=target_model,
+                    messages=messages,
+                    tools=tools_schema,
+                    stream=stream_responses,
+                    context=runtime_context,
+                )
+            )
+        with client_lease(
+            route_id or target_model,
+            runtime,
+        ) as leased_client:
+            return sanitize_provider_result(
+                runtime.invoke(
+                    client=leased_client,
+                    model=target_model,
+                    messages=messages,
+                    tools=tools_schema,
+                    stream=stream_responses,
+                    context=runtime_context,
+                )
+            )
 
     def _log_retry(route_model: str, reason: str, attempt: str) -> None:
         message = (
@@ -1501,162 +1530,308 @@ def retry_with_fallback(
             pass
 
     if last_error and not attempted:
-        conductor.route_health.record_failure(model, str(last_error))
+        conductor.route_health.record_failure(
+            model, _safe_failure_reason(last_error)
+        )
         conductor._update_health_metadata(session_state)
 
-    same_route_reason = str(last_error) if last_error else "retry"
-    backoff_seconds = 0.6
-    _log_retry(model, same_route_reason, "retry")
-    _sleep_with_jitter(backoff_seconds)
+    retry_same_route = not (
+        isinstance(last_error, ProviderRuntimeError)
+        and last_error.safe_code == "route_circuit_open"
+    )
+    if retry_same_route:
+        same_route_reason = _safe_failure_reason(last_error)
+        backoff_seconds = 0.6
+        _log_retry(model, same_route_reason, "retry")
+        _sleep_with_jitter(backoff_seconds)
 
-    try:
-        result = _invoke(model)
-        attempted.append((model, stream_responses, None))
-        conductor.route_health.record_success(model)
-        conductor._update_health_metadata(session_state)
-        return _simplify_result(result)
-    except ProviderRuntimeError as retry_error:
-        attempted.append((model, stream_responses, str(retry_error) or retry_error.__class__.__name__))
-        last_error = retry_error
-        conductor.route_health.record_failure(model, str(retry_error) or retry_error.__class__.__name__)
-        conductor._update_health_metadata(session_state)
+        try:
+            result = _invoke(model)
+            attempted.append((model, stream_responses, None))
+            conductor.route_health.record_success(model)
+            conductor._update_health_metadata(session_state)
+            return _simplify_result(result)
+        except ProviderRuntimeError as retry_error:
+            recorder = getattr(runtime_context, "exchange_recorder", None)
+            if retry_error.output_emitted or (
+                recorder is not None and recorder.output_emitted
+            ):
+                raise
+            if recorder is not None:
+                recorder.reset_unemitted_attempt()
+            retry_reason = _safe_failure_reason(retry_error)
+            attempted.append((model, stream_responses, retry_reason))
+            last_error = retry_error
+            conductor.route_health.record_failure(model, retry_reason)
+            conductor._update_health_metadata(session_state)
 
     route_id = None
     if runtime_context and isinstance(runtime_context.extra, dict):
         route_id = runtime_context.extra.get("route_id")
     routing_prefs = conductor._get_model_routing_preferences(route_id)
     explicit_fallbacks = routing_prefs.get("fallback_models") or []
-    fallback_model, fallback_diag = conductor._select_fallback_route(
-        route_id,
-        provider_id,
-        model,
-        explicit_fallbacks,
+    current_route = str(route_id or model)
+    current_error = last_error
+    locked_fallbacks = isinstance(
+        getattr(conductor, "_model_role_lock", None), dict
     )
 
-    if not fallback_model:
-        if last_error:
-            raise last_error
-        return None
+    while True:
+        fallback_model, fallback_diag = conductor._select_fallback_route(
+            current_route,
+            provider_id,
+            current_route,
+            explicit_fallbacks,
+            failure_reason=current_error,
+        )
+        if not fallback_model:
+            if current_error:
+                raise current_error
+            return None
 
-    fallback_reason = str(last_error) if last_error else "fallback"
-    _record_degraded(model, fallback_reason)
-    _log_retry(fallback_model, fallback_reason, "fallback")
-    conductor.provider_metrics.add_fallback(primary=model, fallback=fallback_model, reason=fallback_reason)
-    turn_hint = None
-    if runtime_context and isinstance(runtime_context.extra, dict):
-        turn_hint = runtime_context.extra.get("turn_index")
-    conductor._log_routing_event(
-        session_state,
-        markdown_logger,
-        turn_index=turn_hint,
-        tag="fallback_route",
-        message=(
-            f"[routing] Selected fallback route '{fallback_model}' after '{fallback_reason}'."
-        ),
-        payload={
-            "from": route_id or model,
-            "reason": fallback_reason,
-            "diagnostics": fallback_diag,
-        },
-    )
+        fallback_reason = (
+            current_error.model_fallback_reason
+            if isinstance(current_error, ProviderRuntimeError)
+            and current_error.model_fallback_reason
+            else _safe_failure_reason(current_error, "provider_fallback")
+        )
+        _record_degraded(current_route, fallback_reason)
+        _log_retry(fallback_model, fallback_reason, "fallback")
+        conductor.provider_metrics.add_fallback(
+            primary=current_route,
+            fallback=fallback_model,
+            reason=fallback_reason,
+        )
+        turn_hint = None
+        if runtime_context and isinstance(runtime_context.extra, dict):
+            turn_hint = runtime_context.extra.get("turn_index")
+        conductor._log_routing_event(
+            session_state,
+            markdown_logger,
+            turn_index=turn_hint,
+            tag="fallback_route",
+            message=(
+                f"[routing] Selected fallback route '{fallback_model}' "
+                f"after '{fallback_reason}'."
+            ),
+            payload={
+                "from": current_route,
+                "reason": fallback_reason,
+                "diagnostics": fallback_diag,
+            },
+        )
 
-    try:
-        fallback_runtime_descriptor, fallback_model_resolved = active_provider_router.get_runtime_descriptor(
-            fallback_model
-        )
-        fallback_runtime = active_provider_registry.create_runtime(fallback_runtime_descriptor)
-        fallback_client_config = active_provider_router.create_client_config(fallback_model)
-        fallback_runtime_context = ProviderRuntimeContext(
-            session_state=runtime_context.session_state,
-            agent_config=runtime_context.agent_config,
-            stream=False,
-            extra=dict(runtime_context.extra or {}, fallback_of=model, route_id=fallback_model),
-        )
-        fallback_client = fallback_runtime.create_client(
-            fallback_client_config["api_key"],
-            base_url=fallback_client_config.get("base_url"),
-            default_headers=fallback_client_config.get("default_headers"),
-        )
+        start_ts = time.time()
         try:
-            if getattr(conductor.logger_v2, "include_structured_requests", True):
-                turn_idx = runtime_context.extra.get("turn_index") if runtime_context.extra else None
-                if turn_idx is not None:
+            (
+                fallback_runtime_descriptor,
+                fallback_model_resolved,
+            ) = active_provider_router.get_runtime_descriptor(fallback_model)
+            fallback_runtime = active_provider_registry.create_runtime(
+                fallback_runtime_descriptor
+            )
+            fallback_identity = ProviderIdentity(
+                provider_id=fallback_runtime_descriptor.provider_id,
+                runtime_id=fallback_runtime_descriptor.runtime_id,
+                route_id=fallback_model,
+                model=fallback_model_resolved,
+            )
+            recorder = getattr(runtime_context, "exchange_recorder", None)
+            if recorder is not None:
+                recorder.rebind_provider(fallback_identity)
+            fallback_client_config = (
+                active_provider_router.create_client_config(fallback_model)
+            )
+            fallback_runtime_context = ProviderRuntimeContext(
+                session_state=runtime_context.session_state,
+                agent_config=runtime_context.agent_config,
+                stream=False,
+                extra=dict(
+                    runtime_context.extra or {},
+                    fallback_of=current_route,
+                    route_id=fallback_model,
+                ),
+                session_id=runtime_context.session_id,
+                input_id=runtime_context.input_id,
+                turn_id=runtime_context.turn_id,
+                exchange_recorder=recorder,
+                cancel_requested=runtime_context.cancel_requested,
+            )
+            try:
+                if getattr(
+                    conductor.logger_v2,
+                    "include_structured_requests",
+                    True,
+                ):
+                    turn_idx = (
+                        runtime_context.extra.get("turn_index")
+                        if runtime_context.extra
+                        else None
+                    )
                     try:
-                        turn_for_record = int(turn_idx)
+                        turn_for_record = (
+                            int(turn_idx) if turn_idx is not None else None
+                        )
                     except Exception:
                         turn_for_record = None
-                else:
-                    turn_for_record = None
-                if turn_for_record is not None:
-                    headers_snapshot = dict(fallback_client_config.get("default_headers") or {})
-                    if getattr(fallback_runtime_descriptor, "provider_id", None) == "openrouter":
-                        headers_snapshot.setdefault("Accept", "application/json; charset=utf-8")
-                        headers_snapshot.setdefault("Accept-Encoding", "identity")
-                    conductor.structured_request_recorder.record_request(
-                        turn_for_record,
-                        provider_id=fallback_runtime_descriptor.provider_id,
-                        runtime_id=fallback_runtime_descriptor.runtime_id,
-                        model=fallback_model_resolved,
-                        request_headers=headers_snapshot,
-                        request_body={
-                            "model": fallback_model_resolved,
-                            "messages": messages,
-                            "tools": tools_schema,
-                            "stream": False,
-                        },
-                        stream=False,
-                        tool_count=len(tools_schema or []),
-                        endpoint=fallback_client_config.get("base_url"),
-                        attempt=len(attempted),
-                        extra={"fallback_of": model},
+                    if turn_for_record is not None:
+                        headers_snapshot = dict(
+                            fallback_client_config.get("default_headers")
+                            or {}
+                        )
+                        if (
+                            fallback_runtime_descriptor.provider_id
+                            == "openrouter"
+                        ):
+                            headers_snapshot.setdefault(
+                                "Accept",
+                                "application/json; charset=utf-8",
+                            )
+                            headers_snapshot.setdefault(
+                                "Accept-Encoding", "identity"
+                            )
+                        conductor.structured_request_recorder.record_request(
+                            turn_for_record,
+                            provider_id=(
+                                fallback_runtime_descriptor.provider_id
+                            ),
+                            runtime_id=(
+                                fallback_runtime_descriptor.runtime_id
+                            ),
+                            model=fallback_model_resolved,
+                            request_headers=headers_snapshot,
+                            request_body={
+                                "model": fallback_model_resolved,
+                                "messages": messages,
+                                "tools": tools_schema,
+                                "stream": False,
+                            },
+                            stream=False,
+                            tool_count=len(tools_schema or []),
+                            endpoint=fallback_client_config.get("base_url"),
+                            attempt=len(attempted),
+                            extra={"fallback_of": current_route},
+                        )
+            except Exception:
+                pass
+            if client_lease is not None:
+                with client_lease(
+                    fallback_model, fallback_runtime
+                ) as fallback_client:
+                    result = sanitize_provider_result(
+                        fallback_runtime.invoke(
+                            client=fallback_client,
+                            model=fallback_model_resolved,
+                            messages=messages,
+                            tools=tools_schema,
+                            stream=False,
+                            context=fallback_runtime_context,
+                        )
                     )
-        except Exception:
-            pass
-        start_ts = time.time()
-        result = fallback_runtime.invoke(
-            client=fallback_client,
-            model=fallback_model_resolved,
-            messages=messages,
-            tools=tools_schema,
-            stream=False,
-            context=fallback_runtime_context,
-        )
-        elapsed = time.time() - start_ts
-        try:
-            conductor.provider_metrics.add_call(
-                fallback_model_resolved,
-                stream=False,
-                elapsed=elapsed,
-                outcome="success",
+            else:
+                with active_provider_router.execution_client_config(
+                    fallback_model,
+                    endpoint_id=f"fallback:{fallback_model}",
+                ) as fallback_config:
+                    fallback_client = fallback_runtime.create_client(
+                        fallback_config.get("api_key"),
+                        base_url=fallback_config.get("base_url"),
+                        default_headers=fallback_config.get(
+                            "default_headers"
+                        ),
+                    )
+                    result = sanitize_provider_result(
+                        fallback_runtime.invoke(
+                            client=fallback_client,
+                            model=fallback_model_resolved,
+                            messages=messages,
+                            tools=tools_schema,
+                            stream=False,
+                            context=fallback_runtime_context,
+                        )
+                    )
+            elapsed = time.time() - start_ts
+            try:
+                conductor.provider_metrics.add_call(
+                    fallback_model_resolved,
+                    stream=False,
+                    elapsed=elapsed,
+                    outcome="success",
+                )
+            except Exception:
+                pass
+            session_state.set_provider_metadata(
+                "fallback_route",
+                {
+                    "from": current_route,
+                    "to": fallback_model,
+                    "provider": fallback_runtime_descriptor.provider_id,
+                    "reason": fallback_reason,
+                },
             )
-        except Exception:
-            pass
-        session_state.set_provider_metadata("fallback_route", {
-            "from": model,
-            "to": fallback_model,
-            "provider": fallback_runtime_descriptor.provider_id,
-        })
-        conductor.route_health.record_success(fallback_model)
-        conductor._update_health_metadata(session_state)
-        return result
-    except Exception as exc:
-        elapsed = time.time() - start_ts if 'start_ts' in locals() else 0.0
-        try:
-            conductor.provider_metrics.add_call(
-                fallback_model,
-                stream=False,
-                elapsed=elapsed,
-                outcome="error",
-                error_reason=str(exc),
+            conductor.route_health.record_success(fallback_model)
+            conductor._update_health_metadata(session_state)
+            result.metadata = dict(result.metadata or {})
+            result.metadata[
+                "provider_exchange_identity"
+            ] = fallback_identity.as_dict()
+            return result
+        except ProviderRuntimeError as exc:
+            elapsed = time.time() - start_ts
+            failure_reason = (
+                exc.model_fallback_reason
+                or _safe_failure_reason(exc, "provider_fallback_error")
             )
+            try:
+                conductor.provider_metrics.add_call(
+                    fallback_model,
+                    stream=False,
+                    elapsed=elapsed,
+                    outcome="error",
+                    error_reason=failure_reason,
+                )
+            except Exception:
+                pass
+            attempted.append((fallback_model, False, failure_reason))
+            conductor.route_health.record_failure(
+                fallback_model, failure_reason
+            )
+            conductor._update_health_metadata(session_state)
+            fallback_recorder = getattr(
+                runtime_context, "exchange_recorder", None
+            )
+            if exc.output_emitted or (
+                fallback_recorder is not None
+                and fallback_recorder.output_emitted
+            ):
+                raise
+            if fallback_recorder is not None:
+                fallback_recorder.reset_unemitted_attempt()
+            if not locked_fallbacks:
+                raise current_error or exc
+            current_route = fallback_model
+            current_error = exc
         except Exception:
-            pass
-        attempted.append((fallback_model, False, str(exc) or exc.__class__.__name__))
-        conductor.route_health.record_failure(fallback_model, str(exc) or exc.__class__.__name__)
-        conductor._update_health_metadata(session_state)
-        if last_error:
-            raise last_error
-        raise
+            elapsed = time.time() - start_ts
+            failure_reason = "provider_fallback_error"
+            try:
+                conductor.provider_metrics.add_call(
+                    fallback_model,
+                    stream=False,
+                    elapsed=elapsed,
+                    outcome="error",
+                    error_reason=failure_reason,
+                )
+            except Exception:
+                pass
+            attempted.append((fallback_model, False, failure_reason))
+            conductor.route_health.record_failure(
+                fallback_model, failure_reason
+            )
+            conductor._update_health_metadata(session_state)
+            if current_error:
+                raise current_error
+            raise
 
 
 __all__ = ['log_provider_message', 'process_model_output', 'handle_text_tool_calls', 'handle_native_tool_calls', 'retry_with_fallback']

@@ -5,9 +5,21 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ray
+from breadboard_engine.security import (
+    build_child_environment,
+    contains_provider_credential_value,
+    provider_credential_values,
+    protected_credential_paths,
+    ProcessIsolationUnavailable,
+    purge_provider_credentials,
+    WorkspaceFilesystem,
+    WorkspacePathError,
+    redaction,
+    validate_workspace_credential_boundary,
+)
 
 from .adaptive_iter import ADAPTIVE_PREFIX_ITERABLE
 
@@ -34,12 +46,41 @@ class DockerSandboxV2:
         network: str = "none",
         runtime: str | None = None,
         docker_bin: str | None = None,
+        protected_paths: Optional[Sequence[str | os.PathLike[str]]] = None,
+        purge_process_environment: bool = True,
     ) -> None:
+        normalized_network = str(network or "none").strip().lower()
+        if normalized_network != "none":
+            raise ProcessIsolationUnavailable(
+                "Docker model sandbox network must be disabled"
+            )
+        self._protected_credential_paths = tuple(
+            str(path)
+            for path in dict.fromkeys(
+                (
+                    *protected_credential_paths(),
+                    *(protected_paths or ()),
+                )
+            )
+        )
+        self._workspace_files = WorkspaceFilesystem(workspace)
+        workspace_root = self._workspace_files.root
+        self._credential_workspace_overlap = any(
+            path == workspace_root
+            or path.is_relative_to(workspace_root)
+            or workspace_root.is_relative_to(path)
+            for path in (
+                Path(item).expanduser().resolve(strict=False)
+                for item in self._protected_credential_paths
+            )
+        )
+        if purge_process_environment:
+            purge_provider_credentials()
         self.image = image
         self.session_id = session_id
-        self.workspace = str(workspace)
+        self.workspace = str(workspace_root)
         self.lsp_actor = lsp_actor
-        self.network = str(network or "none")
+        self.network = "none"
         self.runtime = runtime or os.environ.get("RAY_DOCKER_RUNTIME")
         self.docker_bin = docker_bin or shutil.which("docker") or "docker"
 
@@ -49,20 +90,17 @@ class DockerSandboxV2:
     def get_workspace(self) -> str:
         return self.workspace
 
+    def provider_environment_is_clean(self) -> bool:
+        """Report the provider-credential invariant without exposing names or values."""
+        return not provider_credential_values()
+
     def _resolve_checked(self, path: str) -> Tuple[str, bool]:
-        ws = Path(self.workspace).resolve()
-        candidate = Path(path)
-        if not candidate.is_absolute():
-            candidate = ws / candidate
+        if self._credential_workspace_overlap:
+            return self.workspace, False
         try:
-            candidate = candidate.resolve()
-        except Exception:
-            return str(ws), False
-        try:
-            candidate.relative_to(ws)
-        except Exception:
-            return str(ws), False
-        return str(candidate), True
+            return self._workspace_files.display_path(path), True
+        except (WorkspacePathError, OSError, ValueError):
+            return self.workspace, False
 
     def _resolve(self, path: str) -> str:
         abs_path, _ok = self._resolve_checked(path)
@@ -85,48 +123,49 @@ class DockerSandboxV2:
             pass
 
     def exists(self, path: str) -> bool:
-        abs_path, ok = self._resolve_checked(path)
-        return ok and Path(abs_path).exists()
+        if self._credential_workspace_overlap:
+            return False
+        try:
+            return self._workspace_files.exists(path)
+        except (WorkspacePathError, OSError, ValueError):
+            return False
 
     def stat(self, path: str) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
         if not ok:
             return {"path": abs_path, "exists": False, "error": "path_outside_workspace"}
-        p = Path(abs_path)
-        if not p.exists():
-            return {"path": abs_path, "exists": False}
         try:
-            st = p.stat()
-            return {
-                "path": abs_path,
-                "exists": True,
-                "type": "dir" if p.is_dir() else "file",
-                "size": st.st_size,
-                "mtime": st.st_mtime,
-            }
-        except Exception:
-            return {"path": abs_path, "exists": True}
+            info = self._workspace_files.stat(path)
+        except FileNotFoundError:
+            return {"path": abs_path, "exists": False}
+        except (WorkspacePathError, OSError, ValueError):
+            return {"path": abs_path, "exists": False, "error": "unsafe_workspace_path"}
+        return {
+            "path": info.path,
+            "exists": True,
+            "type": info.kind,
+            "size": info.size,
+            "mtime": info.mtime,
+        }
 
     def put(self, path: str, content: bytes) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
         if not ok:
             return {"ok": False, "path": abs_path, "error": "path_outside_workspace"}
-        p = Path(abs_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
+        payload = content or b""
         try:
-            p.write_bytes(content or b"")
-        except Exception as exc:
+            self._workspace_files.write_bytes(path, payload)
+        except (WorkspacePathError, OSError, ValueError) as exc:
             return {"ok": False, "path": abs_path, "error": str(exc)}
         self._touch_lsp(abs_path)
-        return {"ok": True, "path": abs_path, "bytes": len(content or b"")}
+        return {"ok": True, "path": abs_path, "bytes": len(payload)}
 
     def get(self, path: str) -> bytes:
-        abs_path, ok = self._resolve_checked(path)
-        if not ok:
+        if self._credential_workspace_overlap:
             return b""
         try:
-            return Path(abs_path).read_bytes()
-        except Exception:
+            return self._workspace_files.read_bytes(path)
+        except (WorkspacePathError, OSError, ValueError):
             return b""
 
     def read_text(
@@ -137,8 +176,8 @@ class DockerSandboxV2:
         encoding: str = "utf-8",
     ) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
+        start = max(0, int(offset or 0)) if offset is not None else 0
         if not ok:
-            start = max(0, int(offset or 0)) if offset is not None else 0
             return {
                 "path": abs_path,
                 "content": "",
@@ -148,125 +187,113 @@ class DockerSandboxV2:
                 "error": "path_outside_workspace",
             }
         try:
-            raw = Path(abs_path).read_text(encoding=encoding, errors="replace")
-        except Exception:
+            raw = self._workspace_files.read_text(
+                path,
+                encoding=encoding,
+                errors="replace",
+            )
+        except (WorkspacePathError, OSError, ValueError):
             raw = ""
-        start = max(0, int(offset or 0)) if offset is not None else 0
         content = raw[start:] if start else raw
         truncated = False
         if limit is not None:
             try:
-                lim = int(limit)
-            except Exception:
-                lim = None
-            if lim is not None and lim >= 0 and len(content) > lim:
-                content = content[:lim]
+                limit_value = int(limit)
+            except (TypeError, ValueError):
+                limit_value = None
+            if (
+                limit_value is not None
+                and limit_value >= 0
+                and len(content) > limit_value
+            ):
+                content = content[:limit_value]
                 truncated = True
-        return {"path": abs_path, "content": content, "truncated": truncated, "offset": start, "limit": limit}
+        return {
+            "path": abs_path,
+            "content": content,
+            "truncated": truncated,
+            "offset": start,
+            "limit": limit,
+        }
 
-    def write_text(self, path: str, content: str, encoding: str = "utf-8") -> Dict[str, Any]:
+    def write_text(
+        self,
+        path: str,
+        content: str,
+        encoding: str = "utf-8",
+    ) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
         if not ok:
             return {"ok": False, "path": abs_path, "error": "path_outside_workspace"}
-        p = Path(abs_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
+        value = content or ""
         try:
-            p.write_text(content or "", encoding=encoding)
-        except Exception as exc:
+            self._workspace_files.write_text(path, value, encoding=encoding)
+        except (WorkspacePathError, OSError, ValueError) as exc:
             return {"ok": False, "path": abs_path, "error": str(exc)}
         self._touch_lsp(abs_path)
-        return {"ok": True, "path": abs_path, "bytes": len(content or "")}
+        return {"ok": True, "path": abs_path, "bytes": len(value)}
 
     def ls(self, path: str, depth: int = 1) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
         if not ok:
-            return {"path": abs_path, "entries": [], "items": [], "tree_format": False, "error": "path_outside_workspace"}
-        depth = max(1, int(depth or 1))
-        root = Path(abs_path)
-        entries: List[Dict[str, str]] = []
-        if not root.exists():
-            return {"path": abs_path, "entries": []}
-
-        def _walk(current: Path, rel: Path, remaining: int) -> None:
-            try:
-                for child in sorted(current.iterdir()):
-                    rel_child = rel / child.name
-                    entries.append({"path": str(rel_child), "type": "dir" if child.is_dir() else "file"})
-                    if child.is_dir() and remaining > 1:
-                        _walk(child, rel_child, remaining - 1)
-            except Exception:
-                pass
-
-        _walk(root, Path("."), depth)
-        return {"path": abs_path, "items": entries, "entries": entries, "tree_format": False}
-
-    def glob(self, pattern: str, root: str = ".", limit: Optional[int] = None) -> List[str]:
-        resolved_root, ok = self._resolve_checked(root)
-        if not ok:
-            return []
-        root_path = Path(resolved_root)
-        if not root_path.exists():
-            return []
-        matches: List[str] = []
+            return {
+                "path": abs_path,
+                "entries": [],
+                "items": [],
+                "tree_format": False,
+                "error": "path_outside_workspace",
+            }
         try:
-            for match in root_path.glob(pattern):
-                try:
-                    matches.append(str(match.relative_to(root_path)))
-                except Exception:
-                    matches.append(str(match))
-        except Exception:
+            entries = [
+                {"path": item.path, "type": item.kind}
+                for item in self._workspace_files.list_entries(
+                    path,
+                    depth=max(1, int(depth or 1)),
+                )
+            ]
+        except (WorkspacePathError, OSError, ValueError):
+            entries = []
+        return {
+            "path": abs_path,
+            "items": entries,
+            "entries": entries,
+            "tree_format": False,
+        }
+
+    def glob(
+        self,
+        pattern: str,
+        root: str = ".",
+        limit: Optional[int] = None,
+    ) -> List[str]:
+        if self._credential_workspace_overlap:
             return []
         try:
-            matches.sort(
-                key=lambda p: (root_path / p).stat().st_mtime if (root_path / p).exists() else 0.0,
-                reverse=True,
+            return self._workspace_files.glob(pattern, root=root, limit=limit)
+        except (WorkspacePathError, OSError, ValueError):
+            return []
+
+    def grep(
+        self,
+        pattern: str,
+        path: str = ".",
+        include: Optional[str] = None,
+        limit: int = 100,
+    ) -> Dict[str, Any]:
+        if self._credential_workspace_overlap:
+            return {"matches": []}
+        try:
+            matches = self._workspace_files.grep(
+                pattern,
+                root=path,
+                include=include,
+                limit=limit,
             )
-        except Exception:
-            pass
-        if limit is not None:
-            try:
-                lim = int(limit)
-                if lim >= 0:
-                    matches = matches[:lim]
-            except Exception:
-                pass
-        return matches
+        except (WorkspacePathError, OSError, ValueError, re.error):
+            matches = []
+        return {"matches": matches}
 
-    def grep(self, pattern: str, path: str = ".", include: Optional[str] = None, limit: int = 100) -> Dict[str, Any]:
-        root = Path(self._resolve(path))
-        if not root.exists():
-            return {"matches": []}
-        try:
-            regex = re.compile(pattern)
-        except Exception:
-            return {"matches": []}
-        import fnmatch
-
-        matches: List[Dict[str, Any]] = []
-        try:
-            for file_path in root.rglob("*"):
-                if not file_path.is_file():
-                    continue
-                try:
-                    rel = str(file_path.relative_to(root))
-                except Exception:
-                    rel = str(file_path)
-                if include and not fnmatch.fnmatch(rel, include):
-                    continue
-                try:
-                    text = file_path.read_text(encoding="utf-8", errors="ignore")
-                except Exception:
-                    continue
-                for idx, line in enumerate(text.splitlines(), start=1):
-                    if regex.search(line):
-                        matches.append({"path": rel, "line": idx, "text": line})
-                        if int(limit or 0) > 0 and len(matches) >= int(limit or 0):
-                            return {"matches": matches}
-            return {"matches": matches}
-        except Exception:
-            return {"matches": matches}
-
-    def _docker_prefix(self, *, env: Optional[Dict[str, str]] = None) -> List[str]:
+    def _docker_prefix(self, *, env_names: Iterable[str] = ()) -> List[str]:
         if shutil.which(self.docker_bin) is None and self.docker_bin != "docker":
             raise RuntimeError(f"docker binary not found: {self.docker_bin}")
         if shutil.which("docker") is None and self.docker_bin == "docker":
@@ -286,10 +313,8 @@ class DockerSandboxV2:
             args.extend(["--network", self.network])
         if self.runtime:
             args.extend(["--runtime", self.runtime])
-        for key, value in (env or {}).items():
-            if not key:
-                continue
-            args.extend(["-e", f"{key}={value}"])
+        for key in env_names:
+            args.extend(["--env", str(key)])
         args.append(self.image)
         return args
 
@@ -302,41 +327,140 @@ class DockerSandboxV2:
         stdin_data: Optional[str] = None,
         shell: bool = True,
     ):
-        # Execute inside the container via sh -lc.
+        del shell
         cmd = command or ""
-        docker_cmd = [*self._docker_prefix(env=env), "sh", "-lc", cmd]
+        if self._credential_workspace_overlap:
+            payload = {
+                "exit": 126,
+                "stdout": "",
+                "stderr": (
+                    "Docker sandbox command rejected: workspace overlaps "
+                    "credential storage"
+                ),
+            }
+            if not stream:
+                return payload
+            return [
+                ADAPTIVE_PREFIX_ITERABLE,
+                payload["stderr"],
+                payload,
+            ]
+        secret_values = (
+            *provider_credential_values(),
+            *provider_credential_values(env or {}),
+        )
+        if contains_provider_credential_value(
+            (cmd, stdin_data, env),
+            values=secret_values,
+        ):
+            payload = {
+                "exit": 126,
+                "stdout": "",
+                "stderr": (
+                    "Docker sandbox command rejected: provider credential "
+                    "in process input"
+                ),
+            }
+            if not stream:
+                return payload
+            return [
+                ADAPTIVE_PREFIX_ITERABLE,
+                payload["stderr"],
+                payload,
+            ]
         try:
-            result = subprocess.run(
-                docker_cmd,
-                timeout=timeout,
-                input=stdin_data,
-                capture_output=True,
-                text=True,
+            host_env = build_child_environment(overrides=env)
+        except ValueError:
+            payload = {
+                "exit": 126,
+                "stdout": "",
+                "stderr": (
+                    "Docker sandbox environment rejected: override key "
+                    "is not allowlisted"
+                ),
+            }
+            if not stream:
+                return payload
+            return [
+                ADAPTIVE_PREFIX_ITERABLE,
+                payload["stderr"],
+                payload,
+            ]
+        env_names = tuple(
+            str(key)
+            for key in (env or {})
+            if str(key) in host_env
+        )
+        try:
+            validate_workspace_credential_boundary(
+                self.workspace,
+                protected_paths=self._protected_credential_paths,
             )
-            stdout = result.stdout or ""
-            stderr = result.stderr or ""
-            payload = {"exit": result.returncode, "stdout": stdout, "stderr": stderr}
+        except ProcessIsolationUnavailable:
+            payload = {
+                "exit": 126,
+                "stdout": "",
+                "stderr": (
+                    "Docker sandbox command rejected: workspace credential "
+                    "boundary is unsafe"
+                ),
+            }
             if not stream:
                 return payload
+            return [
+                ADAPTIVE_PREFIX_ITERABLE,
+                payload["stderr"],
+                payload,
+            ]
+        docker_cmd = [
+            *self._docker_prefix(env_names=env_names),
+            "sh",
+            "-lc",
+            cmd,
+        ]
+        with redaction.secret_value_scope(*secret_values):
+            try:
+                result = subprocess.run(
+                    docker_cmd,
+                    timeout=timeout,
+                    input=stdin_data,
+                    env=host_env,
+                    capture_output=True,
+                    text=True,
+                )
+                payload = {
+                    "exit": result.returncode,
+                    "stdout": redaction.scrub_text(result.stdout or ""),
+                    "stderr": redaction.scrub_text(result.stderr or ""),
+                }
+            except subprocess.TimeoutExpired:
+                payload = {
+                    "exit": 124,
+                    "stdout": "",
+                    "stderr": "Command timed out",
+                }
+            except Exception as exc:  # noqa: BLE001
+                payload = {
+                    "exit": 1,
+                    "stdout": "",
+                    "stderr": redaction.safe_exception_message(
+                        exc,
+                        operation="Docker sandbox command",
+                    ),
+                }
 
-            lines: List[Any] = [ADAPTIVE_PREFIX_ITERABLE]
-            for line in (stdout.splitlines() or []):
+        if not stream:
+            return payload
+        lines: List[Any] = [ADAPTIVE_PREFIX_ITERABLE]
+        stdout = str(payload.get("stdout") or "")
+        stderr = str(payload.get("stderr") or "")
+        for line in stdout.splitlines() or []:
+            lines.append(line)
+        if not stdout and stderr:
+            for line in stderr.splitlines():
                 lines.append(line)
-            if not stdout and stderr:
-                for line in stderr.splitlines():
-                    lines.append(line)
-            lines.append(payload)
-            return lines
-        except subprocess.TimeoutExpired:
-            payload = {"exit": 124, "stdout": "", "stderr": "Command timed out"}
-            if not stream:
-                return payload
-            return [ADAPTIVE_PREFIX_ITERABLE, payload]
-        except Exception as exc:  # noqa: BLE001
-            payload = {"exit": 1, "stdout": "", "stderr": str(exc)}
-            if not stream:
-                return payload
-            return [ADAPTIVE_PREFIX_ITERABLE, payload]
+        lines.append(payload)
+        return lines
 
     def run(
         self,

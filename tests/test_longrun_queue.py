@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import json
+import os
 
-from breadboard_engine.longrun.queue import FeatureFileQueue, TodoStoreQueue, build_work_queue
+import pytest
+
+from breadboard_engine.security import WorkspacePathError
+
+from breadboard_engine.longrun.queue import (
+    FeatureFileQueue,
+    TodoStoreQueue,
+    build_work_queue,
+)
 from breadboard_engine.todo.store import TodoDraft, TodoStore
 
 
 def test_todo_store_queue_claim_and_complete(tmp_path) -> None:
     store = TodoStore(str(tmp_path), load_existing=False)
-    created = store.create([TodoDraft(title="Implement parser"), TodoDraft(title="Write tests")])
+    created = store.create(
+        [TodoDraft(title="Implement parser"), TodoDraft(title="Write tests")]
+    )
     queue = TodoStoreQueue(store=store)
 
     first = queue.peek_next()
@@ -90,3 +101,21 @@ def test_build_work_queue_selects_feature_file_backend(tmp_path) -> None:
     queue = build_work_queue(cfg, workspace=str(tmp_path))
     assert isinstance(queue, FeatureFileQueue)
     assert queue.snapshot()["backend"] == "feature_file"
+
+
+@pytest.mark.parametrize("link_kind", ("symlink", "hardlink"))
+def test_feature_file_queue_rejects_linked_target(tmp_path, link_kind) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    secret = tmp_path / "credential"
+    secret.write_text("queue-link-canary", encoding="utf-8")
+    target = workspace / "feature_queue.json"
+    if link_kind == "symlink":
+        target.symlink_to(secret)
+    else:
+        os.link(secret, target)
+
+    with pytest.raises(WorkspacePathError):
+        FeatureFileQueue(target, workspace=workspace)
+
+    assert secret.read_text(encoding="utf-8") == "queue-link-canary"

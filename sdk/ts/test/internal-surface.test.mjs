@@ -77,3 +77,101 @@ test("internal event decoder preserves incremental assistant tool calls", async 
   assert.equal(emptyTextCompleted.kind, "assistant_text_completed")
   assert.equal(emptyTextCompleted.payload.text, "")
 })
+
+test("internal event decoder accepts explicit session-scoped control and gap events", async () => {
+  const internal = await import("../dist/internal.js")
+  const envelope = (seq, type, payload) => ({
+    stable_cursor: true,
+    id: `event-${seq}`,
+    seq,
+    session_id: "session-1",
+    input_id: null,
+    turn_id: null,
+    timestamp_ms: seq,
+    type,
+    payload,
+  })
+
+  const gap = internal.decodeLoggedSessionEvent(envelope(1, "stream.gap", { reason: "overflow" }))
+  const control = internal.decodeLoggedSessionEvent(envelope(2, "session_control", { kind: "stop_requested" }))
+  assert.equal(gap.kind, "stream_gap_observed")
+  assert.equal(control.kind, "session_control_observed")
+  assert.equal(gap.inputId, null)
+  assert.equal(control.turnId, null)
+})
+
+test("internal event decoder rejects unsafe runtime error codes", async () => {
+  const internal = await import("../dist/internal.js")
+  assert.throws(
+    () => internal.decodeLoggedSessionEvent({
+      stable_cursor: true,
+      id: "event-error",
+      seq: 1,
+      session_id: "session-1",
+      input_id: null,
+      turn_id: null,
+      timestamp_ms: 1,
+      type: "error",
+      payload: { code: "ProviderRawExceptionText" },
+    }),
+    (error) => error?.failure?.kind === "protocol",
+  )
+})
+
+test("internal event decoder preserves provider completion presence semantics", async () => {
+  const internal = await import("../dist/internal.js")
+  const envelope = (payload) => ({
+    stable_cursor: true,
+    id: "event-provider-complete",
+    seq: 1,
+    session_id: "session-1",
+    input_id: "input-1",
+    turn_id: "turn-1",
+    timestamp_ms: 1,
+    type: "turn_completed",
+    payload,
+  })
+  const event = internal.decodeLoggedSessionEvent(envelope({
+    exchange_ref: {
+      exchange_id: "px-1",
+      schema_version: "bb.provider_exchange.v2",
+    },
+    finish_reason: "stop",
+    raw_provider_finish: "completed",
+    output_emitted: true,
+    usage: {
+      inputTokens: 0,
+      extensions: { providerBucket: "standard" },
+    },
+  }))
+
+  assert.equal(event.kind, "turn_completed")
+  assert.equal(event.payload.usage.inputTokens, 0)
+  assert.equal(Object.hasOwn(event.payload.usage, "outputTokens"), false)
+  assert.deepEqual(event.payload.exchangeRef, {
+    exchangeId: "px-1",
+    schemaVersion: "bb.provider_exchange.v2",
+  })
+  assert.throws(
+    () => internal.decodeLoggedSessionEvent(envelope({
+      usage: { inputTokens: 0, providerTotal: 9 },
+    })),
+    (error) => error?.failure?.code === "unknown_provider_usage_field",
+  )
+  assert.throws(
+    () => internal.decodeLoggedSessionEvent(envelope({
+      usage: {
+        extensions: Object.fromEntries(
+          Array.from({ length: 33 }, (_, index) => [`key${index}`, index]),
+        ),
+      },
+    })),
+    (error) => error?.failure?.code === "invalid_provider_usage_extensions_bounds",
+  )
+  assert.throws(
+    () => internal.decodeLoggedSessionEvent(envelope({
+      usage: { extensions: { oversized: "x".repeat(4097) } },
+    })),
+    (error) => error?.failure?.code === "invalid_provider_usage_extensions_bounds",
+  )
+})

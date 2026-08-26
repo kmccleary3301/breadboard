@@ -9,6 +9,7 @@ from breadboard_engine.compilation.v2_loader import load_agent_config_view
 from breadboard_engine.compilation.effective_config_graph import finalize_effective_config_graph
 from breadboard.product.harness.compile import (
     HarnessCompileError,
+    HarnessReferenceMissingError,
     compile_harness_definition,
 )
 ROOT = Path(__file__).resolve().parents[3]
@@ -49,7 +50,7 @@ def test_invalid_references_are_rejected(extends: Any) -> None:
     with pytest.raises(HarnessCompileError, match="invalid reference"):
         compile_harness_definition({"extends": extends}, source_ref="root")
 def test_missing_cyclic_and_inconsistent_references_are_rejected() -> None:
-    with pytest.raises(HarnessCompileError, match="missing reference"):
+    with pytest.raises(HarnessReferenceMissingError, match="missing reference"):
         compile_harness_definition(
             {"extends": "missing"}, source_ref="root",
             load_ref=lambda _parent, _ref: (_ for _ in ()).throw(KeyError()))
@@ -75,6 +76,84 @@ def test_lock_and_explanation_match_public_projection_schemas() -> None:
     assert _schema_errors(
         "bb.harness_explanation_report.v1.schema.json",
         compiled.explanation.as_dict()) == []
+
+def test_prompt_resources_are_deterministic_host_visible_lock_inputs() -> None:
+    definition = {
+        "schema_version": "bb.harness_definition.v1",
+        "version": 1,
+        "workspace": {"root": "."},
+        "providers": {
+            "default_model": "mock/reference",
+            "models": [{"id": "mock/reference", "adapter": "mock_chat"}],
+        },
+        "modes": [{"name": "respond"}],
+        "loop": {"sequence": [{"mode": "respond"}]},
+    }
+    resources = {
+        "prompts/system.md": b"System prompt.\n",
+        "prompts/review.md": b"Review prompt.\n",
+    }
+    first = compile_harness_definition(
+        definition, source_ref="harness.yaml", resource_inputs=resources)
+    reordered = compile_harness_definition(
+        definition,
+        source_ref="harness.yaml",
+        resource_inputs=dict(reversed(tuple(resources.items()))),
+    )
+    changed = compile_harness_definition(
+        definition,
+        source_ref="harness.yaml",
+        resource_inputs={**resources, "prompts/system.md": b"Changed.\n"},
+    )
+    unbound = compile_harness_definition(
+        definition,
+        source_ref="harness.yaml",
+    )
+    bound = unbound.with_resource_inputs(resources)
+
+    assert (
+        first.lock.canonical_json()
+        == reordered.lock.canonical_json()
+        == bound.lock.canonical_json()
+    )
+    assert first.lock["graph_hash"] != changed.lock["graph_hash"]
+    assert first.as_dict() == changed.as_dict() == definition
+    resource_layers = [
+        layer for layer in first.lock["source_layers"]
+        if layer["scope"] == "resource"
+    ]
+    assert [layer["source_ref"] for layer in resource_layers] == [
+        "prompts/review.md",
+        "prompts/system.md",
+    ]
+    assert all(
+        layer["host_visible"] is True and layer["model_visible"] is True
+        for layer in resource_layers
+    )
+    assert _schema_errors(
+        "bb.effective_harness_lock.v1.schema.json", first.lock.as_dict()) == []
+    assert unbound.with_resource_inputs({}) is unbound
+    with pytest.raises(HarnessCompileError, match="already bound"):
+        bound.with_resource_inputs(resources)
+
+@pytest.mark.parametrize(
+    ("resource_inputs", "message"),
+    [
+        ({"": b"prompt"}, "reference"),
+        ({" ": b"prompt"}, "reference"),
+        ({"prompts/system.md": "prompt"}, "bytes"),
+    ],
+)
+def test_invalid_prompt_resources_fail_before_lock(
+    resource_inputs: dict[str, Any],
+    message: str,
+) -> None:
+    with pytest.raises(HarnessCompileError, match=message):
+        compile_harness_definition(
+            {"tools": {}},
+            source_ref="harness.yaml",
+            resource_inputs=resource_inputs,
+        )
 def test_invalid_and_empty_definitions_fail_before_lock() -> None:
     with pytest.raises(HarnessCompileError, match="invalid Harness Definition"):
         compile_harness_definition(

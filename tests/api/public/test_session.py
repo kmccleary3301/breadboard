@@ -9,8 +9,11 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator
 
 from breadboard_engine.api.cli_bridge.app import create_app
+import breadboard_engine.provider_broker as provider_broker
+from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
 
 
@@ -27,7 +30,7 @@ def client(monkeypatch, tmp_path: Path) -> Iterator[TestClient]:
         yield test_client
 def _locked_harness(client: TestClient) -> str:
     assert client.post("/v1/harnesses", json={}).json()["ok"] is True
-    result = client.post("/v1/harnesses/minimal_harness.v2.yaml/lock").json()
+    result = client.post("/v1/harnesses/daily_driver.v1.yaml/lock").json()
     assert result["ok"] is True
     return result["data"]["path"]
 def _stream_records(response) -> list[dict]:
@@ -65,6 +68,191 @@ def test_session_lifecycle_and_resumable_event_stream(client: TestClient, monkey
     assert resumed == [first[-1]]
     assert client.get("/v1/sessions/session-fixture").json()["data"]["session"]["status"] == "canceled"
     assert client.get("/v1/sessions/session-fixture/artifacts").json()["ok"] is True
+def test_c4_daily_driver_completes_with_stable_observations_and_restart(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
+    monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("BREADBOARD_SESSION_STATE_ROOT", str(tmp_path / "session-state"))
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "session-events"))
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
+    monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    for name in (
+        "CODEX_AUTH_TOKEN",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "MOCK_API_KEY",
+    ):
+        monkeypatch.setenv(name, f"C4_SENTINEL_{name}")
+
+    def forbidden_provider_broker() -> None:
+        raise AssertionError("provider-free profile must not consult the credential broker")
+
+    observed_api_keys: list[str] = []
+    create_client = MockRuntime.create_client
+
+    def audited_create_client(
+        runtime: MockRuntime,
+        api_key: str,
+        *,
+        base_url: str | None = None,
+        default_headers: dict[str, str] | None = None,
+    ):
+        observed_api_keys.append(api_key)
+        return create_client(
+            runtime,
+            api_key,
+            base_url=base_url,
+            default_headers=default_headers,
+        )
+
+    monkeypatch.setattr(provider_broker, "get_provider_broker", forbidden_provider_broker)
+    monkeypatch.setattr(MockRuntime, "create_client", audited_create_client)
+
+    session_id = "c4-provider-free"
+    with TestClient(create_app(include_atp_routes=False)) as first_service:
+        lock_id = _locked_harness(first_service)
+        started = first_service.post(
+            "/v1/sessions",
+            json={
+                "lock_id": lock_id,
+                "task": "Inspect this workspace using a tool, then finish.",
+                "session_id": session_id,
+            },
+            headers={"Idempotency-Key": "c4-start"},
+        )
+        assert started.status_code == 202 and started.json()["data"]["session"]["status"] == "running"
+        sent = first_service.post(
+            f"/v1/sessions/{session_id}/input",
+            json={"content": "Continue deterministically."},
+            headers={"Idempotency-Key": "c4-input"},
+        )
+        assert sent.status_code == 202 and sent.json()["ok"] is True
+        streamed = first_service.get(f"/v1/sessions/{session_id}/events")
+        events = _stream_records(streamed)
+        current = first_service.get(f"/v1/sessions/{session_id}")
+        artifacts = first_service.get(f"/v1/sessions/{session_id}/artifacts")
+
+    assert current.json()["data"]["session"]["status"] == "completed"
+    assert artifacts.status_code == 200
+    assert artifacts.json()["data"] == {"session_id": session_id, "artifacts": []}
+    assert [event["seq"] for event in events] == list(range(1, len(events) + 1))
+    assert events[0]["kind"] == "session.started"
+    assert events[-1]["kind"] == "session.completed"
+    kinds = [event["kind"] for event in events]
+    assert "input.accepted" in kinds
+    assert [event["payload"]["tool"] for event in events if event["kind"] == "tool_call"] == [
+        "list_dir",
+        "apply_unified_patch",
+    ]
+    assistant_events = [event for event in events if event["kind"] == "assistant_message"]
+    assert assistant_events
+    assert any(
+        event["payload"] == {"metadata": {"has_content": True}}
+        for event in assistant_events
+    )
+    assert all(
+        set(event["payload"]) == {"metadata"}
+        and set(event["payload"]["metadata"]) == {"has_content"}
+        and type(event["payload"]["metadata"]["has_content"]) is bool
+        for event in assistant_events
+    )
+    tool_completions = [
+        event["payload"]["tool"] for event in events if event["kind"] == "tool_result"
+    ]
+    assert tool_completions == [
+        "list_dir",
+        "apply_unified_patch",
+        "apply_unified_patch",
+        "apply_unified_patch",
+        "apply_unified_patch",
+    ]
+    assert all(
+        set(event["payload"]) == {"tool", "error"}
+        and type(event["payload"]["error"]) is bool
+        for event in events
+        if event["kind"] == "tool_result"
+    )
+    observation_schemas = {
+        "assistant_message": "bb.payload.message.assistant.v1",
+        "tool_call": "bb.payload.tool.called.v1",
+        "tool_result": "bb.payload.tool.completed.v1",
+    }
+    registry_path = (
+        Path(__file__).resolve().parents[3]
+        / "contracts"
+        / "kernel"
+        / "registries"
+        / "kernel_event_kinds.v1.json"
+    )
+    registered = {
+        entry["id"]: entry["metadata"]["payload_schema_version"]
+        for entry in json.loads(registry_path.read_text(encoding="utf-8"))["entries"]
+        if entry["id"] in observation_schemas
+    }
+    assert registered == observation_schemas
+    schema_root = registry_path.parents[1] / "schemas" / "payloads"
+    for event in events:
+        schema_id = observation_schemas.get(event["kind"])
+        if schema_id is None:
+            continue
+        assert event["payload_schema_version"] == schema_id
+        schema_path = schema_root / f"{schema_id}.schema.json"
+        Draft202012Validator(
+            json.loads(schema_path.read_text(encoding="utf-8"))
+        ).validate(event["payload"])
+    assert observed_api_keys and set(observed_api_keys) == {"mock"}
+
+    with TestClient(create_app(include_atp_routes=False)) as restarted_service:
+        restored = restarted_service.get(f"/v1/sessions/{session_id}")
+        restored_events = _stream_records(
+            restarted_service.get(f"/v1/sessions/{session_id}/events")
+        )
+        restored_artifacts = restarted_service.get(
+            f"/v1/sessions/{session_id}/artifacts"
+        )
+        described = restarted_service.get("/v1/system").json()
+        assert restored.status_code == 200
+        assert restored.json()["data"]["session"] == current.json()["data"]["session"]
+        assert restored_events == events
+        assert restored_artifacts.json()["record_refs"] == [
+            f".breadboard/sessions/{session_id}/session_events.jsonl"
+        ]
+        profile = described["data"]["default_profile"]
+        assert profile["profile_id"] == "daily_driver.v1"
+        assert (
+            restored.json()["data"]["session"]["effective_lock_hash"]
+            == profile["effective_lock_hash"]
+            == described["hashes"]["profile"]
+        )
+
+        lock_path = tmp_path / lock_id
+        corrupt_lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        corrupt_lock["graph_hash"] = "sha256:" + "0" * 64
+        lock_path.write_text(json.dumps(corrupt_lock), encoding="utf-8")
+        rejected = restarted_service.post(
+            "/v1/sessions",
+            json={
+                "lock_id": lock_id,
+                "task": "must reject corrupt lock",
+                "session_id": "c4-corrupt-lock",
+            },
+            headers={"Idempotency-Key": "c4-corrupt"},
+        )
+        assert rejected.status_code == 409
+        assert rejected.json()["error"]["error_code"] == "lock_drift"
+
+    persisted = (
+        tmp_path
+        / ".breadboard"
+        / "sessions"
+        / session_id
+        / "session_events.jsonl"
+    ).read_text(encoding="utf-8")
+    assert "C4_SENTINEL" not in persisted
 def test_session_invalid_state_is_stable_and_secret_free(client: TestClient, tmp_path: Path) -> None:
     lock_id = _locked_harness(client)
     payload = {"lock_id": lock_id, "task": "secret-free error", "session_id": "duplicate"}
@@ -264,9 +452,9 @@ def test_durable_session_fallback_rejects_symlinked_event_file(monkeypatch, tmp_
 
 def test_session_start_preserves_lock_drift_error(client: TestClient, tmp_path: Path) -> None:
     lock_id = _locked_harness(client)
-    harness = tmp_path / "minimal_harness.v2.yaml"
+    harness = tmp_path / "daily_driver.v1.yaml"
     original = harness.read_text()
-    changed = original.replace("name: respond", "name: changed", 1).replace("mode: respond", "mode: changed", 1)
+    changed = original.replace("name: coding", "name: changed", 1).replace("mode: coding", "mode: changed", 1)
     assert changed != original
     harness.write_text(changed)
     response = client.post(

@@ -3,7 +3,7 @@ Provider-specific adapters for handling tool calling formats, ID matching, and r
 
 Handles the translation between our internal tool calling system and provider-specific formats.
 """
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, Any, List, Tuple
 from abc import ABC, abstractmethod
 import json
 import re
@@ -71,24 +71,32 @@ def _get_provider_settings(tool_def: Any) -> Dict[str, Any]:
 
 
 class OpenAIAdapter(ProviderAdapter):
-    """OpenAI-specific adapter for tool calling"""
+    """OpenAI-compatible adapter bound to one canonical provider."""
+
+    def __init__(self, provider_id: str = "openai"):
+        self._provider_id = provider_id
+
     
     def should_use_native_tool(self, tool_def: Dict[str, Any]) -> bool:
         """Check if tool should use OpenAI native function calling"""
         provider_routing = _get_provider_settings(tool_def)
-        openai_config = provider_routing.get("openai", {})
-        return openai_config.get("native_primary", False)
+        provider_config = provider_routing.get(self._provider_id, {})
+        return provider_config.get("native_primary", False)
     
     def translate_tool_to_native_schema(self, tool_def: Dict[str, Any]) -> Dict[str, Any]:
         """Convert to OpenAI function calling format"""
         parameters = {}
         required = []
         provider_routing = _get_provider_settings(tool_def)
-        openai_config = provider_routing.get("openai", {}) if isinstance(provider_routing, dict) else {}
-        additional_props = openai_config.get("additional_properties")
+        provider_config = (
+            provider_routing.get(self._provider_id, {})
+            if isinstance(provider_routing, dict)
+            else {}
+        )
+        additional_props = provider_config.get("additional_properties")
         if not isinstance(additional_props, bool):
             additional_props = None
-        strict_flag = openai_config.get("strict")
+        strict_flag = provider_config.get("strict")
         if not isinstance(strict_flag, bool):
             strict_flag = None
         
@@ -191,11 +199,15 @@ class OpenAIAdapter(ProviderAdapter):
         }
     
     def get_provider_id(self) -> str:
-        return "openai"
+        return self._provider_id
 
 
 class OpenRouterAdapter(OpenAIAdapter):
     """OpenRouter adapter (OpenAI-compatible) with Azure call_id aliasing."""
+
+    def __init__(self):
+        super().__init__("openrouter")
+
 
     def create_tool_result_message(self, call_id: str, tool_name: str, result: Any) -> Dict[str, Any]:
         msg = super().create_tool_result_message(call_id, tool_name, result)
@@ -321,17 +333,22 @@ class ProviderAdapterManager:
     """Manages provider-specific adapters"""
     
     def __init__(self):
+        openai_compatible = {
+            provider_id: OpenAIAdapter(provider_id)
+            for provider_id in ("codex", "openai", "mock", "cli_mock", "smoke", "replay")
+        }
         self.adapters = {
-            "openai": OpenAIAdapter(),
+            **openai_compatible,
             "anthropic": AnthropicAdapter(),
             "openrouter": OpenRouterAdapter(),
-            "mock": OpenAIAdapter(),
-            "cli_mock": OpenAIAdapter(),
         }
-    
+
     def get_adapter(self, provider_id: str) -> ProviderAdapter:
-        """Get adapter for provider"""
-        return self.adapters.get(provider_id, self.adapters["openai"])
+        """Get an explicitly cataloged adapter without provider substitution."""
+        try:
+            return self.adapters[provider_id]
+        except KeyError as exc:
+            raise ValueError(f"unsupported provider adapter: {provider_id}") from exc
     
     def filter_tools_for_provider(self, tools: List[Dict[str, Any]], provider_id: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """

@@ -12,6 +12,13 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from ..security import (
+    build_child_environment,
+    build_restricted_process_command,
+    contains_provider_credential_value,
+    provider_credential_values,
+    redaction,
+)
 
 from ..core.core import ToolDefinition
 from .context import ConductorContext
@@ -45,6 +52,21 @@ def _coerce_subprocess_text(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return str(value)
+def _scrub_subprocess_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
+    scrubbed, _problems = redaction.scrub_structure(
+        payload,
+        path="$.verification_result",
+    )
+    if isinstance(scrubbed, dict):
+        return scrubbed
+    return {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "verification result unavailable",
+        "timed_out": False,
+    }
+
+
 
 def _run_subprocess_capture_with_group_timeout(
     args: List[str],
@@ -55,65 +77,113 @@ def _run_subprocess_capture_with_group_timeout(
     """Run a local verification command and kill its full process group on timeout."""
 
     proc: Optional[subprocess.Popen[str]] = None
-    try:
-        proc = subprocess.Popen(
-            args,
-            cwd=cwd,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        stdout, stderr = proc.communicate(timeout=timeout)
+    secret_values = provider_credential_values()
+    if contains_provider_credential_value(args, values=secret_values):
         return {
-            "exit": int(proc.returncode or 0),
-            "stdout": stdout or "",
-            "stderr": stderr or "",
+            "exit": 126,
+            "stdout": "",
+            "stderr": (
+                "verification command rejected: provider credential "
+                "in process input"
+            ),
             "timed_out": False,
         }
-    except subprocess.TimeoutExpired as exc:
-        stdout = _coerce_subprocess_text(getattr(exc, "stdout", ""))
-        stderr = _coerce_subprocess_text(getattr(exc, "stderr", ""))
-        if proc is not None and proc.pid is not None:
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            except Exception:
+    with redaction.secret_value_scope(*secret_values):
+        try:
+            child_environment = build_child_environment()
+            isolated_args, child_environment = build_restricted_process_command(
+                args,
+                workspace=cwd,
+                working_directory=cwd,
+                shell=False,
+                environment=child_environment,
+            )
+            proc = subprocess.Popen(
+                isolated_args,
+                cwd=cwd,
+                env=child_environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            stdout, stderr = proc.communicate(timeout=timeout)
+            return _scrub_subprocess_capture(
+                {
+                    "exit": int(proc.returncode or 0),
+                    "stdout": stdout or "",
+                    "stderr": stderr or "",
+                    "timed_out": False,
+                }
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = _coerce_subprocess_text(getattr(exc, "stdout", ""))
+            stderr = _coerce_subprocess_text(getattr(exc, "stderr", ""))
+            if proc is not None and proc.pid is not None:
                 try:
-                    proc.terminate()
-                except Exception:
-                    pass
-            try:
-                out_after, err_after = proc.communicate(timeout=2)
-                stdout += _coerce_subprocess_text(out_after)
-                stderr += _coerce_subprocess_text(err_after)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
+                    os.killpg(proc.pid, signal.SIGTERM)
                 except ProcessLookupError:
                     pass
                 except Exception:
                     try:
-                        proc.kill()
+                        proc.terminate()
                     except Exception:
                         pass
                 try:
                     out_after, err_after = proc.communicate(timeout=2)
                     stdout += _coerce_subprocess_text(out_after)
                     stderr += _coerce_subprocess_text(err_after)
-                except Exception as kill_exc:
-                    stderr += f"\nFailed to collect process output after kill: {kill_exc}"
-            except Exception as collect_exc:
-                stderr += f"\nFailed to collect process output after termination: {collect_exc}"
-        if not stderr.strip():
-            stderr = f"Command timed out after {timeout:g} seconds"
-        elif "timed out" not in stderr.lower():
-            stderr = f"{stderr.rstrip()}\nCommand timed out after {timeout:g} seconds"
-        return {"exit": 124, "stdout": stdout or "", "stderr": stderr or "", "timed_out": True}
-    except Exception as exc:
-        return {"exit": 1, "stdout": "", "stderr": str(exc), "timed_out": False}
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    except Exception:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                    try:
+                        out_after, err_after = proc.communicate(timeout=2)
+                        stdout += _coerce_subprocess_text(out_after)
+                        stderr += _coerce_subprocess_text(err_after)
+                    except Exception as kill_exc:
+                        stderr += (
+                            "\nFailed to collect process output after kill: "
+                            f"{redaction.safe_exception_message(kill_exc)}"
+                        )
+                except Exception as collect_exc:
+                    stderr += (
+                        "\nFailed to collect process output after termination: "
+                        f"{redaction.safe_exception_message(collect_exc)}"
+                    )
+            if not stderr.strip():
+                stderr = f"Command timed out after {timeout:g} seconds"
+            elif "timed out" not in stderr.lower():
+                stderr = (
+                    f"{stderr.rstrip()}\nCommand timed out after {timeout:g} seconds"
+                )
+            return _scrub_subprocess_capture(
+                {
+                    "exit": 124,
+                    "stdout": stdout or "",
+                    "stderr": stderr or "",
+                    "timed_out": True,
+                }
+            )
+        except Exception as exc:
+            return _scrub_subprocess_capture(
+                {
+                    "exit": 1,
+                    "stdout": "",
+                    "stderr": redaction.safe_exception_message(
+                        exc,
+                        operation="verification command",
+                    ),
+                    "timed_out": False,
+                }
+            )
 
 def _auto_verify_smoke_command_from_prompt(prompt: str) -> str:
     timeout_match = re.search(

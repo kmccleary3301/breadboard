@@ -1,24 +1,28 @@
-"""
-Canonical LSP manager module.
-
-This module exposes the current multi-language LSP surface as the canonical
-`breadboard.lsp_manager` import path while retaining the older Python-only
-prototype actor for compatibility.
-"""
+"""Canonical, descriptor-secured LSP manager with Python compatibility fallbacks."""
 from __future__ import annotations
 
-import asyncio
+import ast
 import json
 import os
 import shutil
 import subprocess
-import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
-import fnmatch
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 import ray
+from breadboard_engine.security import (
+    ProcessIsolationUnavailable,
+    WorkspaceFilesystem,
+    WorkspacePathError,
+    build_child_environment,
+    build_restricted_process_command,
+    protected_credential_paths,
+    provider_credential_values,
+    purge_provider_credentials,
+    redaction,
+    validate_workspace_credential_boundary,
+)
 
 # LSP JSON-RPC client implementation
 class LSPJSONRPCClient:
@@ -168,9 +172,30 @@ LSP_SERVER_CONFIGS = {
 class LSPServer:
     """Individual LSP server instance running in isolated container"""
     
-    def __init__(self, server_id: str, workspace_root: str, container_image: str = "lsp-universal:latest"):
+    def __init__(
+        self,
+        server_id: str,
+        workspace_root: str,
+        container_image: str = "lsp-universal:latest",
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ):
+        self._protected_paths = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        purge_provider_credentials()
         self.server_id = server_id
-        self.workspace_root = workspace_root
+        safe_root = validate_workspace_credential_boundary(
+            workspace_root,
+            protected_paths=self._protected_paths,
+        )
+        self._workspace_files = WorkspaceFilesystem(safe_root)
+        self.workspace_root = str(self._workspace_files.root)
         self.container_image = container_image
         self.config = LSP_SERVER_CONFIGS.get(server_id, {})
         self.client: Optional[LSPJSONRPCClient] = None
@@ -236,66 +261,100 @@ class LSPServer:
         return True
     
     async def _spawn_server(self) -> Optional[subprocess.Popen]:
-        """Spawn LSP server process (containerized if specified)"""
+        """Spawn an LSP server behind the credential process boundary."""
         command = self.config.get("command", [])
         if not command:
             return None
-            
         try:
-            # Option 1: Direct process spawn
             if os.environ.get("LSP_USE_CONTAINERS", "0") == "0":
-                return subprocess.Popen(
-                    command,
-                    cwd=self.workspace_root,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=False
+                target = command
+            else:
+                target = [
+                    "docker",
+                    "run",
+                    "-i",
+                    "--rm",
+                    "--network=none",
+                    "--workdir=/workspace",
+                    f"--volume={self.workspace_root}:/workspace:ro",
+                    f"--name=lsp-{self.server_id}-{self.session_id}",
+                    self.container_image,
+                    *command,
+                ]
+            child_environment = build_child_environment()
+            isolated_command, child_environment = (
+                build_restricted_process_command(
+                    target,
+                    workspace=self.workspace_root,
+                    working_directory=self.workspace_root,
+                    shell=False,
+                    environment=child_environment,
+                    protected_paths=self._protected_paths,
                 )
-            
-            # Option 2: Container spawn (Docker/Podman)
-            container_cmd = [
-                "docker", "run", "-i", "--rm",
-                "--network=none",  # Isolated networking
-                f"--workdir=/workspace",
-                f"--volume={self.workspace_root}:/workspace:ro",
-                f"--name=lsp-{self.server_id}-{self.session_id}",
-                self.container_image
-            ] + command
-            
-            return subprocess.Popen(
-                container_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE,
-                text=False
             )
-            
-        except Exception as e:
-            print(f"Failed to spawn server {self.server_id}: {e}")
+            return subprocess.Popen(
+                isolated_command,
+                cwd=self.workspace_root,
+                env=child_environment,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=False,
+                shell=False,
+            )
+        except Exception as exc:
+            print(
+                f"Failed to spawn server {self.server_id}: "
+                f"{redaction.safe_exception_message(exc, operation='LSP server')}"
+            )
             return None
-    
+    def _logical_file_path(self, file_path: str) -> Path:
+        raw_path = os.fspath(file_path)
+        if not isinstance(raw_path, str):
+            raw_path = os.fsdecode(raw_path)
+        path = Path(raw_path)
+        if path.is_absolute():
+            try:
+                path = path.relative_to(self._workspace_files.root)
+            except ValueError as exc:
+                raise WorkspacePathError("path_outside_workspace") from exc
+        return path
+
+    def _document_uri(self, file_path: str) -> str:
+        logical_path = self._logical_file_path(file_path)
+        return f"file://{self._workspace_files.display_path(logical_path)}"
+
     def open_document(self, file_path: str) -> Dict[str, Any]:
-        """Open document in LSP server"""
+        """Open one workspace document through the pinned root descriptor."""
         if not self.initialized or not self.client:
             return {"error": "Server not initialized"}
-            
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
-                content = f.read()
-                
-            self.client._send_notification("textDocument/didOpen", {
-                "textDocument": {
-                    "uri": f"file://{file_path}",
-                    "languageId": self._get_language_id(file_path),
-                    "version": 1,
-                    "text": content
-                }
-            })
-            return {"status": "opened"}
-            
-        except Exception as e:
-            return {"error": str(e)}
+            logical_path = self._logical_file_path(file_path)
+            content = self._workspace_files.read_text(
+                logical_path,
+                encoding="utf-8",
+                errors="replace",
+            )
+            uri = self._document_uri(file_path)
+            self.client._send_notification(
+                "textDocument/didOpen",
+                {
+                    "textDocument": {
+                        "uri": uri,
+                        "languageId": self._get_language_id(str(logical_path)),
+                        "version": 1,
+                        "text": content,
+                    }
+                },
+            )
+            return {"status": "opened", "uri": uri}
+        except Exception as error:
+            return {
+                "error": redaction.safe_exception_message(
+                    error,
+                    operation="LSP document",
+                )
+            }
     
     def get_diagnostics(self) -> Dict[str, List[Dict[str, Any]]]:
         """Get current diagnostics"""
@@ -309,7 +368,7 @@ class LSPServer:
             return {"error": "Server not initialized"}
             
         return self.client._send_request("textDocument/hover", {
-            "textDocument": {"uri": f"file://{file_path}"},
+            "textDocument": {"uri": self._document_uri(file_path)},
             "position": {"line": line, "character": character}
         })
     
@@ -319,7 +378,7 @@ class LSPServer:
             return {"error": "Server not initialized"}
             
         return self.client._send_request("textDocument/definition", {
-            "textDocument": {"uri": f"file://{file_path}"},
+            "textDocument": {"uri": self._document_uri(file_path)},
             "position": {"line": line, "character": character}
         })
     
@@ -329,7 +388,7 @@ class LSPServer:
             return {"error": "Server not initialized"}
             
         return self.client._send_request("textDocument/references", {
-            "textDocument": {"uri": f"file://{file_path}"},
+            "textDocument": {"uri": self._document_uri(file_path)},
             "position": {"line": line, "character": character},
             "context": {"includeDeclaration": include_declaration}
         })
@@ -347,7 +406,7 @@ class LSPServer:
             return {"error": "Server not initialized"}
             
         return self.client._send_request("textDocument/documentSymbol", {
-            "textDocument": {"uri": f"file://{file_path}"}
+            "textDocument": {"uri": self._document_uri(file_path)}
         })
     
     def format_document(self, file_path: str) -> Dict[str, Any]:
@@ -356,7 +415,7 @@ class LSPServer:
             return {"error": "Server not initialized"}
             
         return self.client._send_request("textDocument/formatting", {
-            "textDocument": {"uri": f"file://{file_path}"},
+            "textDocument": {"uri": self._document_uri(file_path)},
             "options": {
                 "tabSize": 4,
                 "insertSpaces": True,
@@ -371,7 +430,7 @@ class LSPServer:
             return {"error": "Server not initialized"}
             
         return self.client._send_request("textDocument/codeAction", {
-            "textDocument": {"uri": f"file://{file_path}"},
+            "textDocument": {"uri": self._document_uri(file_path)},
             "range": {
                 "start": {"line": start_line, "character": start_char},
                 "end": {"line": end_line, "character": end_char}
@@ -385,7 +444,7 @@ class LSPServer:
             return {"error": "Server not initialized"}
             
         return self.client._send_request("textDocument/completion", {
-            "textDocument": {"uri": f"file://{file_path}"},
+            "textDocument": {"uri": self._document_uri(file_path)},
             "position": {"line": line, "character": character}
         })
     
@@ -415,14 +474,28 @@ class LSPServer:
         if self.client:
             self.client.shutdown()
         self.initialized = False
+        self._workspace_files.close()
 
 
 @ray.remote
 class LSPOrchestrator:
     """Orchestrates multiple LSP servers and handles client lifecycle"""
     
-    def __init__(self):
-        self.servers: Dict[str, ray.ObjectRef] = {}  # (server_id, root) -> server
+    def __init__(
+        self,
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ):
+        self._protected_paths = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        purge_provider_credentials()
+        self.servers: Dict[str, ray.ObjectRef] = {}
         self.broken_servers: Set[str] = set()
         
     def _find_project_root(self, file_path: str, patterns: List[str]) -> Optional[str]:
@@ -437,30 +510,49 @@ class LSPOrchestrator:
             
         return None
     
-    async def get_servers_for_file(self, file_path: str) -> List[ray.ObjectRef]:
-        """Get appropriate LSP servers for a file (OpenCode pattern)"""
+    async def get_servers_for_file(
+        self,
+        file_path: str,
+        workspace_root: Optional[str] = None,
+    ) -> List[ray.ObjectRef]:
+        """Get language servers without expanding beyond an admitted root."""
         extension = Path(file_path).suffix
         matching_servers = []
-        
+
         for server_id, config in LSP_SERVER_CONFIGS.items():
             if extension not in config["extensions"]:
                 continue
-                
-            # Find project root
-            root = self._find_project_root(file_path, config["root_patterns"])
-            if not root:
-                root = str(Path(file_path).parent)
-                
+
+            if workspace_root is None:
+                discovered = self._find_project_root(
+                    file_path,
+                    config["root_patterns"],
+                )
+                candidate_root = discovered or str(Path(file_path).parent)
+            else:
+                candidate_root = workspace_root
+            try:
+                root = str(
+                    validate_workspace_credential_boundary(
+                        candidate_root,
+                        protected_paths=self._protected_paths,
+                    )
+                )
+                Path(os.path.abspath(file_path)).relative_to(root)
+            except (OSError, ProcessIsolationUnavailable, ValueError):
+                continue
+
             server_key = f"{server_id}:{root}"
-            
-            # Skip broken servers
             if server_key in self.broken_servers:
                 continue
-                
-            # Get or create server
+
             if server_key not in self.servers:
                 try:
-                    server = LSPServer.remote(server_id, root)
+                    server = LSPServer.remote(
+                        server_id,
+                        root,
+                        protected_paths=self._protected_paths,
+                    )
                     started = await server.start.remote()
                     if started:
                         self.servers[server_key] = server
@@ -471,8 +563,12 @@ class LSPOrchestrator:
                     self.broken_servers.add(server_key)
             else:
                 matching_servers.append(self.servers[server_key])
-                
+
         return matching_servers
+
+    def active_servers(self) -> List[ray.ObjectRef]:
+        """Return servers already admitted and started by this orchestrator."""
+        return list(self.servers.values())
     
     async def cleanup_servers(self):
         """Clean up all servers"""
@@ -488,44 +584,112 @@ class LSPOrchestrator:
 class CLILinterRunner:
     """Runs CLI-based linters in isolated sandboxes"""
     
-    def __init__(self, sandbox_image: str = "lsp-universal:latest"):
+    def __init__(
+        self,
+        sandbox_image: str = "lsp-universal:latest",
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ):
+        self._protected_paths = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        purge_provider_credentials()
         self.sandbox_image = sandbox_image
-    
+
+    def _run_linter(
+        self,
+        command: Sequence[str],
+        *,
+        workspace: str,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        child_environment = build_child_environment()
+        isolated_command, child_environment = build_restricted_process_command(
+            command,
+            workspace=workspace,
+            working_directory=workspace,
+            shell=False,
+            environment=child_environment,
+            protected_paths=getattr(self, "_protected_paths", ()),
+        )
+        with redaction.secret_value_scope(*provider_credential_values()):
+            result = subprocess.run(
+                isolated_command,
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=child_environment,
+                shell=False,
+            )
+            result.stdout = redaction.scrub_text(result.stdout or "")
+            result.stderr = redaction.scrub_text(result.stderr or "")
+            return result
+
     async def run_ruff(self, file_path: str) -> List[Dict[str, Any]]:
-        """Run ruff linter on Python file"""
+        """Run ruff linter on Python file."""
         try:
-            result = subprocess.run([
-                "ruff", "check", "--output-format=json", file_path
-            ], capture_output=True, text=True, timeout=30)
-            
+            workspace = str(Path(file_path).expanduser().absolute().parent)
+            result = self._run_linter(
+                ["ruff", "check", "--output-format=json", file_path],
+                workspace=workspace,
+                timeout=30,
+            )
             if result.stdout:
-                ruff_output = json.loads(result.stdout)
-                return self._convert_ruff_to_lsp_diagnostics(ruff_output)
+                return self._convert_ruff_to_lsp_diagnostics(
+                    json.loads(result.stdout)
+                )
         except Exception:
             pass
         return []
-    
-    async def run_eslint(self, file_path: str) -> List[Dict[str, Any]]:
-        """Run ESLint on TypeScript/JavaScript file"""
+
+    async def run_eslint(
+        self,
+        file_path: str,
+        workspace_root: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Run an already-installed ESLint without package-manager fallback."""
         try:
-            result = subprocess.run([
-                "npx", "eslint", "--format=json", file_path
-            ], capture_output=True, text=True, timeout=30)
-            
+            root = Path(workspace_root or Path(file_path).parent).resolve()
+            local_candidate = root / "node_modules" / ".bin" / "eslint"
+            try:
+                local_executable = local_candidate.resolve(strict=True)
+            except OSError:
+                local_executable = None
+            if local_executable is not None and (
+                local_executable == root or root in local_executable.parents
+            ):
+                executable = str(local_executable)
+            else:
+                executable = shutil.which("eslint")
+            if not executable:
+                return []
+            result = self._run_linter(
+                [executable, "--format=json", file_path],
+                workspace=str(root),
+                timeout=30,
+            )
             if result.stdout:
-                eslint_output = json.loads(result.stdout)
-                return self._convert_eslint_to_lsp_diagnostics(eslint_output)
+                return self._convert_eslint_to_lsp_diagnostics(
+                    json.loads(result.stdout)
+                )
         except Exception:
             pass
         return []
-    
+
     async def run_clippy(self, workspace_root: str) -> List[Dict[str, Any]]:
-        """Run clippy on Rust project"""
+        """Run clippy on a Rust project."""
         try:
-            result = subprocess.run([
-                "cargo", "clippy", "--message-format=json", "--", "-D", "warnings"
-            ], cwd=workspace_root, capture_output=True, text=True, timeout=120)
-            
+            result = self._run_linter(
+                ["cargo", "clippy", "--message-format=json", "--", "-D", "warnings"],
+                workspace=workspace_root,
+                timeout=120,
+            )
             if result.stdout:
                 return self._convert_clippy_to_lsp_diagnostics(result.stdout)
         except Exception:
@@ -596,23 +760,44 @@ class CLILinterRunner:
 class UnifiedDiagnostics:
     """Aggregates diagnostics from LSP servers and CLI linters"""
     
-    def __init__(self):
-        self.orchestrator = LSPOrchestrator.remote()
-        self.linter_runner = CLILinterRunner.remote()
+    def __init__(
+        self,
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ):
+        captured = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        purge_provider_credentials()
+        self.orchestrator = LSPOrchestrator.remote(protected_paths=captured)
+        self.linter_runner = CLILinterRunner.remote(protected_paths=captured)
     
-    async def collect_all_diagnostics(self, file_path: str) -> Dict[str, List[Dict[str, Any]]]:
-        """Collect diagnostics from all sources"""
+    async def collect_all_diagnostics(
+        self,
+        file_path: str,
+        workspace_root: Optional[str] = None,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Collect diagnostics inside the supplied admitted workspace root."""
         all_diagnostics = {}
-        
+
         try:
-            # Get LSP servers for this file
-            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            servers = await self.orchestrator.get_servers_for_file.remote(
+                file_path,
+                workspace_root,
+            )
             
             # Collect LSP diagnostics
             lsp_futures = []
             for server in servers:
                 # Open document first
-                await server.open_document.remote(file_path)
+                opened = await server.open_document.remote(file_path)
+                if opened.get("error"):
+                    continue
                 lsp_futures.append(server.get_diagnostics.remote())
             
             # Collect CLI linter diagnostics
@@ -622,14 +807,17 @@ class UnifiedDiagnostics:
             if extension == ".py":
                 cli_futures.append(self.linter_runner.run_ruff.remote(file_path))
             elif extension in [".ts", ".tsx", ".js", ".jsx"]:
-                cli_futures.append(self.linter_runner.run_eslint.remote(file_path))
+                cli_futures.append(
+                    self.linter_runner.run_eslint.remote(
+                        file_path,
+                        workspace_root,
+                    )
+                )
             elif extension == ".rs":
-                workspace_root = Path(file_path).parent
-                while workspace_root != workspace_root.parent:
-                    if (workspace_root / "Cargo.toml").exists():
-                        break
-                    workspace_root = workspace_root.parent
-                cli_futures.append(self.linter_runner.run_clippy.remote(str(workspace_root)))
+                clippy_root = workspace_root or str(Path(file_path).parent)
+                cli_futures.append(
+                    self.linter_runner.run_clippy.remote(clippy_root)
+                )
             
             # Wait for all diagnostics
             if lsp_futures:
@@ -683,6 +871,40 @@ class UnifiedDiagnostics:
         return unique_diagnostics
 
 
+def _python_symbol_records(
+    source: str,
+    *,
+    top_level_only: bool,
+) -> List[Dict[str, Any]]:
+    tree = ast.parse(source)
+    nodes = ast.iter_child_nodes(tree) if top_level_only else ast.walk(tree)
+    records = []
+    for node in nodes:
+        if not isinstance(
+            node,
+            (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+        ):
+            continue
+        line = max(int(getattr(node, "lineno", 1)) - 1, 0)
+        symbol_range = {
+            "start": {"line": line, "character": 0},
+            "end": {"line": line, "character": 1},
+        }
+        records.append(
+            {
+                "name": node.name,
+                "kind": (
+                    5
+                    if isinstance(node, ast.ClassDef)
+                    else 12
+                ),
+                "range": symbol_range,
+                "selectionRange": symbol_range,
+            }
+        )
+    return records
+
+
 @ray.remote
 class LSPManagerV2:
     """
@@ -690,19 +912,83 @@ class LSPManagerV2:
     Drop-in replacement for the original lsp_manager.py with OpenCode feature parity.
     """
     
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ):
+        captured = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        purge_provider_credentials()
+        self._protected_paths = captured
         self.roots: Set[str] = set()
         self.touched_files: Set[str] = set()
-        self.orchestrator = LSPOrchestrator.remote()
-        self.unified_diagnostics = UnifiedDiagnostics.remote()
+        self._root_filesystems: Dict[str, WorkspaceFilesystem] = {}
+        self.orchestrator = LSPOrchestrator.remote(protected_paths=captured)
+        self.unified_diagnostics = UnifiedDiagnostics.remote(
+            protected_paths=captured
+        )
         
+    def _admit_file_context(
+        self,
+        path: str,
+    ) -> tuple[str, str, WorkspaceFilesystem, Path]:
+        raw_path = Path(path)
+        for root in sorted(self.roots, key=len, reverse=True):
+            filesystem = self._root_filesystems[root]
+            if raw_path.is_absolute():
+                try:
+                    relative = raw_path.relative_to(root)
+                except ValueError:
+                    continue
+            else:
+                relative = raw_path
+            try:
+                filesystem.inspect_file(relative)
+            except (
+                FileNotFoundError,
+                WorkspacePathError,
+                OSError,
+            ):
+                continue
+            return (
+                filesystem.display_path(relative),
+                root,
+                filesystem,
+                relative,
+            )
+        raise WorkspacePathError("path_outside_workspace")
+
+    def _admit_file(self, path: str) -> str:
+        admitted, _root, _filesystem, _relative = (
+            self._admit_file_context(path)
+        )
+        return admitted
+
     def register_root(self, root: str) -> None:
-        """Register a workspace root"""
-        self.roots.add(os.path.abspath(root))
+        """Register and pin a workspace root descriptor."""
+        safe_root = validate_workspace_credential_boundary(
+            root,
+            protected_paths=self._protected_paths,
+        )
+        filesystem = WorkspaceFilesystem(safe_root)
+        normalized = str(filesystem.root)
+        previous = self._root_filesystems.get(normalized)
+        if previous is not None:
+            previous.close()
+        self._root_filesystems[normalized] = filesystem
+        self.roots.add(normalized)
     
     def touch_file(self, path: str, wait: bool = True) -> None:
-        """Mark file as touched for diagnostics refresh"""
-        self.touched_files.add(os.path.abspath(path))
+        """Mark an admitted regular workspace file as touched."""
+        del wait
+        self.touched_files.add(self._admit_file(path))
     
     async def diagnostics(self) -> Dict[str, List[Dict[str, Any]]]:
         """
@@ -714,24 +1000,41 @@ class LSPManagerV2:
         # Process touched files
         files_to_process = list(self.touched_files) if self.touched_files else []
         
-        # If no touched files, scan workspace roots
         if not files_to_process:
-            for root in self.roots:
-                for ext in ['.py', '.ts', '.tsx', '.js', '.jsx', '.go', '.rs', '.cpp', '.c', '.java', '.rb', '.cs']:
-                    for file_path in Path(root).rglob(f'*{ext}'):
-                        files_to_process.append(str(file_path))
-                        if len(files_to_process) > 100:  # Limit for performance
-                            break
+            supported = {
+                extension
+                for config in LSP_SERVER_CONFIGS.values()
+                for extension in config["extensions"]
+            }
+            for root, filesystem in self._root_filesystems.items():
+                for entry in filesystem.list_entries(".", depth=64):
+                    if entry.kind != "file":
+                        continue
+                    if Path(entry.path).suffix not in supported:
+                        continue
+                    files_to_process.append(
+                        filesystem.display_path(entry.path)
+                    )
                     if len(files_to_process) > 100:
                         break
+                if len(files_to_process) > 100:
+                    break
         
         # Collect diagnostics for all files
         diagnostic_futures = []
-        for file_path in files_to_process[:50]:  # Process max 50 files at once
-            if os.path.isfile(file_path):
-                diagnostic_futures.append(
-                    self.unified_diagnostics.collect_all_diagnostics.remote(file_path)
+        for candidate in files_to_process[:50]:
+            try:
+                file_path, root, _filesystem, _relative = (
+                    self._admit_file_context(candidate)
                 )
+            except (FileNotFoundError, WorkspacePathError, OSError):
+                continue
+            diagnostic_futures.append(
+                self.unified_diagnostics.collect_all_diagnostics.remote(
+                    file_path,
+                    root,
+                )
+            )
         
         if diagnostic_futures:
             results = ray.get(diagnostic_futures)
@@ -743,59 +1046,168 @@ class LSPManagerV2:
         
         return all_diagnostics
     
-    async def hover(self, file_path: str, line: int, character: int) -> Dict[str, Any]:
-        """Get hover information from appropriate LSP server"""
+    async def hover(
+        self,
+        file_path: str,
+        line: int,
+        character: int,
+    ) -> Dict[str, Any]:
+        """Get LSP hover data, falling back to a descriptor-read symbol."""
         try:
-            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            admitted, root, filesystem, relative = (
+                self._admit_file_context(file_path)
+            )
+            servers = await self.orchestrator.get_servers_for_file.remote(
+                admitted,
+                root,
+            )
             for server in servers:
                 try:
-                    await server.open_document.remote(file_path)
-                    result = await server.hover.remote(file_path, line, character)
+                    opened = await server.open_document.remote(admitted)
+                    if opened.get("error"):
+                        continue
+                    result = await server.hover.remote(
+                        admitted,
+                        line,
+                        character,
+                    )
                     if result and "error" not in result:
                         return result
                 except Exception:
                     continue
+            if relative.suffix != ".py":
+                return {}
+            source = filesystem.read_text(
+                relative,
+                encoding="utf-8",
+                errors="replace",
+            )
+            lines = source.splitlines()
+            line_index = int(line) - 1
+            if line_index < 0 or line_index >= len(lines):
+                return {}
+            text = lines[line_index]
+            cursor = max(int(character) - 1, 0)
+            cursor = min(cursor, len(text))
+            start = cursor
+            while start > 0 and (
+                text[start - 1].isalnum() or text[start - 1] == "_"
+            ):
+                start -= 1
+            end = cursor
+            while end < len(text) and (
+                text[end].isalnum() or text[end] == "_"
+            ):
+                end += 1
+            word = text[start:end]
+            if word:
+                return {
+                    "contents": [
+                        {
+                            "language": "python",
+                            "value": f"symbol: {word}",
+                        }
+                    ]
+                }
         except Exception:
             pass
         return {}
     
-    async def workspace_symbol(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Search workspace symbols across all language servers"""
+    async def workspace_symbol(
+        self,
+        query: str,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Search active servers, then descriptor-read Python sources."""
+        maximum = max(0, int(limit))
+        if maximum == 0:
+            return []
         all_symbols = []
-        
+
         try:
-            # Get all active servers
-            for root in self.roots:
-                for server_id in LSP_SERVER_CONFIGS:
-                    server_key = f"{server_id}:{root}"
-                    if hasattr(self.orchestrator, 'servers') and server_key in self.orchestrator.servers:
-                        server = self.orchestrator.servers[server_key]
-                        try:
-                            result = await server.workspace_symbols.remote(query)
-                            if result and "result" in result:
-                                symbols = result["result"][:10]  # Limit per server
-                                all_symbols.extend(symbols)
-                        except Exception:
-                            continue
-        except Exception:
-            pass
-        
-        # Sort and limit results
-        all_symbols.sort(key=lambda x: x.get("name", ""))
-        return all_symbols[:limit]
-    
-    async def document_symbol(self, file_path: str) -> List[Dict[str, Any]]:
-        """Get document symbols from appropriate LSP server"""
-        try:
-            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            servers = await self.orchestrator.active_servers.remote()
             for server in servers:
                 try:
-                    await server.open_document.remote(file_path)
-                    result = await server.document_symbols.remote(file_path)
+                    result = await server.workspace_symbols.remote(query)
                     if result and "result" in result:
+                        all_symbols.extend(result["result"][:maximum])
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        if not all_symbols:
+            normalized_query = str(query).casefold()
+            for root in sorted(self.roots):
+                filesystem = self._root_filesystems[root]
+                for entry in filesystem.list_entries(".", depth=64):
+                    if entry.kind != "file" or not entry.path.endswith(".py"):
+                        continue
+                    try:
+                        source = filesystem.read_text(
+                            entry.path,
+                            encoding="utf-8",
+                            errors="replace",
+                        )
+                        records = _python_symbol_records(
+                            source,
+                            top_level_only=False,
+                        )
+                    except (OSError, SyntaxError):
+                        continue
+                    file_path = filesystem.display_path(entry.path)
+                    for record in records:
+                        if normalized_query not in record["name"].casefold():
+                            continue
+                        all_symbols.append(
+                            {
+                                "name": record["name"],
+                                "kind": record["kind"],
+                                "location": {
+                                    "uri": f"file://{file_path}",
+                                    "range": record["range"],
+                                },
+                            }
+                        )
+                        if len(all_symbols) >= maximum:
+                            return all_symbols
+
+        all_symbols.sort(key=lambda item: item.get("name", ""))
+        return all_symbols[:maximum]
+    
+    async def document_symbol(
+        self,
+        file_path: str,
+    ) -> List[Dict[str, Any]]:
+        """Get document symbols with a descriptor-read Python fallback."""
+        try:
+            admitted, root, filesystem, relative = (
+                self._admit_file_context(file_path)
+            )
+            servers = await self.orchestrator.get_servers_for_file.remote(
+                admitted,
+                root,
+            )
+            for server in servers:
+                try:
+                    opened = await server.open_document.remote(admitted)
+                    if opened.get("error"):
+                        continue
+                    result = await server.document_symbols.remote(admitted)
+                    if result and "result" in result and result["result"]:
                         return result["result"]
                 except Exception:
                     continue
+            if relative.suffix == ".py":
+                source = filesystem.read_text(
+                    relative,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                return _python_symbol_records(
+                    source,
+                    top_level_only=True,
+                )
         except Exception:
             pass
         return []
@@ -803,10 +1215,18 @@ class LSPManagerV2:
     async def go_to_definition(self, file_path: str, line: int, character: int) -> Dict[str, Any]:
         """Go to definition via LSP server"""
         try:
-            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            file_path, root, _filesystem, _relative = (
+                self._admit_file_context(file_path)
+            )
+            servers = await self.orchestrator.get_servers_for_file.remote(
+                file_path,
+                root,
+            )
             for server in servers:
                 try:
-                    await server.open_document.remote(file_path)
+                    opened = await server.open_document.remote(file_path)
+                    if opened.get("error"):
+                        continue
                     result = await server.go_to_definition.remote(file_path, line, character)
                     if result and "result" in result and result["result"]:
                         return result
@@ -819,10 +1239,18 @@ class LSPManagerV2:
     async def find_references(self, file_path: str, line: int, character: int) -> Dict[str, Any]:
         """Find references via LSP server"""
         try:
-            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            file_path, root, _filesystem, _relative = (
+                self._admit_file_context(file_path)
+            )
+            servers = await self.orchestrator.get_servers_for_file.remote(
+                file_path,
+                root,
+            )
             for server in servers:
                 try:
-                    await server.open_document.remote(file_path)
+                    opened = await server.open_document.remote(file_path)
+                    if opened.get("error"):
+                        continue
                     result = await server.find_references.remote(file_path, line, character, True)
                     if result and "result" in result:
                         return result
@@ -835,10 +1263,18 @@ class LSPManagerV2:
     async def format_document(self, file_path: str) -> Dict[str, Any]:
         """Format document via LSP server"""
         try:
-            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            file_path, root, _filesystem, _relative = (
+                self._admit_file_context(file_path)
+            )
+            servers = await self.orchestrator.get_servers_for_file.remote(
+                file_path,
+                root,
+            )
             for server in servers:
                 try:
-                    await server.open_document.remote(file_path)
+                    opened = await server.open_document.remote(file_path)
+                    if opened.get("error"):
+                        continue
                     result = await server.format_document.remote(file_path)
                     if result and "result" in result:
                         return result
@@ -852,12 +1288,25 @@ class LSPManagerV2:
                           end_line: int, end_char: int, diagnostics: List[Dict] = None) -> Dict[str, Any]:
         """Get code actions via LSP server"""
         try:
-            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            file_path, root, _filesystem, _relative = (
+                self._admit_file_context(file_path)
+            )
+            servers = await self.orchestrator.get_servers_for_file.remote(
+                file_path,
+                root,
+            )
             for server in servers:
                 try:
-                    await server.open_document.remote(file_path)
+                    opened = await server.open_document.remote(file_path)
+                    if opened.get("error"):
+                        continue
                     result = await server.code_actions.remote(
-                        file_path, start_line, start_char, end_line, end_char, diagnostics
+                        file_path,
+                        start_line,
+                        start_char,
+                        end_line,
+                        end_char,
+                        diagnostics,
                     )
                     if result and "result" in result:
                         return result
@@ -870,10 +1319,18 @@ class LSPManagerV2:
     async def completion(self, file_path: str, line: int, character: int) -> Dict[str, Any]:
         """Get code completion via LSP server"""
         try:
-            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            file_path, root, _filesystem, _relative = (
+                self._admit_file_context(file_path)
+            )
+            servers = await self.orchestrator.get_servers_for_file.remote(
+                file_path,
+                root,
+            )
             for server in servers:
                 try:
-                    await server.open_document.remote(file_path)
+                    opened = await server.open_document.remote(file_path)
+                    if opened.get("error"):
+                        continue
                     result = await server.completion.remote(file_path, line, character)
                     if result and "result" in result:
                         return result
@@ -889,6 +1346,10 @@ class LSPManagerV2:
             await self.orchestrator.cleanup_servers.remote()
         except Exception:
             pass
+        for filesystem in self._root_filesystems.values():
+            filesystem.close()
+        self._root_filesystems.clear()
+        self.roots.clear()
 
 
 # Compatibility wrapper for existing code
@@ -905,7 +1366,7 @@ def _mk_diagnostic(path: str, message: str, line: int, col: int, severity: int =
     }
 
 
-from .lsp_manager_basic_legacy import LSPManager
+LSPManager = LSPManagerV2
 
 
 __all__ = [

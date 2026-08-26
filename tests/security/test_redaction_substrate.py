@@ -37,7 +37,9 @@ class TestSecretKeyRegistry:
 
 class TestValuePatterns:
     def test_openai_style_key(self):
-        assert redaction.REDACTED in redaction.scrub_text("key sk-proj-abcdef123456 end")
+        assert redaction.REDACTED in redaction.scrub_text(
+            "key sk-proj-abcdef123456 end"
+        )
 
     def test_jwt(self):
         jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N"
@@ -54,22 +56,39 @@ class TestValuePatterns:
 
 
 class TestRegisteredValues:
-    def test_registered_value_scrubbed_everywhere(self):
-        redaction.register_secret_value("hunter2-canary-value")
-        assert "hunter2-canary-value" not in redaction.scrub_text(
-            "prefix hunter2-canary-value suffix"
-        )
-
-    def test_short_and_non_string_values_ignored(self):
-        redaction.register_secret_value("abc")
-        redaction.register_secret_value(None)
-        redaction.register_secret_value(12345)
+    def test_scoped_value_scrubbed_then_released(self):
+        secret = "hunter2-canary-value"
+        with redaction.secret_value_scope(secret):
+            assert secret not in redaction.scrub_text(f"prefix {secret} suffix")
+            assert redaction.iter_registered_secret_values() == (secret,)
         assert redaction.iter_registered_secret_values() == ()
 
-    def test_idempotent(self):
-        redaction.register_secret_value("dup-canary-value")
-        redaction.register_secret_value("dup-canary-value")
-        assert redaction.iter_registered_secret_values() == ("dup-canary-value",)
+    def test_short_and_non_string_values_ignored(self):
+        with redaction.secret_value_scope("abc", None, 12345):
+            assert redaction.iter_registered_secret_values() == ()
+        assert redaction.iter_registered_secret_values() == ()
+
+    def test_overlapping_scopes_are_reference_counted(self):
+        secret = "dup-canary-value"
+        with redaction.secret_value_scope(secret):
+            with redaction.secret_value_scope(secret):
+                assert redaction.iter_registered_secret_values() == (secret,)
+            assert redaction.iter_registered_secret_values() == (secret,)
+        assert redaction.iter_registered_secret_values() == ()
+
+    def test_exception_fields_are_scrubbed_before_scope_release(self):
+        secret = "exception-canary-value"
+        error = RuntimeError(f"failed with {secret}")
+        error.details = {"debug": secret, "authorization": secret}
+        error.add_note(f"note {secret}")
+
+        with redaction.secret_value_scope(secret):
+            assert redaction.scrub_exception_in_place(error) is error
+
+        assert secret not in str(error)
+        assert secret not in repr(error.details)
+        assert secret not in repr(error.__notes__)
+        assert redaction.iter_registered_secret_values() == ()
 
 
 class TestScrubStructure:
@@ -110,3 +129,57 @@ class TestScrubStructure:
         assert scrubbed["x-ratelimit-remaining-requests"] == "99"
         assert scrubbed["x-api-key"] == redaction.REDACTED
         assert scrubbed["Cookie"] == redaction.REDACTED
+
+    def test_auth_secrets_redact_without_destroying_generic_state_or_code(self):
+        payload = {
+            "state": "running",
+            "code": "flow_unavailable",
+            "authorization_code": "auth-code-canary",
+            "user_code": "ABCD-EFGH",
+        }
+
+        scrubbed, _problems = redaction.scrub_structure(payload)
+
+        assert scrubbed["state"] == "running"
+        assert scrubbed["code"] == "flow_unavailable"
+        assert scrubbed["authorization_code"] == redaction.REDACTED
+        assert scrubbed["user_code"] == redaction.REDACTED
+
+    def test_auth_url_redacts_secret_query_keys_and_drops_fragment(self):
+        query_secret = "opaque-query-canary"
+        fragment_secret = "opaque-fragment-canary"
+        cleaned = redaction.scrub_auth_url(
+            "https://auth.example.test/authorize"
+            f"?client_id=public-client&access_token={query_secret}&state=one-time"
+            f"#access_token={fragment_secret}"
+        )
+
+        assert "client_id=public-client" in cleaned
+        assert query_secret not in cleaned
+        assert fragment_secret not in cleaned
+        assert "access_token=%2A%2A%2AREDACTED%2A%2A%2A" in cleaned
+        assert "state=%2A%2A%2AREDACTED%2A%2A%2A" in cleaned
+        assert "#" not in cleaned
+
+    def test_provider_auth_runtime_is_removed_recursively(self):
+        payload = {
+            "provider_auth_runtime": {"openai": {"api_key": "top-canary"}},
+            "wrapper": {
+                "provider_auth_runtime.openai.api_key": "nested-canary",
+                "safe": True,
+            },
+            "items": [{"provider_auth_runtime": {"token": "list-canary"}}],
+            "providers.provider_auth_runtime.openai.api_key": "prefixed-canary",
+            "providers": {
+                "provider_auth_runtime.openai.api_key": "nested-prefixed-canary"
+            },
+        }
+
+        assert redaction.contains_provider_auth_runtime(payload)
+        stripped = redaction.strip_provider_auth_runtime(payload)
+        assert stripped == {
+            "wrapper": {"safe": True},
+            "items": [{}],
+            "providers": {},
+        }
+        assert not redaction.contains_provider_auth_runtime(stripped)

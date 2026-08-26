@@ -3,17 +3,13 @@ import uuid
 import pytest
 import ray
 import json
-import tempfile
-import time
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import ANY, Mock, patch
 
 from breadboard.lsp_deployment import (
     LSPClusterManager,
     LSPDeploymentConfig,
     LSPProxyRouter,
     deploy_lsp_system,
-    example_usage
 )
 from breadboard.lsp_manager import LSP_SERVER_CONFIGS
 
@@ -230,13 +226,34 @@ class TestLSPClusterManager:
         assert "cpu" in unknown_resources
         assert "memory" in unknown_resources
     
-    def test_single_server_deployment(self, ray_cluster, cluster_manager, test_workspace):
-        """Test deployment of a single server"""
-        # Test deployment with real LSPManagerV2 (will fail gracefully if no language servers available)
-        server = cluster_manager._deploy_single_server("python", str(test_workspace), 0)
-        
-        # Server could be None if language server requirements aren't met, but method should not crash
-        assert server is None or hasattr(server, '__ray_ready__')  # Either None or a Ray actor
+    @patch("breadboard.lsp_deployment.LSPManagerV2")
+    def test_single_server_deployment(
+        self,
+        mock_lsp_manager,
+        ray_cluster,
+        cluster_manager,
+        test_workspace,
+    ):
+        """Deploy one manager with the requested resource envelope."""
+        mock_server = Mock()
+        mock_server.register_root.remote.return_value = ray.put(None)
+        mock_lsp_manager.options.return_value.remote.return_value = mock_server
+
+        server = cluster_manager._deploy_single_server(
+            "python",
+            str(test_workspace),
+            0,
+        )
+
+        assert server is mock_server
+        mock_lsp_manager.options.assert_called_once_with(
+            num_cpus=0.5,
+            memory=256 * 1024 * 1024,
+            name=ANY,
+        )
+        mock_server.register_root.remote.assert_called_once_with(
+            str(test_workspace)
+        )
     
     def test_health_check_empty_cluster(self, cluster_manager):
         """Test health check on empty cluster"""
@@ -405,24 +422,30 @@ class TestLSPProxyRouter:
 class TestDeploymentIntegration:
     """Integration tests for deployment system"""
     
-    def test_deploy_lsp_system_development(self, ray_cluster, test_workspace):
-        """Test development deployment"""
+    @patch.object(LSPClusterManager, "_deploy_single_server")
+    def test_deploy_lsp_system_development(
+        self,
+        mock_deploy,
+        ray_cluster,
+        test_workspace,
+    ):
+        """Deploy only the configured language without starting nested actors."""
+        mock_server = Mock()
+        mock_server.diagnostics.remote.return_value = ray.put({})
+        mock_server.shutdown.remote.return_value = ray.put(None)
+        mock_deploy.return_value = mock_server
         config = LSPDeploymentConfig.create_development_config()
-        
-        # Limit languages for faster testing
         config["languages"]["enabled"] = ["python"]
-        config["languages"]["disabled"] = list(set(LSP_SERVER_CONFIGS.keys()) - {"python"})
-        
-        # Deploy system
+        config["languages"]["disabled"] = list(
+            set(LSP_SERVER_CONFIGS) - {"python"}
+        )
+
         cluster_manager = deploy_lsp_system(config, [str(test_workspace)])
-        
+
         assert isinstance(cluster_manager, LSPClusterManager)
-        
-        # Test health check
-        health = cluster_manager.health_check()
-        assert isinstance(health, dict)
-        
-        # Cleanup
+        assert set(cluster_manager.lsp_pools) == {"python"}
+        assert cluster_manager.health_check()["healthy_servers"] == 1
+        assert mock_deploy.call_count == 1
         cluster_manager.shutdown_all()
     
     def test_deploy_lsp_system_with_invalid_config(self, ray_cluster, test_workspace):
@@ -442,25 +465,37 @@ class TestDeploymentIntegration:
         # Cleanup
         cluster_manager.shutdown_all()
     
-    def test_deploy_with_multiple_workspaces(self, ray_cluster, tmp_path):
-        """Test deployment with multiple workspace roots"""
-        # Create multiple workspaces
+    @patch.object(LSPClusterManager, "_deploy_single_server")
+    def test_deploy_with_multiple_workspaces(
+        self,
+        mock_deploy,
+        ray_cluster,
+        tmp_path,
+    ):
+        """Deploy one configured manager per workspace root."""
+        mock_server = Mock()
+        mock_server.shutdown.remote.return_value = ray.put(None)
+        mock_deploy.return_value = mock_server
         workspaces = []
-        for i in range(3):
-            workspace = tmp_path / f"workspace_{i}"
+        for index in range(3):
+            workspace = tmp_path / f"workspace_{index}"
             workspace.mkdir()
-            (workspace / "test.py").write_text(f"def function_{i}(): pass")
+            (workspace / "test.py").write_text(
+                f"def function_{index}(): pass"
+            )
             workspaces.append(str(workspace))
-        
+
         config = LSPDeploymentConfig.create_development_config()
         config["languages"]["enabled"] = ["python"]
-        
-        # Deploy to multiple workspaces
+        config["languages"]["disabled"] = list(
+            set(LSP_SERVER_CONFIGS) - {"python"}
+        )
         cluster_manager = deploy_lsp_system(config, workspaces)
-        
+
         assert isinstance(cluster_manager, LSPClusterManager)
-        
-        # Cleanup
+        assert set(cluster_manager.lsp_pools) == {"python"}
+        assert len(cluster_manager.lsp_pools["python"]) == len(workspaces)
+        assert mock_deploy.call_count == len(workspaces)
         cluster_manager.shutdown_all()
 
 
@@ -516,26 +551,36 @@ class TestEnvironmentIntegration:
 class TestFailureScenarios:
     """Test failure scenarios and recovery"""
     
-    def test_server_startup_failure_handling(self, ray_cluster, test_workspace):
-        """Test handling of server startup failures"""
+    def test_server_startup_failure_handling(
+        self,
+        ray_cluster,
+        test_workspace,
+    ):
+        """Track a failed deployment without starting a nested Ray actor."""
         cluster_manager = LSPClusterManager(max_replicas_per_language=1)
-        
-        # Deploy with non-existent language
-        fake_config = {"fake_language": {
-            "id": "fake",
-            "extensions": [".fake"],
-            "command": ["nonexistent-server"],
-            "requires": ["nonexistent-tool"],
-            "initialization": {}
-        }}
-        
-        with patch.dict(LSP_SERVER_CONFIGS, fake_config):
-            deployment_status = cluster_manager.deploy_lsp_cluster([str(test_workspace)])
-        
-        # Should track failed deployments
-        assert isinstance(deployment_status["failed_languages"], list)
-        
-        # Cleanup
+        fake_config = {
+            "fake_language": {
+                "id": "fake",
+                "extensions": [".fake"],
+                "command": ["nonexistent-server"],
+                "requires": ["nonexistent-tool"],
+                "initialization": {},
+            }
+        }
+
+        with (
+            patch.dict(LSP_SERVER_CONFIGS, fake_config, clear=True),
+            patch.object(
+                cluster_manager,
+                "_deploy_single_server",
+                return_value=None,
+            ),
+        ):
+            deployment_status = cluster_manager.deploy_lsp_cluster(
+                [str(test_workspace)]
+            )
+
+        assert deployment_status["failed_languages"] == ["fake_language"]
         cluster_manager.shutdown_all()
     
     def test_health_check_with_unhealthy_servers(self, ray_cluster):
@@ -617,23 +662,30 @@ class TestScalingBehavior:
         for language in ["python", "typescript", "go"]:
             cluster_manager.lsp_pools[language] = [Mock() for _ in range(2)]
         
-        # Perform concurrent scaling
+        # Keep this a scaling-concurrency test, not a nested-actor startup test.
         import threading
-        
+
         def scale_language(lang, target):
-            cluster_manager.scale_language_servers(lang, target, [str(test_workspace)])
-        
+            cluster_manager.scale_language_servers(
+                lang,
+                target,
+                [str(test_workspace)],
+            )
+
         threads = [
             threading.Thread(target=scale_language, args=("python", 4)),
             threading.Thread(target=scale_language, args=("typescript", 1)),
-            threading.Thread(target=scale_language, args=("go", 3))
+            threading.Thread(target=scale_language, args=("go", 3)),
         ]
-        
-        for thread in threads:
-            thread.start()
-        
-        for thread in threads:
-            thread.join()
+        with patch.object(
+            cluster_manager,
+            "_deploy_single_server",
+            return_value=Mock(),
+        ):
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
         
         # System should remain stable
         assert isinstance(cluster_manager.lsp_pools, dict)

@@ -1,0 +1,53 @@
+# BreadBoard's ordinary first-install profile. This is product configuration, not E4 evidence.
+schema_version: bb.harness_definition.v1
+version: 1
+
+# The session operates in the project selected by the caller.
+workspace:
+  root: .
+
+# First install remains deterministic and provider-free. Configured providers replace this model.
+providers:
+  default_model: mock/reference
+  models:
+    - id: mock/reference
+      adapter: mock_chat
+
+# Prompt files are package resources and immutable inputs to the effective lock.
+prompts:
+  packs:
+    base:
+      system: prompts/daily_driver_system.md
+
+# The packaged runtime registry supplies these ordinary coding tools.
+tools:
+  mark_task_complete: true
+
+modes:
+  - name: coding
+    prompt: "@pack(base).system"
+    tools_enabled:
+      - read_file
+      - list_dir
+      - apply_unified_patch
+      - create_file_from_block
+      - run_shell
+      - TodoWrite
+      - mark_task_complete
+
+# Shell execution always requires an explicit operator decision.
+permissions:
+  options:
+    mode: prompt
+  shell:
+    default: ask
+
+loop:
+  sequence:
+    - mode: coding
+
+# Bound stalled first-install sessions without constraining productive tool loops.
+completion:
+  natural_finish:
+    idle_turn_limit: 2
+    no_tool_turns_threshold: 2

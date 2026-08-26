@@ -12,13 +12,30 @@ from breadboard_engine.security import redaction
 
 
 MAX_TEXT_BYTES = 32768
-MAX_BASE64_BYTES = 65536
+_BINARY_MEDIA_OMITTED = "[binary media omitted]"
+
+
+def _omit_binary_media(value: Any) -> Any:
+    if isinstance(value, str):
+        if value.startswith("data:image/") and ";base64," in value:
+            return _BINARY_MEDIA_OMITTED
+        return value
+    if isinstance(value, list):
+        return [_omit_binary_media(item) for item in value]
+    if isinstance(value, dict):
+        omitted = {
+            key: _omit_binary_media(item) for key, item in value.items()
+        }
+        if value.get("type") == "base64" and "data" in value:
+            omitted["data"] = _BINARY_MEDIA_OMITTED
+        return omitted
+    return value
 
 
 def _scrub(value: Any) -> Any:
     # C-G0d: central substrate replaces the local eight-key deny-list.
     scrubbed, _problems = redaction.scrub_structure(value)
-    return scrubbed
+    return _omit_binary_media(scrubbed)
 
 
 def _now_iso() -> str:
@@ -63,7 +80,7 @@ class ProviderDumpLogger:
         if not path:
             return
         target = path / filename
-        data = json.dumps(payload, indent=2)
+        data = json.dumps(_scrub(payload), indent=2)
         with self._lock:
             target.write_text(data, encoding="utf-8")
 
@@ -135,10 +152,9 @@ class ProviderDumpLogger:
         body_payload: Dict[str, Any] = {"encoding": "unknown"}
         if body_text:
             body_payload["encoding"] = "utf8"
-            body_payload["text"] = body_text[:MAX_TEXT_BYTES]
+            body_payload["text"] = redaction.scrub_text(body_text[:MAX_TEXT_BYTES])
         if body_base64:
-            body_payload.setdefault("encoding", "base64")
-            body_payload["base64"] = body_base64[:MAX_BASE64_BYTES]
+            body_payload["binaryOmitted"] = True
 
         entry = {
             "logVersion": 1,

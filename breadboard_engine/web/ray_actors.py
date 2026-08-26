@@ -10,7 +10,8 @@ import ray
 from .crawler import CrawlRequest, crawl_site
 from .frontier import MemoryFrontier, RedisFrontier, RedisFrontierConfig
 from .models import ScrapeOptions
-from .scraper import WebScraper, WebScraperSettings
+from .scraper import WebScraper, WebScraperSettings, _validate_http_url
+from ..security import purge_provider_credentials
 
 
 def _stable_cache_key(prefix: str, payload: Dict[str, Any]) -> str:
@@ -31,6 +32,7 @@ class WebScraperActor:
         cache_ttl_s: int = 3600,
         cache_namespace: str = "kc_web_cache",
     ):
+        purge_provider_credentials()
         self.scraper = WebScraper(settings=WebScraperSettings(**(settings or {})))
         self.cache_ttl_s = int(cache_ttl_s)
         self.cache_namespace = cache_namespace.strip(":") or "kc_web_cache"
@@ -47,6 +49,7 @@ class WebScraperActor:
         await self.scraper.close()
 
     async def scrape_url(self, url: str, *, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        url = _validate_http_url(url)
         opts = ScrapeOptions(**(options or {}))
         cache_key = None
         if self._redis is not None:
@@ -84,6 +87,7 @@ class CrawlCoordinatorActor:
         frontier_namespace: str = "kc_crawl_frontier",
         scraper_settings: Optional[Dict[str, Any]] = None,
     ):
+        purge_provider_credentials()
         self.scraper = WebScraper(settings=WebScraperSettings(**(scraper_settings or {})))
         self.redis_frontier_url = redis_frontier_url
         self.frontier_namespace = frontier_namespace.strip(":") or "kc_crawl_frontier"

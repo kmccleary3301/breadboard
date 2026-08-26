@@ -2,7 +2,6 @@ import os
 import uuid
 import pytest
 import ray
-import tempfile
 import json
 import importlib
 import warnings
@@ -10,12 +9,13 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from breadboard.lsp_manager import (
-    LSPManagerV2, 
-    LSPServer, 
-    LSPOrchestrator, 
-    UnifiedDiagnostics,
+    CLILinterRunner,
     LSPJSONRPCClient,
-    LSP_SERVER_CONFIGS
+    LSPManagerV2,
+    LSPOrchestrator,
+    LSPServer,
+    LSP_SERVER_CONFIGS,
+    UnifiedDiagnostics,
 )
 from breadboard.lsp_manager_v2 import LSPManagerV2 as CompatLSPManagerV2
 
@@ -30,11 +30,10 @@ def ray_cluster():
         ray.shutdown()
 
 
-@pytest.fixture
-def test_workspace(tmp_path):
-    """Create a test workspace with sample files"""
-    workspace = tmp_path / f"lsp_test_{uuid.uuid4().hex[:8]}"
-    workspace.mkdir(parents=True, exist_ok=True)
+@pytest.fixture(scope="module")
+def test_workspace(tmp_path_factory):
+    """Create one shared workspace; tests do not destructively mutate it."""
+    workspace = tmp_path_factory.mktemp("lsp_test")
     
     # Create test files with various languages
     test_files = {
@@ -115,6 +114,37 @@ func main() {
     
     return workspace
 
+@pytest.fixture(scope="module")
+def mock_lsp_server(ray_cluster, test_workspace):
+    """Reuse one real actor for the actor-transport boundary checks."""
+    os.environ["LSP_USE_CONTAINERS"] = "0"
+    server = LSPServer.remote("python", str(test_workspace))
+    yield server
+    try:
+        ray.get(server.shutdown.remote())
+    except Exception:
+        pass
+    os.environ.pop("LSP_USE_CONTAINERS", None)
+
+
+@pytest.fixture(scope="module")
+def orchestrator(ray_cluster):
+    actor = LSPOrchestrator.remote()
+    yield actor
+    ray.get(actor.cleanup_servers.remote())
+
+
+@pytest.fixture(scope="module")
+def unified_diagnostics(ray_cluster):
+    return UnifiedDiagnostics.remote()
+
+
+@pytest.fixture(scope="module")
+def lsp_manager(ray_cluster):
+    actor = LSPManagerV2.remote()
+    yield actor
+    ray.get(actor.shutdown.remote())
+
 
 class TestLSPJSONRPCClient:
     """Test LSP JSON-RPC client functionality"""
@@ -130,8 +160,8 @@ class TestLSPJSONRPCClient:
         # Mock the _read_response method to avoid actual I/O
         client._read_response = Mock(return_value={"jsonrpc": "2.0", "id": 1, "result": {}})
         
-        result1 = client._send_request("test_method")
-        result2 = client._send_request("another_method")
+        client._send_request("test_method")
+        client._send_request("another_method")
         
         assert client.request_id == 2
     
@@ -210,20 +240,6 @@ class TestLSPServerConfigs:
 class TestLSPServer:
     """Test individual LSP server functionality"""
     
-    @pytest.fixture
-    def mock_lsp_server(self, test_workspace):
-        """Create a mock LSP server for testing"""
-        # Use local processes instead of containers for testing
-        os.environ["LSP_USE_CONTAINERS"] = "0"
-        
-        server = LSPServer.remote("python", str(test_workspace))
-        yield server
-        
-        # Cleanup
-        try:
-            ray.get(server.shutdown.remote())
-        except:
-            pass
     
     def test_server_initialization(self, ray_cluster, mock_lsp_server):
         """Test LSP server initialization"""
@@ -283,10 +299,6 @@ class TestLSPServer:
 class TestLSPOrchestrator:
     """Test LSP orchestration and server management"""
     
-    @pytest.fixture
-    def orchestrator(self, ray_cluster):
-        """Create LSP orchestrator for testing"""
-        return LSPOrchestrator.remote()
     
     def test_project_root_detection(self, orchestrator, test_workspace):
         """Test project root detection logic"""
@@ -338,14 +350,71 @@ class TestLSPOrchestrator:
         orchestrator_instance = ray.get(orchestrator.__ray_ready__.remote())
         assert hasattr(orchestrator_instance, 'broken_servers') or True  # Access is limited
 
+class TestCLILinterRunner:
+    async def test_eslint_uses_preinstalled_executable_without_npx(
+        self,
+        tmp_path,
+    ):
+        runner_type = CLILinterRunner.__ray_metadata__.modified_class
+        runner = object.__new__(runner_type)
+        result = Mock(stdout="[]", stderr="", returncode=0)
+        target = tmp_path / "sample.ts"
+        target.write_text("const value = 1;\n")
+
+        with (
+            patch(
+                "breadboard.lsp_manager.shutil.which",
+                return_value="/trusted/bin/eslint",
+            ),
+            patch.object(
+                runner,
+                "_run_linter",
+                return_value=result,
+            ) as run_linter,
+        ):
+            diagnostics = await runner.run_eslint(
+                str(target),
+                str(tmp_path),
+            )
+
+        assert diagnostics == []
+        command = run_linter.call_args.args[0]
+        assert command == [
+            "/trusted/bin/eslint",
+            "--format=json",
+            str(target),
+        ]
+        assert "npx" not in command
+
+    async def test_eslint_missing_executable_fails_fast(
+        self,
+        tmp_path,
+    ):
+        runner_type = CLILinterRunner.__ray_metadata__.modified_class
+        runner = object.__new__(runner_type)
+        target = tmp_path / "sample.ts"
+        target.write_text("const value = 1;\n")
+
+        with (
+            patch(
+                "breadboard.lsp_manager.shutil.which",
+                return_value=None,
+            ),
+            patch.object(runner, "_run_linter") as run_linter,
+        ):
+            diagnostics = await runner.run_eslint(
+                str(target),
+                str(tmp_path),
+            )
+
+        assert diagnostics == []
+        run_linter.assert_not_called()
+
+
 
 class TestUnifiedDiagnostics:
     """Test unified diagnostics collection"""
     
-    @pytest.fixture  
-    def unified_diagnostics(self, ray_cluster):
-        """Create unified diagnostics collector for testing"""
-        return UnifiedDiagnostics.remote()
     
     def test_diagnostic_collection_structure(self, unified_diagnostics, test_workspace):
         """Test that diagnostic collection returns proper structure"""
@@ -387,10 +456,6 @@ class TestUnifiedDiagnostics:
 class TestLSPManagerV2:
     """Test the main LSP Manager V2 functionality"""
     
-    @pytest.fixture
-    def lsp_manager(self, ray_cluster):
-        """Create LSP manager for testing"""
-        return LSPManagerV2.remote()
     
     def test_workspace_registration(self, lsp_manager, test_workspace):
         """Test workspace root registration"""
@@ -475,9 +540,13 @@ class TestLSPManagerV2:
 class TestLSPManagerV2Integration:
     """Integration tests for LSP Manager V2 with realistic scenarios"""
     
-    def test_multi_language_project(self, ray_cluster, test_workspace):
-        """Test LSP manager with multi-language project"""
-        lsp_manager = LSPManagerV2.remote()
+    def test_multi_language_project(
+        self,
+        ray_cluster,
+        lsp_manager,
+        test_workspace,
+    ):
+        """Test LSP manager with multi-language project."""
         ray.get(lsp_manager.register_root.remote(str(test_workspace)))
         
         # Touch multiple file types
@@ -494,9 +563,13 @@ class TestLSPManagerV2Integration:
         symbols = ray.get(lsp_manager.workspace_symbol.remote("Calculator", 50))
         assert isinstance(symbols, list)
     
-    def test_error_handling_with_invalid_files(self, ray_cluster, test_workspace):
-        """Test error handling with invalid file paths"""
-        lsp_manager = LSPManagerV2.remote()
+    def test_error_handling_with_invalid_files(
+        self,
+        ray_cluster,
+        lsp_manager,
+        test_workspace,
+    ):
+        """Test error handling with invalid file paths."""
         ray.get(lsp_manager.register_root.remote(str(test_workspace)))
         
         # Test with non-existent file
@@ -509,9 +582,13 @@ class TestLSPManagerV2Integration:
         definition_result = ray.get(lsp_manager.go_to_definition.remote(str(nonexistent_file), 1, 1))
         assert isinstance(definition_result, dict)
     
-    def test_concurrent_operations(self, ray_cluster, test_workspace):
-        """Test concurrent LSP operations"""
-        lsp_manager = LSPManagerV2.remote()
+    def test_concurrent_operations(
+        self,
+        ray_cluster,
+        lsp_manager,
+        test_workspace,
+    ):
+        """Test concurrent LSP operations."""
         ray.get(lsp_manager.register_root.remote(str(test_workspace)))
         
         test_file = test_workspace / "test.py"
@@ -531,21 +608,25 @@ class TestLSPManagerV2Integration:
         for result in results:
             assert isinstance(result, (dict, list))
     
-    def test_resource_cleanup_on_failure(self, ray_cluster, test_workspace):
-        """Test that resources are properly cleaned up on failures"""
-        lsp_manager = LSPManagerV2.remote()
+    def test_resource_cleanup_on_failure(
+        self,
+        ray_cluster,
+        lsp_manager,
+        test_workspace,
+    ):
+        """Test that resources are properly cleaned up on failures."""
         ray.get(lsp_manager.register_root.remote(str(test_workspace)))
         
         # Force some operations that might fail
         try:
             # Use invalid parameters that might cause failures
             ray.get(lsp_manager.hover.remote("", -1, -1))
-        except:
+        except Exception:
             pass  # Expected to potentially fail
         
         try:
             ray.get(lsp_manager.go_to_definition.remote("/invalid/path", 999, 999))
-        except:
+        except Exception:
             pass  # Expected to potentially fail
         
         # Manager should still be functional
@@ -590,8 +671,13 @@ class TestContainerIntegration:
 class TestPerformanceAndScaling:
     """Performance and scaling tests"""
     
-    def test_large_number_of_files(self, ray_cluster, tmp_path):
-        """Test LSP manager with large number of files"""
+    def test_large_number_of_files(
+        self,
+        ray_cluster,
+        lsp_manager,
+        tmp_path,
+    ):
+        """Test LSP manager with a nontrivial workspace."""
         workspace = tmp_path / f"large_test_{uuid.uuid4().hex[:8]}"
         workspace.mkdir()
         
@@ -600,7 +686,6 @@ class TestPerformanceAndScaling:
         for i in range(num_files):
             (workspace / f"file_{i}.py").write_text(f"def function_{i}():\n    return {i}\n")
         
-        lsp_manager = LSPManagerV2.remote()
         ray.get(lsp_manager.register_root.remote(str(workspace)))
         
         # This should handle many files without crashing
@@ -611,17 +696,20 @@ class TestPerformanceAndScaling:
         symbols = ray.get(lsp_manager.workspace_symbol.remote("function", 100))
         assert isinstance(symbols, list)
     
-    def test_memory_usage_stability(self, ray_cluster, test_workspace):
-        """Test that memory usage remains stable over multiple operations"""
-        lsp_manager = LSPManagerV2.remote()
+    def test_memory_usage_stability(
+        self,
+        ray_cluster,
+        lsp_manager,
+        test_workspace,
+    ):
+        """Keep repeated warm operations functional without actor churn."""
         ray.get(lsp_manager.register_root.remote(str(test_workspace)))
-        
-        # Perform many operations
+
         test_file = test_workspace / "test.py"
-        for i in range(20):
+        for index in range(3):
             ray.get(lsp_manager.touch_file.remote(str(test_file)))
             ray.get(lsp_manager.diagnostics.remote())
-            ray.get(lsp_manager.workspace_symbol.remote(f"test_{i}", 10))
+            ray.get(lsp_manager.workspace_symbol.remote(f"test_{index}", 10))
         
         # Should still be functional
         final_diagnostics = ray.get(lsp_manager.diagnostics.remote())

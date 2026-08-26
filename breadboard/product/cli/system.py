@@ -3,6 +3,7 @@ import os,sysconfig
 from pathlib import Path
 from typing import Any
 from breadboard.product.operation_catalog import internal_evidence_operation_catalog,product_operation_catalog
+from . import harness as harness_operations
 from .result import CliResult,from_exception,portable_ref
 def resource_path(relative:str)->Path:
     root=Path(__file__).resolve().parents[3]; p=root/relative
@@ -20,7 +21,33 @@ def _internal_extensions()->list[dict[str,Any]]:
     catalog=internal_evidence_operation_catalog()
     return [{"extension_id":"e4","catalog_id":catalog["contract_id"],"operation_count":len(catalog["operations"])}]
 def describe(command:list[str],workspace:Path):
-    try:return CliResult.success(command,{"system":"breadboard","operation_count":len(_rows()),"operations":_rows(),"internal_extensions":_internal_extensions(),"result_schema":"bb.cli.result.v1","workspace":"."},next_actions=["breadboard system health"],stage="system.describe")
+    try:
+        profile = harness_operations.default_profile_identity()
+        operations = _rows()
+        return CliResult.success(
+            command,
+            {
+                "system": "breadboard",
+                "operation_count": len(operations),
+                "operations": operations,
+                "default_profile": profile,
+                "internal_extensions": _internal_extensions(),
+                "result_schema": "bb.cli.result.v1",
+                "workspace": ".",
+            },
+            hashes={"profile": profile["effective_lock_hash"]},
+            next_actions=["breadboard system health"],
+            stage="system.describe",
+        )
+    except harness_operations.DefaultProfileResolutionError as error:
+        return CliResult.failure(
+            command,
+            error.exit_code,
+            error.error_code,
+            str(error),
+            "system.describe",
+            hint=error.hint,
+        )
     except Exception as e:return from_exception(command,e,"system.describe")
 def health(command:list[str],workspace:Path):
     try:

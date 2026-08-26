@@ -5,12 +5,16 @@ import time
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional
 
+
 from .contracts import (
-    ProviderRuntimeError,
-    ProviderResult,
     ProviderMessage,
+    ProviderResult,
     ProviderRuntimeContext,
+    ProviderRuntimeError,
 )
+
+class _MissingCapabilityProbeCredential(Exception):
+    pass
 
 
 @dataclass
@@ -34,11 +38,13 @@ class ProviderCapabilityProbeRunner:
         provider_registry,
         logger_v2,
         markdown_logger,
+        provider_invoker=None,
     ) -> None:
         self.provider_router = provider_router
         self.provider_registry = provider_registry
         self.logger_v2 = logger_v2
         self.markdown_logger = markdown_logger
+        self.provider_invoker = provider_invoker
 
     def _log(self, message: str) -> None:
         try:
@@ -93,7 +99,7 @@ class ProviderCapabilityProbeRunner:
 
         results: List[CapabilityProbeResult] = []
         for model_id in unique_models:
-            result = self._probe_model(model_id)
+            result = self._probe_model(model_id, session_state)
             results.append(result)
 
         if getattr(self.logger_v2, "run_dir", None):
@@ -109,44 +115,70 @@ class ProviderCapabilityProbeRunner:
             pass
         return results
 
-    def _probe_model(self, model_id: str) -> CapabilityProbeResult:
+    def _probe_model(self, model_id: str, session_state) -> CapabilityProbeResult:
         start = time.time()
         descriptor, runtime_model = self.provider_router.get_runtime_descriptor(model_id)
-        client_cfg = self.provider_router.create_client_config(model_id)
-        api_key = client_cfg.get("api_key")
-        if not api_key:
-            return CapabilityProbeResult(
-                model_id=model_id,
-                attempted=False,
-                skipped_reason="missing_api_key",
-                elapsed=0.0,
-            )
-
         try:
             runtime = self.provider_registry.create_runtime(descriptor)
-        except Exception as exc:
+        except Exception:
             return CapabilityProbeResult(
                 model_id=model_id,
                 attempted=False,
                 skipped_reason="runtime_init_failed",
-                error=str(exc),
+                error="capability_probe_init_error",
                 elapsed=time.time() - start,
             )
 
-        try:
-            client = runtime.create_client(
-                api_key,
-                base_url=client_cfg.get("base_url"),
-                default_headers=client_cfg.get("default_headers"),
+        def _invoke(*, probe_kind: str, **kwargs):
+            if self.provider_invoker is None:
+                raise RuntimeError("capability probe invoker is unavailable")
+            session_id = session_state.get_provider_metadata("session_id")
+            input_id = session_state.get_provider_metadata("input_id")
+            turn_id = session_state.get_provider_metadata("turn_id")
+            if not all(
+                isinstance(value, str) and value.strip()
+                for value in (session_id, input_id, turn_id)
+            ):
+                raise RuntimeError("capability probe correlation is unavailable")
+            origin = self.provider_router.get_credential_origin(
+                model_id, session_id=session_id
             )
-        except Exception as exc:
-            return CapabilityProbeResult(
-                model_id=model_id,
-                attempted=False,
-                skipped_reason="client_init_failed",
-                error=str(exc),
-                elapsed=time.time() - start,
+            if origin is None:
+                raise _MissingCapabilityProbeCredential
+            context = ProviderRuntimeContext(
+                session_state=session_state,
+                agent_config={},
+                stream=bool(kwargs["stream"]),
+                extra={
+                    "diagnostic_probe": True,
+                    "probe_kind": probe_kind,
+                    "session_id": session_id,
+                    "input_id": input_id,
+                    "turn_id": turn_id,
+                },
+                session_id=session_id,
+                input_id=input_id,
+                turn_id=turn_id,
             )
+            turn_index = session_state.get_provider_metadata(
+                "current_turn_index", 0
+            )
+            if not isinstance(turn_index, int) or isinstance(turn_index, bool):
+                turn_index = 0
+            result, _used_streaming = self.provider_invoker.invoke(
+                runtime=runtime,
+                client=None,
+                model=kwargs["model"],
+                send_messages=kwargs["messages"],
+                tools_schema=kwargs["tools"],
+                stream_responses=bool(kwargs["stream"]),
+                runtime_context=context,
+                session_state=session_state,
+                markdown_logger=self.markdown_logger,
+                turn_index=turn_index,
+                route_id=model_id,
+            )
+            return result
 
         messages = [
             {"role": "system", "content": "You are a diagnostic probe. Reply concisely."},
@@ -154,58 +186,51 @@ class ProviderCapabilityProbeRunner:
         ]
 
         tools_schema = None
-        context = None
         stream_success: Optional[bool] = None
         tool_stream_success: Optional[bool] = None
         json_mode_success: Optional[bool] = None
         latest_error: Optional[str] = None
 
-        class _StubSessionState:
-            def get_provider_metadata(self, key: str, default=None):
-                return default
-
-        context = ProviderRuntimeContext(
-            session_state=_StubSessionState(),
-            agent_config={},
-            stream=True,
-            extra={},
-        )
-
         # Streaming probe
         try:
-            runtime.invoke(
-                client=client,
+            _invoke(
+                probe_kind="stream",
                 model=runtime_model,
                 messages=messages,
                 tools=tools_schema,
                 stream=True,
-                context=context,
             )
             stream_success = True
+        except _MissingCapabilityProbeCredential:
+            return CapabilityProbeResult(
+                model_id=model_id,
+                attempted=False,
+                skipped_reason="missing_api_key",
+                elapsed=time.time() - start,
+            )
         except ProviderRuntimeError as exc:
             stream_success = False
-            latest_error = str(exc)
-        except Exception as exc:
+            latest_error = exc.safe_code
+        except Exception:
             stream_success = False
-            latest_error = str(exc)
+            latest_error = "capability_probe_error"
 
         # Non-streaming tool probe (if tools_schema supported)
         try:
-            result = runtime.invoke(
-                client=client,
+            result = _invoke(
+                probe_kind="tool",
                 model=runtime_model,
                 messages=messages,
                 tools=tools_schema,
                 stream=False,
-                context=context,
             )
             tool_stream_success = self._detect_tool_message(result)
         except ProviderRuntimeError as exc:
             tool_stream_success = False
-            latest_error = str(exc)
-        except Exception as exc:
+            latest_error = exc.safe_code
+        except Exception:
             tool_stream_success = False
-            latest_error = str(exc)
+            latest_error = "capability_probe_error"
 
         # JSON mode probe (if supported and streaming succeeded)
         try:
@@ -213,21 +238,20 @@ class ProviderCapabilityProbeRunner:
                 {"role": "system", "content": "Respond with a JSON object with field pong=\"yes\"."},
                 {"role": "user", "content": "Return the JSON now."},
             ]
-            json_result = runtime.invoke(
-                client=client,
+            json_result = _invoke(
+                probe_kind="json",
                 model=runtime_model,
                 messages=json_messages,
                 tools=None,
                 stream=False,
-                context=context,
             )
             json_mode_success = self._looks_like_json(json_result)
         except ProviderRuntimeError as exc:
             json_mode_success = False
-            latest_error = str(exc)
-        except Exception as exc:
+            latest_error = exc.safe_code
+        except Exception:
             json_mode_success = False
-            latest_error = str(exc)
+            latest_error = "capability_probe_error"
 
         elapsed = time.time() - start
         result = CapabilityProbeResult(

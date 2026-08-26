@@ -1,4 +1,19 @@
-import os, subprocess, uuid, ray, time, pathlib, shutil
+import os
+import pathlib
+import shutil
+import subprocess
+import time
+import uuid
+
+import ray
+
+from breadboard_engine.security import (
+    build_child_environment,
+    provider_credential_values,
+    purge_provider_credentials,
+    sanitized_process_environment,
+    redaction,
+)
 
 # This directory will be synced to all nodes by Ray and will serve as the
 # parent for all container workspaces.
@@ -20,7 +35,8 @@ def sandbox_env(image:str):
 
 @ray.remote
 class DevSandbox:
-    def __init__(self, image:str, session_id:str):
+    def __init__(self, image: str, session_id: str):
+        purge_provider_credentials()
         self.image = image
         self.session_id = session_id
         # The working_dir from ray.init() is the root of our sandbox.
@@ -39,22 +55,21 @@ class DevSandbox:
         full_path.write_bytes(content)
 
     def run(self, cmd):
-        """
-        Execute a command and return all output lines as a list.
-        This is not a streaming implementation, but it is more robust
-        than the previous generator-based approach.
-        """
-        proc = subprocess.Popen(
-            cmd,
-            cwd=self.cwd,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        lines = []
-        for line in proc.stdout:
-            lines.append(line.rstrip())
+        """Execute a command and return its scrubbed output lines."""
+        with redaction.secret_value_scope(*provider_credential_values()):
+            proc = subprocess.Popen(
+                cmd,
+                cwd=self.cwd,
+                shell=True,
+                env=build_child_environment(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            lines = [
+                redaction.scrub_text(line.rstrip())
+                for line in proc.stdout
+            ]
         return lines
 
     def get_cwd_contents(self):
@@ -69,7 +84,8 @@ class DevSandbox:
 if __name__ == "__main__":
     # The `working_dir` is specified here at the job level. Ray will sync the
     # contents of CONTAINERS_DIR to the main directory of the container on all nodes.
-    ray.init(runtime_env={"working_dir": str(CONTAINERS_DIR)})
+    with sanitized_process_environment():
+        ray.init(runtime_env={"working_dir": str(CONTAINERS_DIR)})
 
     TEMPLATES = {
         "python":  "python-dev:latest",

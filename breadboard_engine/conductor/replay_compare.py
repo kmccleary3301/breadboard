@@ -194,10 +194,7 @@ def record_replay_tool_output_mismatches(
         return
 
     route_hint = getattr(conductor, "_current_route_id", None) or model
-    try:
-        provider_id = provider_router.parse_model_id(route_hint)[0]
-    except Exception:
-        provider_id = "openai"
+    provider_id = provider_router.parse_model_id(route_hint)[0]
     adapter = provider_adapter_manager.get_adapter(provider_id)
 
     prefixes: List[str] = []

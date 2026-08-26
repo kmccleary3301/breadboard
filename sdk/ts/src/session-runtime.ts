@@ -189,7 +189,28 @@ export type InputObservedEvent = TurnOwnedLoggedEvent<"input_observed", { readon
 export type TurnStartedEvent = TurnOwnedLoggedEvent<"turn_started", ExactEmptyPayload>
 export type AssistantTextDeltaEvent = TurnOwnedLoggedEvent<"assistant_text_delta", { readonly text: string }>
 export type AssistantTextCompletedEvent = TurnOwnedLoggedEvent<"assistant_text_completed", { readonly text: string | null }>
-export type TurnCompletedEvent = TurnOwnedLoggedEvent<"turn_completed", ExactEmptyPayload>
+export type ProviderFinishReason = "stop" | "length" | "toolUse" | "error" | "aborted"
+export interface ProviderUsage {
+  readonly inputTokens?: number
+  readonly outputTokens?: number
+  readonly cacheReadTokens?: number
+  readonly cacheWriteTokens?: number
+  readonly totalTokens?: number
+  readonly reasoningTokens?: number
+  readonly extensions?: CanonicalJsonObject
+}
+export interface ProviderExchangeRef {
+  readonly exchangeId: string
+  readonly schemaVersion: "bb.provider_exchange.v2"
+}
+export interface TurnCompletedPayload {
+  readonly finishReason: ProviderFinishReason | null
+  readonly rawProviderFinish: string | null
+  readonly outputEmitted: boolean | null
+  readonly usage: ProviderUsage | null
+  readonly exchangeRef: ProviderExchangeRef | null
+}
+export type TurnCompletedEvent = TurnOwnedLoggedEvent<"turn_completed", TurnCompletedPayload>
 export type TurnFailedEvent = TurnOwnedLoggedEvent<"turn_failed", { readonly error: RedactedTurnError }>
 export type TurnCancelledEvent = TurnOwnedLoggedEvent<"turn_cancelled", { readonly reason: CancellationReason }>
 export interface AssistantMessageStartedPayload {
@@ -270,6 +291,8 @@ export type ToolExecutionCompletedEvent = TurnOwnedLoggedEvent<"tool_execution_c
 export type ToolCalledEvent = TurnOwnedLoggedEvent<"tool_called", ToolCalledPayload>
 export type ToolResultObservedEvent = TurnOwnedLoggedEvent<"tool_result_observed", ToolResultObservedPayload>
 export type TodoUpdatedEvent = LoggedEventBase<"todo_updated", CanonicalJsonObject>
+export type StreamGapObservedEvent = LoggedEventBase<"stream_gap_observed", CanonicalJsonObject>
+export type SessionControlObservedEvent = LoggedEventBase<"session_control_observed", CanonicalJsonObject>
 export type PermissionRequestedEvent = TurnOwnedLoggedEvent<"permission_requested", PermissionRequestedPayload>
 export type PermissionRespondedEvent = TurnOwnedLoggedEvent<"permission_responded", PermissionRespondedPayload>
 export type CheckpointListObservedEvent = LoggedEventBase<"checkpoint_list_observed", CanonicalJsonObject>
@@ -312,6 +335,8 @@ export type LoggedSessionEvent =
   | ToolCalledEvent
   | ToolResultObservedEvent
   | TodoUpdatedEvent
+  | StreamGapObservedEvent
+  | SessionControlObservedEvent
   | PermissionRequestedEvent
   | PermissionRespondedEvent
   | CheckpointListObservedEvent
@@ -498,6 +523,76 @@ const toJsonValue = (value: unknown, seen: Set<object>): CanonicalJsonValue => {
   return result
 }
 
+const validateProviderExtensionValue = (
+  value: unknown,
+  seen: Set<object>,
+  depth: number,
+): void => {
+  const invalid = (): never => {
+    throw new CanonicalE4ClientError({
+      kind: "protocol",
+      code: "invalid_provider_usage_extensions_bounds",
+    })
+  }
+  if (depth > 8) invalid()
+  if (value === null || typeof value === "boolean") return
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) invalid()
+    return
+  }
+  if (typeof value === "string") {
+    if (Array.from(value).length > 4096) invalid()
+    return
+  }
+  if (typeof value !== "object" || seen.has(value)) return invalid()
+  seen.add(value)
+  if (Array.isArray(value)) {
+    if (value.length > 64) invalid()
+    for (const item of value) validateProviderExtensionValue(item, seen, depth + 1)
+  } else {
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) invalid()
+    const keys = Object.keys(value)
+    if (
+      keys.length > 64
+      || keys.some((key) => key.length === 0 || Array.from(key).length > 128)
+    ) invalid()
+    for (const key of keys) {
+      const item = (value as RawObject)[key]
+      if (item === undefined) invalid()
+      validateProviderExtensionValue(item, seen, depth + 1)
+    }
+  }
+  seen.delete(value)
+}
+
+const parseProviderUsageExtensions = (value: unknown): CanonicalJsonObject => {
+  if (!isRawObject(value)) {
+    throw new CanonicalE4ClientError({
+      kind: "protocol",
+      code: "invalid_provider_usage_extensions",
+    })
+  }
+  const keys = Object.keys(value)
+  if (keys.length > 32) {
+    throw new CanonicalE4ClientError({
+      kind: "protocol",
+      code: "invalid_provider_usage_extensions_bounds",
+    })
+  }
+  validateProviderExtensionValue(value, new Set(), 0)
+  const normalized = toJsonValue(value, new Set()) as CanonicalJsonObject
+  if (
+    new TextEncoder().encode(JSON.stringify(normalized)).byteLength > 16_384
+  ) {
+    throw new CanonicalE4ClientError({
+      kind: "protocol",
+      code: "invalid_provider_usage_extensions_bounds",
+    })
+  }
+  return normalized
+}
+
 export const deterministicSerialize = (value: unknown): Uint8Array =>
   new TextEncoder().encode(JSON.stringify(toJsonValue(value, new Set())))
 
@@ -643,11 +738,117 @@ const parseOptionalTextPayload = (payload: unknown, field: string): { readonly t
   const text = payloadText(payload)
   return { text: typeof text === "string" ? text : null }
 }
-
-const parseCancellationReason = (payload: unknown): { readonly reason: CancellationReason } => {
-  if (!isRawObject(payload)) throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_turn_cancelled_payload" })
-  return { reason: requiredEnum(own(payload, "reason"), "cancellation_reason", ["user_requested", "timeout", "superseded"] as const) }
+const parseProviderUsage = (value: unknown): ProviderUsage => {
+  if (!isRawObject(value)) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_provider_usage" })
+  }
+  const allowed = new Set([
+    "inputTokens",
+    "outputTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+    "totalTokens",
+    "reasoningTokens",
+    "extensions",
+  ])
+  if (Object.keys(value).some((key) => !allowed.has(key))) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "unknown_provider_usage_field" })
+  }
+  const usage: {
+    inputTokens?: number
+    outputTokens?: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+    totalTokens?: number
+    reasoningTokens?: number
+    extensions?: CanonicalJsonObject
+  } = {}
+  for (const key of [
+    "inputTokens",
+    "outputTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+    "totalTokens",
+    "reasoningTokens",
+  ] as const) {
+    const raw = own(value, key)
+    if (raw !== undefined) usage[key] = requiredInteger(raw, `provider_usage_${key}`)
+  }
+  const extensions = own(value, "extensions")
+  if (extensions !== undefined) {
+    usage.extensions = parseProviderUsageExtensions(extensions)
+  }
+  return usage
 }
+
+const parseTurnCompleted = (payload: unknown): TurnCompletedPayload => {
+  if (!isRawObject(payload)) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_turn_completed_payload" })
+  }
+  const allowed = new Set([
+    "finish_reason",
+    "raw_provider_finish",
+    "output_emitted",
+    "usage",
+    "exchange_ref",
+  ])
+  if (Object.keys(payload).some((key) => !allowed.has(key))) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "unknown_turn_completed_field" })
+  }
+  const rawFinishReason = own(payload, "finish_reason")
+  const finishReason = rawFinishReason === undefined
+    ? null
+    : requiredEnum(rawFinishReason, "provider_finish_reason", ["stop", "length", "toolUse", "error", "aborted"] as const)
+  const rawOutputEmitted = own(payload, "output_emitted")
+  if (rawOutputEmitted !== undefined && typeof rawOutputEmitted !== "boolean") {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_provider_output_emitted" })
+  }
+  const rawUsage = own(payload, "usage")
+  const rawExchangeRef = own(payload, "exchange_ref")
+  let exchangeRef: ProviderExchangeRef | null = null
+  if (rawExchangeRef !== undefined) {
+    if (!isRawObject(rawExchangeRef)
+      || Object.keys(rawExchangeRef).some((key) => !["exchange_id", "schema_version"].includes(key))
+      || own(rawExchangeRef, "schema_version") !== "bb.provider_exchange.v2") {
+      throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_provider_exchange_ref" })
+    }
+    const exchangeId = requiredString(
+      own(rawExchangeRef, "exchange_id"),
+      "provider_exchange_id",
+    )
+    if (exchangeId.length > 256) {
+      throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_provider_exchange_id" })
+    }
+    exchangeRef = {
+      exchangeId,
+      schemaVersion: "bb.provider_exchange.v2",
+    }
+  }
+  const rawProviderFinish = optionalString(
+    own(payload, "raw_provider_finish"),
+    "raw_provider_finish",
+  )
+  if (rawProviderFinish !== null && rawProviderFinish.length > 128) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_raw_provider_finish" })
+  }
+  return {
+    finishReason,
+    rawProviderFinish,
+    outputEmitted: rawOutputEmitted === undefined ? null : rawOutputEmitted,
+    usage: rawUsage === undefined ? null : parseProviderUsage(rawUsage),
+    exchangeRef,
+  }
+}
+
+const SAFE_RUNTIME_ERROR_CODES = [
+  "runtime_failure",
+  "worker_crash",
+  "runtime_protocol_error",
+  "runtime_observation_failed",
+  "turn_execution_failed",
+  "permission_delivery_failed",
+  "runtime_cancelled",
+] as const
 
 const parseTurnFailure = (payload: unknown): { readonly error: RedactedTurnError } => {
   if (!isRawObject(payload) || !isRawObject(own(payload, "error"))) {
@@ -655,15 +856,34 @@ const parseTurnFailure = (payload: unknown): { readonly error: RedactedTurnError
   }
   const rawError = own(payload, "error") as RawObject
   const code = requiredString(own(rawError, "code"), "turn_error_code")
-  if (!/^[A-Za-z0-9_.-]{1,128}$/.test(code)) throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_turn_error_code" })
+  if (!SAFE_RUNTIME_ERROR_CODES.includes(code as typeof SAFE_RUNTIME_ERROR_CODES[number])) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_turn_error_code" })
+  }
   return { error: { code, message: REDACTED_VALUE } }
+}
+
+const parseCancellationReason = (
+  payload: unknown,
+): { readonly reason: CancellationReason } => {
+  if (!isRawObject(payload) || Object.keys(payload).some((key) => key !== "reason")) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_turn_cancelled_payload" })
+  }
+  return {
+    reason: requiredEnum(
+      own(payload, "reason"),
+      "turn_cancellation_reason",
+      ["user_requested", "timeout", "superseded"] as const,
+    ),
+  }
 }
 const parseRuntimeFailure = (payload: unknown): { readonly error: RedactedTurnError } => {
   if (!isRawObject(payload)) throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_runtime_error_payload" })
   const nested = own(payload, "error")
   const rawCode = isRawObject(nested) ? own(nested, "code") : own(payload, "code")
   const code = requiredString(rawCode, "runtime_error_code")
-  if (!/^[A-Za-z0-9_.-]{1,128}$/.test(code)) throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_runtime_error_code" })
+  if (!SAFE_RUNTIME_ERROR_CODES.includes(code as typeof SAFE_RUNTIME_ERROR_CODES[number])) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_runtime_error_code" })
+  }
   return { error: { code, message: REDACTED_VALUE } }
 }
 
@@ -890,6 +1110,8 @@ export const decodeLoggedSessionEvent = (value: unknown): LoggedSessionEvent => 
     case "tool.exec.stderr.delta": return { ...turnBase(), kind: "tool_execution_stderr_delta", payload: jsonPayload("tool_execution_stderr_delta") }
     case "tool.exec.end": return { ...turnBase(), kind: "tool_execution_completed", payload: jsonPayload("tool_execution_completed") }
     case "tool_call": return { ...turnBase(), kind: "tool_called", payload: parseToolCalled(payload) }
+    case "stream.gap": return { ...base, kind: "stream_gap_observed", payload: jsonPayload("stream_gap_observed") }
+    case "session_control": return { ...base, kind: "session_control_observed", payload: jsonPayload("session_control_observed") }
     case "todo_event": return { ...base, kind: "todo_updated", payload: jsonPayload("todo_updated") }
     case "tool.result":
     case "tool_result": {
@@ -916,7 +1138,7 @@ export const decodeLoggedSessionEvent = (value: unknown): LoggedSessionEvent => 
       ? { ...base, inputId: null, turnId: null, scope: "session", kind: "runtime_error_observed", payload: parseRuntimeFailure(payload) }
       : { ...turnBase(), scope: "turn", kind: "runtime_error_observed", payload: parseRuntimeFailure(payload) }
     case "run_finished": return { ...turnBase(), kind: "run_finished", payload: jsonPayload("run_finished") }
-    case "turn_completed": return { ...turnBase(), kind: "turn_completed", payload: decodeExactEmptyPayload(payload) }
+    case "turn_completed": return { ...turnBase(), kind: "turn_completed", payload: parseTurnCompleted(payload) }
     case "turn_failed": return { ...turnBase(), kind: "turn_failed", payload: parseTurnFailure(payload) }
     case "turn_cancelled": return { ...turnBase(), kind: "turn_cancelled", payload: parseCancellationReason(payload) }
     default: throw new CanonicalE4ClientError({ kind: "protocol", code: "unsupported_event_family", eventId, sequence })

@@ -1,0 +1,42 @@
+{
+  "schema_version": "bb.effective_model_role_lock.v1",
+  "lock_id": "model_role_lock:example",
+  "defaults": {
+    "role": "default",
+    "known_but_unbound_role": "error",
+    "unknown_role": "error"
+  },
+  "roles": {
+    "default": {
+      "classification": "public",
+      "primary": {
+        "provider_id": "mock",
+        "model_id": "reference",
+        "route_id": "mock/reference",
+        "account_selector": {
+          "mode": "none",
+          "pin": "session"
+        },
+        "account_binding": {
+          "kind": "synthetic",
+          "pin": "session"
+        }
+      },
+      "fallbacks": [],
+      "fallback_on": []
+    }
+  },
+  "dispatch": {
+    "subagents": {},
+    "lanes": {
+      "default": "default"
+    }
+  },
+  "policy": {
+    "allow_environment_overrides": false,
+    "cross_provider_fallback": "forbidden",
+    "account_failover": "forbidden"
+  },
+  "source_model_roles_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "lock_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+}

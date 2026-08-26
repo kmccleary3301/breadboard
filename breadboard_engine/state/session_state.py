@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional
 from pathlib import Path
 import json
 import time
+import threading
 
 from dataclasses import asdict
 
@@ -26,15 +27,22 @@ def _utc_now() -> str:
 
 
 CANONICAL_KERNEL_EVENT_TYPES: dict[str, dict[str, str]] = {
-    "assistant_message": {"family": "message.assistant", "actor": "engine", "visibility": "transcript"},
-    "user_message": {"family": "message.user", "actor": "human", "visibility": "transcript"},
-    "provider_response": {"family": "provider.exchange", "actor": "provider", "visibility": "diagnostic"},
+    "assistant_message": {"family": "message.assistant", "actor": "engine", "visibility": "transcript",
+    },
+    "user_message": {"family": "message.user", "actor": "human", "visibility": "transcript",
+    },
+    "provider_response": {"family": "provider.exchange", "actor": "provider", "visibility": "diagnostic",
+    },
     "tool_call": {"family": "tool.called", "actor": "engine", "visibility": "tool"},
     "tool_result": {"family": "tool.completed", "actor": "tool", "visibility": "tool"},
-    "permission_request": {"family": "permission.requested", "actor": "service", "visibility": "host"},
-    "permission_response": {"family": "permission.decided", "actor": "service", "visibility": "host"},
-    "task_event": {"family": "task.progress", "actor": "subagent", "visibility": "host"},
-    "coordination_signal": {"family": "coordination.signal", "actor": "engine", "visibility": "host"},
+    "permission_request": {"family": "permission.requested", "actor": "service", "visibility": "host",
+    },
+    "permission_response": {"family": "permission.decided", "actor": "service", "visibility": "host",
+    },
+    "task_event": {"family": "task.progress", "actor": "subagent", "visibility": "host",
+    },
+    "coordination_signal": {"family": "coordination.signal", "actor": "engine", "visibility": "host",
+    },
     "coordination_review_verdict": {
         "family": "coordination.review_verdict",
         "actor": "engine",
@@ -46,19 +54,26 @@ CANONICAL_KERNEL_EVENT_TYPES: dict[str, dict[str, str]] = {
         "visibility": "host",
     },
     "turn_start": {"family": "turn.started", "actor": "engine", "visibility": "audit"},
-    "guardrail_event": {"family": "warning.guardrail", "actor": "service", "visibility": "audit"},
-    "lifecycle_event": {"family": "run.lifecycle", "actor": "engine", "visibility": "audit"},
-    "ctree_node": {"family": "compaction.ctree_node", "actor": "service", "visibility": "audit"},
+    "guardrail_event": {"family": "warning.guardrail", "actor": "service", "visibility": "audit",
+    },
+    "lifecycle_event": {"family": "run.lifecycle", "actor": "engine", "visibility": "audit",
+    },
+    "ctree_node": {"family": "compaction.ctree_node", "actor": "service", "visibility": "audit",
+    },
 }
 
 PROJECTION_ONLY_RUNTIME_EVENT_TYPES: dict[str, dict[str, str]] = {
-    "todo_event": {"family": "projection.todo_snapshot", "actor": "service", "visibility": "host"},
-    "ctree_snapshot": {"family": "projection.ctree_snapshot", "actor": "service", "visibility": "host"},
+    "todo_event": {"family": "projection.todo_snapshot", "actor": "service", "visibility": "host",
+    },
+    "ctree_snapshot": {"family": "projection.ctree_snapshot", "actor": "service", "visibility": "host",
+    },
 }
 
 AUDIT_ONLY_RUNTIME_EVENT_TYPES: dict[str, dict[str, str]] = {
-    "lifecycle_event": {"family": "run.lifecycle", "actor": "engine", "visibility": "audit"},
-    "guardrail_event": {"family": "warning.guardrail", "actor": "service", "visibility": "audit"},
+    "lifecycle_event": {"family": "run.lifecycle", "actor": "engine", "visibility": "audit",
+    },
+    "guardrail_event": {"family": "warning.guardrail", "actor": "service", "visibility": "audit",
+    },
 }
 
 PROJECTED_RUNTIME_EVENT_FAMILIES = {meta["family"] for meta in PROJECTION_ONLY_RUNTIME_EVENT_TYPES.values()}
@@ -88,7 +103,9 @@ def _is_internal_user_message(content: Any) -> bool:
     if not isinstance(content, str):
         return False
     stripped = content.lstrip()
-    return stripped.startswith("<VALIDATION_ERROR>") or "<WORKSPACE_TOOL_REQUIRED>" in stripped
+    return (
+        stripped.startswith("<VALIDATION_ERROR>") or "<WORKSPACE_TOOL_REQUIRED>" in stripped
+    )
 
 
 
@@ -121,6 +138,7 @@ class SessionState:
         self.coordination_review_verdicts: List[Dict[str, Any]] = []
         self.coordination_directives: List[Dict[str, Any]] = []
         self.provider_metadata: Dict[str, Any] = {}
+        self._provider_metadata_lock = threading.RLock()
         self.reasoning_traces = ReasoningTraceStore()
         self.ir_events: List[IRDeltaEvent] = []
         self.ir_finish: Optional[IRFinish] = None
@@ -151,7 +169,11 @@ class SessionState:
         self._kernel_emitter = kernel_emitter
         self._clock = clock or _utc_now
         self._emitted_tool_declared_call_ids: set[str] = set()
+        # Numeric turn indexes remain useful to legacy diagnostics, but stable
+        # event ownership is always carried by the admitted string identities.
         self._active_turn_index: Optional[int] = None
+        self._active_input_id: Optional[str] = None
+        self._active_turn_id: Optional[str] = None
         self._turn_assistant_emitted = False
         self._turn_user_emitted = False
         self._last_ctree_node_id: Optional[str] = None
@@ -165,6 +187,33 @@ class SessionState:
         emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]],
     ) -> None:
         self._event_emitter = emitter
+
+    def set_turn_context(
+        self,
+        *,
+        input_id: Optional[str],
+        turn_id: Optional[str],
+        turn_index: Optional[int] = None,
+    ) -> None:
+        """Set the admitted identity used by stable runtime/kernel projections."""
+        self._active_input_id = str(input_id) if input_id else None
+        self._active_turn_id = str(turn_id) if turn_id else None
+        self._active_turn_index = (
+            turn_index
+            if isinstance(turn_index, int) and not isinstance(turn_index, bool)
+            else None
+        )
+        if self._active_input_id is None:
+            self.provider_metadata.pop("input_id", None)
+        else:
+            self.provider_metadata["input_id"] = self._active_input_id
+        if self._active_turn_id is None:
+            self.provider_metadata.pop("turn_id", None)
+        else:
+            self.provider_metadata["turn_id"] = self._active_turn_id
+
+    def clear_turn_context(self) -> None:
+        self.set_turn_context(input_id=None, turn_id=None, turn_index=None)
 
     def _next_event_seq(self) -> int:
         self._event_seq += 1
@@ -198,6 +247,16 @@ class SessionState:
         envelope["visibility"] = contract_meta["visibility"]
         if turn is not None:
             envelope["turn"] = turn
+        input_id = self.provider_metadata.get("input_id") or self._active_input_id
+        turn_id = self.provider_metadata.get("turn_id") or self._active_turn_id
+        if (
+            isinstance(input_id, str)
+            and input_id
+            and isinstance(turn_id, str)
+            and turn_id
+        ):
+            envelope["input_id"] = input_id
+            envelope["turn_id"] = turn_id
         if seq is not None:
             envelope["seq"] = seq
             envelope["payload"].setdefault("seq", seq)
@@ -219,9 +278,11 @@ class SessionState:
     def _kernel_visibility_ref(visibility: str) -> Dict[str, bool]:
         value = str(visibility or "host")
         if value == "model":
-            return {"model_visible": True, "provider_visible": True, "host_visible": True}
+            return {"model_visible": True, "provider_visible": True, "host_visible": True,
+            }
         if value == "audit":
-            return {"model_visible": False, "provider_visible": False, "host_visible": True}
+            return {"model_visible": False, "provider_visible": False, "host_visible": True,
+            }
         return {"model_visible": False, "provider_visible": False, "host_visible": True}
 
     def build_kernel_event_v2_record(
@@ -247,8 +308,16 @@ class SessionState:
             "payload_schema_version": f"bb.payload.{meta.get('family') or 'legacy.unclassified'}.v1",
             "payload": dict(payload or {}),
         }
-        if turn is not None:
-            record["turn_id"] = f"turn:{turn}"
+        input_id = self.provider_metadata.get("input_id") or self._active_input_id
+        turn_id = self.provider_metadata.get("turn_id") or self._active_turn_id
+        if (
+            isinstance(input_id, str)
+            and input_id
+            and isinstance(turn_id, str)
+            and turn_id
+        ):
+            record["input_id"] = input_id
+            record["turn_id"] = turn_id
         return record
 
     def classify_runtime_event_type(self, event_type: str) -> Dict[str, str]:
@@ -462,7 +531,9 @@ class SessionState:
             return
 
         role = message.get("role")
-        turn_hint = self._active_turn_index if isinstance(self._active_turn_index, int) else None
+        turn_hint = (
+            self._active_turn_index if isinstance(self._active_turn_index, int) else None
+        )
         emitted_message = message
         if role == "user":
             emitted_message = dict(message)
@@ -568,7 +639,8 @@ class SessionState:
             "kind": "annotation",
             "visibility": "host",
             "content": normalized,
-            "provenance": {"source": "legacy_transcript_entry", "legacy_shape": "multi_key"},
+            "provenance": {"source": "legacy_transcript_entry", "legacy_shape": "multi_key",
+            },
         }
 
     def derive_transcript_contract_items(self) -> List[Dict[str, Any]]:
@@ -580,7 +652,9 @@ class SessionState:
             "kind": str(item.get("kind") or "annotation"),
             "visibility": self._kernel_visibility_ref(str(item.get("visibility") or "host")),
             "content": item.get("content"),
-            "content_schema_version": item.get("content_schema_version") if isinstance(item.get("content_schema_version"), str) else None,
+            "content_schema_version": (
+                item.get("content_schema_version") if isinstance(item.get("content_schema_version"), str) else None
+            ),
         }
         call_id = item.get("call_id", item.get("callId"))
         if isinstance(call_id, str) and call_id:
@@ -633,9 +707,16 @@ class SessionState:
             "run_id": str(self.provider_metadata.get("run_id") or self.provider_metadata.get("session_id") or "run"),
             "tool_spec_ref": f"tool:{tool_name}",
         }
-        turn = self.get_provider_metadata("current_turn_index")
-        if isinstance(turn, int):
-            record["turn_id"] = f"turn:{turn}"
+        input_id = self.provider_metadata.get("input_id") or self._active_input_id
+        turn_id = self.provider_metadata.get("turn_id") or self._active_turn_id
+        if (
+            isinstance(input_id, str)
+            and input_id
+            and isinstance(turn_id, str)
+            and turn_id
+        ):
+            record["input_id"] = input_id
+            record["turn_id"] = turn_id
         return record
 
     def emit_tool_call_primitive(self, call: Any, state: str, result: Optional[Dict[str, Any]] = None) -> None:
@@ -655,7 +736,10 @@ class SessionState:
         error_value = result.get("error") if isinstance(result, dict) else None
         denied = bool(isinstance(result, dict) and result.get("denied"))
         exit_code = result.get("exit_code") if isinstance(result, dict) else None
-        terminal_state = "denied" if denied else ("failed" if error_value or (isinstance(exit_code, int) and exit_code != 0) else "completed")
+        terminal_state = (
+            "denied" if denied else ("failed" if error_value or (isinstance(exit_code, int) and exit_code != 0) else "completed"
+            )
+        )
         outcome: Dict[str, Any] = {
             "schema_version": "bb.tool_execution_outcome.v2",
             "call_id": call_id,
@@ -667,8 +751,12 @@ class SessionState:
         if error_value:
             outcome["error"] = {"message": str(error_value)}
         if isinstance(exit_code, int) and not isinstance(exit_code, bool):
-            stdout = result.get("stdout") if isinstance(result.get("stdout"), str) else ""
-            stderr = result.get("stderr") if isinstance(result.get("stderr"), str) else ""
+            stdout = (
+                result.get("stdout") if isinstance(result.get("stdout"), str) else ""
+            )
+            stderr = (
+                result.get("stderr") if isinstance(result.get("stderr"), str) else ""
+            )
             outcome["usage"] = {
                 "exit_code": exit_code,
                 "stdout_bytes": len(stdout.encode("utf-8")),
@@ -687,7 +775,8 @@ class SessionState:
                 {
                     "schema_version": "bb.tool_model_render.v2",
                     "call_id": call_id,
-                    "parts": [{"part_kind": "error" if error_value else "text", "content": render_content}],
+                    "parts": [{"part_kind": "error" if error_value else "text", "content": render_content,
+                        }],
                     "truncation": {"truncated": False},
                     "visibility": self._kernel_visibility_ref("model" if not error_value else "host"),
                 },
@@ -839,6 +928,18 @@ class SessionState:
     def get_provider_metadata(self, key: str, default: Any = None) -> Any:
         return self.provider_metadata.get(key, default)
 
+    def record_provider_exchange(self, exchange: Dict[str, Any]) -> None:
+        """Atomically retain every provider exchange and project the latest one."""
+
+        with self._provider_metadata_lock:
+            history = self.provider_metadata.setdefault(
+                "provider_exchange_history", []
+            )
+            if not isinstance(history, list):
+                raise TypeError("provider_exchange_history must be a list")
+            history.append(exchange)
+            self.provider_metadata["last_provider_exchange"] = exchange
+
     def clear_provider_metadata(self) -> None:
         self.provider_metadata.clear()
 
@@ -867,8 +968,8 @@ class SessionState:
             "tool_prompt_mode": self.last_tool_prompt_mode,
             "native_tools_enabled": bool(provider_cfg.get("use_native", False)),
             "tools_suppressed": bool(provider_cfg.get("suppress_prompts", False)),
-            "yaml_tools_count": len(getattr(self, 'yaml_tools', [])),
-            "enhanced_executor_enabled": bool(getattr(self, 'enhanced_executor', None)),
+            "yaml_tools_count": len(getattr(self, "yaml_tools", [])),
+            "enhanced_executor_enabled": bool(getattr(self, "enhanced_executor", None)),
             "provider_metadata_keys": sorted(self.provider_metadata.keys()),
             "reasoning_trace_counts": {
                 "encrypted": len(self.reasoning_traces.get_encrypted_traces()),
@@ -966,7 +1067,9 @@ class SessionState:
         meta = metadata or {}
         is_todo = bool(meta.get("is_todo"))
         if is_todo:
-            self.tool_usage_summary["todo_calls"] = int(self.tool_usage_summary.get("todo_calls", 0)) + 1
+            self.tool_usage_summary["todo_calls"] = (
+                int(self.tool_usage_summary.get("todo_calls", 0)) + 1
+            )
         else:
             self.tool_usage_summary["total_calls"] += 1
         per_turn = None
@@ -987,15 +1090,21 @@ class SessionState:
             if success:
                 self.tool_usage_summary["successful_writes"] += 1
         if meta.get("is_user_facing_write"):
-            self.tool_usage_summary["user_facing_write_calls"] = int(self.tool_usage_summary.get("user_facing_write_calls", 0)) + 1
+            self.tool_usage_summary["user_facing_write_calls"] = (
+                int(self.tool_usage_summary.get("user_facing_write_calls", 0)) + 1
+            )
             if success:
-                self.tool_usage_summary["successful_user_facing_writes"] = int(self.tool_usage_summary.get("successful_user_facing_writes", 0)) + 1
+                self.tool_usage_summary["successful_user_facing_writes"] = (
+                    int(self.tool_usage_summary.get("successful_user_facing_writes", 0)) + 1
+                )
                 successful_user_targets = list(self.tool_usage_summary.get("successful_user_facing_write_targets") or [])
                 for target in meta.get("write_targets") or []:
                     target_str = str(target or "")
                     if target_str and target_str not in successful_user_targets:
                         successful_user_targets.append(target_str)
-                self.tool_usage_summary["successful_user_facing_write_targets"] = successful_user_targets
+                self.tool_usage_summary["successful_user_facing_write_targets"] = (
+                    successful_user_targets
+                )
         requested_targets = meta.get("requested_write_targets")
         if isinstance(requested_targets, list):
             existing_targets = list(self.tool_usage_summary.get("requested_write_targets") or [])
@@ -1005,15 +1114,21 @@ class SessionState:
                     existing_targets.append(target_str)
             self.tool_usage_summary["requested_write_targets"] = existing_targets
         if meta.get("is_requested_file_write"):
-            self.tool_usage_summary["requested_file_write_calls"] = int(self.tool_usage_summary.get("requested_file_write_calls", 0)) + 1
+            self.tool_usage_summary["requested_file_write_calls"] = (
+                int(self.tool_usage_summary.get("requested_file_write_calls", 0)) + 1
+            )
             if success:
-                self.tool_usage_summary["successful_requested_file_writes"] = int(self.tool_usage_summary.get("successful_requested_file_writes", 0)) + 1
+                self.tool_usage_summary["successful_requested_file_writes"] = (
+                    int(self.tool_usage_summary.get("successful_requested_file_writes", 0)) + 1
+                )
                 successful_targets = list(self.tool_usage_summary.get("successful_requested_write_targets") or [])
                 for target in meta.get("requested_write_matches") or []:
                     target_str = str(target or "")
                     if target_str and target_str not in successful_targets:
                         successful_targets.append(target_str)
-                self.tool_usage_summary["successful_requested_write_targets"] = successful_targets
+                self.tool_usage_summary["successful_requested_write_targets"] = (
+                    successful_targets
+                )
         if meta.get("is_run_shell"):
             self.tool_usage_summary["run_shell_calls"] += 1
         if meta.get("is_test_command"):
@@ -1021,7 +1136,9 @@ class SessionState:
             if meta.get("exit_code") == 0 and success:
                 self.tool_usage_summary["successful_tests"] += 1
         self.set_provider_metadata("turn_has_tool_usage", True)
-        turn_hint = turn_index if isinstance(turn_index, int) else self._active_turn_index
+        turn_hint = (
+            turn_index if isinstance(turn_index, int) else self._active_turn_index
+        )
         payload: Dict[str, Any] = {
             "tool": tool_name,
             "success": bool(success),
@@ -1031,7 +1148,9 @@ class SessionState:
         }
         if isinstance(result, dict) and result:
             payload["result"] = dict(result)
-        call_id = meta.get("call_id") or meta.get("tool_call_id") or meta.get("toolCallId")
+        call_id = (
+            meta.get("call_id") or meta.get("tool_call_id") or meta.get("toolCallId")
+        )
         if isinstance(call_id, str) and call_id.strip():
             payload["call_id"] = call_id.strip()
         self._emit_event(

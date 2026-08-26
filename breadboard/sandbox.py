@@ -8,12 +8,25 @@ from __future__ import annotations
 
 import os
 import signal
+import re
 import subprocess
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, Optional, Sequence, Tuple, List
 
 import ray
+from breadboard_engine.security import (
+    build_child_environment,
+    ProcessIsolationUnavailable,
+    build_restricted_process_command,
+    contains_provider_credential_value,
+    provider_credential_values,
+    protected_credential_paths,
+    purge_provider_credentials,
+    WorkspaceFilesystem,
+    WorkspacePathError,
+    redaction,
+)
 
 from .adaptive_iter import ADAPTIVE_PREFIX_ITERABLE
 
@@ -26,10 +39,41 @@ class DevSandboxV2:
     host filesystem scoped to the provided workspace.
     """
 
-    def __init__(self, image: str, session_id: str = "", workspace: str = "", lsp_actor: Any = None) -> None:
+    def __init__(
+        self,
+        image: str,
+        session_id: str = "",
+        workspace: str = "",
+        lsp_actor: Any = None,
+        *,
+        protected_paths: Optional[Sequence[str | os.PathLike[str]]] = None,
+        purge_process_environment: bool = True,
+    ) -> None:
+        self._protected_credential_paths = tuple(
+            str(path)
+            for path in dict.fromkeys(
+                (
+                    *protected_credential_paths(),
+                    *(protected_paths or ()),
+                )
+            )
+        )
+        self._workspace_files = WorkspaceFilesystem(workspace)
+        workspace_root = self._workspace_files.root
+        self._credential_workspace_overlap = any(
+            path == workspace_root
+            or path.is_relative_to(workspace_root)
+            or workspace_root.is_relative_to(path)
+            for path in (
+                Path(item).expanduser().resolve(strict=False)
+                for item in self._protected_credential_paths
+            )
+        )
+        if purge_process_environment:
+            purge_provider_credentials()
         self.image = image
         self.session_id = session_id
-        self.workspace = str(workspace)
+        self.workspace = str(workspace_root)
         self.lsp_actor = lsp_actor
 
     def get_session_id(self) -> str:
@@ -38,20 +82,17 @@ class DevSandboxV2:
     def get_workspace(self) -> str:
         return self.workspace
 
+    def provider_environment_is_clean(self) -> bool:
+        """Report the provider-credential invariant without exposing names or values."""
+        return not provider_credential_values()
+
     def _resolve_checked(self, path: str) -> Tuple[str, bool]:
-        ws = Path(self.workspace).resolve()
-        candidate = Path(path)
-        if not candidate.is_absolute():
-            candidate = ws / candidate
+        if self._credential_workspace_overlap:
+            return self.workspace, False
         try:
-            candidate = candidate.resolve()
-        except Exception:
-            return str(ws), False
-        try:
-            candidate.relative_to(ws)
-        except Exception:
-            return str(ws), False
-        return str(candidate), True
+            return self._workspace_files.display_path(path), True
+        except (WorkspacePathError, OSError, ValueError):
+            return self.workspace, False
 
     def _resolve(self, path: str) -> str:
         abs_path, _ok = self._resolve_checked(path)
@@ -74,50 +115,49 @@ class DevSandboxV2:
             pass
 
     def exists(self, path: str) -> bool:
-        abs_path, ok = self._resolve_checked(path)
-        if not ok:
+        if self._credential_workspace_overlap:
             return False
-        return Path(abs_path).exists()
+        try:
+            return self._workspace_files.exists(path)
+        except (WorkspacePathError, OSError, ValueError):
+            return False
 
     def stat(self, path: str) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
         if not ok:
             return {"path": abs_path, "exists": False, "error": "path_outside_workspace"}
-        p = Path(abs_path)
-        if not p.exists():
-            return {"path": abs_path, "exists": False}
         try:
-            st = p.stat()
-            return {
-                "path": abs_path,
-                "exists": True,
-                "type": "dir" if p.is_dir() else "file",
-                "size": st.st_size,
-                "mtime": st.st_mtime,
-            }
-        except Exception:
-            return {"path": abs_path, "exists": True}
+            info = self._workspace_files.stat(path)
+        except FileNotFoundError:
+            return {"path": abs_path, "exists": False}
+        except (WorkspacePathError, OSError, ValueError):
+            return {"path": abs_path, "exists": False, "error": "unsafe_workspace_path"}
+        return {
+            "path": info.path,
+            "exists": True,
+            "type": info.kind,
+            "size": info.size,
+            "mtime": info.mtime,
+        }
 
     def put(self, path: str, content: bytes) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
         if not ok:
             return {"ok": False, "path": abs_path, "error": "path_outside_workspace"}
-        p = Path(abs_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
+        payload = content or b""
         try:
-            p.write_bytes(content or b"")
-        except Exception as exc:
+            self._workspace_files.write_bytes(path, payload)
+        except (WorkspacePathError, OSError, ValueError) as exc:
             return {"ok": False, "path": abs_path, "error": str(exc)}
         self._touch_lsp(abs_path)
-        return {"ok": True, "path": abs_path, "bytes": len(content or b"")}
+        return {"ok": True, "path": abs_path, "bytes": len(payload)}
 
     def get(self, path: str) -> bytes:
-        abs_path, ok = self._resolve_checked(path)
-        if not ok:
+        if self._credential_workspace_overlap:
             return b""
         try:
-            return Path(abs_path).read_bytes()
-        except Exception:
+            return self._workspace_files.read_bytes(path)
+        except (WorkspacePathError, OSError, ValueError):
             return b""
 
     def read_text(
@@ -128,10 +168,8 @@ class DevSandboxV2:
         encoding: str = "utf-8",
     ) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
+        start = max(0, int(offset or 0)) if offset is not None else 0
         if not ok:
-            start = int(offset or 0) if offset is not None else 0
-            if start < 0:
-                start = 0
             return {
                 "path": abs_path,
                 "content": "",
@@ -141,135 +179,111 @@ class DevSandboxV2:
                 "error": "path_outside_workspace",
             }
         try:
-            raw = Path(abs_path).read_text(encoding=encoding, errors="replace")
-        except Exception:
+            raw = self._workspace_files.read_text(
+                path,
+                encoding=encoding,
+                errors="replace",
+            )
+        except (WorkspacePathError, OSError, ValueError):
             raw = ""
-
-        start = int(offset or 0) if offset is not None else 0
-        if start < 0:
-            start = 0
+        content = raw[start:] if start else raw
         truncated = False
-        content = raw
-        if start:
-            content = content[start:]
         if limit is not None:
             try:
-                lim = int(limit)
-            except Exception:
-                lim = None
-            if lim is not None and lim >= 0 and len(content) > lim:
-                content = content[:lim]
+                limit_value = int(limit)
+            except (TypeError, ValueError):
+                limit_value = None
+            if (
+                limit_value is not None
+                and limit_value >= 0
+                and len(content) > limit_value
+            ):
+                content = content[:limit_value]
                 truncated = True
+        return {
+            "path": abs_path,
+            "content": content,
+            "truncated": truncated,
+            "offset": start,
+            "limit": limit,
+        }
 
-        return {"path": abs_path, "content": content, "truncated": truncated, "offset": start, "limit": limit}
-
-    def write_text(self, path: str, content: str, encoding: str = "utf-8") -> Dict[str, Any]:
+    def write_text(
+        self,
+        path: str,
+        content: str,
+        encoding: str = "utf-8",
+    ) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
         if not ok:
             return {"ok": False, "path": abs_path, "error": "path_outside_workspace"}
-        p = Path(abs_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
+        value = content or ""
         try:
-            p.write_text(content or "", encoding=encoding)
-        except Exception as exc:
+            self._workspace_files.write_text(path, value, encoding=encoding)
+        except (WorkspacePathError, OSError, ValueError) as exc:
             return {"ok": False, "path": abs_path, "error": str(exc)}
         self._touch_lsp(abs_path)
-        return {"ok": True, "path": abs_path, "bytes": len(content or "")}
+        return {"ok": True, "path": abs_path, "bytes": len(value)}
 
     def ls(self, path: str, depth: int = 1) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
         if not ok:
-            return {"path": abs_path, "entries": [], "items": [], "tree_format": False, "error": "path_outside_workspace"}
-        depth = max(1, int(depth or 1))
-        root = Path(abs_path)
-        entries = []
-        if not root.exists():
-            return {"path": abs_path, "entries": []}
-
-        def _walk(current: Path, rel: Path, remaining: int) -> None:
-            try:
-                for child in sorted(current.iterdir()):
-                    rel_child = rel / child.name
-                    entries.append({
-                        "path": str(rel_child),
-                        "type": "dir" if child.is_dir() else "file",
-                    })
-                    if child.is_dir() and remaining > 1:
-                        _walk(child, rel_child, remaining - 1)
-            except Exception:
-                pass
-
-        _walk(root, Path("."), depth)
-        return {"path": abs_path, "items": entries, "entries": entries, "tree_format": False}
-
-    def glob(self, pattern: str, root: str = ".", limit: Optional[int] = None) -> List[str]:
-        resolved_root, ok = self._resolve_checked(root)
-        if not ok:
-            return []
-        root_path = Path(resolved_root)
-        if not root_path.exists():
-            return []
-        matches: List[str] = []
+            return {
+                "path": abs_path,
+                "entries": [],
+                "items": [],
+                "tree_format": False,
+                "error": "path_outside_workspace",
+            }
         try:
-            for match in root_path.glob(pattern):
-                try:
-                    rel = str(match.relative_to(root_path))
-                except Exception:
-                    rel = str(match)
-                matches.append(rel)
-        except Exception:
+            entries = [
+                {"path": item.path, "type": item.kind}
+                for item in self._workspace_files.list_entries(
+                    path,
+                    depth=max(1, int(depth or 1)),
+                )
+            ]
+        except (WorkspacePathError, OSError, ValueError):
+            entries = []
+        return {
+            "path": abs_path,
+            "items": entries,
+            "entries": entries,
+            "tree_format": False,
+        }
+
+    def glob(
+        self,
+        pattern: str,
+        root: str = ".",
+        limit: Optional[int] = None,
+    ) -> List[str]:
+        if self._credential_workspace_overlap:
             return []
-        # Sort by mtime (desc) to align with OpenCode expectations
         try:
-            matches.sort(
-                key=lambda p: (root_path / p).stat().st_mtime if (root_path / p).exists() else 0.0,
-                reverse=True,
+            return self._workspace_files.glob(pattern, root=root, limit=limit)
+        except (WorkspacePathError, OSError, ValueError):
+            return []
+
+    def grep(
+        self,
+        pattern: str,
+        path: str = ".",
+        include: Optional[str] = None,
+        limit: int = 100,
+    ) -> Dict[str, Any]:
+        if self._credential_workspace_overlap:
+            return {"matches": []}
+        try:
+            matches = self._workspace_files.grep(
+                pattern,
+                root=path,
+                include=include,
+                limit=limit,
             )
-        except Exception:
-            pass
-        if limit is not None:
-            try:
-                limit_val = int(limit)
-                if limit_val >= 0:
-                    matches = matches[:limit_val]
-            except Exception:
-                pass
-        return matches
-
-    def grep(self, pattern: str, path: str = ".", include: Optional[str] = None, limit: int = 100) -> Dict[str, Any]:
-        root = Path(self._resolve(path))
-        if not root.exists():
-            return {"matches": []}
-        try:
-            import re
-            regex = re.compile(pattern)
-        except Exception:
-            return {"matches": []}
-        import fnmatch
-
-        matches: List[Dict[str, Any]] = []
-        try:
-            for file_path in root.rglob("*"):
-                if not file_path.is_file():
-                    continue
-                try:
-                    rel = str(file_path.relative_to(root))
-                except Exception:
-                    rel = str(file_path)
-                if include and not fnmatch.fnmatch(rel, include):
-                    continue
-                try:
-                    text = file_path.read_text(encoding="utf-8", errors="ignore")
-                except Exception:
-                    continue
-                for idx, line in enumerate(text.splitlines(), start=1):
-                    if regex.search(line):
-                        matches.append({"path": rel, "line": idx, "text": line})
-                        if len(matches) >= int(limit or 0 or 0) and int(limit or 0) > 0:
-                            return {"matches": matches}
-            return {"matches": matches}
-        except Exception:
-            return {"matches": matches}
+        except (WorkspacePathError, OSError, ValueError, re.error):
+            matches = []
+        return {"matches": matches}
 
     def run(
         self,
@@ -300,52 +314,143 @@ class DevSandboxV2:
     ) -> Dict[str, Any]:
         cmd = command or ""
         proc: Optional[subprocess.Popen[str]] = None
+        secret_values = (
+            *provider_credential_values(),
+            *provider_credential_values(env or {}),
+        )
+        if contains_provider_credential_value(
+            (cmd, stdin_data, env),
+            values=secret_values,
+        ):
+            payload = {
+                "exit": 126,
+                "stdout": "",
+                "stderr": (
+                    "sandbox command rejected: provider credential "
+                    "in process input"
+                ),
+            }
+            if not stream:
+                return payload
+            return [
+                ADAPTIVE_PREFIX_ITERABLE,
+                payload["stderr"],
+                payload,
+            ]  # type: ignore[return-value]
         try:
-            proc = subprocess.Popen(
+            child_env = build_child_environment(overrides=env)
+        except ValueError:
+            payload = {
+                "exit": 126,
+                "stdout": "",
+                "stderr": (
+                    "sandbox environment rejected: override key "
+                    "is not allowlisted"
+                ),
+            }
+            if not stream:
+                return payload
+            return [
+                ADAPTIVE_PREFIX_ITERABLE,
+                payload["stderr"],
+                payload,
+            ]  # type: ignore[return-value]
+        try:
+            isolated_argv, child_env = build_restricted_process_command(
                 cmd,
-                cwd=self.workspace,
+                workspace=self.workspace,
                 shell=bool(shell),
-                # Coding models assume bash semantics (set -o pipefail, [[ ]],
-                # heredocs); /bin/sh is dash on Debian/Ubuntu and rejects them.
-                executable="/bin/bash" if shell else None,
-                env={**os.environ, **(env or {})},
-                stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                start_new_session=True,
+                environment=child_env,
+                protected_paths=self._protected_credential_paths,
             )
-            stdout, stderr = proc.communicate(input=stdin_data, timeout=timeout)
-            payload = {"exit": proc.returncode, "stdout": stdout or "", "stderr": stderr or ""}
-        except subprocess.TimeoutExpired:
-            if proc is not None and proc.pid is not None:
-                try:
-                    os.killpg(proc.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                except Exception:
+        except ProcessIsolationUnavailable:
+            payload = {
+                "exit": 126,
+                "stdout": "",
+                "stderr": (
+                    "sandbox command rejected: filesystem isolation "
+                    "is unavailable"
+                ),
+            }
+            if not stream:
+                return payload
+            return [
+                ADAPTIVE_PREFIX_ITERABLE,
+                payload["stderr"],
+                payload,
+            ]  # type: ignore[return-value]
+        with redaction.secret_value_scope(*secret_values):
+            try:
+                proc = subprocess.Popen(
+                    isolated_argv,
+                    cwd=self.workspace,
+                    shell=False,
+                    env=child_env,
+                    stdin=(
+                        subprocess.PIPE
+                        if stdin_data is not None
+                        else subprocess.DEVNULL
+                    ),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    start_new_session=True,
+                )
+                stdout, stderr = proc.communicate(input=stdin_data, timeout=timeout)
+                payload = {
+                    "exit": proc.returncode,
+                    "stdout": stdout or "",
+                    "stderr": stderr or "",
+                }
+            except subprocess.TimeoutExpired:
+                if proc is not None and proc.pid is not None:
                     try:
-                        proc.terminate()
-                    except Exception:
-                        pass
-                try:
-                    stdout, stderr = proc.communicate(timeout=2)
-                except Exception:
-                    try:
-                        os.killpg(proc.pid, signal.SIGKILL)
+                        os.killpg(proc.pid, signal.SIGTERM)
                     except ProcessLookupError:
                         pass
                     except Exception:
                         try:
-                            proc.kill()
+                            proc.terminate()
                         except Exception:
                             pass
-                    stdout, stderr = proc.communicate()
-            else:
-                stdout, stderr = "", ""
-            payload = {"exit": 124, "stdout": stdout or "", "stderr": (stderr or "Command timed out")}
-        except Exception as exc:
-            payload = {"exit": 1, "stdout": "", "stderr": str(exc)}
+                    try:
+                        stdout, stderr = proc.communicate(timeout=2)
+                    except Exception:
+                        try:
+                            os.killpg(proc.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        except Exception:
+                            try:
+                                proc.kill()
+                            except Exception:
+                                pass
+                        stdout, stderr = proc.communicate()
+                else:
+                    stdout, stderr = "", ""
+                payload = {
+                    "exit": 124,
+                    "stdout": stdout or "",
+                    "stderr": stderr or "Command timed out",
+                }
+            except Exception as exc:
+                payload = {
+                    "exit": 1,
+                    "stdout": "",
+                    "stderr": redaction.safe_exception_message(
+                        exc,
+                        operation="sandbox command",
+                    ),
+                }
+            scrubbed, _problems = redaction.scrub_structure(
+                payload,
+                path="$.sandbox_result",
+            )
+            payload = scrubbed if isinstance(scrubbed, dict) else {
+                "exit": 1,
+                "stdout": "",
+                "stderr": "sandbox result unavailable",
+            }
 
         if not stream:
             return payload
@@ -353,7 +458,7 @@ class DevSandboxV2:
         lines: List[Any] = [ADAPTIVE_PREFIX_ITERABLE]
         stdout = str(payload.get("stdout") or "")
         stderr = str(payload.get("stderr") or "")
-        for line in (stdout.splitlines() or []):
+        for line in stdout.splitlines() or []:
             lines.append(line)
         if not stdout and stderr:
             for line in stderr.splitlines():
@@ -372,18 +477,23 @@ class DevSandboxV2:
         abs_path, ok = self._resolve_checked(path)
         if not ok:
             return {"ok": False, "path": abs_path, "error": "path_outside_workspace"}
-        p = Path(abs_path)
-        content = ""
-        if p.exists():
-            content = p.read_text(encoding=encoding, errors="replace")
-        if count and count > 0:
-            updated = content.replace(old_string, new_string, count)
-        else:
-            updated = content.replace(old_string, new_string)
-        p.parent.mkdir(parents=True, exist_ok=True)
         try:
-            p.write_text(updated, encoding=encoding)
-        except Exception as exc:
+            content = (
+                self._workspace_files.read_text(
+                    path,
+                    encoding=encoding,
+                    errors="replace",
+                )
+                if self._workspace_files.exists(path)
+                else ""
+            )
+            updated = (
+                content.replace(old_string, new_string, count)
+                if count and count > 0
+                else content.replace(old_string, new_string)
+            )
+            self._workspace_files.write_text(path, updated, encoding=encoding)
+        except (WorkspacePathError, OSError, ValueError) as exc:
             return {"ok": False, "path": abs_path, "error": str(exc)}
         self._touch_lsp(abs_path)
         return {"ok": True, "path": abs_path}
@@ -412,14 +522,32 @@ class DevSandboxV2:
             results.append(self.edit_replace(path, old, new, count, encoding=encoding))
         return {"ok": True, "results": results}
 
-    def _run_git(self, args: List[str], *, timeout: int = 10) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["git", *args],
-            cwd=self.workspace,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def _run_git(
+        self,
+        args: List[str],
+        *,
+        timeout: int = 10,
+    ) -> subprocess.CompletedProcess[str]:
+        child_env = build_child_environment()
+        isolated_argv, child_env = build_restricted_process_command(
+            ("git", *args),
+            workspace=self.workspace,
+            shell=False,
+            environment=child_env,
+            protected_paths=self._protected_credential_paths,
         )
+        with redaction.secret_value_scope(*provider_credential_values()):
+            result = subprocess.run(
+                isolated_argv,
+                cwd=self.workspace,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=child_env,
+            )
+            result.stdout = redaction.scrub_text(result.stdout or "")
+            result.stderr = redaction.scrub_text(result.stderr or "")
+            return result
 
     def vcs(self, request: Dict[str, Any]) -> Dict[str, Any]:
         action = (request or {}).get("action") or (request or {}).get("operation") or "status"
@@ -470,11 +598,27 @@ class DevSandboxV2:
                 patch_text = str((params or {}).get("patch") or "")
                 if not patch_text.strip():
                     return {"ok": False, "error": "empty patch"}
-                patch_path = Path(self.workspace) / f".breadboard_patch_{uuid.uuid4().hex}.diff"
-                patch_path.write_text(patch_text, encoding="utf-8")
                 args = ["apply"]
-                if bool((params or {}).get("three_way") or (params or {}).get("threeWay")):
+                three_way = bool(
+                    (params or {}).get("three_way")
+                    or (params or {}).get("threeWay")
+                )
+                if three_way:
+                    refresh = self._run_git(["update-index", "--refresh"], timeout=20)
+                    if refresh.returncode != 0:
+                        return {
+                            "ok": False,
+                            "stdout": refresh.stdout,
+                            "stderr": refresh.stderr,
+                        }
                     args.append("--3way")
+                patch_name = f".breadboard_patch_{uuid.uuid4().hex}.diff"
+                patch_path = self._workspace_files.display_path(patch_name)
+                self._workspace_files.write_text(
+                    patch_name,
+                    patch_text,
+                    encoding="utf-8",
+                )
                 if bool((params or {}).get("index")):
                     args.append("--index")
                 whitespace = (params or {}).get("whitespace")
@@ -484,10 +628,12 @@ class DevSandboxV2:
                     args.append("-R")
                 if bool((params or {}).get("keep_rejects")):
                     args.append("--reject")
-                args.append(str(patch_path))
+                args.append(patch_path)
                 res = self._run_git(args, timeout=30)
                 try:
-                    patch_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+                    self._workspace_files.unlink(patch_name)
+                except (WorkspacePathError, OSError):
+                    pass
                 except Exception:
                     pass
                 return {"ok": res.returncode == 0, "stdout": res.stdout, "stderr": res.stderr}
@@ -521,6 +667,7 @@ def new_dev_sandbox_v2(
     lsp_actor: Any = None,
     driver: str | None = None,
     driver_options: Dict[str, Any] | None = None,
+    protected_paths: Optional[Sequence[str | os.PathLike[str]]] = None,
 ):
     """Create a sandbox actor for the requested driver.
 
@@ -538,6 +685,14 @@ def new_dev_sandbox_v2(
         name=name,
         lsp_actor=lsp_actor,
         driver_options=dict(driver_options or {}),
+        protected_paths=tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        ),
     )
     try:
         return create_sandbox(spec)
@@ -551,6 +706,7 @@ def new_dev_sandbox_v2(
             name=name,
             lsp_actor=lsp_actor,
             driver_options=spec.driver_options,
+            protected_paths=spec.protected_paths,
         )
         return create_sandbox(fallback)
 

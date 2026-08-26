@@ -222,6 +222,11 @@ def capture_request_body(
             max_steps=max_steps,
             stream_responses=False,
             tool_prompt_mode=tool_prompt_mode,
+            context={
+                "session_id": "compat-capture",
+                "input_id": "compat-input",
+                "turn_id": "compat-turn",
+            },
         )
     return store.last()
 

@@ -26,8 +26,19 @@
     },
     {
       "id": "provider_response",
+      "status": "deprecated",
+      "description": "Historical kernel-owned runtime event kind for provider.exchange.v1.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "provider.exchange",
+        "actor": "provider",
+        "visibility": "host"
+      }
+    },
+    {
+      "id": "provider_response_v2",
       "status": "active",
-      "description": "Kernel-owned runtime event kind for provider.exchange.",
+      "description": "Kernel-owned runtime event kind carrying a closed provider.exchange.v2 reference.",
       "metadata": {
         "classification": "kernel",
         "kernel_family": "provider.exchange",

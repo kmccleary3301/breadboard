@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
@@ -60,18 +60,39 @@ class ProviderCatalogEntry:
     provider_id: str
     display_name: str
     runtime_id: str
-    auth_schemes: tuple[str, ...] = ("api_key",)
+    auth_schemes: tuple[str, ...] = ()
     oauth_flows: tuple[OAuthFlowSpec, ...] = ()
     compatible_protocol: str = "openai"
     base_url: str | None = None
+    aliases: tuple[str, ...] = ()
+    config_adapter_ids: tuple[str, ...] = ()
+    support_tier: Literal["core", "deferred", "evidence"] = "evidence"
+    auth_owner: Literal["broker", "provider", "none"] = "none"
+    api_key_env: str | None = None
+    default_api_variant: str = "chat"
+    model_discovery: Literal["configured_only"] = "configured_only"
 
-    def as_view(self) -> dict[str, Any]:
+    def as_view(
+        self,
+        *,
+        available: bool | None = None,
+        availability_reason: str | None = None,
+    ) -> dict[str, Any]:
+        product_oauth_flows = self.oauth_flows if self.auth_owner == "broker" else ()
         return {
             "provider_id": self.provider_id,
+            "aliases": list(self.aliases),
             "display_name": self.display_name,
+            "support_tier": self.support_tier,
+            "auth_owner": self.auth_owner,
             "auth_schemes": list(self.auth_schemes),
-            "login_available": any(flow.resolved_client_id() is not None for flow in self.oauth_flows),
-            "oauth_flows": [flow.flow_id for flow in self.oauth_flows],
+            "available": bool(available),
+            "availability_reason": availability_reason,
+            "login_available": any(
+                flow.resolved_client_id() is not None for flow in product_oauth_flows
+            ),
+            "oauth_flows": [flow.flow_id for flow in product_oauth_flows],
+            "model_discovery": self.model_discovery,
             "runtime_id": self.runtime_id,
             "compatible_protocol": self.compatible_protocol,
             "base_url": self.base_url,
@@ -83,7 +104,14 @@ OPENAI_CODEX_OAUTH = OAuthFlowSpec(
     auth_url="https://auth.openai.com/oauth/authorize",
     token_url="https://auth.openai.com/oauth/token",
     client_id="app_EMoamEEZ73f0CkXaXp7hrann",
-    scopes=("openid", "profile", "email", "offline_access", "api.connectors.read", "api.connectors.invoke"),
+    scopes=(
+        "openid",
+        "profile",
+        "email",
+        "offline_access",
+        "api.connectors.read",
+        "api.connectors.invoke",
+    ),
     callback_port=1455,
     callback_path="/auth/callback",
     device_usercode_url="https://auth.openai.com/api/accounts/deviceauth/usercode",
@@ -144,30 +172,141 @@ GOOGLE_ANTIGRAVITY_OAUTH = OAuthFlowSpec(
 
 
 _PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
-    "codex": ProviderCatalogEntry("codex", "Codex", "codex_app_server", ("api_key", "oauth2"), (OPENAI_CODEX_OAUTH,)),
-    "openai": ProviderCatalogEntry("openai", "OpenAI", "openai_chat"),
-    "openrouter": ProviderCatalogEntry("openrouter", "OpenRouter", "openrouter_chat", base_url="https://openrouter.ai/api/v1"),
-    "anthropic": ProviderCatalogEntry("anthropic", "Anthropic", "anthropic_messages", ("api_key", "oauth2"), (ANTHROPIC_OAUTH,), compatible_protocol="anthropic"),
-    "google-gemini-cli": ProviderCatalogEntry("google-gemini-cli", "Google Cloud Code Assist (Gemini CLI)", "openai_chat", ("oauth2",), (GOOGLE_GEMINI_CLI_OAUTH,)),
-    "google-antigravity": ProviderCatalogEntry("google-antigravity", "Antigravity", "openai_chat", ("oauth2",), (GOOGLE_ANTIGRAVITY_OAUTH,)),
-    "mock": ProviderCatalogEntry("mock", "Mock", "mock_chat"),
-    "cli_mock": ProviderCatalogEntry("cli_mock", "CLI Mock", "cli_mock_chat"),
+    "codex": ProviderCatalogEntry(
+        provider_id="codex",
+        aliases=("openai-codex",),
+        display_name="Codex",
+        runtime_id="codex_app_server",
+        config_adapter_ids=("codex_app_server",),
+        auth_schemes=("provider_managed",),
+        oauth_flows=(OPENAI_CODEX_OAUTH,),
+        support_tier="core",
+        auth_owner="provider",
+        default_api_variant="app_server",
+    ),
+    "openai": ProviderCatalogEntry(
+        provider_id="openai",
+        display_name="OpenAI",
+        runtime_id="openai_chat",
+        config_adapter_ids=("openai", "openai_chat", "openai_responses", "responses"),
+        auth_schemes=("api_key",),
+        support_tier="core",
+        auth_owner="broker",
+        api_key_env="OPENAI_API_KEY",
+    ),
+    "anthropic": ProviderCatalogEntry(
+        provider_id="anthropic",
+        display_name="Anthropic",
+        runtime_id="anthropic_messages",
+        config_adapter_ids=("anthropic", "anthropic_messages"),
+        auth_schemes=("api_key", "oauth2"),
+        oauth_flows=(ANTHROPIC_OAUTH,),
+        compatible_protocol="anthropic",
+        support_tier="core",
+        auth_owner="broker",
+        api_key_env="ANTHROPIC_API_KEY",
+        default_api_variant="messages",
+    ),
+    "openrouter": ProviderCatalogEntry(
+        provider_id="openrouter",
+        display_name="OpenRouter",
+        runtime_id="openrouter_chat",
+        config_adapter_ids=("openrouter_chat",),
+        auth_schemes=("api_key",),
+        base_url="https://openrouter.ai/api/v1",
+        support_tier="core",
+        auth_owner="broker",
+        api_key_env="OPENROUTER_API_KEY",
+    ),
+    "google-gemini-cli": ProviderCatalogEntry(
+        provider_id="google-gemini-cli",
+        display_name="Google Cloud Code Assist (Gemini CLI)",
+        runtime_id="openai_chat",
+        auth_schemes=("oauth2",),
+        oauth_flows=(GOOGLE_GEMINI_CLI_OAUTH,),
+        support_tier="deferred",
+        auth_owner="broker",
+    ),
+    "google-antigravity": ProviderCatalogEntry(
+        provider_id="google-antigravity",
+        display_name="Antigravity",
+        runtime_id="openai_chat",
+        auth_schemes=("oauth2",),
+        oauth_flows=(GOOGLE_ANTIGRAVITY_OAUTH,),
+        support_tier="deferred",
+        auth_owner="broker",
+    ),
+    "mock": ProviderCatalogEntry(
+        provider_id="mock",
+        display_name="Mock",
+        runtime_id="mock_chat",
+        default_api_variant="mock",
+    ),
+    "cli_mock": ProviderCatalogEntry(
+        provider_id="cli_mock",
+        display_name="CLI Mock",
+        runtime_id="cli_mock_chat",
+        config_adapter_ids=("cli_mock_chat",),
+        default_api_variant="mock",
+    ),
+    "smoke": ProviderCatalogEntry(
+        provider_id="smoke",
+        display_name="Smoke",
+        runtime_id="smoke_chat",
+        config_adapter_ids=("smoke_chat",),
+        default_api_variant="mock",
+    ),
+    "replay": ProviderCatalogEntry(
+        provider_id="replay",
+        display_name="Replay",
+        runtime_id="replay",
+        config_adapter_ids=("replay",),
+        default_api_variant="replay",
+    ),
 }
+
+_CONFIG_ADAPTER_CATALOG: dict[str, ProviderCatalogEntry] = {}
+for _entry in _PROVIDER_CATALOG.values():
+    for _adapter_id in _entry.config_adapter_ids:
+        if _adapter_id in _CONFIG_ADAPTER_CATALOG:
+            raise RuntimeError(f"duplicate provider config adapter: {_adapter_id}")
+        _CONFIG_ADAPTER_CATALOG[_adapter_id] = _entry
 
 
 def provider_catalog() -> tuple[ProviderCatalogEntry, ...]:
     return tuple(_PROVIDER_CATALOG.values())
 
 
+def product_provider_catalog() -> tuple[ProviderCatalogEntry, ...]:
+    return tuple(
+        entry for entry in _PROVIDER_CATALOG.values() if entry.support_tier == "core"
+    )
+
+
+def routable_provider_catalog() -> tuple[ProviderCatalogEntry, ...]:
+    return tuple(
+        entry
+        for entry in _PROVIDER_CATALOG.values()
+        if entry.support_tier in {"core", "evidence"}
+    )
+
+
 def get_provider_catalog_entry(provider_id: str) -> ProviderCatalogEntry | None:
-    return _PROVIDER_CATALOG.get(str(provider_id or "").strip().lower())
+    normalized = str(provider_id or "").strip().lower()
+    direct = _PROVIDER_CATALOG.get(normalized)
+    if direct is not None:
+        return direct
+    return next(
+        (entry for entry in _PROVIDER_CATALOG.values() if normalized in entry.aliases),
+        None,
+    )
 
 
-def register_provider_catalog_entry(entry: ProviderCatalogEntry) -> None:
-    """Register data only; adapters are selected from the entry's flow specs."""
-    if not entry.provider_id.strip():
-        raise ValueError("provider_id is required")
-    _PROVIDER_CATALOG[entry.provider_id.strip().lower()] = entry
+def get_provider_catalog_entry_for_adapter(
+    adapter_id: str,
+) -> ProviderCatalogEntry | None:
+    normalized = str(adapter_id or "").strip().lower()
+    return _CONFIG_ADAPTER_CATALOG.get(normalized)
 
 
 __all__ = [
@@ -178,6 +317,8 @@ __all__ = [
     "OAuthFlowSpec",
     "ProviderCatalogEntry",
     "get_provider_catalog_entry",
+    "get_provider_catalog_entry_for_adapter",
+    "product_provider_catalog",
     "provider_catalog",
-    "register_provider_catalog_entry",
+    "routable_provider_catalog",
 ]

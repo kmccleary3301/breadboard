@@ -1,4 +1,3 @@
-import os
 import types
 
 import pytest
@@ -140,6 +139,11 @@ def _run_scenario(monkeypatch, workspace, scenario):
         max_steps=2,
         stream_responses=scenario["stream"],
         tool_prompt_mode="system_compiled_and_persistent_per_turn",
+        context={
+            "session_id": f"regression-{scenario['id']}",
+            "input_id": "input-1",
+            "turn_id": "turn-1",
+        },
     )
 
     metrics = conductor.provider_metrics.snapshot()
@@ -180,3 +184,90 @@ def test_provider_regression_matrix(monkeypatch, regression_env, scenario):
     assert completion_reason, "completion reason should be populated"
 
     assert "dialects" in metrics, "dialect metrics key should exist in provider metrics snapshot"
+
+
+def test_first_class_media_survives_conductor_to_provider(
+    monkeypatch, regression_env
+) -> None:
+    monkeypatch.setenv("KC_DISABLE_PROVIDER_PROBES", "1")
+    config = load_agent_config(
+        "agent_configs/misc/opencode_grok4fast_c_fs_v2.yaml"
+    )
+    config.setdefault("logging", {})["enabled"] = False
+    openrouter_cfg = provider_router.providers["openrouter"]
+    monkeypatch.setattr(openrouter_cfg, "runtime_id", "mock_chat")
+    monkeypatch.setattr(openrouter_cfg, "base_url", None)
+    captured_messages = []
+
+    def _capture_invoke(
+        self, *, client, model, messages, tools, stream, context
+    ):
+        captured_messages.append(messages)
+        return ProviderResult(
+            messages=[
+                ProviderMessage(
+                    role="assistant",
+                    content="TASK COMPLETE",
+                    tool_calls=[],
+                    finish_reason="stop",
+                    index=0,
+                )
+            ],
+            raw_response={"mock": True},
+            usage=None,
+            encrypted_reasoning=None,
+            reasoning_summaries=None,
+            model="mock",
+        )
+
+    monkeypatch.setattr(MockRuntime, "invoke", _capture_invoke)
+    conductor_cls = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = conductor_cls(
+        workspace=str(regression_env),
+        config=config,
+        local_mode=True,
+    )
+    digest = "sha256:" + "a" * 64
+    uri = f"attachment://{digest}"
+
+    conductor.run_agentic_loop(
+        system_prompt="",
+        user_prompt="Describe the image",
+        model=config["providers"]["default_model"],
+        max_steps=1,
+        stream_responses=False,
+        tool_prompt_mode="system_compiled_and_persistent_per_turn",
+        context={
+            "session_id": "media-session",
+            "input_id": "media-input",
+            "turn_id": "media-turn",
+            "attachment_capabilities": {
+                uri: {
+                    "digest": digest,
+                    "size_bytes": 1,
+                    "media_type": "image/png",
+                }
+            },
+            "input_media": [
+                {
+                    "type": "media",
+                    "kind": "image",
+                    "uri": uri,
+                    "mime": "image/png",
+                }
+            ],
+        },
+    )
+
+    assert captured_messages
+    user_message = next(
+        message
+        for message in reversed(captured_messages[0])
+        if message["role"] == "user"
+    )
+    assert {
+        "type": "media",
+        "kind": "image",
+        "uri": uri,
+        "mime": "image/png",
+    } in user_message["content"]

@@ -3,13 +3,25 @@
 from __future__ import annotations
 
 import datetime
-import json
 import re
+import time
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..contracts import ProviderMessage, ProviderResult, ProviderRuntime, ProviderRuntimeContext, ProviderRuntimeError, ProviderToolCall
+from ..contracts import (
+    ProviderContractError,
+    ProviderMessage,
+    ProviderResult,
+    ProviderRuntime,
+    ProviderRuntimeContext,
+    ProviderRuntimeError,
+    ProviderToolCall,
+    canonical_json,
+)
+from ..input_media import resolve_input_media
+from ..model_role_options import anthropic_role_options
 from ...logging.provider_dump import provider_dump_logger
+from ...security import redaction
 from ..registry import provider_registry
 from ..sdk_bindings import provider_sdk_bindings
 
@@ -53,126 +65,264 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             return None
         return "".join(parts) if parts else None
 
-    def _convert_messages(self, messages: List[Dict[str, Any]]) -> Tuple[Optional[str], List[Dict[str, Any]]]:
-        system_prompt: Optional[str] = None
+    def _convert_messages(
+        self,
+        messages: List[Dict[str, Any]],
+        *,
+        context: ProviderRuntimeContext | None = None,
+    ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+        system_parts: List[str] = []
         converted: List[Dict[str, Any]] = []
+
+        def text_blocks(content: Any) -> List[Dict[str, Any]]:
+            if isinstance(content, str):
+                return [{"type": "text", "text": content}]
+            if content is None:
+                return []
+            if not isinstance(content, list):
+                raise ProviderContractError(
+                    "Anthropic message content must be text or blocks"
+                )
+            blocks: List[Dict[str, Any]] = []
+            for block in content:
+                if not isinstance(block, dict):
+                    raise ProviderContractError(
+                        "Anthropic content blocks must be objects"
+                    )
+                block_type = block.get("type")
+                if block_type in {"text", "input_text", "output_text"}:
+                    text = block.get("text")
+                    if not isinstance(text, str):
+                        raise ProviderContractError(
+                            "Anthropic text block requires text"
+                        )
+                    blocks.append({"type": "text", "text": text})
+                elif block_type == "media":
+                    media = resolve_input_media(block, context)
+                    blocks.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media.mime,
+                                "data": media.base64_data,
+                            },
+                        }
+                    )
+                elif block_type in {
+                    "image",
+                    "document",
+                    "thinking",
+                    "redacted_thinking",
+                }:
+                    blocks.append(dict(block))
+                elif block_type in {"tool_call", "tool_result"}:
+                    blocks.append(dict(block))
+                elif block_type == "provider_replay":
+                    raise ProviderContractError(
+                        "Anthropic provider replay requires native replay conversion"
+                    )
+                else:
+                    raise ProviderContractError(
+                        f"unsupported Anthropic content block: {block_type!r}"
+                    )
+            return blocks
+
+        def parse_tool_call(raw: Any) -> ProviderToolCall:
+            if not isinstance(raw, dict):
+                raise ProviderContractError("tool call must be an object")
+            function = raw.get("function")
+            function_data = function if isinstance(function, dict) else raw
+            call_id = (
+                raw.get("call_id")
+                or raw.get("id")
+                or raw.get("tool_use_id")
+                or raw.get("tool_call_id")
+            )
+            name = function_data.get("name")
+            if "arguments_json" in function_data:
+                arguments = function_data.get("arguments_json")
+            elif "arguments" in function_data:
+                arguments = function_data.get("arguments")
+            else:
+                raise ProviderContractError("tool call requires arguments")
+            if arguments is None:
+                raise ProviderContractError("tool call requires arguments")
+            call = ProviderToolCall(
+                id=call_id,
+                name=name,
+                arguments=arguments,
+                type=(
+                    "function"
+                    if raw.get("type") == "tool_call"
+                    else raw.get("type", "function")
+                ),
+                raw=raw,
+            )
+            call.as_dict()
+            if not isinstance(call.parsed_arguments, dict):
+                raise ProviderContractError(
+                    "Anthropic tool arguments must be an object"
+                )
+            return call
 
         for message in messages:
             role = message.get("role")
             content = message.get("content")
-
-            if role == "system" and system_prompt is None:
-                system_prompt = content if isinstance(content, str) else json.dumps(content)
-                continue
-
-            # Translate OpenAI-style tool calls into Anthropic `tool_use` blocks so
-            # the model receives its own tool invocation history.
-            tool_calls = message.get("tool_calls")
-            if role == "assistant" and isinstance(tool_calls, list) and tool_calls:
-                blocks: List[Dict[str, Any]] = []
-                if isinstance(content, list):
-                    for block in content:
-                        if not isinstance(block, dict):
-                            continue
-                        block_type = block.get("type")
-                        if block_type == "text" and not block.get("text"):
-                            continue
-                        if block_type:
-                            blocks.append(block)
-                else:
-                    text_value = content if isinstance(content, str) else ""
-                    if text_value:
-                        blocks.append({"type": "text", "text": text_value})
-
-                for idx, tc in enumerate(tool_calls):
-                    if not isinstance(tc, dict):
-                        continue
-                    call_id = tc.get("id") or tc.get("tool_use_id") or tc.get("tool_call_id") or f"toolu_{idx}"
-                    fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
-                    name = fn.get("name") or tc.get("name")
-                    args_raw = fn.get("arguments") or tc.get("arguments") or "{}"
-                    try:
-                        input_payload = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
-                    except Exception:
-                        input_payload = {}
-                    if not name:
-                        continue
-                    blocks.append(
-                        {
-                            "type": "tool_use",
-                            "id": str(call_id),
-                            "name": str(name),
-                            "input": input_payload if isinstance(input_payload, dict) else {},
-                        }
+            if role in {"system", "developer"}:
+                blocks = text_blocks(content)
+                if any(block.get("type") != "text" for block in blocks):
+                    raise ProviderContractError(
+                        "Anthropic system content must be text"
                     )
-
-                converted.append({"role": "assistant", "content": blocks})
+                system_parts.extend(block["text"] for block in blocks)
                 continue
 
-            # Tool results must be provided as `tool_result` blocks in a user message
-            # immediately after the assistant's `tool_use` block.
-            if role == "tool":
-                tool_use_id = (
-                    message.get("tool_use_id")
-                    or message.get("tool_call_id")
-                    or message.get("call_id")
-                    or message.get("id")
-                )
-                text_value = self._message_content_to_text(content)
-                if not tool_use_id:
-                    # Best-effort fallback: preserve output as user text if we can't associate it.
-                    if text_value:
-                        converted.append({"role": "user", "content": [{"type": "text", "text": text_value}]})
-                    continue
-                converted.append(
-                    {
-                        "role": "user",
-                        "content": [
+            if role in {"tool", "tool_result"}:
+                result_blocks: List[Dict[str, Any]] = []
+                if isinstance(content, list):
+                    for block in text_blocks(content):
+                        if block.get("type") != "tool_result":
+                            raise ProviderContractError(
+                                "tool-result messages require tool_result blocks"
+                            )
+                        call_id = block.get("call_id")
+                        result_content = block.get("content")
+                        if not isinstance(call_id, str) or not call_id:
+                            raise ProviderContractError(
+                                "tool_result requires call_id"
+                            )
+                        if result_content is None:
+                            raise ProviderContractError(
+                                "tool_result requires content"
+                            )
+                        if "is_error" in block and not isinstance(
+                            block["is_error"], bool
+                        ):
+                            raise ProviderContractError(
+                                "tool_result is_error must be boolean"
+                            )
+                        result_blocks.append(
                             {
                                 "type": "tool_result",
-                                "tool_use_id": str(tool_use_id),
-                                "content": text_value or "",
+                                "tool_use_id": call_id,
+                                "content": (
+                                    result_content
+                                    if isinstance(result_content, str)
+                                    else canonical_json(result_content)
+                                ),
+                                "is_error": (
+                                    block["is_error"]
+                                    if "is_error" in block
+                                    else False
+                                ),
                             }
-                        ],
-                    }
+                        )
+                elif role == "tool":
+                    call_id = (
+                        message.get("tool_use_id")
+                        or message.get("tool_call_id")
+                        or message.get("call_id")
+                        or message.get("id")
+                    )
+                    if not isinstance(call_id, str) or not call_id:
+                        raise ProviderContractError(
+                            "tool message requires call_id"
+                        )
+                    result_blocks.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": call_id,
+                            "content": (
+                                content
+                                if isinstance(content, str)
+                                else canonical_json(content)
+                            ),
+                        }
+                    )
+                else:
+                    raise ProviderContractError(
+                        "canonical tool_result messages require block content"
+                    )
+                if not result_blocks:
+                    raise ProviderContractError(
+                        "tool-result messages require content"
+                    )
+                converted.append({"role": "user", "content": result_blocks})
+                continue
+
+            if role not in {"user", "assistant"}:
+                raise ProviderContractError(
+                    f"unsupported Anthropic role: {role!r}"
                 )
-                continue
-
-            if isinstance(content, list):
-                blocks: List[Dict[str, Any]] = []
-                for block in content:
-                    if not isinstance(block, dict):
+            blocks = text_blocks(content)
+            if role == "assistant":
+                raw_calls = message.get("tool_calls")
+                if raw_calls is not None:
+                    if not isinstance(raw_calls, list):
+                        raise ProviderContractError("tool_calls must be a list")
+                    blocks.extend(raw_calls)
+                converted_blocks: List[Dict[str, Any]] = []
+                seen_calls: Dict[str, Dict[str, Any]] = {}
+                for block in blocks:
+                    is_tool_call = (
+                        block.get("type") in {"tool_call", "function"}
+                        or isinstance(block.get("function"), dict)
+                    )
+                    if not is_tool_call:
+                        if block.get("type") == "tool_result":
+                            raise ProviderContractError(
+                                "assistant content cannot contain tool_result"
+                            )
+                        converted_blocks.append(block)
                         continue
-                    block_type = block.get("type")
-                    if block_type == "text" and not block.get("text"):
+                    call = parse_tool_call(block)
+                    call_data = call.as_dict()
+                    call_id = call_data["call_id"]
+                    prior = seen_calls.get(call_id)
+                    if prior is not None:
+                        if prior != call_data:
+                            raise ProviderContractError(
+                                "conflicting duplicate tool call identifier"
+                            )
                         continue
-                    if block_type:
-                        blocks.append(block)
-            else:
-                text_value = content if isinstance(content, str) else ""
-                blocks = [{"type": "text", "text": text_value}] if text_value else []
+                    seen_calls[call_id] = call_data
+                    converted_blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": call_data["call_id"],
+                            "name": call_data["name"],
+                            "input": call.parsed_arguments,
+                        }
+                    )
+                blocks = converted_blocks
+            elif any(
+                block.get("type") in {"tool_call", "tool_result"}
+                for block in blocks
+            ):
+                raise ProviderContractError(
+                    "user content cannot contain tool call/result blocks"
+                )
+            if blocks:
+                converted.append({"role": role, "content": blocks})
 
-            if not blocks:
-                continue
-
-            converted.append({
-                "role": role,
-                "content": blocks,
-            })
-
-        return system_prompt, converted
+        return (
+            "\n\n".join(system_parts) if system_parts else None,
+            converted,
+        )
 
     def _extract_usage(self, response: Any) -> Optional[Dict[str, Any]]:
         usage_obj = getattr(response, "usage", None)
         if usage_obj is None:
             return None
-        try:
+        if isinstance(usage_obj, dict):
             return dict(usage_obj)
-        except Exception:
-            try:
-                return usage_obj.model_dump()  # type: ignore[attr-defined]
-            except Exception:
-                return None
+        model_dump = getattr(usage_obj, "model_dump", None)
+        if callable(model_dump):
+            value = model_dump()
+            if isinstance(value, dict):
+                return value
+        raise ProviderContractError("Anthropic usage must be an object")
 
     def _get_attr(self, obj: Any, name: str, default: Any = None) -> Any:
         if hasattr(obj, name):
@@ -188,49 +338,153 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         usage_override: Optional[Dict[str, Any]] = None,
     ) -> ProviderResult:
         text_parts: List[str] = []
+        reasoning_blocks: List[Dict[str, Any]] = []
         tool_calls: List[ProviderToolCall] = []
         reasoning_summaries: List[str] = []
+        provider_replay: List[Dict[str, Any]] = []
+        seen_tool_call_ids: set[str] = set()
 
-        for block in getattr(response, "content", []) or []:
+        content = getattr(response, "content", None)
+        if not isinstance(content, (list, tuple)):
+            raise ProviderRuntimeError(
+                "Malformed Anthropic response content",
+                kind="protocol",
+                details={"code": "invalid_anthropic_content"},
+            )
+        response_id = getattr(response, "id", None)
+        if not isinstance(response_id, str) or not response_id:
+            raise ProviderRuntimeError(
+                "Malformed Anthropic response identifier",
+                kind="protocol",
+                details={"code": "invalid_anthropic_content"},
+            )
+        stop_reason = getattr(response, "stop_reason", None)
+        if stop_reason not in {
+            "end_turn",
+            "max_tokens",
+            "stop_sequence",
+            "tool_use",
+            "pause_turn",
+            "refusal",
+            "model_context_window_exceeded",
+        }:
+            raise ProviderRuntimeError(
+                "Unknown Anthropic stop reason",
+                kind="protocol",
+                details={"code": "unknown_anthropic_finish"},
+            )
+
+        for block in content:
             block_type = self._get_attr(block, "type")
             if block_type == "text":
-                text_val = self._get_attr(block, "text", "")
-                if text_val:
-                    text_parts.append(str(text_val))
+                text_value = self._get_attr(block, "text", "")
+                if not isinstance(text_value, str):
+                    raise ProviderRuntimeError(
+                        "Malformed Anthropic text block",
+                        kind="protocol",
+                        details={"code": "invalid_anthropic_content"},
+                    )
+                text_parts.append(text_value)
             elif block_type == "tool_use":
                 call_id = self._get_attr(block, "id")
                 name = self._get_attr(block, "name")
-                input_payload = self._get_attr(block, "input", {})
-                try:
-                    arguments = json.dumps(input_payload)
-                except Exception:
-                    arguments = "{}"
+                input_payload = self._get_attr(block, "input", None)
+                if (
+                    not isinstance(call_id, str)
+                    or not call_id
+                    or call_id in seen_tool_call_ids
+                    or not isinstance(name, str)
+                    or not name
+                    or not isinstance(input_payload, dict)
+                ):
+                    raise ProviderRuntimeError(
+                        "Malformed Anthropic tool-use block",
+                        kind="protocol",
+                        details={"code": "invalid_anthropic_content"},
+                    )
+                seen_tool_call_ids.add(call_id)
                 tool_calls.append(
                     ProviderToolCall(
                         id=call_id,
                         name=name,
-                        arguments=arguments,
+                        arguments=input_payload,
                         type="function",
                         raw=block,
                     )
                 )
             elif block_type == "thinking":
-                thinking_text = self._get_attr(block, "text", "")
+                thinking_text = self._get_attr(
+                    block, "thinking", self._get_attr(block, "text", "")
+                )
+                if not isinstance(thinking_text, str):
+                    raise ProviderRuntimeError(
+                        "Malformed Anthropic thinking block",
+                        kind="protocol",
+                        details={"code": "invalid_anthropic_content"},
+                    )
+                reasoning_blocks.append({"type": "thinking", "text": thinking_text})
                 if thinking_text:
-                    reasoning_summaries.append(str(thinking_text))
+                    reasoning_summaries.append(thinking_text)
+                signature = self._get_attr(block, "signature")
+                if signature is not None:
+                    if not isinstance(signature, str) or not signature:
+                        raise ProviderRuntimeError(
+                            "Malformed Anthropic thinking signature",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_content"},
+                        )
+                    replay = {
+                        "provider_id": "anthropic",
+                        "schema_version": "anthropic.messages.v1",
+                        "replay_scope": "same_provider",
+                        "payload": {"signature": signature},
+                    }
+                    reasoning_blocks.append({"type": "provider_replay", **replay})
+                    provider_replay.append(replay)
+            elif block_type == "redacted_thinking":
+                redacted_data = self._get_attr(block, "data")
+                if not isinstance(redacted_data, str) or not redacted_data:
+                    raise ProviderRuntimeError(
+                        "Malformed Anthropic redacted thinking block",
+                        kind="protocol",
+                        details={"code": "invalid_anthropic_content"},
+                    )
+                reasoning_blocks.append(
+                    {"type": "redacted_thinking", "data": redacted_data}
+                )
+                replay = {
+                    "provider_id": "anthropic",
+                    "schema_version": "anthropic.messages.v1",
+                    "replay_scope": "same_provider",
+                    "payload": {"redacted_data": redacted_data},
+                }
+                reasoning_blocks.append({"type": "provider_replay", **replay})
+                provider_replay.append(replay)
+            else:
+                raise ProviderRuntimeError(
+                    "Unknown Anthropic response content",
+                    kind="protocol",
+                    details={"code": "unknown_anthropic_content"},
+                )
 
-        content_text = "".join(text_parts) if text_parts else None
         provider_message = ProviderMessage(
             role="assistant",
-            content=content_text,
+            content="".join(text_parts) if text_parts else None,
             tool_calls=tool_calls,
-            finish_reason=getattr(response, "stop_reason", None),
+            finish_reason=stop_reason,
             index=0,
             raw_message=response,
-            annotations={"anthropic_stop_reason": getattr(response, "stop_reason", None)},
+            annotations={
+                "anthropic_stop_reason": getattr(response, "stop_reason", None)
+            },
+            message_id=response_id,
         )
 
-        usage_dict = usage_override if usage_override is not None else self._extract_usage(response)
+        usage_dict = (
+            usage_override
+            if usage_override is not None
+            else self._extract_usage(response)
+        )
         metadata: Dict[str, Any] = {}
         if usage_dict:
             for key in [
@@ -247,8 +501,10 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             raw_response=response,
             usage=usage_dict,
             reasoning_summaries=reasoning_summaries or None,
+            reasoning_blocks=reasoning_blocks or None,
             model=getattr(response, "model", None),
             metadata=metadata,
+            provider_replay=provider_replay or None,
         )
 
     _RATE_LIMIT_HEADER_MAP = {
@@ -523,21 +779,330 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         self,
         client: Any,
         request: Dict[str, Any],
-    ) -> Tuple[Any, Optional[Dict[str, Any]], Dict[str, str], Optional[int], Optional[str]]:
+        context: ProviderRuntimeContext,
+    ) -> Tuple[
+        Any, Optional[Dict[str, Any]], Dict[str, str], Optional[int], Optional[str]
+    ]:
         stream_ctx = client.messages.stream(**request)
         usage_override: Optional[Dict[str, Any]] = None
         response_obj: Any = None
+        block_types: Dict[int, str] = {}
+        call_ids: Dict[int, str] = {}
+        tool_names: Dict[int, str] = {}
+        tool_args: Dict[int, str] = {}
+        tool_arg_delta_started: set[int] = set()
+        ended_blocks: set[int] = set()
+        streamed_stop_reason: Optional[str] = None
+        message_id: Optional[str] = None
+        message_stopped = False
+        def event_index(event: Any) -> int:
+            value = self._get_attr(event, "index")
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < 0
+            ):
+                raise ProviderRuntimeError(
+                    "Malformed Anthropic content index",
+                    kind="protocol",
+                    details={"code": "invalid_anthropic_event"},
+                )
+            return value
+
         with stream_ctx as stream_obj:
-            for _ in stream_obj:
-                pass
+            for event in stream_obj:
+                context.raise_if_cancelled()
+                event_type = self._get_attr(event, "type")
+                if event_type == "message_start":
+                    if message_id is not None or message_stopped:
+                        raise ProviderRuntimeError(
+                            "Duplicate Anthropic message start",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_event"},
+                        )
+                    message = self._get_attr(event, "message")
+                    message_id_value = self._get_attr(message, "id")
+                    if (
+                        not isinstance(message_id_value, str)
+                        or not message_id_value
+                    ):
+                        raise ProviderRuntimeError(
+                            "Anthropic message start is missing its identifier",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_event"},
+                        )
+                    message_id = message_id_value
+                    context.record_provider_event("response_start", {})
+                elif event_type == "content_block_start":
+                    if message_id is None or message_stopped:
+                        raise ProviderRuntimeError(
+                            "Anthropic content preceded message start",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_event"},
+                        )
+                    index = event_index(event)
+                    if index != len(block_types) or index in block_types:
+                        raise ProviderRuntimeError(
+                            "Anthropic content indices are not contiguous",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_event"},
+                        )
+                    block = self._get_attr(event, "content_block")
+                    block_type = self._get_attr(block, "type")
+                    if not isinstance(block_type, str) or not block_type:
+                        raise ProviderRuntimeError(
+                            "Malformed Anthropic content block",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_event"},
+                        )
+                    block_types[index] = block_type
+                    payload = {"content_index": index, "message_id": message_id}
+                    if block_type == "text":
+                        context.record_provider_event("text_start", payload)
+                    elif block_type in {"thinking", "redacted_thinking"}:
+                        context.record_provider_event("thinking_start", payload)
+                    elif block_type == "tool_use":
+                        call_id = self._get_attr(block, "id")
+                        name = self._get_attr(block, "name")
+                        input_payload = self._get_attr(block, "input")
+                        if (
+                            not isinstance(call_id, str)
+                            or not call_id
+                            or not isinstance(name, str)
+                            or not name
+                            or not isinstance(input_payload, dict)
+                        ):
+                            raise ProviderRuntimeError(
+                                "Malformed Anthropic tool-use start",
+                                kind="protocol",
+                                details={"code": "invalid_anthropic_event"},
+                            )
+                        call_ids[index] = call_id
+                        tool_names[index] = name
+                        tool_args[index] = canonical_json(input_payload)
+                        context.record_provider_event(
+                            "tool_call_start",
+                            {**payload, "call_id": call_id, "name": name},
+                        )
+                    else:
+                        raise ProviderRuntimeError(
+                            "Unknown Anthropic content block",
+                            kind="protocol",
+                            details={"code": "unknown_anthropic_content"},
+                        )
+                elif event_type == "content_block_delta":
+                    index = event_index(event)
+                    if (
+                        message_id is None
+                        or index not in block_types
+                        or index in ended_blocks
+                        or message_stopped
+                    ):
+                        raise ProviderRuntimeError(
+                            "Anthropic content delta preceded block start",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_event"},
+                        )
+                    delta = self._get_attr(event, "delta")
+                    delta_type = self._get_attr(delta, "type")
+                    block_type = block_types[index]
+                    if delta_type == "text_delta" and block_type == "text":
+                        value = self._get_attr(delta, "text")
+                        event_kind = "text_delta"
+                    elif (
+                        delta_type == "thinking_delta"
+                        and block_type in {"thinking", "redacted_thinking"}
+                    ):
+                        value = self._get_attr(delta, "thinking")
+                        event_kind = "thinking_delta"
+                    elif (
+                        delta_type == "input_json_delta"
+                        and block_type == "tool_use"
+                    ):
+                        value = self._get_attr(delta, "partial_json")
+                        event_kind = "tool_call_delta"
+                    elif (
+                        delta_type == "signature_delta"
+                        and block_type in {"thinking", "redacted_thinking"}
+                    ):
+                        signature = self._get_attr(delta, "signature")
+                        if not isinstance(signature, str) or not signature:
+                            raise ProviderRuntimeError(
+                                "Malformed Anthropic signature delta",
+                                kind="protocol",
+                                details={"code": "invalid_anthropic_event"},
+                            )
+                        continue
+                    else:
+                        raise ProviderRuntimeError(
+                            "Unknown Anthropic content delta",
+                            kind="protocol",
+                            details={"code": "unknown_anthropic_delta"},
+                        )
+                    if not isinstance(value, str) or not value:
+                        raise ProviderRuntimeError(
+                            "Malformed Anthropic content delta",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_event"},
+                        )
+                    payload = {
+                        "content_index": index,
+                        "message_id": message_id,
+                        "delta": value,
+                    }
+                    if event_kind == "tool_call_delta":
+                        if index not in tool_arg_delta_started:
+                            if tool_args[index] != "{}":
+                                raise ProviderRuntimeError(
+                                    "Anthropic tool input changed during streaming",
+                                    kind="protocol",
+                                    details={"code": "invalid_anthropic_event"},
+                                )
+                            tool_args[index] = ""
+                            tool_arg_delta_started.add(index)
+                        tool_args[index] += value
+                        context.record_provider_event(
+                            event_kind,
+                            {**payload, "call_id": call_ids[index]},
+                        )
+                    else:
+                        context.record_provider_event(event_kind, payload)
+                elif event_type == "content_block_stop":
+                    index = event_index(event)
+                    if (
+                        message_id is None
+                        or message_stopped
+                        or index not in block_types
+                        or index in ended_blocks
+                    ):
+                        raise ProviderRuntimeError(
+                            "Malformed Anthropic content stop",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_event"},
+                        )
+                    ended_blocks.add(index)
+                    payload = {"content_index": index, "message_id": message_id}
+                    block_type = block_types[index]
+                    if block_type == "text":
+                        context.record_provider_event("text_end", payload)
+                    elif block_type in {"thinking", "redacted_thinking"}:
+                        context.record_provider_event("thinking_end", payload)
+                    elif block_type == "tool_use":
+                        try:
+                            call = ProviderToolCall(
+                                id=call_ids[index],
+                                name=tool_names[index],
+                                arguments=tool_args[index],
+                            )
+                            parsed_arguments = call.parsed_arguments
+                        except (KeyError, ProviderContractError):
+                            raise ProviderRuntimeError(
+                                "Malformed Anthropic tool-use completion",
+                                kind="protocol",
+                                details={"code": "invalid_anthropic_event"},
+                            ) from None
+                        context.record_provider_event(
+                            "tool_call_end",
+                            {
+                                **payload,
+                                "call_id": call_ids[index],
+                                "arguments_json": call.arguments_json,
+                                "arguments": parsed_arguments,
+                            },
+                        )
+                    else:
+                        raise ProviderRuntimeError(
+                            "Unknown Anthropic content block",
+                            kind="protocol",
+                            details={"code": "unknown_anthropic_content"},
+                        )
+                elif event_type == "message_delta":
+                    if message_id is None or message_stopped:
+                        raise ProviderRuntimeError(
+                            "Malformed Anthropic message delta",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_event"},
+                        )
+                    delta = self._get_attr(event, "delta")
+                    if delta is None or (
+                        isinstance(delta, dict) and "stop_reason" not in delta
+                    ):
+                        raise ProviderRuntimeError(
+                            "Malformed Anthropic message delta",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_event"},
+                        )
+                    stop_reason = self._get_attr(delta, "stop_reason")
+                    if stop_reason is not None and stop_reason not in {
+                        "end_turn",
+                        "max_tokens",
+                        "stop_sequence",
+                        "tool_use",
+                        "pause_turn",
+                        "refusal",
+                        "model_context_window_exceeded",
+                    }:
+                        raise ProviderRuntimeError(
+                            "Unknown Anthropic message stop reason",
+                            kind="protocol",
+                            details={"code": "unknown_anthropic_finish"},
+                        )
+                    if stop_reason is not None:
+                        streamed_stop_reason = stop_reason
+                    event_usage = self._get_attr(event, "usage")
+                    if event_usage is not None:
+                        usage_override = self._extract_usage(
+                            SimpleNamespace(usage=event_usage)
+                        )
+                elif event_type == "message_stop":
+                    if (
+                        message_id is None
+                        or message_stopped
+                        or set(block_types) != ended_blocks
+                    ):
+                        raise ProviderRuntimeError(
+                            "Anthropic message stopped with open content blocks",
+                            kind="protocol",
+                            details={"code": "invalid_anthropic_event"},
+                        )
+                    message_stopped = True
+                elif event_type == "ping":
+                    continue
+                else:
+                    raise ProviderRuntimeError(
+                        "Unknown Anthropic stream event",
+                        kind="protocol",
+                        details={"code": "unknown_anthropic_event"},
+                    )
+            if message_id is None or not message_stopped:
+                raise ProviderRuntimeError(
+                    "Anthropic stream omitted message terminal",
+                    kind="protocol",
+                    details={"code": "missing_anthropic_terminal"},
+                )
             response = stream_obj.get_final_message()
+            if getattr(response, "id", None) != message_id:
+                raise ProviderRuntimeError(
+                    "Anthropic final message identifier mismatch",
+                    kind="protocol",
+                    details={"code": "invalid_anthropic_event"},
+                )
+            if (
+                streamed_stop_reason is not None
+                and getattr(response, "stop_reason", None)
+                != streamed_stop_reason
+            ):
+                raise ProviderRuntimeError(
+                    "Anthropic final stop reason mismatch",
+                    kind="protocol",
+                    details={"code": "invalid_anthropic_event"},
+                )
             response_obj = getattr(stream_obj, "response", None)
             final_usage = getattr(stream_obj, "get_final_usage", None)
             if callable(final_usage):
-                try:
-                    usage_override = self._extract_usage(SimpleNamespace(usage=final_usage()))
-                except Exception:
-                    usage_override = None
+                usage_override = self._extract_usage(
+                    SimpleNamespace(usage=final_usage())
+                )
         headers = self._normalize_headers(getattr(response_obj, "headers", {}) or {})
         status_code = getattr(response_obj, "status_code", None)
         return response, usage_override, headers, status_code, None
@@ -565,13 +1130,22 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
     ) -> ProviderResult:
+        context.raise_if_cancelled()
         tools = self._filter_anthropic_tools(tools, context)
-        system_prompt, converted_messages = self._convert_messages(messages)
+        system_prompt, converted_messages = self._convert_messages(
+            messages, context=context
+        )
 
-        anthropic_cfg = (context.agent_config.get("provider_tools") or {}).get("anthropic", {})
+        anthropic_cfg = (context.agent_config.get("provider_tools") or {}).get(
+            "anthropic", {}
+        )
         max_tokens = anthropic_cfg.get("max_output_tokens", 1024)
         temperature = anthropic_cfg.get("temperature")
-        prompt_cache_cfg = (anthropic_cfg.get("prompt_cache") or {}) if isinstance(anthropic_cfg, dict) else {}
+        prompt_cache_cfg = (
+            (anthropic_cfg.get("prompt_cache") or {})
+            if isinstance(anthropic_cfg, dict)
+            else {}
+        )
         extra_headers: Dict[str, str] = {}
         try:
             extra_headers.update(anthropic_cfg.get("extra_headers") or {})
@@ -596,12 +1170,16 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         }
 
         if system_prompt:
-            request["system"] = self._build_system_prompt(system_prompt, prompt_cache_cfg)
+            request["system"] = self._build_system_prompt(
+                system_prompt, prompt_cache_cfg
+            )
 
         if tools:
             request["tools"] = tools
 
-        resolved_tool_choice = self._resolve_tool_choice(anthropic_cfg.get("tool_choice"), tools)
+        resolved_tool_choice = self._resolve_tool_choice(
+            anthropic_cfg.get("tool_choice"), tools
+        )
         if resolved_tool_choice is not None:
             request["tool_choice"] = resolved_tool_choice
 
@@ -610,6 +1188,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
 
         if temperature is not None:
             request["temperature"] = float(temperature)
+        request.update(anthropic_role_options(context))
 
         response_metadata: Dict[str, Any] = {"stream": bool(stream)}
         if resolved_tool_choice:
@@ -632,14 +1211,24 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             try:
                 session_state.set_provider_metadata(
                     "anthropic_active_tools",
-                    [t.get("name") for t in tools if isinstance(t, dict) and t.get("name")],
+                    [
+                        t.get("name")
+                        for t in tools
+                        if isinstance(t, dict) and t.get("name")
+                    ],
                 )
             except Exception:
                 pass
             if resolved_tool_choice is not None:
-                session_state.set_provider_metadata("anthropic_tool_choice", resolved_tool_choice)
+                session_state.set_provider_metadata(
+                    "anthropic_tool_choice", resolved_tool_choice
+                )
 
-        rate_limit_cfg = (anthropic_cfg.get("rate_limit") or {}) if isinstance(anthropic_cfg, dict) else {}
+        rate_limit_cfg = (
+            (anthropic_cfg.get("rate_limit") or {})
+            if isinstance(anthropic_cfg, dict)
+            else {}
+        )
         max_retries = 0
         try:
             max_retries = int(rate_limit_cfg.get("max_retries") or 0)
@@ -651,14 +1240,19 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 provider_sdk_bindings.sleep(delay_seconds)
 
         attempt = 0
+        exchange_recorder = getattr(context, "exchange_recorder", None)
         while True:
             self._maybe_delay_for_rate_limits(context, anthropic_cfg)
             _respect_delay()
             try:
                 if stream:
-                    response, usage_override, headers, status_code, body_text = self._call_streaming(client, request)
+                    response, usage_override, headers, status_code, body_text = (
+                        self._call_streaming(client, request, context)
+                    )
                 else:
-                    response, usage_override, headers, status_code, body_text = self._call_non_streaming(client, request)
+                    response, usage_override, headers, status_code, body_text = (
+                        self._call_non_streaming(client, request)
+                    )
 
                 metadata = {**response_metadata, "attempts": attempt + 1}
                 self._capture_rate_limit_headers(context, headers)
@@ -675,15 +1269,35 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     metadata=metadata,
                 )
                 return self._normalize_response(response, usage_override=usage_override)
+            except ProviderRuntimeError:
+                raise
+            except ProviderContractError:
+                raise ProviderRuntimeError(
+                    "Anthropic provider contract violation",
+                    kind="protocol",
+                    output_emitted=bool(
+                        exchange_recorder and exchange_recorder.output_emitted
+                    ),
+                    details={"code": "invalid_anthropic_content"},
+                ) from None
             except Exception as exc:
-                is_rate_limit = provider_sdk_bindings.anthropic_rate_limit_error is not None and isinstance(exc, provider_sdk_bindings.anthropic_rate_limit_error)
-                is_overloaded = False if is_rate_limit else self._is_overloaded_error(exc)
+                is_rate_limit = (
+                    provider_sdk_bindings.anthropic_rate_limit_error is not None
+                    and isinstance(
+                        exc, provider_sdk_bindings.anthropic_rate_limit_error
+                    )
+                )
+                is_overloaded = (
+                    False if is_rate_limit else self._is_overloaded_error(exc)
+                )
                 headers: Dict[str, str] = {}
                 status_code = None
                 body_text = None
                 if is_rate_limit or is_overloaded:
                     response_obj = getattr(exc, "response", None)
-                    headers = self._normalize_headers(getattr(response_obj, "headers", {}) or {})
+                    headers = self._normalize_headers(
+                        getattr(response_obj, "headers", {}) or {}
+                    )
                     status_code = getattr(exc, "status_code", None)
                     body_text = self._safe_http_text(response_obj) or str(exc)
                     if is_rate_limit:
@@ -710,9 +1324,27 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                             context=context,
                             metadata=metadata,
                         )
-                        raise ProviderRuntimeError(str(exc)) from exc
+                        details: Dict[str, Any] | None = None
+                        if is_rate_limit:
+                            details = {
+                                "classification": "rate_limited",
+                                "status_code": 429,
+                            }
+                            retry_after = headers.get("retry-after")
+                            if retry_after is not None:
+                                details["retry_after"] = retry_after
+                        raise ProviderRuntimeError(
+                            redaction.safe_exception_message(exc),
+                            details=details,
+                            output_emitted=bool(
+                                exchange_recorder
+                                and exchange_recorder.output_emitted
+                            ),
+                        ) from None
                     retry_after_value = headers.get("retry-after")
-                    wait_seconds = self._compute_rate_limit_retry_delay(rate_limit_cfg, attempt, retry_after_value)
+                    wait_seconds = self._compute_rate_limit_retry_delay(
+                        rate_limit_cfg, attempt, retry_after_value
+                    )
                     fallback_cooldown = rate_limit_cfg.get("fallback_cooldown_seconds")
                     if wait_seconds <= 0 and fallback_cooldown:
                         try:
@@ -727,7 +1359,11 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     if session_state:
                         try:
                             session_state.set_provider_metadata(
-                                "anthropic_last_rate_limit" if is_rate_limit else "anthropic_last_overload",
+                                (
+                                    "anthropic_last_rate_limit"
+                                    if is_rate_limit
+                                    else "anthropic_last_overload"
+                                ),
                                 {
                                     "attempt": attempt + 1,
                                     "retry_after": retry_after_value,
@@ -737,6 +1373,25 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                             )
                         except Exception:
                             pass
+                    if (
+                        exchange_recorder is not None
+                        and exchange_recorder.output_emitted
+                    ):
+                        raise ProviderRuntimeError(
+                            "Anthropic retry refused after output",
+                            kind="provider",
+                            output_emitted=True,
+                            details={
+                                "classification": (
+                                    "rate_limited"
+                                    if is_rate_limit
+                                    else "overloaded"
+                                ),
+                                "status_code": status_code,
+                            },
+                        ) from None
+                    if exchange_recorder is not None:
+                        exchange_recorder.reset_unemitted_attempt()
                     attempt += 1
                     if wait_seconds > 0:
                         provider_sdk_bindings.sleep(wait_seconds)
@@ -749,12 +1404,17 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     status_code=status_code,
                     headers=None,
                     content_type=None,
-                    body_text=str(exc),
+                    body_text=None,
                     body_base64=None,
                     context=context,
                     metadata=metadata,
                 )
-                raise ProviderRuntimeError(str(exc)) from exc
+                raise ProviderRuntimeError(
+                    redaction.safe_exception_message(exc),
+                    output_emitted=bool(
+                        exchange_recorder and exchange_recorder.output_emitted
+                    ),
+                ) from None
 
 
 provider_registry.register_runtime("anthropic_messages", AnthropicMessagesRuntime)

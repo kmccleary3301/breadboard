@@ -7,6 +7,14 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from ..security import (
+    WorkspaceFilesystem,
+    WorkspacePathError,
+    build_child_environment,
+    build_restricted_process_command,
+    provider_credential_values,
+    redaction,
+)
 
 
 @dataclass(frozen=True)
@@ -64,62 +72,114 @@ class CheckpointManager:
     - Excludes `.breadboard/**` and `.git/**` from snapshots.
     """
 
+    _ROOT_LOGICAL = ".breadboard/checkpoints"
+    _GIT_LOGICAL = ".breadboard/checkpoints/git"
+    _GIT_HEAD_LOGICAL = ".breadboard/checkpoints/git/HEAD"
+    _META_LOGICAL = ".breadboard/checkpoints/checkpoints.json"
+
     def __init__(self, workspace_dir: Path) -> None:
-        self._workspace_dir = Path(workspace_dir).resolve()
-        self._root = self._workspace_dir / ".breadboard" / "checkpoints"
-        self._git_dir = self._root / "git"
-        self._meta_path = self._root / "checkpoints.json"
+        self._workspace_dir = Path(workspace_dir).expanduser().absolute()
+        self._git_dir = self._workspace_dir / self._GIT_LOGICAL
+        self._workspace_files: WorkspaceFilesystem | None = None
         self._lock = threading.Lock()
 
-    def _ensure_workspace(self) -> None:
-        if not self._workspace_dir.exists() or not self._workspace_dir.is_dir():
-            raise RuntimeError(f"workspace directory missing: {self._workspace_dir}")
-        self._root.mkdir(parents=True, exist_ok=True)
+    def _ensure_workspace(self) -> WorkspaceFilesystem:
+        if self._workspace_files is not None:
+            return self._workspace_files
+        try:
+            self._workspace_files = WorkspaceFilesystem.open_anchored_root(
+                self._workspace_dir,
+                create=False,
+            )
+        except WorkspacePathError as exc:
+            raise RuntimeError(
+                f"workspace directory missing: {self._workspace_dir}"
+            ) from exc
+        return self._workspace_files
+
+    def _ensure_state_root(self) -> WorkspaceFilesystem:
+        filesystem = self._ensure_workspace()
+        filesystem.create_directory(self._ROOT_LOGICAL)
+        return filesystem
 
     def _run_git(self, args: List[str]) -> str:
         cmd = [
             "git",
+            "-c",
+            "core.hooksPath=/dev/null",
             f"--git-dir={self._git_dir}",
             f"--work-tree={self._workspace_dir}",
             *args,
         ]
-        proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        child_environment = build_child_environment()
+        isolated_command, child_environment = build_restricted_process_command(
+            cmd,
+            workspace=self._workspace_dir,
+            working_directory=self._workspace_dir,
+            shell=False,
+            environment=child_environment,
+        )
+        with redaction.secret_value_scope(*provider_credential_values()):
+            proc = subprocess.run(
+                isolated_command,
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=self._workspace_dir,
+                env=child_environment,
+                shell=False,
+            )
+            stdout = redaction.scrub_text(proc.stdout or "")
+            stderr = redaction.scrub_text(proc.stderr or "")
         if proc.returncode != 0:
-            stderr = (proc.stderr or "").strip()
-            stdout = (proc.stdout or "").strip()
-            details = stderr or stdout or f"exit={proc.returncode}"
-            raise RuntimeError(f"checkpoint git command failed: {' '.join(args)} ({details})")
-        return (proc.stdout or "").strip()
+            details = stderr.strip() or stdout.strip() or f"exit={proc.returncode}"
+            raise RuntimeError(
+                f"checkpoint git command failed: {' '.join(args)} ({details})"
+            )
+        return stdout.strip()
 
     def _ensure_repo(self) -> None:
-        self._ensure_workspace()
-        if not (self._git_dir / "HEAD").exists():
-            self._git_dir.mkdir(parents=True, exist_ok=True)
+        filesystem = self._ensure_state_root()
+        if not filesystem.exists(self._GIT_HEAD_LOGICAL):
+            filesystem.create_directory(self._GIT_LOGICAL)
             self._run_git(["init", "--quiet"])
             self._run_git(["config", "user.name", "Breadboard Checkpoints"])
             self._run_git(["config", "user.email", "breadboard@local"])
-            self._configure_excludes()
+        self._configure_excludes()
 
     def _configure_excludes(self) -> None:
-        info_dir = self._git_dir / "info"
-        info_dir.mkdir(parents=True, exist_ok=True)
-        exclude_path = info_dir / "exclude"
+        filesystem = self._ensure_state_root()
+        filesystem.create_directory(f"{self._GIT_LOGICAL}/info")
+        exclude_logical = f"{self._GIT_LOGICAL}/info/exclude"
         patterns = [
             ".breadboard/",
             ".git/",
         ]
         existing = ""
         try:
-            existing = exclude_path.read_text(encoding="utf-8")
+            existing = filesystem.read_text(
+                exclude_logical,
+                encoding="utf-8",
+                errors="strict",
+            )
         except FileNotFoundError:
             existing = ""
         merged = set(line.strip() for line in existing.splitlines() if line.strip())
         merged.update(patterns)
-        exclude_path.write_text("\n".join(sorted(merged)) + "\n", encoding="utf-8")
+        filesystem.write_text(
+            exclude_logical,
+            "\n".join(sorted(merged)) + "\n",
+            encoding="utf-8",
+        )
 
     def _load_meta(self) -> List[Dict[str, Any]]:
+        filesystem = self._ensure_state_root()
         try:
-            raw = self._meta_path.read_text(encoding="utf-8")
+            raw = filesystem.read_text(
+                self._META_LOGICAL,
+                encoding="utf-8",
+                errors="strict",
+            )
         except FileNotFoundError:
             return []
         try:
@@ -129,9 +189,12 @@ class CheckpointManager:
         return list(data) if isinstance(data, list) else []
 
     def _write_meta(self, entries: List[Dict[str, Any]]) -> None:
-        tmp_path = self._meta_path.with_suffix(".json.tmp")
-        tmp_path.write_text(json.dumps(entries, indent=2, sort_keys=False), encoding="utf-8")
-        tmp_path.replace(self._meta_path)
+        filesystem = self._ensure_state_root()
+        filesystem.write_text(
+            self._META_LOGICAL,
+            json.dumps(entries, indent=2, sort_keys=False),
+            encoding="utf-8",
+        )
 
     @staticmethod
     def _next_checkpoint_id(entries: List[Dict[str, Any]]) -> str:
@@ -162,7 +225,9 @@ class CheckpointManager:
                 deletions += int(del_raw)
         return tracked, additions, deletions
 
-    def create_checkpoint(self, preview: str, *, snapshot: Optional[Dict[str, Any]] = None) -> CheckpointSummary:
+    def create_checkpoint(
+        self, preview: str, *, snapshot: Optional[Dict[str, Any]] = None
+    ) -> CheckpointSummary:
         preview_text = str(preview or "").strip() or "Checkpoint"
         with self._lock:
             self._ensure_repo()
@@ -172,13 +237,23 @@ class CheckpointManager:
 
             # Stage the full workspace (excluding ignored paths) and commit.
             self._run_git(["add", "-A"])
-            self._run_git(["commit", "--allow-empty", "-m", f"{checkpoint_id}: {preview_text}", "--quiet"])
+            self._run_git(
+                [
+                    "commit",
+                    "--allow-empty",
+                    "-m",
+                    f"{checkpoint_id}: {preview_text}",
+                    "--quiet",
+                ]
+            )
             commit_hash = self._run_git(["rev-parse", "HEAD"]).strip()
 
             tracked_files = 0
             additions = 0
             deletions = 0
-            parents = self._run_git(["rev-list", "--parents", "-n", "1", "HEAD"]).split()
+            parents = self._run_git(
+                ["rev-list", "--parents", "-n", "1", "HEAD"]
+            ).split()
             if len(parents) >= 2:
                 parent_hash = parents[1]
                 numstat = self._run_git(["diff", "--numstat", parent_hash, commit_hash])
@@ -219,13 +294,19 @@ class CheckpointManager:
             for entry in entries:
                 summaries.append(
                     CheckpointSummary(
-                        checkpoint_id=str(entry.get("checkpoint_id") or entry.get("id") or ""),
-                        created_at=int(entry.get("created_at") or entry.get("timestamp") or 0),
+                        checkpoint_id=str(
+                            entry.get("checkpoint_id") or entry.get("id") or ""
+                        ),
+                        created_at=int(
+                            entry.get("created_at") or entry.get("timestamp") or 0
+                        ),
                         preview=str(entry.get("preview") or ""),
                         tracked_files=int(entry.get("tracked_files") or 0),
                         additions=int(entry.get("additions") or 0),
                         deletions=int(entry.get("deletions") or 0),
-                        has_untracked_changes=bool(entry.get("has_untracked_changes") or False),
+                        has_untracked_changes=bool(
+                            entry.get("has_untracked_changes") or False
+                        ),
                     )
                 )
             summaries.sort(key=lambda item: item.created_at, reverse=True)
@@ -244,7 +325,9 @@ class CheckpointManager:
                 entry_id = str(entry.get("checkpoint_id") or entry.get("id") or "")
                 if entry_id == cid:
                     index = i
-                    commit_hash = str(entry.get("git_commit") or entry.get("commit") or "")
+                    commit_hash = str(
+                        entry.get("git_commit") or entry.get("commit") or ""
+                    )
                     break
             if index is None or not commit_hash:
                 raise ValueError(f"unknown checkpoint_id: {cid}")
@@ -256,13 +339,21 @@ class CheckpointManager:
                 entries = entries[: index + 1]
                 self._write_meta(entries)
 
-    def _write_snapshot(self, checkpoint_id: str, snapshot: Dict[str, Any]) -> Optional[str]:
+    def _write_snapshot(
+        self, checkpoint_id: str, snapshot: Dict[str, Any]
+    ) -> Optional[str]:
         try:
-            target = self._root / "snapshots" / f"{checkpoint_id}.json"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
-            rel = str(target.relative_to(self._workspace_dir))
-            return rel
+            filesystem = self._ensure_state_root()
+            logical = f"{self._ROOT_LOGICAL}/snapshots/{checkpoint_id}.json"
+            filesystem.create_directory(f"{self._ROOT_LOGICAL}/snapshots")
+            filesystem.write_text(
+                logical,
+                json.dumps(snapshot, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            return logical
+        except WorkspacePathError:
+            raise
         except Exception:
             return None
 
@@ -281,11 +372,13 @@ class CheckpointManager:
         if not snapshot_path:
             return None
         try:
-            target = Path(snapshot_path)
-            if not target.is_absolute():
-                target = (self._workspace_dir / snapshot_path).resolve()
-            if not target.exists():
-                return None
-            return json.loads(target.read_text(encoding="utf-8"))
-        except Exception:
+            filesystem = self._ensure_workspace()
+            return json.loads(
+                filesystem.read_text(
+                    str(snapshot_path),
+                    encoding="utf-8",
+                    errors="strict",
+                )
+            )
+        except (FileNotFoundError, json.JSONDecodeError):
             return None

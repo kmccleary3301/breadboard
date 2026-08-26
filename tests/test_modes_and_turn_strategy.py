@@ -1,8 +1,10 @@
 import os
+from types import SimpleNamespace
 import ray
 import pytest
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.conductor.modes import add_enhanced_message_fields
 
 
 @pytest.mark.skipif('OPENAI_API_KEY' not in os.environ, reason="requires provider key")
@@ -37,6 +39,53 @@ def test_mode_tool_gating_and_turn_strategy(tmp_path):
     out = ray.get(actor.run_agentic_loop.remote("", "hello", cfg["providers"]["default_model"], max_steps=1))
     assert isinstance(out, dict)
     ray.kill(actor)
+
+def test_compiled_tool_prompt_preserves_first_class_input_media() -> None:
+    media = {
+        "type": "media",
+        "kind": "image",
+        "uri": "attachment://sha256:" + "a" * 64,
+        "mime": "image/png",
+    }
+    state = SimpleNamespace(
+        messages=[
+            {"role": "system", "content": "system"},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "inspect"},
+                    dict(media),
+                ],
+            },
+        ],
+        provider_messages=[
+            {"role": "system", "content": "system"},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "inspect"},
+                    dict(media),
+                ],
+            },
+        ],
+    )
+
+    add_enhanced_message_fields(
+        SimpleNamespace(),
+        "system_compiled_and_persistent_per_turn",
+        [],
+        [],
+        state,
+        False,
+        "",
+        "inspect",
+    )
+
+    assert state.messages[1]["content"][1] == media
+    assert state.provider_messages[1]["content"][1] == media
+    assert state.provider_messages[1]["content"][0]["text"].startswith(
+        "inspect"
+    )
 
 
 

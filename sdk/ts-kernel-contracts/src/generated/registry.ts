@@ -2,6 +2,7 @@
 
 import * as Ajv2020Module from "ajv/dist/2020.js"
 import type { ValidateFunction } from "ajv"
+import { withProviderExchangeV2Semantics } from "../provider-exchange-v2.js"
 
 const Ajv2020Candidate: unknown =
   Ajv2020Module && typeof Ajv2020Module === "object" && "default" in Ajv2020Module ? Ajv2020Module.default : Ajv2020Module
@@ -5275,6 +5276,346 @@ export const GENERATED_SCHEMA_OBJECTS = {
       }
     }
   },
+  "https://breadboard.dev/contracts/kernel/schemas/bb.credentials.v1.schema.json": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.credentials.v1.schema.json",
+    "title": "BreadBoard credential store logical model V1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "store_id",
+      "records"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.credentials.v1",
+        "description": "Contract version discriminator for this record."
+      },
+      "store_id": {
+        "type": "string",
+        "pattern": "^bbstore_[A-Za-z0-9]+$",
+        "description": "Unique identifier for the credential store instance."
+      },
+      "records": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/credential_record"
+        },
+        "description": "List of credential records managed by the store."
+      }
+    },
+    "$defs": {
+      "credential_record": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "credential_id",
+          "provider_id",
+          "auth_scheme_id",
+          "credential_kind",
+          "account_binding_id",
+          "account_label",
+          "status",
+          "source",
+          "secret_version",
+          "secret",
+          "identity",
+          "bindings",
+          "metadata"
+        ],
+        "properties": {
+          "credential_id": {
+            "type": "string",
+            "pattern": "^bbcred_[A-Za-z0-9]+$"
+          },
+          "provider_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "auth_scheme_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "credential_kind": {
+            "enum": [
+              "oauth2",
+              "api_key"
+            ]
+          },
+          "account_binding_id": {
+            "type": "string",
+            "pattern": "^bbacct_[A-Za-z0-9]+$"
+          },
+          "account_label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "active",
+              "disabled",
+              "revoked",
+              "reauthorization_required",
+              "quarantined"
+            ]
+          },
+          "source": {
+            "enum": [
+              "breadboard_login",
+              "manual",
+              "import_omp",
+              "import_codex",
+              "import_legacy_breadboard",
+              "migration",
+              "broker"
+            ]
+          },
+          "secret_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "secret": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/oauth2_secret"
+              },
+              {
+                "$ref": "#/$defs/api_key_secret"
+              }
+            ]
+          },
+          "identity": {
+            "$ref": "#/$defs/identity",
+            "writeOnly": true
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/binding"
+            },
+            "writeOnly": true
+          },
+          "metadata": {
+            "$ref": "#/$defs/metadata"
+          }
+        }
+      },
+      "oauth2_secret": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "secret_ref",
+          "key_version",
+          "token_type",
+          "issued_at_utc",
+          "expires_at_utc",
+          "scopes",
+          "provider_token_metadata"
+        ],
+        "properties": {
+          "kind": {
+            "const": "oauth2"
+          },
+          "token_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "issued_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "provider_token_metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "secret_ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^bbsecret_[a-z0-9_]+$",
+            "description": "Opaque reference into the application-encrypted secret store. Plaintext secret material never appears in bb.credentials.v1 documents."
+          },
+          "key_version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "api_key_secret": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "secret_ref",
+          "key_version",
+          "issued_at_utc",
+          "expires_at_utc"
+        ],
+        "properties": {
+          "kind": {
+            "const": "api_key"
+          },
+          "issued_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expires_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "secret_ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^bbsecret_[a-z0-9_]+$",
+            "description": "Opaque reference into the application-encrypted secret store. Plaintext secret material never appears in bb.credentials.v1 documents."
+          },
+          "key_version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "identity": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "email",
+          "provider_account_id",
+          "display_name"
+        ],
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "binding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "binding_id",
+          "kind",
+          "label",
+          "value"
+        ],
+        "properties": {
+          "binding_id": {
+            "type": "string",
+            "pattern": "^bbbind_[A-Za-z0-9]+$"
+          },
+          "kind": {
+            "enum": [
+              "organization",
+              "project",
+              "workspace",
+              "tenant",
+              "enterprise",
+              "endpoint_identity"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true
+          }
+        }
+      },
+      "metadata": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "created_at_utc",
+          "updated_at_utc",
+          "last_used_at_utc",
+          "last_refresh_at_utc",
+          "last_refresh_outcome",
+          "disabled_reason_code"
+        ],
+        "properties": {
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_used_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_refresh_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_refresh_outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "disabled_reason_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
   "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json",
@@ -6468,6 +6809,8 @@ export const GENERATED_SCHEMA_OBJECTS = {
       "watch_set_size",
       "first_pass_snapshot_sha256",
       "second_pass_snapshot_sha256",
+      "first_pass_watch_set",
+      "second_pass_watch_set",
       "byte_identical",
       "changed_paths",
       "score_authority"
@@ -6528,6 +6871,18 @@ export const GENERATED_SCHEMA_OBJECTS = {
       "byte_identical": {
         "type": "boolean"
       },
+      "first_pass_watch_set": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/watch_set_entry"
+        }
+      },
+      "second_pass_watch_set": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/watch_set_entry"
+        }
+      },
       "first_exit_code": {
         "type": "integer"
       },
@@ -6544,6 +6899,23 @@ export const GENERATED_SCHEMA_OBJECTS = {
       }
     },
     "$defs": {
+      "watch_set_entry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"
+          }
+        }
+      },
       "score_authority_values": {
         "type": "object",
         "additionalProperties": false,
@@ -9984,6 +10356,619 @@ export const GENERATED_SCHEMA_OBJECTS = {
       }
     }
   },
+  "https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json",
+    "title": "BreadBoard effective model role lock V1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "lock_id",
+      "defaults",
+      "roles",
+      "dispatch",
+      "policy",
+      "source_model_roles_hash",
+      "lock_hash"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.effective_model_role_lock.v1"
+      },
+      "lock_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "defaults": {
+        "$ref": "#/$defs/defaults"
+      },
+      "roles": {
+        "type": "object",
+        "propertyNames": {
+          "pattern": "^[a-z][a-z0-9._-]*$"
+        },
+        "minProperties": 1,
+        "additionalProperties": {
+          "$ref": "#/$defs/role"
+        }
+      },
+      "dispatch": {
+        "$ref": "#/$defs/dispatch"
+      },
+      "policy": {
+        "$ref": "#/$defs/policy"
+      },
+      "source_model_roles_hash": {
+        "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"
+      },
+      "lock_hash": {
+        "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"
+      }
+    },
+    "$defs": {
+      "defaults": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "known_but_unbound_role",
+          "unknown_role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "known_but_unbound_role": {
+            "enum": [
+              "error",
+              "use_default"
+            ]
+          },
+          "unknown_role": {
+            "const": "error"
+          }
+        }
+      },
+      "dispatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subagents",
+          "lanes"
+        ],
+        "properties": {
+          "subagents": {
+            "$ref": "#/$defs/dispatch_map"
+          },
+          "lanes": {
+            "$ref": "#/$defs/dispatch_map"
+          }
+        }
+      },
+      "dispatch_map": {
+        "type": "object",
+        "propertyNames": {
+          "minLength": 1
+        },
+        "additionalProperties": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9._-]*$"
+        }
+      },
+      "policy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "allow_environment_overrides",
+          "cross_provider_fallback",
+          "account_failover"
+        ],
+        "properties": {
+          "allow_environment_overrides": {
+            "type": "boolean"
+          },
+          "cross_provider_fallback": {
+            "enum": [
+              "forbidden",
+              "explicit_only"
+            ]
+          },
+          "account_failover": {
+            "enum": [
+              "forbidden",
+              "explicit_only"
+            ]
+          }
+        }
+      },
+      "role": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "classification",
+          "primary",
+          "fallbacks",
+          "fallback_on"
+        ],
+        "properties": {
+          "classification": {
+            "enum": [
+              "public",
+              "internal",
+              "custom"
+            ]
+          },
+          "primary": {
+            "$ref": "#/$defs/target"
+          },
+          "fallbacks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/target"
+            }
+          },
+          "fallback_on": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "provider_unavailable",
+                "rate_limited",
+                "model_unavailable",
+                "capability_drift",
+                "timeout_before_output"
+              ]
+            }
+          },
+          "reasoning": {
+            "$ref": "#/$defs/reasoning"
+          },
+          "generation": {
+            "$ref": "#/$defs/generation"
+          },
+          "requires": {
+            "$ref": "#/$defs/capabilities"
+          },
+          "service_tier": {
+            "enum": [
+              "default",
+              "flex",
+              "priority",
+              "batch",
+              "free",
+              "enterprise"
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "target": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider_id",
+          "model_id",
+          "route_id",
+          "account_binding"
+        ],
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "model_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "route_id": {
+            "type": "string",
+            "minLength": 3
+          },
+          "model_revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endpoint_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "auth_scheme_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "account_selector": {
+            "$ref": "#/$defs/account_selector"
+          },
+          "account_binding": {
+            "$ref": "#/$defs/account_binding"
+          }
+        }
+      },
+      "account_selector": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "pin"
+            ],
+            "properties": {
+              "mode": {
+                "const": "default"
+              },
+              "pin": {
+                "enum": [
+                  "session",
+                  "lock"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "alias",
+              "pin"
+            ],
+            "properties": {
+              "mode": {
+                "const": "alias"
+              },
+              "alias": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "pin": {
+                "enum": [
+                  "session",
+                  "lock"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "pin"
+            ],
+            "properties": {
+              "mode": {
+                "const": "none"
+              },
+              "pin": {
+                "const": "session"
+              }
+            }
+          }
+        ]
+      },
+      "account_binding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "pin"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "account",
+              "configured",
+              "environment",
+              "fallback",
+              "provider_managed",
+              "synthetic"
+            ]
+          },
+          "pin": {
+            "enum": [
+              "session",
+              "lock"
+            ]
+          },
+          "account_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "binding_ref": {
+            "$ref": "#/$defs/binding_ref"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "const": "account"
+              },
+              "pin": {
+                "const": "session"
+              }
+            },
+            "required": [
+              "binding_ref"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "account_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "source"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "account"
+              },
+              "pin": {
+                "const": "lock"
+              }
+            },
+            "required": [
+              "account_id"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "binding_ref"
+                  ]
+                },
+                {
+                  "required": [
+                    "source"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "configured",
+                  "environment",
+                  "fallback"
+                ]
+              },
+              "pin": {
+                "const": "session"
+              }
+            },
+            "required": [
+              "binding_ref",
+              "source"
+            ],
+            "not": {
+              "required": [
+                "account_id"
+              ]
+            }
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "provider_managed",
+                  "synthetic"
+                ]
+              },
+              "pin": {
+                "const": "session"
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "account_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "binding_ref"
+                  ]
+                },
+                {
+                  "required": [
+                    "source"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "binding_ref": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider_id",
+          "session_id"
+        ],
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "reasoning": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "enum": [
+              "inherit",
+              "disabled",
+              "effort",
+              "budget"
+            ]
+          },
+          "effort": {
+            "enum": [
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          "budget_tokens": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expose_summary": {
+            "type": "boolean"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "effort"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "effort"
+              ],
+              "not": {
+                "required": [
+                  "budget_tokens"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "budget"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "budget_tokens"
+              ],
+              "not": {
+                "required": [
+                  "effort"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "generation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "temperature": {
+            "type": "number",
+            "minimum": 0
+          },
+          "top_p": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "seed": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "capabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tools": {
+            "type": "boolean"
+          },
+          "parallel_tools": {
+            "type": "boolean"
+          },
+          "vision": {
+            "type": "boolean"
+          },
+          "streaming": {
+            "type": "boolean"
+          },
+          "structured_output": {
+            "type": "boolean"
+          },
+          "prompt_cache": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
   "https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json",
@@ -13127,6 +14112,412 @@ export const GENERATED_SCHEMA_OBJECTS = {
       }
     }
   },
+  "https://breadboard.dev/contracts/kernel/schemas/bb.model_roles.v1.schema.json": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.model_roles.v1.schema.json",
+    "title": "BreadBoard model roles V1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "defaults",
+      "roles",
+      "dispatch"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.model_roles.v1",
+        "description": "Contract version discriminator for this record."
+      },
+      "defaults": {
+        "$ref": "#/$defs/defaults"
+      },
+      "roles": {
+        "type": "object",
+        "propertyNames": {
+          "pattern": "^[a-z][a-z0-9._-]*$"
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/role_binding"
+        },
+        "minProperties": 1
+      },
+      "dispatch": {
+        "$ref": "#/$defs/dispatch"
+      },
+      "policy": {
+        "$ref": "#/$defs/policy"
+      }
+    },
+    "$defs": {
+      "defaults": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "known_but_unbound_role",
+          "unknown_role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "known_but_unbound_role": {
+            "enum": [
+              "error",
+              "use_default"
+            ]
+          },
+          "unknown_role": {
+            "const": "error"
+          }
+        }
+      },
+      "role_binding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "primary",
+          "fallbacks",
+          "fallback_on"
+        ],
+        "properties": {
+          "primary": {
+            "$ref": "#/$defs/model_target"
+          },
+          "fallbacks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/model_target"
+            }
+          },
+          "fallback_on": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "provider_unavailable",
+                "rate_limited",
+                "model_unavailable",
+                "capability_drift",
+                "timeout_before_output"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "reasoning": {
+            "$ref": "#/$defs/reasoning"
+          },
+          "generation": {
+            "$ref": "#/$defs/generation"
+          },
+          "requires": {
+            "$ref": "#/$defs/capabilities"
+          },
+          "service_tier": {
+            "enum": [
+              "default",
+              "flex",
+              "priority",
+              "batch",
+              "free",
+              "enterprise"
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "model_target": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider_id",
+          "model_id"
+        ],
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "model_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model_revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endpoint_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "auth_scheme_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "account_selector": {
+            "$ref": "#/$defs/account_selector"
+          }
+        }
+      },
+      "account_selector": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "pin"
+            ],
+            "properties": {
+              "mode": {
+                "const": "default"
+              },
+              "pin": {
+                "enum": [
+                  "session",
+                  "lock"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "alias",
+              "pin"
+            ],
+            "properties": {
+              "mode": {
+                "const": "alias"
+              },
+              "alias": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "pin": {
+                "enum": [
+                  "session",
+                  "lock"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "pin"
+            ],
+            "properties": {
+              "mode": {
+                "const": "none"
+              },
+              "pin": {
+                "const": "session"
+              }
+            }
+          }
+        ]
+      },
+      "reasoning": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "enum": [
+              "inherit",
+              "disabled",
+              "effort",
+              "budget"
+            ]
+          },
+          "effort": {
+            "enum": [
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          "budget_tokens": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expose_summary": {
+            "type": "boolean"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "effort"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "effort"
+              ],
+              "not": {
+                "required": [
+                  "budget_tokens"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "budget"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "budget_tokens"
+              ],
+              "not": {
+                "required": [
+                  "effort"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "generation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "temperature": {
+            "type": "number",
+            "minimum": 0
+          },
+          "top_p": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "seed": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "capabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tools": {
+            "type": "boolean"
+          },
+          "parallel_tools": {
+            "type": "boolean"
+          },
+          "vision": {
+            "type": "boolean"
+          },
+          "streaming": {
+            "type": "boolean"
+          },
+          "structured_output": {
+            "type": "boolean"
+          },
+          "prompt_cache": {
+            "type": "boolean"
+          }
+        }
+      },
+      "dispatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subagents",
+          "lanes"
+        ],
+        "properties": {
+          "subagents": {
+            "type": "object",
+            "propertyNames": {
+              "minLength": 1
+            },
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9._-]*$"
+            }
+          },
+          "lanes": {
+            "type": "object",
+            "propertyNames": {
+              "minLength": 1
+            },
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9._-]*$"
+            }
+          }
+        }
+      },
+      "policy": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "allow_environment_overrides": {
+            "type": "boolean"
+          },
+          "cross_provider_fallback": {
+            "enum": [
+              "forbidden",
+              "explicit_only"
+            ]
+          },
+          "account_failover": {
+            "enum": [
+              "forbidden",
+              "explicit_only"
+            ]
+          }
+        }
+      }
+    }
+  },
   "https://breadboard.dev/contracts/kernel/schemas/bb.permission.v1.schema.json": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.permission.v1.schema.json",
@@ -13595,6 +14986,1082 @@ export const GENERATED_SCHEMA_OBJECTS = {
             }
           }
         }
+      }
+    }
+  },
+  "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",
+    "title": "BreadBoard Provider Exchange V2",
+    "$comment": "Supersedes bb.provider_exchange.v1, which remains frozen for accepted evidence. Generated runtime validators additionally enforce canonical tool arguments, bounded encoded size/depth, event lifecycle, and terminal output consistency.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "exchange_id",
+      "correlation",
+      "provider",
+      "request",
+      "events",
+      "terminal"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.provider_exchange.v2"
+      },
+      "exchange_id": {
+        "$ref": "#/$defs/identifier"
+      },
+      "correlation": {
+        "$ref": "#/$defs/correlation"
+      },
+      "provider": {
+        "$ref": "#/$defs/provider"
+      },
+      "request": {
+        "$ref": "#/$defs/request"
+      },
+      "events": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/event"
+        }
+      },
+      "terminal": {
+        "$ref": "#/$defs/terminal"
+      }
+    },
+    "$defs": {
+      "identifier": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "\\S"
+      },
+      "canonical_json": {
+        "description": "A finite JSON value serialized canonically by the invariant owner.",
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "number",
+            "not": {
+              "type": "integer"
+            }
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/canonical_json"
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/canonical_json"
+            }
+          }
+        ]
+      },
+      "bounded_extension_json": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "string",
+            "maxLength": 4096
+          },
+          {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/$defs/bounded_extension_json"
+            }
+          },
+          {
+            "type": "object",
+            "maxProperties": 64,
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/bounded_extension_json"
+            }
+          }
+        ]
+      },
+      "provider_replay_bounded_json": {
+        "$comment": "Generated runtime validators additionally enforce depth 4 and 4096 canonical UTF-8 bytes.",
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "string",
+            "maxLength": 4096
+          },
+          {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/$defs/provider_replay_bounded_json"
+            }
+          },
+          {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/provider_replay_bounded_json"
+            }
+          }
+        ]
+      },
+      "correlation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "session_id",
+          "input_id",
+          "turn_id"
+        ],
+        "properties": {
+          "session_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "input_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "turn_id": {
+            "$ref": "#/$defs/identifier"
+          }
+        }
+      },
+      "provider": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider_id",
+          "runtime_id",
+          "route_id",
+          "model"
+        ],
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$",
+            "maxLength": 128
+          },
+          "runtime_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$",
+            "maxLength": 128
+          },
+          "route_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+          }
+        }
+      },
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stream",
+          "messages",
+          "tools"
+        ],
+        "properties": {
+          "stream": {
+            "type": "boolean"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/message"
+            }
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/tool"
+            }
+          }
+        }
+      },
+      "tool": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "parameters"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/identifier"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "\\S"
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/canonical_json"
+            }
+          }
+        }
+      },
+      "message": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "message_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "role": {
+            "enum": [
+              "system",
+              "user",
+              "developer",
+              "assistant",
+              "tool_result"
+            ]
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/content_block"
+            }
+          }
+        }
+      },
+      "content_block": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/text_block"
+          },
+          {
+            "$ref": "#/$defs/media_block"
+          },
+          {
+            "$ref": "#/$defs/thinking_block"
+          },
+          {
+            "$ref": "#/$defs/redacted_thinking_block"
+          },
+          {
+            "$ref": "#/$defs/tool_call_block"
+          },
+          {
+            "$ref": "#/$defs/tool_result_block"
+          },
+          {
+            "$ref": "#/$defs/provider_replay_block"
+          }
+        ]
+      },
+      "text_block": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "text"
+        ],
+        "properties": {
+          "type": {
+            "const": "text"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "media_block": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "kind",
+          "uri",
+          "mime"
+        ],
+        "properties": {
+          "type": {
+            "const": "media"
+          },
+          "kind": {
+            "const": "image"
+          },
+          "uri": {
+            "type": "string",
+            "pattern": "^attachment://sha256:[0-9a-f]{64}$"
+          },
+          "mime": {
+            "type": "string",
+            "pattern": "^image/[a-z0-9][a-z0-9.+-]*$",
+            "maxLength": 128
+          }
+        }
+      },
+      "thinking_block": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "text"
+        ],
+        "properties": {
+          "type": {
+            "const": "thinking"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "redacted_thinking_block": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "data"
+        ],
+        "properties": {
+          "type": {
+            "const": "redacted_thinking"
+          },
+          "data": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "\\S"
+          }
+        }
+      },
+      "tool_call_block": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "call_id",
+          "name",
+          "arguments_json",
+          "arguments"
+        ],
+        "properties": {
+          "type": {
+            "const": "tool_call"
+          },
+          "call_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "name": {
+            "$ref": "#/$defs/identifier"
+          },
+          "arguments_json": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 65536
+          },
+          "arguments": {
+            "$ref": "#/$defs/canonical_json"
+          }
+        }
+      },
+      "tool_result_block": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "call_id",
+          "content"
+        ],
+        "properties": {
+          "type": {
+            "const": "tool_result"
+          },
+          "call_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "content": {
+            "type": "string"
+          },
+          "is_error": {
+            "type": "boolean"
+          }
+        }
+      },
+      "provider_replay_payload": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "encrypted_content": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/provider_replay_bounded_json"
+              },
+              {
+                "not": {
+                  "type": "null"
+                }
+              }
+            ]
+          },
+          "signature": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/provider_replay_bounded_json"
+              },
+              {
+                "not": {
+                  "type": "null"
+                }
+              }
+            ]
+          },
+          "redacted_data": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/provider_replay_bounded_json"
+              },
+              {
+                "not": {
+                  "type": "null"
+                }
+              }
+            ]
+          },
+          "item_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "\\S"
+          },
+          "reasoning_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "\\S"
+          }
+        }
+      },
+      "provider_replay": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider_id",
+          "schema_version",
+          "replay_scope",
+          "payload"
+        ],
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$",
+            "maxLength": 128
+          },
+          "schema_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "\\S"
+          },
+          "replay_scope": {
+            "enum": [
+              "same_provider",
+              "diagnostic"
+            ]
+          },
+          "payload": {
+            "$ref": "#/$defs/provider_replay_payload"
+          }
+        }
+      },
+      "provider_replay_block": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "provider_id",
+          "schema_version",
+          "replay_scope",
+          "payload"
+        ],
+        "properties": {
+          "type": {
+            "const": "provider_replay"
+          },
+          "provider_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$",
+            "maxLength": 128
+          },
+          "schema_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "\\S"
+          },
+          "replay_scope": {
+            "enum": [
+              "same_provider",
+              "diagnostic"
+            ]
+          },
+          "payload": {
+            "$ref": "#/$defs/provider_replay_payload"
+          }
+        }
+      },
+      "event_sequence": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "content_index": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "event": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "kind"
+            ],
+            "properties": {
+              "sequence": {
+                "$ref": "#/$defs/event_sequence"
+              },
+              "kind": {
+                "const": "response_start"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "kind",
+              "content_index",
+              "message_id"
+            ],
+            "properties": {
+              "sequence": {
+                "$ref": "#/$defs/event_sequence"
+              },
+              "kind": {
+                "const": "text_start"
+              },
+              "content_index": {
+                "$ref": "#/$defs/content_index"
+              },
+              "message_id": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "kind",
+              "content_index",
+              "message_id",
+              "delta"
+            ],
+            "properties": {
+              "sequence": {
+                "$ref": "#/$defs/event_sequence"
+              },
+              "kind": {
+                "const": "text_delta"
+              },
+              "content_index": {
+                "$ref": "#/$defs/content_index"
+              },
+              "message_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "delta": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 65536,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "kind",
+              "content_index",
+              "message_id"
+            ],
+            "properties": {
+              "sequence": {
+                "$ref": "#/$defs/event_sequence"
+              },
+              "kind": {
+                "const": "text_end"
+              },
+              "content_index": {
+                "$ref": "#/$defs/content_index"
+              },
+              "message_id": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "kind",
+              "content_index",
+              "message_id"
+            ],
+            "properties": {
+              "sequence": {
+                "$ref": "#/$defs/event_sequence"
+              },
+              "kind": {
+                "const": "thinking_start"
+              },
+              "content_index": {
+                "$ref": "#/$defs/content_index"
+              },
+              "message_id": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "kind",
+              "content_index",
+              "message_id",
+              "delta"
+            ],
+            "properties": {
+              "sequence": {
+                "$ref": "#/$defs/event_sequence"
+              },
+              "kind": {
+                "const": "thinking_delta"
+              },
+              "content_index": {
+                "$ref": "#/$defs/content_index"
+              },
+              "message_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "delta": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 65536,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "kind",
+              "content_index",
+              "message_id"
+            ],
+            "properties": {
+              "sequence": {
+                "$ref": "#/$defs/event_sequence"
+              },
+              "kind": {
+                "const": "thinking_end"
+              },
+              "content_index": {
+                "$ref": "#/$defs/content_index"
+              },
+              "message_id": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "kind",
+              "content_index",
+              "message_id",
+              "call_id",
+              "name"
+            ],
+            "properties": {
+              "sequence": {
+                "$ref": "#/$defs/event_sequence"
+              },
+              "kind": {
+                "const": "tool_call_start"
+              },
+              "content_index": {
+                "$ref": "#/$defs/content_index"
+              },
+              "message_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "call_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "name": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "kind",
+              "content_index",
+              "message_id",
+              "call_id",
+              "delta"
+            ],
+            "properties": {
+              "sequence": {
+                "$ref": "#/$defs/event_sequence"
+              },
+              "kind": {
+                "const": "tool_call_delta"
+              },
+              "content_index": {
+                "$ref": "#/$defs/content_index"
+              },
+              "message_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "call_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "delta": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 65536,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "kind",
+              "content_index",
+              "message_id",
+              "call_id",
+              "arguments_json",
+              "arguments"
+            ],
+            "properties": {
+              "sequence": {
+                "$ref": "#/$defs/event_sequence"
+              },
+              "kind": {
+                "const": "tool_call_end"
+              },
+              "content_index": {
+                "$ref": "#/$defs/content_index"
+              },
+              "message_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "call_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "arguments_json": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 65536
+              },
+              "arguments": {
+                "$ref": "#/$defs/canonical_json"
+              }
+            }
+          }
+        ]
+      },
+      "usage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inputTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "outputTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cacheWriteTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reasoningTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extensions": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/bounded_extension_json"
+            }
+          }
+        }
+      },
+      "assistant_message": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "message_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "role": {
+            "const": "assistant"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/content_block"
+            }
+          }
+        }
+      },
+      "terminal_evidence_refs": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "\\S"
+        },
+        "uniqueItems": true
+      },
+      "terminal": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "output_emitted",
+              "finish_reason",
+              "assistant_messages",
+              "evidence_refs"
+            ],
+            "properties": {
+              "kind": {
+                "const": "done"
+              },
+              "output_emitted": {
+                "type": "boolean"
+              },
+              "finish_reason": {
+                "enum": [
+                  "stop",
+                  "length",
+                  "toolUse",
+                  "error",
+                  "aborted"
+                ]
+              },
+              "raw_provider_finish": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+                "maxLength": 128
+              },
+              "usage": {
+                "$ref": "#/$defs/usage"
+              },
+              "assistant_messages": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/assistant_message"
+                }
+              },
+              "provider_replay": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/provider_replay"
+                }
+              },
+              "evidence_refs": {
+                "$ref": "#/$defs/terminal_evidence_refs"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "output_emitted",
+              "code",
+              "category",
+              "retryable",
+              "evidence_refs"
+            ],
+            "properties": {
+              "kind": {
+                "const": "error"
+              },
+              "output_emitted": {
+                "type": "boolean"
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_.-]*$",
+                "maxLength": 64
+              },
+              "category": {
+                "enum": [
+                  "adapter",
+                  "provider",
+                  "transport",
+                  "protocol",
+                  "configuration"
+                ]
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "http_status": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              "evidence_refs": {
+                "$ref": "#/$defs/terminal_evidence_refs"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "output_emitted",
+              "owner",
+              "reason_code",
+              "evidence_refs"
+            ],
+            "properties": {
+              "kind": {
+                "const": "cancelled"
+              },
+              "output_emitted": {
+                "type": "boolean"
+              },
+              "owner": {
+                "enum": [
+                  "caller",
+                  "provider",
+                  "transport",
+                  "engine"
+                ]
+              },
+              "reason_code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_.-]*$",
+                "maxLength": 64
+              },
+              "evidence_refs": {
+                "$ref": "#/$defs/terminal_evidence_refs"
+              }
+            }
+          }
+        ]
       }
     }
   },
@@ -18698,6 +21165,7 @@ const GENERATED_SCHEMA_ALIASES: Record<string, readonly string[]> = {
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_slice.v2.schema.json": ["bb.coordination_slice.v2.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json": ["bb.coordination_verification_result.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json": ["bb.coordination_view.v1.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.credentials.v1.schema.json": ["bb.credentials.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json": ["bb.directive.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.distributed_task_descriptor.v1.schema.json": ["bb.distributed_task_descriptor.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.artifact_catalog.v1.schema.json": ["bb.e4.artifact_catalog.v1.schema.json"],
@@ -18719,6 +21187,7 @@ const GENERATED_SCHEMA_ALIASES: Record<string, readonly string[]> = {
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_coverage.v1.schema.json": ["bb.e4.target_coverage.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_coverage.v2.schema.json": ["bb.e4.target_coverage.v2.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json": ["bb.effective_config_graph.v1.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json": ["bb.effective_model_role_lock.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json": ["bb.effective_operation_policy.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.effective_tool_surface.v1.schema.json": ["bb.effective_tool_surface.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.environment_selector.v1.schema.json": ["bb.environment_selector.v1.schema.json"],
@@ -18733,9 +21202,11 @@ const GENERATED_SCHEMA_ALIASES: Record<string, readonly string[]> = {
   "https://breadboard.dev/contracts/kernel/schemas/bb.kernel.common.v1.schema.json": ["bb.kernel.common.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.lane_validation_report.v1.schema.json": ["bb.lane_validation_report.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json": ["bb.memory_compaction_plan.v1.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.model_roles.v1.schema.json": ["bb.model_roles.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.permission.v1.schema.json": ["bb.permission.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.projection_event.v1.schema.json": ["bb.projection_event.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v1.schema.json": ["bb.provider_exchange.v1.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json": ["bb.provider_exchange.v2.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.provider_route.v1.schema.json": ["bb.provider_route.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.registry.v1.schema.json": ["bb.registry.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.replay_session.v1.schema.json": ["bb.replay_session.v1.schema.json"],
@@ -18786,6 +21257,10 @@ for (const [schemaId, schema] of Object.entries(GENERATED_SCHEMA_OBJECTS)) {
 }
 
 for (const [schemaId, schema] of Object.entries(GENERATED_SCHEMA_OBJECTS)) {
-  const validate = ajv.getSchema(schemaId) ?? ajv.compile(schema)
+  const structuralValidate = ajv.getSchema(schemaId) ?? ajv.compile(schema)
+  const validate =
+    schemaId === "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json"
+      ? withProviderExchangeV2Semantics(structuralValidate)
+      : structuralValidate
   GENERATED_SCHEMAS[schemaId] = { schema, validate }
 }

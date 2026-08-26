@@ -1,0 +1,385 @@
+{
+  "matrix_id": "f6-supported-provider-semantics-v1",
+  "oracle_identity": {
+    "commit": "6c1209842323bb4713f127ac303c97fd043d585c",
+    "repository": "can1357/oh-my-pi",
+    "tag": "v18.0.1",
+    "tree": "67a19f0d45a71af8c3d9ae83562ffb1fcb579d61"
+  },
+  "required_row_count": 45,
+  "rows": [
+    {
+      "claim": "approved provider identity, alias, auth scheme, and representative model resolve to the intended adapter",
+      "comparator": "catalog_route_contract.v1",
+      "required": true,
+      "row_id": "codex.catalog_model_route",
+      "seam": "provider.catalog_model_route",
+      "subject": "codex"
+    },
+    {
+      "claim": "canonical history and tools reach the model-visible request without silent role or tool repair",
+      "comparator": "request_semantic_contract.v1",
+      "required": true,
+      "row_id": "codex.request_ir",
+      "seam": "provider.request_ir",
+      "subject": "codex"
+    },
+    {
+      "claim": "ordered start, delta, and end events reconstruct final text exactly once",
+      "comparator": "stream_semantic_contract.v1",
+      "required": true,
+      "row_id": "codex.text_stream",
+      "seam": "provider.text_stream",
+      "subject": "codex"
+    },
+    {
+      "claim": "partial arguments, call identity, tool-result replay, reasoning, and final tool call remain exact",
+      "comparator": "tool_semantic_contract.v1",
+      "required": true,
+      "row_id": "codex.tool_stream",
+      "seam": "provider.tool_stream",
+      "subject": "codex"
+    },
+    {
+      "claim": "usage and finish reason normalize without converting unknown usage to zero",
+      "comparator": "usage_finish_contract.v1",
+      "required": true,
+      "row_id": "codex.usage_finish",
+      "seam": "provider.usage_finish",
+      "subject": "codex"
+    },
+    {
+      "claim": "auth, rate-limit, and malformed transport failures produce one sanitized terminal error without unsafe replay",
+      "comparator": "error_terminal_contract.v1",
+      "required": true,
+      "row_id": "codex.error_terminal",
+      "seam": "provider.error_terminal",
+      "subject": "codex"
+    },
+    {
+      "claim": "cancellation before output and after a partial delta produces one cancel terminal without retry or fallback",
+      "comparator": "cancel_terminal_contract.v1",
+      "required": true,
+      "row_id": "codex.cancel_terminal",
+      "seam": "provider.cancel_terminal",
+      "subject": "codex"
+    },
+    {
+      "claim": "approved provider identity, alias, auth scheme, and representative model resolve to the intended adapter",
+      "comparator": "catalog_route_contract.v1",
+      "required": true,
+      "row_id": "openai.catalog_model_route",
+      "seam": "provider.catalog_model_route",
+      "subject": "openai"
+    },
+    {
+      "claim": "canonical history and tools reach the model-visible request without silent role or tool repair",
+      "comparator": "request_semantic_contract.v1",
+      "required": true,
+      "row_id": "openai.request_ir",
+      "seam": "provider.request_ir",
+      "subject": "openai"
+    },
+    {
+      "claim": "ordered start, delta, and end events reconstruct final text exactly once",
+      "comparator": "stream_semantic_contract.v1",
+      "required": true,
+      "row_id": "openai.text_stream",
+      "seam": "provider.text_stream",
+      "subject": "openai"
+    },
+    {
+      "claim": "partial arguments, call identity, tool-result replay, reasoning, and final tool call remain exact",
+      "comparator": "tool_semantic_contract.v1",
+      "required": true,
+      "row_id": "openai.tool_stream",
+      "seam": "provider.tool_stream",
+      "subject": "openai"
+    },
+    {
+      "claim": "usage and finish reason normalize without converting unknown usage to zero",
+      "comparator": "usage_finish_contract.v1",
+      "required": true,
+      "row_id": "openai.usage_finish",
+      "seam": "provider.usage_finish",
+      "subject": "openai"
+    },
+    {
+      "claim": "auth, rate-limit, and malformed transport failures produce one sanitized terminal error without unsafe replay",
+      "comparator": "error_terminal_contract.v1",
+      "required": true,
+      "row_id": "openai.error_terminal",
+      "seam": "provider.error_terminal",
+      "subject": "openai"
+    },
+    {
+      "claim": "cancellation before output and after a partial delta produces one cancel terminal without retry or fallback",
+      "comparator": "cancel_terminal_contract.v1",
+      "required": true,
+      "row_id": "openai.cancel_terminal",
+      "seam": "provider.cancel_terminal",
+      "subject": "openai"
+    },
+    {
+      "claim": "approved provider identity, alias, auth scheme, and representative model resolve to the intended adapter",
+      "comparator": "catalog_route_contract.v1",
+      "required": true,
+      "row_id": "anthropic.catalog_model_route",
+      "seam": "provider.catalog_model_route",
+      "subject": "anthropic"
+    },
+    {
+      "claim": "canonical history and tools reach the model-visible request without silent role or tool repair",
+      "comparator": "request_semantic_contract.v1",
+      "required": true,
+      "row_id": "anthropic.request_ir",
+      "seam": "provider.request_ir",
+      "subject": "anthropic"
+    },
+    {
+      "claim": "ordered start, delta, and end events reconstruct final text exactly once",
+      "comparator": "stream_semantic_contract.v1",
+      "required": true,
+      "row_id": "anthropic.text_stream",
+      "seam": "provider.text_stream",
+      "subject": "anthropic"
+    },
+    {
+      "claim": "partial arguments, call identity, tool-result replay, reasoning, and final tool call remain exact",
+      "comparator": "tool_semantic_contract.v1",
+      "required": true,
+      "row_id": "anthropic.tool_stream",
+      "seam": "provider.tool_stream",
+      "subject": "anthropic"
+    },
+    {
+      "claim": "usage and finish reason normalize without converting unknown usage to zero",
+      "comparator": "usage_finish_contract.v1",
+      "required": true,
+      "row_id": "anthropic.usage_finish",
+      "seam": "provider.usage_finish",
+      "subject": "anthropic"
+    },
+    {
+      "claim": "auth, rate-limit, and malformed transport failures produce one sanitized terminal error without unsafe replay",
+      "comparator": "error_terminal_contract.v1",
+      "required": true,
+      "row_id": "anthropic.error_terminal",
+      "seam": "provider.error_terminal",
+      "subject": "anthropic"
+    },
+    {
+      "claim": "cancellation before output and after a partial delta produces one cancel terminal without retry or fallback",
+      "comparator": "cancel_terminal_contract.v1",
+      "required": true,
+      "row_id": "anthropic.cancel_terminal",
+      "seam": "provider.cancel_terminal",
+      "subject": "anthropic"
+    },
+    {
+      "claim": "approved provider identity, alias, auth scheme, and representative model resolve to the intended adapter",
+      "comparator": "catalog_route_contract.v1",
+      "required": true,
+      "row_id": "openrouter.catalog_model_route",
+      "seam": "provider.catalog_model_route",
+      "subject": "openrouter"
+    },
+    {
+      "claim": "canonical history and tools reach the model-visible request without silent role or tool repair",
+      "comparator": "request_semantic_contract.v1",
+      "required": true,
+      "row_id": "openrouter.request_ir",
+      "seam": "provider.request_ir",
+      "subject": "openrouter"
+    },
+    {
+      "claim": "ordered start, delta, and end events reconstruct final text exactly once",
+      "comparator": "stream_semantic_contract.v1",
+      "required": true,
+      "row_id": "openrouter.text_stream",
+      "seam": "provider.text_stream",
+      "subject": "openrouter"
+    },
+    {
+      "claim": "partial arguments, call identity, tool-result replay, reasoning, and final tool call remain exact",
+      "comparator": "tool_semantic_contract.v1",
+      "required": true,
+      "row_id": "openrouter.tool_stream",
+      "seam": "provider.tool_stream",
+      "subject": "openrouter"
+    },
+    {
+      "claim": "usage and finish reason normalize without converting unknown usage to zero",
+      "comparator": "usage_finish_contract.v1",
+      "required": true,
+      "row_id": "openrouter.usage_finish",
+      "seam": "provider.usage_finish",
+      "subject": "openrouter"
+    },
+    {
+      "claim": "auth, rate-limit, and malformed transport failures produce one sanitized terminal error without unsafe replay",
+      "comparator": "error_terminal_contract.v1",
+      "required": true,
+      "row_id": "openrouter.error_terminal",
+      "seam": "provider.error_terminal",
+      "subject": "openrouter"
+    },
+    {
+      "claim": "cancellation before output and after a partial delta produces one cancel terminal without retry or fallback",
+      "comparator": "cancel_terminal_contract.v1",
+      "required": true,
+      "row_id": "openrouter.cancel_terminal",
+      "seam": "provider.cancel_terminal",
+      "subject": "openrouter"
+    },
+    {
+      "allowed_divergence_ref": "E4:auth_source_precedence",
+      "claim": "full API-key source precedence is deterministic",
+      "comparator": "auth_contract.v1",
+      "required": true,
+      "row_id": "auth.api_key_precedence",
+      "seam": "provider_broker",
+      "subject": "authentication"
+    },
+    {
+      "allowed_divergence_ref": "E4:codex_auth_precedence",
+      "claim": "Codex OAuth, stored, environment, and auth-file precedence is deterministic",
+      "comparator": "auth_contract.v1",
+      "required": true,
+      "row_id": "auth.codex_oauth_precedence",
+      "seam": "provider_broker",
+      "subject": "authentication"
+    },
+    {
+      "allowed_divergence_ref": "E5:explicit_account_binding",
+      "claim": "explicit account binding never silently rotates",
+      "comparator": "auth_contract.v1",
+      "required": true,
+      "row_id": "auth.explicit_account_binding",
+      "seam": "provider_broker",
+      "subject": "authentication"
+    },
+    {
+      "allowed_divergence_ref": "E5:session_affinity",
+      "claim": "automatic affinity survives restart and secret rotation",
+      "comparator": "auth_contract.v1",
+      "required": true,
+      "row_id": "auth.automatic_affinity_restart_rotation",
+      "seam": "provider_broker",
+      "subject": "authentication"
+    },
+    {
+      "allowed_divergence_ref": "E5:classified_rate_limit_rotation",
+      "claim": "only classified 429 rotates an automatically bound account",
+      "comparator": "auth_contract.v1",
+      "required": true,
+      "row_id": "auth.classified_429_rotation",
+      "seam": "provider_broker",
+      "subject": "authentication"
+    },
+    {
+      "allowed_divergence_ref": "E6:refresh_single_flight",
+      "claim": "concurrent refresh is single-flight",
+      "comparator": "auth_contract.v1",
+      "required": true,
+      "row_id": "auth.refresh_single_flight",
+      "seam": "provider_broker",
+      "subject": "authentication"
+    },
+    {
+      "allowed_divergence_ref": "E6:transient_refresh_deferral",
+      "claim": "transient refresh failure defers without revocation",
+      "comparator": "auth_contract.v1",
+      "required": true,
+      "row_id": "auth.refresh_transient_deferral",
+      "seam": "provider_broker",
+      "subject": "authentication"
+    },
+    {
+      "allowed_divergence_ref": "E6:definitive_refresh_tombstone",
+      "claim": "definitive refresh failure tombstones the credential",
+      "comparator": "auth_contract.v1",
+      "required": true,
+      "row_id": "auth.refresh_definitive_tombstone",
+      "seam": "provider_broker",
+      "subject": "authentication"
+    },
+    {
+      "allowed_divergence_ref": "E6:revoke_refresh_cas",
+      "claim": "revocation during refresh cannot resurrect a credential",
+      "comparator": "auth_contract.v1",
+      "required": true,
+      "row_id": "auth.revoke_during_refresh",
+      "seam": "provider_broker",
+      "subject": "authentication"
+    },
+    {
+      "claim": "approved public aliases resolve to exact role targets",
+      "comparator": "role_contract.v1",
+      "required": true,
+      "row_id": "role.public_alias_selection",
+      "seam": "model_roles",
+      "subject": "model roles"
+    },
+    {
+      "claim": "unknown and unavailable roles fail closed under the declared policy",
+      "comparator": "role_contract.v1",
+      "required": true,
+      "row_id": "role.unknown_unavailable",
+      "seam": "model_roles",
+      "subject": "model roles"
+    },
+    {
+      "allowed_divergence_ref": "F5:immutable_role_lock",
+      "claim": "role-lock identity is stable through secret rotation and restart",
+      "comparator": "role_contract.v1",
+      "required": true,
+      "row_id": "role.lock_secret_rotation_restart",
+      "seam": "model_roles",
+      "subject": "model roles"
+    },
+    {
+      "allowed_divergence_ref": "F5:auth_policy_failure_not_model_fallback",
+      "claim": "auth and policy failures never trigger model fallback",
+      "comparator": "role_contract.v1",
+      "required": true,
+      "row_id": "role.auth_policy_no_fallback",
+      "seam": "model_roles",
+      "subject": "model roles"
+    },
+    {
+      "allowed_divergence_ref": "F5:cross_provider_fallback_forbidden",
+      "claim": "cross-provider fallback is forbidden by default",
+      "comparator": "role_contract.v1",
+      "required": true,
+      "row_id": "role.cross_provider_default_forbidden",
+      "seam": "model_roles",
+      "subject": "model roles"
+    },
+    {
+      "claim": "source-free wheel serves provider catalog, auth, and role responses",
+      "comparator": "artifact_contract.v1",
+      "required": true,
+      "row_id": "artifact.wheel_provider_catalog_auth_role",
+      "seam": "installed_artifacts",
+      "subject": "built artifacts"
+    },
+    {
+      "claim": "clean installed packed SDK consumes exact local provider, auth, and role responses",
+      "comparator": "artifact_contract.v1",
+      "required": true,
+      "row_id": "artifact.sdk_local_responses",
+      "seam": "installed_artifacts",
+      "subject": "built artifacts"
+    },
+    {
+      "claim": "installed wheel and packed SDK complete one provider-free strict stream and terminal trace",
+      "comparator": "artifact_contract.v1",
+      "required": true,
+      "row_id": "artifact.installed_end_to_end_trace",
+      "seam": "installed_artifacts",
+      "subject": "built artifacts"
+    }
+  ],
+  "schema_version": "bb.provider_differential_matrix.v1"
+}

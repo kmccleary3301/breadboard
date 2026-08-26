@@ -446,6 +446,14 @@
       "superseded_by": null
     },
     {
+      "default_for_generation": false,
+      "family": "model_roles",
+      "lifecycle": "active_production",
+      "notes": "Current active effective lock version.",
+      "schema_id": "bb.effective_model_role_lock.v1",
+      "superseded_by": null
+    },
+    {
       "default_for_generation": true,
       "family": "model_roles",
       "lifecycle": "active",
@@ -468,10 +476,19 @@
       "superseded_by": null
     },
     {
+      "default_for_generation": false,
+      "family": "provider_exchange",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Superseded by bb.provider_exchange.v2.",
+      "schema_id": "bb.provider_exchange.v1",
+      "superseded_by": "bb.provider_exchange.v2"
+    },
+    {
       "default_for_generation": true,
       "family": "provider_exchange",
       "lifecycle": "active_production",
-      "schema_id": "bb.provider_exchange.v1",
+      "notes": "F4 active production aggregate.",
+      "schema_id": "bb.provider_exchange.v2",
       "superseded_by": null
     },
     {

@@ -1,5 +1,9 @@
 import json
+import os
 from pathlib import Path
+import pytest
+
+from breadboard_engine.security import WorkspacePathError
 
 from breadboard_engine.todo import TodoDraft, TodoManager, TodoPatch, TodoStore
 
@@ -69,23 +73,50 @@ def test_todo_write_board_sync(tmp_path):
     store = TodoStore(str(workspace))
     manager = TodoManager(store, lambda event: None)
 
-    manager.handle_write_board({
-        "todos": [
-            {"content": "Design header", "status": "pending"},
-            {"content": "Implement core", "status": "in_progress", "activeForm": "Implementing core"},
-        ]
-    })
+    manager.handle_write_board(
+        {
+            "todos": [
+                {"content": "Design header", "status": "pending"},
+                {
+                    "content": "Implement core",
+                    "status": "in_progress",
+                    "activeForm": "Implementing core",
+                },
+            ]
+        }
+    )
     todos = store.list_items()
     assert [todo.title for todo in todos] == ["Design header", "Implement core"]
     assert todos[1].status == "in_progress"
     assert todos[1].metadata.get("active_form") == "Implementing core"
 
-    manager.handle_write_board({
-        "todos": [
-            {"content": "Implement core", "status": "completed"},
-        ]
-    })
+    manager.handle_write_board(
+        {
+            "todos": [
+                {"content": "Implement core", "status": "completed"},
+            ]
+        }
+    )
     todos = store.list_items()
     assert len(todos) == 1
     assert todos[0].title == "Implement core"
     assert todos[0].status == "done"
+
+
+@pytest.mark.parametrize("link_kind", ("symlink", "hardlink"))
+def test_todo_store_rejects_linked_state_file(tmp_path, link_kind):
+    workspace = make_workspace(tmp_path)
+    state_dir = workspace / ".breadboard"
+    state_dir.mkdir()
+    secret = tmp_path / "credential"
+    secret.write_text("todo-link-canary", encoding="utf-8")
+    target = state_dir / "todos.json"
+    if link_kind == "symlink":
+        target.symlink_to(secret)
+    else:
+        os.link(secret, target)
+
+    with pytest.raises(WorkspacePathError):
+        TodoStore(str(workspace))
+
+    assert secret.read_text(encoding="utf-8") == "todo-link-canary"

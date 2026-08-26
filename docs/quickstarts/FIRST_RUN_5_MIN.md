@@ -51,6 +51,12 @@ Verify the installed engine catalog:
 breadboard --json system describe
 ```
 
+The response's `data.default_profile` records the installed package reference,
+definition digest, effective lock digest, prompt-resource digest, and
+model-role-resource digest. A typed `default_profile_unavailable` or
+`default_profile_invalid` response means the installed distribution must be
+repaired before startup.
+
 Engine-only fallback (always available):
 
 ```bash
@@ -63,14 +69,36 @@ python scripts/dev/first_time_doctor.py --profile engine --strict
 
 ```bash
 breadboard harness create --out ./harness
-breadboard harness validate ./harness/minimal_harness.v2.yaml
-breadboard harness lock ./harness/minimal_harness.v2.yaml \
-  --out ./harness/minimal_harness.lock.json
-breadboard harness run ./harness/minimal_harness.v2.yaml \
-  --lock ./harness/minimal_harness.lock.json \
+breadboard harness validate ./harness/daily_driver.v1.yaml
+breadboard harness lock ./harness/daily_driver.v1.yaml \
+  --out ./harness/daily_driver.lock.json
+breadboard harness run ./harness/daily_driver.v1.yaml \
+  --lock ./harness/daily_driver.lock.json \
   --local \
   --task "Reply exactly with: OK"
 ```
+
+The public session event stream records lifecycle events plus minimal
+`assistant_message`, `tool_call`, and `tool_result` observations. Those
+observation payloads contain only `metadata.has_content`, the public tool name,
+or the public tool name plus an error flag; they never persist assistant content,
+tool arguments/results, credentials, paths, or backend event IDs. A completed
+stream remains readable after the service restarts.
+
+### Provider operation modes
+
+- **Provider-free:** the copied profile uses `mock/reference` through
+  `mock_chat`. It is deterministic and does not consult an environment secret
+  or provider credential.
+- **Configured provider:** replace `providers.default_model` and the matching
+  `providers.models` row with an integration reported as supported by
+  `breadboard integration list`, then validate and create a new lock. The
+  profile does not turn a native or evidence-only adapter into a supported
+  product integration.
+
+Both modes expose the same bounded file/edit/todo tool surface. Shell execution
+is enabled but `permissions.options.mode: prompt` and
+`permissions.shell.default: ask` require an operator decision.
 
 ---
 

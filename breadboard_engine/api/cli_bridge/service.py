@@ -10,21 +10,24 @@ import uuid, weakref
 from pathlib import Path
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, AsyncIterator, Optional, Sequence
+from typing import Any, AsyncIterator, Mapping, Optional, Sequence
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import AnchoredStorage, ArtifactStore, Session as ProductSession
 from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
 from fastapi import HTTPException, UploadFile, status
+from breadboard.product.cli.harness import (
+    DefaultProfileResolution,
+    resolve_default_profile,
+)
 from .events import (
     EventType,
     SessionEvent,
     REPLAY_RETENTION_MAX_EVENTS,
-    replay_configuration_digest,
     replay_retention_facts,
 )
 from .models import (
     ATPReplBatchRequest, ATPReplBatchResponse, ATPReplError, ATPReplMetrics, ATPReplRequest, ATPReplResponse,
-    ATPReplSorry, AttachmentHandle, AttachmentUploadResponse, ModelCatalogEntry, ModelCatalogResponse,
+    ATPReplSorry, AttachmentHandle, AttachmentUploadResponse, ModelCatalogResponse,
     SkillCatalogResponse, CTreeSnapshotResponse, SessionCommandRequest, SessionCommandResponse,
     SessionCreateRequest, SessionCreateResponse, SessionFileContent, SessionFileInfo, SessionInputRequest,
     SessionInputResponse, SessionStatus,
@@ -45,13 +48,31 @@ from .engine_identity_config import (
 )
 from .session_runner import MAX_ATTACHMENT_BYTES, SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
+from .model_catalog import build_model_catalog
+from .runtime_emission import (
+    DEFAULT_INTERACTIVE_SESSION_TITLE,
+    _sanitize_persisted_runtime_config,
+    ManagedStatePaths,
+    ManagedStateRootError,
+    compile_runtime_effective_config_graph,
+    default_runtime_record_root,
+    emit_session_start_records,
+    managed_state_paths,
+    prepare_managed_state,
+    primitive_emission_enabled,
+)
 from ...compilation.v2_loader import load_agent_config
 from ...compilation.effective_operation_policy import policy_pack_for_config_authority
-from ...model_roles import ModelRoleResolutionError
-from .runtime_emission import DEFAULT_INTERACTIVE_SESSION_TITLE, _sanitize_persisted_runtime_config, compile_runtime_effective_config_graph, default_runtime_record_root, emit_session_start_records, primitive_emission_enabled
-from ...provider import runtime_codex as runtime_codex_module
-from ...provider_routing import provider_router
+from ...model_roles import (
+    ModelRoleResolutionError,
+    compile_model_roles,
+    embed_model_role_lock,
+    restore_model_role_lock,
+)
+from ...provider.routing import provider_router
+from ...provider_broker import get_provider_broker
 logger = logging.getLogger(__name__)
+MODEL_ROLES_METADATA_KEY = "bb.model_roles.v1"
 def _load_bridge_chaos_metadata() -> dict[str, float] | None:
     latency, jitter = (max(0, int(os.environ.get(name, "0")))
                        for name in ("BREADBOARD_CLI_LATENCY_MS", "BREADBOARD_CLI_JITTER_MS"))
@@ -63,7 +84,10 @@ def _load_bridge_chaos_metadata() -> dict[str, float] | None:
 def _env_flag(name: str) -> bool:
     return (os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"})
 _START_PENDING, _START_COMMITTED, _START_OWNER = ".start.pending", ".start.committed", ".start.owner"
-def _event_root() -> Path:
+def _event_root(state_paths: ManagedStatePaths | None = None) -> Path:
+    managed = state_paths if state_paths is not None else managed_state_paths()
+    if managed is not None:
+        return managed.session_events
     return Path(os.environ.get("BREADBOARD_SESSION_EVENT_ROOT", Path.home() / ".breadboard" / "session_events")).resolve()
 def _sync_tree(root: Path) -> None:
     for path in (root, *root.rglob("*")):
@@ -103,12 +127,23 @@ def _start_active(path: Path) -> bool:
 def _create_owned_stage(path: Path) -> None:
     temporary = path.with_name(f".{path.name}.{os.urandom(16).hex()}.start-owner"); path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        temporary.mkdir(); (temporary / _START_OWNER).write_text(str(os.getpid()), encoding="utf-8"); _sync_tree(temporary)
+        temporary.mkdir(mode=0o700); (temporary / _START_OWNER).write_text(str(os.getpid()), encoding="utf-8"); _sync_tree(temporary)
         temporary.replace(path); AnchoredStorage.sync_directory(path.parent)
     finally:
         shutil.rmtree(temporary, ignore_errors=True)
-def _cleanup_incomplete_starts(record_root: Path | None = None, event_root: Path | None = None) -> None:
-    record_root, event_root = record_root or default_runtime_record_root(), event_root or _event_root()
+def _cleanup_incomplete_starts(
+    record_root: Path | None = None,
+    event_root: Path | None = None,
+    *,
+    state_paths: ManagedStatePaths | None = None,
+) -> None:
+    managed = state_paths if state_paths is not None else managed_state_paths()
+    if managed is not None:
+        record_root = record_root or managed.runtime_records
+        event_root = event_root or managed.session_events
+    else:
+        record_root = record_root or default_runtime_record_root()
+        event_root = event_root or _event_root()
     for root in (record_root, event_root):
         for staged in root.glob(".*.start-owner") if root.is_dir() else ():
             if not _start_active(staged): shutil.rmtree(staged, ignore_errors=True)
@@ -123,7 +158,7 @@ def _cleanup_incomplete_starts(record_root: Path | None = None, event_root: Path
         if _start_active(staged): continue
         session_id = staged.name[1:-len(".events.starting")]; authority, target = record_root / session_id / _START_COMMITTED, event_root / session_id
         if authority.is_file():
-            target.mkdir(parents=True, exist_ok=True)
+            target.mkdir(mode=0o700, parents=True, exist_ok=True)
             for path in staged.iterdir(): (target / path.name).exists() or path.replace(target / path.name)
             (target / _START_OWNER).unlink(missing_ok=True); shutil.rmtree(staged, ignore_errors=True); _sync_tree(target)
         else: shutil.rmtree(staged, ignore_errors=True)
@@ -172,11 +207,21 @@ class SessionService:
         state_root: str | Path | None = None,
         subscriber_queue_maxsize: int | None = None,
     ) -> None:
-        configured_state_root = (
-            state_root
-            or os.environ.get("BREADBOARD_SESSION_STATE_ROOT")
-            or (default_runtime_record_root() / "session_state")
-        )
+        self._managed_state_paths = prepare_managed_state()
+        if self._managed_state_paths is not None:
+            configured_state_root = self._managed_state_paths.session_state
+            if state_root is not None and Path(state_root).resolve() != configured_state_root:
+                raise ManagedStateRootError()
+            if registry is not None:
+                registry_root = getattr(registry, "_state_root", None)
+                if registry_root is None or Path(registry_root).resolve() != configured_state_root:
+                    raise ManagedStateRootError()
+        else:
+            configured_state_root = (
+                state_root
+                or os.environ.get("BREADBOARD_SESSION_STATE_ROOT")
+                or (default_runtime_record_root() / "session_state")
+            )
         self.registry = registry or SessionRegistry(
             configured_state_root,
             process_identity=get_engine_process_identity(),
@@ -194,11 +239,85 @@ class SessionService:
         self._atp_service_initialized = False
         self._atp_runtime_capabilities: dict[str, Any] = {}
         self._session_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
-        _cleanup_incomplete_starts()
+        _cleanup_incomplete_starts(state_paths=self._managed_state_paths)
     def _session_lock(self, session_id: str) -> asyncio.Lock: return self._session_locks.setdefault(session_id, asyncio.Lock())
     @staticmethod
-    def _runtime_lock(session_id: str, runtime_config: dict[str, Any], source_ref: str) -> EffectiveHarnessLock:
-        return EffectiveHarnessLock._from_record(compile_runtime_effective_config_graph(session_id, runtime_config, source_ref))
+    def _runtime_lock(
+        session_id: str, runtime_config: dict[str, Any], source_ref: str
+    ) -> EffectiveHarnessLock:
+        graph = compile_runtime_effective_config_graph(
+            session_id, runtime_config, source_ref
+        )
+        role_lock = runtime_config.get("model_role_lock")
+        if isinstance(role_lock, Mapping):
+            graph = embed_model_role_lock(
+                graph,
+                restore_model_role_lock(
+                    role_lock,
+                    broker=get_provider_broker(),
+                    session_id=session_id,
+                ),
+            )
+        return EffectiveHarnessLock._from_record(graph)
+    @staticmethod
+    def _configured_model_catalog(
+        runtime_config: dict[str, Any],
+        *,
+        session_id: str,
+    ) -> dict[str, Any]:
+        providers = (
+            runtime_config.get("providers")
+            if isinstance(runtime_config, dict)
+            else {}
+        )
+        providers = providers if isinstance(providers, dict) else {}
+        configured = providers.get("models") or []
+        default_model = providers.get("default_model") or runtime_config.get(
+            "model"
+        )
+        if not configured and default_model:
+            configured = [{"id": default_model}]
+        entries, issues = build_model_catalog(
+            configured,
+            credential_origin=lambda route: provider_router.get_credential_origin(
+                str(route), session_id=session_id
+            ),
+        )
+        return {
+            "models": [
+                item.model_dump(mode="json")
+                if hasattr(item, "model_dump")
+                else dict(item)
+                for item in entries
+            ],
+            "issues": [
+                item.model_dump(mode="json")
+                if hasattr(item, "model_dump")
+                else dict(item)
+                for item in issues
+            ],
+        }
+
+    @classmethod
+    def _compile_session_role_lock(
+        cls,
+        runtime_config: dict[str, Any],
+        *,
+        session_id: str,
+        role_document: Any | None = None,
+    ):
+        if role_document is None:
+            role_document = runtime_config.get("model_roles")
+        if role_document is None:
+            return None
+        catalog = cls._configured_model_catalog(runtime_config, session_id=session_id)
+        return compile_model_roles(
+            role_document,
+            broker=get_provider_broker(),
+            session_id=session_id,
+            bind_session_accounts=True,
+            catalog=catalog,
+        )
     def _publication_boundary(self, _name: str) -> None: pass
     def _publish_start_bundle(
         self, session_id: str, staged_record_dir: Path, staging_record_root: Path, runtime_record_dir: Path, staged_event_dir: Path, event_dir: Path, publish_records: bool,
@@ -315,9 +434,53 @@ class SessionService:
         runtime_root: Path | None = None,
         effective_lock: EffectiveHarnessLock | None = None,
     ) -> SessionCreateResponse:
+        if effective_lock is not None and not isinstance(
+            effective_lock, EffectiveHarnessLock
+        ):
+            raise TypeError("effective_lock must be an EffectiveHarnessLock")
         await self.registry.ensure_session_admission_open()
-        session_id, metadata = session_id or str(uuid.uuid4()), dict(request.metadata or {}); metadata.setdefault("config_path", request.config_path)
-        if await self.registry.get(session_id) is not None: raise ValueError(f"session already exists: {session_id}")
+        session_id = session_id or str(uuid.uuid4())
+        if await self.registry.get(session_id) is not None:
+            raise ValueError(f"session already exists: {session_id}")
+        default_profile: DefaultProfileResolution | None = None
+        if request.config_path is None:
+            default_profile = resolve_default_profile()
+            default_lock = default_profile.compilation.lock
+            if (
+                effective_lock is not None
+                and effective_lock.as_dict() != default_lock.as_dict()
+            ):
+                raise ValueError(
+                    "supplied effective lock conflicts with packaged default profile"
+                )
+            request = request.model_copy(
+                update={"config_path": str(default_profile.source_path)}
+            )
+        request_metadata = dict(request.metadata or {})
+        role_document = request_metadata.pop(MODEL_ROLES_METADATA_KEY, None)
+        for reserved_key in (
+            "config_path",
+            "default_profile",
+            "profile_id",
+            "definition_ref",
+            "schema_version",
+            "source_sha256",
+            "profile_hash",
+            "effective_lock_schema_version",
+            "effective_lock_hash",
+            "resources",
+        ):
+            request_metadata.pop(reserved_key, None)
+        if default_profile is not None:
+            default_identity = default_profile.public_identity()
+            request_metadata["config_path"] = str(
+                default_identity["definition_ref"]
+            )
+            request_metadata["default_profile"] = default_identity
+        else:
+            request_metadata["config_path"] = str(request.config_path)
+        request = request.model_copy(update={"metadata": request_metadata})
+        metadata = dict(request.metadata or {})
         if self._bridge_chaos: metadata.setdefault("bridgeChaos", self._bridge_chaos)
         session_title = request.task if request.task.strip() else DEFAULT_INTERACTIVE_SESSION_TITLE
         record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata); runner = SessionRunner(session=record, registry=self.registry, request=request)
@@ -331,23 +494,44 @@ class SessionService:
                 metadata["model"] = str(selected_model)
         if not metadata.get("mode") and isinstance(runtime_config, dict) and runtime_config.get("mode"):
             metadata["mode"] = str(runtime_config["mode"])
-        persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config)
+        role_lock = self._compile_session_role_lock(
+            runtime_config,
+            session_id=session_id,
+            role_document=role_document,
+        )
+        if role_lock is not None:
+            runtime_config = runner.install_model_role_lock(role_lock)
+            persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config)
+        else:
+            persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config)
         runtime_graph = compile_runtime_effective_config_graph(
             session_id, persisted_runtime_config, request.config_path
         )
-        role_lock = None
-        role_document = runtime_config.get("model_roles") if isinstance(runtime_config, dict) else None
-        if isinstance(role_document, dict) and role_document.get("schema_version") == "bb.model_roles.v1":
-            from ...model_roles import compile_model_roles, embed_model_role_lock
-
-            role_lock = compile_model_roles(role_document)
+        if role_lock is not None:
             runtime_graph = embed_model_role_lock(runtime_graph, role_lock)
             metadata["model_role_lock_hash"] = role_lock.lock_hash
+            metadata["model_role_lock"] = role_lock.as_dict()
+            metadata["active_model_role"] = role_lock["defaults"]["role"]
             metadata["model_role_default"] = role_lock["defaults"]["role"]
-        if effective_lock is not None and not isinstance(effective_lock, EffectiveHarnessLock):
-            raise TypeError("effective_lock must be an EffectiveHarnessLock")
-        runtime_lock = effective_lock if effective_lock is not None else EffectiveHarnessLock._from_record(runtime_graph)
-        emit_primitives = primitive_emission_enabled(); runtime_record_dir, event_dir = (runtime_root or default_runtime_record_root()) / session_id, (event_root or _event_root()) / session_id
+        if default_profile is not None:
+            runtime_lock = default_profile.compilation.lock
+        elif effective_lock is not None:
+            selected_graph = effective_lock.as_dict()
+            if role_lock is not None:
+                selected_graph = embed_model_role_lock(
+                    selected_graph, role_lock
+                )
+            runtime_lock = EffectiveHarnessLock._from_record(selected_graph)
+        else:
+            runtime_lock = EffectiveHarnessLock._from_record(runtime_graph)
+        emit_primitives = primitive_emission_enabled()
+        if self._managed_state_paths is not None:
+            runtime_base = self._managed_state_paths.runtime_records
+            event_base = self._managed_state_paths.session_events
+        else:
+            runtime_base = runtime_root or default_runtime_record_root()
+            event_base = event_root or _event_root()
+        runtime_record_dir, event_dir = runtime_base / session_id, event_base / session_id
         staging_record_root = runtime_record_dir.parent / f".{session_id}.records.starting"
         staged_record_dir, staged_event_dir = staging_record_root / session_id, event_dir.with_name(f".{session_id}.events.starting")
         active_stages = {staged_event_dir, *({staging_record_root} if emit_primitives else set())}
@@ -377,6 +561,7 @@ class SessionService:
             product_session = ProductSession.start(runtime_lock, session_title, session_id=session_id, sink=event_sink)
             record.product_session = product_session; metadata["session_contract"] = product_session.read_model.as_dict()
             async with self.registry._lock:
+                await runner.prepare_start(admission_serialized=True)
                 runner.schedule_start()
                 self._publish_start_bundle(session_id, staged_record_dir, staging_record_root, runtime_record_dir, staged_event_dir, event_dir, emit_primitives)
                 event_sink.path = event_dir / "session_events.jsonl"; self.registry._records[session_id] = record
@@ -590,6 +775,13 @@ class SessionService:
                 break
             try:
                 async with record.dispatch_lock:
+                    previous_event_seq = record.event_seq
+                    previous_event_seq_value = event.seq
+                    record.event_seq += 1
+                    if event.seq is None:
+                        event.seq = record.event_seq
+                    else:
+                        record.event_seq = max(record.event_seq, int(event.seq))
                     if event.type in {
                         EventType.TURN_COMPLETED,
                         EventType.TURN_FAILED,
@@ -598,15 +790,12 @@ class SessionService:
                         try:
                             await self.registry.persist(record, terminal_event=event)
                         except Exception:
+                            record.event_seq = previous_event_seq
+                            event.seq = previous_event_seq_value
                             # A terminal event without durable retention is not safe
                             # to expose as resolved evidence.
                             setattr(record, "_dispatcher_complete", True)
                             break
-                    record.event_seq += 1
-                    if event.seq is None:
-                        event.seq = record.event_seq
-                    else:
-                        record.event_seq = max(record.event_seq, int(event.seq))
                     record.event_log.append(event)
                     if record.subscribers:
                         for subscriber in list(record.subscribers):
@@ -635,7 +824,10 @@ class SessionService:
     ) -> dict[str, Any]:
         record = await self.ensure_session(session_id)
         metadata = record.metadata if isinstance(record.metadata, dict) else {}
-        runtime_dir = Path(str(metadata["runtime_record_dir"])) if metadata.get("runtime_record_dir") else default_runtime_record_root() / session_id
+        runtime_base = self._managed_state_paths.runtime_records if self._managed_state_paths is not None else default_runtime_record_root()
+        runtime_dir = runtime_base / session_id if self._managed_state_paths is not None else (
+            Path(str(metadata["runtime_record_dir"])) if metadata.get("runtime_record_dir") else runtime_base / session_id
+        )
         rows: list[dict[str, Any]] = []
         committed = not (runtime_dir / _START_PENDING).exists() or (runtime_dir / _START_COMMITTED).exists()
         if committed:
@@ -859,7 +1051,7 @@ class SessionService:
             detail = await runner.handle_command(
                 payload.command,
                 payload.payload,
-                durable_reconfigure=durable_reconfigure if payload.command in {"set_model", "set_mode", "set_skills"} else None,
+                durable_reconfigure=durable_reconfigure if payload.command in {"set_model", "set_mode", "set_skills", "set_role", "set_model_role"} else None,
             )
         except ModelRoleResolutionError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.problem.to_dict()) from exc
@@ -1099,49 +1291,13 @@ class SessionService:
         models_cfg = providers.get("models") or []
         if not models_cfg and default_model:
             models_cfg = [{"id": default_model}]
-        def infer_provider(model_id: str, provider: Optional[str], adapter: Optional[str]) -> Optional[str]:
-            if provider and isinstance(provider, str) and provider.strip():
-                return provider.strip()
-            if isinstance(model_id, str) and "/" in model_id:
-                return model_id.split("/", 1)[0]
-            if adapter and isinstance(adapter, str) and adapter.strip():
-                return adapter.strip()
-            return None
-        def normalize_entry(entry: Any) -> Optional[ModelCatalogEntry]:
-            if isinstance(entry, str):
-                model_id = entry
-                adapter = None
-                provider = infer_provider(model_id, None, None)
-                return ModelCatalogEntry(id=model_id, provider=provider, name=model_id)
-            if not isinstance(entry, dict):
-                return None
-            model_id = entry.get("id") or entry.get("model_id") or entry.get("model")
-            if not model_id:
-                return None
-            model_id = str(model_id)
-            adapter = entry.get("adapter") or entry.get("adapter_id")
-            provider = infer_provider(model_id, entry.get("provider"), adapter)
-            name = entry.get("name") or model_id
-            context_length = entry.get("context_length") or entry.get("contextLength") or entry.get("context_tokens")
-            context_length = int(context_length) if isinstance(context_length, (int, float)) else None
-            params = entry.get("params") or entry.get("parameters") or None
-            routing = entry.get("routing") or None
-            metadata = entry.get("metadata") or None
-            return ModelCatalogEntry(
-                id=model_id,
-                adapter=str(adapter) if adapter else None,
-                provider=str(provider) if provider else None,
-                name=str(name) if name else None,
-                context_length=context_length,
-                params=params if isinstance(params, dict) else None,
-                routing=routing if isinstance(routing, dict) else None,
-                metadata=metadata if isinstance(metadata, dict) else None,
-            )
-        entries: list[ModelCatalogEntry] = []
-        for entry in models_cfg:
-            normalized = normalize_entry(entry)
-            if normalized:
-                entries.append(normalized)
+        broker = get_provider_broker()
+        entries, issues = build_model_catalog(
+            models_cfg,
+            credential_origin=lambda route: broker.get_credential_origin(
+                str(route), session_id="model_catalog"
+            ),
+        )
         policy = policy_pack_for_config_authority(
             config,
             session_id="model_catalog",
@@ -1152,11 +1308,16 @@ class SessionService:
             entries = [entry for entry in entries if policy.is_model_allowed(entry.id)]
             if default_model and not policy.is_model_allowed(str(default_model)):
                 default_model = entries[0].id if entries else None
+        if default_model and all(entry.id != str(default_model) for entry in entries):
+            default_model = entries[0].id if entries else None
         return ModelCatalogResponse(
             models=entries,
             default_model=str(default_model) if default_model else None,
             config_path=str(config_path),
+            discovery_policy="configured_only",
+            issues=issues,
         )
+
     def atp_feature_status(self, *, enabled: bool | None = None) -> dict[str, Any]:
         return {
             "enabled": bool(self._atp_repl_enabled if enabled is None else enabled),

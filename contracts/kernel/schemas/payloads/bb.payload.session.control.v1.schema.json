@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.session.control.v1.schema.json",
+  "title": "BreadBoard Kernel Event Payload session.control V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind"
+  ],
+  "properties": {
+    "kind": {
+      "const": "stop_requested"
+    }
+  }
+}

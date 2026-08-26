@@ -16,7 +16,11 @@ def _write_config(path: Path, text: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_model_allowlist_filters_catalog(tmp_path: Path) -> None:
+async def test_model_allowlist_filters_catalog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.model_catalog.provider_router.get_credential_origin",
+        lambda _route: None,
+    )
     cfg_path = _write_config(
         tmp_path / "cfg.yaml",
         """
@@ -47,6 +51,11 @@ policies:
     ids = [entry.id for entry in catalog.models]
     assert ids == ["openrouter/openai/gpt-5-nano"]
     assert catalog.default_model == "openrouter/openai/gpt-5-nano"
+    assert catalog.discovery_policy == "configured_only"
+    assert catalog.issues == []
+    assert catalog.models[0].canonical_provider == "openrouter"
+    assert catalog.models[0].available is False
+    assert catalog.models[0].availability_reason == "missing_auth"
 
 
 @pytest.mark.asyncio
