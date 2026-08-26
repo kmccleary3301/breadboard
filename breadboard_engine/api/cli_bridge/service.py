@@ -620,6 +620,7 @@ class SessionService:
                 record.event_log,
                 head_sequence=record.event_seq,
                 retained_history_partial=record.replay_history_partial,
+                persisted_head_event_id=record.replay_head_event_id,
             ),
             stable_cursor=False,
         )

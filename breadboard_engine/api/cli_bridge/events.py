@@ -41,6 +41,7 @@ def replay_retention_facts(
     *,
     head_sequence: int,
     retained_history_partial: bool,
+    persisted_head_event_id: str | None = None,
 ) -> Dict[str, Any]:
     retained = [event for event in events if event.stable_cursor and event.seq is not None]
     first = retained[0] if retained else None
@@ -57,7 +58,11 @@ def replay_retention_facts(
         "earliestRetainedSequence": first.seq if first is not None else None,
         "earliestRetainedEventId": first.event_id if first is not None else None,
         "headSequence": head_sequence,
-        "headEventId": head.event_id if head is not None else None,
+        "headEventId": (
+            head.event_id
+            if head is not None
+            else persisted_head_event_id if head_sequence > 0 else None
+        ),
         "retainedHistory": retained_history,
     }
     facts["sessionReplayContractDigest"] = _stable_digest(

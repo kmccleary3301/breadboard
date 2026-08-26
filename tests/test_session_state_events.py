@@ -747,15 +747,42 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     assert record.dispatcher_task is not None
     assert not record.dispatcher_task.done()
 
+    # Completion bookkeeping can advance the observed cursor after the retained
+    # terminal envelope. Persist only its head identity, never its payload.
+    completion_tail = SessionEvent(
+        EventType.COMPLETION,
+        record.session_id,
+        {"summary": {"private": "completion-payload-must-not-persist"}},
+        seq=2,
+    )
+    replay_head = SessionEvent(
+        EventType.RUN_FINISHED,
+        record.session_id,
+        {"logging_dir": "/private/source/path-must-not-persist"},
+        seq=3,
+    )
+    record.event_log.extend((completion_tail, replay_head))
+    record.event_seq = 3
+    await registry.persist(record)
+    retained_bytes = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
+    assert "completion-payload-must-not-persist" not in retained_bytes
+    assert "path-must-not-persist" not in retained_bytes
+    retained = json.loads(retained_bytes)
+    assert retained["session"]["event_seq"] == replay_head.seq
+    assert retained["session"]["event_head_id"] == replay_head.event_id
+
     await record.event_queue.put(None)
     await record.dispatcher_task
     restarted = SessionRegistry(state_root=tmp_path)
     restored = await restarted.get(record.session_id)
     assert restored is not None
     summary = restored.to_summary()
-    assert summary.head_sequence == 1
-    assert summary.head_event_id == terminal_envelope["id"]
+    assert summary.head_sequence == replay_head.seq
+    assert summary.head_event_id == replay_head.event_id
     assert summary.terminal_event_envelopes == [terminal_envelope]
+    stream_open = SessionService._stream_open_event(restored)
+    assert stream_open.payload["headSequence"] == replay_head.seq
+    assert stream_open.payload["headEventId"] == replay_head.event_id
 
 
 @pytest.mark.asyncio

@@ -308,6 +308,30 @@ class PersistenceMixin:
             except FileNotFoundError:
                 pass
 
+    @staticmethod
+    def _durable_replay_head(record: SessionRecord) -> tuple[int, str | None]:
+        for event in reversed(record.event_log):
+            if (
+                event.stable_cursor
+                and event.seq == record.event_seq
+                and record.event_seq > 0
+            ):
+                return record.event_seq, event.event_id
+        if record.event_seq > 0 and record.replay_head_event_id:
+            return record.event_seq, record.replay_head_event_id
+        for envelope in reversed(record.terminal_event_envelopes):
+            sequence = envelope.get("seq")
+            event_id = envelope.get("id")
+            if (
+                isinstance(sequence, int)
+                and not isinstance(sequence, bool)
+                and sequence > 0
+                and isinstance(event_id, str)
+                and event_id
+            ):
+                return sequence, event_id
+        return 0, None
+
     def _serialize_record(self, record: SessionRecord) -> Dict[str, Any]:
         submissions = []
         for key, turn in record.submissions_by_key.items():
@@ -346,6 +370,7 @@ class PersistenceMixin:
         if not isinstance(role_lock, dict):
             role_lock = None
         active_role = metadata.get("active_model_role")
+        durable_event_seq, durable_head_event_id = self._durable_replay_head(record)
         return {
             "schema_version": _STATE_SCHEMA_VERSION,
             "session": {
@@ -353,7 +378,8 @@ class PersistenceMixin:
                 "status": record.status.value,
                 "created_at": record.created_at.isoformat(),
                 "last_activity_at": record.last_activity_at.isoformat(),
-                "event_seq": record.event_seq,
+                "event_seq": durable_event_seq,
+                "event_head_id": durable_head_event_id,
                 "model": _retained_model_id(metadata.get("model")),
                 "config_path": str(metadata.get("config_path") or ""),
                 "model_role_lock": role_lock,
@@ -469,6 +495,14 @@ class PersistenceMixin:
             raise ValueError("unsupported session-state schema")
         session = payload["session"]
         session_id = str(session["session_id"])
+        persisted_event_seq = int(session.get("event_seq") or 0)
+        persisted_head_event_id = session.get("event_head_id")
+        if persisted_head_event_id is not None and (
+            not isinstance(persisted_head_event_id, str) or not persisted_head_event_id
+        ):
+            raise ValueError("retained replay head identity is invalid")
+        if persisted_event_seq == 0 and persisted_head_event_id is not None:
+            raise ValueError("empty retained replay has a head identity")
         model = _retained_model_id(session.get("model"))
         metadata: Dict[str, Any] = {}
         if model is not None:
@@ -508,8 +542,9 @@ class PersistenceMixin:
             status=SessionStatus(str(session["status"])),
             created_at=datetime.fromisoformat(str(session["created_at"])),
             last_activity_at=datetime.fromisoformat(str(session["last_activity_at"])),
-            event_seq=int(session.get("event_seq") or 0),
-            replay_history_partial=bool(session.get("event_seq")),
+            event_seq=persisted_event_seq,
+            replay_history_partial=bool(persisted_event_seq),
+            replay_head_event_id=persisted_head_event_id,
             metadata=metadata,
         )
         for item in payload.get("turns") or []:
@@ -568,6 +603,13 @@ class PersistenceMixin:
             record.event_log.extend(
                 sorted(rehydrated_events, key=lambda event: int(event.seq or 0))
             )
+        if record.event_seq > 0 and record.replay_head_event_id is None:
+            if record.event_log:
+                legacy_head = record.event_log[-1]
+                record.event_seq = int(legacy_head.seq or 0)
+                record.replay_head_event_id = legacy_head.event_id
+            else:
+                record.event_seq = 0
         committed_turn_ids = {
             str(item.get("turn_id"))
             for item in record.terminal_event_envelopes
