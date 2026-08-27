@@ -18,7 +18,9 @@ from breadboard.product.operations.model import (
     from_exception,
 )
 from breadboard.product.runtime.events import ProcessLock
-from breadboard.product.operation_catalog import product_operation_catalog
+from breadboard.product.operations.generated_bindings import (
+    PUBLIC_OPERATION_BINDINGS,
+)
 from breadboard_engine.security import redaction
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -46,16 +48,13 @@ _ASYNC_OPERATIONS = frozenset(
 def _operation_contract() -> tuple[
     frozenset[str], frozenset[tuple[str, re.Pattern[str]]]
 ]:
-    document = product_operation_catalog()
     operation_ids: set[str] = set()
     routes: set[tuple[str, re.Pattern[str]]] = set()
-    for operation in document["operations"]:
-        operation_id = str(operation["operation_id"])
-        binding = operation["bindings"]["openapi"]
-        operation_ids.add(operation_id)
-        path = re.escape(str(binding["path"]))
+    for binding in PUBLIC_OPERATION_BINDINGS:
+        operation_ids.add(binding.operation_id)
+        path = re.escape(binding.path)
         pattern = re.sub(r"\\\{[^}]+\\\}", r"[^/]+", path)
-        routes.add((str(binding["method"]).upper(), re.compile(f"^{pattern}$")))
+        routes.add((binding.http_method.upper(), re.compile(f"^{pattern}$")))
     return frozenset(operation_ids), frozenset(routes)
 
 

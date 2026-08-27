@@ -88,8 +88,12 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
     assert "lane" not in help_result.stdout
     internal_environment = dict(environment, BREADBOARD_ENABLE_E4_API="1")
     internal_help = subprocess.run(
-        [str(breadboard), "--help"], cwd=outside_repo, env=internal_environment,
-        check=False, capture_output=True, text=True,
+        [str(breadboard), "--help"],
+        cwd=outside_repo,
+        env=internal_environment,
+        check=False,
+        capture_output=True,
+        text=True,
     )
     assert internal_help.returncode == 0, internal_help.stderr
     assert "lane" in internal_help.stdout
@@ -155,8 +159,11 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "agent_configs/templates/prompts/minimal_system.md",
         "agentic_coder_prototype/__init__.py",
         "breadboard/product/cli/main.py",
+        "breadboard/product/operations/generated_bindings.py",
         "breadboard_engine/compilation/bundle.py",
         "breadboard_sdk/__init__.py",
+        "breadboard_sdk/generated/__init__.py",
+        "breadboard_sdk/generated/public_bindings.py",
         "breadboard_sdk/generated/public_surface_manifest.v1.json",
         "config/product/tui-release.json",
         "conformance/comparators/registry.json",
@@ -257,6 +264,13 @@ from pathlib import Path
 import breadboard
 import breadboard_engine
 import breadboard_sdk
+from breadboard.product.operations.generated_bindings import (
+    PUBLIC_OPERATION_BINDINGS as PRODUCT_OPERATION_BINDINGS,
+)
+from breadboard_sdk.generated import (
+    PUBLIC_OPERATION_BINDINGS as SDK_OPERATION_BINDINGS,
+)
+from breadboard_sdk.generated import public_bindings as sdk_public_bindings
 from breadboard.product.harness.default_profile import default_profile_identity, resolve_default_profile
 from breadboard.product.cli.system import schemas
 from breadboard.product.harness.templates import (
@@ -316,6 +330,9 @@ generated = json.loads(
 )
 assert generated["catalog_id"] == "bb.public_operation_catalog.v2"
 assert len(generated["operations"]) == 26
+assert len(SDK_OPERATION_BINDINGS) == len(PRODUCT_OPERATION_BINDINGS) == 26
+assert sdk_public_bindings.PUBLIC_OPERATION_BINDINGS is SDK_OPERATION_BINDINGS
+assert files("breadboard_sdk.generated").joinpath("public_bindings.py").is_file()
 assert distribution.version == "0.0.0"
 print(json.dumps({{
     "distribution": distribution.metadata["Name"],
@@ -379,11 +396,15 @@ print(json.dumps({{
         assert payload["stage_outcomes"][0]["stage"] == expected_stage
         payloads[expected_stage] = payload
     assert payloads["system.describe"]["data"]["operation_count"] == 26
-    assert payloads["system.describe"]["data"]["default_profile"][
-        "profile_id"
-    ] == "daily_driver.v1"
-    assert payloads["system.describe"]["hashes"]["profile"] == (
-        payloads["system.describe"]["data"]["default_profile"][
-            "effective_lock_hash"
-        ]
+    assert (
+        payloads["system.describe"]["data"]["default_profile"]["profile_id"]
+        == "daily_driver.v1"
+    )
+    assert (
+        payloads["system.describe"]["hashes"]["profile"]
+        == (
+            payloads["system.describe"]["data"]["default_profile"][
+                "effective_lock_hash"
+            ]
+        )
     )

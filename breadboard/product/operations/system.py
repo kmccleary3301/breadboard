@@ -8,9 +8,9 @@ from breadboard.product.harness.default_profile import (
     DefaultProfileResolutionError,
     default_profile_identity,
 )
-from breadboard.product.operation_catalog import (
-    internal_evidence_operation_catalog,
-    product_operation_catalog,
+from breadboard.product.operation_catalog import internal_evidence_operation_catalog
+from breadboard.product.operations.generated_bindings import (
+    PUBLIC_OPERATION_BINDINGS,
 )
 from breadboard.product.operations.model import (
     OperationContext,
@@ -40,24 +40,15 @@ _HEALTH_COMMAND = ("system", "health")
 _SCHEMAS_COMMAND = ("system", "schemas")
 
 
-def _candidate_operations() -> list[dict[str, Any]]:
-    return list(product_operation_catalog()["operations"])
-
-
 def _operation_rows() -> list[dict[str, str]]:
-    rows = []
-    for operation in _candidate_operations():
-        binding = operation.get("bindings", {}).get("bbh", {})
-        operation_id = operation.get("operation_id")
-        command = binding.get("command") if isinstance(binding, dict) else None
-        if isinstance(operation_id, str) and isinstance(command, str):
-            rows.append(
-                {
-                    "operation_id": operation_id,
-                    "command": command,
-                    "status": str(operation.get("status") or "candidate"),
-                }
-            )
+    rows = [
+        {
+            "operation_id": binding.operation_id,
+            "command": binding.cli_command,
+            "status": binding.status,
+        }
+        for binding in PUBLIC_OPERATION_BINDINGS
+    ]
     return sorted(rows, key=lambda row: row["operation_id"])
 
 

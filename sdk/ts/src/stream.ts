@@ -1,7 +1,33 @@
 import { createParser, type EventSourceParseCallback, type ParsedEvent, type ReconnectInterval } from "eventsource-parser"
 import { ApiError, type BreadboardClientConfig } from "./client.js"
 import type { SessionEvent } from "./types.js"
+import {
+  PUBLIC_BINDINGS_BY_OPERATION_ID,
+  type PublicOperationBinding,
+} from "./generated/public-bindings.js"
 
+export const bindGeneratedRoute = (
+  binding: PublicOperationBinding,
+  pathValues: Readonly<Record<string, string>> = {},
+): string => {
+  const placeholders: string[] = []
+  for (const match of binding.path.matchAll(/\{([^{}]+)\}/g)) {
+    const name = match[1]
+    if (!name) throw new Error(`Invalid path placeholder in ${binding.operationId}`)
+    placeholders.push(name)
+  }
+  for (const name of Object.keys(pathValues)) {
+    if (!placeholders.includes(name)) throw new Error(`Unknown path parameter ${name} for ${binding.operationId}`)
+  }
+  let route = binding.path
+  for (const name of placeholders) {
+    const value = pathValues[name]
+    if (value === undefined) throw new Error(`Missing path parameter ${name} for ${binding.operationId}`)
+    route = route.replace(`{${name}}`, value)
+  }
+  if (/\{[^{}]+\}/.test(route)) throw new Error(`Unresolved path parameter for ${binding.operationId}`)
+  return route
+}
 export interface StreamConfig extends BreadboardClientConfig {}
 
 export interface EventStreamOptions {
@@ -85,6 +111,8 @@ const normalize = (
   }
 }
 
+const sessionEventsBinding = PUBLIC_BINDINGS_BY_OPERATION_ID["session.events"]
+
 const streamUrl = (
   sessionId: string,
   config: StreamConfig,
@@ -92,7 +120,7 @@ const streamUrl = (
   lastEventId?: string,
 ): URL => {
   const url = new URL(
-    `v1/sessions/${encodeURIComponent(sessionId)}/events`,
+    bindGeneratedRoute(sessionEventsBinding, { session_id: encodeURIComponent(sessionId) }).replace(/^\/+/, ""),
     config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`,
   )
   if (!("schema" in query) && !("v" in query)) query.schema = config.streamSchema ?? 2
@@ -122,7 +150,7 @@ export const streamSessionEvents = async function* (
     const token = await resolveToken(options.config, options.signal)
     if (options.signal?.aborted) return
     const response = await (options.config.fetch ?? globalThis.fetch)(streamUrl(sessionId, options.config, { ...(options.query ?? {}) }, options.lastEventId), {
-      method: "GET",
+      method: sessionEventsBinding.httpMethod,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.lastEventId ? { "Last-Event-ID": options.lastEventId } : {}),
