@@ -374,13 +374,13 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
         normalized = name.strip().lower().replace("-", "_")
         words = normalized.split("_")
         compact = normalized.replace("_", "")
-        if not (
+        credential_named = (
             is_secret_key(name)
             or any(word in _CREDENTIAL_HEADER_WORDS for word in words)
             or compact.endswith(_CREDENTIAL_HEADER_SUFFIXES)
-        ):
-            return
-        add(name)
+        )
+        if credential_named:
+            add(name)
         add_all(item)
         if not isinstance(item, str):
             return

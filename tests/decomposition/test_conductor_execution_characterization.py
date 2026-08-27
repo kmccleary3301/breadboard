@@ -152,7 +152,7 @@ def test_retry_fallback_sequence_and_provider_logging(monkeypatch: pytest.Monkey
         logger_v2=SimpleNamespace(run_dir=None), md_writer=SimpleNamespace(system=lambda text: text), route_health=Health(),
         provider_metrics=Metrics(), _update_health_metadata=lambda *_: None,
         _get_model_routing_preferences=lambda route: {"fallback_models": ["mock/fallback"]},
-        _select_fallback_route=lambda *args: ("mock/fallback", {"selected": True}),
+        _select_fallback_route=lambda *args, **kwargs: ("mock/fallback", {"selected": True}),
         _log_routing_event=lambda *args, **kwargs: events.append("routing.event"),
     )
     logger = _logger()

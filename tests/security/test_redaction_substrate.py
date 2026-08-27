@@ -145,6 +145,7 @@ class TestRegisteredValues:
             "Cookie",
             "sid=cookie-secret",
             "cookie-secret",
+            "application/json",
             "url-user",
             "url-password",
             "query-secret",
@@ -154,6 +155,9 @@ class TestRegisteredValues:
         assert redaction.credential_secret_values(
             {"headers": {"x-api-key": "abc"}}
         ) == ("x-api-key", "abc")
+        assert redaction.credential_secret_values(
+            {"headers": {"X-Custom": "custom-header-secret"}}
+        ) == ("custom-header-secret",)
 
     def test_credential_material_decodes_header_and_numeric_components(self):
         basic_credential = "YmFzaWMtdXNlcjpiYXNpYy1wYXNzd29yZA=="
@@ -196,6 +200,7 @@ class TestRegisteredValues:
             "session_token",
             "set%2Dcookie",
             "set-cookie",
+            "application/json",
             "access_token",
             "4827",
             "4827.0",
