@@ -1,7 +1,7 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
 // openapi-schema-sha256: d776432f53d774d2179a721069a5c6867698712efbd059f0b2be5beb7e334a37
-// app-source-sha256: da0e303ea84ac1d18cf330439f55b440b6996597de886e5cc488d27b73bf8034
+// app-source-sha256: 5bf6ab6afb45db20956f24cfdd816f51f7229eb8b6a9bbdbee2ee1f63191174c
 
 export interface AuthActionResponse { "detail"?: { [key: string]: unknown; } | null; "ok": boolean; }
 
