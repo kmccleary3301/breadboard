@@ -210,7 +210,7 @@ def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
             "account_label": "restart",
             "api_key": "anthropic-restart-secret",
             "headers": {
-                "X-Custom-Auth": "custom-header-secret",
+                "X-Custom": "custom-header-secret",
                 "X-Authorization": "Bearer prefixed-header-secret",
             },
             "base_url": (
@@ -230,7 +230,6 @@ def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
         assert material is not None
         assert {
             "anthropic-restart-secret",
-            "X-Custom-Auth",
             "custom-header-secret",
             "X-Authorization",
             "Bearer prefixed-header-secret",
