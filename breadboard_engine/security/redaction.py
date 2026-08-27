@@ -381,4 +381,15 @@ def _scrub_node(value: Any, path: str, problems: list[RedactionProblem]) -> Any:
                 RedactionProblem("secret_value", path, "secret value scrubbed from text")
             )
         return cleaned
+    if isinstance(value, (bool, int, float)) and contains_registered_secret_text(
+        str(value)
+    ):
+        problems.append(
+            RedactionProblem(
+                "secret_value",
+                path,
+                "secret value scrubbed from scalar",
+            )
+        )
+        return REDACTED
     return value

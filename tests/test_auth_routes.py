@@ -256,6 +256,62 @@ def test_auth_api_key_rejects_secret_bearing_credential_identity_fields(
     assert secret not in redaction.iter_registered_secret_values()
 
 
+def test_auth_api_key_scrubs_numeric_metadata_and_rejects_matching_expiry(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+
+    secret = "73194628"
+    database = tmp_path / "metadata.sqlite3"
+    broker = ProviderBroker(SQLiteCredentialStore(database))
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    client = TestClient(create_app())
+
+    stored = client.put(
+        "/v1/auth/credentials/openai/main/api-key",
+        json={
+            "api_key": secret,
+            "metadata": {"numeric_canary": int(secret)},
+        },
+    )
+
+    assert stored.status_code == 200
+    assert stored.json()["metadata"] == {"numeric_canary": "***REDACTED***"}
+    assert secret not in stored.text
+    with sqlite3.connect(database) as connection:
+        metadata_json = connection.execute(
+            "SELECT metadata_json FROM accounts"
+        ).fetchone()[0]
+    assert secret not in metadata_json
+    assert secret not in json.dumps(broker.audit_events())
+    assert secret not in redaction.iter_registered_secret_values()
+
+    expiry_database = tmp_path / "expiry.sqlite3"
+    expiry_broker = ProviderBroker(SQLiteCredentialStore(expiry_database))
+    monkeypatch.setattr(broker_module, "_default_broker", expiry_broker)
+    expiry_client = TestClient(create_app())
+    rejected = expiry_client.put(
+        "/v1/auth/credentials/openai/main/api-key",
+        json={"api_key": secret, "expires_at_ms": int(secret)},
+    )
+
+    assert rejected.status_code == 400
+    assert rejected.json() == {
+        "error": "invalid_request",
+        "detail": (
+            "credential identity fields cannot contain credential material"
+        ),
+        "path": None,
+    }
+    assert secret not in rejected.text
+    with sqlite3.connect(expiry_database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
+    assert expiry_broker.audit_events() == []
+    assert secret not in redaction.iter_registered_secret_values()
+
+
 def test_model_catalog_route_projects_only_configured_provider_truth(
     tmp_path,
     monkeypatch,
