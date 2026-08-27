@@ -81,6 +81,22 @@ class TestRegisteredValues:
             f"prefix-{secret}-suffix"
         )
 
+    def test_registered_numeric_secret_scrubs_json_scalar(self):
+        secret = "4827"
+        with redaction.secret_value_scope(secret):
+            scrubbed, problems = redaction.scrub_structure(
+                {"nested": [int(secret)]}
+            )
+        assert scrubbed == {"nested": [redaction.REDACTED]}
+        assert problems == [
+            redaction.RedactionProblem(
+                "secret_value",
+                "$.nested[0]",
+                "secret value scrubbed from scalar",
+            )
+        ]
+        assert redaction.iter_registered_secret_values() == ()
+
     def test_short_and_non_string_values_ignored(self):
         with redaction.secret_value_scope("abc", None, 12345):
             assert redaction.iter_registered_secret_values() == ()

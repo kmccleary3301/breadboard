@@ -755,6 +755,7 @@ class ProviderBroker:
                 label,
                 alias,
                 str(account_id) if account_id is not None else "",
+                str(expires_at_ms) if expires_at_ms is not None else "",
             )
             if any(
                 redaction.contains_registered_secret_text(value)
