@@ -333,9 +333,13 @@ class SQLiteCredentialStore:
         return connection
 
     @contextmanager
-    def _transaction(self) -> Iterator[sqlite3.Connection]:
+    def _transaction(
+        self, *, immediate: bool = False
+    ) -> Iterator[sqlite3.Connection]:
         nested = getattr(self._transaction_local, "connection", None)
         if nested is not None:
+            if immediate and not nested.in_transaction:
+                nested.execute("BEGIN IMMEDIATE")
             yield nested
             return
         callbacks: list[Callable[[], None]] = []
@@ -346,6 +350,8 @@ class SQLiteCredentialStore:
             self._transaction_local.connection = connection
             self._transaction_local.after_commit = callbacks
             try:
+                if immediate:
+                    connection.execute("BEGIN IMMEDIATE")
                 yield connection
                 # SQLite owns commit/rollback; hardening only removes unsafe
                 # mode bits and never attempts a raw-copy or restore.
@@ -367,7 +373,7 @@ class SQLiteCredentialStore:
     @contextmanager
     def atomic(self) -> Iterator[None]:
         """Group a state change and its durable audit event in one commit."""
-        with self._transaction():
+        with self._transaction(immediate=True):
             yield
 
     def after_commit(self, callback: Callable[[], None]) -> None:
@@ -1536,8 +1542,8 @@ class SQLiteCredentialStore:
         if not material.get("access_token") or not material.get("refresh_token"):
             raise ValueError("refreshed OAuth material is incomplete")
         account_ref = str(account_id)
-        timestamp = now_ms()
-        with self._transaction() as connection:
+        with self._transaction(immediate=True) as connection:
+            timestamp = now_ms()
             account = connection.execute(
                 "SELECT * FROM accounts WHERE account_id = ?",
                 (account_ref,),
@@ -1549,6 +1555,8 @@ class SQLiteCredentialStore:
             if (
                 state is None
                 or str(state["owner_id"] or "") != str(owner_id)
+                or int(state["expected_secret_version"] or 0)
+                != int(expected_secret_version)
                 or state["lease_expires_at_ms"] is None
                 or int(state["lease_expires_at_ms"]) <= timestamp
             ):
@@ -1562,8 +1570,14 @@ class SQLiteCredentialStore:
                        SET owner_id = NULL, expected_secret_version = NULL,
                            lease_acquired_at_ms = NULL, lease_expires_at_ms = NULL,
                            updated_at_ms = ?
-                       WHERE account_id = ? AND owner_id = ?""",
-                    (timestamp, account_ref, str(owner_id)),
+                       WHERE account_id = ? AND owner_id = ?
+                         AND expected_secret_version = ?""",
+                    (
+                        timestamp,
+                        account_ref,
+                        str(owner_id),
+                        int(expected_secret_version),
+                    ),
                 )
                 return {
                     "status": "superseded",
@@ -1573,7 +1587,7 @@ class SQLiteCredentialStore:
             merged_metadata = self._decode_json(account["metadata_json"])
             if isinstance(metadata, Mapping):
                 merged_metadata.update(dict(metadata))
-            connection.execute(
+            account_update = connection.execute(
                 """UPDATE accounts
                    SET status = 'active', secret_version = ?, updated_at_ms = ?,
                        expires_at_ms = ?, metadata_json = ?
@@ -1588,6 +1602,8 @@ class SQLiteCredentialStore:
                     current_version,
                 ),
             )
+            if account_update.rowcount != 1:
+                raise RuntimeError("credential refresh account CAS failed")
             connection.execute(
                 "DELETE FROM secrets WHERE account_id = ?",
                 (account_ref,),
@@ -1604,16 +1620,26 @@ class SQLiteCredentialStore:
                     timestamp,
                 ),
             )
-            connection.execute(
+            state_update = connection.execute(
                 """UPDATE credential_refresh_state
                    SET owner_id = NULL, expected_secret_version = NULL,
                        lease_acquired_at_ms = NULL, lease_expires_at_ms = NULL,
                        last_failure_class = NULL, last_failure_code = NULL,
                        last_failure_at_ms = NULL, retry_not_before_ms = NULL,
                        updated_at_ms = ?
-                   WHERE account_id = ? AND owner_id = ?""",
-                (timestamp, account_ref, str(owner_id)),
+                   WHERE account_id = ? AND owner_id = ?
+                     AND expected_secret_version = ?
+                     AND lease_expires_at_ms > ?""",
+                (
+                    timestamp,
+                    account_ref,
+                    str(owner_id),
+                    int(expected_secret_version),
+                    timestamp,
+                ),
             )
+            if state_update.rowcount != 1:
+                raise RuntimeError("credential refresh claim CAS failed")
             updated = connection.execute(
                 "SELECT * FROM accounts WHERE account_id = ?",
                 (account_ref,),
@@ -1639,8 +1665,8 @@ class SQLiteCredentialStore:
             raise ValueError("failure_class must be transient or definitive")
         account_ref = str(account_id)
         owner_ref = str(owner_id)
-        timestamp = now_ms()
-        with self._transaction() as connection:
+        with self._transaction(immediate=True) as connection:
+            timestamp = now_ms()
             state = connection.execute(
                 "SELECT * FROM credential_refresh_state WHERE account_id = ?",
                 (account_ref,),
@@ -1652,6 +1678,8 @@ class SQLiteCredentialStore:
             if (
                 state is None
                 or str(state["owner_id"] or "") != owner_ref
+                or int(state["expected_secret_version"] or 0)
+                != int(expected_secret_version)
                 or state["lease_expires_at_ms"] is None
                 or int(state["lease_expires_at_ms"]) <= timestamp
                 or account is None
@@ -1665,12 +1693,14 @@ class SQLiteCredentialStore:
                 else None
             )
             if classification == "definitive":
-                connection.execute(
+                account_update = connection.execute(
                     """UPDATE accounts SET status = 'revoked', updated_at_ms = ?
                        WHERE account_id = ? AND status = 'active'
                          AND secret_version = ?""",
                     (timestamp, account_ref, int(expected_secret_version)),
                 )
+                if account_update.rowcount != 1:
+                    raise RuntimeError("credential refresh failure CAS failed")
                 connection.execute(
                     "DELETE FROM secrets WHERE account_id = ?",
                     (account_ref,),
@@ -1680,14 +1710,16 @@ class SQLiteCredentialStore:
                        WHERE account_id = ? AND released_at_ms IS NULL""",
                     (timestamp, account_ref),
                 )
-            connection.execute(
+            state_update = connection.execute(
                 """UPDATE credential_refresh_state
                    SET owner_id = NULL, expected_secret_version = NULL,
                        lease_acquired_at_ms = NULL, lease_expires_at_ms = NULL,
                        last_failure_class = ?, last_failure_code = ?,
                        last_failure_at_ms = ?, retry_not_before_ms = ?,
                        updated_at_ms = ?
-                   WHERE account_id = ? AND owner_id = ?""",
+                   WHERE account_id = ? AND owner_id = ?
+                     AND expected_secret_version = ?
+                     AND lease_expires_at_ms > ?""",
                 (
                     classification,
                     str(failure_code)[:128],
@@ -1696,8 +1728,12 @@ class SQLiteCredentialStore:
                     timestamp,
                     account_ref,
                     owner_ref,
+                    int(expected_secret_version),
+                    timestamp,
                 ),
             )
+            if state_update.rowcount != 1:
+                raise RuntimeError("credential refresh claim CAS failed")
             return True
 
     def acquire_lease(

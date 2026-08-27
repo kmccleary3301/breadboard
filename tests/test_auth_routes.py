@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import pytest
 
 from fastapi.testclient import TestClient
@@ -35,8 +36,9 @@ def _roles() -> dict:
 def test_auth_routes_are_typed_and_never_return_secret(tmp_path, monkeypatch, caplog):
     import breadboard_engine.provider_broker.broker as broker_module
 
-    secret = "sk-api-route-canary-secret"
-    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    secret = "opaque-credential-canary-7q9mx"
+    database = tmp_path / "credentials.sqlite3"
+    broker = ProviderBroker(SQLiteCredentialStore(database))
     monkeypatch.setattr(broker_module, "_default_broker", broker)
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
     client = TestClient(create_app())
@@ -56,19 +58,37 @@ def test_auth_routes_are_typed_and_never_return_secret(tmp_path, monkeypatch, ca
 
     stored = client.put(
         "/v1/auth/credentials/openai/main/api-key",
-        json={"api_key": secret, "headers": {"Authorization": f"Bearer {secret}"}},
+        json={
+            "api_key": secret,
+            "headers": {"Authorization": f"Bearer {secret}"},
+            "metadata": {
+                "description": secret,
+                "nested": {"note": secret},
+            },
+        },
     )
     assert stored.status_code == 200
     credential = stored.json()
     assert credential["provider_id"] == "openai"
     assert credential["refresh_state"]["status"] == "idle"
     assert credential["refresh_state"]["retry_not_before_ms"] is None
+    assert credential["metadata"] == {
+        "description": "***REDACTED***",
+        "nested": {"note": "***REDACTED***"},
+    }
     assert secret not in stored.text
 
     listed = client.get("/v1/auth/credentials", params={"provider_id": "openai"})
     assert listed.status_code == 200
     assert listed.json()[0]["refresh_state"]["status"] == "idle"
     assert secret not in listed.text
+    with sqlite3.connect(database) as connection:
+        metadata_json = connection.execute(
+            "SELECT metadata_json FROM accounts WHERE account_id = ?",
+            (credential["account_id"],),
+        ).fetchone()[0]
+    assert secret not in metadata_json
+    assert json.loads(metadata_json) == credential["metadata"]
 
     role = client.post(
         "/v1/model-roles/resolve",

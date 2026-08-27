@@ -4,6 +4,7 @@ import json
 import time
 import threading
 import urllib.parse
+import pytest
 
 from breadboard_engine.provider_broker import (
     ProviderBroker,
@@ -386,6 +387,288 @@ def test_refresh_single_flight_is_durable_across_broker_instances(tmp_path):
             2,
         ),
     }
+
+
+def _stored_oauth_material(
+    store: SQLiteCredentialStore,
+    account_id: str,
+) -> dict[str, str]:
+    with store._transaction() as connection:
+        row = connection.execute(
+            "SELECT material FROM secrets WHERE account_id = ?",
+            (account_id,),
+        ).fetchone()
+    assert row is not None
+    return json.loads(row["material"])
+
+
+def test_refresh_terminal_operations_reject_owner_after_lease_takeover(
+    tmp_path,
+    monkeypatch,
+):
+    import breadboard_engine.provider_broker.store as store_module
+
+    base_ms = store_module.now_ms()
+    monkeypatch.setattr(store_module, "now_ms", lambda: base_ms)
+    db = tmp_path / "terminal-takeover.sqlite3"
+    stale = SQLiteCredentialStore(db)
+    current = SQLiteCredentialStore(db)
+    credential = stale.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="terminal-takeover",
+        material={
+            "access_token": "takeover-access-current",
+            "refresh_token": "takeover-refresh-current",
+        },
+        expires_at_ms=base_ms + 10_000,
+    )
+    account_id = credential["account_id"]
+    assert stale.claim_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="stale-owner",
+        lease_duration_ms=100,
+    )["status"] == "acquired"
+
+    monkeypatch.setattr(store_module, "now_ms", lambda: base_ms + 101)
+    takeover = current.claim_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="current-owner",
+        lease_duration_ms=100,
+    )
+    assert takeover["status"] == "acquired"
+    assert takeover["recovered_stale_lease"] is True
+
+    completed = stale.complete_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="stale-owner",
+        material={
+            "access_token": "takeover-access-stale",
+            "refresh_token": "takeover-refresh-stale",
+        },
+        expires_at_ms=base_ms + 20_000,
+    )
+    failed = stale.fail_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="stale-owner",
+        failure_class="definitive",
+        failure_code="invalid_grant",
+    )
+
+    assert completed == {"status": "claim_lost"}
+    assert failed is False
+    assert _stored_oauth_material(current, account_id) == {
+        "access_token": "takeover-access-current",
+        "refresh_token": "takeover-refresh-current",
+    }
+    assert current.inspect_refresh_state(account_id)["status"] == "refreshing"
+
+
+def test_refresh_terminal_operations_preserve_concurrent_rotation(
+    tmp_path,
+):
+    db = tmp_path / "terminal-rotation.sqlite3"
+    stale = SQLiteCredentialStore(db)
+    current = SQLiteCredentialStore(db)
+    now = int(time.time() * 1000)
+    credential = stale.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="terminal-rotation",
+        material={
+            "access_token": "rotation-access-old",
+            "refresh_token": "rotation-refresh-old",
+        },
+        expires_at_ms=now + 10_000,
+    )
+    account_id = credential["account_id"]
+    assert stale.claim_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="stale-owner",
+        lease_duration_ms=10_000,
+    )["status"] == "acquired"
+    rotated = current.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="terminal-rotation",
+        account_id=account_id,
+        material={
+            "access_token": "rotation-access-current",
+            "refresh_token": "rotation-refresh-current",
+        },
+        expires_at_ms=now + 20_000,
+    )
+
+    completed = stale.complete_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="stale-owner",
+        material={
+            "access_token": "rotation-access-stale",
+            "refresh_token": "rotation-refresh-stale",
+        },
+        expires_at_ms=now + 30_000,
+    )
+    failed = stale.fail_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="stale-owner",
+        failure_class="definitive",
+        failure_code="invalid_grant",
+    )
+
+    assert rotated["secret_version"] == 2
+    assert completed == {"status": "claim_lost"}
+    assert failed is False
+    assert _stored_oauth_material(current, account_id) == {
+        "access_token": "rotation-access-current",
+        "refresh_token": "rotation-refresh-current",
+    }
+    assert current.inspect_refresh_state(account_id) == {"status": "idle"}
+
+
+@pytest.mark.parametrize("terminal", ["complete", "definitive"])
+def test_refresh_terminal_transition_holds_write_ownership(
+    tmp_path,
+    monkeypatch,
+    terminal,
+):
+    import breadboard_engine.provider_broker.store as store_module
+
+    db = tmp_path / f"terminal-lock-{terminal}.sqlite3"
+    stale = SQLiteCredentialStore(db)
+    current = SQLiteCredentialStore(db)
+    now = store_module.now_ms()
+    credential = stale.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label=f"terminal-lock-{terminal}",
+        material={
+            "access_token": "terminal-lock-access-old",
+            "refresh_token": "terminal-lock-refresh-old",
+        },
+        expires_at_ms=now + 10_000,
+    )
+    account_id = credential["account_id"]
+    assert stale.claim_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="terminal-owner",
+        lease_duration_ms=10_000,
+    )["status"] == "acquired"
+
+    terminal_entered = threading.Event()
+    release_terminal = threading.Event()
+    rotation_started = threading.Event()
+    rotation_done = threading.Event()
+    terminal_results = []
+    rotation_results = []
+    terminal_errors = []
+    rotation_errors = []
+    terminal_thread = None
+    original_now_ms = store_module.now_ms
+
+    def controlled_now_ms():
+        if threading.current_thread() is terminal_thread:
+            terminal_entered.set()
+            assert release_terminal.wait(2)
+        return original_now_ms()
+
+    monkeypatch.setattr(store_module, "now_ms", controlled_now_ms)
+
+    def apply_terminal():
+        try:
+            if terminal == "complete":
+                terminal_results.append(
+                    stale.complete_oauth_refresh(
+                        account_id=account_id,
+                        expected_secret_version=1,
+                        owner_id="terminal-owner",
+                        material={
+                            "access_token": "terminal-lock-access-refreshed",
+                            "refresh_token": "terminal-lock-refresh-refreshed",
+                        },
+                        expires_at_ms=now + 20_000,
+                    )
+                )
+            else:
+                terminal_results.append(
+                    stale.fail_oauth_refresh(
+                        account_id=account_id,
+                        expected_secret_version=1,
+                        owner_id="terminal-owner",
+                        failure_class="definitive",
+                        failure_code="invalid_grant",
+                    )
+                )
+        except BaseException as error:
+            terminal_errors.append(error)
+
+    def rotate():
+        rotation_started.set()
+        try:
+            with current.atomic():
+                rotation_results.append(
+                    current.put_oauth(
+                        provider_id="anthropic",
+                        auth_scheme_id="oauth2",
+                        label=f"terminal-lock-{terminal}",
+                        account_id=account_id,
+                        material={
+                            "access_token": "terminal-lock-access-current",
+                            "refresh_token": "terminal-lock-refresh-current",
+                        },
+                        expires_at_ms=now + 30_000,
+                    )
+                )
+        except BaseException as error:
+            rotation_errors.append(error)
+        finally:
+            rotation_done.set()
+
+    terminal_thread = threading.Thread(target=apply_terminal)
+    rotation_thread = threading.Thread(target=rotate)
+    terminal_thread.start()
+    assert terminal_entered.wait(2)
+    rotation_thread.start()
+    assert rotation_started.wait(2)
+    assert not rotation_done.wait(0.1)
+    release_terminal.set()
+    terminal_thread.join(2)
+    rotation_thread.join(2)
+
+    assert not terminal_errors
+    assert not terminal_thread.is_alive()
+    assert not rotation_thread.is_alive()
+    if terminal == "complete":
+        assert terminal_results[0]["status"] == "completed"
+        assert rotation_errors == []
+        assert rotation_results[0]["secret_version"] == 3
+        assert _stored_oauth_material(current, account_id) == {
+            "access_token": "terminal-lock-access-current",
+            "refresh_token": "terminal-lock-refresh-current",
+        }
+    else:
+        assert terminal_results == [True]
+        assert rotation_results == []
+        assert len(rotation_errors) == 1
+        assert isinstance(rotation_errors[0], ValueError)
+        with current._transaction() as connection:
+            account = connection.execute(
+                "SELECT status FROM accounts WHERE account_id = ?",
+                (account_id,),
+            ).fetchone()
+            secret_count = connection.execute(
+                "SELECT COUNT(*) FROM secrets WHERE account_id = ?",
+                (account_id,),
+            ).fetchone()[0]
+        assert account["status"] == "revoked"
+        assert secret_count == 0
 
 
 def test_stale_refresh_owner_is_recovered_after_restart(

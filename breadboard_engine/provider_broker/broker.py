@@ -742,36 +742,43 @@ class ProviderBroker:
             except (TypeError, ValueError):
                 expires_at_ms = None
         account_id = self._value(payload, "accountId", "account_id")
-        material = {"api_key": api_key.strip(), "headers": headers}
-        if base_url:
-            material["base_url"] = str(base_url)
-        if isinstance(routing, Mapping) and routing:
-            material["routing"] = dict(routing)
-        try:
-            with self.store.atomic():
-                view = self.store.put_api_key(
-                    provider_id=provider_id,
-                    auth_scheme_id=auth_scheme,
-                    label=label,
-                    alias=alias,
-                    account_id=str(account_id) if account_id else None,
-                    expires_at_ms=(
-                        int(expires_at_ms) if expires_at_ms is not None else None
-                    ),
-                    metadata=metadata if isinstance(metadata, Mapping) else {},
-                    material=material,
-                    source="login",
-                )
-                self._emit(
-                    "credential_stored",
-                    provider_id=provider_id,
-                    account_id=view["account_id"],
-                    credential_id=view["credential_id"],
-                    secret_version=view["secret_version"],
-                )
-        finally:
-            self._clear_mutable_material(material)
-        return dict(view)
+        secret_value = api_key.strip()
+        metadata_value = dict(metadata) if isinstance(metadata, Mapping) else {}
+        with redaction.secret_value_scope(secret_value):
+            scrubbed_metadata, _ = redaction.scrub_structure(
+                metadata_value,
+                path="$.metadata",
+            )
+            material = {"api_key": secret_value, "headers": headers}
+            if base_url:
+                material["base_url"] = str(base_url)
+            if isinstance(routing, Mapping) and routing:
+                material["routing"] = dict(routing)
+            try:
+                with self.store.atomic():
+                    view = self.store.put_api_key(
+                        provider_id=provider_id,
+                        auth_scheme_id=auth_scheme,
+                        label=label,
+                        alias=alias,
+                        account_id=str(account_id) if account_id else None,
+                        expires_at_ms=(
+                            int(expires_at_ms) if expires_at_ms is not None else None
+                        ),
+                        metadata=scrubbed_metadata,
+                        material=material,
+                        source="login",
+                    )
+                    self._emit(
+                        "credential_stored",
+                        provider_id=provider_id,
+                        account_id=view["account_id"],
+                        credential_id=view["credential_id"],
+                        secret_version=view["secret_version"],
+                    )
+            finally:
+                self._clear_mutable_material(material)
+            return dict(view)
 
     def logout(self, input: Any = None, **kwargs: Any) -> dict[str, Any]:
         payload = input if input is not None else kwargs
