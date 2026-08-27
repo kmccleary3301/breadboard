@@ -14,6 +14,7 @@ The engine `main` branch does not contain the accepted D6 product/runtime tree. 
 
 - Product CLI/runtime, engine session state and CLI bridge, provider/runtime boundaries, security isolation, SDK/contracts, and their tests.
 - Subsequent bounded Ray environment controls, error-only Ray logging, and durable replay-head behavior.
+- CI repair decision: retain the accepted camelCase provider-usage wire object under a narrow `snake_case_property_names` convention exemption; all other V2 contract rules remain active.
 - Danger-zone: yes.
 - Outside scope: later SDK credential hardening, typed public-operation seams, TUI integration, RL amendment closure, and release publication.
 
@@ -37,6 +38,7 @@ The engine `main` branch does not contain the accepted D6 product/runtime tree. 
 - Acceptance criteria:
   - generated SDK and public manifests are current at the PR head;
   - bounded runtime controls and durable replay semantics remain intact;
+  - the primitive registry census and deterministic E4 pilot lock include the active provider-exchange V2 contract;
   - installed product restart/readback remains source-independent;
   - the PR is explicitly treated as a compatibility break rather than silently labelled non-breaking.
 

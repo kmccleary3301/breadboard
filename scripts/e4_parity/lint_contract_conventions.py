@@ -31,6 +31,7 @@ ROOT_RULES = {
     "schema_version_const",
     "pack_totality",
     "schema_census",
+    "snake_case_property_names",
 }
 
 
@@ -99,7 +100,8 @@ def _is_exempt(rel_path: str, rule: str, allowlist: Mapping[str, frozenset[str]]
 
 
 def _is_legacy_allowlisted(rel_path: str, allowlist: Mapping[str, frozenset[str]]) -> bool:
-    return rel_path in allowlist
+    major_version = _schema_major_version(Path(rel_path).name)
+    return rel_path in allowlist and major_version is not None and major_version < 2
 
 
 def _contract_name(filename: str) -> str | None:
@@ -546,7 +548,9 @@ def lint_schema(
     diagnostics.extend(_rule_nullable_fields(rel_path, payload))
     diagnostics.extend(_rule_visibility_fields(rel_path, payload))
     if _uses_new_kernel_dialect(schema_path, rel_path, allowlist):
-        diagnostics.extend(_rule_closed_object_property_names(rel_path, payload))
+        for diagnostic in _rule_closed_object_property_names(rel_path, payload):
+            if not _is_exempt(rel_path, diagnostic.rule, allowlist):
+                diagnostics.append(diagnostic)
         diagnostics.extend(_rule_at_utc_timestamp_refs(rel_path, payload))
     return diagnostics
 

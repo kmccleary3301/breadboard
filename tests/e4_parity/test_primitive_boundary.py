@@ -35,6 +35,7 @@ EXPECTED_SCHEMA_VERSIONS = {
     "bb.blob_ref.v1",
     "bb.external_protocol_session.v1",
     "bb.provider_route.v1",
+    "bb.provider_exchange.v2",
     "bb.memory_compaction_plan.v1",
     "bb.transcript_continuation_patch.v1",
     "bb.work_item.v1",

@@ -125,6 +125,7 @@ def _write_allowlist(repo_root: Path, entries: list[dict[str, Any]] | None = Non
                 "canonical_absolute_id",
                 "strict_root_additional_properties",
                 "schema_version_const",
+                "snake_case_property_names",
             ],
             "entries": entries or [],
         },
@@ -361,6 +362,26 @@ def test_synthetic_new_v2_schema_enforces_closed_property_names_and_at_utc_refs(
     _write_schema(tmp_path, "bb.test_item.v2.schema.json", payload)
 
     assert _rules(tmp_path) == ["snake_case_property_names", "timestamp_utc_ref"]
+
+
+def test_v2_allowlist_exempts_only_the_named_property_rule(tmp_path: Path) -> None:
+    schema_rel = "contracts/kernel/schemas/bb.test_item.v2.schema.json"
+    _write_allowlist(
+        tmp_path,
+        [
+            {
+                "path": schema_rel,
+                "exemptions": ["snake_case_property_names"],
+                "source": "test",
+                "reason": "unit-test fixture",
+            }
+        ],
+    )
+    payload = _schema("bb.test_item.v2.schema.json")
+    payload["properties"]["camelCase"] = {"type": "string"}
+    _write_schema(tmp_path, "bb.test_item.v2.schema.json", payload)
+
+    assert lint_contract_conventions(repo_root=tmp_path) == []
 
 
 @pytest.mark.parametrize(
