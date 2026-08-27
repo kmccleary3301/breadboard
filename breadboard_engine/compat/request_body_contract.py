@@ -184,6 +184,35 @@ def _apply_compat_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
+def _normalize_compat_workspace_paths(
+    value: Any,
+    *,
+    resolved_root: str,
+    declared_root: str,
+) -> Any:
+    if isinstance(value, str):
+        return value.replace(resolved_root, declared_root)
+    if isinstance(value, list):
+        return [
+            _normalize_compat_workspace_paths(
+                item,
+                resolved_root=resolved_root,
+                declared_root=declared_root,
+            )
+            for item in value
+        ]
+    if isinstance(value, dict):
+        return {
+            key: _normalize_compat_workspace_paths(
+                item,
+                resolved_root=resolved_root,
+                declared_root=declared_root,
+            )
+            for key, item in value.items()
+        }
+    return value
+
+
 def capture_request_body(
     *,
     config_path: str,
@@ -228,7 +257,20 @@ def capture_request_body(
                 "turn_id": "compat-turn",
             },
         )
-    return store.last()
+    captured = store.last()
+    declared_root = str(workspace_root.absolute())
+    resolved_root = str(workspace_root.resolve())
+    if declared_root == resolved_root:
+        return captured
+    return CapturedRequest(
+        provider_id=captured.provider_id,
+        runtime_id=captured.runtime_id,
+        payload=_normalize_compat_workspace_paths(
+            captured.payload,
+            resolved_root=resolved_root,
+            declared_root=declared_root,
+        ),
+    )
 
 
 def default_request_body_cases() -> Iterable[Dict[str, Any]]:
