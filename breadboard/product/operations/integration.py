@@ -34,9 +34,12 @@ _GET_COMMAND = ("integration", "get")
 
 
 def _catalog() -> Any:
-    from breadboard.product.integrations import IntegrationCatalog
+    from breadboard.product.integrations import (
+        IntegrationCatalog,
+        internal_capture_adapters,
+    )
 
-    return IntegrationCatalog()
+    return IntegrationCatalog(internal_capture_adapters())
 
 
 def _record(value: Any) -> Any:

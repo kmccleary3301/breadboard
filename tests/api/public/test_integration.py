@@ -210,3 +210,37 @@ def test_integration_list_get_and_async_probe(monkeypatch, tmp_path: Path) -> No
             "next_action": "breadboard integration list",
         }
     ]
+
+
+def test_default_catalog_exposes_provider_free_capture_adapters(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
+    monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    client = TestClient(create_app(include_atp_routes=False))
+
+    listing = client.get("/v1/integrations")
+    assert listing.status_code == 200
+    assert [
+        row["integration_id"] for row in listing.json()["data"]["integrations"]
+    ] == ["capture:json", "capture:memory"]
+
+    fetched = client.get("/v1/integrations/capture%3Amemory")
+    assert fetched.status_code == 200
+    assert fetched.json()["data"]["integration"]["implementation_id"] == (
+        "breadboard.memory"
+    )
+
+    probed = client.post(
+        "/v1/integrations/capture%3Amemory/probe",
+        headers={"Idempotency-Key": "probe-default-capture-memory"},
+    )
+    assert probed.status_code == 202
+    report = probed.json()["data"]["probe"]
+    assert report["integration_id"] == "capture:memory"
+    assert report["status"] == "available"
+    assert report["effects"] == ["record"]
+    assert report["permissions"] == ["capture.write"]
