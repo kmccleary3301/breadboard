@@ -266,9 +266,8 @@ class LSPServer:
         if not command:
             return None
         try:
-            if os.environ.get("LSP_USE_CONTAINERS", "0") == "0":
-                target = command
-            else:
+            use_container = os.environ.get("LSP_USE_CONTAINERS", "0") != "0"
+            if use_container:
                 target = [
                     "docker",
                     "run",
@@ -281,17 +280,26 @@ class LSPServer:
                     self.container_image,
                     *command,
                 ]
+            else:
+                target = command
             child_environment = build_child_environment()
-            isolated_command, child_environment = (
-                build_restricted_process_command(
-                    target,
-                    workspace=self.workspace_root,
-                    working_directory=self.workspace_root,
-                    shell=False,
-                    environment=child_environment,
+            if use_container:
+                validate_workspace_credential_boundary(
+                    self.workspace_root,
                     protected_paths=self._protected_paths,
                 )
-            )
+                isolated_command = tuple(target)
+            else:
+                isolated_command, child_environment = (
+                    build_restricted_process_command(
+                        target,
+                        workspace=self.workspace_root,
+                        working_directory=self.workspace_root,
+                        shell=False,
+                        environment=child_environment,
+                        protected_paths=self._protected_paths,
+                    )
+                )
             return subprocess.Popen(
                 isolated_command,
                 cwd=self.workspace_root,

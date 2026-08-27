@@ -7,6 +7,13 @@ import { join } from "node:path"
 
 import { GENERATED_SCHEMAS, GENERATED_SCHEMA_IDS_BY_PACK, GENERATED_SCHEMAS_BY_PACK, PACKS } from "../src/generated/index.js"
 import { GENERATED_SCHEMAS as INTERNAL_GENERATED_SCHEMAS } from "../src/generated/internal-registry.js"
+import type { ProviderReplayPayload } from "../src/generated/types/bb.provider_exchange.v2.js"
+
+const scalarReplayPayload = {
+  encrypted_content: "encrypted",
+  signature: "signed",
+  redacted_data: "redacted",
+} satisfies ProviderReplayPayload
 
 function loadJson(relPath: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(process.cwd(), relPath), "utf8")) as Record<string, unknown>
@@ -52,6 +59,10 @@ const INTERNAL_SCHEMA_FILES: Record<string, true> = {
   "bb.e4.lane_manifest.v2.schema.json": true,
 }
 
+
+test("generated replay payload accepts schema-valid scalar values", () => {
+  assert.equal(scalarReplayPayload.encrypted_content, "encrypted")
+})
 
 test("generated registry and type files cover every kernel schema", () => {
   const schemaFiles = readdirSync(join(process.cwd(), "../../contracts/kernel/schemas"))

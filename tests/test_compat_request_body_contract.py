@@ -3,7 +3,7 @@ from breadboard_engine.compat.request_body_contract import (
 )
 
 
-def test_compat_workspace_paths_use_declared_root() -> None:
+def test_compat_workspace_paths_normalize_only_path_values() -> None:
     payload = {
         "instructions": "run in /private/tmp/bb_compat/opencode",
         "nested": ["/private/tmp/bb_compat/opencode/file.txt", 3],
@@ -14,6 +14,6 @@ def test_compat_workspace_paths_use_declared_root() -> None:
         resolved_root="/private/tmp/bb_compat",
         declared_root="/tmp/bb_compat",
     ) == {
-        "instructions": "run in /tmp/bb_compat/opencode",
+        "instructions": "run in /private/tmp/bb_compat/opencode",
         "nested": ["/tmp/bb_compat/opencode/file.txt", 3],
     }

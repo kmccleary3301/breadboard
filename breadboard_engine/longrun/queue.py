@@ -274,6 +274,8 @@ class FeatureFileQueue:
             raise
         except Exception:
             raw = {}
+        if not isinstance(raw, dict):
+            raw = {}
         items = raw.get("items")
         if not isinstance(items, list):
             items = []

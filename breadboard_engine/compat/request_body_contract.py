@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -191,7 +192,9 @@ def _normalize_compat_workspace_paths(
     declared_root: str,
 ) -> Any:
     if isinstance(value, str):
-        return value.replace(resolved_root, declared_root)
+        if value == resolved_root or value.startswith(f"{resolved_root}{os.sep}"):
+            return declared_root + value[len(resolved_root) :]
+        return value
     if isinstance(value, list):
         return [
             _normalize_compat_workspace_paths(
