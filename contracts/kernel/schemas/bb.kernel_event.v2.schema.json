@@ -34,6 +34,10 @@
       "type": "string",
       "minLength": 1
     },
+    "input_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "turn_id": {
       "type": "string",
       "minLength": 1
