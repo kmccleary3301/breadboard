@@ -6,8 +6,10 @@ import hashlib
 import json
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from breadboard.product.operations.model import portable_ref
 
 
 def _copy(value: Any, *, freeze: bool) -> Any:
@@ -26,8 +28,17 @@ def _copy(value: Any, *, freeze: bool) -> Any:
 def canonical_json_bytes(value: Any) -> bytes:
     """Return the frozen graph records' canonical UTF-8 encoding."""
     plain = _copy(value, freeze=False)
-    text = json.dumps(plain, allow_nan=False, ensure_ascii=False, indent=2,
-                      separators=(",", ": "), sort_keys=True) + "\n"
+    text = (
+        json.dumps(
+            plain,
+            allow_nan=False,
+            ensure_ascii=False,
+            indent=2,
+            separators=(",", ": "),
+            sort_keys=True,
+        )
+        + "\n"
+    )
     return text.encode("utf-8")
 
 
@@ -73,4 +84,44 @@ class _FrozenRecord(Mapping[str, Any]):
 
 class EffectiveHarnessLock(_FrozenRecord):
     """Recursively immutable ``bb.effective_config_graph.v1`` record."""
+
     __slots__ = ()
+
+
+def lock_path(path: str | Path, out: str | Path | None = None) -> Path:
+    """Return the effective lock path for a harness source."""
+    source = path if isinstance(path, Path) else Path(path)
+    if out:
+        target = Path(out).expanduser()
+        return (
+            target
+            if target.is_file() or target.suffix == ".json"
+            else target / f"{source.stem}.lock.json"
+        )
+    return source.with_name(source.stem + ".lock.json")
+
+
+def lock_metadata_path(path: str | Path) -> Path:
+    """Return the sidecar metadata path for an effective lock."""
+    source = path if isinstance(path, Path) else Path(path)
+    return source.with_name("." + source.name + ".meta.json")
+
+
+def load_lock(
+    path: str | Path,
+    workspace: str | Path,
+    *,
+    explicit: bool = False,
+) -> tuple[EffectiveHarnessLock, Path]:
+    """Load an effective lock and require its metadata sidecar."""
+    source = path if isinstance(path, Path) else Path(path)
+    root = workspace if isinstance(workspace, Path) else Path(workspace)
+    target = (
+        source if explicit or source.name.endswith(".lock.json") else lock_path(source)
+    )
+    if not target.exists():
+        raise FileNotFoundError(f"lock is missing: {portable_ref(target, root)}")
+    metadata = lock_metadata_path(target)
+    if not metadata.exists():
+        raise ValueError("lock metadata is missing; lock must be regenerated")
+    return EffectiveHarnessLock._from_record(json.loads(target.read_text())), metadata

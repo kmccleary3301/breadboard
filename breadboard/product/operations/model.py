@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import sysconfig
+
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 EXIT_OK = 0
 EXIT_VALIDATION_FAILURE = 2
@@ -11,11 +13,63 @@ EXIT_RUNTIME_FAILURE = 4
 EXIT_LOCK_DRIFT = 5
 EXIT_BLOCKED = 6
 
+WorkspacePathPolicy = Literal["explicit-local", "contained-public"]
+
+
+def _source_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _installed_data_root() -> Path:
+    return Path(sysconfig.get_path("data"))
+
 
 @dataclass(frozen=True, slots=True)
 class OperationContext:
     workspace: Path
+    path_policy: WorkspacePathPolicy = "explicit-local"
+    reference_root: Path = field(default_factory=Path.cwd)
+    protected_roots: tuple[Path, ...] = ()
+    capabilities: frozenset[str] = frozenset()
     enabled_extensions: frozenset[str] = frozenset()
+    source_root: Path = field(default_factory=_source_root)
+    installed_data_root: Path = field(default_factory=_installed_data_root)
+
+    @property
+    def contained(self) -> bool:
+        return self.path_policy == "contained-public"
+
+    def resolve_path(self, reference: str | Path) -> Path:
+        if self.path_policy == "explicit-local":
+            candidate = Path(reference).expanduser()
+            if not candidate.is_absolute():
+                candidate = self.reference_root / candidate
+            return candidate.resolve()
+
+        relative = Path(reference)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("resource identifier must be workspace-relative")
+        candidate = self.workspace.joinpath(relative)
+        if any(
+            self.workspace.joinpath(*relative.parts[:index]).is_symlink()
+            for index in range(1, len(relative.parts) + 1)
+        ):
+            raise ValueError("resource identifier cannot traverse a symlink")
+        resolved = candidate.resolve()
+        if not resolved.is_relative_to(self.workspace) or any(
+            resolved == root or resolved.is_relative_to(root)
+            for root in self.protected_roots
+        ):
+            raise PermissionError(
+                "public operations cannot address maintainer evidence trees"
+            )
+        return resolved
+
+    def installed_resource(self, relative: str | Path) -> Path:
+        source_path = self.source_root / relative
+        if source_path.exists():
+            return source_path
+        return self.installed_data_root / relative
 
 
 def portable_ref(
