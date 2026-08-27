@@ -1,11 +1,13 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
-// openapi-schema-sha256: d776432f53d774d2179a721069a5c6867698712efbd059f0b2be5beb7e334a37
+// openapi-schema-sha256: ee4d456857db160e368f1722979f4a02e0453dded37dd9e8d7c5edc92e3c1ab5
 // app-source-sha256: 5bf6ab6afb45db20956f24cfdd816f51f7229eb8b6a9bbdbee2ee1f63191174c
 
 export interface AuthActionResponse { "detail"?: { [key: string]: unknown; } | null; "ok": boolean; }
 
-export interface AuthCredentialView { "account_id": string; "alias"?: string | null; "auth_scheme_id": string; "created_at_ms": number; "credential_id": string; "credential_kind"?: string; "expires_at_ms"?: number | null; "has_api_key"?: boolean; "label": string; "metadata"?: { [key: string]: unknown; }; "provider_id": string; "refresh_state"?: { [key: string]: unknown; }; "secret_version": number; "source"?: string; "status": string; "updated_at_ms": number; }
+export interface AuthCredentialRefreshState { "expected_secret_version"?: number | null; "last_failure_at_ms"?: number | null; "last_failure_class"?: string | null; "last_failure_code"?: string | null; "lease_acquired_at_ms"?: number | null; "lease_expires_at_ms"?: number | null; "retry_not_before_ms"?: number | null; "status": string; "updated_at_ms"?: number | null; }
+
+export interface AuthCredentialView { "account_id": string; "alias"?: string | null; "auth_scheme_id": string; "created_at_ms": number; "credential_id": string; "credential_kind"?: string; "expires_at_ms"?: number | null; "has_api_key"?: boolean; "label": string; "metadata"?: { [key: string]: unknown; }; "provider_id": string; "refresh_state"?: AuthCredentialRefreshState; "secret_version": number; "source"?: string; "status": string; "updated_at_ms": number; }
 
 export interface AuthLoginSession { "authorization_url"?: string | null; "created_at_ms"?: number | null; "credential"?: AuthCredentialView | null; "expires_at_ms"?: number | null; "flow_id"?: string | null; "flow_kind"?: string | null; "instructions"?: string | null; "login_session_id": string; "problem"?: { [key: string]: unknown; } | null; "provider_id": string; "redirect_uri"?: string | null; "status": string; "updated_at_ms"?: number | null; "user_code"?: string | null; }
 

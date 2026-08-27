@@ -61,10 +61,13 @@ def test_auth_routes_are_typed_and_never_return_secret(tmp_path, monkeypatch, ca
     assert stored.status_code == 200
     credential = stored.json()
     assert credential["provider_id"] == "openai"
+    assert credential["refresh_state"]["status"] == "idle"
+    assert credential["refresh_state"]["retry_not_before_ms"] is None
     assert secret not in stored.text
 
     listed = client.get("/v1/auth/credentials", params={"provider_id": "openai"})
     assert listed.status_code == 200
+    assert listed.json()[0]["refresh_state"]["status"] == "idle"
     assert secret not in listed.text
 
     role = client.post(

@@ -310,14 +310,14 @@ export interface ProviderAuthStatusResponse { readonly attached?: ReadonlyArray<
 export interface AuthProviderView { readonly provider_id: string; readonly aliases: ReadonlyArray<string>; readonly display_name: string; readonly support_tier: "core"; readonly auth_owner: "broker" | "provider"; readonly auth_schemes: ReadonlyArray<string>; readonly available: boolean; readonly availability_reason?: "provider_managed" | "missing_auth" | null; readonly login_available?: boolean; readonly oauth_flows?: ReadonlyArray<string>; readonly model_discovery: "configured_only"; readonly runtime_id?: string | null; readonly compatible_protocol?: string | null; readonly base_url?: string | null }
 export interface AuthCredentialRefreshState {
   readonly status: string
-  readonly expected_secret_version?: number
-  readonly lease_acquired_at_ms?: number
-  readonly lease_expires_at_ms?: number
-  readonly last_failure_class?: string
-  readonly last_failure_code?: string
-  readonly last_failure_at_ms?: number
-  readonly retry_not_before_ms?: number
-  readonly updated_at_ms?: number
+  readonly expected_secret_version?: number | null
+  readonly lease_acquired_at_ms?: number | null
+  readonly lease_expires_at_ms?: number | null
+  readonly last_failure_class?: string | null
+  readonly last_failure_code?: string | null
+  readonly last_failure_at_ms?: number | null
+  readonly retry_not_before_ms?: number | null
+  readonly updated_at_ms?: number | null
 }
 export interface AuthCredentialView {
   readonly account_id: string
