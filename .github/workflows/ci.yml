@@ -23,6 +23,8 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
+      - uses: astral-sh/setup-uv@v6
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
