@@ -4,7 +4,8 @@
   "rules": [
     "canonical_absolute_id",
     "strict_root_additional_properties",
-    "schema_version_const"
+    "schema_version_const",
+    "snake_case_property_names"
   ],
   "entries": [
     {
@@ -102,6 +103,14 @@
       "exemptions": [],
       "source": "docs_tmp/phase_16/dossiers/D2_SCHEMA_CONVENTIONS_MATRIX.md",
       "reason": "Pre-BB-ER v1 contract retained; non-root convention drift remains isolated by this explicit legacy entry while canonical $id is enforced."
+    },
+    {
+      "path": "contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",
+      "exemptions": [
+        "snake_case_property_names"
+      ],
+      "source": "docs/contracts/policies/acr/ACR-20260827-engine-d6-recovery.md",
+      "reason": "The accepted provider usage wire object is already consumed as camelCase by Python and TypeScript session clients; retain that bounded object while all other V2 conventions remain enforced."
     },
     {
       "path": "contracts/kernel/schemas/bb.provider_route.v1.schema.json",
