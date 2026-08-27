@@ -743,8 +743,16 @@ class ProviderBroker:
                 expires_at_ms = None
         account_id = self._value(payload, "accountId", "account_id")
         secret_value = api_key.strip()
+        if len(secret_value) < 4:
+            raise ValueError(
+                "api_key must contain at least four non-whitespace characters"
+            )
         metadata_value = dict(metadata) if isinstance(metadata, Mapping) else {}
         with redaction.secret_value_scope(secret_value):
+            if redaction.contains_registered_secret_mapping_key(metadata_value):
+                raise ValueError(
+                    "metadata keys cannot contain credential material"
+                )
             scrubbed_metadata, _ = redaction.scrub_structure(
                 metadata_value,
                 path="$.metadata",

@@ -236,6 +236,34 @@ def iter_registered_secret_values() -> tuple[str, ...]:
         return tuple(_registered_values)
 
 
+def contains_registered_secret_mapping_key(value: Any) -> bool:
+    """Return whether a nested mapping key contains an active exact secret."""
+    secrets = iter_registered_secret_values()
+    if not secrets:
+        return False
+    seen: set[int] = set()
+
+    def visit(item: Any) -> bool:
+        if isinstance(item, Mapping):
+            identity = id(item)
+            if identity in seen:
+                return False
+            seen.add(identity)
+            return any(
+                any(secret in str(key) for secret in secrets) or visit(child)
+                for key, child in item.items()
+            )
+        if isinstance(item, (list, tuple)):
+            identity = id(item)
+            if identity in seen:
+                return False
+            seen.add(identity)
+            return any(visit(child) for child in item)
+        return False
+
+    return visit(value)
+
+
 def clear_registered_secret_values() -> None:
     """Test hook; production code never clears the registry."""
     with _registry_lock:
