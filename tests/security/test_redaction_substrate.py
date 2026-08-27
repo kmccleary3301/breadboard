@@ -81,6 +81,24 @@ class TestRegisteredValues:
             f"prefix-{secret}-suffix"
         )
 
+    def test_registered_secret_scrubs_mapping_key_and_problem_path(self):
+        secret = "mapping-key-canary-value"
+        with redaction.secret_value_scope(secret):
+            scrubbed, problems = redaction.scrub_structure(
+                {"outer": [{f"prefix-{secret}-suffix": "description"}]}
+            )
+        safe_key = f"prefix-{redaction.REDACTED}-suffix"
+        assert scrubbed == {"outer": [{safe_key: "description"}]}
+        assert problems == [
+            redaction.RedactionProblem(
+                "secret_value",
+                f"$.outer[0].{safe_key}",
+                "secret value scrubbed from mapping key",
+            )
+        ]
+        assert secret not in repr(problems)
+        assert redaction.iter_registered_secret_values() == ()
+
     def test_registered_numeric_secret_scrubs_json_scalar(self):
         secret = "4827"
         with redaction.secret_value_scope(secret):

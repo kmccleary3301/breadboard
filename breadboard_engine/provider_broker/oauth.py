@@ -14,6 +14,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Protocol
 
+from breadboard_engine.security.redaction import MIN_REGISTERED_SECRET_LENGTH
 from .catalog import OAuthFlowSpec
 
 DEFAULT_OAUTH_HTTP_TIMEOUT_SECONDS = 30
@@ -130,6 +131,13 @@ def _jwt_claim(token: str, path: tuple[str, ...]) -> str | None:
         return str(value) if isinstance(value, str) and value else None
     except (ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError):
         return None
+
+
+def _is_valid_oauth_token(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value.strip()) >= MIN_REGISTERED_SECRET_LENGTH
+    )
 
 
 class OAuthFlowAdapter:
@@ -290,14 +298,13 @@ class OAuthFlowAdapter:
         except (TypeError, ValueError):
             expires_seconds = float("nan")
         malformed = (
-            not isinstance(access, str)
-            or not access
+            not _is_valid_oauth_token(access)
             or isinstance(expires, bool)
             or not math.isfinite(expires_seconds)
             or expires_seconds <= 0
             or expires_seconds > 31_536_000
-            or (require_refresh and (not isinstance(refresh, str) or not refresh))
-            or (refresh is not None and not isinstance(refresh, str))
+            or (require_refresh and refresh is None)
+            or (refresh is not None and not _is_valid_oauth_token(refresh))
         )
         if malformed:
             raise OAuthFlowError(
