@@ -460,9 +460,16 @@ class ProviderRouter:
                     if key and value is not None
                 }
             )
-        secret_values: tuple[Any, ...] = ()
+        secret_values: tuple[str, ...] = ()
         if secret_material:
-            secret_values = (api_key, *headers.values())
+            secret_values = redaction.credential_secret_values(
+                {
+                    "api_key": api_key,
+                    "headers": headers,
+                    "base_url": base_url,
+                    "routing": material.get("routing"),
+                }
+            )
         result: dict[str, Any] = {
             "model": actual_model,
             "api_key": api_key,

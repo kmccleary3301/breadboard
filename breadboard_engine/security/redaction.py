@@ -271,6 +271,112 @@ def contains_registered_secret_mapping_key(value: Any) -> bool:
     return visit(value)
 
 
+def credential_secret_values(value: Any) -> tuple[str, ...]:
+    """Extract credential-bearing strings from structured provider material."""
+    values: list[str] = []
+    included: set[str] = set()
+    visited: set[int] = set()
+
+    def add(item: Any) -> None:
+        if not isinstance(item, str):
+            return
+        text = item.strip()
+        if text and text not in included:
+            included.add(text)
+            values.append(text)
+
+    def add_all(item: Any) -> None:
+        if isinstance(item, Mapping):
+            identity = id(item)
+            if identity in visited:
+                return
+            visited.add(identity)
+            for key, child in item.items():
+                add(key)
+                add_all(child)
+        elif isinstance(item, (list, tuple)):
+            identity = id(item)
+            if identity in visited:
+                return
+            visited.add(identity)
+            for child in item:
+                add_all(child)
+        else:
+            add(item)
+
+    def add_header(name: str, item: Any) -> None:
+        normalized = name.strip().lower().replace("-", "_")
+        words = normalized.split("_")
+        if not (
+            is_secret_key(name)
+            or "auth" in words
+            or "authentication" in words
+        ):
+            return
+        add(name)
+        add_all(item)
+        if not isinstance(item, str):
+            return
+        text = item.strip()
+        if normalized in {"authorization", "proxy_authorization"}:
+            _scheme, separator, credential = text.partition(" ")
+            if separator:
+                add(credential)
+        elif normalized in {"cookie", "set_cookie"}:
+            for part in text.split(";"):
+                _cookie_name, separator, credential = part.partition("=")
+                if separator:
+                    add(credential)
+
+    def add_url(item: Any) -> None:
+        if not isinstance(item, str):
+            return
+        try:
+            parsed = urllib.parse.urlsplit(item)
+            if parsed.username:
+                add(urllib.parse.unquote(parsed.username))
+            if parsed.password:
+                add(urllib.parse.unquote(parsed.password))
+            for key, child in urllib.parse.parse_qsl(
+                parsed.query,
+                keep_blank_values=True,
+            ):
+                if is_secret_key(key):
+                    add(child)
+        except (TypeError, ValueError):
+            return
+
+    def visit(item: Any, *, include_sensitive_names: bool) -> None:
+        if isinstance(item, Mapping):
+            identity = id(item)
+            if identity in visited:
+                return
+            visited.add(identity)
+            for key, child in item.items():
+                normalized = str(key).strip().lower().replace("-", "_")
+                if normalized == "headers" and isinstance(child, Mapping):
+                    for header, header_value in child.items():
+                        add_header(str(header), header_value)
+                elif normalized == "base_url":
+                    add_url(child)
+                elif is_secret_key(key):
+                    if include_sensitive_names:
+                        add(str(key))
+                    add_all(child)
+                else:
+                    visit(child, include_sensitive_names=True)
+        elif isinstance(item, (list, tuple)):
+            identity = id(item)
+            if identity in visited:
+                return
+            visited.add(identity)
+            for child in item:
+                visit(child, include_sensitive_names=include_sensitive_names)
+
+    visit(value, include_sensitive_names=False)
+    return tuple(values)
+
+
 def clear_registered_secret_values() -> None:
     """Test hook; production code never clears the registry."""
     with _registry_lock:

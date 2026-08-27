@@ -115,6 +115,45 @@ class TestRegisteredValues:
         ]
         assert redaction.iter_registered_secret_values() == ()
 
+    def test_credential_material_extracts_nested_and_encoded_secrets(self):
+        assert redaction.credential_secret_values(
+            {
+                "api_key": "primary-secret",
+                "headers": {
+                    "Authorization": "Bearer authorization-secret",
+                    "x-api-key": "header-secret",
+                    "Cookie": "sid=cookie-secret",
+                    "Content-Type": "application/json",
+                },
+                "base_url": (
+                    "https://url-user:url-password@example.test/v1"
+                    "?api_key=query-secret"
+                ),
+                "routing": {
+                    "nested": {"refresh_token": "routing-secret"},
+                    "region": "us-east",
+                },
+            }
+        ) == (
+            "primary-secret",
+            "Authorization",
+            "Bearer authorization-secret",
+            "authorization-secret",
+            "x-api-key",
+            "header-secret",
+            "Cookie",
+            "sid=cookie-secret",
+            "cookie-secret",
+            "url-user",
+            "url-password",
+            "query-secret",
+            "refresh_token",
+            "routing-secret",
+        )
+        assert redaction.credential_secret_values(
+            {"headers": {"x-api-key": "abc"}}
+        ) == ("x-api-key", "abc")
+
     def test_short_and_non_string_values_ignored(self):
         with redaction.secret_value_scope("abc", None, 12345):
             assert redaction.iter_registered_secret_values() == ()

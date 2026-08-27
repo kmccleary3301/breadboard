@@ -600,11 +600,7 @@ class ProviderBroker:
                 state=self._value(payload, "state"),
                 is_cancelled=login_is_terminal,
             )
-            oauth_secret_values = tuple(
-                value
-                for key, value in material.items()
-                if redaction.is_secret_key(key) and isinstance(value, str)
-            )
+            oauth_secret_values = redaction.credential_secret_values(material)
             try:
                 with redaction.secret_value_scope(*oauth_secret_values):
                     with self.store.atomic():
@@ -793,41 +789,52 @@ class ProviderBroker:
                 expires_at_ms = None
         account_id = self._value(payload, "accountId", "account_id")
         secret_value = api_key.strip()
-        if len(secret_value) < 4:
+        if len(secret_value) < redaction.MIN_REGISTERED_SECRET_LENGTH:
             raise ValueError(
                 "api_key must contain at least four non-whitespace characters"
             )
         metadata_value = dict(metadata) if isinstance(metadata, Mapping) else {}
-        with redaction.secret_value_scope(secret_value):
-            identity_values = (
-                provider_id,
-                auth_scheme,
-                label,
-                alias,
-                str(account_id) if account_id is not None else "",
-                str(expires_at_ms) if expires_at_ms is not None else "",
-            )
+        material = {"api_key": secret_value, "headers": headers}
+        if base_url:
+            material["base_url"] = str(base_url)
+        if isinstance(routing, Mapping) and routing:
+            material["routing"] = dict(routing)
+        credential_values = redaction.credential_secret_values(material)
+        try:
             if any(
-                redaction.contains_registered_secret_text(value)
-                for value in identity_values
+                len(value) < redaction.MIN_REGISTERED_SECRET_LENGTH
+                for value in credential_values
             ):
                 raise ValueError(
-                    "credential identity fields cannot contain credential material"
+                    (
+                        "credential material values must contain at least four "
+                        "non-whitespace characters"
+                    )
                 )
-            if redaction.contains_registered_secret_mapping_key(metadata_value):
-                raise ValueError(
-                    "metadata keys cannot contain credential material"
+            with redaction.secret_value_scope(*credential_values):
+                identity_values = (
+                    provider_id,
+                    auth_scheme,
+                    label,
+                    alias,
+                    str(account_id) if account_id is not None else "",
+                    str(expires_at_ms) if expires_at_ms is not None else "",
                 )
-            scrubbed_metadata, _ = redaction.scrub_structure(
-                metadata_value,
-                path="$.metadata",
-            )
-            material = {"api_key": secret_value, "headers": headers}
-            if base_url:
-                material["base_url"] = str(base_url)
-            if isinstance(routing, Mapping) and routing:
-                material["routing"] = dict(routing)
-            try:
+                if any(
+                    redaction.contains_registered_secret_text(value)
+                    for value in identity_values
+                ):
+                    raise ValueError(
+                        "credential identity fields cannot contain credential material"
+                    )
+                if redaction.contains_registered_secret_mapping_key(metadata_value):
+                    raise ValueError(
+                        "metadata keys cannot contain credential material"
+                    )
+                scrubbed_metadata, _ = redaction.scrub_structure(
+                    metadata_value,
+                    path="$.metadata",
+                )
                 with self.store.atomic():
                     view = self.store.put_api_key(
                         provider_id=provider_id,
@@ -849,15 +856,15 @@ class ProviderBroker:
                         credential_id=view["credential_id"],
                         secret_version=view["secret_version"],
                     )
-            finally:
-                self._clear_mutable_material(material)
-            scrubbed_view, _ = redaction.scrub_structure(
-                view,
-                path="$.credential",
-            )
-            if not isinstance(scrubbed_view, Mapping):
-                raise RuntimeError("credential store returned an invalid view")
-            return dict(scrubbed_view)
+                scrubbed_view, _ = redaction.scrub_structure(
+                    view,
+                    path="$.credential",
+                )
+                if not isinstance(scrubbed_view, Mapping):
+                    raise RuntimeError("credential store returned an invalid view")
+                return dict(scrubbed_view)
+        finally:
+            self._clear_mutable_material(material)
 
     def logout(self, input: Any = None, **kwargs: Any) -> dict[str, Any]:
         payload = input if input is not None else kwargs
@@ -1128,12 +1135,7 @@ class ProviderBroker:
                     owner_id=owner_id,
                     lease_duration_ms=lease_duration_ms,
                 )
-                refreshed_secret_values = (
-                    refreshed.get("api_key"),
-                    refreshed.get("access_token"),
-                    refreshed.get("refresh_token"),
-                    *dict(refreshed.get("headers") or {}).values(),
-                )
+                refreshed_secret_values = redaction.credential_secret_values(refreshed)
                 with redaction.secret_value_scope(*refreshed_secret_values):
                     refreshed_metadata = {
                         key: stale_material[key]
@@ -1275,12 +1277,7 @@ class ProviderBroker:
             self._clear_mutable_material(material)
             return None
         self.store.release_lease(str(material.get("lease_id") or ""))
-        refresh_secret_values = (
-            material.get("api_key"),
-            material.get("access_token"),
-            material.get("refresh_token"),
-            *dict(material.get("headers") or {}).values(),
-        )
+        refresh_secret_values = redaction.credential_secret_values(material)
         with redaction.secret_value_scope(*refresh_secret_values):
             return self._refresh_stored_material(
                 material,
@@ -1686,14 +1683,7 @@ class ProviderBroker:
             environment=environment,
             minimum_validity_ms=minimum_validity_ms,
         )
-        secret_values: tuple[Any, ...] = ()
-        if isinstance(material, dict):
-            secret_values = (
-                material.get("api_key"),
-                material.get("access_token"),
-                material.get("refresh_token"),
-                *dict(material.get("headers") or {}).values(),
-            )
+        secret_values = redaction.credential_secret_values(material)
         with redaction.secret_value_scope(*secret_values):
             try:
                 yield material

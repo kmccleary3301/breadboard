@@ -134,3 +134,35 @@ test("FastAPI detail produces an actionable API error", async (t) => {
     },
   )
 })
+
+test("structured FastAPI problem detail preserves its code and message", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const problem = {
+    schema_version: "bb.problem.v1",
+    error_code: "model_role_conflict",
+    message: "requested model role conflicts with the effective lock",
+    path: "$.model_roles",
+    details: { role: "planner" },
+  }
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ detail: problem }), {
+      status: 409,
+      headers: { "content-type": "application/json" },
+    })
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+
+  await assert.rejects(
+    () => client.resolveModelRoles({ model_roles: { schema_version: "bb.model_roles.v1" } }),
+    (error) => {
+      assert.ok(error instanceof ApiError)
+      assert.equal(error.status, 409)
+      assert.equal(
+        error.message,
+        "model_role_conflict: requested model role conflicts with the effective lock",
+      )
+      assert.deepEqual(error.body, { detail: problem })
+      return true
+    },
+  )
+})
