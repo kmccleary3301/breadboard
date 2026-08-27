@@ -208,6 +208,7 @@ SECRET_VALUE_PATTERNS: Tuple[re.Pattern[str], ...] = (
 )
 
 MIN_REGISTERED_SECRET_LENGTH = 4
+_MIN_REGISTERED_SECRET_SUBSTRING_LENGTH = 3
 
 _registered_values: ContextVar[tuple[str, ...]] = ContextVar(
     "breadboard_registered_secret_values",
@@ -264,11 +265,20 @@ def iter_registered_secret_values() -> tuple[str, ...]:
     )
 
 
+def _registered_secret_occurs(text: str, secret: str) -> bool:
+    if len(secret) < _MIN_REGISTERED_SECRET_SUBSTRING_LENGTH:
+        return text == secret
+    return secret in text
+
+
 def contains_registered_secret_text(value: Any) -> bool:
     """Return whether text contains an active exact secret."""
     if not isinstance(value, str):
         return False
-    return any(secret in value for secret in iter_registered_secret_values())
+    return any(
+        _registered_secret_occurs(value, secret)
+        for secret in iter_registered_secret_values()
+    )
 
 
 def contains_registered_secret_mapping_key(value: Any) -> bool:
@@ -285,7 +295,11 @@ def contains_registered_secret_mapping_key(value: Any) -> bool:
                 return False
             seen.add(identity)
             return any(
-                any(secret in str(key) for secret in secrets) or visit(child)
+                any(
+                    _registered_secret_occurs(str(key), secret)
+                    for secret in secrets
+                )
+                or visit(child)
                 for key, child in item.items()
             )
         if isinstance(item, (list, tuple)):
@@ -510,7 +524,7 @@ def scrub_text(text: str) -> str:
     if not isinstance(text, str) or not text:
         return text
     for secret in iter_registered_secret_values():
-        if secret in text:
+        if _registered_secret_occurs(text, secret):
             text = text.replace(secret, REDACTED)
     for pattern in SECRET_VALUE_PATTERNS:
         text = pattern.sub(REDACTED, text)

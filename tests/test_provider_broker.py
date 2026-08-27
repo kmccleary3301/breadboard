@@ -201,6 +201,26 @@ def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
     assert broker.store.release_lease(lease_id) is False
 
 
+def test_put_api_key_accepts_one_character_custom_header_value(tmp_path):
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+
+    view = broker.putApiKey(
+        {
+            "provider_id": "anthropic",
+            "account_label": "main",
+            "api_key": "anthropic-primary-secret",
+            "headers": {"X-Custom": "a"},
+        }
+    )
+
+    assert view["provider_id"] == "anthropic"
+    assert view["label"] == "main"
+    with broker.execution_material("anthropic") as material:
+        assert material["headers"] == {"X-Custom": "a"}
+        scrubbed, _ = redaction.scrub_structure(material["headers"])
+        assert scrubbed == {"X-Custom": redaction.REDACTED}
+
+
 def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
     db = tmp_path / "credentials.sqlite3"
     original = ProviderBroker(SQLiteCredentialStore(db))

@@ -241,6 +241,20 @@ class TestRegisteredValues:
             )
         assert redaction.iter_registered_secret_values() == ()
 
+    def test_one_character_secret_matches_only_complete_values(self):
+        with redaction.secret_value_scope("a", allow_short=True):
+            assert redaction.contains_registered_secret_text("a") is True
+            assert redaction.contains_registered_secret_text("anthropic") is False
+            assert redaction.scrub_text("a") == redaction.REDACTED
+            assert redaction.scrub_text("anthropic") == "anthropic"
+            scrubbed, _ = redaction.scrub_structure(
+                {"X-Custom": "a", "label": "anthropic"}
+            )
+            assert scrubbed == {
+                "X-Custom": redaction.REDACTED,
+                "label": "anthropic",
+            }
+
     def test_scopes_are_isolated_between_operation_contexts(self):
         outer_secret = "outer-operation-secret"
         inner_secret = "inner-operation-secret"
