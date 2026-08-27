@@ -15,7 +15,10 @@ import threading
 from pathlib import Path
 from typing import Mapping, Sequence
 if __package__:
-    from .child_environment import initial_provider_credential_keys
+    from .child_environment import (
+        initial_provider_credential_keys,
+        purge_provider_credentials,
+    )
 
 
 
@@ -598,6 +601,7 @@ def build_restricted_process_command(
         pass
 
     child_environment = dict(environment)
+    purge_provider_credentials(child_environment)
     child_environment.update(
         {
             "HOME": str(root),

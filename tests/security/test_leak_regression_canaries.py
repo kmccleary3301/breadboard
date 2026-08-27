@@ -753,6 +753,38 @@ class TestChildEnvironmentBoundary:
                 environment={"PATH": "/usr/bin"},
             )
 
+    def test_restricted_process_command_purges_late_provider_credentials(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        from breadboard_engine.security import process_isolation
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        monkeypatch.setattr(process_isolation.platform, "system", lambda: "Linux")
+        secret = "late-provider-secret"
+
+        _, child_environment = (
+            process_isolation.build_restricted_process_command(
+                ["/usr/bin/true"],
+                workspace=workspace,
+                shell=False,
+                environment={
+                    "PATH": "/usr/bin",
+                    "OPENAI_API_KEY": secret,
+                    "SECRET_ALIAS": secret,
+                    "CUSTOM_RUNTIME_FLAG": "kept",
+                },
+            )
+        )
+
+        assert "OPENAI_API_KEY" not in child_environment
+        assert "SECRET_ALIAS" not in child_environment
+        assert child_environment["CUSTOM_RUNTIME_FLAG"] == "kept"
+        assert child_environment["HOME"] == str(workspace)
+
+
     def test_linux_helper_loads_without_package_context(self) -> None:
         import subprocess
         import sys
