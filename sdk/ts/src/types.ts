@@ -1,3 +1,20 @@
+export interface Problem {
+  readonly schema_version?: "bb.problem.v1"
+  readonly error_code: string
+  readonly message: string
+  readonly record_refs?: ReadonlyArray<string>
+  readonly failed_stage?: string | null
+  readonly hint?: string | null
+  readonly next_actions?: ReadonlyArray<string>
+}
+
+export interface StageOutcome {
+  readonly stage: string
+  readonly status: string
+  readonly report_ref?: string | null
+  readonly next_action?: string | null
+}
+
 export interface PublicResult {
   readonly schema_version: "bb.cli.result.v1"
   readonly ok: boolean
@@ -5,12 +22,41 @@ export interface PublicResult {
   readonly command: ReadonlyArray<string>
   readonly record_refs: ReadonlyArray<string>
   readonly hashes: Readonly<Record<string, string>>
-  readonly stage_outcomes: ReadonlyArray<Readonly<Record<string, unknown>>>
+  readonly stage_outcomes: ReadonlyArray<StageOutcome>
   readonly warnings: ReadonlyArray<string>
   readonly next_actions: ReadonlyArray<string>
-  readonly error: Readonly<Record<string, unknown>> | null
+  readonly error: Problem | null
   readonly exit_code: number
   readonly data: Readonly<Record<string, unknown>>
+}
+
+export interface PublicHarnessCreateRequest {
+  readonly directory?: string
+}
+
+export interface PublicHarnessUpdateRequest {
+  readonly definition: Readonly<Record<string, unknown>>
+}
+
+export interface PublicSessionStartRequest {
+  readonly lock_id: string
+  readonly task: string
+  readonly session_id?: string | null
+}
+
+export interface PublicSessionInputRequest {
+  readonly content: string
+}
+
+export type PublicSessionDecision = "allow" | "deny" | "once" | "always" | "reject"
+
+export interface PublicSessionApprovalRequest {
+  readonly request_id: string
+  readonly decision: PublicSessionDecision
+}
+
+export interface PublicSessionCancelRequest {
+  readonly reason?: string
 }
 
 export type EventType =

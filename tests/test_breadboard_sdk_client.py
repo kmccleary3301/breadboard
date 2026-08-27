@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, get_type_hints
 
 import pytest
 
@@ -11,8 +11,23 @@ from breadboard_sdk.generated.public_bindings import (
 
 import breadboard_sdk
 import breadboard_sdk.client as client_module
+import breadboard_sdk.types as types_module
 from breadboard_sdk.client import BreadBoardClient
 from breadboard_sdk.compat import CompatibilityBreadboardClient
+
+from breadboard_sdk.types import (
+    ArtifactRefV1,
+    Problem,
+    PublicHarnessCreateRequest,
+    PublicHarnessUpdateRequest,
+    PublicResult,
+    PublicSessionApprovalRequest,
+    PublicSessionCancelRequest,
+    PublicSessionDecision,
+    PublicSessionInputRequest,
+    PublicSessionStartRequest,
+    StageOutcome,
+)
 
 
 class _JsonResponse:
@@ -97,6 +112,98 @@ def test_candidate_python_sdk_preserves_public_result_and_idempotency(
         "https://breadboard.test/"
         + artifact_binding.path.format(artifact_id="sha256%3Aabc").lstrip("/")
     )
+
+
+def test_python_sdk_authored_types_and_client_hints_match_public_contract() -> None:
+    assert not hasattr(types_module, "NotRequired")
+    assert ArtifactRefV1.__required_keys__ == {
+        "schema_version",
+        "id",
+        "kind",
+        "mime",
+        "size_bytes",
+        "sha256",
+        "storage",
+        "path",
+    }
+    assert ArtifactRefV1.__optional_keys__ == {"preview"}
+    assert Problem.__required_keys__ == {"error_code", "message"}
+    assert Problem.__optional_keys__ == {
+        "schema_version",
+        "record_refs",
+        "failed_stage",
+        "hint",
+        "next_actions",
+    }
+    assert StageOutcome.__required_keys__ == {"stage", "status"}
+    assert StageOutcome.__optional_keys__ == {"report_ref", "next_action"}
+    assert PublicResult.__required_keys__ == {
+        "schema_version",
+        "ok",
+        "status",
+        "command",
+        "record_refs",
+        "hashes",
+        "stage_outcomes",
+        "warnings",
+        "next_actions",
+        "error",
+        "exit_code",
+        "data",
+    }
+    assert PublicResult.__optional_keys__ == set()
+    assert PublicHarnessCreateRequest.__required_keys__ == set()
+    assert PublicHarnessCreateRequest.__optional_keys__ == {"directory"}
+    assert PublicHarnessUpdateRequest.__required_keys__ == {"definition"}
+    assert PublicHarnessUpdateRequest.__optional_keys__ == set()
+    assert PublicSessionStartRequest.__required_keys__ == {"lock_id", "task"}
+    assert PublicSessionStartRequest.__optional_keys__ == {"session_id"}
+    assert PublicSessionInputRequest.__required_keys__ == {"content"}
+    assert PublicSessionInputRequest.__optional_keys__ == set()
+    assert PublicSessionApprovalRequest.__required_keys__ == {
+        "request_id",
+        "decision",
+    }
+    assert PublicSessionApprovalRequest.__optional_keys__ == set()
+    assert PublicSessionCancelRequest.__required_keys__ == set()
+    assert PublicSessionCancelRequest.__optional_keys__ == {"reason"}
+
+    json_methods = (
+        "describe_system",
+        "health_system",
+        "schemas_system",
+        "create_harness",
+        "list_harness",
+        "get_harness",
+        "update_harness",
+        "validate_harness",
+        "explain_harness",
+        "lock_harness",
+        "get_harness_lock",
+        "list_integration",
+        "get_integration",
+        "probe_integration",
+        "list_artifact",
+        "get_artifact",
+        "verify_artifact",
+        "start_session",
+        "list_session",
+        "get_session",
+        "send_input_session",
+        "approve_session",
+        "resume_session",
+        "cancel_session",
+        "artifacts_session",
+    )
+    assert len(json_methods) == 25
+    assert all(
+        get_type_hints(getattr(BreadBoardClient, name))["return"] is PublicResult
+        for name in json_methods
+    )
+    start_hints = get_type_hints(BreadBoardClient.start_session)
+    assert start_hints["payload"] is PublicSessionStartRequest
+    approval_hints = get_type_hints(BreadBoardClient.approve_session)
+    assert approval_hints["decision"] is PublicSessionDecision
 
 
 def test_candidate_python_sdk_streams_generated_session_events_route(

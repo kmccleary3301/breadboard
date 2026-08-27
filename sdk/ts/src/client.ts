@@ -8,9 +8,11 @@ import type {
   AuthLoginSession, BeginAuthLogin, CompleteAuthLogin, PutApiKeyInput, AuthActionResponse, ModelRolesResolveInput,
   ModelRolesResolveResponse, ReadSessionFileOptions, RegistryList, RLRunArtifactListResponse, RLRunAuditResponse,
   RLRunCancelRequest, RLRunReplayResponse, RLRunStatusResponse, RLRunSubmitRequest, RLRunSubmitResponse,
+  Problem, PublicHarnessCreateRequest, PublicHarnessUpdateRequest, PublicResult, PublicSessionApprovalRequest,
+  PublicSessionCancelRequest, PublicSessionDecision, PublicSessionInputRequest, PublicSessionStartRequest,
   SessionCommandRequest, SessionCommandResponse,
   SessionCreateRequest, SessionCreateResponse, SessionEvent, SessionFileContent, SessionFileInfo, SessionInputRequest,
-  SessionInputResponse, SessionKernelRecordList, SessionSummary, SkillCatalogResponse, PublicResult,
+  SessionInputResponse, SessionKernelRecordList, SessionSummary, SkillCatalogResponse,
 } from "./types.js"
 import {
   PUBLIC_BINDINGS_BY_ACTION_ID,
@@ -18,7 +20,7 @@ import {
   type PublicActionId,
 } from "./generated/public-bindings.js"
 export type { PublicActionId } from "./generated/public-bindings.js"
-type Problem = { readonly error_code: string; readonly message: string }
+type ProblemDetail = Pick<Problem, "error_code" | "message">
 
 export class ApiError extends Error {
   readonly status: number
@@ -53,7 +55,7 @@ const resource = (value: string, label: string): string => {
   if (parts.some((part) => !part || part === "." || part === "..")) throw new Error(`${label} cannot contain empty or dot segments`)
   return parts.map(encodeURIComponent).join("/")
 }
-const isProblem = (value: unknown): value is Problem =>
+const isProblem = (value: unknown): value is ProblemDetail =>
   typeof value === "object"
   && value !== null
   && !Array.isArray(value)
@@ -102,28 +104,96 @@ const request = async <T>(config: BreadboardClientConfig, route: string, method:
 
 export interface BreadboardClient {
   invokePublicAction(actionId: PublicActionId, input?: Readonly<Record<string, unknown>>): Promise<unknown>
-  health(): Promise<HealthResponse>; engineStatus(): Promise<EngineStatusResponse>
-  createSession(payload: SessionCreateRequest): Promise<SessionCreateResponse>; listSessions(): Promise<SessionSummary[]>; getSession(id: string): Promise<SessionSummary>
-  listSessionRecords(id: string, options?: { schemaVersion?: string; offset?: number; limit?: number }): Promise<SessionKernelRecordList>
-  postInput(id: string, body: SessionInputRequest): Promise<SessionInputResponse>; postCommand(id: string, body: SessionCommandRequest): Promise<SessionCommandResponse>; deleteSession(id: string): Promise<void>
-  listSessionFiles(id: string, path?: string): Promise<SessionFileInfo[]>; readSessionFile(id: string, path: string, options?: ReadSessionFileOptions): Promise<SessionFileContent>
-  getModelCatalog(configPath: string): Promise<ModelCatalogResponse>; getSkillsCatalog(id: string): Promise<SkillCatalogResponse>; getCtreeSnapshot(id: string): Promise<CTreeSnapshotResponse>
-  getCtreeTree(id: string, options?: { stage?: string; includePreviews?: boolean; source?: string }): Promise<CTreeTreeResponse>
-  getCtreeDisk(id: string): Promise<CTreeDiskArtifactsResponse>; getCtreeEvents(id: string, options?: { source?: string; offset?: number; limit?: number }): Promise<CTreeEventsResponse>
-  getE4Health(): Promise<E4Health>; listE4Schemas(): Promise<E4SchemaList>; listE4Lanes(options?: Record<string, unknown>): Promise<E4LaneList>; getE4Lane(id: string): Promise<E4LaneDetail>; listE4Claims(options?: Record<string, unknown>): Promise<E4ClaimList>; getE4Claim(id: string): Promise<E4ClaimDetail>; getE4Catalog(options?: Record<string, unknown>): Promise<E4CatalogPage>; getE4CatalogBinding(): Promise<E4CatalogBinding>; getE4LedgerRows(options?: Record<string, unknown>): Promise<E4LedgerRows>; listE4Records(schema: string, options?: Record<string, unknown>): Promise<E4RecordList>; reverifyE4Claim(id: string, body?: E4ReverifyRequest): Promise<E4ReverifyResult>; getE4Coverage(target: string): Promise<E4CoverageMatrix>
-  listRegistries(): Promise<RegistryList>; getRegistry(id: string): Promise<Record<string, unknown>>
-  providerAuthAttach(body: ProviderAuthAttachRequest): Promise<ProviderAuthAttachResponse>; providerAuthDetach(body: ProviderAuthDetachRequest): Promise<ProviderAuthDetachResponse>; providerAuthStatus(): Promise<ProviderAuthStatusResponse>
-  listProviders(): Promise<ReadonlyArray<AuthProviderView>>; listCredentials(providerId?: string): Promise<ReadonlyArray<AuthCredentialView>>
-  beginLogin(input: BeginAuthLogin): Promise<AuthLoginSession>; getLogin(loginSessionId: string): Promise<AuthLoginSession>
-  completeLogin(input: CompleteAuthLogin & { readonly login_session_id: string }): Promise<AuthLoginSession>; cancelLogin(loginSessionId: string): Promise<AuthActionResponse>
-  putApiKey(providerId: string, accountLabel: string, input: PutApiKeyInput): Promise<AuthCredentialView>
-  logout(credentialRef: string): Promise<AuthActionResponse>; revoke(credentialRef: string): Promise<AuthActionResponse>
-  resolveModelRoles(input: ModelRolesResolveInput): Promise<ModelRolesResolveResponse>
-  downloadArtifact(id: string, artifact: string): Promise<string>; uploadAttachments(id: string, attachments: ReadonlyArray<AttachmentUploadPayload>): Promise<AttachmentHandle[]>
+
+  describeSystem(): Promise<PublicResult>
+  healthSystem(): Promise<PublicResult>
+  schemasSystem(): Promise<PublicResult>
+  createHarness(directory?: PublicHarnessCreateRequest["directory"]): Promise<PublicResult>
+  listHarness(): Promise<PublicResult>
+  getHarness(id: string): Promise<PublicResult>
+  updateHarness(id: string, definition: PublicHarnessUpdateRequest["definition"]): Promise<PublicResult>
+  validateHarness(id: string): Promise<PublicResult>
+  explainHarness(id: string): Promise<PublicResult>
+  lockHarness(id: string): Promise<PublicResult>
+  getHarnessLock(id: string): Promise<PublicResult>
+  listIntegration(): Promise<PublicResult>
+  getIntegration(id: string): Promise<PublicResult>
+  probeIntegration(id: string, idempotencyKey?: string): Promise<PublicResult>
+  listArtifact(): Promise<PublicResult>
+  getArtifact(id: string): Promise<PublicResult>
+  verifyArtifact(id: string): Promise<PublicResult>
+  startSession(body: PublicSessionStartRequest, idempotencyKey?: string): Promise<PublicResult>
+  listSession(): Promise<PublicResult>
+  getSession(id: string): Promise<SessionSummary>
+  sendInputSession(id: string, content: PublicSessionInputRequest["content"], idempotencyKey?: string): Promise<PublicResult>
+  approveSession(id: string, requestId: PublicSessionApprovalRequest["request_id"], decision: PublicSessionDecision, idempotencyKey?: string): Promise<PublicResult>
+  resumeSession(id: string, idempotencyKey?: string): Promise<PublicResult>
+  cancelSession(id: string, reason?: PublicSessionCancelRequest["reason"], idempotencyKey?: string): Promise<PublicResult>
   eventsSession(id: string, options?: Omit<EventStreamOptions, "config">): AsyncGenerator<SessionEvent, void, void>
+  artifactsSession(id: string): Promise<PublicResult>
+
+  health(): Promise<HealthResponse>
+  engineStatus(): Promise<EngineStatusResponse>
+  createSession(payload: SessionCreateRequest): Promise<SessionCreateResponse>
+  listSessions(): Promise<SessionSummary[]>
+  listSessionRecords(id: string, options?: { schemaVersion?: string; offset?: number; limit?: number }): Promise<SessionKernelRecordList>
+  postInput(id: string, body: SessionInputRequest): Promise<SessionInputResponse>
+  postCommand(id: string, body: SessionCommandRequest): Promise<SessionCommandResponse>
+  deleteSession(id: string): Promise<void>
+  listSessionFiles(id: string, path?: string): Promise<SessionFileInfo[]>
+  readSessionFile(id: string, path: string, options?: ReadSessionFileOptions): Promise<SessionFileContent>
+  getModelCatalog(configPath: string): Promise<ModelCatalogResponse>
+  getSkillsCatalog(id: string): Promise<SkillCatalogResponse>
+  getCtreeSnapshot(id: string): Promise<CTreeSnapshotResponse>
+  getCtreeTree(id: string, options?: { stage?: string; includePreviews?: boolean; source?: string }): Promise<CTreeTreeResponse>
+  getCtreeDisk(id: string): Promise<CTreeDiskArtifactsResponse>
+  getCtreeEvents(id: string, options?: { source?: string; offset?: number; limit?: number }): Promise<CTreeEventsResponse>
+  getE4Health(): Promise<E4Health>
+  listE4Schemas(): Promise<E4SchemaList>
+  listE4Lanes(options?: Record<string, unknown>): Promise<E4LaneList>
+  getE4Lane(id: string): Promise<E4LaneDetail>
+  listE4Claims(options?: Record<string, unknown>): Promise<E4ClaimList>
+  getE4Claim(id: string): Promise<E4ClaimDetail>
+  getE4Catalog(options?: Record<string, unknown>): Promise<E4CatalogPage>
+  getE4CatalogBinding(): Promise<E4CatalogBinding>
+  getE4LedgerRows(options?: Record<string, unknown>): Promise<E4LedgerRows>
+  listE4Records(schema: string, options?: Record<string, unknown>): Promise<E4RecordList>
+  reverifyE4Claim(id: string, body?: E4ReverifyRequest): Promise<E4ReverifyResult>
+  getE4Coverage(target: string): Promise<E4CoverageMatrix>
+  listRegistries(): Promise<RegistryList>
+  getRegistry(id: string): Promise<Record<string, unknown>>
+  providerAuthAttach(body: ProviderAuthAttachRequest): Promise<ProviderAuthAttachResponse>
+  providerAuthDetach(body: ProviderAuthDetachRequest): Promise<ProviderAuthDetachResponse>
+  providerAuthStatus(): Promise<ProviderAuthStatusResponse>
+  listProviders(): Promise<ReadonlyArray<AuthProviderView>>
+  listCredentials(providerId?: string): Promise<ReadonlyArray<AuthCredentialView>>
+  beginLogin(input: BeginAuthLogin): Promise<AuthLoginSession>
+  getLogin(loginSessionId: string): Promise<AuthLoginSession>
+  completeLogin(input: CompleteAuthLogin & { readonly login_session_id: string }): Promise<AuthLoginSession>
+  cancelLogin(loginSessionId: string): Promise<AuthActionResponse>
+  putApiKey(providerId: string, accountLabel: string, input: PutApiKeyInput): Promise<AuthCredentialView>
+  logout(credentialRef: string): Promise<AuthActionResponse>
+  revoke(credentialRef: string): Promise<AuthActionResponse>
+  resolveModelRoles(input: ModelRolesResolveInput): Promise<ModelRolesResolveResponse>
+  downloadArtifact(id: string, artifact: string): Promise<string>
+  uploadAttachments(id: string, attachments: ReadonlyArray<AttachmentUploadPayload>): Promise<AttachmentHandle[]>
 }
 
-const action = (config: BreadboardClientConfig, id: PublicActionId, input: Readonly<Record<string, unknown>> = {}): Promise<unknown> => {
+type PublicActionResult<ActionId extends PublicActionId> =
+  ActionId extends "public.session.events"
+    ? AsyncGenerator<SessionEvent, void, void>
+    : PublicResult
+
+function action<ActionId extends PublicActionId>(
+  config: BreadboardClientConfig,
+  id: ActionId,
+  input?: Readonly<Record<string, unknown>>,
+): Promise<PublicActionResult<ActionId>>
+function action(
+  config: BreadboardClientConfig,
+  id: PublicActionId,
+  input: Readonly<Record<string, unknown>> = {},
+): Promise<unknown> {
   const binding = PUBLIC_BINDINGS_BY_ACTION_ID[id]
   const r = (
     pathValues: Readonly<Record<string, string>> = {},
@@ -177,7 +247,7 @@ const publicData = async <T>(config: BreadboardClientConfig, route: string, key:
 }
 export const createBreadboardClient = (config: BreadboardClientConfig): BreadboardClient => {
   const c = {
-    describeSystem: () => action(config, "public.system.describe"), healthSystem: () => action(config, "public.system.health"), schemasSystem: () => action(config, "public.system.schemas"), createHarness: (directory = ".") => action(config, "public.harness.create", { directory }), listHarness: () => action(config, "public.harness.list"), getHarness: (id: string) => action(config, "public.harness.get", { harness_id: id }), updateHarness: (id: string, definition: Record<string, unknown>) => action(config, "public.harness.update", { harness_id: id, definition }), validateHarness: (id: string) => action(config, "public.harness.validate", { harness_id: id }), explainHarness: (id: string) => action(config, "public.harness.explain", { harness_id: id }), lockHarness: (id: string) => action(config, "public.harness.lock", { harness_id: id }), getHarnessLock: (id: string) => action(config, "public.harness_lock.get", { lock_id: id }), listIntegration: () => action(config, "public.integration.list"), getIntegration: (id: string) => action(config, "public.integration.get", { integration_id: id }), probeIntegration: (id: string, key?: string) => action(config, "public.integration.probe", { integration_id: id, idempotency_key: key }), listArtifact: () => action(config, "public.artifact.list"), getArtifact: (id: string) => action(config, "public.artifact.get", { artifact_id: id }), verifyArtifact: (id: string) => action(config, "public.artifact.verify", { artifact_id: id }), startSession: (body: Record<string, unknown>, key?: string) => action(config, "public.session.start", { ...body, idempotency_key: key }), listSession: () => action(config, "public.session.list"), sendInputSession: (id: string, content: string, key?: string) => action(config, "public.session.send_input", { session_id: id, content, idempotency_key: key }), approveSession: (id: string, request: string, decision: string, key?: string) => action(config, "public.session.approve", { session_id: id, request_id: request, decision, idempotency_key: key }), resumeSession: (id: string, key?: string) => action(config, "public.session.resume", { session_id: id, idempotency_key: key }), cancelSession: (id: string, reason?: string, key?: string) => action(config, "public.session.cancel", { session_id: id, reason, idempotency_key: key }), artifactsSession: (id: string) => action(config, "public.session.artifacts", { session_id: id }),
+    describeSystem: () => action(config, "public.system.describe"), healthSystem: () => action(config, "public.system.health"), schemasSystem: () => action(config, "public.system.schemas"), createHarness: (directory = ".") => action(config, "public.harness.create", { directory }), listHarness: () => action(config, "public.harness.list"), getHarness: (id: string) => action(config, "public.harness.get", { harness_id: id }), updateHarness: (id: string, definition: PublicHarnessUpdateRequest["definition"]) => action(config, "public.harness.update", { harness_id: id, definition }), validateHarness: (id: string) => action(config, "public.harness.validate", { harness_id: id }), explainHarness: (id: string) => action(config, "public.harness.explain", { harness_id: id }), lockHarness: (id: string) => action(config, "public.harness.lock", { harness_id: id }), getHarnessLock: (id: string) => action(config, "public.harness_lock.get", { lock_id: id }), listIntegration: () => action(config, "public.integration.list"), getIntegration: (id: string) => action(config, "public.integration.get", { integration_id: id }), probeIntegration: (id: string, key?: string) => action(config, "public.integration.probe", { integration_id: id, idempotency_key: key }), listArtifact: () => action(config, "public.artifact.list"), getArtifact: (id: string) => action(config, "public.artifact.get", { artifact_id: id }), verifyArtifact: (id: string) => action(config, "public.artifact.verify", { artifact_id: id }), startSession: (body: PublicSessionStartRequest, key?: string) => action(config, "public.session.start", { ...body, idempotency_key: key }), listSession: () => action(config, "public.session.list"), sendInputSession: (id: string, content: string, key?: string) => action(config, "public.session.send_input", { session_id: id, content, idempotency_key: key }), approveSession: (id: string, request: string, decision: PublicSessionDecision, key?: string) => action(config, "public.session.approve", { session_id: id, request_id: request, decision, idempotency_key: key }), resumeSession: (id: string, key?: string) => action(config, "public.session.resume", { session_id: id, idempotency_key: key }), cancelSession: (id: string, reason?: string, key?: string) => action(config, "public.session.cancel", { session_id: id, reason, idempotency_key: key }), artifactsSession: (id: string) => action(config, "public.session.artifacts", { session_id: id }),
     invokePublicAction: (id: PublicActionId, input?: Readonly<Record<string, unknown>>) => action(config, id, input),
     health: () => request<HealthResponse>(config, "/v1/health", "GET"), engineStatus: () => request<EngineStatusResponse>(config, "/v1/status", "GET"),
     createSession: (body: SessionCreateRequest) => request<SessionCreateResponse>(config, "/v1/sessions", "POST", { body }), listSessions: () => publicData<SessionSummary[]>(config, "/v1/sessions", "sessions"), getSession: (id: string) => publicData<SessionSummary>(config, bindGeneratedRoute(PUBLIC_BINDINGS_BY_ACTION_ID["public.session.get"], { session_id: encodeURIComponent(id) }), "session", PUBLIC_BINDINGS_BY_ACTION_ID["public.session.get"].httpMethod),
@@ -201,7 +271,8 @@ export const createBreadboardClient = (config: BreadboardClientConfig): Breadboa
     uploadAttachments: async (id: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => { if (!attachments.length) return []; const form = new FormData(); attachments.forEach((a, i) => { const bytes = Uint8Array.from(atob(a.base64), (char) => char.charCodeAt(0)); form.append("files", new Blob([bytes], { type: a.mime || "application/octet-stream" }), a.filename ?? `attachment-${i + 1}.bin`) }); form.append("metadata", JSON.stringify({ source: "clipboard" })); const token = await valueToken(config); const response = await (config.fetch ?? globalThis.fetch)(buildUrl(config.baseUrl, `/v1/sessions/${encodeURIComponent(id)}/attachments`), { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : undefined, body: form }); const content = response.headers.get("content-type") ?? ""; const payload = content.includes("json") ? await response.json() : undefined; if (!response.ok) throw new ApiError(`Attachment upload failed with status ${response.status}`, response.status, payload); return (payload as { attachments?: AttachmentHandle[] } | undefined)?.attachments ?? [] },
     eventsSession: (id: string, options: Omit<EventStreamOptions, "config"> = {}) => streamSessionEvents(id, { ...options, config: config as StreamConfig }),
   }
-  return c as BreadboardClient
+  const client: BreadboardClient = c
+  return client
 }
 export const createApiClient = createBreadboardClient
 export type { PublicResult }
