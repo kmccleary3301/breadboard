@@ -1986,7 +1986,7 @@ class SQLiteCredentialStore:
                 )
             return result
 
-    def finish_login(
+    def finish_pending_login(
         self,
         login_session_id: str,
         status: str,
@@ -2000,7 +2000,7 @@ class SQLiteCredentialStore:
                        flow_json = CASE
                            WHEN ? IN ('completed', 'failed', 'cancelled', 'expired')
                            THEN NULL ELSE flow_json END
-                   WHERE login_session_id = ?""",
+                   WHERE login_session_id = ? AND status = 'pending'""",
                 (
                     normalized_status,
                     now_ms(),
@@ -2018,8 +2018,7 @@ class SQLiteCredentialStore:
             result = connection.execute(
                 """UPDATE login_sessions
                    SET status = 'cancelled', updated_at_ms = ?, flow_json = NULL
-                   WHERE login_session_id = ?
-                     AND status NOT IN ('cancelled', 'completed', 'expired')""",
+                   WHERE login_session_id = ? AND status = 'pending'""",
                 (timestamp, str(login_session_id)),
             )
             return result.rowcount > 0

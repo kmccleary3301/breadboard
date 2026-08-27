@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { createBreadboardClient } from "../dist/client.js"
+import { ApiError, createBreadboardClient } from "../dist/client.js"
 
 
 test("candidate product methods preserve canonical result envelopes and routes", async (t) => {
@@ -99,4 +99,38 @@ test("broker and model-role methods use canonical typed routes", async (t) => {
     ["POST", "/v1/auth/credentials/bbcred_test/revoke"], ["POST", "/v1/model-roles/resolve"],
   ])
   assert.equal(requests[6][2].api_key, "sk-sdk-canary")
+})
+
+test("DELETE actions preserve JSON response bodies", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const response = { ok: false, detail: { code: "already_terminal" } }
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify(response), { headers: { "content-type": "application/json" } })
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+
+  assert.deepEqual(await client.cancelLogin("bblogin_test"), response)
+  assert.deepEqual(await client.logout("bbacct_test"), response)
+})
+
+test("FastAPI detail produces an actionable API error", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ detail: "credential action forbidden" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    })
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+
+  await assert.rejects(
+    () => client.logout("bbacct_test"),
+    (error) => {
+      assert.ok(error instanceof ApiError)
+      assert.equal(error.status, 403)
+      assert.equal(error.message, "credential action forbidden")
+      assert.deepEqual(error.body, { detail: "credential action forbidden" })
+      return true
+    },
+  )
 })

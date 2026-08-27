@@ -821,6 +821,10 @@ def test_completed_oauth_login_clears_internal_flow_json(tmp_path, monkeypatch):
     )
     assert status == "completed"
     assert flow_json is None
+    assert broker.cancelLogin(started["login_session_id"])["ok"] is False
+    assert (
+        _login_storage_row(broker.store, started["login_session_id"])[0] == "completed"
+    )
 
 
 def test_failed_oauth_login_clears_internal_flow_json(tmp_path):
@@ -850,6 +854,8 @@ def test_failed_oauth_login_clears_internal_flow_json(tmp_path):
     )
     assert status == "failed"
     assert flow_json is None
+    assert broker.cancelLogin(started["login_session_id"])["ok"] is False
+    assert _login_storage_row(broker.store, started["login_session_id"])[0] == "failed"
 
 
 def test_cancelled_oauth_login_clears_internal_flow_json(tmp_path):
@@ -866,6 +872,202 @@ def test_cancelled_oauth_login_clears_internal_flow_json(tmp_path):
     )
     assert status == "cancelled"
     assert flow_json is None
+    assert broker.cancelLogin(started["login_session_id"])["ok"] is False
+
+
+def test_cancel_during_oauth_completion_wins_without_persisting_material(tmp_path):
+    db = tmp_path / "cancel-completion-race.sqlite3"
+    entered = threading.Event()
+    release = threading.Event()
+    access_canary = "cancel-race-access-canary"
+    refresh_canary = "cancel-race-refresh-canary"
+
+    def transport(_url, *, method, headers, body=None):
+        _ = (method, headers, body)
+        entered.set()
+        assert release.wait(2)
+        return (
+            200,
+            {},
+            json.dumps(
+                {
+                    "access_token": access_canary,
+                    "refresh_token": refresh_canary,
+                    "expires_in": 3600,
+                }
+            ).encode(),
+        )
+
+    completer = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    canceller = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    started = completer.beginLogin({"provider_id": "codex"})
+    flow = completer.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
+    results = []
+    errors = []
+
+    def complete():
+        try:
+            results.append(
+                completer.completeLogin(
+                    {
+                        "login_session_id": started["login_session_id"],
+                        "authorization_code": "cancel-race-code",
+                        "state": flow["state"],
+                    }
+                )
+            )
+        except BaseException as error:
+            errors.append(error)
+
+    thread = threading.Thread(target=complete)
+    thread.start()
+    assert entered.wait(2)
+    assert canceller.cancelLogin(started["login_session_id"])["ok"] is True
+    release.set()
+    thread.join(2)
+
+    assert not errors
+    assert not thread.is_alive()
+    assert [result["status"] for result in results] == ["cancelled"]
+    assert all("credential" not in result for result in results)
+    status, _created_at_ms, _updated_at_ms, flow_json = _login_storage_row(
+        canceller.store, started["login_session_id"]
+    )
+    assert status == "cancelled"
+    assert flow_json is None
+    assert canceller.listCredentials() == []
+    with canceller.store._transaction() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM secrets").fetchone()[0] == 0
+    audit = canceller.audit_events()
+    assert not any(event["event"] == "provider_login_completed" for event in audit)
+    visible = json.dumps(
+        {
+            "results": results,
+            "login": canceller.getLogin(started["login_session_id"]),
+            "credentials": canceller.listCredentials(),
+            "audit": audit,
+        }
+    )
+    database_bytes = b"".join(
+        path.read_bytes()
+        for path in (db, db.with_name(f"{db.name}-wal"))
+        if path.exists()
+    )
+    for canary in (access_canary, refresh_canary):
+        assert canary not in visible
+        assert canary.encode() not in database_bytes
+
+
+def test_cancel_during_device_poll_stops_before_token_exchange(tmp_path):
+    db = tmp_path / "cancel-device-poll.sqlite3"
+    poll_entered = threading.Event()
+    release_poll = threading.Event()
+    token_exchange = threading.Event()
+    authorization_canary = "cancel-device-authorization-canary"
+    verifier_canary = "cancel-device-verifier-canary"
+    calls = []
+
+    def transport(url, *, method, headers, body=None):
+        _ = (method, headers, body)
+        calls.append(url)
+        if url.endswith("/deviceauth/usercode"):
+            return (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "device_auth_id": "cancel-device-id",
+                        "user_code": "CANCEL-DEVICE",
+                        "interval": 1,
+                        "expires_in": 30,
+                    }
+                ).encode(),
+            )
+        if url.endswith("/deviceauth/token"):
+            poll_entered.set()
+            assert release_poll.wait(2)
+            return (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "authorization_code": authorization_canary,
+                        "code_verifier": verifier_canary,
+                    }
+                ).encode(),
+            )
+        if url.endswith("/oauth/token"):
+            token_exchange.set()
+            return (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "access_token": "must-not-be-issued",
+                        "refresh_token": "must-not-be-issued",
+                        "expires_in": 3600,
+                    }
+                ).encode(),
+            )
+        raise AssertionError(f"unexpected OAuth endpoint: {url}")
+
+    completer = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    canceller = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    started = completer.beginLogin({"provider_id": "codex", "flow": "device"})
+    assert started["flow_kind"] == "device"
+    results = []
+    errors = []
+
+    def complete():
+        try:
+            results.append(
+                completer.completeLogin(
+                    {"login_session_id": started["login_session_id"]}
+                )
+            )
+        except BaseException as error:
+            errors.append(error)
+
+    thread = threading.Thread(target=complete)
+    thread.start()
+    assert poll_entered.wait(2)
+    assert canceller.cancelLogin(started["login_session_id"])["ok"] is True
+    release_poll.set()
+    thread.join(2)
+
+    assert not errors
+    assert not thread.is_alive()
+    assert [result["status"] for result in results] == ["cancelled"]
+    assert token_exchange.is_set() is False
+    assert calls == [
+        "https://auth.openai.com/api/accounts/deviceauth/usercode",
+        "https://auth.openai.com/api/accounts/deviceauth/token",
+    ]
+    assert canceller.listCredentials() == []
+    audit = canceller.audit_events()
+    assert not any(
+        event["event"] in {"provider_login_completed", "provider_login_failed"}
+        for event in audit
+    )
+    visible = json.dumps(
+        {
+            "results": results,
+            "login": canceller.getLogin(started["login_session_id"]),
+            "credentials": canceller.listCredentials(),
+            "audit": audit,
+        }
+    )
+    database_bytes = b"".join(
+        path.read_bytes()
+        for path in (db, db.with_name(f"{db.name}-wal"))
+        if path.exists()
+    )
+    for canary in (authorization_canary, verifier_canary):
+        assert canary not in visible
+        assert canary.encode() not in database_bytes
 
 
 def test_pending_oauth_login_has_at_most_ten_minute_deadline(tmp_path, monkeypatch):

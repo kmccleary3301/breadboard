@@ -144,7 +144,8 @@ def test_broker_nine_method_surface_and_plain_data(tmp_path):
         ]["code"]
         == "flow_unavailable"
     )
-    assert broker.cancelLogin(login["login_session_id"])["ok"] is True
+    assert broker.cancelLogin(login["login_session_id"])["ok"] is False
+    assert broker.getLogin(login["login_session_id"])["status"] == "unavailable"
 
     assert broker.logout({"account_id": credential["account_id"]})["ok"] is True
     assert broker.revoke({"account_id": credential["account_id"]})["ok"] is True
