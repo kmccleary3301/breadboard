@@ -67,7 +67,13 @@ const isProblem = (value: unknown): value is Problem =>
 const detailMessage = (value: unknown): string | undefined => {
   if (typeof value === "string") return value
   if (isProblem(value)) return `${value.error_code}: ${value.message}`
-  return undefined
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
+  try {
+    const serialized = JSON.stringify(value)
+    return serialized === "{}" ? undefined : serialized
+  } catch {
+    return undefined
+  }
 }
 
 const apiErrorMessage = (status: number, payload: unknown): string => {

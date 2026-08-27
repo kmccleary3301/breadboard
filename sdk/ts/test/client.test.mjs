@@ -176,6 +176,34 @@ test("FastAPI detail produces an actionable API error", async (t) => {
   )
 })
 
+test("structured error envelope detail remains actionable", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const response = {
+    error: "model_role_conflict",
+    detail: { role: "planner", effective_role: "builder" },
+  }
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify(response), {
+      status: 409,
+      headers: { "content-type": "application/json" },
+    })
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+
+  await assert.rejects(
+    () => client.resolveModelRoles({ model_roles: { schema_version: "bb.model_roles.v1" } }),
+    (error) => {
+      assert.ok(error instanceof ApiError)
+      assert.equal(
+        error.message,
+        'model_role_conflict: {"role":"planner","effective_role":"builder"}',
+      )
+      assert.deepEqual(error.body, response)
+      return true
+    },
+  )
+})
+
 test("structured FastAPI problem detail preserves its code and message", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => { globalThis.fetch = originalFetch })
