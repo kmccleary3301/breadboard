@@ -19,6 +19,8 @@ a no-op.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 import threading
 import urllib.parse
@@ -157,6 +159,41 @@ _SECRET_KEY_SUFFIXES: Tuple[str, ...] = (
     "_api_key",
     "_credential",
     "_private_key",
+    "_auth",
+    "_authorization",
+    "_cookie",
+)
+
+_CREDENTIAL_HEADER_WORDS = frozenset(
+    {
+        "api",
+        "apikey",
+        "auth",
+        "authentication",
+        "authorization",
+        "bearer",
+        "cookie",
+        "credential",
+        "credentials",
+        "key",
+        "password",
+        "secret",
+        "token",
+    }
+)
+
+_CREDENTIAL_HEADER_SUFFIXES: Tuple[str, ...] = (
+    "apikey",
+    "auth",
+    "authentication",
+    "authorization",
+    "bearer",
+    "cookie",
+    "credential",
+    "credentials",
+    "password",
+    "secret",
+    "token",
 )
 
 SECRET_VALUE_PATTERNS: Tuple[re.Pattern[str], ...] = (
@@ -232,8 +269,14 @@ def secret_value_scope(*values: Any):
 
 
 def iter_registered_secret_values() -> tuple[str, ...]:
+    """Return active secrets longest-first so overlapping values scrub fully."""
     with _registry_lock:
-        return tuple(_registered_values)
+        return tuple(
+            sorted(
+                _registered_values,
+                key=lambda value: (-len(value), value),
+            )
+        )
 
 
 def contains_registered_secret_text(value: Any) -> bool:
@@ -278,12 +321,26 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
     visited: set[int] = set()
 
     def add(item: Any) -> None:
-        if not isinstance(item, str):
+        if isinstance(item, bool):
             return
-        text = item.strip()
-        if text and text not in included:
-            included.add(text)
-            values.append(text)
+        if isinstance(item, str):
+            candidates = (item.strip(),)
+        elif isinstance(item, int):
+            integer = str(item)
+            candidates = (integer, f"{integer}.0")
+        elif isinstance(item, float):
+            number = str(item)
+            candidates = (
+                (number, str(int(item)))
+                if item.is_integer()
+                else (number,)
+            )
+        else:
+            return
+        for text in candidates:
+            if text and text not in included:
+                included.add(text)
+                values.append(text)
 
     def add_all(item: Any) -> None:
         if isinstance(item, Mapping):
@@ -304,13 +361,23 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
         else:
             add(item)
 
+    def unquoted_component(value: str) -> str:
+        text = value.strip()
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+            return text[1:-1]
+        return text
+
+    def decoded_component(value: str) -> str:
+        return urllib.parse.unquote(unquoted_component(value))
+
     def add_header(name: str, item: Any) -> None:
         normalized = name.strip().lower().replace("-", "_")
         words = normalized.split("_")
+        compact = normalized.replace("_", "")
         if not (
             is_secret_key(name)
-            or "auth" in words
-            or "authentication" in words
+            or any(word in _CREDENTIAL_HEADER_WORDS for word in words)
+            or compact.endswith(_CREDENTIAL_HEADER_SUFFIXES)
         ):
             return
         add(name)
@@ -318,15 +385,40 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
         if not isinstance(item, str):
             return
         text = item.strip()
-        if normalized in {"authorization", "proxy_authorization"}:
-            _scheme, separator, credential = text.partition(" ")
-            if separator:
-                add(credential)
-        elif normalized in {"cookie", "set_cookie"}:
+        scheme, separator, credential = text.partition(" ")
+        if separator and scheme.lower() in {"basic", "bearer", "token"}:
+            add(credential)
+            if scheme.lower() == "basic":
+                try:
+                    decoded = base64.b64decode(
+                        credential,
+                        validate=True,
+                    ).decode("utf-8")
+                except (binascii.Error, UnicodeDecodeError, ValueError):
+                    pass
+                else:
+                    add(decoded)
+                    username, password_separator, password = decoded.partition(":")
+                    if password_separator:
+                        add(username)
+                        add(password)
+        if normalized == "set_cookie" or normalized.endswith("_set_cookie"):
+            cookie_name, cookie_separator, cookie_value = text.split(";", 1)[
+                0
+            ].partition("=")
+            if cookie_separator:
+                if is_secret_key(cookie_name):
+                    add(cookie_name)
+                add(unquoted_component(cookie_value))
+                add(decoded_component(cookie_value))
+        elif normalized == "cookie" or normalized.endswith("_cookie"):
             for part in text.split(";"):
-                _cookie_name, separator, credential = part.partition("=")
-                if separator:
-                    add(credential)
+                cookie_name, cookie_separator, cookie_value = part.partition("=")
+                if cookie_separator:
+                    if is_secret_key(cookie_name):
+                        add(cookie_name)
+                    add(unquoted_component(cookie_value))
+                    add(decoded_component(cookie_value))
 
     def add_url(item: Any) -> None:
         if not isinstance(item, str):
@@ -334,15 +426,18 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
         try:
             parsed = urllib.parse.urlsplit(item)
             if parsed.username:
+                add(parsed.username)
                 add(urllib.parse.unquote(parsed.username))
             if parsed.password:
+                add(parsed.password)
                 add(urllib.parse.unquote(parsed.password))
-            for key, child in urllib.parse.parse_qsl(
-                parsed.query,
-                keep_blank_values=True,
-            ):
-                if is_secret_key(key):
-                    add(child)
+            for query_part in parsed.query.split("&"):
+                raw_key, separator, raw_value = query_part.partition("=")
+                if separator and is_secret_key(
+                    urllib.parse.unquote_plus(raw_key)
+                ):
+                    add(raw_value)
+                    add(urllib.parse.unquote_plus(raw_value))
         except (TypeError, ValueError):
             return
 
