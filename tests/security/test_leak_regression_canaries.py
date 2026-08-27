@@ -1753,6 +1753,17 @@ class TestPostInvocationBoundary:
             usage={"debug": canary},
             metadata={"trace": canary},
         )
+        runtime_result.provider_replay = [
+            {
+                "provider_id": "openai",
+                "schema_version": "openai.responses.v1",
+                "replay_scope": "same_provider",
+                "payload": {
+                    "encrypted_content": f"provider replay echoed {canary}",
+                    "item_id": f"item-{canary}",
+                },
+            }
+        ]
         runtime = SimpleNamespace(
             descriptor=SimpleNamespace(
                 provider_id="openai",
@@ -1784,6 +1795,7 @@ class TestPostInvocationBoundary:
         assert redaction.iter_registered_secret_values() == ()
         assert canary not in json.dumps(result.raw_response)
         assert canary not in json.dumps(state.provider_metadata)
+        assert canary not in json.dumps(result.provider_replay)
 
         manager = LoggerV2Manager(
             {"logging": {"root_dir": str(tmp_path / "post-invocation")}}
