@@ -22,9 +22,9 @@ from __future__ import annotations
 import base64
 import binascii
 import re
-import threading
 import urllib.parse
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Mapping, Tuple
 
@@ -209,15 +209,20 @@ SECRET_VALUE_PATTERNS: Tuple[re.Pattern[str], ...] = (
 
 MIN_REGISTERED_SECRET_LENGTH = 4
 
-_registry_lock = threading.Lock()
-_registered_values: dict[str, int] = {}
+_registered_values: ContextVar[tuple[str, ...]] = ContextVar(
+    "breadboard_registered_secret_values",
+    default=(),
+)
 
 
-def _normalized_secret_value(value: Any) -> str | None:
+def _normalized_secret_value(
+    value: Any, *, allow_short: bool = False
+) -> str | None:
     if not isinstance(value, str):
         return None
     text = value.strip()
-    return text if len(text) >= MIN_REGISTERED_SECRET_LENGTH else None
+    minimum = 1 if allow_short else MIN_REGISTERED_SECRET_LENGTH
+    return text if len(text) >= minimum else None
 
 
 @dataclass(frozen=True)
@@ -229,54 +234,34 @@ class RedactionProblem:
     detail: str  # human-oriented, never contains the secret itself
 
 
-def _register_secret_value(value: Any) -> None:
-    """Register a known secret value for the active operation."""
-    text = _normalized_secret_value(value)
-    if text is None:
-        return
-    with _registry_lock:
-        _registered_values[text] = _registered_values.get(text, 0) + 1
-
-
-def _unregister_secret_value(value: Any) -> None:
-    """Release one registration without disrupting overlapping operations."""
-    text = _normalized_secret_value(value)
-    if text is None:
-        return
-    with _registry_lock:
-        count = _registered_values.get(text, 0)
-        if count <= 1:
-            _registered_values.pop(text, None)
-        else:
-            _registered_values[text] = count - 1
 
 
 @contextmanager
-def secret_value_scope(*values: Any):
-    """Keep exact-value redaction active only while an operation uses secrets."""
-    registered = [
+def secret_value_scope(*values: Any, allow_short: bool = False):
+    """Keep exact-value redaction active only in the current operation context."""
+    registered = tuple(
         text
         for value in values
-        if (text := _normalized_secret_value(value)) is not None
-    ]
-    for text in registered:
-        _register_secret_value(text)
+        if (
+            text := _normalized_secret_value(value, allow_short=allow_short)
+        )
+        is not None
+    )
+    token = _registered_values.set((*_registered_values.get(), *registered))
     try:
         yield
     finally:
-        for text in registered:
-            _unregister_secret_value(text)
+        _registered_values.reset(token)
 
 
 def iter_registered_secret_values() -> tuple[str, ...]:
-    """Return active secrets longest-first so overlapping values scrub fully."""
-    with _registry_lock:
-        return tuple(
-            sorted(
-                _registered_values,
-                key=lambda value: (-len(value), value),
-            )
+    """Return current-context secrets longest-first without duplicates."""
+    return tuple(
+        sorted(
+            set(_registered_values.get()),
+            key=lambda value: (-len(value), value),
         )
+    )
 
 
 def contains_registered_secret_text(value: Any) -> bool:
@@ -474,8 +459,7 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
 
 def clear_registered_secret_values() -> None:
     """Test hook; production code never clears the registry."""
-    with _registry_lock:
-        _registered_values.clear()
+    _registered_values.set(())
 
 
 def _is_provider_auth_runtime_key(value: Any) -> bool:

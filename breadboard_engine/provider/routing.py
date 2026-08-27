@@ -483,7 +483,10 @@ class ProviderRouter:
             result["credential_origin"] = {
                 str(key): str(value) for key, value in origin.items() if key and value
             }
-        with redaction.secret_value_scope(*secret_values):
+        with redaction.secret_value_scope(
+            *secret_values,
+            allow_short=True,
+        ):
             try:
                 yield result
             except BaseException as error:

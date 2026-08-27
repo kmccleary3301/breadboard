@@ -602,7 +602,10 @@ class ProviderBroker:
             )
             oauth_secret_values = redaction.credential_secret_values(material)
             try:
-                with redaction.secret_value_scope(*oauth_secret_values):
+                with redaction.secret_value_scope(
+                    *oauth_secret_values,
+                    allow_short=True,
+                ):
                     with self.store.atomic():
                         if not self.store.finish_pending_login(
                             str(login_id),
@@ -801,17 +804,10 @@ class ProviderBroker:
             material["routing"] = dict(routing)
         credential_values = redaction.credential_secret_values(material)
         try:
-            if any(
-                len(value) < redaction.MIN_REGISTERED_SECRET_LENGTH
-                for value in credential_values
+            with redaction.secret_value_scope(
+                *credential_values,
+                allow_short=True,
             ):
-                raise ValueError(
-                    (
-                        "credential material values must contain at least four "
-                        "non-whitespace characters"
-                    )
-                )
-            with redaction.secret_value_scope(*credential_values):
                 identity_values = (
                     provider_id,
                     auth_scheme,
@@ -1136,7 +1132,10 @@ class ProviderBroker:
                     lease_duration_ms=lease_duration_ms,
                 )
                 refreshed_secret_values = redaction.credential_secret_values(refreshed)
-                with redaction.secret_value_scope(*refreshed_secret_values):
+                with redaction.secret_value_scope(
+                    *refreshed_secret_values,
+                    allow_short=True,
+                ):
                     refreshed_metadata = {
                         key: stale_material[key]
                         for key in (
@@ -1278,7 +1277,10 @@ class ProviderBroker:
             return None
         self.store.release_lease(str(material.get("lease_id") or ""))
         refresh_secret_values = redaction.credential_secret_values(material)
-        with redaction.secret_value_scope(*refresh_secret_values):
+        with redaction.secret_value_scope(
+            *refresh_secret_values,
+            allow_short=True,
+        ):
             return self._refresh_stored_material(
                 material,
                 provider_id=provider_id,
@@ -1684,7 +1686,10 @@ class ProviderBroker:
             minimum_validity_ms=minimum_validity_ms,
         )
         secret_values = redaction.credential_secret_values(material)
-        with redaction.secret_value_scope(*secret_values):
+        with redaction.secret_value_scope(
+            *secret_values,
+            allow_short=True,
+        ):
             try:
                 yield material
             except BaseException as error:

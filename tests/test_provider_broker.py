@@ -212,6 +212,7 @@ def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
             "headers": {
                 "X-Custom": "custom-header-secret",
                 "X-Authorization": "Bearer prefixed-header-secret",
+                "Key": "abc",
             },
             "base_url": (
                 "https://url-user:url-password@example.test/v1"
@@ -234,6 +235,8 @@ def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
             "X-Authorization",
             "Bearer prefixed-header-secret",
             "prefixed-header-secret",
+            "Key",
+            "abc",
             "url-user",
             "url-password",
             "query-secret",

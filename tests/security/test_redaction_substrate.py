@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextvars
+
 import pytest
 
 from breadboard_engine.security import redaction
@@ -229,6 +231,28 @@ class TestRegisteredValues:
     def test_short_and_non_string_values_ignored(self):
         with redaction.secret_value_scope("abc", None, 12345):
             assert redaction.iter_registered_secret_values() == ()
+        assert redaction.iter_registered_secret_values() == ()
+
+    def test_credential_scope_registers_short_values(self):
+        with redaction.secret_value_scope("abc", allow_short=True):
+            assert redaction.iter_registered_secret_values() == ("abc",)
+            assert redaction.scrub_text("echo abc") == (
+                f"echo {redaction.REDACTED}"
+            )
+        assert redaction.iter_registered_secret_values() == ()
+
+    def test_scopes_are_isolated_between_operation_contexts(self):
+        outer_secret = "outer-operation-secret"
+        inner_secret = "inner-operation-secret"
+
+        def isolated_operation():
+            assert redaction.iter_registered_secret_values() == ()
+            with redaction.secret_value_scope(inner_secret):
+                return redaction.iter_registered_secret_values()
+
+        with redaction.secret_value_scope(outer_secret):
+            assert contextvars.Context().run(isolated_operation) == (inner_secret,)
+            assert redaction.iter_registered_secret_values() == (outer_secret,)
         assert redaction.iter_registered_secret_values() == ()
 
     def test_overlapping_scopes_are_reference_counted(self):
