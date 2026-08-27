@@ -12946,6 +12946,10 @@ export const GENERATED_SCHEMA_OBJECTS = {
         "type": "string",
         "minLength": 1
       },
+      "input_id": {
+        "type": "string",
+        "minLength": 1
+      },
       "turn_id": {
         "type": "string",
         "minLength": 1
@@ -15245,7 +15249,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
           "description": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 4096,
+            "maxLength": 16384,
             "pattern": "\\S"
           },
           "parameters": {
@@ -15253,6 +15257,9 @@ export const GENERATED_SCHEMA_OBJECTS = {
             "additionalProperties": {
               "$ref": "#/$defs/canonical_json"
             }
+          },
+          "strict": {
+            "type": "boolean"
           }
         }
       },
