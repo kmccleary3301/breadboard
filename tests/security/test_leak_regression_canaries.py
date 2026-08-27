@@ -1771,6 +1771,9 @@ class TestPostInvocationBoundary:
             runtime_context=ProviderRuntimeContext(
                 session_state=state,
                 agent_config={},
+                session_id="canary-session",
+                input_id="canary-input",
+                turn_id="canary-turn",
             ),
             session_state=state,
             markdown_logger=Mock(),
@@ -1847,6 +1850,9 @@ class TestPostInvocationBoundary:
                 runtime_context=ProviderRuntimeContext(
                     session_state=state,
                     agent_config={},
+                    session_id="canary-session",
+                    input_id="canary-input",
+                    turn_id="canary-turn",
                 ),
                 session_state=state,
                 markdown_logger=Mock(),
@@ -1868,7 +1874,10 @@ class TestPostInvocationBoundary:
         from types import SimpleNamespace
         from unittest.mock import Mock
 
-        from breadboard_engine.provider_runtime import ProviderRuntimeContext
+        from breadboard_engine.provider_runtime import (
+            ProviderRuntimeContext,
+            ProviderRuntimeError,
+        )
         from breadboard_engine.state.session_state import SessionState
 
         canary = "opaque-runtime-crash-canary-6f23"
@@ -1889,7 +1898,7 @@ class TestPostInvocationBoundary:
         )
         state = SessionState(workspace=".", image="cli", config={})
 
-        with pytest.raises(RuntimeError) as exc_info:
+        with pytest.raises(ProviderRuntimeError) as exc_info:
             self._invoker(client_lease=lease).invoke(
                 runtime=runtime,
                 client=None,
@@ -1900,6 +1909,9 @@ class TestPostInvocationBoundary:
                 runtime_context=ProviderRuntimeContext(
                     session_state=state,
                     agent_config={},
+                    session_id="canary-session",
+                    input_id="canary-input",
+                    turn_id="canary-turn",
                 ),
                 session_state=state,
                 markdown_logger=Mock(),
@@ -1907,7 +1919,8 @@ class TestPostInvocationBoundary:
                 route_id="openai/gpt-test",
             )
 
-        assert exc_info.value is error
+        assert exc_info.value is not error
+        assert str(exc_info.value) == "provider runtime failed"
         assert redaction.iter_registered_secret_values() == ()
         assert canary not in str(error)
         assert canary not in json.dumps(error.details)

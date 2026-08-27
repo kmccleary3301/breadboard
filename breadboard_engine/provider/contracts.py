@@ -2293,6 +2293,17 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
     for message in result.messages:
         if not isinstance(message, ProviderMessage):
             raise ProviderContractError("runtime result contains an invalid message")
+        message.content = _portable_provider_payload(message.content)
+        message.finish_reason = (
+            redaction.scrub_text(message.finish_reason)
+            if message.finish_reason is not None
+            else None
+        )
+        message.message_id = (
+            redaction.scrub_text(message.message_id)
+            if message.message_id is not None
+            else None
+        )
         message.raw_message = _portable_provider_payload(message.raw_message)
         message.raw_choice = _portable_provider_payload(message.raw_choice)
         message.reasoning = _portable_provider_payload(message.reasoning)
@@ -2301,7 +2312,16 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
             if isinstance(message.annotations, dict)
             else {}
         )
+        message.tool_results = _portable_provider_payload(message.tool_results)
         for call in message.tool_calls:
+            call.id = redaction.scrub_text(call.id) if call.id is not None else None
+            call.name = (
+                redaction.scrub_text(call.name) if call.name is not None else None
+            )
+            call.parsed_arguments = _portable_provider_payload(call.parsed_arguments)
+            canonical_arguments = canonical_json(call.parsed_arguments)
+            call.arguments = canonical_arguments
+            call.arguments_json = canonical_arguments
             call.raw = _portable_provider_payload(call.raw)
     result.raw_response = _portable_provider_payload(result.raw_response)
     result.usage = (
