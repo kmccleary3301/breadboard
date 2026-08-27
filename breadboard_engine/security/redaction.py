@@ -236,6 +236,13 @@ def iter_registered_secret_values() -> tuple[str, ...]:
         return tuple(_registered_values)
 
 
+def contains_registered_secret_text(value: Any) -> bool:
+    """Return whether text contains an active exact secret."""
+    if not isinstance(value, str):
+        return False
+    return any(secret in value for secret in iter_registered_secret_values())
+
+
 def contains_registered_secret_mapping_key(value: Any) -> bool:
     """Return whether a nested mapping key contains an active exact secret."""
     secrets = iter_registered_secret_values()

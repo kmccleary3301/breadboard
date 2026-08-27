@@ -61,6 +61,8 @@ def test_auth_routes_are_typed_and_never_return_secret(tmp_path, monkeypatch, ca
         "/v1/auth/credentials/openai/main/api-key",
         json={
             "api_key": secret,
+            "auth_scheme_id": "api_key",
+            "alias": "primary",
             "headers": {"Authorization": f"Bearer {secret}"},
             "metadata": {
                 "description": secret,
@@ -70,6 +72,9 @@ def test_auth_routes_are_typed_and_never_return_secret(tmp_path, monkeypatch, ca
     )
     assert stored.status_code == 200
     credential = stored.json()
+    assert credential["auth_scheme_id"] == "api_key"
+    assert credential["label"] == "main"
+    assert credential["alias"] == "primary"
     assert credential["provider_id"] == "openai"
     assert credential["refresh_state"]["status"] == "idle"
     assert credential["refresh_state"]["retry_not_before_ms"] is None
@@ -195,6 +200,53 @@ def test_auth_api_key_rejects_values_below_exact_redaction_minimum(
     assert response.json() == {
         "error": "invalid_request",
         "detail": "api_key must contain at least four non-whitespace characters",
+        "path": None,
+    }
+    assert secret not in response.text
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
+    assert secret not in json.dumps(broker.audit_events())
+    assert secret not in redaction.iter_registered_secret_values()
+
+
+@pytest.mark.parametrize(
+    "identity_field",
+    ["provider_id", "account_label", "alias", "auth_scheme_id"],
+)
+def test_auth_api_key_rejects_secret_bearing_credential_identity_fields(
+    tmp_path,
+    monkeypatch,
+    identity_field,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+
+    secret = "credential-identity-canary-6m2vk"
+    database = tmp_path / "credentials.sqlite3"
+    broker = ProviderBroker(SQLiteCredentialStore(database))
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    client = TestClient(create_app())
+    provider_id = secret if identity_field == "provider_id" else "openai"
+    account_label = secret if identity_field == "account_label" else "main"
+    payload = {
+        "api_key": secret,
+        "alias": secret if identity_field == "alias" else "primary",
+        "auth_scheme_id": (
+            secret if identity_field == "auth_scheme_id" else "api_key"
+        ),
+    }
+
+    response = client.put(
+        f"/v1/auth/credentials/{provider_id}/{account_label}/api-key",
+        json=payload,
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": "invalid_request",
+        "detail": (
+            "credential identity fields cannot contain credential material"
+        ),
         "path": None,
     }
     assert secret not in response.text
