@@ -34,6 +34,18 @@ export type CanonicalJson =
     };
 /**
  * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "provider_replay_non_null_bounded_json".
+ */
+export type ProviderReplayNonNullBoundedJson =
+  | boolean
+  | number
+  | string
+  | ProviderReplayBoundedJson[]
+  | {
+      [k: string]: ProviderReplayBoundedJson;
+    };
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
  * via the `definition` "provider_replay_bounded_json".
  */
 export type ProviderReplayBoundedJson =
@@ -294,15 +306,9 @@ export interface ProviderReplayBlock {
  * via the `definition` "provider_replay_payload".
  */
 export interface ProviderReplayPayload {
-  encrypted_content?: ProviderReplayBoundedJson & {
-    [k: string]: unknown;
-  };
-  signature?: ProviderReplayBoundedJson & {
-    [k: string]: unknown;
-  };
-  redacted_data?: ProviderReplayBoundedJson & {
-    [k: string]: unknown;
-  };
+  encrypted_content?: ProviderReplayNonNullBoundedJson;
+  signature?: ProviderReplayNonNullBoundedJson;
+  redacted_data?: ProviderReplayNonNullBoundedJson;
   item_id?: string;
   reasoning_id?: string;
 }
