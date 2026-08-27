@@ -1241,16 +1241,20 @@ def _normalize_tool_schema(tool: Any, index: int) -> Dict[str, Any]:
         fn = _strict_dict(
             wrapped.get("function"),
             field_name=f"request.tools[{index}].function",
-            allowed={"name", "description", "parameters"},
+            allowed={"name", "description", "parameters", "strict"},
         )
     else:
         fn = _strict_dict(
             tool,
             field_name=f"request.tools[{index}]",
-            allowed={"name", "description", "parameters"},
+            allowed={"name", "description", "parameters", "input_schema", "strict"},
         )
+        if "parameters" in fn and "input_schema" in fn:
+            raise ProviderContractError(
+                f"request.tools[{index}] cannot define both parameters and input_schema"
+            )
     name = fn.get("name")
-    parameters = fn.get("parameters", {})
+    parameters = fn.get("parameters", fn.get("input_schema", {}))
     if not isinstance(name, str) or not name or not isinstance(parameters, Mapping):
         raise ProviderContractError(
             f"request.tools[{index}] requires name and parameters"
@@ -1260,6 +1264,13 @@ def _normalize_tool_schema(tool: Any, index: int) -> Dict[str, Any]:
         "name": name,
         "parameters": json.loads(canonical_json(dict(parameters))),
     }
+    strict = fn.get("strict")
+    if strict is not None:
+        if not isinstance(strict, bool):
+            raise ProviderContractError(
+                f"request.tools[{index}].strict must be boolean"
+            )
+        result["strict"] = strict
     description = fn.get("description")
     if description is not None:
         if not isinstance(description, str) or not description:
@@ -1267,7 +1278,7 @@ def _normalize_tool_schema(tool: Any, index: int) -> Dict[str, Any]:
                 f"request.tools[{index}].description must be nonempty"
             )
         result["description"] = _require_text(
-            description, f"request.tools[{index}].description", max_length=4096
+            description, f"request.tools[{index}].description", max_length=16384
         )
     return result
 
