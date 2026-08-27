@@ -12,6 +12,8 @@ import type {
   SessionCreateRequest, SessionCreateResponse, SessionEvent, SessionFileContent, SessionFileInfo, SessionInputRequest,
   SessionInputResponse, SessionKernelRecordList, SessionSummary, SkillCatalogResponse, PublicResult,
 } from "./types.js"
+import type { Problem } from "./generated/dtos.js"
+
 
 export class ApiError extends Error {
   readonly status: number
@@ -52,12 +54,29 @@ const resource = (value: string, label: string): string => {
   if (parts.some((part) => !part || part === "." || part === "..")) throw new Error(`${label} cannot contain empty or dot segments`)
   return parts.map(encodeURIComponent).join("/")
 }
+const isProblem = (value: unknown): value is Problem =>
+  typeof value === "object"
+  && value !== null
+  && !Array.isArray(value)
+  && "error_code" in value
+  && typeof value.error_code === "string"
+  && "message" in value
+  && typeof value.message === "string"
+
+const detailMessage = (value: unknown): string | undefined => {
+  if (typeof value === "string") return value
+  if (isProblem(value)) return `${value.error_code}: ${value.message}`
+  return undefined
+}
+
 const apiErrorMessage = (status: number, payload: unknown): string => {
   if (typeof payload === "object" && payload !== null && !Array.isArray(payload)) {
     const error = "error" in payload && typeof payload.error === "string" ? payload.error : undefined
-    const detail = "detail" in payload && typeof payload.detail === "string" ? payload.detail : undefined
-    if (error) return detail ? `${error}: ${detail}` : error
+    const detail = "detail" in payload ? detailMessage(payload.detail) : undefined
+    if (error) return detail && !detail.startsWith(`${error}:`) ? `${error}: ${detail}` : detail ?? error
     if (detail) return detail
+    const problem = detailMessage(payload)
+    if (problem) return problem
   }
   return `Request failed with status ${status}`
 }

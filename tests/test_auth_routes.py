@@ -312,6 +312,148 @@ def test_auth_api_key_scrubs_numeric_metadata_and_rejects_matching_expiry(
     assert secret not in redaction.iter_registered_secret_values()
 
 
+@pytest.mark.parametrize(
+    "credential_source",
+    ["api_key_header", "authorization_header", "routing", "base_url"],
+)
+def test_auth_api_key_scrubs_distinct_nested_credential_values(
+    credential_source,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+
+    primary_secret = "primary-secret-material"
+    nested_secret = f"{credential_source}-secondary-secret"
+    credential_fields: dict[str, object]
+    if credential_source == "api_key_header":
+        credential_fields = {"headers": {"x-api-key": nested_secret}}
+    elif credential_source == "authorization_header":
+        credential_fields = {
+            "headers": {"Authorization": f"Bearer {nested_secret}"}
+        }
+    elif credential_source == "routing":
+        credential_fields = {"routing": {"refresh_token": nested_secret}}
+    else:
+        credential_fields = {
+            "base_url": f"https://example.test/v1?api_key={nested_secret}"
+        }
+
+    sensitive_property = {
+        "api_key_header": "x-api-key",
+        "authorization_header": "Authorization",
+        "routing": "refresh_token",
+    }.get(credential_source)
+    metadata = {"canary": nested_secret}
+    if sensitive_property is not None:
+        metadata["property_canary"] = sensitive_property
+
+    database = tmp_path / f"{credential_source}.sqlite3"
+    broker = ProviderBroker(SQLiteCredentialStore(database))
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    client = TestClient(create_app())
+
+    response = client.put(
+        "/v1/auth/credentials/openai/main/api-key",
+        json={
+            "api_key": primary_secret,
+            "metadata": metadata,
+            **credential_fields,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["metadata"] == {
+        key: "***REDACTED***" for key in metadata
+    }
+    assert primary_secret not in response.text
+    assert nested_secret not in response.text
+    if sensitive_property is not None:
+        assert sensitive_property not in response.text
+    with sqlite3.connect(database) as connection:
+        metadata_json = connection.execute(
+            "SELECT metadata_json FROM accounts"
+        ).fetchone()[0]
+    assert nested_secret not in metadata_json
+    if sensitive_property is not None:
+        assert sensitive_property not in metadata_json
+    assert nested_secret not in json.dumps(broker.audit_events())
+    assert redaction.iter_registered_secret_values() == ()
+
+
+def test_auth_api_key_rejects_distinct_header_secret_in_identity(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+
+    nested_secret = "secondary-header-secret"
+    database = tmp_path / "identity.sqlite3"
+    broker = ProviderBroker(SQLiteCredentialStore(database))
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    client = TestClient(create_app())
+
+    response = client.put(
+        "/v1/auth/credentials/openai/main/api-key",
+        json={
+            "api_key": "primary-secret-material",
+            "alias": nested_secret,
+            "headers": {"x-api-key": nested_secret},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": "invalid_request",
+        "detail": (
+            "credential identity fields cannot contain credential material"
+        ),
+        "path": None,
+    }
+    assert nested_secret not in response.text
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
+    assert broker.audit_events() == []
+    assert redaction.iter_registered_secret_values() == ()
+
+
+def test_auth_api_key_rejects_short_distinct_header_secret(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+
+    database = tmp_path / "short.sqlite3"
+    broker = ProviderBroker(SQLiteCredentialStore(database))
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    client = TestClient(create_app())
+
+    response = client.put(
+        "/v1/auth/credentials/openai/main/api-key",
+        json={
+            "api_key": "primary-secret-material",
+            "headers": {"x-api-key": "abc"},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": "invalid_request",
+        "detail": (
+            "credential material values must contain at least four "
+            "non-whitespace characters"
+        ),
+        "path": None,
+    }
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
+    assert broker.audit_events() == []
+    assert redaction.iter_registered_secret_values() == ()
+
+
 def test_model_catalog_route_projects_only_configured_provider_truth(
     tmp_path,
     monkeypatch,
