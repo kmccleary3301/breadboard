@@ -39,6 +39,11 @@ jobs:
       - name: Provision immutable E4 inputs
         run: python scripts/e4_parity/provision_immutable_inputs.py --repo-root "$GITHUB_WORKSPACE" --workspace-root "$GITHUB_WORKSPACE/.."
 
+      - name: Verify catalog-generated public bindings
+        run: |
+          python scripts/quality/generate_public_bindings.py --check
+          pytest -q tests/test_public_binding_codegen.py tests/test_public_binding_parity.py
+
       - name: Verify WS-A default-server SDK smokes
         env:
           BREADBOARD_PYTHON: python
@@ -61,11 +66,10 @@ jobs:
       - name: Verify CLI bridge contract exports
         run: pytest -q tests/test_cli_bridge_contract_exports.py
 
-      - name: Verify generated TS SDK is current
+      - name: Verify independent OpenAPI/full-server routes
         run: |
           python scripts/dev/generate_ts_sdk.py --check
           pytest -q tests/test_ts_sdk_codegen.py
-          python scripts/quality/sync_public_client_manifests.py --check
 
       - name: Verify built Python and TypeScript artifacts
         run: |
