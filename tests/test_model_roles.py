@@ -13,6 +13,7 @@ from breadboard_engine.model_roles import (
     embed_model_role_lock,
     resolve_role_name,
     restore_model_role_lock,
+    validate_model_role_lock,
     select_role_target,
 )
 from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialStore
@@ -723,6 +724,10 @@ def test_restore_rejects_hash_semantic_origin_and_account_revocation(tmp_path) -
             )
         )
         == "account_binding_unavailable"
+    )
+    assert (
+        validate_model_role_lock(account_lock.as_dict()).lock_hash
+        == account_lock.lock_hash
     )
 
 

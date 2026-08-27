@@ -1176,13 +1176,10 @@ def credential_origin_matches_binding(
     if kind == "synthetic":
         return origin_kind == "fallback" and origin.get("source") == "synthetic"
     return False
-def restore_model_role_lock(
+def validate_model_role_lock(
     record: Mapping[str, Any],
-    *,
-    broker: Any = None,
-    session_id: str | None = None,
 ) -> DerivedModelRoleLock:
-    """Validate an effective lock and fail closed on current account bindings."""
+    """Validate an immutable role lock without resolving current credentials."""
     checked = _validate_effective(record)
     expected = _copy(checked, freeze=False)
     supplied_hash = expected.get("lock_hash")
@@ -1194,6 +1191,18 @@ def restore_model_role_lock(
             "$.lock_hash",
         )
     _validate_effective_semantics(checked)
+    return DerivedModelRoleLock._from_record(checked)
+
+
+def restore_model_role_lock(
+    record: Mapping[str, Any],
+    *,
+    broker: Any = None,
+    session_id: str | None = None,
+) -> DerivedModelRoleLock:
+    """Validate an effective lock and fail closed on current account bindings."""
+    restored = validate_model_role_lock(record)
+    checked = restored.as_dict()
     for role, role_binding in checked["roles"].items():
         targets = (role_binding["primary"], *role_binding["fallbacks"])
         for index, target in enumerate(targets):
@@ -1259,7 +1268,7 @@ def restore_model_role_lock(
                     path,
                     provider_id=target["provider_id"],
                 )
-    return DerivedModelRoleLock._from_record(checked)
+    return restored
 
 
 def derive_model_role_lock(*args: Any, **kwargs: Any) -> DerivedModelRoleLock:
@@ -1325,5 +1334,6 @@ __all__ = [
     "embed_model_role_lock",
     "resolve_role_name",
     "restore_model_role_lock",
+    "validate_model_role_lock",
     "select_role_target",
 ]

@@ -71,6 +71,7 @@ from ...model_roles import (
 )
 from ...provider.routing import provider_router
 from ...provider_broker import get_provider_broker
+from ...provider import runtime_codex as runtime_codex_module
 logger = logging.getLogger(__name__)
 MODEL_ROLES_METADATA_KEY = "bb.model_roles.v1"
 def _load_bridge_chaos_metadata() -> dict[str, float] | None:
@@ -513,7 +514,11 @@ class SessionService:
             metadata["model_role_lock"] = role_lock.as_dict()
             metadata["active_model_role"] = role_lock["defaults"]["role"]
             metadata["model_role_default"] = role_lock["defaults"]["role"]
-        if default_profile is not None:
+        default_profile_overridden = any(
+            key != "workspace.root"
+            for key in (request.overrides or {})
+        )
+        if default_profile is not None and not default_profile_overridden:
             runtime_lock = default_profile.compilation.lock
         elif effective_lock is not None:
             selected_graph = effective_lock.as_dict()
@@ -1296,7 +1301,8 @@ class SessionService:
         entries, issues = build_model_catalog(
             models_cfg,
             credential_origin=lambda route: broker.get_credential_origin(
-                str(route), session_id="model_catalog"
+                provider_router.parse_model_id(str(route))[0],
+                session_id="model_catalog",
             ),
         )
         policy = policy_pack_for_config_authority(
