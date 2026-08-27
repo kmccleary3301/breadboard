@@ -175,13 +175,14 @@
         "description": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 4096,
+          "maxLength": 16384,
           "pattern": "\\S"
         },
         "parameters": {
           "type": "object",
           "additionalProperties": {"$ref": "#/$defs/canonical_json"}
-        }
+        },
+        "strict": {"type": "boolean"}
       }
     },
     "message": {
