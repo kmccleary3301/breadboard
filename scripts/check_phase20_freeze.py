@@ -95,6 +95,12 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "sha256": "63aa96ffceb9983d7374065872613c5f335a74b0df257c147c9373be55a2f622",
         "class": "tightening",
     },
+    "https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v2.schema.json": {
+        "packet": "D6-CI-REPAIR",
+        "sha256": "f26e62a605c179e9eadc6df6d49838a5d9c44be44d7791e977b4547dfc171704",
+        "class": "plan_mandated_evolution",
+        "ref": "AM25",
+    },
 }
 
 # Phase 20 packet F4. These generated sources are known before the freeze begins.
