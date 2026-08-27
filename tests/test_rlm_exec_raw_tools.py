@@ -200,6 +200,7 @@ def test_rlm_provider_subcalls_preserve_parent_session_affinity(
             {
                 "session_id": "e5-parent-session",
                 "endpoint_id": "stub/model",
+                "account_selector": None,
             },
         )
     ]
