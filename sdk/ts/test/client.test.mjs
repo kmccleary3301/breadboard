@@ -47,6 +47,47 @@ test("candidate product methods preserve canonical result envelopes and routes",
   assert.deepEqual(requests.filter((row) => row[2]).map((row) => row[2]), ["probe-key", "start-key", "input-key", "approval-key", "resume-key", "cancel-key"])
 })
 
+test("configured fetch transport handles JSON and attachment requests", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  globalThis.fetch = async () => { throw new Error("global fetch used") }
+  const requests = []
+  const configuredFetch = async (input, init) => {
+    const path = new URL(String(input)).pathname
+    requests.push({ path, init })
+    const payload = path.endsWith("/attachments")
+      ? { attachments: [] }
+      : { session_id: "session-configured" }
+    return new Response(JSON.stringify(payload), {
+      headers: { "content-type": "application/json" },
+    })
+  }
+  const client = createBreadboardClient({
+    baseUrl: "http://breadboard.test:9099",
+    fetch: configuredFetch,
+  })
+
+  assert.deepEqual(await client.createSession({}), {
+    session_id: "session-configured",
+  })
+  assert.deepEqual(
+    await client.uploadAttachments("session-configured", [{
+      base64: btoa("configured"),
+      filename: "configured.txt",
+      mime: "text/plain",
+    }]),
+    [],
+  )
+  assert.deepEqual(
+    requests.map(({ path, init }) => [path, init?.method]),
+    [
+      ["/v1/sessions", "POST"],
+      ["/v1/sessions/session-configured/attachments", "POST"],
+    ],
+  )
+  assert.ok(requests[1].init?.body instanceof FormData)
+})
+
 test("session readers unwrap the canonical public result", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => { globalThis.fetch = originalFetch })

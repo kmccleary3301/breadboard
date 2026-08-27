@@ -121,17 +121,14 @@ export const streamSessionEvents = async function* (
   try {
     const token = await resolveToken(options.config, options.signal)
     if (options.signal?.aborted) return
-    const response = await fetch(
-      streamUrl(sessionId, options.config, { ...(options.query ?? {}) }, options.lastEventId),
-      {
-        method: "GET",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...(options.lastEventId ? { "Last-Event-ID": options.lastEventId } : {}),
-        },
-        signal: controller.signal,
+    const response = await (options.config.fetch ?? globalThis.fetch)(streamUrl(sessionId, options.config, { ...(options.query ?? {}) }, options.lastEventId), {
+      method: "GET",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.lastEventId ? { "Last-Event-ID": options.lastEventId } : {}),
       },
-    )
+      signal: controller.signal,
+    })
     if (!response.ok) {
       throw new ApiError(
         `Streaming request failed with status ${response.status}`,

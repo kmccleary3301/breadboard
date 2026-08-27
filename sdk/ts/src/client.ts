@@ -24,6 +24,7 @@ export class ApiError extends Error {
 type JsonMethod = "GET" | "POST" | "PUT" | "DELETE"
 export interface BreadboardClientConfig {
   readonly baseUrl: string
+  readonly fetch?: typeof fetch
   readonly authToken?: string | (() => Promise<string | undefined>)
   readonly requestTimeoutMs?: number
   readonly streamSchema?: number | null
@@ -87,7 +88,7 @@ const request = async <T>(config: BreadboardClientConfig, route: string, method:
   try {
     const token = await valueToken(config)
     if (token) headers.Authorization = `Bearer ${token}`
-    const response = await fetch(buildUrl(config.baseUrl, route, options.query), { method, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body), signal: controller.signal })
+    const response = await (config.fetch ?? globalThis.fetch)(buildUrl(config.baseUrl, route, options.query), { method, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body), signal: controller.signal })
     const contentType = response.headers.get("content-type") ?? ""
     const isJson = contentType.includes("application/json")
     if (!response.ok) {
@@ -170,7 +171,7 @@ export const createBreadboardClient = (config: BreadboardClientConfig): Breadboa
     revoke: (credentialRef: string) => request<AuthActionResponse>(config, `/v1/auth/credentials/${encodeURIComponent(credentialRef)}/revoke`, "POST"),
     resolveModelRoles: (input: ModelRolesResolveInput) => request<ModelRolesResolveResponse>(config, "/v1/model-roles/resolve", "POST", { body: input }),
     downloadArtifact: (id: string, artifact: string) => request<string>(config, `/v1/sessions/${encodeURIComponent(id)}/download`, "GET", { query: { artifact }, responseType: "text" }),
-    uploadAttachments: async (id: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => { if (!attachments.length) return []; const form = new FormData(); attachments.forEach((a, i) => { const bytes = Uint8Array.from(atob(a.base64), (char) => char.charCodeAt(0)); form.append("files", new Blob([bytes], { type: a.mime || "application/octet-stream" }), a.filename ?? `attachment-${i + 1}.bin`) }); form.append("metadata", JSON.stringify({ source: "clipboard" })); const token = await valueToken(config); const response = await fetch(buildUrl(config.baseUrl, `/v1/sessions/${encodeURIComponent(id)}/attachments`), { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : undefined, body: form }); const content = response.headers.get("content-type") ?? ""; const payload = content.includes("json") ? await response.json() : undefined; if (!response.ok) throw new ApiError(`Attachment upload failed with status ${response.status}`, response.status, payload); return (payload as { attachments?: AttachmentHandle[] } | undefined)?.attachments ?? [] },
+    uploadAttachments: async (id: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => { if (!attachments.length) return []; const form = new FormData(); attachments.forEach((a, i) => { const bytes = Uint8Array.from(atob(a.base64), (char) => char.charCodeAt(0)); form.append("files", new Blob([bytes], { type: a.mime || "application/octet-stream" }), a.filename ?? `attachment-${i + 1}.bin`) }); form.append("metadata", JSON.stringify({ source: "clipboard" })); const token = await valueToken(config); const response = await (config.fetch ?? globalThis.fetch)(buildUrl(config.baseUrl, `/v1/sessions/${encodeURIComponent(id)}/attachments`), { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : undefined, body: form }); const content = response.headers.get("content-type") ?? ""; const payload = content.includes("json") ? await response.json() : undefined; if (!response.ok) throw new ApiError(`Attachment upload failed with status ${response.status}`, response.status, payload); return (payload as { attachments?: AttachmentHandle[] } | undefined)?.attachments ?? [] },
     eventsSession: (id: string, options: Omit<EventStreamOptions, "config"> = {}) => streamSessionEvents(id, { ...options, config: config as import("./stream.js").StreamConfig }),
   }
   return c as BreadboardClient
