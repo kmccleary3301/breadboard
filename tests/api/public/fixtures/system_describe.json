@@ -1,0 +1,184 @@
+{
+  "command": [
+    "system",
+    "describe"
+  ],
+  "data": {
+    "default_profile": {
+      "definition_ref": "agent_configs/templates/daily_driver.v1.yaml",
+      "effective_lock_hash": "sha256:165d34c5ed177005fa289544da0b451294c89bb51b0d289f2372c4bd081eff43",
+      "effective_lock_schema_version": "bb.effective_config_graph.v1",
+      "profile_id": "daily_driver.v1",
+      "resources": [
+        {
+          "ref": "agent_configs/templates/daily_driver_roles.v1.json",
+          "sha256": "sha256:4094accaa44d06ba1484141c1b0cd01dfc13cf225141db0230b37aec86a75f61"
+        },
+        {
+          "ref": "agent_configs/templates/prompts/daily_driver_system.md",
+          "sha256": "sha256:1b3f1543403a6bf3c1d8c8a3e95d44412f44876265a32b5e9557567afdacf695"
+        }
+      ],
+      "schema_version": "bb.harness_definition.v1",
+      "source_sha256": "sha256:155e9db1dabee3975739a221324215993002438dc33dd73402959dc4649709f5"
+    },
+    "internal_extensions": [],
+    "operation_count": 26,
+    "operations": [
+      {
+        "command": "bbh artifact get",
+        "operation_id": "artifact.get",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh artifact list",
+        "operation_id": "artifact.list",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh artifact verify",
+        "operation_id": "artifact.verify",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh harness create",
+        "operation_id": "harness.create",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh harness explain",
+        "operation_id": "harness.explain",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh harness get",
+        "operation_id": "harness.get",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh harness list",
+        "operation_id": "harness.list",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh harness lock",
+        "operation_id": "harness.lock",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh harness update",
+        "operation_id": "harness.update",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh harness validate",
+        "operation_id": "harness.validate",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh harness-lock get",
+        "operation_id": "harness_lock.get",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh integration get",
+        "operation_id": "integration.get",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh integration list",
+        "operation_id": "integration.list",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh integration probe",
+        "operation_id": "integration.probe",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh session approve",
+        "operation_id": "session.approve",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh session artifacts",
+        "operation_id": "session.artifacts",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh session cancel",
+        "operation_id": "session.cancel",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh session events",
+        "operation_id": "session.events",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh session get",
+        "operation_id": "session.get",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh session list",
+        "operation_id": "session.list",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh session resume",
+        "operation_id": "session.resume",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh session send-input",
+        "operation_id": "session.send_input",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh harness run",
+        "operation_id": "session.start",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh system describe",
+        "operation_id": "system.describe",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh system health",
+        "operation_id": "system.health",
+        "status": "candidate"
+      },
+      {
+        "command": "bbh system schemas",
+        "operation_id": "system.schemas",
+        "status": "candidate"
+      }
+    ],
+    "result_schema": "bb.cli.result.v1",
+    "system": "breadboard",
+    "workspace": "."
+  },
+  "error": null,
+  "exit_code": 0,
+  "hashes": {
+    "profile": "sha256:165d34c5ed177005fa289544da0b451294c89bb51b0d289f2372c4bd081eff43"
+  },
+  "next_actions": [
+    "breadboard system health"
+  ],
+  "ok": true,
+  "record_refs": [],
+  "schema_version": "bb.cli.result.v1",
+  "stage_outcomes": [
+    {
+      "next_action": null,
+      "report_ref": null,
+      "stage": "system.describe",
+      "status": "passed"
+    }
+  ],
+  "status": "ok",
+  "warnings": []
+}

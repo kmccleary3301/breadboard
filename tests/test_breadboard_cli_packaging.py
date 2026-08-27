@@ -257,7 +257,7 @@ from pathlib import Path
 import breadboard
 import breadboard_engine
 import breadboard_sdk
-from breadboard.product.cli.harness import default_profile_identity, resolve_default_profile
+from breadboard.product.harness.default_profile import default_profile_identity, resolve_default_profile
 from breadboard.product.cli.system import schemas
 from breadboard.product.harness.templates import (
     daily_driver_model_roles_path,

@@ -15,7 +15,7 @@ from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import AnchoredStorage, ArtifactStore, Session as ProductSession
 from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
 from fastapi import HTTPException, UploadFile, status
-from breadboard.product.cli.harness import (
+from breadboard.product.harness.default_profile import (
     DefaultProfileResolution,
     resolve_default_profile,
 )

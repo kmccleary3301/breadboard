@@ -8,7 +8,7 @@ from pathlib import Path
 from breadboard.product.runtime.events import KernelEvent, Session, SessionView
 from breadboard.product.runtime.artifacts import AnchoredStorage
 
-from .result import CliResult, from_exception, portable_ref
+from breadboard.product.operations.model import OperationResult, from_exception, portable_ref
 
 
 def _workspace(a=None,w=None):return w.expanduser().resolve() if w else Path(getattr(a,"workspace",None) or Path.cwd()).expanduser().resolve()
@@ -108,15 +108,15 @@ def list_sessions(a):
                 s,p=load_session(w,session_id);v=s.read_model
                 rows.append({"session_id":v.session_id,"status":v.status,"event_count":v.event_count});refs.append(portable_ref(p,w))
             except Exception:pass
-        return CliResult.success(["session","list"],{"sessions":rows,"count":len(rows)},refs,stage="session.list")
+        return OperationResult.success(["session","list"],{"sessions":rows,"count":len(rows)},refs,stage="session.list")
     except Exception as e:return from_exception(["session","list"],e,"session.list")
 def get(a,command_name="get"):
     w=_workspace(a)
-    try:s,p=load_session(w,a.SESSION_ID); v=s.read_model; return CliResult.success(["session",command_name],{"session":_view(v)},[portable_ref(p,w)],{"lock":v.effective_lock_hash,"task":v.task_hash},stage=f"session.{command_name}")
+    try:s,p=load_session(w,a.SESSION_ID); v=s.read_model; return OperationResult.success(["session",command_name],{"session":_view(v)},[portable_ref(p,w)],{"lock":v.effective_lock_hash,"task":v.task_hash},stage=f"session.{command_name}")
     except Exception as e:return from_exception(["session",command_name],e,f"session.{command_name}")
 def _mutate(a,name,fn):
     w=_workspace(a)
-    try:s,p=load_session(w,a.SESSION_ID); v=fn(s); persist_session(w,s,p); return CliResult.success(["session",name],{"session":_view(v)},[portable_ref(p,w)],stage=f"session.{name}")
+    try:s,p=load_session(w,a.SESSION_ID); v=fn(s); persist_session(w,s,p); return OperationResult.success(["session",name],{"session":_view(v)},[portable_ref(p,w)],stage=f"session.{name}")
     except Exception as e:return from_exception(["session",name],e,f"session.{name}")
 def send_input(a):return _mutate(a,"send-input",lambda s:s.input(a.content if getattr(a,"content",None) is not None else a.TEXT))
 def approve(a):return _mutate(a,"approve",lambda s:s.resolve_approval(a.request_id,a.decision))
@@ -124,7 +124,7 @@ def resume(a):return _mutate(a,"resume",lambda s:s.resume())
 def cancel(a):return _mutate(a,"cancel",lambda s:s.cancel(getattr(a,"reason",None) or "operator request"))
 def events(a):
     w=_workspace(a)
-    try:s,p=load_session(w,a.SESSION_ID); return CliResult.success(["session","events"],{"session_id":a.SESSION_ID,"events":[x.as_dict() for x in s.events]},[portable_ref(p,w)],stage="session.events")
+    try:s,p=load_session(w,a.SESSION_ID); return OperationResult.success(["session","events"],{"session_id":a.SESSION_ID,"events":[x.as_dict() for x in s.events]},[portable_ref(p,w)],stage="session.events")
     except Exception as e:return from_exception(["session","events"],e,"session.events")
 def _artifact_rows(w,s):
     rows={};prefix=f"{s}.";handles=[];descriptors=[]
@@ -162,4 +162,4 @@ def artifacts(a):
     w=_workspace(a)
     try:s,p=load_session(w,a.SESSION_ID); rows=_artifact_rows(w,a.SESSION_ID)
     except Exception as e:return from_exception(["session","artifacts"],e,"session.artifacts")
-    return CliResult.success(["session","artifacts"],{"session_id":a.SESSION_ID,"artifacts":rows},[portable_ref(p,w)],stage="session.artifacts")
+    return OperationResult.success(["session","artifacts"],{"session_id":a.SESSION_ID,"artifacts":rows},[portable_ref(p,w)],stage="session.artifacts")

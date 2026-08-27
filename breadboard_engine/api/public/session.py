@@ -20,7 +20,7 @@ from breadboard_engine.api.cli_bridge.models import (
 )
 from breadboard.product.cli import harness as harness_operations
 from breadboard.product.cli import session as session_operations
-from breadboard.product.cli.result import CliResult
+from breadboard.product.operations.model import OperationResult
 
 from .models import (
     PublicResult,
@@ -84,19 +84,19 @@ async def _require_live_product_session(service, session_id: str, workspace: Pat
         status_code=409,
         detail="session runtime state is unavailable after service restart",
     )
-async def _session_result(service, session_id: str, command_name: str) -> CliResult:
+async def _session_result(service, session_id: str, command_name: str) -> OperationResult:
     _, session = await _product_session(service, session_id)
     view = session.read_model
-    return CliResult.success(
+    return OperationResult.success(
         ["session", command_name],
         {"session": view.as_dict()},
         hashes={"lock": view.effective_lock_hash, "task": view.task_hash},
         stage=f"session.{command_name}",
     )
-async def _read_session_result(service, session_id: str, command_name: str, workspace: Path) -> CliResult:
+async def _read_session_result(service, session_id: str, command_name: str, workspace: Path) -> OperationResult:
     _, session = await _read_product_session(service, session_id, workspace)
     view = session.read_model
-    return CliResult.success(
+    return OperationResult.success(
         ["session", command_name],
         {"session": view.as_dict()},
         hashes={"lock": view.effective_lock_hash, "task": view.task_hash},
@@ -118,13 +118,13 @@ def _resolve_start_lock(request: SessionStartRequest, workspace: Path):
         contained=True,
     ))
     return lock, source_path, checked
-async def _start_result(request: SessionStartRequest, workspace: Path, service) -> CliResult:
+async def _start_result(request: SessionStartRequest, workspace: Path, service) -> OperationResult:
     if request.session_id and (request.session_id in {".", ".."} or request.session_id != Path(request.session_id).name):
         raise ValueError("session_id must be a portable identifier")
     effective_lock, source_path, checked = await run_in_threadpool(_resolve_start_lock, request, workspace)
     if not checked.ok:
         error = checked.error or {}
-        return CliResult.failure(
+        return OperationResult.failure(
             ["session", "start"],
             checked.exit_code,
             str(error.get("error_code") or "lock_drift"),
@@ -147,7 +147,7 @@ async def _start_result(request: SessionStartRequest, workspace: Path, service) 
         effective_lock=effective_lock,
     )
     return await _session_result(service, created.session_id, "start")
-async def _list_result(service, workspace: Path) -> CliResult:
+async def _list_result(service, workspace: Path) -> OperationResult:
     durable = await run_in_threadpool(session_operations.list_sessions, SimpleNamespace(workspace=workspace))
     if not durable.ok:
         return durable
@@ -164,25 +164,25 @@ async def _list_result(service, workspace: Path) -> CliResult:
         except Exception:
             continue
     ordered = [rows[session_id] for session_id in sorted(rows)]
-    return CliResult.success(["session", "list"], {"sessions": ordered, "count": len(ordered)}, refs=durable.record_refs, stage="session.list")
-async def _send_result(service, session_id: str, content: str, workspace: Path) -> CliResult:
+    return OperationResult.success(["session", "list"], {"sessions": ordered, "count": len(ordered)}, refs=durable.record_refs, stage="session.list")
+async def _send_result(service, session_id: str, content: str, workspace: Path) -> OperationResult:
     await _require_live_product_session(service, session_id, workspace)
     await service.send_input(session_id, BridgeSessionInputRequest(content=content))
     return await _session_result(service, session_id, "send-input")
-async def _command_result(service, session_id: str, command: str, payload: dict, command_name: str, workspace: Path) -> CliResult:
+async def _command_result(service, session_id: str, command: str, payload: dict, command_name: str, workspace: Path) -> OperationResult:
     await _require_live_product_session(service, session_id, workspace)
     await service.execute_command(session_id, BridgeSessionCommandRequest(command=command, payload=payload))
     return await _session_result(service, session_id, command_name)
-async def _cancel_result(service, session_id: str, reason: str, workspace: Path) -> CliResult:
+async def _cancel_result(service, session_id: str, reason: str, workspace: Path) -> OperationResult:
     await _require_live_product_session(service, session_id, workspace)
     await service.stop_session(session_id, reason=reason)
     return await _session_result(service, session_id, "cancel")
-async def _artifacts_result(service, session_id: str) -> CliResult:
+async def _artifacts_result(service, session_id: str) -> OperationResult:
     record, _ = await _product_session(service, session_id)
     artifacts = getattr(record, "product_artifacts", {})
     rows = [{"name": name, **ref.as_dict()} for name, ref in sorted(artifacts.items())]
-    return CliResult.success(["session", "artifacts"], {"session_id": session_id, "artifacts": rows}, stage="session.artifacts")
-async def _read_artifacts_result(service, session_id: str, workspace: Path) -> CliResult:
+    return OperationResult.success(["session", "artifacts"], {"session_id": session_id, "artifacts": rows}, stage="session.artifacts")
+async def _read_artifacts_result(service, session_id: str, workspace: Path) -> OperationResult:
     try:
         return await _artifacts_result(service, session_id)
     except _ProductSessionUnavailable:
