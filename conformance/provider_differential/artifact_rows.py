@@ -422,7 +422,7 @@ if (process.env.F6_CONFIG_PATH) {
     eventsDone,
     new Promise((_, reject) => setTimeout(() => reject(new Error('turn timeout')), 45000)),
   ]);
-  const summary = await client.getSession(started.session_id);
+  const summary = await client.getSessionSummary(started.session_id);
   output.session = {
     status: summary.status,
     logging_dir: summary.logging_dir ?? null,

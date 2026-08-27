@@ -18,7 +18,7 @@ export const runResume = async (
   onEvent?: (event: SessionEvent) => Promise<void> | void,
 ): Promise<ResumeResult> => {
   const sdk = getCliSdk()
-  const summary = await sdk.api().getSession(options.sessionId)
+  const summary = await sdk.api().getSessionSummary(options.sessionId)
   await rememberSession(summary)
   const { events, completion } = await collectSessionStream(sdk.stream(options.sessionId, { signal: undefined }), onEvent)
   return { sessionId: options.sessionId, events, completion }

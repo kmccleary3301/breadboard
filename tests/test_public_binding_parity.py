@@ -558,7 +558,7 @@ def test_typescript_tables_wrappers_and_root_exports_match_contract() -> None:
     expected_action_bindings = {
         row["typescript_method"]: row["action_id"]
         for row in expected
-        if row["operation_id"] not in {"session.get", "session.events"}
+        if row["operation_id"] != "session.events"
     }
     assert {
         item["method"]: item["actionId"] for item in action_bindings
