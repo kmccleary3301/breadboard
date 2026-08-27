@@ -157,3 +157,17 @@ def test_check_reports_sorted_stale_paths_without_writing(
     paths = [line.split(": ", 1)[1] for line in output]
     assert paths == sorted(paths)
     assert not list(root.rglob("*.py"))
+
+
+def test_generation_writes_stable_readable_modes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _staged_catalog(tmp_path)
+    monkeypatch.setattr(generator, "ROOT", root)
+
+    assert generator.main([]) == 0
+    outputs = generator.build_outputs(root)
+    assert all(
+        path.stat().st_mode & 0o777 == generator.GENERATED_FILE_MODE for path in outputs
+    )
+    assert generator.main(["--check"]) == 0
