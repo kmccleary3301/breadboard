@@ -98,6 +98,56 @@ async def test_default_session_create_uses_exact_profile_authority(
 
 
 @pytest.mark.asyncio
+async def test_default_profile_overrides_define_product_runtime_lock(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    service = SessionService()
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            workspace=str(workspace),
+            overrides={"providers.default_model": "mock/overridden"},
+        ),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    default_lock = harness_operations.resolve_default_profile().compilation.lock
+
+    assert (
+        record.runner.current_runtime_config()["providers"]["default_model"]
+        == "mock/overridden"
+    )
+    assert (
+        record.product_session.read_model.effective_lock_hash
+        != default_lock["graph_hash"]
+    )
+    await service.stop_session(response.session_id)
+    await _stop(record)
+
+
+def test_prewarm_sync_invokes_codex_runtime_module(monkeypatch, tmp_path) -> None:
+    calls = []
+    monkeypatch.setattr(
+        SERVICE + "runtime_codex_module.prewarm_codex_app_server",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    SessionService()._prewarm_request_runtime_sync(
+        SessionCreateRequest(workspace=str(tmp_path)),
+        {"model": "codex/gpt-5.4-mini"},
+        {},
+    )
+
+    assert calls == [{"model": "gpt-5.4-mini", "cwd": str(tmp_path)}]
+
+
+@pytest.mark.asyncio
 async def test_explicit_config_metadata_remains_custom(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(
         monkeypatch,

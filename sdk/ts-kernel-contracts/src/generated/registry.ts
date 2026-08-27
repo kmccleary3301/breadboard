@@ -15152,6 +15152,40 @@ export const GENERATED_SCHEMA_OBJECTS = {
           }
         ]
       },
+      "provider_replay_non_null_bounded_json": {
+        "$comment": "Non-null replay root; nested arrays and objects may contain null.",
+        "oneOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "string",
+            "maxLength": 4096
+          },
+          {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/$defs/provider_replay_bounded_json"
+            }
+          },
+          {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/provider_replay_bounded_json"
+            }
+          }
+        ]
+      },
       "correlation": {
         "type": "object",
         "additionalProperties": false,
@@ -15453,40 +15487,13 @@ export const GENERATED_SCHEMA_OBJECTS = {
         "minProperties": 1,
         "properties": {
           "encrypted_content": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/provider_replay_bounded_json"
-              },
-              {
-                "not": {
-                  "type": "null"
-                }
-              }
-            ]
+            "$ref": "#/$defs/provider_replay_non_null_bounded_json"
           },
           "signature": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/provider_replay_bounded_json"
-              },
-              {
-                "not": {
-                  "type": "null"
-                }
-              }
-            ]
+            "$ref": "#/$defs/provider_replay_non_null_bounded_json"
           },
           "redacted_data": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/provider_replay_bounded_json"
-              },
-              {
-                "not": {
-                  "type": "null"
-                }
-              }
-            ]
+            "$ref": "#/$defs/provider_replay_non_null_bounded_json"
           },
           "item_id": {
             "type": "string",

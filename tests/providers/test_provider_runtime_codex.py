@@ -322,20 +322,17 @@ def test_codex_app_server_fails_closed_on_approval_request(method) -> None:
     }
 
 
-def test_codex_app_server_uses_restricted_process_builder(
+def test_codex_app_server_uses_native_sandbox_after_boundary_validation(
     monkeypatch,
     tmp_path,
 ) -> None:
     protected = tmp_path / "credentials.sqlite3"
-    builder_calls: list[tuple[object, dict]] = []
+    validation_calls: list[tuple[object, dict]] = []
     popen_calls: list[tuple[object, dict]] = []
 
-    def _builder(command, **kwargs):
-        builder_calls.append((command, kwargs))
-        return (
-            ("/trusted/isolation-helper", "--", "codex", "app-server"),
-            {"PATH": "/trusted/bin", "HOME": str(tmp_path)},
-        )
+    def _validate(workspace, **kwargs):
+        validation_calls.append((workspace, kwargs))
+        return tmp_path
 
     class _Process:
         stderr = io.StringIO("")
@@ -346,66 +343,60 @@ def test_codex_app_server_uses_restricted_process_builder(
 
     monkeypatch.setattr(
         runtime_codex_module,
-        "build_restricted_process_command",
-        _builder,
+        "validate_workspace_credential_boundary",
+        _validate,
     )
     monkeypatch.setattr(runtime_codex_module.subprocess, "Popen", _popen)
     client = runtime_codex_module._CodexJsonRpcClient(
         codex_bin="/trusted/bin/codex",
         cwd=str(tmp_path),
-        env={"PATH": "/trusted/bin"},
+        env={"PATH": "/trusted/bin", "HOME": "/trusted/home"},
         protected_paths=(str(protected),),
     )
 
     client.start()
 
-    assert builder_calls == [
+    assert validation_calls == [
         (
-            ["/trusted/bin/codex", "app-server", "--listen", "stdio://"],
-            {
-                "workspace": str(tmp_path),
-                "working_directory": str(tmp_path),
-                "shell": False,
-                "environment": {"PATH": "/trusted/bin"},
-                "protected_paths": (str(protected),),
-            },
+            str(tmp_path),
+            {"protected_paths": (str(protected),)},
         )
     ]
-    assert popen_calls[0][0] == (
-        "/trusted/isolation-helper",
-        "--",
-        "codex",
+    assert popen_calls[0][0] == [
+        "/trusted/bin/codex",
         "app-server",
-    )
+        "--listen",
+        "stdio://",
+    ]
     assert popen_calls[0][1]["env"] == {
         "PATH": "/trusted/bin",
-        "HOME": str(tmp_path),
+        "HOME": "/trusted/home",
     }
     assert popen_calls[0][1]["cwd"] == str(tmp_path)
     assert popen_calls[0][1]["shell"] is False
 
 
-def test_codex_app_server_isolation_failure_is_secret_free_and_never_retries(
+def test_codex_app_server_boundary_failure_is_secret_free_and_never_retries(
     monkeypatch,
     tmp_path,
 ) -> None:
     canary = "codex-isolation-error-canary-e7"
-    build_calls = 0
+    validation_calls = 0
 
-    def _builder(*_args, **_kwargs):
-        nonlocal build_calls
-        build_calls += 1
+    def _validate(*_args, **_kwargs):
+        nonlocal validation_calls
+        validation_calls += 1
         raise runtime_codex_module.ProcessIsolationUnavailable(canary)
 
     monkeypatch.setattr(
         runtime_codex_module,
-        "build_restricted_process_command",
-        _builder,
+        "validate_workspace_credential_boundary",
+        _validate,
     )
     monkeypatch.setattr(
         runtime_codex_module.subprocess,
         "Popen",
-        lambda *_args, **_kwargs: pytest.fail("unisolated process launch attempted"),
+        lambda *_args, **_kwargs: pytest.fail("unchecked process launch attempted"),
     )
     client = runtime_codex_module._CodexJsonRpcClient(
         codex_bin="codex",
@@ -423,7 +414,7 @@ def test_codex_app_server_isolation_failure_is_secret_free_and_never_retries(
             exc_info.tb,
         )
     )
-    assert build_calls == 1
+    assert validation_calls == 1
     assert canary not in rendered
     assert canary not in json.dumps(exc_info.value.details)
     assert exc_info.value.details == {

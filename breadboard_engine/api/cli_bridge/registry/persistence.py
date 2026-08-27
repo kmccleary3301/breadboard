@@ -514,16 +514,11 @@ class PersistenceMixin:
             if not isinstance(role_lock, dict):
                 raise ValueError("retained model-role lock is not an object")
             from ....model_roles import (
-                restore_model_role_lock,
                 select_role_target,
+                validate_model_role_lock,
             )
-            from ....provider_broker import get_provider_broker
 
-            restored = restore_model_role_lock(
-                role_lock,
-                broker=get_provider_broker(),
-                session_id=session_id,
-            )
+            restored = validate_model_role_lock(role_lock)
             active_role = (
                 str(session.get("active_model_role") or "").strip()
                 or str((restored.get("defaults") or {}).get("role") or "")

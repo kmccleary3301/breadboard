@@ -59,6 +59,55 @@ policies:
 
 
 @pytest.mark.asyncio
+async def test_model_catalog_resolves_credentials_by_provider_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = []
+
+    class Broker:
+        def get_credential_origin(self, provider_id, *, session_id):
+            observed.append((provider_id, session_id))
+            return {"kind": "env", "env_var": "OPENAI_API_KEY"}
+
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.service.get_provider_broker",
+        lambda: Broker(),
+    )
+    cfg_path = _write_config(
+        tmp_path / "catalog.yaml",
+        """
+version: 2
+workspace:
+  root: .
+providers:
+  default_model: openai/gpt-4.1
+  models:
+    - id: openai/gpt-4.1
+      adapter: openai
+""",
+    )
+
+    cfg_text = Path(cfg_path).read_text(encoding="utf-8")
+    Path(cfg_path).write_text(
+        cfg_text
+        + """
+modes:
+  - name: build
+    prompt: noop
+loop:
+  sequence:
+    - mode: build
+""",
+        encoding="utf-8",
+    )
+    catalog = await SessionService(SessionRegistry()).list_models(cfg_path)
+
+    assert observed == [("openai", "model_catalog")]
+    assert catalog.models[0].available is True
+
+
+@pytest.mark.asyncio
 async def test_set_model_enforced_by_policy(tmp_path: Path) -> None:
     cfg_path = _write_config(
         tmp_path / "cfg.yaml",

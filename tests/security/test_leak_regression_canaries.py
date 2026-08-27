@@ -322,6 +322,18 @@ class TestChildEnvironmentBoundary:
                 source=source,
                 overrides={"SAFE_OVERRIDE": "kept"},
             )
+        custom = build_child_environment(
+            source=source,
+            overrides={"SAFE_OVERRIDE": "kept"},
+            allowed_override_keys=("SAFE_OVERRIDE",),
+        )
+        assert custom["SAFE_OVERRIDE"] == "kept"
+        with pytest.raises(ValueError, match="not permitted"):
+            build_child_environment(
+                source=source,
+                overrides={"OPENAI_API_KEY": "replacement"},
+                allowed_override_keys=("OPENAI_API_KEY",),
+            )
         assert is_provider_credential_env_key("BREADBOARD_CREDENTIAL_STORE_PATH")
         assert is_provider_credential_env_key("BREADBOARD_CREDENTIAL_DB")
 
@@ -599,6 +611,37 @@ class TestChildEnvironmentBoundary:
         assert create["exit"] != 0
         assert not (clean_workspace / "credential-hardlink").exists()
         assert canary not in json.dumps((rejected, create))
+
+    def test_hardlink_boundary_revalidates_workspace_contents(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from breadboard_engine.security.process_isolation import (
+            ProcessIsolationUnavailable,
+            validate_workspace_credential_boundary,
+        )
+
+        protected = tmp_path / "protected"
+        protected.mkdir()
+        credential_file = protected / "credentials.sqlite3"
+        credential_file.write_text("credential-canary", encoding="utf-8")
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        validate_workspace_credential_boundary(
+            workspace,
+            protected_paths=(credential_file,),
+        )
+        os.link(credential_file, workspace / "late-hardlink")
+
+        with pytest.raises(
+            ProcessIsolationUnavailable,
+            match="protected credential hardlink",
+        ):
+            validate_workspace_credential_boundary(
+                workspace,
+                protected_paths=(credential_file,),
+            )
 
     def test_macos_sandbox_denies_network_and_parent_process_inspection(
         self,
@@ -1426,6 +1469,54 @@ class TestE7CredentialBoundary:
         assert popen_calls
         assert builder_calls
         assert canary not in json.dumps(popen_calls[0][1].get("env", {}))
+
+    def test_container_lsp_validates_workspace_without_wrapping_docker(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        import breadboard.lsp_manager as lsp_module
+
+        monkeypatch.setenv("LSP_USE_CONTAINERS", "1")
+        server_type = lsp_module.LSPServer.__ray_metadata__.modified_class
+        server = server_type("python", str(tmp_path))
+        validated = []
+        popen_calls = []
+        monkeypatch.setattr(
+            lsp_module,
+            "validate_workspace_credential_boundary",
+            lambda workspace, **kwargs: validated.append((workspace, kwargs)),
+        )
+        monkeypatch.setattr(
+            lsp_module,
+            "build_restricted_process_command",
+            lambda *_args, **_kwargs: pytest.fail(
+                "docker client must retain daemon connectivity"
+            ),
+        )
+        monkeypatch.setattr(
+            lsp_module.subprocess,
+            "Popen",
+            lambda *args, **kwargs: popen_calls.append((args, kwargs))
+            or object(),
+        )
+
+        process = asyncio.run(server._spawn_server())
+
+        assert process is not None
+        assert validated == [
+            (
+                server.workspace_root,
+                {"protected_paths": server._protected_paths},
+            )
+        ]
+        assert popen_calls[0][0][0][:4] == (
+            "docker",
+            "run",
+            "-i",
+            "--rm",
+        )
+
 
     def test_lsp_linter_uses_restricted_builder_and_scrubs_canary_output(
         self, tmp_path: Path, monkeypatch

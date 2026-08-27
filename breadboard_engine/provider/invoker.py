@@ -177,18 +177,20 @@ class ProviderInvoker:
                 sanitize_provider_result(result_value)
                 _adopt_result_provider(result_value)
                 normalized_events = normalize_provider_result(result_value)
+                assistant_messages = normalized_result_messages(result_value)
+                provider_replay = normalized_result_replay(
+                    result_value,
+                    provider_id=recorder.provider.provider_id,
+                )
                 result_value.metadata["normalized_events"] = normalized_events
                 terminal = ProviderDone(
-                    output_emitted=bool(result_value.messages)
+                    output_emitted=bool(assistant_messages)
                     or recorder.output_emitted,
                     finish_reason=self._finish_reason(result_value),
                     raw_provider_finish=self._raw_finish(result_value),
                     usage=result_value.usage,
-                    assistant_messages=normalized_result_messages(result_value),
-                    provider_replay=normalized_result_replay(
-                        result_value,
-                        provider_id=recorder.provider.provider_id,
-                    ),
+                    assistant_messages=assistant_messages,
+                    provider_replay=provider_replay,
                 )
                 exchange = self._persist_exchange(
                     session_state, recorder, terminal, result=result_value

@@ -88,7 +88,10 @@ class MCPManager:
         env: Dict[str, Any] | None,
         cwd: str | None,
     ) -> Any:
-        child_environment = build_child_environment(overrides=env)
+        child_environment = build_child_environment(
+            overrides=env,
+            allowed_override_keys=() if env is None else env.keys(),
+        )
         isolated_command, child_environment = build_restricted_process_command(
             (command, *args),
             workspace=self._workspace,
@@ -101,7 +104,7 @@ class MCPManager:
             command=isolated_command[0],
             args=list(isolated_command[1:]),
             env=child_environment,
-            cwd=str(self._workspace),
+            cwd=str(cwd or self._workspace),
         )
 
     async def _async_start(self) -> None:

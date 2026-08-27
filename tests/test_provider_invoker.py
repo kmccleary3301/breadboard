@@ -120,6 +120,45 @@ def test_provider_invoker_stream_success():
     assert session_state.get_provider_metadata("last_provider_exchange") == exchange
 
 
+def test_provider_invoker_counts_reasoning_only_result_as_output() -> None:
+    runtime_result = ProviderResult(
+        messages=[],
+        raw_response=None,
+        reasoning_blocks=[{"type": "thinking", "text": "plan"}],
+        metadata={},
+    )
+    runtime = _mk_runtime(runtime_result)
+    invoker = _make_invoker(Mock(return_value=None))
+    invoker.route_health.is_circuit_open.return_value = False
+    session_state = _session_state()
+
+    result, _ = invoker.invoke(
+        runtime=runtime,
+        client=object(),
+        model="cli_mock/dev",
+        send_messages=[],
+        tools_schema=None,
+        stream_responses=False,
+        runtime_context=ProviderRuntimeContext(
+            session_state=session_state,
+            agent_config={},
+        ),
+        session_state=session_state,
+        markdown_logger=_markdown_logger(),
+        turn_index=1,
+        route_id="cli_mock/dev",
+    )
+
+    terminal = result.metadata["provider_exchange"]["terminal"]
+    assert terminal["output_emitted"] is True
+    assert terminal["assistant_messages"] == [
+        {
+            "role": "assistant",
+            "content": [{"type": "thinking", "text": "plan"}],
+        }
+    ]
+
+
 def test_provider_invoker_strips_control_sentinels_from_public_output_only():
     runtime_result = ProviderResult(
         messages=[

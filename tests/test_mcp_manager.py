@@ -20,10 +20,14 @@ def test_mcp_stdio_parameters_use_restricted_process_boundary(
     manager._protected_paths = (str(tmp_path / "protected"),)
     captured = {}
 
+    def build_environment(*, overrides=None, allowed_override_keys=()):
+        captured["allowed_override_keys"] = tuple(allowed_override_keys)
+        return {"PATH": "/usr/bin", **(overrides or {})}
+
     monkeypatch.setattr(
         manager_module,
         "build_child_environment",
-        lambda *, overrides=None: {"PATH": "/usr/bin", **(overrides or {})},
+        build_environment,
     )
 
     def isolate(command, **kwargs):
@@ -42,21 +46,24 @@ def test_mcp_stdio_parameters_use_restricted_process_boundary(
         lambda **kwargs: SimpleNamespace(**kwargs),
     )
 
+    configured_cwd = tmp_path / "server"
+    configured_cwd.mkdir()
     params = manager._stdio_parameters(
         "server-bin",
         ("--stdio",),
-        {"NODE_ENV": "test"},
-        str(tmp_path),
+        {"FOO": "bar"},
+        str(configured_cwd),
     )
 
     assert captured["command"] == ("server-bin", "--stdio")
     assert captured["workspace"] == tmp_path
-    assert captured["working_directory"] == str(tmp_path)
+    assert captured["working_directory"] == str(configured_cwd)
     assert captured["protected_paths"] == manager._protected_paths
+    assert captured["allowed_override_keys"] == ("FOO",)
     assert params.command == "/isolated-launch"
     assert params.args == ["server-bin", "--stdio"]
     assert params.env == {"PATH": "/usr/bin"}
-    assert params.cwd == str(tmp_path)
+    assert params.cwd == str(configured_cwd)
 
 
 def test_mcp_replay_append_rejects_linked_target(tmp_path: Path) -> None:

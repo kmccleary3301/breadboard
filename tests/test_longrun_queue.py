@@ -86,6 +86,20 @@ def test_feature_file_queue_flow(tmp_path) -> None:
     assert first["metadata"]["longrun_completion_reason"] == "verified"
 
 
+def test_feature_file_queue_treats_non_object_json_as_empty(tmp_path) -> None:
+    path = tmp_path / "feature_queue.json"
+    path.write_text("[]", encoding="utf-8")
+
+    queue = FeatureFileQueue(path)
+
+    assert queue.peek_next() is None
+    assert queue.snapshot() == {
+        "backend": "feature_file",
+        "open_count": 0,
+        "items": [],
+    }
+
+
 def test_build_work_queue_selects_todo_store_backend(tmp_path) -> None:
     store = TodoStore(str(tmp_path), load_existing=False)
     store.create([TodoDraft(title="Queue build test")])
