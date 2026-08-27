@@ -13,6 +13,7 @@ import requests
 import breadboard_sdk
 from scripts import breadboard_cli
 from breadboard.product.cli import harness as harness_operations
+from breadboard_engine.api.local_server import local_server
 from breadboard.product.cli import session as session_operations
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.harness.templates import (
@@ -89,7 +90,7 @@ def test_local_server_enables_only_product_api_and_restores_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "0")
-    with harness_operations._local_server(tmp_path) as base_url:
+    with local_server(tmp_path) as base_url:
         assert requests.get(f"{base_url}/v1/system", timeout=5).status_code == 200
         assert requests.get(f"{base_url}/v1/e4/lanes", timeout=5).status_code == 404
     assert os.environ["BREADBOARD_ENABLE_PUBLIC_API"] == "0"

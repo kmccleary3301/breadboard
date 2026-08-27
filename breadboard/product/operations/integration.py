@@ -21,6 +21,14 @@ class GetIntegrationRequest:
     integration_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class ProbeIntegrationRequest:
+    integration_id: str | None = None
+
+
+_PROBE_COMMAND = ("integration", "probe")
+
+
 _LIST_COMMAND = ("integration", "list")
 _GET_COMMAND = ("integration", "get")
 
@@ -110,3 +118,26 @@ def get_integration(
         )
     except Exception as error:
         return from_exception(_GET_COMMAND, error, "integration.get")
+
+
+def probe_integration(
+    request: ProbeIntegrationRequest,
+    _context: OperationContext,
+) -> OperationResult:
+    try:
+        return OperationResult.success(
+            _PROBE_COMMAND,
+            {"probe": _record(_catalog().probe(request.integration_id))},
+            stage="integration.probe",
+        )
+    except ModuleNotFoundError:
+        return OperationResult.failure(
+            _PROBE_COMMAND,
+            EXIT_BLOCKED,
+            "integration_catalog_unavailable",
+            "integration catalog is unavailable in this installation",
+            "integration.probe",
+            status="blocked",
+        )
+    except Exception as error:
+        return from_exception(_PROBE_COMMAND, error, "integration.probe")

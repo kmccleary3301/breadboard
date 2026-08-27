@@ -3,7 +3,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from breadboard_engine.api.cli_bridge.app import create_app
+from breadboard_engine.api.public.models import scrub_public
 from breadboard.product.cli import harness as cli_harness
+from breadboard.product.operations import harness as harness_operations
 
 
 def _client(monkeypatch, workspace: Path) -> TestClient:
@@ -35,6 +37,10 @@ def test_harness_family_delegates_to_product_operations(
     assert (
         replayed.status_code == 200
         and replayed.json()["data"] == created.json()["data"]
+    )
+    assert (
+        cli_harness.init(SimpleNamespace(workspace=tmp_path, out=tmp_path)).as_dict()
+        == created.json()
     )
     fetched = client.get("/v1/harnesses/daily_driver.v1.yaml")
     assert fetched.status_code == 200
@@ -102,6 +108,17 @@ def test_harness_family_delegates_to_product_operations(
         ][0]["name"]
         == "review"
     )
+    assert (
+        cli_harness.update(
+            SimpleNamespace(
+                workspace=tmp_path,
+                PATH=tmp_path / "daily_driver.v1.yaml",
+                document=definition,
+                source=None,
+            )
+        ).as_dict()
+        == updated.json()
+    )
     nested = client.post("/v1/harnesses", json={"directory": "bundles"})
     assert nested.status_code == 200
     invalid_nested_update = client.put(
@@ -143,6 +160,15 @@ def test_harness_family_delegates_to_product_operations(
     locked = client.post("/v1/harnesses/daily_driver.v1.yaml/lock")
     assert locked.status_code == 200
     lock_id = locked.json()["data"]["path"]
+    cli_locked = cli_harness.lock(
+        SimpleNamespace(
+            workspace=tmp_path,
+            PATH=tmp_path / "daily_driver.v1.yaml",
+            out=None,
+            check=False,
+        )
+    ).as_dict()
+    assert scrub_public(cli_locked, tmp_path) == locked.json()
     fetched_lock = client.get(f"/v1/harness-locks/{lock_id}")
     assert fetched_lock.json()["ok"] is True
     lock_arguments = SimpleNamespace(
@@ -162,6 +188,58 @@ def test_harness_family_delegates_to_product_operations(
         ).as_dict()
         == listed.json()
     )
+
+
+def test_harness_update_preserves_definition_when_replacement_is_invalid(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    client = _client(monkeypatch, tmp_path)
+    assert client.post("/v1/harnesses", json={}).status_code == 200
+    harness_path = tmp_path / "daily_driver.v1.yaml"
+    before = harness_path.read_bytes()
+
+    response = client.put(
+        "/v1/harnesses/daily_driver.v1.yaml",
+        json={"definition": {}},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["ok"] is False
+    assert harness_path.read_bytes() == before
+    assert not tuple(tmp_path.glob(f".{harness_path.name}.*.tmp"))
+
+
+def test_harness_lock_rolls_back_pair_when_metadata_commit_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    client = _client(monkeypatch, tmp_path)
+    assert client.post("/v1/harnesses", json={}).status_code == 200
+    harness_path = tmp_path / "daily_driver.v1.yaml"
+    assert client.post("/v1/harnesses/daily_driver.v1.yaml/lock").status_code == 200
+    target = harness_operations.lock_path(harness_path)
+    metadata = harness_operations.lock_metadata_path(target)
+    before = (target.read_bytes(), metadata.read_bytes())
+    (tmp_path / "prompts" / "daily_driver_system.md").write_text(
+        "Changed prompt content.\n",
+        encoding="utf-8",
+    )
+    replace = harness_operations.os.replace
+
+    def fail_metadata_commit(source: Path, destination: Path) -> None:
+        if Path(destination) == metadata:
+            raise OSError("injected metadata commit failure")
+        replace(source, destination)
+
+    monkeypatch.setattr(harness_operations.os, "replace", fail_metadata_commit)
+
+    response = client.post("/v1/harnesses/daily_driver.v1.yaml/lock")
+
+    assert response.status_code == 500
+    assert response.json()["ok"] is False
+    assert (target.read_bytes(), metadata.read_bytes()) == before
+    assert not tuple(tmp_path.glob(".*.tmp"))
 
 
 def test_public_api_cannot_write_maintainer_evidence_trees(

@@ -3,17 +3,22 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from breadboard.product.harness.lock import lock_metadata_path, lock_path
 from breadboard.product.operations.harness import (
+    CreateHarnessRequest as CreateHarnessOperationRequest,
     ExplainHarnessRequest,
     GetHarnessLockRequest,
     GetHarnessRequest,
     ListHarnessesRequest,
+    LockHarnessRequest,
+    UpdateHarnessRequest as UpdateHarnessOperationRequest,
     ValidateHarnessRequest,
+    create_harness,
     explain_harness,
     get_harness,
     get_harness_lock,
     list_harnesses,
+    lock_harness,
+    update_harness,
     validate_harness,
 )
 
@@ -23,43 +28,24 @@ from .models import (
     PublicResult,
     invoke,
     public_operation_context,
-    workspace_path,
 )
 
 
 router = APIRouter(tags=["public-harness"])
 
 
-def _args(workspace, reference: str | None = None, **values):
-    from types import SimpleNamespace
-
-    fields = {"workspace": workspace, "contained": True, **values}
-    if reference is not None:
-        fields["PATH"] = workspace_path(reference, workspace)
-    return SimpleNamespace(**fields)
-
-
-def _contained(path, workspace):
-    return workspace_path(str(path.relative_to(workspace)), workspace)
-
-
 def _create(request: HarnessCreateRequest, workspace):
-    from breadboard.product.cli import harness as legacy_harness_operations
-
-    directory = workspace_path(request.directory, workspace)
-    for target in legacy_harness_operations.daily_driver_bundle_paths(directory):
-        _contained(target, workspace)
-    return legacy_harness_operations.init(_args(workspace, out=directory))
+    return create_harness(
+        CreateHarnessOperationRequest(request.directory),
+        public_operation_context(workspace),
+    )
 
 
 def _lock(harness_id: str, workspace):
-    from breadboard.product.cli import harness as legacy_harness_operations
-
-    args = _args(workspace, harness_id, out=None, check=False)
-    target = lock_path(args.PATH)
-    _contained(target, workspace)
-    _contained(lock_metadata_path(target), workspace)
-    return legacy_harness_operations.lock(args)
+    return lock_harness(
+        LockHarnessRequest(harness_id),
+        public_operation_context(workspace),
+    )
 
 
 def _update(
@@ -67,10 +53,9 @@ def _update(
     request: HarnessUpdateRequest,
     workspace,
 ):
-    from breadboard.product.cli import harness as legacy_harness_operations
-
-    return legacy_harness_operations.update(
-        _args(workspace, harness_id, document=request.definition)
+    return update_harness(
+        UpdateHarnessOperationRequest(harness_id, definition=request.definition),
+        public_operation_context(workspace),
     )
 
 

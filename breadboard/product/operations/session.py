@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from typing import Literal, Protocol, Sequence
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Literal, Mapping, Protocol, Sequence
 
+from breadboard.product.harness.lock import EffectiveHarnessLock, load_lock
+from breadboard.product.operations.harness import LockHarnessRequest, lock_harness
 from breadboard.product.operations.model import (
     EXIT_BLOCKED,
     OperationContext,
@@ -11,7 +15,8 @@ from breadboard.product.operations.model import (
     from_exception,
     portable_ref,
 )
-from breadboard.product.runtime.events import KernelEvent, Session
+
+from breadboard.product.runtime.events import KernelEvent, Session, SessionView
 from breadboard.product.runtime.session_store import (
     load_session,
     session_artifact_rows,
@@ -23,6 +28,137 @@ TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "canceled"})
 _RUNTIME_UNAVAILABLE_MESSAGE = (
     "session runtime state is unavailable after service restart"
 )
+
+
+def _validate_session_id(session_id: str) -> None:
+    if (
+        not session_id
+        or session_id in {".", ".."}
+        or session_id != Path(session_id).name
+    ):
+        raise ValueError("session_id must be a portable identifier")
+
+
+class SessionMutationError(RuntimeError):
+    """Presentation-neutral failure raised by a mutation port."""
+
+    def __init__(
+        self,
+        exit_code: int,
+        error_code: str,
+        message: str,
+        *,
+        hint: str | None = None,
+        refs: Sequence[str] = (),
+        next_actions: Sequence[str] = (),
+    ) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code
+        self.error_code = error_code
+        self.message = message
+        self.hint = hint
+        self.refs = tuple(refs)
+        self.next_actions = tuple(next_actions)
+
+
+@dataclass(frozen=True, slots=True)
+class StartSessionRequest:
+    lock_id: str
+    task: str
+    session_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SendSessionInputRequest:
+    session_id: str
+    content: str
+
+
+@dataclass(frozen=True, slots=True)
+class ApproveSessionRequest:
+    session_id: str
+    request_id: str
+    decision: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResumeSessionRequest:
+    session_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class CancelSessionRequest:
+    session_id: str
+    reason: str = "operator request"
+
+
+@dataclass(frozen=True, slots=True)
+class StartSessionOutcome:
+    view: SessionView
+    refs: tuple[str, ...] = ()
+    hashes: Mapping[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class SendSessionInputOutcome:
+    view: SessionView
+    refs: tuple[str, ...] = ()
+    hashes: Mapping[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ApproveSessionOutcome:
+    view: SessionView
+    refs: tuple[str, ...] = ()
+    hashes: Mapping[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ResumeSessionOutcome:
+    view: SessionView
+    refs: tuple[str, ...] = ()
+    hashes: Mapping[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class CancelSessionOutcome:
+    view: SessionView
+    refs: tuple[str, ...] = ()
+    hashes: Mapping[str, str] = field(default_factory=dict)
+
+
+class SessionMutationPort(Protocol):
+    async def start(
+        self,
+        request: StartSessionRequest,
+        context: OperationContext,
+        effective_lock: EffectiveHarnessLock,
+        source_path: Path,
+    ) -> StartSessionOutcome: ...
+
+    async def send_input(
+        self,
+        request: SendSessionInputRequest,
+        context: OperationContext,
+    ) -> SendSessionInputOutcome: ...
+
+    async def approve(
+        self,
+        request: ApproveSessionRequest,
+        context: OperationContext,
+    ) -> ApproveSessionOutcome: ...
+
+    async def resume(
+        self,
+        request: ResumeSessionRequest,
+        context: OperationContext,
+    ) -> ResumeSessionOutcome: ...
+
+    async def cancel(
+        self,
+        request: CancelSessionRequest,
+        context: OperationContext,
+    ) -> CancelSessionOutcome: ...
 
 
 class LiveSessionReadPort(Protocol):
@@ -317,3 +453,194 @@ async def list_session_events(
         refs,
         stage="session.events",
     )
+
+
+def _mutation_result(
+    command: Sequence[str],
+    stage: str,
+    outcome: (
+        StartSessionOutcome
+        | SendSessionInputOutcome
+        | ApproveSessionOutcome
+        | ResumeSessionOutcome
+        | CancelSessionOutcome
+    ),
+) -> OperationResult:
+    view = outcome.view
+    hashes = dict(outcome.hashes) or {
+        "lock": view.effective_lock_hash,
+        "task": view.task_hash,
+    }
+    return OperationResult.success(
+        command,
+        {"session": view.as_dict()},
+        outcome.refs,
+        hashes,
+        stage=stage,
+    )
+
+
+def _mutation_failure(
+    command: Sequence[str],
+    stage: str,
+    error: SessionMutationError,
+) -> OperationResult:
+    return OperationResult.failure(
+        command,
+        error.exit_code,
+        error.error_code,
+        error.message,
+        stage,
+        hint=error.hint,
+        refs=error.refs,
+        next_actions=error.next_actions,
+    )
+
+
+def _resolve_start_lock(
+    request: StartSessionRequest,
+    context: OperationContext,
+) -> tuple[EffectiveHarnessLock, Path, OperationResult]:
+    lock_path = context.resolve_path(request.lock_id)
+    lock, metadata_path = load_lock(lock_path, context.workspace, explicit=True)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    source_ref = metadata.get("source_ref")
+    if not isinstance(source_ref, str) or not source_ref:
+        raise ValueError("lock metadata source_ref is missing")
+    source_reference: str | Path = source_ref
+    if not context.contained and not Path(source_ref).is_absolute():
+        source_reference = context.workspace / source_ref
+    source_path = context.resolve_path(source_reference)
+    lock_request_path: str | Path = source_ref if context.contained else source_path
+    lock_request_out: str | Path = (
+        lock_path.relative_to(context.workspace) if context.contained else lock_path
+    )
+    checked = lock_harness(
+        LockHarnessRequest(
+            path=lock_request_path,
+            out=lock_request_out,
+            check=True,
+        ),
+        context,
+    )
+    return lock, source_path, checked
+
+
+async def start(
+    request: StartSessionRequest,
+    context: OperationContext,
+    mutation_port: SessionMutationPort,
+) -> OperationResult:
+    command = ["session", "start"]
+    stage = "session.start"
+    try:
+        if request.session_id is not None:
+            _validate_session_id(request.session_id)
+        effective_lock, source_path, checked = await asyncio.to_thread(
+            _resolve_start_lock,
+            request,
+            context,
+        )
+        if not checked.ok:
+            error = checked.error or {}
+            return OperationResult.failure(
+                command,
+                checked.exit_code,
+                str(error.get("error_code") or "lock_drift"),
+                str(error.get("message") or "harness lock validation failed"),
+                stage,
+                hint=error.get("hint"),
+                refs=checked.record_refs,
+                next_actions=checked.next_actions,
+            )
+        outcome = await mutation_port.start(
+            request,
+            context,
+            effective_lock,
+            source_path,
+        )
+        return _mutation_result(command, stage, outcome)
+    except SessionMutationError as error:
+        return _mutation_failure(command, stage, error)
+    except Exception as error:
+        return from_exception(command, error, stage)
+
+
+async def send_input(
+    request: SendSessionInputRequest,
+    context: OperationContext,
+    mutation_port: SessionMutationPort,
+) -> OperationResult:
+    command = ["session", "send-input"]
+    stage = "session.send-input"
+    try:
+        _validate_session_id(request.session_id)
+        return _mutation_result(
+            command,
+            stage,
+            await mutation_port.send_input(request, context),
+        )
+    except SessionMutationError as error:
+        return _mutation_failure(command, stage, error)
+    except Exception as error:
+        return from_exception(command, error, stage)
+
+
+async def approve(
+    request: ApproveSessionRequest,
+    context: OperationContext,
+    mutation_port: SessionMutationPort,
+) -> OperationResult:
+    command = ["session", "approve"]
+    stage = "session.approve"
+    try:
+        _validate_session_id(request.session_id)
+        return _mutation_result(
+            command,
+            stage,
+            await mutation_port.approve(request, context),
+        )
+    except SessionMutationError as error:
+        return _mutation_failure(command, stage, error)
+    except Exception as error:
+        return from_exception(command, error, stage)
+
+
+async def resume(
+    request: ResumeSessionRequest,
+    context: OperationContext,
+    mutation_port: SessionMutationPort,
+) -> OperationResult:
+    command = ["session", "resume"]
+    stage = "session.resume"
+    try:
+        _validate_session_id(request.session_id)
+        return _mutation_result(
+            command,
+            stage,
+            await mutation_port.resume(request, context),
+        )
+    except SessionMutationError as error:
+        return _mutation_failure(command, stage, error)
+    except Exception as error:
+        return from_exception(command, error, stage)
+
+
+async def cancel(
+    request: CancelSessionRequest,
+    context: OperationContext,
+    mutation_port: SessionMutationPort,
+) -> OperationResult:
+    command = ["session", "cancel"]
+    stage = "session.cancel"
+    try:
+        _validate_session_id(request.session_id)
+        return _mutation_result(
+            command,
+            stage,
+            await mutation_port.cancel(request, context),
+        )
+    except SessionMutationError as error:
+        return _mutation_failure(command, stage, error)
+    except Exception as error:
+        return from_exception(command, error, stage)
