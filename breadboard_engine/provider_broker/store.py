@@ -1412,6 +1412,17 @@ class SQLiteCredentialStore:
             ).fetchone()
             if (
                 previous is not None
+                and previous["owner_id"]
+                and str(previous["owner_id"]) != owner_ref
+                and previous["lease_expires_at_ms"] is not None
+                and int(previous["lease_expires_at_ms"]) > timestamp
+            ):
+                return {
+                    "status": "busy",
+                    "lease_expires_at_ms": int(previous["lease_expires_at_ms"]),
+                }
+            if (
+                previous is not None
                 and not previous["owner_id"]
                 and previous["retry_not_before_ms"] is not None
                 and int(previous["retry_not_before_ms"]) > timestamp
