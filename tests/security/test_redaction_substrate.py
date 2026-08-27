@@ -63,6 +63,17 @@ class TestRegisteredValues:
             assert redaction.iter_registered_secret_values() == (secret,)
         assert redaction.iter_registered_secret_values() == ()
 
+    def test_scoped_value_detected_in_nested_mapping_key(self):
+        secret = "mapping-key-canary-value"
+        payload = {"outer": [{f"prefix-{secret}-suffix": "description"}]}
+        with redaction.secret_value_scope(secret):
+            assert redaction.contains_registered_secret_mapping_key(payload)
+            assert not redaction.contains_registered_secret_mapping_key(
+                {"outer": [{"description": secret}]}
+            )
+        assert redaction.iter_registered_secret_values() == ()
+        assert not redaction.contains_registered_secret_mapping_key(payload)
+
     def test_short_and_non_string_values_ignored(self):
         with redaction.secret_value_scope("abc", None, 12345):
             assert redaction.iter_registered_secret_values() == ()
