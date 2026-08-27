@@ -26,6 +26,107 @@
     "title": "AuthActionResponse",
     "type": "object"
    },
+   "AuthCredentialRefreshState": {
+    "properties": {
+     "expected_secret_version": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Expected Secret Version"
+     },
+     "last_failure_at_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Failure At Ms"
+     },
+     "last_failure_class": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Failure Class"
+     },
+     "last_failure_code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Failure Code"
+     },
+     "lease_acquired_at_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lease Acquired At Ms"
+     },
+     "lease_expires_at_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lease Expires At Ms"
+     },
+     "retry_not_before_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Retry Not Before Ms"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "updated_at_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At Ms"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "AuthCredentialRefreshState",
+    "type": "object"
+   },
    "AuthCredentialView": {
     "properties": {
      "account_id": {
@@ -90,9 +191,7 @@
       "type": "string"
      },
      "refresh_state": {
-      "additionalProperties": true,
-      "title": "Refresh State",
-      "type": "object"
+      "$ref": "#/components/schemas/AuthCredentialRefreshState"
      },
      "secret_version": {
       "title": "Secret Version",

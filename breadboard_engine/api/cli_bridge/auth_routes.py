@@ -82,6 +82,8 @@ def _safe_credential(value: dict[str, Any]) -> AuthCredentialView:
         value.get("refresh_state") or {},
         path="$.refresh_state",
     )
+    safe_refresh_state = dict(refresh_state) if isinstance(refresh_state, dict) else {}
+    safe_refresh_state.setdefault("status", "idle")
     return AuthCredentialView(
         account_id=str(value.get("account_id") or ""),
         credential_id=str(value.get("credential_id") or ""),
@@ -98,7 +100,7 @@ def _safe_credential(value: dict[str, Any]) -> AuthCredentialView:
         expires_at_ms=value.get("expires_at_ms"),
         has_api_key=bool(value.get("has_api_key")),
         metadata=metadata if isinstance(metadata, dict) else {},
-        refresh_state=(refresh_state if isinstance(refresh_state, dict) else {}),
+        refresh_state=safe_refresh_state,
     )
 
 
