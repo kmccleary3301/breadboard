@@ -104,6 +104,7 @@ def test_session_lifecycle_and_resumable_event_stream(
     sequences = [event["seq"] for event in first]
     assert len(sequences) >= 2 and sequences == list(range(1, len(sequences) + 1))
     assert all(event["schema_version"] == "bb.kernel_event.v2" for event in first)
+    assert sum(event["kind"] == "input.accepted" for event in first) == 1
     assert first[-1]["kind"] == "session.canceled"
     assert first[-1]["payload"]["reason"] == "<redacted>"
     resumed = _stream_records(

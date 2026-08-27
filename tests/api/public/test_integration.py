@@ -5,6 +5,11 @@ from fastapi.testclient import TestClient
 from breadboard_engine.api.cli_bridge.app import create_app
 from breadboard_engine.api.public import integration as api_integration
 from breadboard.product.cli import integration as cli_integration
+from breadboard.product.operations.integration import (
+    ProbeIntegrationRequest,
+    probe_integration,
+)
+from breadboard.product.operations.model import OperationContext
 from breadboard.product.integrations.catalog import (
     IntegrationCatalog,
     IntegrationDescriptor,
@@ -23,7 +28,10 @@ class _Adapter:
         secret_reference_names=("FIXTURE_TOKEN",),
     )
 
+    probe_calls = 0
+
     def probe(self) -> ProbeReport:
+        type(self).probe_calls += 1
         return ProbeReport(
             schema_version="bb.capability_probe_report.v1",
             report_id="probe:fixture.provider",
@@ -97,6 +105,37 @@ def test_integration_list_get_and_async_probe(monkeypatch, tmp_path: Path) -> No
         ["integration", "get"],
         {"integration": descriptor},
     )
+    expected_probe = _success_result(
+        ["integration", "probe"],
+        {
+            "probe": {
+                "schema_version": "bb.capability_probe_report.v1",
+                "report_id": "probe:fixture.provider",
+                "integration_id": "fixture.provider",
+                "kind": "provider_adapter",
+                "implementation_id": "fixture:provider",
+                "identity": {
+                    "integration_id": "fixture.provider",
+                    "kind": "provider_adapter",
+                    "implementation_id": "fixture:provider",
+                },
+                "status": "available",
+                "capabilities": ["chat"],
+                "effects": [],
+                "permissions": [],
+                "error": None,
+                "checked_at_utc": "2026-07-24T00:00:00Z",
+            }
+        },
+    )
+    assert (
+        probe_integration(
+            ProbeIntegrationRequest("fixture.provider"),
+            OperationContext(workspace=tmp_path),
+        ).as_dict()
+        == expected_probe
+    )
+
     listing = client.get("/v1/integrations")
     fetched = client.get("/v1/integrations/fixture.provider")
     cli_arguments = SimpleNamespace(workspace=tmp_path)
@@ -110,6 +149,13 @@ def test_integration_list_get_and_async_probe(monkeypatch, tmp_path: Path) -> No
     )
     cli_arguments.INTEGRATION_ID = "fixture.provider"
     assert cli_integration.get(cli_arguments).as_dict() == expected_get
+    assert cli_integration.probe(cli_arguments).as_dict() == expected_probe
+    assert cli_integration.probe(SimpleNamespace(workspace=tmp_path)).as_dict() == (
+        _success_result(
+            ["integration", "probe"],
+            {"probe": [expected_probe["data"]["probe"]]},
+        )
+    )
     before_reads = {
         path.relative_to(tmp_path).as_posix(): path.read_bytes()
         for path in tmp_path.rglob("*")
@@ -123,15 +169,20 @@ def test_integration_list_get_and_async_probe(monkeypatch, tmp_path: Path) -> No
         if path.is_file() and not path.is_symlink()
     }
     assert after_reads == before_reads
+    probe_calls_before_http = _Adapter.probe_calls
     probed = client.post(
         "/v1/integrations/fixture.provider/probe",
         headers={"Idempotency-Key": "probe-fixture"},
     )
-    assert probed.status_code == 202
-    assert (
-        probed.json()["data"]["probe"]["schema_version"]
-        == "bb.capability_probe_report.v1"
+    replayed = client.post(
+        "/v1/integrations/fixture.provider/probe",
+        headers={"Idempotency-Key": "probe-fixture"},
     )
+    assert probed.status_code == 202
+    assert replayed.status_code == 202
+    assert probed.json() == expected_probe
+    assert replayed.json() == expected_probe
+    assert _Adapter.probe_calls == probe_calls_before_http + 1
     assert "FIXTURE_TOKEN" in fetched.text
     assert "token-value-must-not-leak" not in fetched.text + probed.text
     missing = client.get("/v1/integrations/missing")

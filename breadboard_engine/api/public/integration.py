@@ -7,6 +7,7 @@ from breadboard.product.operations import integration as integration_operations
 from breadboard.product.operations.integration import (
     GetIntegrationRequest,
     ListIntegrationsRequest,
+    ProbeIntegrationRequest,
 )
 
 from .models import PublicResult, invoke, invoke_idempotent, public_operation_context
@@ -55,17 +56,12 @@ def probe(
     integration_id: str,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    from types import SimpleNamespace
-
-    from breadboard.product.cli import (
-        integration as legacy_integration_operations,
-    )
-
     return invoke_idempotent(
         "integration.probe",
         idempotency_key,
         {"integration_id": integration_id},
-        lambda workspace: legacy_integration_operations.probe(
-            SimpleNamespace(workspace=workspace, INTEGRATION_ID=integration_id)
+        lambda workspace: integration_operations.probe_integration(
+            ProbeIntegrationRequest(integration_id),
+            public_operation_context(workspace),
         ),
     )

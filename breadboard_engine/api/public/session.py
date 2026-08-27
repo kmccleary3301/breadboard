@@ -17,9 +17,7 @@ from breadboard_engine.api.cli_bridge.models import (
 from breadboard_engine.api.cli_bridge.models import (
     SessionInputRequest as BridgeSessionInputRequest,
 )
-from breadboard.product.harness.lock import load_lock
 from breadboard.product.operations import session as session_operations
-from breadboard.product.operations.model import OperationResult
 from breadboard.product.runtime import session_store
 
 from .models import (
@@ -138,115 +136,161 @@ async def _require_live_product_session(
     )
 
 
-async def _session_result(
-    service,
-    session_id: str,
-    command_name: str,
-) -> OperationResult:
-    _, session = await _product_session(service, session_id)
-    view = session.read_model
-    return OperationResult.success(
-        ["session", command_name],
-        {"session": view.as_dict()},
-        hashes={"lock": view.effective_lock_hash, "task": view.task_hash},
-        stage=f"session.{command_name}",
+def _mutation_error(error: HTTPException) -> session_operations.SessionMutationError:
+    status_code = int(error.status_code)
+    exit_code = {404: 3, 409: 6, 422: 2}.get(
+        status_code, 4 if status_code >= 500 else 2
+    )
+    error_code = {
+        404: "path_unavailable",
+        409: "invalid_state",
+        422: "invalid_state",
+    }.get(status_code, "runtime_failure" if status_code >= 500 else "invalid_state")
+    return session_operations.SessionMutationError(
+        exit_code,
+        error_code,
+        str(error.detail),
     )
 
 
-def _resolve_start_lock(request: SessionStartRequest, workspace: Path):
-    from types import SimpleNamespace
+class _LiveSessionMutationAdapter:
+    def __init__(self, service) -> None:
+        self._service = service
 
-    from breadboard.product.cli import harness as legacy_harness_operations
+    async def start(
+        self,
+        request: session_operations.StartSessionRequest,
+        context,
+        effective_lock,
+        source_path: Path,
+    ) -> session_operations.StartSessionOutcome:
+        try:
+            created = await self._service.create_session(
+                BridgeSessionCreateRequest(
+                    config_path=str(source_path),
+                    task=request.task,
+                    workspace=str(context.workspace),
+                    metadata={
+                        "non_interactive_cli_session": True,
+                        "cli_session_kind": "oneshot",
+                    },
+                ),
+                session_id=request.session_id,
+                event_root=workspace_path(
+                    ".breadboard/sessions",
+                    context.workspace,
+                ),
+                runtime_root=workspace_path(
+                    ".breadboard/service_records",
+                    context.workspace,
+                ),
+                effective_lock=effective_lock,
+            )
+            _, session = await _product_session(
+                self._service,
+                created.session_id,
+            )
+            return session_operations.StartSessionOutcome(session.read_model)
+        except HTTPException as error:
+            raise _mutation_error(error) from error
 
-    lock_path = workspace_path(request.lock_id, workspace)
-    lock, metadata_path = load_lock(lock_path, workspace, explicit=True)
-    metadata = json.loads(metadata_path.read_text())
-    source_ref = metadata.get("source_ref")
-    if not isinstance(source_ref, str) or not source_ref:
-        raise ValueError("lock metadata source_ref is missing")
-    source_path = workspace_path(source_ref, workspace)
-    checked = legacy_harness_operations.lock(
-        SimpleNamespace(
-            workspace=workspace,
-            PATH=source_path,
-            out=lock_path,
-            check=True,
-            contained=True,
-        )
-    )
-    return lock, source_path, checked
+    async def send_input(
+        self,
+        request: session_operations.SendSessionInputRequest,
+        context,
+    ) -> session_operations.SendSessionInputOutcome:
+        try:
+            await _require_live_product_session(
+                self._service,
+                request.session_id,
+                context.workspace,
+            )
+            await self._service.send_input(
+                request.session_id,
+                BridgeSessionInputRequest(content=request.content),
+            )
+            _, session = await _product_session(
+                self._service,
+                request.session_id,
+            )
+            return session_operations.SendSessionInputOutcome(session.read_model)
+        except HTTPException as error:
+            raise _mutation_error(error) from error
 
+    async def approve(
+        self,
+        request: session_operations.ApproveSessionRequest,
+        context,
+    ) -> session_operations.ApproveSessionOutcome:
+        try:
+            await _require_live_product_session(
+                self._service,
+                request.session_id,
+                context.workspace,
+            )
+            await self._service.execute_command(
+                request.session_id,
+                BridgeSessionCommandRequest(
+                    command="permission_response",
+                    payload={
+                        "request_id": request.request_id,
+                        "response": request.decision,
+                    },
+                ),
+            )
+            _, session = await _product_session(
+                self._service,
+                request.session_id,
+            )
+            return session_operations.ApproveSessionOutcome(session.read_model)
+        except HTTPException as error:
+            raise _mutation_error(error) from error
 
-async def _start_result(
-    request: SessionStartRequest, workspace: Path, service
-) -> OperationResult:
-    if request.session_id and (
-        request.session_id in {".", ".."}
-        or request.session_id != Path(request.session_id).name
-    ):
-        raise ValueError("session_id must be a portable identifier")
-    effective_lock, source_path, checked = await run_in_threadpool(
-        _resolve_start_lock, request, workspace
-    )
-    if not checked.ok:
-        error = checked.error or {}
-        return OperationResult.failure(
-            ["session", "start"],
-            checked.exit_code,
-            str(error.get("error_code") or "lock_drift"),
-            str(error.get("message") or "harness lock validation failed"),
-            "session.start",
-            hint=error.get("hint"),
-            refs=checked.record_refs,
-            next_actions=checked.next_actions,
-        )
-    created = await service.create_session(
-        BridgeSessionCreateRequest(
-            config_path=str(source_path),
-            task=request.task,
-            workspace=str(workspace),
-            metadata={
-                "non_interactive_cli_session": True,
-                "cli_session_kind": "oneshot",
-            },
-        ),
-        session_id=request.session_id,
-        event_root=workspace_path(".breadboard/sessions", workspace),
-        runtime_root=workspace_path(".breadboard/service_records", workspace),
-        effective_lock=effective_lock,
-    )
-    return await _session_result(service, created.session_id, "start")
+    async def resume(
+        self,
+        request: session_operations.ResumeSessionRequest,
+        context,
+    ) -> session_operations.ResumeSessionOutcome:
+        try:
+            await _require_live_product_session(
+                self._service,
+                request.session_id,
+                context.workspace,
+            )
+            await self._service.execute_command(
+                request.session_id,
+                BridgeSessionCommandRequest(command="resume", payload={}),
+            )
+            _, session = await _product_session(
+                self._service,
+                request.session_id,
+            )
+            return session_operations.ResumeSessionOutcome(session.read_model)
+        except HTTPException as error:
+            raise _mutation_error(error) from error
 
-
-async def _send_result(
-    service, session_id: str, content: str, workspace: Path
-) -> OperationResult:
-    await _require_live_product_session(service, session_id, workspace)
-    await service.send_input(session_id, BridgeSessionInputRequest(content=content))
-    return await _session_result(service, session_id, "send-input")
-
-
-async def _command_result(
-    service,
-    session_id: str,
-    command: str,
-    payload: dict,
-    command_name: str,
-    workspace: Path,
-) -> OperationResult:
-    await _require_live_product_session(service, session_id, workspace)
-    await service.execute_command(
-        session_id, BridgeSessionCommandRequest(command=command, payload=payload)
-    )
-    return await _session_result(service, session_id, command_name)
-
-
-async def _cancel_result(
-    service, session_id: str, reason: str, workspace: Path
-) -> OperationResult:
-    await _require_live_product_session(service, session_id, workspace)
-    await service.stop_session(session_id, reason=reason)
-    return await _session_result(service, session_id, "cancel")
+    async def cancel(
+        self,
+        request: session_operations.CancelSessionRequest,
+        context,
+    ) -> session_operations.CancelSessionOutcome:
+        try:
+            await _require_live_product_session(
+                self._service,
+                request.session_id,
+                context.workspace,
+            )
+            await self._service.stop_session(
+                request.session_id,
+                reason=request.reason,
+            )
+            _, session = await _product_session(
+                self._service,
+                request.session_id,
+            )
+            return session_operations.CancelSessionOutcome(session.read_model)
+        except HTTPException as error:
+            raise _mutation_error(error) from error
 
 
 def _kernel_event(event):
@@ -288,11 +332,20 @@ async def start(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     values = request.model_dump(mode="json")
+    neutral_request = session_operations.StartSessionRequest(
+        lock_id=request.lock_id,
+        task=request.task,
+        session_id=request.session_id,
+    )
     return await invoke_idempotent_async(
         "session.start",
         idempotency_key,
         values,
-        lambda workspace: _start_result(request, workspace, _service(context)),
+        lambda workspace: session_operations.start(
+            neutral_request,
+            public_operation_context(workspace),
+            _LiveSessionMutationAdapter(_service(context)),
+        ),
     )
 
 
@@ -321,12 +374,18 @@ async def send_input(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     values = {"session_id": session_id, **request.model_dump(mode="json")}
+    neutral_request = session_operations.SendSessionInputRequest(
+        session_id=session_id,
+        content=request.content,
+    )
     return await invoke_idempotent_async(
         "session.send_input",
         idempotency_key,
         values,
-        lambda workspace: _send_result(
-            _service(context), session_id, request.content, workspace
+        lambda workspace: session_operations.send_input(
+            neutral_request,
+            public_operation_context(workspace),
+            _LiveSessionMutationAdapter(_service(context)),
         ),
     )
 
@@ -344,17 +403,19 @@ async def approve(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     values = {"session_id": session_id, **request.model_dump(mode="json")}
+    neutral_request = session_operations.ApproveSessionRequest(
+        session_id=session_id,
+        request_id=request.request_id,
+        decision=request.decision,
+    )
     return await invoke_idempotent_async(
         "session.approve",
         idempotency_key,
         values,
-        lambda workspace: _command_result(
-            _service(context),
-            session_id,
-            "permission_response",
-            {"request_id": request.request_id, "response": request.decision},
-            "approve",
-            workspace,
+        lambda workspace: session_operations.approve(
+            neutral_request,
+            public_operation_context(workspace),
+            _LiveSessionMutationAdapter(_service(context)),
         ),
     )
 
@@ -374,8 +435,10 @@ async def resume(
         "session.resume",
         idempotency_key,
         {"session_id": session_id},
-        lambda workspace: _command_result(
-            _service(request), session_id, "resume", {}, "resume", workspace
+        lambda workspace: session_operations.resume(
+            session_operations.ResumeSessionRequest(session_id),
+            public_operation_context(workspace),
+            _LiveSessionMutationAdapter(_service(request)),
         ),
     )
 
@@ -393,12 +456,18 @@ async def cancel(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     values = {"session_id": session_id, **request.model_dump(mode="json")}
+    neutral_request = session_operations.CancelSessionRequest(
+        session_id=session_id,
+        reason=request.reason,
+    )
     return await invoke_idempotent_async(
         "session.cancel",
         idempotency_key,
         values,
-        lambda workspace: _cancel_result(
-            _service(context), session_id, request.reason, workspace
+        lambda workspace: session_operations.cancel(
+            neutral_request,
+            public_operation_context(workspace),
+            _LiveSessionMutationAdapter(_service(context)),
         ),
     )
 

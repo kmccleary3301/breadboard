@@ -7,13 +7,9 @@ from breadboard.product.operations import integration as integration_operations
 from breadboard.product.operations.integration import (
     GetIntegrationRequest,
     ListIntegrationsRequest,
+    ProbeIntegrationRequest,
 )
-from breadboard.product.operations.model import (
-    EXIT_BLOCKED,
-    OperationContext,
-    OperationResult,
-    from_exception,
-)
+from breadboard.product.operations.model import OperationContext, OperationResult
 
 
 def _operation_context(workspace: Path) -> OperationContext:
@@ -43,26 +39,7 @@ def get(args: Any) -> OperationResult:
 
 
 def probe(args: Any) -> OperationResult:
-    try:
-        return OperationResult.success(
-            ["integration", "probe"],
-            {
-                "probe": integration_operations._record(
-                    integration_operations._catalog().probe(
-                        getattr(args, "INTEGRATION_ID", None)
-                    )
-                )
-            },
-            stage="integration.probe",
-        )
-    except ModuleNotFoundError:
-        return OperationResult.failure(
-            ["integration", "probe"],
-            EXIT_BLOCKED,
-            "integration_catalog_unavailable",
-            "integration catalog is unavailable in this installation",
-            "integration.probe",
-            status="blocked",
-        )
-    except Exception as error:
-        return from_exception(["integration", "probe"], error, "integration.probe")
+    return integration_operations.probe_integration(
+        ProbeIntegrationRequest(getattr(args, "INTEGRATION_ID", None)),
+        _operation_context(_workspace(args)),
+    )

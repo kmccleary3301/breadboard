@@ -31,6 +31,20 @@ I2_READ_VERIFY_OPERATION_IDS = frozenset(
     }
 )
 
+I3_MUTATION_OPERATION_IDS = frozenset(
+    {
+        "harness.create",
+        "harness.lock",
+        "harness.update",
+        "integration.probe",
+        "session.approve",
+        "session.cancel",
+        "session.resume",
+        "session.send_input",
+        "session.start",
+    }
+)
+
 
 def test_i2_inventory_matches_read_and_verify_catalog() -> None:
     catalog = json.loads(
@@ -43,6 +57,19 @@ def test_i2_inventory_matches_read_and_verify_catalog() -> None:
     }
 
     assert observed == I2_READ_VERIFY_OPERATION_IDS
+
+
+def test_i3_inventory_matches_write_and_execute_catalog() -> None:
+    catalog = json.loads(
+        (ROOT / "contracts/public/operations.v2.json").read_text(encoding="utf-8")
+    )
+    observed = {
+        operation["operation_id"]
+        for operation in catalog["operations"]
+        if operation["effects"] in {"write", "execute"}
+    }
+
+    assert observed == I3_MUTATION_OPERATION_IDS
 
 
 def _imports(relative_path: str) -> set[str]:
@@ -184,3 +211,40 @@ def test_public_read_adapters_do_not_reach_cli(
         }
         assert referenced_names.isdisjoint(cli_bindings)
         assert "SimpleNamespace" not in referenced_names
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "breadboard_engine/api/public/harness.py",
+        "breadboard_engine/api/public/integration.py",
+        "breadboard_engine/api/public/session.py",
+    ],
+)
+def test_public_mutation_adapters_do_not_reach_cli(relative_path: str) -> None:
+    source = (ROOT / relative_path).read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=relative_path)
+
+    assert not any(
+        module.startswith("breadboard.product.cli")
+        for module in _imports(relative_path)
+    )
+    assert not any(
+        isinstance(node, ast.Name) and node.id == "SimpleNamespace"
+        for node in ast.walk(tree)
+    )
+
+
+def test_harness_cli_does_not_own_local_http_server() -> None:
+    relative_path = "breadboard/product/cli/harness.py"
+    source = (ROOT / relative_path).read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=relative_path)
+    function_names = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    assert "_local_server" not in function_names
+    assert "uvicorn" not in _imports(relative_path)
+    assert "breadboard_engine.api.cli_bridge.app" not in _imports(relative_path)

@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from scripts import breadboard_cli
-from breadboard.product.cli import harness as harness_operations
+from breadboard.product.operations import harness as harness_operations
 from breadboard.product.harness import resolution as harness_resolution
 from breadboard.product.harness.lock import sha256_bytes
 from breadboard.product.evidence import load_lane
