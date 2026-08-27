@@ -316,6 +316,7 @@ export interface Tool {
   parameters: {
     [k: string]: CanonicalJson;
   };
+  strict?: boolean;
 }
 /**
  * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema

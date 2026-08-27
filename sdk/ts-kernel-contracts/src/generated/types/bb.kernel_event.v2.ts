@@ -7,6 +7,7 @@ export interface KernelEventV2 {
   event_id: string;
   run_id: string;
   session_id: string;
+  input_id?: string;
   turn_id?: string;
   step_id?: string;
   task_id?: string;
