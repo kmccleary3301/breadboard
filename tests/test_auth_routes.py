@@ -314,7 +314,13 @@ def test_auth_api_key_scrubs_numeric_metadata_and_rejects_matching_expiry(
 
 @pytest.mark.parametrize(
     "credential_source",
-    ["api_key_header", "authorization_header", "routing", "base_url"],
+    [
+        "api_key_header",
+        "authorization_header",
+        "prefixed_authorization_header",
+        "routing",
+        "base_url",
+    ],
 )
 def test_auth_api_key_scrubs_distinct_nested_credential_values(
     credential_source,
@@ -332,6 +338,10 @@ def test_auth_api_key_scrubs_distinct_nested_credential_values(
         credential_fields = {
             "headers": {"Authorization": f"Bearer {nested_secret}"}
         }
+    elif credential_source == "prefixed_authorization_header":
+        credential_fields = {
+            "headers": {"X-Authorization": f"Bearer {nested_secret}"}
+        }
     elif credential_source == "routing":
         credential_fields = {"routing": {"refresh_token": nested_secret}}
     else:
@@ -342,6 +352,7 @@ def test_auth_api_key_scrubs_distinct_nested_credential_values(
     sensitive_property = {
         "api_key_header": "x-api-key",
         "authorization_header": "Authorization",
+        "prefixed_authorization_header": "X-Authorization",
         "routing": "refresh_token",
     }.get(credential_source)
     metadata = {"canary": nested_secret}
@@ -382,6 +393,42 @@ def test_auth_api_key_scrubs_distinct_nested_credential_values(
     assert redaction.iter_registered_secret_values() == ()
 
 
+def test_auth_api_key_scrubs_overlapping_secondary_secret_completely(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+
+    primary_secret = "overlap-secret"
+    secondary_secret = "overlap-secret-suffix"
+    database = tmp_path / "overlap.sqlite3"
+    broker = ProviderBroker(SQLiteCredentialStore(database))
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    client = TestClient(create_app())
+
+    response = client.put(
+        "/v1/auth/credentials/openai/main/api-key",
+        json={
+            "api_key": primary_secret,
+            "headers": {"X-Authorization": f"Bearer {secondary_secret}"},
+            "metadata": {"canary": secondary_secret},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["metadata"] == {"canary": "***REDACTED***"}
+    assert primary_secret not in response.text
+    assert "suffix" not in response.text
+    with sqlite3.connect(database) as connection:
+        metadata_json = connection.execute(
+            "SELECT metadata_json FROM accounts"
+        ).fetchone()[0]
+    assert primary_secret not in metadata_json
+    assert "suffix" not in metadata_json
+    assert redaction.iter_registered_secret_values() == ()
+
+
 def test_auth_api_key_rejects_distinct_header_secret_in_identity(
     tmp_path,
     monkeypatch,
@@ -419,7 +466,92 @@ def test_auth_api_key_rejects_distinct_header_secret_in_identity(
     assert redaction.iter_registered_secret_values() == ()
 
 
-def test_auth_api_key_rejects_short_distinct_header_secret(
+@pytest.mark.parametrize(
+    ("credential_fields", "public_value"),
+    [
+        (
+            {
+                "headers": {
+                    "Authorization": (
+                        "Basic YmFzaWMtdXNlcjpiYXNpYy1wYXNzd29yZA=="
+                    )
+                }
+            },
+            "basic-password",
+        ),
+        ({"headers": {"Cookie": 'sid="cookie%2Dsecret"'}}, "cookie-secret"),
+        (
+            {"headers": {"Cookie": 'sid="cookie%2Dsecret"'}},
+            "cookie%2Dsecret",
+        ),
+        (
+            {
+                "base_url": (
+                    "https://url-user:url%2Dsecret@example.test/v1"
+                    "?api_key=query%2Dsecret"
+                )
+            },
+            "url%2Dsecret",
+        ),
+        (
+            {
+                "base_url": (
+                    "https://url-user:url%2Dsecret@example.test/v1"
+                    "?api_key=query%2Dsecret"
+                )
+            },
+            "url-secret",
+        ),
+        ({"routing": {"access_token": 48273195}}, 48273195),
+        ({"routing": {"access_token": 48273195.0}}, 48273195),
+        ({"routing": {"access_token": 48273195}}, 48273195.0),
+    ],
+)
+def test_auth_api_key_scrubs_decoded_and_numeric_credential_values(
+    credential_fields,
+    public_value,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+
+    database = tmp_path / "decoded.sqlite3"
+    broker = ProviderBroker(SQLiteCredentialStore(database))
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    client = TestClient(create_app())
+
+    response = client.put(
+        "/v1/auth/credentials/openai/main/api-key",
+        json={
+            "api_key": "primary-secret-material",
+            "metadata": {"canary": public_value},
+            **credential_fields,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["metadata"] == {"canary": "***REDACTED***"}
+    assert str(public_value) not in response.text
+    with sqlite3.connect(database) as connection:
+        metadata_json = connection.execute(
+            "SELECT metadata_json FROM accounts"
+        ).fetchone()[0]
+    assert str(public_value) not in metadata_json
+    assert str(public_value) not in json.dumps(broker.audit_events())
+    assert redaction.iter_registered_secret_values() == ()
+
+
+@pytest.mark.parametrize(
+    "credential_fields",
+    [
+        {"headers": {"x-api-key": "abc"}},
+        {"headers": {"X-Authorization": "Bearer abc"}},
+        {"routing": {"access_token": 123}},
+    ],
+)
+def test_auth_api_key_rejects_short_distinct_credential_material(
+    credential_fields,
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -435,7 +567,7 @@ def test_auth_api_key_rejects_short_distinct_header_secret(
         "/v1/auth/credentials/openai/main/api-key",
         json={
             "api_key": "primary-secret-material",
-            "headers": {"x-api-key": "abc"},
+            **credential_fields,
         },
     )
 

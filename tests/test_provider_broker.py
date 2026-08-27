@@ -209,12 +209,18 @@ def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
             "provider_id": "anthropic",
             "account_label": "restart",
             "api_key": "anthropic-restart-secret",
-            "headers": {"X-Custom-Auth": "custom-header-secret"},
+            "headers": {
+                "X-Custom-Auth": "custom-header-secret",
+                "X-Authorization": "Bearer prefixed-header-secret",
+            },
             "base_url": (
                 "https://url-user:url-password@example.test/v1"
                 "?api_key=query-secret"
             ),
-            "routing": {"refresh_token": "routing-secret"},
+            "routing": {
+                "refresh_token": "routing-secret",
+                "access_token": 48273195,
+            },
         }
     )
     redaction.clear_registered_secret_values()
@@ -226,11 +232,16 @@ def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
             "anthropic-restart-secret",
             "X-Custom-Auth",
             "custom-header-secret",
+            "X-Authorization",
+            "Bearer prefixed-header-secret",
+            "prefixed-header-secret",
             "url-user",
             "url-password",
             "query-secret",
             "refresh_token",
             "routing-secret",
+            "access_token",
+            "48273195",
         } <= set(redaction.iter_registered_secret_values())
 
     assert material == {}

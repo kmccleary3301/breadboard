@@ -21,6 +21,7 @@ class TestSecretKeyRegistry:
         assert redaction.is_secret_key("X-Api-Key")
         assert redaction.is_secret_key("Authorization")
         assert redaction.is_secret_key("Set-Cookie")
+        assert redaction.is_secret_key("X-Authorization")
         assert redaction.is_secret_key("access_token")
 
     def test_suffix_rule(self):
@@ -154,6 +155,72 @@ class TestRegisteredValues:
             {"headers": {"x-api-key": "abc"}}
         ) == ("x-api-key", "abc")
 
+    def test_credential_material_decodes_header_and_numeric_components(self):
+        basic_credential = "YmFzaWMtdXNlcjpiYXNpYy1wYXNzd29yZA=="
+        assert redaction.credential_secret_values(
+            {
+                "headers": {
+                    "X-Authorization": "Bearer prefixed-secret",
+                    "XAuthorization": "Bearer compact-secret",
+                    "Proxy-Authentication": f"Basic {basic_credential}",
+                    "Cookie": 'sid="cookie%2Dencoded"',
+                    "Set-Cookie": (
+                        'session_token="set%2Dcookie"; Path=/; HttpOnly'
+                    ),
+                    "Content-Type": "application/json",
+                },
+                "routing": {
+                    "access_token": 4827,
+                    "session_token": True,
+                },
+            }
+        ) == (
+            "X-Authorization",
+            "Bearer prefixed-secret",
+            "prefixed-secret",
+            "XAuthorization",
+            "Bearer compact-secret",
+            "compact-secret",
+            "Proxy-Authentication",
+            f"Basic {basic_credential}",
+            basic_credential,
+            "basic-user:basic-password",
+            "basic-user",
+            "basic-password",
+            "Cookie",
+            'sid="cookie%2Dencoded"',
+            "cookie%2Dencoded",
+            "cookie-encoded",
+            "Set-Cookie",
+            'session_token="set%2Dcookie"; Path=/; HttpOnly',
+            "session_token",
+            "set%2Dcookie",
+            "set-cookie",
+            "access_token",
+            "4827",
+            "4827.0",
+        )
+        assert redaction.credential_secret_values(
+            {"routing": {"access_token": 123}}
+        ) == ("access_token", "123", "123.0")
+
+    def test_credential_material_keeps_raw_and_decoded_url_credentials(self):
+        assert redaction.credential_secret_values(
+            {
+                "base_url": (
+                    "https://url%2Duser:url%2Dpassword@example.test/v1"
+                    "?api_key=query%2Dsecret"
+                )
+            }
+        ) == (
+            "url%2Duser",
+            "url-user",
+            "url%2Dpassword",
+            "url-password",
+            "query%2Dsecret",
+            "query-secret",
+        )
+
     def test_short_and_non_string_values_ignored(self):
         with redaction.secret_value_scope("abc", None, 12345):
             assert redaction.iter_registered_secret_values() == ()
@@ -165,6 +232,14 @@ class TestRegisteredValues:
             with redaction.secret_value_scope(secret):
                 assert redaction.iter_registered_secret_values() == (secret,)
             assert redaction.iter_registered_secret_values() == (secret,)
+        assert redaction.iter_registered_secret_values() == ()
+
+    def test_overlapping_secret_values_scrub_longest_first(self):
+        shorter = "overlap-secret"
+        longer = "overlap-secret-suffix"
+        with redaction.secret_value_scope(shorter, longer):
+            assert redaction.iter_registered_secret_values() == (longer, shorter)
+            assert redaction.scrub_text(longer) == redaction.REDACTED
         assert redaction.iter_registered_secret_values() == ()
 
     def test_exception_fields_are_scrubbed_before_scope_release(self):
