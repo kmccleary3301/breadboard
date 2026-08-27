@@ -749,6 +749,20 @@ class ProviderBroker:
             )
         metadata_value = dict(metadata) if isinstance(metadata, Mapping) else {}
         with redaction.secret_value_scope(secret_value):
+            identity_values = (
+                provider_id,
+                auth_scheme,
+                label,
+                alias,
+                str(account_id) if account_id is not None else "",
+            )
+            if any(
+                redaction.contains_registered_secret_text(value)
+                for value in identity_values
+            ):
+                raise ValueError(
+                    "credential identity fields cannot contain credential material"
+                )
             if redaction.contains_registered_secret_mapping_key(metadata_value):
                 raise ValueError(
                     "metadata keys cannot contain credential material"
@@ -786,7 +800,13 @@ class ProviderBroker:
                     )
             finally:
                 self._clear_mutable_material(material)
-            return dict(view)
+            scrubbed_view, _ = redaction.scrub_structure(
+                view,
+                path="$.credential",
+            )
+            if not isinstance(scrubbed_view, Mapping):
+                raise RuntimeError("credential store returned an invalid view")
+            return dict(scrubbed_view)
 
     def logout(self, input: Any = None, **kwargs: Any) -> dict[str, Any]:
         payload = input if input is not None else kwargs

@@ -151,6 +151,30 @@ def test_broker_nine_method_surface_and_plain_data(tmp_path):
     assert broker.revoke({"account_id": credential["account_id"]})["ok"] is True
     assert broker.listCredentials("openai")[0]["status"] == "revoked"
 
+def test_broker_rejects_secret_bearing_account_id(tmp_path):
+    secret = "credential-account-id-canary-8p4ws"
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / "credentials.sqlite3")
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="credential identity fields cannot contain credential material",
+    ):
+        broker.putApiKey(
+            {
+                "provider_id": "openai",
+                "account_label": "main",
+                "account_id": secret,
+                "api_key": secret,
+            }
+        )
+
+    assert broker.listCredentials() == []
+    assert broker.audit_events() == []
+    assert secret not in redaction.iter_registered_secret_values()
+
+
 
 def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
     db = tmp_path / "credentials.sqlite3"

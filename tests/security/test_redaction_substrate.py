@@ -71,8 +71,15 @@ class TestRegisteredValues:
             assert not redaction.contains_registered_secret_mapping_key(
                 {"outer": [{"description": secret}]}
             )
+            assert redaction.contains_registered_secret_text(
+                f"prefix-{secret}-suffix"
+            )
+            assert not redaction.contains_registered_secret_text("description")
         assert redaction.iter_registered_secret_values() == ()
         assert not redaction.contains_registered_secret_mapping_key(payload)
+        assert not redaction.contains_registered_secret_text(
+            f"prefix-{secret}-suffix"
+        )
 
     def test_short_and_non_string_values_ignored(self):
         with redaction.secret_value_scope("abc", None, 12345):
