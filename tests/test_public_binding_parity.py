@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator, get_args, get_type_hints
 
 import pytest
 
@@ -21,6 +21,8 @@ TS_BINDINGS_PATH = ROOT / "sdk" / "ts" / "src" / "generated" / "public-bindings.
 TS_ROUTES_PATH = ROOT / "sdk" / "ts" / "src" / "generated" / "routes.ts"
 TS_CLIENT_PATH = ROOT / "sdk" / "ts" / "src" / "client.ts"
 TS_INDEX_PATH = ROOT / "sdk" / "ts" / "src" / "index.ts"
+TS_TYPES_PATH = ROOT / "sdk" / "ts" / "src" / "types.ts"
+OPENAPI_PATH = ROOT / "docs" / "contracts" / "cli_bridge" / "openapi.json"
 TUI_MANIFEST_PATH = (
     ROOT / "tui_skeleton" / "src" / "generated" / "public_surface_manifest.v1.json"
 )
@@ -35,7 +37,7 @@ TYPESCRIPT_PATH = (
 _TS_SNAPSHOT_SCRIPT = r"""
 const fs = require("node:fs");
 const ts = require(process.argv[1]);
-const [bindingsPath, routesPath, clientPath, indexPath] = process.argv.slice(2);
+const [bindingsPath, routesPath, clientPath, indexPath, typesPath] = process.argv.slice(2);
 
 function sourceFile(path) {
   return ts.createSourceFile(
@@ -65,11 +67,63 @@ function nodeName(node, file) {
   return node.name.getText(file);
 }
 
+function dtoShapes(path) {
+  const file = sourceFile(path);
+  const wanted = new Set([
+    "Problem",
+    "StageOutcome",
+    "PublicResult",
+    "PublicHarnessCreateRequest",
+    "PublicHarnessUpdateRequest",
+    "PublicSessionStartRequest",
+    "PublicSessionInputRequest",
+    "PublicSessionApprovalRequest",
+    "PublicSessionCancelRequest",
+  ]);
+  const shapes = {};
+  for (const statement of file.statements) {
+    if (!ts.isInterfaceDeclaration(statement) || !wanted.has(statement.name.text)) {
+      continue;
+    }
+    const properties = statement.members
+      .filter((member) => ts.isPropertySignature(member))
+      .map((member) => ({
+        name: nodeName(member, file),
+        required: member.questionToken === undefined,
+      }));
+    shapes[statement.name.text] = {
+      properties: properties.map((property) => property.name),
+      required: properties.filter((property) => property.required).map((property) => property.name),
+    };
+  }
+  return shapes;
+}
+
+function stringUnionValues(path, typeName) {
+  const file = sourceFile(path);
+  for (const statement of file.statements) {
+    if (
+      ts.isTypeAliasDeclaration(statement)
+      && statement.name.text === typeName
+      && ts.isUnionTypeNode(statement.type)
+    ) {
+      return statement.type.types.map((member) => {
+        if (!ts.isLiteralTypeNode(member) || !ts.isStringLiteralLike(member.literal)) {
+          throw new Error(`${typeName} must contain only string literals`);
+        }
+        return member.literal.text;
+      });
+    }
+  }
+  throw new Error(`missing string union ${typeName}`);
+}
+
 function clientShape(path) {
   const file = sourceFile(path);
   const interfaceMethods = [];
   const factoryMethods = [];
   const actionBindings = [];
+  const breadboardClientAssertions = [];
 
   function actionIds(node) {
     const ids = [];
@@ -88,7 +142,14 @@ function clientShape(path) {
     return ids;
   }
 
+
   function visit(node) {
+    if (
+      (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node))
+      && node.type.getText(file) === "BreadboardClient"
+    ) {
+      breadboardClientAssertions.push(node.getText(file));
+    }
     if (ts.isInterfaceDeclaration(node) && node.name.text === "BreadboardClient") {
       for (const member of node.members) {
         const name = nodeName(member, file);
@@ -113,7 +174,7 @@ function clientShape(path) {
     ts.forEachChild(node, visit);
   }
   visit(file);
-  return { interfaceMethods, factoryMethods, actionBindings };
+  return { interfaceMethods, factoryMethods, actionBindings, breadboardClientAssertions };
 }
 
 function rootExports(path) {
@@ -144,6 +205,8 @@ process.stdout.write(JSON.stringify({
   fullRoutes: routes.ROUTES,
   client: clientShape(clientPath),
   root: rootExports(indexPath),
+  types: dtoShapes(typesPath),
+  sessionDecisions: stringUnionValues(typesPath, "PublicSessionDecision"),
 }));
 """
 
@@ -243,6 +306,7 @@ def _typescript_snapshot() -> dict[str, Any]:
             str(TS_ROUTES_PATH),
             str(TS_CLIENT_PATH),
             str(TS_INDEX_PATH),
+            str(TS_TYPES_PATH),
         ],
         cwd=ROOT,
         check=False,
@@ -333,14 +397,113 @@ def test_bbh_argparse_leaf_commands_match_catalog(
 
 def test_python_sdk_explicit_methods_match_catalog() -> None:
     from breadboard_sdk.client import BreadBoardClient
+    from breadboard_sdk.types import PublicResult, SessionEvent
 
-    expected = {row["python_method"] for row in _expected_rows()}
+    rows = _expected_rows()
+    expected = {row["python_method"] for row in rows}
     actual = {
         name
         for name, value in vars(BreadBoardClient).items()
         if not name.startswith("_") and inspect.isfunction(value)
     }
     assert actual == expected
+    for row in rows:
+        expected_return = (
+            Generator[SessionEvent, None, None]
+            if row["operation_id"] == "session.events"
+            else PublicResult
+        )
+        assert (
+            get_type_hints(getattr(BreadBoardClient, row["python_method"]))["return"]
+            == expected_return
+        )
+
+
+def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
+    import breadboard_sdk.types as python_types
+
+    openapi = json.loads(OPENAPI_PATH.read_text(encoding="utf-8"))
+    snapshot = _typescript_snapshot()
+    dto_components = {
+        "Problem": ("Problem", python_types.Problem),
+        "StageOutcome": ("StageOutcome", python_types.StageOutcome),
+        "PublicResult": ("PublicResult", python_types.PublicResult),
+        "PublicHarnessCreateRequest": (
+            "HarnessCreateRequest",
+            python_types.PublicHarnessCreateRequest,
+        ),
+        "PublicHarnessUpdateRequest": (
+            "HarnessUpdateRequest",
+            python_types.PublicHarnessUpdateRequest,
+        ),
+        "PublicSessionStartRequest": (
+            "SessionStartRequest",
+            python_types.PublicSessionStartRequest,
+        ),
+        "PublicSessionInputRequest": (
+            "SessionInputRequest",
+            python_types.PublicSessionInputRequest,
+        ),
+        "PublicSessionApprovalRequest": (
+            "SessionApprovalRequest",
+            python_types.PublicSessionApprovalRequest,
+        ),
+        "PublicSessionCancelRequest": (
+            "SessionCancelRequest",
+            python_types.PublicSessionCancelRequest,
+        ),
+    }
+    components = openapi["components"]["schemas"]
+    assert set(snapshot["types"]) == set(dto_components)
+    for typescript_name, (component_name, python_type) in dto_components.items():
+        component = components[component_name]
+        expected_properties = set(component["properties"])
+        expected_required = set(component.get("required", []))
+        if typescript_name == "PublicResult":
+            # The serialized public envelope always carries its defaulted identity.
+            expected_required.add("schema_version")
+        assert set(get_type_hints(python_type)) == expected_properties
+        assert set(python_type.__required_keys__) == expected_required
+        assert set(snapshot["types"][typescript_name]["properties"]) == (
+            expected_properties
+        )
+        assert set(snapshot["types"][typescript_name]["required"]) == expected_required
+    expected_decisions = set(
+        components["SessionApprovalRequest"]["properties"]["decision"]["enum"]
+    )
+    assert set(get_args(python_types.PublicSessionDecision)) == expected_decisions
+    assert set(snapshot["sessionDecisions"]) == expected_decisions
+
+    request_components = {
+        "harness.create": "HarnessCreateRequest",
+        "harness.update": "HarnessUpdateRequest",
+        "session.start": "SessionStartRequest",
+        "session.send_input": "SessionInputRequest",
+        "session.approve": "SessionApprovalRequest",
+        "session.cancel": "SessionCancelRequest",
+    }
+    for operation in _catalog()["operations"]:
+        binding = operation["bindings"]["openapi"]
+        observed = openapi["paths"][binding["path"]][binding["method"].lower()]
+        request = observed.get("requestBody")
+        expected_request = request_components.get(operation["operation_id"])
+        if expected_request is None:
+            assert request is None
+        else:
+            assert request["content"]["application/json"]["schema"] == {
+                "$ref": f"#/components/schemas/{expected_request}"
+            }
+        if operation["operation_id"] == "session.events":
+            continue
+        successes = [
+            response
+            for status, response in observed["responses"].items()
+            if status.startswith("2")
+        ]
+        assert len(successes) == 1
+        assert successes[0]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/PublicResult"
+        }
 
 
 def test_typescript_tables_wrappers_and_root_exports_match_contract() -> None:
@@ -383,6 +546,11 @@ def test_typescript_tables_wrappers_and_root_exports_match_contract() -> None:
     expected_methods = {row["typescript_method"] for row in expected}
 
     assert expected_methods <= set(snapshot["client"]["factoryMethods"])
+    assert expected_methods <= set(snapshot["client"]["interfaceMethods"])
+    assert len(snapshot["client"]["interfaceMethods"]) == len(
+        set(snapshot["client"]["interfaceMethods"])
+    )
+    assert snapshot["client"]["breadboardClientAssertions"] == []
     action_bindings = snapshot["client"]["actionBindings"]
     assert len(action_bindings) == len(
         {(item["method"], item["actionId"]) for item in action_bindings}

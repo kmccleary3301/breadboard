@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Literal, Optional, TypedDict, NotRequired
+from typing import Any, Dict, Iterable, List, Literal, Optional, TypedDict
 
 
 EventType = Literal[
@@ -36,18 +36,21 @@ EventType = Literal[
 ]
 
 
-class SessionEvent(TypedDict):
+class _SessionEventOptional(TypedDict, total=False):
+    timestamp_ms: int
+    seq: int
+    run_id: Optional[str]
+    thread_id: Optional[str]
+    turn_id: Optional[str | int]
+
+
+class SessionEvent(_SessionEventOptional):
     id: str
     type: EventType
     session_id: str
     turn: Optional[int]
     timestamp: int
     payload: Dict[str, Any]
-    timestamp_ms: NotRequired[int]
-    seq: NotRequired[int]
-    run_id: NotRequired[Optional[str]]
-    thread_id: NotRequired[Optional[str]]
-    turn_id: NotRequired[Optional[str | int]]
 
 
 class ArtifactRefPreview(TypedDict, total=False):
@@ -56,7 +59,11 @@ class ArtifactRefPreview(TypedDict, total=False):
     note: Optional[str]
 
 
-class ArtifactRefV1(TypedDict):
+class _ArtifactRefV1Optional(TypedDict, total=False):
+    preview: Optional[ArtifactRefPreview]
+
+
+class ArtifactRefV1(_ArtifactRefV1Optional):
     schema_version: Literal["artifact_ref_v1"]
     id: str
     kind: Literal["tool_output", "tool_diff", "tool_result"]
@@ -65,7 +72,6 @@ class ArtifactRefV1(TypedDict):
     sha256: str
     storage: Literal["workspace_file"]
     path: str
-    preview: NotRequired[Optional[ArtifactRefPreview]]
 
 
 class HealthResponse(TypedDict, total=False):
@@ -187,6 +193,85 @@ class CTreeSnapshotResponse(TypedDict, total=False):
 class ErrorResponse(TypedDict, total=False):
     message: str
     detail: Dict[str, Any]
+
+
+class _ProblemDefaults(TypedDict, total=False):
+    schema_version: Literal["bb.problem.v1"]
+    record_refs: List[str]
+    failed_stage: Optional[str]
+    hint: Optional[str]
+    next_actions: List[str]
+
+
+class Problem(_ProblemDefaults):
+    error_code: str
+    message: str
+
+
+class _StageOutcomeDefaults(TypedDict, total=False):
+    report_ref: Optional[str]
+    next_action: Optional[str]
+
+
+class StageOutcome(_StageOutcomeDefaults):
+    stage: str
+    status: str
+
+
+class PublicResult(TypedDict):
+    schema_version: Literal["bb.cli.result.v1"]
+    ok: bool
+    status: Literal["ok", "error"]
+    command: List[str]
+    record_refs: List[str]
+    hashes: Dict[str, str]
+    stage_outcomes: List[StageOutcome]
+    warnings: List[str]
+    next_actions: List[str]
+    error: Optional[Problem]
+    exit_code: int
+    data: Dict[str, Any]
+
+
+class _PublicHarnessCreateRequestDefaults(TypedDict, total=False):
+    directory: str
+
+
+class PublicHarnessCreateRequest(_PublicHarnessCreateRequestDefaults):
+    pass
+
+
+class PublicHarnessUpdateRequest(TypedDict):
+    definition: Dict[str, Any]
+
+
+class _PublicSessionStartRequestDefaults(TypedDict, total=False):
+    session_id: Optional[str]
+
+
+class PublicSessionStartRequest(_PublicSessionStartRequestDefaults):
+    lock_id: str
+    task: str
+
+
+class PublicSessionInputRequest(TypedDict):
+    content: str
+
+
+PublicSessionDecision = Literal["allow", "deny", "once", "always", "reject"]
+
+
+class PublicSessionApprovalRequest(TypedDict):
+    request_id: str
+    decision: PublicSessionDecision
+
+
+class _PublicSessionCancelRequestDefaults(TypedDict, total=False):
+    reason: str
+
+
+class PublicSessionCancelRequest(_PublicSessionCancelRequestDefaults):
+    pass
 
 
 AttachmentFileTuple = tuple[str, bytes, str | None]

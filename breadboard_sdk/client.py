@@ -8,7 +8,12 @@ from urllib.parse import quote, urlencode, urljoin
 import requests
 
 from .generated.public_bindings import PUBLIC_BINDINGS_BY_OPERATION_ID
-from .types import SessionEvent
+from .types import (
+    PublicResult,
+    PublicSessionDecision,
+    PublicSessionStartRequest,
+    SessionEvent,
+)
 
 
 @dataclass
@@ -97,7 +102,7 @@ class BreadBoardClient:
         query: Dict[str, Any] | None = None,
         body: Any | None = None,
         headers: Dict[str, str] | None = None,
-    ) -> Any:
+    ) -> PublicResult:
         binding = PUBLIC_BINDINGS_BY_OPERATION_ID.get(operation_id)
         if binding is None:
             raise ValueError(f"unknown public operation ID: {operation_id}")
@@ -119,22 +124,22 @@ class BreadBoardClient:
     def _idempotency(value: str | None) -> Dict[str, str] | None:
         return {"Idempotency-Key": value} if value else None
 
-    def describe_system(self) -> Dict[str, Any]:
+    def describe_system(self) -> PublicResult:
         return self._request_operation("system.describe")
 
-    def health_system(self) -> Dict[str, Any]:
+    def health_system(self) -> PublicResult:
         return self._request_operation("system.health")
 
-    def schemas_system(self) -> Dict[str, Any]:
+    def schemas_system(self) -> PublicResult:
         return self._request_operation("system.schemas")
 
-    def create_harness(self, directory: str = ".") -> Dict[str, Any]:
+    def create_harness(self, directory: str = ".") -> PublicResult:
         return self._request_operation("harness.create", body={"directory": directory})
 
-    def list_harness(self) -> Dict[str, Any]:
+    def list_harness(self) -> PublicResult:
         return self._request_operation("harness.list")
 
-    def get_harness(self, harness_id: str) -> Dict[str, Any]:
+    def get_harness(self, harness_id: str) -> PublicResult:
         return self._request_operation(
             "harness.get",
             path_params={"harness_id": _resource_path(harness_id)},
@@ -142,41 +147,41 @@ class BreadBoardClient:
 
     def update_harness(
         self, harness_id: str, definition: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> PublicResult:
         return self._request_operation(
             "harness.update",
             path_params={"harness_id": _resource_path(harness_id)},
             body={"definition": definition},
         )
 
-    def validate_harness(self, harness_id: str) -> Dict[str, Any]:
+    def validate_harness(self, harness_id: str) -> PublicResult:
         return self._request_operation(
             "harness.validate",
             path_params={"harness_id": _resource_path(harness_id)},
         )
 
-    def explain_harness(self, harness_id: str) -> Dict[str, Any]:
+    def explain_harness(self, harness_id: str) -> PublicResult:
         return self._request_operation(
             "harness.explain",
             path_params={"harness_id": _resource_path(harness_id)},
         )
 
-    def lock_harness(self, harness_id: str) -> Dict[str, Any]:
+    def lock_harness(self, harness_id: str) -> PublicResult:
         return self._request_operation(
             "harness.lock",
             path_params={"harness_id": _resource_path(harness_id)},
         )
 
-    def get_harness_lock(self, lock_id: str) -> Dict[str, Any]:
+    def get_harness_lock(self, lock_id: str) -> PublicResult:
         return self._request_operation(
             "harness_lock.get",
             path_params={"lock_id": _resource_path(lock_id)},
         )
 
-    def list_integration(self) -> Dict[str, Any]:
+    def list_integration(self) -> PublicResult:
         return self._request_operation("integration.list")
 
-    def get_integration(self, integration_id: str) -> Dict[str, Any]:
+    def get_integration(self, integration_id: str) -> PublicResult:
         return self._request_operation(
             "integration.get",
             path_params={"integration_id": quote(integration_id, safe="")},
@@ -184,41 +189,41 @@ class BreadBoardClient:
 
     def probe_integration(
         self, integration_id: str, *, idempotency_key: str | None = None
-    ) -> Dict[str, Any]:
+    ) -> PublicResult:
         return self._request_operation(
             "integration.probe",
             path_params={"integration_id": quote(integration_id, safe="")},
             headers=self._idempotency(idempotency_key),
         )
 
-    def list_artifact(self) -> Dict[str, Any]:
+    def list_artifact(self) -> PublicResult:
         return self._request_operation("artifact.list")
 
-    def get_artifact(self, artifact_id: str) -> Dict[str, Any]:
+    def get_artifact(self, artifact_id: str) -> PublicResult:
         return self._request_operation(
             "artifact.get",
             path_params={"artifact_id": quote(artifact_id, safe="")},
         )
 
-    def verify_artifact(self, artifact_id: str) -> Dict[str, Any]:
+    def verify_artifact(self, artifact_id: str) -> PublicResult:
         return self._request_operation(
             "artifact.verify",
             path_params={"artifact_id": quote(artifact_id, safe="")},
         )
 
     def start_session(
-        self, payload: Dict[str, Any], *, idempotency_key: str | None = None
-    ) -> Dict[str, Any]:
+        self, payload: PublicSessionStartRequest, *, idempotency_key: str | None = None
+    ) -> PublicResult:
         return self._request_operation(
             "session.start",
             body=payload,
             headers=self._idempotency(idempotency_key),
         )
 
-    def list_session(self) -> Dict[str, Any]:
+    def list_session(self) -> PublicResult:
         return self._request_operation("session.list")
 
-    def get_session(self, session_id: str) -> Dict[str, Any]:
+    def get_session(self, session_id: str) -> PublicResult:
         return self._request_operation(
             "session.get",
             path_params={"session_id": quote(session_id, safe="")},
@@ -226,7 +231,7 @@ class BreadBoardClient:
 
     def send_input_session(
         self, session_id: str, content: str, *, idempotency_key: str | None = None
-    ) -> Dict[str, Any]:
+    ) -> PublicResult:
         return self._request_operation(
             "session.send_input",
             path_params={"session_id": quote(session_id, safe="")},
@@ -238,10 +243,10 @@ class BreadBoardClient:
         self,
         session_id: str,
         request_id: str,
-        decision: str,
+        decision: PublicSessionDecision,
         *,
         idempotency_key: str | None = None,
-    ) -> Dict[str, Any]:
+    ) -> PublicResult:
         body = {"request_id": request_id, "decision": decision}
         return self._request_operation(
             "session.approve",
@@ -252,7 +257,7 @@ class BreadBoardClient:
 
     def resume_session(
         self, session_id: str, *, idempotency_key: str | None = None
-    ) -> Dict[str, Any]:
+    ) -> PublicResult:
         return self._request_operation(
             "session.resume",
             path_params={"session_id": quote(session_id, safe="")},
@@ -265,7 +270,7 @@ class BreadBoardClient:
         reason: str = "operator request",
         *,
         idempotency_key: str | None = None,
-    ) -> Dict[str, Any]:
+    ) -> PublicResult:
         return self._request_operation(
             "session.cancel",
             path_params={"session_id": quote(session_id, safe="")},
@@ -273,7 +278,7 @@ class BreadBoardClient:
             headers=self._idempotency(idempotency_key),
         )
 
-    def artifacts_session(self, session_id: str) -> Dict[str, Any]:
+    def artifacts_session(self, session_id: str) -> PublicResult:
         return self._request_operation(
             "session.artifacts",
             path_params={"session_id": quote(session_id, safe="")},

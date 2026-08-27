@@ -185,15 +185,17 @@ def test_product_client_manifests_are_catalog_fixed_points() -> None:
         assert path.read_bytes() == content
 
 
-def test_inventory_is_a_checked_in_fixed_point_with_honest_gaps() -> None:
+def test_inventory_is_a_checked_in_fixed_point_without_surface_gaps() -> None:
     first = build_inventory()
     second = build_inventory()
     assert canonical_bytes(first) == canonical_bytes(second)
     assert canonical_bytes(first) == (PUBLIC_DIR / "surface_inventory.v1.json").read_bytes()
     assert first["parity_claimed"] is False
     assert first["candidate_status"] == "candidate"
-    assert any(summary["gaps"] > 0 for summary in first["summary"].values())
-    assert all(summary["detected"] + summary["gaps"] == 26 for summary in first["summary"].values())
+    assert all(
+        summary == {"detected": 26, "gaps": 0, "total": 26}
+        for summary in first["summary"].values()
+    )
 def test_generated_binding_manifest_ignores_source_text(tmp_path) -> None:
     manifest = tmp_path / "generated" / "public_surface_manifest.v1.json"
     (tmp_path / "client.test.ts").write_text("// system.health BreadBoardClient health", encoding="utf-8")
