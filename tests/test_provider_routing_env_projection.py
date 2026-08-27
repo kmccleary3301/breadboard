@@ -75,6 +75,7 @@ def test_stored_alternate_credentials_are_scoped_through_provider_errors(
 
     redaction.clear_registered_secret_values()
     header_secret = "prefixed-header-secret"
+    short_header_secret = "abc"
     encoded_url_secret = "url%2Dsecret"
     decoded_url_secret = "url-secret"
     numeric_secret = "48273195"
@@ -86,6 +87,7 @@ def test_stored_alternate_credentials_are_scoped_through_provider_errors(
             "api_key": "primary-secret-material",
             "headers": {
                 "X-Authorization": f"Bearer {header_secret}",
+                "X-Custom": short_header_secret,
             },
             "base_url": (
                 f"https://url-user:{encoded_url_secret}@example.test/v1"
@@ -100,19 +102,22 @@ def test_stored_alternate_credentials_are_scoped_through_provider_errors(
         with router.execution_client_config("openai/gpt-5.4-mini"):
             assert {
                 header_secret,
+                short_header_secret,
                 encoded_url_secret,
                 decoded_url_secret,
                 numeric_secret,
             } <= set(redaction.iter_registered_secret_values())
             raise RuntimeError(
                 (
-                    f"provider call failed {header_secret} "
-                    f"{encoded_url_secret} {decoded_url_secret} {numeric_secret}"
+                    f"provider call failed {short_header_secret} "
+                    f"{header_secret} {encoded_url_secret} "
+                    f"{decoded_url_secret} {numeric_secret}"
                 )
             )
 
     for secret in (
         header_secret,
+        short_header_secret,
         encoded_url_secret,
         decoded_url_secret,
         numeric_secret,

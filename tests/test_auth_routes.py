@@ -543,15 +543,16 @@ def test_auth_api_key_scrubs_decoded_and_numeric_credential_values(
 
 
 @pytest.mark.parametrize(
-    "credential_fields",
+    ("credential_fields", "short_values"),
     [
-        {"headers": {"x-api-key": "abc"}},
-        {"headers": {"X-Authorization": "Bearer abc"}},
-        {"routing": {"access_token": 123}},
+        ({"headers": {"x-api-key": "abc"}}, {"abc"}),
+        ({"headers": {"X-Authorization": "Bearer abc"}}, {"abc"}),
+        ({"routing": {"access_token": 123}}, {"123"}),
     ],
 )
-def test_auth_api_key_rejects_short_distinct_credential_material(
+def test_auth_api_key_scopes_short_distinct_credential_material(
     credential_fields,
+    short_values,
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -571,18 +572,11 @@ def test_auth_api_key_rejects_short_distinct_credential_material(
         },
     )
 
-    assert response.status_code == 400
-    assert response.json() == {
-        "error": "invalid_request",
-        "detail": (
-            "credential material values must contain at least four "
-            "non-whitespace characters"
-        ),
-        "path": None,
-    }
-    with sqlite3.connect(database) as connection:
-        assert connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
-    assert broker.audit_events() == []
+    assert response.status_code == 200
+    with broker.execution_material("openai") as material:
+        assert material is not None
+        assert short_values <= set(redaction.iter_registered_secret_values())
+    assert material == {}
     assert redaction.iter_registered_secret_values() == ()
 
 
