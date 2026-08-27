@@ -4345,7 +4345,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List Harnesses",
+        "summary": "List Harnesses Route",
         "tags": [
           "public-harness"
         ]
