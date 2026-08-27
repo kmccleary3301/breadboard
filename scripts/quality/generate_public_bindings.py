@@ -18,6 +18,7 @@ CATALOG_RELATIVE: Final = Path("contracts/public/operations.v2.json")
 GENERATOR_PATH: Final = "scripts/quality/generate_public_bindings.py"
 GENERATOR_VERSION: Final = "1"
 SCHEMA_VERSION: Final = "bb.public_client_binding_manifest.v1"
+GENERATED_FILE_MODE: Final = 0o644
 NORMALIZED_FIELDS: Final = (
     "operation_id",
     "status",
@@ -498,6 +499,7 @@ def _write_atomic(path: Path, content: bytes) -> None:
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as handle:
+            os.fchmod(handle.fileno(), GENERATED_FILE_MODE)
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
