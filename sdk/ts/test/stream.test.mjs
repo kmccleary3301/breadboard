@@ -50,10 +50,11 @@ test("openEventStream reuses the authenticated fetch transport", async (t) => {
   t.after(() => {
     globalThis.fetch = originalFetch
   })
+  globalThis.fetch = async () => { throw new Error("global fetch used") }
 
   let requestedUrl
   let requestedHeaders
-  globalThis.fetch = async (input, init) => {
+  const configuredFetch = async (input, init) => {
     requestedUrl = String(input)
     requestedHeaders = new Headers(init?.headers)
     const encoded = new TextEncoder().encode(
@@ -85,6 +86,7 @@ test("openEventStream reuses the authenticated fetch transport", async (t) => {
         config: {
           baseUrl: "http://breadboard.test:9099",
           authToken: async () => "fixture-token",
+          fetch: configuredFetch,
         },
       },
     )
