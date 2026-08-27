@@ -308,6 +308,62 @@ def test_provider_request_preserves_authorized_media_reference() -> None:
     payload["request"]["messages"][1]["content"].append(media)
     Draft202012Validator(schema).validate(payload)
 
+def test_provider_request_normalizes_anthropic_input_schema():
+    description = "Read a file. " * 400
+    request = ProviderRequest(
+        stream=False,
+        messages=[{"role": "user", "content": "run"}],
+        tools=[
+            {
+                "name": "read",
+                "description": description,
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"],
+                },
+            }
+        ],
+    )
+
+    assert request.tools == [
+        {
+            "name": "read",
+            "description": description,
+            "parameters": {
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+                "type": "object",
+            },
+        }
+    ]
+
+def test_provider_request_preserves_openai_strict_tool_mode():
+    request = ProviderRequest(
+        stream=False,
+        messages=[{"role": "user", "content": "run"}],
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "read",
+                    "parameters": {"type": "object"},
+                    "strict": True,
+                },
+            }
+        ],
+    )
+
+    assert request.tools == [
+        {
+            "name": "read",
+            "parameters": {"type": "object"},
+            "strict": True,
+        }
+    ]
+
+
+
 def test_provider_request_rejects_unknown_tool_schema_semantics():
     with pytest.raises(ProviderContractError):
         ProviderRequest(
