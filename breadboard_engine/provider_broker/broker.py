@@ -568,7 +568,7 @@ class ProviderBroker:
                 "status": "failed",
                 "problem": self._problem("not_found", "login session not found"),
             }
-        if str(login.get("status") or "") == "expired":
+        if str(login.get("status") or "") != "pending":
             return self._public_login(login)
         flow = login.get("flow") if isinstance(login.get("flow"), Mapping) else {}
         adapter = self._oauth_adapter(
@@ -586,6 +586,11 @@ class ProviderBroker:
                 "status": "unavailable",
                 "problem": problem,
             }
+
+        def login_is_terminal() -> bool:
+            current = self.store.get_login(str(login_id))
+            return current is None or str(current.get("status") or "") != "pending"
+
         try:
             material = adapter.complete(
                 flow,
@@ -593,9 +598,13 @@ class ProviderBroker:
                     payload, "code", "authorizationCode", "authorization_code"
                 ),
                 state=self._value(payload, "state"),
+                is_cancelled=login_is_terminal,
             )
-            with self.store.atomic():
-                try:
+            try:
+                with self.store.atomic():
+                    if not self.store.finish_pending_login(str(login_id), "completed"):
+                        current = self.store.get_login(str(login_id)) or login
+                        return self._public_login(current)
                     provider_id = str(login["provider_id"])
                     entry = get_provider_catalog_entry(provider_id)
                     store_provider = (
@@ -633,15 +642,14 @@ class ProviderBroker:
                         metadata=metadata,
                         source="login",
                     )
-                finally:
-                    self._clear_mutable_material(material)
-                self.store.finish_login(str(login_id), "completed")
-                self._emit(
-                    "provider_login_completed",
-                    provider_id=provider_id,
-                    account_id=view["account_id"],
-                    credential_id=view["credential_id"],
-                )
+                    self._emit(
+                        "provider_login_completed",
+                        provider_id=provider_id,
+                        account_id=view["account_id"],
+                        credential_id=view["credential_id"],
+                    )
+            finally:
+                self._clear_mutable_material(material)
             return {
                 **self._public_login(self.store.get_login(str(login_id)) or login),
                 "status": "completed",
@@ -655,15 +663,21 @@ class ProviderBroker:
                 **exc.details,
             )
             with self.store.atomic():
-                self.store.finish_login(str(login_id), "failed", problem)
-                self._emit(
-                    "provider_login_failed",
-                    provider_id=login["provider_id"],
-                    login_session_id=str(login_id),
-                    code=exc.code,
+                changed = self.store.finish_pending_login(
+                    str(login_id), "failed", problem
                 )
+                if changed:
+                    self._emit(
+                        "provider_login_failed",
+                        provider_id=login["provider_id"],
+                        login_session_id=str(login_id),
+                        code=exc.code,
+                    )
+            current = self.store.get_login(str(login_id)) or login
+            if not changed:
+                return self._public_login(current)
             return {
-                **self._public_login(self.store.get_login(str(login_id)) or login),
+                **self._public_login(current),
                 "status": "failed",
                 "problem": problem,
             }

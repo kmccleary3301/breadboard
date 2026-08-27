@@ -1,7 +1,7 @@
 import { streamSessionEvents, type EventStreamOptions } from "./stream.js"
 import type {
   AttachmentHandle, AttachmentUploadPayload, CTreeDiskArtifactsResponse, CTreeEventsResponse, CTreeSnapshotResponse,
-  CTreeTreeResponse, E4ApiErrorEnvelope, E4CatalogBinding, E4CatalogPage, E4ClaimDetail, E4ClaimList, E4CoverageMatrix,
+  CTreeTreeResponse, E4CatalogBinding, E4CatalogPage, E4ClaimDetail, E4ClaimList, E4CoverageMatrix,
   E4Health, E4LaneDetail, E4LaneList, E4LedgerRows, E4RecordList, E4ReverifyRequest, E4ReverifyResult, E4SchemaList,
   EngineStatusResponse, HealthResponse, ModelCatalogResponse, ProviderAuthAttachRequest, ProviderAuthAttachResponse,
   ProviderAuthDetachRequest, ProviderAuthDetachResponse, ProviderAuthStatusResponse, AuthProviderView, AuthCredentialView,
@@ -53,9 +53,11 @@ const resource = (value: string, label: string): string => {
   return parts.map(encodeURIComponent).join("/")
 }
 const apiErrorMessage = (status: number, payload: unknown): string => {
-  if (payload && typeof payload === "object" && typeof (payload as E4ApiErrorEnvelope).error === "string") {
-    const detail = (payload as E4ApiErrorEnvelope).detail
-    return detail ? `${(payload as E4ApiErrorEnvelope).error}: ${detail}` : (payload as E4ApiErrorEnvelope).error
+  if (typeof payload === "object" && payload !== null && !Array.isArray(payload)) {
+    const error = "error" in payload && typeof payload.error === "string" ? payload.error : undefined
+    const detail = "detail" in payload && typeof payload.detail === "string" ? payload.detail : undefined
+    if (error) return detail ? `${error}: ${detail}` : error
+    if (detail) return detail
   }
   return `Request failed with status ${status}`
 }
@@ -73,9 +75,10 @@ const request = async <T>(config: BreadboardClientConfig, route: string, method:
       const payload = isJson ? await response.json().catch(() => undefined) : await response.text().catch(() => undefined)
       throw new ApiError(apiErrorMessage(response.status, payload), response.status, payload)
     }
-    if (method === "DELETE") return undefined as T
-    if (options.responseType === "text" || !isJson) return await response.text() as T
-    return await response.json() as T
+    if (options.responseType === "text") return await response.text() as T
+    if (isJson) return await response.json() as T
+    const text = await response.text()
+    return (text === "" ? undefined : text) as T
   } finally { clearTimeout(timeout) }
 }
 
