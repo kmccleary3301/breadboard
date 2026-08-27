@@ -2344,6 +2344,11 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
         if isinstance(result.reasoning_blocks, list)
         else None
     )
+    result.provider_replay = (
+        _portable_provider_payload(result.provider_replay)
+        if isinstance(result.provider_replay, list)
+        else None
+    )
     result.model = (
         redaction.scrub_text(result.model) if result.model is not None else None
     )
