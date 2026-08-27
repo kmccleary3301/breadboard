@@ -29,12 +29,6 @@ class ProcessIsolationUnavailable(RuntimeError):
 _SQLITE_SIDECAR_SUFFIXES = ("", "-wal", "-shm", "-journal")
 _REGISTERED_PATHS_LOCK = threading.RLock()
 _REGISTERED_PROTECTED_PATHS: dict[str, Path] = {}
-_HARDLINK_BOUNDARY_LOCK = threading.RLock()
-_VALIDATED_HARDLINK_BOUNDARIES: dict[
-    tuple[tuple[int, int], tuple[str, ...]],
-    None,
-] = {}
-_MAX_VALIDATED_HARDLINK_BOUNDARIES = 256
 
 
 def _normalized_path(path: str | os.PathLike[str]) -> Path:
@@ -215,14 +209,6 @@ def _validate_hardlink_boundary(
     workspace: Path,
     protected_paths: Sequence[Path],
 ) -> None:
-    root_metadata = os.stat(workspace, follow_symlinks=False)
-    key = (
-        (root_metadata.st_dev, root_metadata.st_ino),
-        tuple(sorted(str(path) for path in protected_paths)),
-    )
-    with _HARDLINK_BOUNDARY_LOCK:
-        if key in _VALIDATED_HARDLINK_BOUNDARIES:
-            return
     workspace_links = _linked_regular_identities(workspace)
     if workspace_links:
         protected_links: set[tuple[int, int]] = set()
@@ -232,12 +218,6 @@ def _validate_hardlink_boundary(
             raise ProcessIsolationUnavailable(
                 "process workspace contains a protected credential hardlink"
             )
-    with _HARDLINK_BOUNDARY_LOCK:
-        if len(_VALIDATED_HARDLINK_BOUNDARIES) >= (_MAX_VALIDATED_HARDLINK_BOUNDARIES):
-            _VALIDATED_HARDLINK_BOUNDARIES.pop(
-                next(iter(_VALIDATED_HARDLINK_BOUNDARIES))
-            )
-        _VALIDATED_HARDLINK_BOUNDARIES[key] = None
 
 
 def _validate_workspace(
@@ -740,6 +720,7 @@ _DENIED_SYSCALLS: dict[str, tuple[int, tuple[int, ...]]] = {
         (117, 198, 203, 241, 270, 271, 272, 280, 425, 438),
     ),
 }
+
 
 
 class _SockFilter(ctypes.Structure):

@@ -211,10 +211,15 @@ def contains_provider_credential_value(
 def build_child_environment(
     source: Mapping[str, object] | None = None,
     overrides: Mapping[str, object] | None = None,
+    *,
+    allowed_override_keys: Iterable[str] = (),
 ) -> dict[str, str]:
     """Build a new environment without copying ambient credentials."""
     environment = os.environ if source is None else source
     override_values = overrides or {}
+    permitted_override_keys = _SAFE_OVERRIDE_ENV_KEYS.union(
+        str(key) for key in allowed_override_keys
+    )
     known_secrets = (
         *provider_credential_values(environment),
         *provider_credential_values(override_values),
@@ -239,7 +244,7 @@ def build_child_environment(
         name = str(key)
         if (
             value is None
-            or name not in _SAFE_OVERRIDE_ENV_KEYS
+            or name not in permitted_override_keys
             or is_provider_credential_env_key(name)
         ):
             rejected.append(name)
