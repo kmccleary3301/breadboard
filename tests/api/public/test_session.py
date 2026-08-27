@@ -15,6 +15,7 @@ from breadboard_engine.api.cli_bridge.app import create_app
 import breadboard_engine.provider_broker as provider_broker
 from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
+from breadboard.product.runtime import session_store
 
 
 @pytest.fixture
@@ -22,24 +23,42 @@ def client(monkeypatch, tmp_path: Path) -> Iterator[TestClient]:
     monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("BREADBOARD_SESSION_STATE_ROOT", str(tmp_path / "session-state"))
-    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "session-events"))
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "session-events")
+    )
     monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
     monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
     with TestClient(create_app(include_atp_routes=False)) as test_client:
         yield test_client
+
+
 def _locked_harness(client: TestClient) -> str:
     assert client.post("/v1/harnesses", json={}).json()["ok"] is True
     result = client.post("/v1/harnesses/daily_driver.v1.yaml/lock").json()
     assert result["ok"] is True
     return result["data"]["path"]
+
+
 def _stream_records(response) -> list[dict]:
-    return [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
-def test_session_lifecycle_and_resumable_event_stream(client: TestClient, monkeypatch, tmp_path: Path) -> None:
+    return [
+        json.loads(line[6:])
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+
+
+def test_session_lifecycle_and_resumable_event_stream(
+    client: TestClient, monkeypatch, tmp_path: Path
+) -> None:
     lock_id = _locked_harness(client)
     started = client.post(
         "/v1/sessions",
-        json={"lock_id": lock_id, "task": "exercise public session", "session_id": "session-fixture"},
+        json={
+            "lock_id": lock_id,
+            "task": "exercise public session",
+            "session_id": "session-fixture",
+        },
         headers={"Idempotency-Key": "start-fixture"},
     )
     assert started.status_code == 202, started.text
@@ -47,14 +66,39 @@ def test_session_lifecycle_and_resumable_event_stream(client: TestClient, monkey
     lock = json.loads((tmp_path / lock_id).read_text(encoding="utf-8"))
     assert started.json()["hashes"]["lock"] == lock["graph_hash"]
     monkeypatch.setenv("SESSION_TOKEN", "abc")
+
     def finish() -> None:
         sleep(0.05)
         headers = {"Idempotency-Key": "input-fixture"}
-        assert client.post("/v1/sessions/session-fixture/input", json={"content": "continue"}, headers=headers).status_code == 202
-        assert client.post("/v1/sessions/session-fixture/input", json={"content": "continue"}, headers=headers).status_code == 202
-        assert client.post("/v1/sessions/session-fixture/cancel", json={"reason": "abc"}, headers={"Idempotency-Key": "cancel-fixture"}).status_code == 202
-    worker = Thread(target=finish); worker.start()
-    streamed = client.get("/v1/sessions/session-fixture/events"); worker.join()
+        assert (
+            client.post(
+                "/v1/sessions/session-fixture/input",
+                json={"content": "continue"},
+                headers=headers,
+            ).status_code
+            == 202
+        )
+        assert (
+            client.post(
+                "/v1/sessions/session-fixture/input",
+                json={"content": "continue"},
+                headers=headers,
+            ).status_code
+            == 202
+        )
+        assert (
+            client.post(
+                "/v1/sessions/session-fixture/cancel",
+                json={"reason": "abc"},
+                headers={"Idempotency-Key": "cancel-fixture"},
+            ).status_code
+            == 202
+        )
+
+    worker = Thread(target=finish)
+    worker.start()
+    streamed = client.get("/v1/sessions/session-fixture/events")
+    worker.join()
     first = _stream_records(streamed)
     assert '"reason":"abc"' not in streamed.text
     sequences = [event["seq"] for event in first]
@@ -63,11 +107,19 @@ def test_session_lifecycle_and_resumable_event_stream(client: TestClient, monkey
     assert first[-1]["kind"] == "session.canceled"
     assert first[-1]["payload"]["reason"] == "<redacted>"
     resumed = _stream_records(
-        client.get("/v1/sessions/session-fixture/events", headers={"Last-Event-ID": str(first[-2]["seq"])})
+        client.get(
+            "/v1/sessions/session-fixture/events",
+            headers={"Last-Event-ID": str(first[-2]["seq"])},
+        )
     )
     assert resumed == [first[-1]]
-    assert client.get("/v1/sessions/session-fixture").json()["data"]["session"]["status"] == "canceled"
+    assert (
+        client.get("/v1/sessions/session-fixture").json()["data"]["session"]["status"]
+        == "canceled"
+    )
     assert client.get("/v1/sessions/session-fixture/artifacts").json()["ok"] is True
+
+
 def test_c4_daily_driver_completes_with_stable_observations_and_restart(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -75,7 +127,9 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
     monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("BREADBOARD_SESSION_STATE_ROOT", str(tmp_path / "session-state"))
-    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "session-events"))
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "session-events")
+    )
     monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
     monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
@@ -89,7 +143,9 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
         monkeypatch.setenv(name, f"C4_SENTINEL_{name}")
 
     def forbidden_provider_broker() -> None:
-        raise AssertionError("provider-free profile must not consult the credential broker")
+        raise AssertionError(
+            "provider-free profile must not consult the credential broker"
+        )
 
     observed_api_keys: list[str] = []
     create_client = MockRuntime.create_client
@@ -109,7 +165,9 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
             default_headers=default_headers,
         )
 
-    monkeypatch.setattr(provider_broker, "get_provider_broker", forbidden_provider_broker)
+    monkeypatch.setattr(
+        provider_broker, "get_provider_broker", forbidden_provider_broker
+    )
     monkeypatch.setattr(MockRuntime, "create_client", audited_create_client)
 
     session_id = "c4-provider-free"
@@ -124,7 +182,10 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
             },
             headers={"Idempotency-Key": "c4-start"},
         )
-        assert started.status_code == 202 and started.json()["data"]["session"]["status"] == "running"
+        assert (
+            started.status_code == 202
+            and started.json()["data"]["session"]["status"] == "running"
+        )
         sent = first_service.post(
             f"/v1/sessions/{session_id}/input",
             json={"content": "Continue deterministically."},
@@ -144,11 +205,15 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
     assert events[-1]["kind"] == "session.completed"
     kinds = [event["kind"] for event in events]
     assert "input.accepted" in kinds
-    assert [event["payload"]["tool"] for event in events if event["kind"] == "tool_call"] == [
+    assert [
+        event["payload"]["tool"] for event in events if event["kind"] == "tool_call"
+    ] == [
         "list_dir",
         "apply_unified_patch",
     ]
-    assistant_events = [event for event in events if event["kind"] == "assistant_message"]
+    assistant_events = [
+        event for event in events if event["kind"] == "assistant_message"
+    ]
     assert assistant_events
     assert any(
         event["payload"] == {"metadata": {"has_content": True}}
@@ -206,6 +271,10 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
         ).validate(event["payload"])
     assert observed_api_keys and set(observed_api_keys) == {"mock"}
 
+    event_path = (
+        tmp_path / ".breadboard" / "sessions" / session_id / "session_events.jsonl"
+    )
+    events_before_reads = event_path.read_bytes()
     with TestClient(create_app(include_atp_routes=False)) as restarted_service:
         restored = restarted_service.get(f"/v1/sessions/{session_id}")
         restored_events = _stream_records(
@@ -214,6 +283,7 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
         restored_artifacts = restarted_service.get(
             f"/v1/sessions/{session_id}/artifacts"
         )
+        restored_listing = restarted_service.get("/v1/sessions")
         described = restarted_service.get("/v1/system").json()
         assert restored.status_code == 200
         assert restored.json()["data"]["session"] == current.json()["data"]["session"]
@@ -228,6 +298,15 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
             == profile["effective_lock_hash"]
             == described["hashes"]["profile"]
         )
+        assert restored_listing.status_code == 200
+        assert restored_listing.json()["data"]["sessions"] == [
+            {
+                "session_id": session_id,
+                "status": "completed",
+                "event_count": len(events),
+            }
+        ]
+        assert event_path.read_bytes() == events_before_reads
 
         lock_path = tmp_path / lock_id
         corrupt_lock = json.loads(lock_path.read_text(encoding="utf-8"))
@@ -246,23 +325,37 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
         assert rejected.json()["error"]["error_code"] == "lock_drift"
 
     persisted = (
-        tmp_path
-        / ".breadboard"
-        / "sessions"
-        / session_id
-        / "session_events.jsonl"
+        tmp_path / ".breadboard" / "sessions" / session_id / "session_events.jsonl"
     ).read_text(encoding="utf-8")
     assert "C4_SENTINEL" not in persisted
-def test_session_invalid_state_is_stable_and_secret_free(client: TestClient, tmp_path: Path) -> None:
+
+
+def test_session_invalid_state_is_stable_and_secret_free(
+    client: TestClient, tmp_path: Path
+) -> None:
     lock_id = _locked_harness(client)
-    payload = {"lock_id": lock_id, "task": "secret-free error", "session_id": "duplicate"}
-    assert client.post("/v1/sessions", json=payload, headers={"Idempotency-Key": "first"}).status_code == 202
-    duplicate = client.post("/v1/sessions", json=payload, headers={"Idempotency-Key": "second"})
+    payload = {
+        "lock_id": lock_id,
+        "task": "secret-free error",
+        "session_id": "duplicate",
+    }
+    assert (
+        client.post(
+            "/v1/sessions", json=payload, headers={"Idempotency-Key": "first"}
+        ).status_code
+        == 202
+    )
+    duplicate = client.post(
+        "/v1/sessions", json=payload, headers={"Idempotency-Key": "second"}
+    )
     assert duplicate.status_code == 422
     assert duplicate.json()["error"]["error_code"] == "invalid_state"
     assert str(tmp_path) not in duplicate.text
     malformed = client.post("/v1/sessions", json={})
-    assert malformed.status_code == 422 and malformed.json()["schema_version"] == "bb.cli.result.v1"
+    assert (
+        malformed.status_code == 422
+        and malformed.json()["schema_version"] == "bb.cli.result.v1"
+    )
     assert malformed.json()["error"]["schema_version"] == "bb.problem.v1"
     missing = client.get("/v1/sessions/does-not-exist")
     assert missing.status_code == 404
@@ -273,7 +366,10 @@ def test_session_invalid_state_is_stable_and_secret_free(client: TestClient, tmp
         headers={"Idempotency-Key": "stray-approval"},
     )
     assert stray_approval.status_code == 422
-    assert client.get("/v1/sessions/duplicate").json()["data"]["session"]["status"] == "running"
+    assert (
+        client.get("/v1/sessions/duplicate").json()["data"]["session"]["status"]
+        == "running"
+    )
     inactive = client.post(
         "/v1/sessions/duplicate/cancel",
         json={},
@@ -294,8 +390,12 @@ def test_session_invalid_state_is_stable_and_secret_free(client: TestClient, tmp
     )
     assert traversal.status_code == 422
     with pytest.raises(ValueError, match="portable identifier"):
-        session_operations.load_session(tmp_path, "..")
-def test_durable_session_fallback_rejects_symlinked_metadata_root(monkeypatch, tmp_path: Path) -> None:
+        session_store.load_session(tmp_path, "..")
+
+
+def test_durable_session_fallback_rejects_symlinked_metadata_root(
+    monkeypatch, tmp_path: Path
+) -> None:
     outside = tmp_path / "outside"
     workspace = tmp_path / "workspace"
     event_directory = outside / ".breadboard" / "sessions" / "symlinked-session"
@@ -329,7 +429,9 @@ def test_durable_session_fallback_rejects_symlinked_metadata_root(monkeypatch, t
         encoding="utf-8",
     )
     workspace.mkdir()
-    (workspace / ".breadboard").symlink_to(outside / ".breadboard", target_is_directory=True)
+    (workspace / ".breadboard").symlink_to(
+        outside / ".breadboard", target_is_directory=True
+    )
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(workspace))
     monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
     monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
@@ -342,15 +444,23 @@ def test_durable_session_fallback_rejects_symlinked_metadata_root(monkeypatch, t
         assert events_response.status_code == 404
         assert "cross-boundary-secret" not in events_response.text
     cli_args = SimpleNamespace(workspace=workspace, SESSION_ID="symlinked-session")
-    for operation in (session_operations.get, session_operations.events, session_operations.artifacts):
+    for operation in (
+        session_operations.get,
+        session_operations.events,
+        session_operations.artifacts,
+    ):
         result = operation(cli_args)
         assert result.ok is False
-        assert "cross-boundary-secret" not in json.dumps(result.as_dict(), sort_keys=True)
+        assert "cross-boundary-secret" not in json.dumps(
+            result.as_dict(), sort_keys=True
+        )
     listing = session_operations.list_sessions(SimpleNamespace(workspace=workspace))
     assert "cross-boundary-secret" not in json.dumps(listing.as_dict(), sort_keys=True)
 
 
-def test_orphaned_running_session_is_not_exposed_as_resumable(monkeypatch, tmp_path: Path) -> None:
+def test_orphaned_running_session_is_not_exposed_as_resumable(
+    monkeypatch, tmp_path: Path
+) -> None:
     session_id = "orphaned-running"
     event_directory = tmp_path / ".breadboard" / "sessions" / session_id
     event_directory.mkdir(parents=True)
@@ -409,7 +519,9 @@ def test_orphaned_running_session_is_not_exposed_as_resumable(monkeypatch, tmp_p
             )
 
 
-def test_durable_session_fallback_rejects_symlinked_event_file(monkeypatch, tmp_path: Path) -> None:
+def test_durable_session_fallback_rejects_symlinked_event_file(
+    monkeypatch, tmp_path: Path
+) -> None:
     workspace = tmp_path / "workspace"
     event_directory = workspace / ".breadboard" / "sessions" / "symlinked-file"
     event_directory.mkdir(parents=True)
@@ -442,19 +554,30 @@ def test_durable_session_fallback_rejects_symlinked_event_file(monkeypatch, tmp_
         response = test_client.get("/v1/sessions/symlinked-file")
         assert response.status_code == 404
         assert "linked-file-secret" not in response.text
-    cli_args = SimpleNamespace(workspace=workspace, SESSION_ID="symlinked-file", reason="must stay contained")
-    for operation in (session_operations.get, session_operations.events, session_operations.artifacts, session_operations.cancel):
+    cli_args = SimpleNamespace(
+        workspace=workspace, SESSION_ID="symlinked-file", reason="must stay contained"
+    )
+    for operation in (
+        session_operations.get,
+        session_operations.events,
+        session_operations.artifacts,
+        session_operations.cancel,
+    ):
         result = operation(cli_args)
         assert result.ok is False
         assert "linked-file-secret" not in json.dumps(result.as_dict(), sort_keys=True)
     assert external.read_bytes() == original_external
 
 
-def test_session_start_preserves_lock_drift_error(client: TestClient, tmp_path: Path) -> None:
+def test_session_start_preserves_lock_drift_error(
+    client: TestClient, tmp_path: Path
+) -> None:
     lock_id = _locked_harness(client)
     harness = tmp_path / "daily_driver.v1.yaml"
     original = harness.read_text()
-    changed = original.replace("name: coding", "name: changed", 1).replace("mode: coding", "mode: changed", 1)
+    changed = original.replace("name: coding", "name: changed", 1).replace(
+        "mode: coding", "mode: changed", 1
+    )
     assert changed != original
     harness.write_text(changed)
     response = client.post(
@@ -465,18 +588,37 @@ def test_session_start_preserves_lock_drift_error(client: TestClient, tmp_path: 
     assert response.status_code == 409
     assert response.json()["command"] == ["session", "start"]
     assert response.json()["error"]["error_code"] == "lock_drift"
+
+
 def test_session_start_dispatches_task_to_execution_service(client: TestClient) -> None:
     lock_id = _locked_harness(client)
-    payload = {"lock_id": lock_id, "task": "complete the execution probe", "session_id": "execution-fixture"}
-    started = client.post("/v1/sessions", json=payload, headers={"Idempotency-Key": "execution-start"})
+    payload = {
+        "lock_id": lock_id,
+        "task": "complete the execution probe",
+        "session_id": "execution-fixture",
+    }
+    started = client.post(
+        "/v1/sessions", json=payload, headers={"Idempotency-Key": "execution-start"}
+    )
     assert started.status_code == 202
     deadline = monotonic() + 10
-    record = client.portal.call(client.app.state.session_service.ensure_session, "execution-fixture")
+    record = client.portal.call(
+        client.app.state.session_service.ensure_session, "execution-fixture"
+    )
     while not record.event_log and monotonic() < deadline:
         sleep(0.05)
-        record = client.portal.call(client.app.state.session_service.ensure_session, "execution-fixture")
+        record = client.portal.call(
+            client.app.state.session_service.ensure_session, "execution-fixture"
+        )
     assert record.event_log and record.event_log[0].asdict()["type"] == "skills_catalog"
-    assert client.post("/v1/sessions/execution-fixture/cancel", json={}, headers={"Idempotency-Key": "execution-cancel"}).status_code == 202
+    assert (
+        client.post(
+            "/v1/sessions/execution-fixture/cancel",
+            json={},
+            headers={"Idempotency-Key": "execution-cancel"},
+        ).status_code
+        == 202
+    )
     records = _stream_records(client.get("/v1/sessions/execution-fixture/events"))
     assert records[0]["kind"] == "session.started"
     assert records[-1]["kind"] == "session.canceled"

@@ -6,14 +6,17 @@ from pathlib import Path
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from breadboard.product.cli import system as legacy_system_operations
 from breadboard.product.operations.model import OperationContext
 from breadboard.product.operations.system import (
     DescribeSystemRequest,
+    HealthSystemRequest,
+    SchemasSystemRequest,
     describe_system,
+    health_system,
+    schemas_system,
 )
 
-from .models import PublicResult, invoke
+from .models import PublicResult, invoke, public_operation_context
 
 
 router = APIRouter(tags=["public-system"])
@@ -26,8 +29,8 @@ def _operation_context(workspace: Path) -> OperationContext:
         in {"1", "true", "yes", "on"}
         else frozenset()
     )
-    return OperationContext(
-        workspace=workspace,
+    return public_operation_context(
+        workspace,
         enabled_extensions=enabled_extensions,
     )
 
@@ -55,9 +58,9 @@ def describe() -> JSONResponse:
 def health() -> JSONResponse:
     return invoke(
         "system.health",
-        lambda workspace: legacy_system_operations.health(
-            ["system", "health"],
-            workspace,
+        lambda workspace: health_system(
+            HealthSystemRequest(),
+            public_operation_context(workspace),
         ),
     )
 
@@ -70,8 +73,8 @@ def health() -> JSONResponse:
 def schemas() -> JSONResponse:
     return invoke(
         "system.schemas",
-        lambda workspace: legacy_system_operations.schemas(
-            ["system", "schemas"],
-            workspace,
+        lambda workspace: schemas_system(
+            SchemasSystemRequest(),
+            public_operation_context(workspace),
         ),
     )

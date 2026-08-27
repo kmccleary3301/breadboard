@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sysconfig
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,6 +16,7 @@ from breadboard.product.operations.model import (
     OperationContext,
     OperationResult,
     from_exception,
+    portable_ref,
 )
 
 
@@ -23,7 +25,19 @@ class DescribeSystemRequest:
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class HealthSystemRequest:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class SchemasSystemRequest:
+    pass
+
+
 _DESCRIBE_COMMAND = ("system", "describe")
+_HEALTH_COMMAND = ("system", "health")
+_SCHEMAS_COMMAND = ("system", "schemas")
 
 
 def _candidate_operations() -> list[dict[str, Any]]:
@@ -60,6 +74,56 @@ def _internal_extensions(
             "operation_count": len(catalog["operations"]),
         }
     ]
+
+
+def health_system(
+    _request: HealthSystemRequest,
+    context: OperationContext,
+) -> OperationResult:
+    try:
+        root = context.workspace.expanduser().resolve()
+        if not root.exists():
+            return OperationResult.failure(
+                _HEALTH_COMMAND,
+                3,
+                "workspace_unavailable",
+                f"workspace does not exist: {portable_ref(root, root)}",
+                "system.health",
+            )
+        metadata = root / ".breadboard"
+        return OperationResult.success(
+            _HEALTH_COMMAND,
+            {
+                "workspace": ".",
+                "workspace_exists": True,
+                "metadata_dir": portable_ref(metadata, root),
+                "metadata_exists": metadata.is_dir(),
+                "python": sysconfig.get_platform(),
+            },
+            stage="system.health",
+        )
+    except Exception as error:
+        return from_exception(_HEALTH_COMMAND, error, "system.health")
+
+
+def schemas_system(
+    _request: SchemasSystemRequest,
+    context: OperationContext,
+) -> OperationResult:
+    try:
+        names = sorted(
+            path.name
+            for path in context.installed_resource("contracts/public/schemas").glob(
+                "*.schema.json"
+            )
+        )
+        return OperationResult.success(
+            _SCHEMAS_COMMAND,
+            {"schema_count": len(names), "schemas": names},
+            stage="system.schemas",
+        )
+    except Exception as error:
+        return from_exception(_SCHEMAS_COMMAND, error, "system.schemas")
 
 
 def describe_system(
