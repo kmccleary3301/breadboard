@@ -600,61 +600,111 @@ class ProviderBroker:
                 state=self._value(payload, "state"),
                 is_cancelled=login_is_terminal,
             )
+            oauth_secret_values = tuple(
+                value
+                for key, value in material.items()
+                if redaction.is_secret_key(key) and isinstance(value, str)
+            )
             try:
-                with self.store.atomic():
-                    if not self.store.finish_pending_login(str(login_id), "completed"):
-                        current = self.store.get_login(str(login_id)) or login
-                        return self._public_login(current)
-                    provider_id = str(login["provider_id"])
-                    entry = get_provider_catalog_entry(provider_id)
-                    store_provider = (
-                        entry.oauth_flows[0].store_provider_id
-                        if entry and entry.oauth_flows
-                        else None
-                    )
-                    store_provider = store_provider or provider_id
-                    label = str(
-                        self._value(
-                            payload,
-                            "accountLabel",
-                            "account_label",
-                            "label",
-                            default=material.get("email") or store_provider,
+                with redaction.secret_value_scope(*oauth_secret_values):
+                    with self.store.atomic():
+                        if not self.store.finish_pending_login(
+                            str(login_id),
+                            "completed",
+                        ):
+                            current = self.store.get_login(str(login_id)) or login
+                            return self._public_login(current)
+                        provider_id = str(login["provider_id"])
+                        entry = get_provider_catalog_entry(provider_id)
+                        store_provider = (
+                            entry.oauth_flows[0].store_provider_id
+                            if entry and entry.oauth_flows
+                            else None
                         )
-                    )
-                    metadata = {
-                        key: material[key]
-                        for key in (
-                            "email",
-                            "provider_account_id",
-                            "project_id",
-                            "token_type",
+                        store_provider = store_provider or provider_id
+                        label = str(
+                            self._value(
+                                payload,
+                                "accountLabel",
+                                "account_label",
+                                "label",
+                                default=material.get("email") or store_provider,
+                            )
                         )
-                        if key in material
-                    }
-                    view = self.store.put_oauth(
-                        provider_id=store_provider,
-                        auth_scheme_id="oauth2",
-                        label=label,
-                        alias=str(self._value(payload, "alias", default="")),
-                        expires_at_ms=int(material["expires_at_ms"]),
-                        material=material,
-                        metadata=metadata,
-                        source="login",
+                        alias = str(self._value(payload, "alias", default=""))
+                        expires_at_ms = int(material["expires_at_ms"])
+                        identity_values = (
+                            provider_id,
+                            store_provider,
+                            "oauth2",
+                            label,
+                            alias,
+                            str(expires_at_ms),
+                        )
+                        if any(
+                            redaction.contains_registered_secret_text(value)
+                            for value in identity_values
+                        ):
+                            raise OAuthFlowError(
+                                "oauth_invalid_response",
+                                (
+                                    "OAuth credential identity fields cannot "
+                                    "contain credential material"
+                                ),
+                            )
+                        metadata = {
+                            key: material[key]
+                            for key in (
+                                "email",
+                                "provider_account_id",
+                                "project_id",
+                                "token_type",
+                            )
+                            if key in material
+                        }
+                        if redaction.contains_registered_secret_mapping_key(metadata):
+                            raise OAuthFlowError(
+                                "oauth_invalid_response",
+                                "OAuth metadata keys cannot contain credential material",
+                            )
+                        scrubbed_metadata, _ = redaction.scrub_structure(
+                            metadata,
+                            path="$.metadata",
+                        )
+                        view = self.store.put_oauth(
+                            provider_id=store_provider,
+                            auth_scheme_id="oauth2",
+                            label=label,
+                            alias=alias,
+                            expires_at_ms=expires_at_ms,
+                            material=material,
+                            metadata=scrubbed_metadata,
+                            source="login",
+                        )
+                        self._emit(
+                            "provider_login_completed",
+                            provider_id=provider_id,
+                            account_id=view["account_id"],
+                            credential_id=view["credential_id"],
+                        )
+                    result, _ = redaction.scrub_structure(
+                        {
+                            **self._public_login(
+                                self.store.get_login(str(login_id)) or login
+                            ),
+                            "status": "completed",
+                            "credential": view,
+                        },
+                        path="$.login",
                     )
-                    self._emit(
-                        "provider_login_completed",
-                        provider_id=provider_id,
-                        account_id=view["account_id"],
-                        credential_id=view["credential_id"],
-                    )
+                    if not isinstance(result, Mapping):
+                        raise OAuthFlowError(
+                            "oauth_invalid_response",
+                            "OAuth credential store returned an invalid view",
+                        )
+                    return dict(result)
             finally:
                 self._clear_mutable_material(material)
-            return {
-                **self._public_login(self.store.get_login(str(login_id)) or login),
-                "status": "completed",
-                "credential": view,
-            }
         except OAuthFlowError as exc:
             problem = self._problem(
                 exc.code,
@@ -1091,9 +1141,14 @@ class ProviderBroker:
                             "email",
                             "provider_account_id",
                             "project_id",
+                            "token_type",
                         )
                         if key in stale_material
                     }
+                    scrubbed_metadata, _ = redaction.scrub_structure(
+                        refreshed_metadata,
+                        path="$.metadata",
+                    )
                     with self.store.atomic():
                         outcome = self.store.complete_oauth_refresh(
                             account_id=account_id,
@@ -1101,7 +1156,7 @@ class ProviderBroker:
                             owner_id=owner_id,
                             expires_at_ms=int(refreshed["expires_at_ms"]),
                             material=refreshed,
-                            metadata=refreshed_metadata,
+                            metadata=scrubbed_metadata,
                         )
                         outcome_status = str(outcome.get("status") or "")
                         if outcome_status == "completed":

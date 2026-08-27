@@ -170,7 +170,7 @@ SECRET_VALUE_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-]{16,}"),  # Bearer credentials
 )
 
-_MIN_REGISTERED_LENGTH = 4
+MIN_REGISTERED_SECRET_LENGTH = 4
 
 _registry_lock = threading.Lock()
 _registered_values: dict[str, int] = {}
@@ -180,7 +180,7 @@ def _normalized_secret_value(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     text = value.strip()
-    return text if len(text) >= _MIN_REGISTERED_LENGTH else None
+    return text if len(text) >= MIN_REGISTERED_SECRET_LENGTH else None
 
 
 @dataclass(frozen=True)
@@ -353,20 +353,31 @@ def _scrub_node(value: Any, path: str, problems: list[RedactionProblem]) -> Any:
     if isinstance(value, Mapping):
         out: dict[Any, Any] = {}
         for key, item in value.items():
-            child = f"{path}.{key}"
-            normalized_key = str(key).strip().lower().replace("-", "_")
+            key_text = str(key)
+            scrubbed_key_text = scrub_text(key_text)
+            output_key = scrubbed_key_text if scrubbed_key_text != key_text else key
+            child = f"{path}.{scrubbed_key_text}"
+            if scrubbed_key_text != key_text:
+                problems.append(
+                    RedactionProblem(
+                        "secret_value",
+                        child,
+                        "secret value scrubbed from mapping key",
+                    )
+                )
+            normalized_key = key_text.strip().lower().replace("-", "_")
             if normalized_key in _AUTH_URL_KEYS and isinstance(item, str):
                 cleaned = scrub_auth_url(item)
-                out[key] = cleaned
+                out[output_key] = cleaned
                 if cleaned != item:
                     problems.append(RedactionProblem("auth_url", child, "auth URL query material redacted"))
             elif is_secret_key(key):
-                out[key] = REDACTED
+                out[output_key] = REDACTED
                 problems.append(
                     RedactionProblem("secret_key", child, "secret-named key redacted")
                 )
             else:
-                out[key] = _scrub_node(item, child, problems)
+                out[output_key] = _scrub_node(item, child, problems)
         return out
     if isinstance(value, (list, tuple)):
         items = [

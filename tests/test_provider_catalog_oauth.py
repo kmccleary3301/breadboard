@@ -155,6 +155,153 @@ def test_codex_browser_login_and_exchange_use_exact_source_endpoints_without_lea
     assert material == {}
 
 
+def test_oauth_completion_scrubs_token_aliases_from_public_metadata(tmp_path):
+    access = "oauth-access-alias-canary"
+    refresh = "oauth-refresh-alias-canary"
+    transport, _calls = _transport_factory(
+        [
+            (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "access_token": access,
+                        "refresh_token": refresh,
+                        "expires_in": 3600,
+                        "project_id": access,
+                        "token_type": refresh,
+                    }
+                ).encode(),
+            )
+        ]
+    )
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / "credentials.sqlite3"),
+        oauth_transport=transport,
+    )
+    started = broker.beginLogin({"provider_id": "codex"})
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
+
+    completed = broker.completeLogin(
+        {
+            "login_session_id": started["login_session_id"],
+            "authorization_code": "auth-code",
+            "state": flow["state"],
+        }
+    )
+
+    assert completed["status"] == "completed"
+    assert completed["credential"]["metadata"] == {
+        "project_id": redaction.REDACTED,
+        "token_type": redaction.REDACTED,
+    }
+    assert access not in json.dumps(completed)
+    assert refresh not in json.dumps(completed)
+    assert access not in json.dumps(broker.listCredentials())
+    assert refresh not in json.dumps(broker.listCredentials())
+    assert access not in json.dumps(broker.audit_events())
+    assert refresh not in json.dumps(broker.audit_events())
+    assert redaction.iter_registered_secret_values() == ()
+
+
+@pytest.mark.parametrize("identity_field", ["account_label", "alias"])
+def test_oauth_completion_rejects_token_aliases_in_public_identity_fields(
+    tmp_path,
+    identity_field,
+):
+    access = "oauth-identity-alias-canary"
+    refresh = "oauth-refresh-control-canary"
+    transport, _calls = _transport_factory(
+        [
+            (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "access_token": access,
+                        "refresh_token": refresh,
+                        "expires_in": 3600,
+                    }
+                ).encode(),
+            )
+        ]
+    )
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / f"{identity_field}.sqlite3"),
+        oauth_transport=transport,
+    )
+    started = broker.beginLogin({"provider_id": "codex"})
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
+    payload = {
+        "login_session_id": started["login_session_id"],
+        "authorization_code": "auth-code",
+        "state": flow["state"],
+        identity_field: access,
+    }
+
+    completed = broker.completeLogin(payload)
+
+    assert completed["status"] == "failed"
+    assert completed["problem"]["code"] == "oauth_invalid_response"
+    assert access not in json.dumps(completed)
+    assert refresh not in json.dumps(completed)
+    assert broker.listCredentials() == []
+    assert access not in json.dumps(broker.audit_events())
+    assert refresh not in json.dumps(broker.audit_events())
+    assert redaction.iter_registered_secret_values() == ()
+
+
+@pytest.mark.parametrize("short_field", ["access_token", "refresh_token"])
+def test_oauth_completion_rejects_tokens_below_exact_redaction_minimum(
+    tmp_path,
+    short_field,
+):
+    tokens = {
+        "access_token": "oauth-access-control-canary",
+        "refresh_token": "oauth-refresh-control-canary",
+    }
+    tokens[short_field] = "abc"
+    transport, _calls = _transport_factory(
+        [
+            (
+                200,
+                {},
+                json.dumps(
+                    {
+                        **tokens,
+                        "expires_in": 3600,
+                    }
+                ).encode(),
+            )
+        ]
+    )
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / f"{short_field}.sqlite3"),
+        oauth_transport=transport,
+    )
+    started = broker.beginLogin({"provider_id": "codex"})
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
+
+    completed = broker.completeLogin(
+        {
+            "login_session_id": started["login_session_id"],
+            "authorization_code": "auth-code",
+            "state": flow["state"],
+        }
+    )
+
+    assert completed["status"] == "failed"
+    assert completed["problem"]["code"] == "oauth_invalid_response"
+    assert broker.listCredentials() == []
+    assert redaction.iter_registered_secret_values() == ()
+
+
 def test_openai_api_key_has_typed_flow_unavailable_and_anthropic_refresh_is_single_refresher(
     tmp_path,
 ):
@@ -214,6 +361,68 @@ def test_openai_api_key_has_typed_flow_unavailable_and_anthropic_refresh_is_sing
         "anthropic-refresh-old" not in json.dumps(event)
         for event in broker.audit_events()
     )
+
+
+def test_oauth_refresh_scrubs_legacy_token_aliases_from_metadata(tmp_path):
+    old_access = "oauth-legacy-metadata-canary"
+    old_refresh = "oauth-legacy-refresh-canary"
+    new_access = "oauth-refreshed-access-canary"
+    new_refresh = "oauth-refreshed-refresh-canary"
+    transport, _calls = _transport_factory(
+        [
+            (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "access_token": new_access,
+                        "refresh_token": new_refresh,
+                        "expires_in": 3600,
+                    }
+                ).encode(),
+            )
+        ]
+    )
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / "credentials.sqlite3"),
+        oauth_transport=transport,
+    )
+    expires_at = int(time.time() * 1000) + 1000
+    credential = broker.store.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="account",
+        material={
+            "access_token": old_access,
+            "refresh_token": old_refresh,
+            "project_id": old_access,
+            "token_type": old_refresh,
+            "expires_at_ms": expires_at,
+        },
+        expires_at_ms=expires_at,
+        metadata={"project_id": old_access, "token_type": old_refresh},
+    )
+
+    with broker.execution_material(
+        "anthropic",
+        account_selector={"account_id": credential["account_id"]},
+        minimum_validity_ms=5000,
+    ) as material:
+        assert material and material["api_key"] == new_access
+
+    assert broker.listCredentials()[0]["metadata"] == {
+        "project_id": redaction.REDACTED,
+        "token_type": redaction.REDACTED,
+    }
+    assert old_access not in json.dumps(broker.listCredentials())
+    assert old_refresh not in json.dumps(broker.listCredentials())
+    assert new_access not in json.dumps(broker.listCredentials())
+    assert new_refresh not in json.dumps(broker.listCredentials())
+    assert old_access not in json.dumps(broker.audit_events())
+    assert old_refresh not in json.dumps(broker.audit_events())
+    assert new_access not in json.dumps(broker.audit_events())
+    assert new_refresh not in json.dumps(broker.audit_events())
+    assert redaction.iter_registered_secret_values() == ()
 
 
 def test_codex_device_flow_uses_source_endpoints(tmp_path):
