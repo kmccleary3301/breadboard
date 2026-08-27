@@ -2,7 +2,7 @@ from __future__ import annotations
 from types import SimpleNamespace; from pathlib import Path; import asyncio, hashlib, json, os, threading, pytest, yaml
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from breadboard.product.cli import harness as harness_operations
+from breadboard.product.harness import default_profile as harness_operations
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import events as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
 from breadboard_engine.api.cli_bridge.app import create_app
@@ -12,7 +12,7 @@ from breadboard_engine.api.cli_bridge.session_runner import MAX_ATTACHMENT_BYTES
 from breadboard_engine.api.cli_bridge.runtime_emission import _tool_names
 from breadboard_engine.auth.enforcer import apply_dotted_overrides; from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard_engine.agent_llm_openai import OpenAIConductor
-from breadboard.product.cli.harness import DefaultProfileInvalidError, DefaultProfileUnavailableError
+from breadboard.product.harness.default_profile import DefaultProfileInvalidError, DefaultProfileUnavailableError
 CONFIG = "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml"
 RUNNER = "breadboard_engine.api.cli_bridge.session_runner.SessionRunner."
 SERVICE = "breadboard_engine.api.cli_bridge.service."

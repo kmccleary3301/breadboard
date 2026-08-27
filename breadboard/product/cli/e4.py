@@ -15,7 +15,7 @@ from ..evidence import (
     lock_lane,
 )
 from ..evidence.lanes import LANE_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION, REF_NAMES
-from .result import CliResult, from_exception, portable_ref
+from breadboard.product.operations.model import OperationResult, from_exception, portable_ref
 
 
 def _workspace(args):
@@ -46,7 +46,7 @@ def _lane_source(value, workspace=None, *, by_id=False):
 
 
 def _unsupported(args):
-    return CliResult.failure(
+    return OperationResult.failure(
         getattr(args, "_command", []), 6, "unsupported_operation",
         "operation is not available in this installation", "command",
         next_actions=["breadboard system describe"], status="blocked",
@@ -59,7 +59,7 @@ def _lane_init(args):
     try:
         root = Path(args.out).expanduser().absolute() if args.out else workspace
         path = init_lane(BreadBoardWorkspace(root), args.lane_id, references=references, execute=["capture"])
-        return CliResult.success(["lane", "init"], {"path": portable_ref(path, root), "lane_id": args.lane_id}, [portable_ref(path, root)], stage="lane.init")
+        return OperationResult.success(["lane", "init"], {"path": portable_ref(path, root), "lane_id": args.lane_id}, [portable_ref(path, root)], stage="lane.init")
     except Exception as exc:
         return from_exception(["lane", "init"], exc, "lane.init")
 
@@ -73,9 +73,9 @@ def _lane_validate(args):
             from scripts.authoring.validate_lane import load_lane_manifest
             from scripts.e4_parity.lane_definitions import load_lane_def
             lane = load_lane_manifest(path) if lane.get("schema_version") == "bb.e4.lane_manifest.v1" else load_lane_def(path)
-        return CliResult.success(["lane", "validate"], {"path": portable_ref(path, workspace), "lane_id": lane["lane_id"]}, [portable_ref(path, workspace)], stage="lane.validate")
+        return OperationResult.success(["lane", "validate"], {"path": portable_ref(path, workspace), "lane_id": lane["lane_id"]}, [portable_ref(path, workspace)], stage="lane.validate")
     except ValueError as exc:
-        return CliResult.failure(["lane", "validate"], 2, "invalid_lane", str(exc), "lane.validate")
+        return OperationResult.failure(["lane", "validate"], 2, "invalid_lane", str(exc), "lane.validate")
     except Exception as exc:
         return from_exception(["lane", "validate"], exc, "lane.validate")
 
@@ -104,12 +104,12 @@ def _lane_lock(args):
             expected = build_lane_lock(lane, root=source_root, manifest_path=path)
             content = (json.dumps(expected, allow_nan=False, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
             if destination.is_file() and not destination.is_symlink() and destination.read_bytes() == content:
-                return CliResult.success(["lane", "lock"], {"path": str(destination.relative_to(workspace.root)), "checked": True}, stage="lane.lock")
-            return CliResult.failure(["lane", "lock"], 5, "lock_drift", "lane lock is missing or differs from deterministic resolution", "lane.lock")
+                return OperationResult.success(["lane", "lock"], {"path": str(destination.relative_to(workspace.root)), "checked": True}, stage="lane.lock")
+            return OperationResult.failure(["lane", "lock"], 5, "lock_drift", "lane lock is missing or differs from deterministic resolution", "lane.lock")
         destination = lock_lane(lane, workspace, root=source_root, manifest_path=path)
-        return CliResult.success(["lane", "lock"], {"path": portable_ref(destination, workspace.root), "lane_id": lane["lane_id"]}, [portable_ref(destination, workspace.root)], stage="lane.lock")
+        return OperationResult.success(["lane", "lock"], {"path": portable_ref(destination, workspace.root), "lane_id": lane["lane_id"]}, [portable_ref(destination, workspace.root)], stage="lane.lock")
     except LaneResolutionError as exc:
-        return CliResult.failure(["lane", "lock"], 3, "path_unavailable", str(exc), "lane.lock", "Check the workspace-relative reference path.", next_actions=["breadboard system health"])
+        return OperationResult.failure(["lane", "lock"], 3, "path_unavailable", str(exc), "lane.lock", "Check the workspace-relative reference path.", next_actions=["breadboard system health"])
     except Exception as exc:
         return from_exception(["lane", "lock"], exc, "lane.lock")
 
@@ -120,7 +120,7 @@ def _lane_create(args):
         if lane.get("schema_version") not in (MANIFEST_SCHEMA_VERSION, LANE_SCHEMA_VERSION):
             raise ValueError("legacy lanes are read-only")
         path = author_lane(lane, BreadBoardWorkspace(_workspace(args)))
-        return CliResult.success(["lane", "create"], {"path": portable_ref(path, _workspace(args)), "lane_id": lane["lane_id"]}, [portable_ref(path, _workspace(args))], stage="lane.create")
+        return OperationResult.success(["lane", "create"], {"path": portable_ref(path, _workspace(args)), "lane_id": lane["lane_id"]}, [portable_ref(path, _workspace(args))], stage="lane.create")
     except Exception as exc:
         return from_exception(["lane", "create"], exc, "lane.create")
 
@@ -130,20 +130,20 @@ def _lane_get(args):
         lane = load_lane(_lane_source(args.PATH, BreadBoardWorkspace(_workspace(args)), by_id=True))
         if lane["lane_id"] != args.PATH:
             raise ValueError(f"lane manifest identity differs from requested lane_id: {args.PATH}")
-        return CliResult.success(["lane", "get"], {"lane": lane}, stage="lane.get")
+        return OperationResult.success(["lane", "get"], {"lane": lane}, stage="lane.get")
     except Exception as exc:
         return from_exception(["lane", "get"], exc, "lane.get")
 
 
 def _lane_list(args):
     from ..evidence.lanes import iter_authoring_lanes
-    return CliResult.success(["lane", "list"], {"lanes": [lane["lane_id"] for lane in iter_authoring_lanes(BreadBoardWorkspace(_workspace(args)))]}, stage="lane.list")
+    return OperationResult.success(["lane", "list"], {"lanes": [lane["lane_id"] for lane in iter_authoring_lanes(BreadBoardWorkspace(_workspace(args)))]}, stage="lane.list")
 
 
 def _lane_stage_report(args):
     try:
         report = StageReport.from_dict(json.loads(_lane_source(args.PATH).read_text(encoding="utf-8")))
-        return CliResult.success(["lane", "stage-report"], {"report": report.as_dict()}, stage="lane.stage_report")
+        return OperationResult.success(["lane", "stage-report"], {"report": report.as_dict()}, stage="lane.stage_report")
     except Exception as exc:
         return from_exception(["lane", "stage-report"], exc, "lane.stage_report")
 
@@ -157,10 +157,10 @@ def _lane_capture(args):
             try:
                 run_lane(str(lane["lane_id"]), stage="capture", out_dir=None, lane_def_dir=path.parent)
             except LaneLockDriftError as exc:
-                return CliResult.failure(["lane", "capture"], 5, "lock_drift", str(exc), "lane.capture")
+                return OperationResult.failure(["lane", "capture"], 5, "lock_drift", str(exc), "lane.capture")
             except LaneRunError as exc:
                 if "execution is inactive" in str(exc):
-                    return CliResult.failure(["lane", "capture"], 6, "candidate_lane_inactive", str(exc), "lane.capture", status="blocked")
+                    return OperationResult.failure(["lane", "capture"], 6, "candidate_lane_inactive", str(exc), "lane.capture", status="blocked")
                 raise
         from scripts.authoring.validate_lane import load_lane_manifest
         from scripts.e4_parity.run_lane import main as run_main, run_lane
@@ -169,8 +169,8 @@ def _lane_capture(args):
         if isinstance(lane.get("capture"), dict) and lane["capture"].get("strategy") == "replay_dump":
             report = run_lane(str(lane["lane_id"]), stage="capture", out_dir=output if lane.get("status") == "accepted" else None, lane_def_dir=path.parent)
             if not report.get("ok"):
-                return CliResult.failure(["lane", "capture"], 4, "stored_capture_invalid", "stored capture artifacts did not validate", "lane.capture", data={"capture": report})
-            result = CliResult.success(["lane", "capture"], {"capture": report, "requested_out": str(output)}, stage="lane.capture")
+                return OperationResult.failure(["lane", "capture"], 4, "stored_capture_invalid", "stored capture artifacts did not validate", "lane.capture", data={"capture": report})
+            result = OperationResult.success(["lane", "capture"], {"capture": report, "requested_out": str(output)}, stage="lane.capture")
             result.warnings.append("stored replay artifacts validated; no new capture process was executed")
             return result
         argv = ["--lane", str(lane["lane_id"]), "--stage", "capture", "--out", str(output), "--lane-def-dir", str(path.parent)]

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { existsSync } from "node:fs"
+import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
 import readline from "node:readline"
@@ -11,6 +12,14 @@ import { streamSessionEvents } from "../dist/stream.js"
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url))
 const smokeServerScript = path.join(repoRoot, "tests", "test_sdk_v1_default_server_smoke.py")
+const describeFixture = path.join(
+  repoRoot,
+  "tests",
+  "api",
+  "public",
+  "fixtures",
+  "system_describe.json",
+)
 
 const startDefaultServer = async (): Promise<{
   baseUrl: string
@@ -64,6 +73,10 @@ test(
     assert.equal((await fetch(`${baseUrl}/sessions`)).status, 404)
 
     const client = createBreadboardClient({ baseUrl, requestTimeoutMs: 5_000 })
+    const expectedDescribe = JSON.parse(
+      await readFile(describeFixture, "utf8"),
+    )
+    assert.deepEqual(await client.describeSystem(), expectedDescribe)
     assert.equal((await client.healthSystem()).ok, true)
     const created = await client.createHarness()
     const locked = await client.lockHarness(created.data.path as string)

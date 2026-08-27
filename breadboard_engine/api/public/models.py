@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
-from breadboard.product.cli.result import CliResult, from_exception
+from breadboard.product.operations.model import OperationResult, from_exception
 from breadboard.product.runtime.events import ProcessLock
 from breadboard.product.operation_catalog import product_operation_catalog
 from breadboard_engine.security import redaction
@@ -131,7 +131,7 @@ def _scrub(value: Any, workspace: Path | None, secrets: Sequence[str]) -> Any:
 def scrub_public(value: Any, workspace: Path | None = None) -> Any:
     return _scrub(value, workspace, _secret_values())
 def result_response(
-    result: CliResult,
+    result: OperationResult,
     *,
     workspace: Path | None = None,
     operation_id: str | None = None,
@@ -143,15 +143,15 @@ def result_response(
 def _operation_identity(operation_id: str) -> tuple[list[str], str]:
     command = [part.replace("_", "-") for part in operation_id.split(".")]
     return command, ".".join(command)
-def from_public_exception(operation_id: str, error: Exception) -> CliResult:
+def from_public_exception(operation_id: str, error: Exception) -> OperationResult:
     command, stage = _operation_identity(operation_id)
     if isinstance(error, HTTPException):
         status_code = int(error.status_code)
         exit_code = {404: 3, 409: 6, 422: 2}.get(status_code, 4 if status_code >= 500 else 2)
         error_code = {404: "path_unavailable", 409: "invalid_state", 422: "invalid_state"}.get(status_code, "runtime_failure" if status_code >= 500 else "invalid_state")
-        return CliResult.failure(command, exit_code, error_code, str(error.detail), stage)
+        return OperationResult.failure(command, exit_code, error_code, str(error.detail), stage)
     return from_exception(command, error, stage)
-def invoke(operation_id: str, function: Callable[[Path], CliResult]) -> JSONResponse:
+def invoke(operation_id: str, function: Callable[[Path], OperationResult]) -> JSONResponse:
     workspace: Path | None = None
     try:
         workspace = public_workspace()
@@ -159,7 +159,7 @@ def invoke(operation_id: str, function: Callable[[Path], CliResult]) -> JSONResp
     except Exception as error:
         result = from_public_exception(operation_id, error)
     return result_response(result, workspace=workspace, operation_id=operation_id)
-async def invoke_async(operation_id: str, function: Callable[[Path], Awaitable[CliResult]]) -> JSONResponse:
+async def invoke_async(operation_id: str, function: Callable[[Path], Awaitable[OperationResult]]) -> JSONResponse:
     workspace: Path | None = None
     try:
         workspace = public_workspace()
@@ -186,7 +186,7 @@ def invoke_idempotent(
     operation_id: str,
     idempotency_key: str | None,
     canonical_input: Mapping[str, Any],
-    function: Callable[[Path], CliResult],
+    function: Callable[[Path], OperationResult],
 ) -> JSONResponse:
     if not idempotency_key:
         return problem_response(operation_id, 422, "idempotency_key_required", "Idempotency-Key is required")
@@ -220,7 +220,7 @@ async def invoke_idempotent_async(
     operation_id: str,
     idempotency_key: str | None,
     canonical_input: Mapping[str, Any],
-    function: Callable[[Path], Awaitable[CliResult]],
+    function: Callable[[Path], Awaitable[OperationResult]],
 ) -> JSONResponse:
     if not idempotency_key:
         return problem_response(operation_id, 422, "idempotency_key_required", "Idempotency-Key is required")
@@ -270,5 +270,5 @@ async def invoke_idempotent_async(
 def problem_response(operation_id: str, status_code: int, error_code: str, message: str) -> JSONResponse:
     exit_code = {404: 3, 409: 6, 422: 2}.get(status_code, 4 if status_code >= 500 else 2)
     command, stage = _operation_identity(operation_id)
-    result = CliResult.failure(command, exit_code, error_code, message, stage)
+    result = OperationResult.failure(command, exit_code, error_code, message, stage)
     return JSONResponse(status_code=status_code, content=_scrub(result.as_dict(), None, _secret_values()))

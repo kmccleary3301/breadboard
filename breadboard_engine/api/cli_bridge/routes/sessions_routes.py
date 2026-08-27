@@ -16,7 +16,7 @@ from ..models import (
     SessionTurnCancelResponse, SkillCatalogResponse,
 )
 from ..service import SessionService
-from breadboard.product.cli.harness import (
+from breadboard.product.harness.default_profile import (
     DefaultProfileInvalidError,
     DefaultProfileUnavailableError,
 )
