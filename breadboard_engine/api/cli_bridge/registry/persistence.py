@@ -333,15 +333,6 @@ class PersistenceMixin:
 
     @staticmethod
     def _durable_replay_head(record: SessionRecord) -> tuple[int, str | None]:
-        for event in reversed(record.event_log):
-            if (
-                event.stable_cursor
-                and event.seq == record.event_seq
-                and record.event_seq > 0
-            ):
-                return record.event_seq, event.event_id
-        if record.event_seq > 0 and record.replay_head_event_id:
-            return record.event_seq, record.replay_head_event_id
         for envelope in reversed(record.terminal_event_envelopes):
             sequence = envelope.get("seq")
             event_id = envelope.get("id")
