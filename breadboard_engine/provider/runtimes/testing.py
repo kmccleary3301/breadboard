@@ -8,6 +8,15 @@ from typing import Any, Dict, List, Optional
 
 from ..contracts import ProviderMessage, ProviderResult, ProviderRuntime, ProviderRuntimeContext, ProviderToolCall
 
+def _exact_zero_usage() -> Dict[str, int]:
+    return {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalTokens": 0,
+    }
+
 
 class MockRuntime(ProviderRuntime):
     """A simple mock provider runtime for offline validation.
@@ -51,7 +60,7 @@ class MockRuntime(ProviderRuntime):
             return ProviderResult(
                 messages=out_messages,
                 raw_response={"mock": True, "mode": model_hint},
-                usage=None,
+                usage=_exact_zero_usage(),
                 encrypted_reasoning=None,
                 reasoning_summaries=None,
                 model="mock",
@@ -64,20 +73,6 @@ class MockRuntime(ProviderRuntime):
             tool_calls = msg.get("tool_calls")
             if isinstance(tool_calls, list):
                 prior_calls += len(tool_calls)
-
-        def _seen_tool(name: str) -> bool:
-            for msg in messages:
-                if msg.get("role") != "assistant":
-                    continue
-                for call in msg.get("tool_calls") or []:
-                    fn = getattr(getattr(call, "function", None), "name", "") or call.get("function")
-                    if fn == name:
-                        return True
-            return False
-
-        has_todo = _seen_tool("todo.write_board")
-        has_write = _seen_tool("write")
-        has_shell = _seen_tool("run_shell")
 
         def _mk_tool_call(name: str, args: Dict[str, Any]) -> ProviderToolCall:
             try:
@@ -172,7 +167,7 @@ class MockRuntime(ProviderRuntime):
         else:
             out_messages.append(ProviderMessage(role="assistant", content="Proceed to build and test.", tool_calls=[], finish_reason="stop", index=0))
 
-        return ProviderResult(messages=out_messages, raw_response={"mock": True}, usage=None, encrypted_reasoning=None, reasoning_summaries=None, model="mock")
+        return ProviderResult(messages=out_messages, raw_response={"mock": True}, usage=_exact_zero_usage(), encrypted_reasoning=None, reasoning_summaries=None, model="mock")
 
 
 class SmokeRuntime(ProviderRuntime):
@@ -219,7 +214,7 @@ class SmokeRuntime(ProviderRuntime):
                 )
             ],
             raw_response={"smoke": True},
-            usage=None,
+            usage=_exact_zero_usage(),
             encrypted_reasoning=None,
             reasoning_summaries=None,
             model="smoke",
@@ -330,7 +325,7 @@ class CliMockRuntime(ProviderRuntime):
             "mock": True,
             "prior_tool_calls": prior_calls,
         }
-        return ProviderResult(messages=out_messages, raw_response=raw_response, metadata={"status_code": 200})
+        return ProviderResult(messages=out_messages, raw_response=raw_response, usage=_exact_zero_usage(), metadata={"status_code": 200})
 
 
 __all__ = ["MockRuntime", "SmokeRuntime", "CliMockRuntime"]
