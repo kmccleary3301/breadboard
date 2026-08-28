@@ -151,11 +151,28 @@ def build_artifact_bundle(
     if not uv_cache.is_dir():
         raise RuntimeError("uv cache directory is unavailable for the offline build")
 
+    npm_cache = Path(
+        _run(
+            (npm, "config", "get", "cache"), cwd=candidate_root, timeout=30
+        ).stdout.strip()
+    ).resolve()
+    if not npm_cache.is_dir():
+        raise RuntimeError("npm cache directory is unavailable for the offline build")
     work_root.mkdir(parents=True, exist_ok=False)
     home = work_root / "home"
     (home / "tmp").mkdir(parents=True)
     environment = _safe_environment(home=home)
     environment["UV_CACHE_DIR"] = str(uv_cache)
+    environment["npm_config_cache"] = str(npm_cache)
+    environment.update(
+        {
+            "BREADBOARD_BUILD_SOURCE_COMMIT": expected_commit,
+            "BREADBOARD_BUILD_SOURCE_TREE": expected_tree,
+            "BREADBOARD_BUILD_SOURCE_REPOSITORY": _git_value(
+                candidate_root, "remote", "get-url", "origin"
+            ),
+        }
+    )
 
     source_archive = work_root / "candidate-source.tar"
     _run(
@@ -173,6 +190,20 @@ def build_artifact_bundle(
     python_source = work_root / "python-source"
     python_source.mkdir()
     shutil.unpack_archive(source_archive, python_source, format="tar")
+    sdk_source = python_source / "sdk" / "ts"
+    _run(
+        (
+            npm,
+            "ci",
+            "--ignore-scripts",
+            "--offline",
+            "--no-audit",
+            "--no-fund",
+        ),
+        cwd=sdk_source,
+        environment=environment,
+        timeout=300,
+    )
 
     wheel_root = work_root / "wheel"
     wheel_root.mkdir()
@@ -201,12 +232,34 @@ def build_artifact_bundle(
         environment=environment,
         timeout=300,
     )
+    installed_provenance = json.loads(
+        _run(
+            (
+                str(python),
+                "-c",
+                (
+                    "import json;"
+                    "from breadboard_engine.api.cli_bridge.app import ENGINE_PROVENANCE;"
+                    "print(json.dumps(ENGINE_PROVENANCE,sort_keys=True))"
+                ),
+            ),
+            cwd=work_root,
+            environment=environment,
+            timeout=120,
+        ).stdout
+    )
+    if installed_provenance.get("commit") != expected_commit:
+        raise RuntimeError(
+            "installed wheel provenance is not bound to the candidate commit"
+        )
+    if installed_provenance.get("dirty") is not False:
+        raise RuntimeError("installed wheel provenance is not immutable")
 
     sdk_out = work_root / "sdk-pack"
     sdk_out.mkdir()
     _run(
         (npm, "run", "pack:canonical", "--", str(sdk_out)),
-        cwd=candidate_root / "sdk" / "ts",
+        cwd=sdk_source,
         environment=environment,
         timeout=300,
     )
@@ -229,9 +282,9 @@ def build_artifact_bundle(
             "--ignore-scripts",
             "--pack-destination",
             str(dependency_out),
-            str(candidate_root / "sdk" / "ts" / "node_modules" / "eventsource-parser"),
+            str(sdk_source / "node_modules" / "eventsource-parser"),
         ),
-        cwd=candidate_root / "sdk" / "ts",
+        cwd=sdk_source,
         environment=environment,
         timeout=120,
     )

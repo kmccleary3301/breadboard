@@ -160,6 +160,17 @@ def _validated_redirect(
     return _validate_http_url(urljoin(current_url, location))
 
 
+def _same_origin(left: str, right: str) -> bool:
+    def origin(url: str) -> tuple[str, str, int]:
+        parsed = urlsplit(url)
+        scheme = parsed.scheme.lower()
+        hostname = (parsed.hostname or "").rstrip(".").lower()
+        port = parsed.port or (443 if scheme == "https" else 80)
+        return scheme, hostname, port
+
+    return origin(left) == origin(right)
+
+
 @dataclass(frozen=True)
 class WebScraperSettings:
     user_agent: str = "BreadBoardWeb/1.0"
@@ -418,13 +429,14 @@ class WebScraper:
     ) -> tuple[int, Dict[str, str]]:
         """Return response metadata through a DNS-pinned direct connection."""
         current_url = url
+        current_headers = dict(headers)
         for _redirect in range(11):
             destination = _resolve_http_destination(current_url)
             status_code, response_headers, _body = await asyncio.to_thread(
                 self._request_once,
                 "HEAD",
                 destination,
-                headers=headers,
+                headers=current_headers,
                 timeout_s=timeout_s,
                 verify_tls=verify_tls,
             )
@@ -435,6 +447,8 @@ class WebScraper:
             )
             if redirect is None:
                 return status_code, response_headers
+            if not _same_origin(current_url, redirect):
+                current_headers.clear()
             current_url = redirect
         raise _InvalidURLScheme("Too many redirects")
 
@@ -448,13 +462,14 @@ class WebScraper:
     ) -> tuple[int, Dict[str, str], bytes]:
         """Return a bounded body through a DNS-pinned direct connection."""
         current_url = url
+        current_headers = dict(headers)
         for _redirect in range(11):
             destination = _resolve_http_destination(current_url)
             status_code, response_headers, body = await asyncio.to_thread(
                 self._request_once,
                 "GET",
                 destination,
-                headers=headers,
+                headers=current_headers,
                 timeout_s=timeout_s,
                 verify_tls=verify_tls,
             )
@@ -465,6 +480,8 @@ class WebScraper:
             )
             if redirect is None:
                 return status_code, response_headers, body
+            if not _same_origin(current_url, redirect):
+                current_headers.clear()
             current_url = redirect
         raise _InvalidURLScheme("Too many redirects")
 
@@ -534,22 +551,24 @@ class WebScraper:
             """
         )
         page = await context.new_page()
-        blocked_request = False
+        blocked_destination = False
 
         async def _proxy_route(route: Any) -> None:
-            nonlocal blocked_request
+            nonlocal blocked_destination
             request = route.request
             method = str(request.method).upper()
             if method not in {"GET", "HEAD"}:
-                blocked_request = True
                 await route.abort("blockedbyclient")
                 return
             try:
-                destination = _resolve_http_destination(str(request.url))
+                request_url = str(request.url)
+                destination = _resolve_http_destination(request_url)
                 try:
-                    request_headers = await request.all_headers()
+                    request_headers = dict(await request.all_headers())
                 except Exception:
                     request_headers = dict(getattr(request, "headers", {}) or {})
+                if _same_origin(url, request_url):
+                    request_headers.update(headers)
                 status_code, response_headers, body = await asyncio.to_thread(
                     self._request_once,
                     method,
@@ -569,7 +588,7 @@ class WebScraper:
                     }
                 }
             except _InvalidURLScheme:
-                blocked_request = True
+                blocked_destination = True
                 await route.abort("blockedbyclient")
                 return
             except Exception:
@@ -583,8 +602,6 @@ class WebScraper:
 
         try:
             await page.route("**/*", _proxy_route)
-            if options.headers:
-                await page.set_extra_http_headers(options.headers)
             timeout_ms = int(max(1, timeout_s * 1000))
             try:
                 response = await page.goto(
@@ -593,17 +610,17 @@ class WebScraper:
                     wait_until="domcontentloaded",
                 )
             except Exception:
-                if blocked_request:
+                if blocked_destination:
                     raise _InvalidURLScheme(
                         "Only public http and https URLs are supported"
                     ) from None
                 raise
-            if blocked_request:
+            if blocked_destination:
                 raise _InvalidURLScheme("Only public http and https URLs are supported")
             _validate_http_url(str(page.url))
             if options.wait_for_ms is not None and int(options.wait_for_ms) > 0:
                 await page.wait_for_timeout(int(options.wait_for_ms))
-            if blocked_request:
+            if blocked_destination:
                 raise _InvalidURLScheme("Only public http and https URLs are supported")
             _validate_http_url(str(page.url))
             status_code = int(response.status) if response is not None else None
