@@ -12,7 +12,7 @@ import weakref
 from pathlib import Path
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, AsyncIterator, Mapping, Optional, Sequence
+from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, Sequence
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import (
     AnchoredStorage,
@@ -1643,9 +1643,12 @@ class SessionService:
         async with self._session_lock(session_id):
             await self._stop_session_locked(session_id)
             await self.registry.delete(session_id)
-
     async def send_input(
-        self, session_id: str, payload: SessionInputRequest
+        self,
+        session_id: str,
+        payload: SessionInputRequest,
+        *,
+        defer_execution: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
     ) -> SessionInputResponse:
         record = await self.ensure_session(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
@@ -1656,10 +1659,13 @@ class SessionService:
         client_message_id = payload.client_message_id or uuid.uuid4().hex
         attachments = tuple(payload.attachments or ())
         body_digest = submission_body_digest(payload.content, attachments)
+        key_digest = identity_digest(client_message_id)
 
         async def admit() -> SessionInputResponse:
             async with record.admission_lock:
-                existing = record.submissions_by_key.get(client_message_id)
+                existing = record.submissions_by_key.get(
+                    client_message_id
+                ) or record.submissions_by_key_digest.get(key_digest)
                 if existing is not None:
                     if existing.body_digest != body_digest:
                         raise HTTPException(
@@ -1689,27 +1695,29 @@ class SessionService:
                 )
                 record.turns_by_id[turn.turn_id] = turn
                 record.submissions_by_key[client_message_id] = turn
-                record.submissions_by_key_digest[identity_digest(client_message_id)] = (
-                    turn
-                )
+                record.submissions_by_key_digest[key_digest] = turn
                 if disposition == "started":
                     record.active_turn_id = turn.turn_id
                 else:
                     record.queued_turn_ids.append(turn.turn_id)
                 record.turn_admission = record.turn_admission.__class__.ACTIVE
+                scheduled_operations: list[Callable[[], Awaitable[None]]] = []
                 try:
                     accepted_content = await runner.enqueue_input(
                         payload.content,
                         attachments=list(attachments),
                         input_id=turn.input_id,
                         turn_id=turn.turn_id,
+                        defer_execution=scheduled_operations.append,
                     )
-                except (ValueError, RuntimeError) as exc:
+                    if len(scheduled_operations) != 1:
+                        raise RuntimeError("input execution was not scheduled exactly once")
+                    turn.content = accepted_content
+                    await self.registry.persist(record)
+                except Exception as exc:
                     record.turns_by_id.pop(turn.turn_id, None)
                     record.submissions_by_key.pop(client_message_id, None)
-                    record.submissions_by_key_digest.pop(
-                        identity_digest(client_message_id), None
-                    )
+                    record.submissions_by_key_digest.pop(key_digest, None)
                     if record.active_turn_id == turn.turn_id:
                         record.active_turn_id = None
                     else:
@@ -1722,6 +1730,8 @@ class SessionService:
                         if record.active_turn_id is not None
                         else record.turn_admission.__class__.IDLE
                     )
+                    if not isinstance(exc, (ValueError, RuntimeError)):
+                        raise
                     http_status = (
                         status.HTTP_400_BAD_REQUEST
                         if isinstance(exc, ValueError)
@@ -1730,7 +1740,11 @@ class SessionService:
                     raise HTTPException(
                         status_code=http_status, detail=str(exc)
                     ) from exc
-                turn.content = accepted_content
+                scheduled_operation = scheduled_operations[0]
+                if defer_execution is None:
+                    await scheduled_operation()
+                else:
+                    defer_execution(scheduled_operation)
                 return SessionInputResponse(
                     client_message_id=client_message_id,
                     input_id=turn.input_id,
