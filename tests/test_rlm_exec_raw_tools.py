@@ -605,7 +605,14 @@ def test_llm_query_model_argument_cannot_escape_active_role_lock(
         "features": {
             "rlm": {
                 "enabled": True,
-                "scheduling": {"mode": "sync"},
+                "budget": {"max_subcalls": 8},
+                "scheduling": {
+                    "mode": "batch",
+                    "batch": {
+                        "enabled": True,
+                        "max_concurrency": 2,
+                    },
+                },
             }
         },
         "providers": {"default_model": "mock/slow"},
@@ -680,12 +687,36 @@ def test_llm_query_model_argument_cannot_escape_active_role_lock(
             },
         }
     )
+    batch_result = conductor._exec_raw(
+        {
+            "function": "llm.batch_query",
+            "arguments": {
+                "queries": [
+                    {
+                        "prompt": "batch active role",
+                        "model": "mock/slow",
+                    },
+                    {
+                        "prompt": "batch mapped lane",
+                        "model": "mock/primary",
+                        "lane": "balanced",
+                    },
+                ]
+            },
+        }
+    )
+
 
 
     assert result.get("text") == "locked", result
     assert result["route_id"] == "mock/primary"
     assert mapped_result["route_id"] == "mock/slow"
-    assert leased_routes == ["mock/primary", "mock/slow"]
+    assert [row["route_id"] for row in batch_result["results"]] == [
+        "mock/primary",
+        "mock/slow",
+    ]
+    assert leased_routes[:2] == ["mock/primary", "mock/slow"]
+    assert sorted(leased_routes[2:]) == ["mock/primary", "mock/slow"]
 
 
 def test_llm_query_artifact_write_handles_non_serializable_usage(monkeypatch: Any, tmp_path: Path) -> None:
