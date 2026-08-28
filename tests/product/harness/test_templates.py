@@ -110,6 +110,7 @@ def test_checked_in_daily_driver_is_public_bounded_and_provider_free() -> None:
     assert document["prompts"]["packs"]["base"]["system"] == (
         "prompts/daily_driver_system.md"
     )
+    assert document["features"] == {"todos": {"enabled": True, "strict": True}}
     assert document["permissions"] == {
         "options": {"mode": "prompt"},
         "shell": {"default": "ask"},
