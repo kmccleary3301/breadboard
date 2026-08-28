@@ -66,7 +66,7 @@ export const renderCommand = Command.make("render", { session: sessionArg, outpu
         const result = await runResume({ sessionId: session })
         let summary: SessionSummary | null = null
         try {
-          summary = await getCliApi().getSessionSummary(session)
+          summary = await getCliApi().getSession(session)
         } catch (error) {
           await reportCommandWarning("failed to load session summary", error)
         }

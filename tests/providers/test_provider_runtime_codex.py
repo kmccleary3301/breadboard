@@ -16,7 +16,9 @@ from breadboard_engine.provider_runtime import (
 )
 from breadboard_engine.security import build_child_environment
 
-provider_registry.register_runtime("codex_app_server", runtime_codex_module.CodexAppServerRuntime)
+provider_registry.register_runtime(
+    "codex_app_server", runtime_codex_module.CodexAppServerRuntime
+)
 
 
 class _FakeSessionState:
@@ -35,7 +37,9 @@ class _FakeSessionState:
     def _emit_event(self, event_type: str, payload: dict, *, turn=None):
         self.emitted.append((event_type, dict(payload), turn))
 
-    def record_tool_event(self, turn_index, tool_name: str, *, success: bool, metadata=None):
+    def record_tool_event(
+        self, turn_index, tool_name: str, *, success: bool, metadata=None
+    ):
         self.tool_events.append((turn_index, tool_name, success, dict(metadata or {})))
 
 
@@ -50,8 +54,10 @@ def _correlated_notification(
     method = result.get("method")
     if method == "turn/completed":
         params.setdefault("threadId", thread_id)
-    elif method == "thread/tokenUsage/updated" or method == "turn/started" or (
-        isinstance(method, str) and method.startswith("item/")
+    elif (
+        method == "thread/tokenUsage/updated"
+        or method == "turn/started"
+        or (isinstance(method, str) and method.startswith("item/"))
     ):
         params.setdefault("threadId", thread_id)
         params.setdefault("turnId", turn_id)
@@ -82,9 +88,7 @@ class _FakeClient:
         )
 
 
-def _agent_item(
-    item_id: str, text: str, *, phase: str = "final_answer"
-) -> dict:
+def _agent_item(item_id: str, text: str, *, phase: str = "final_answer") -> dict:
     return {
         "id": item_id,
         "type": "agentMessage",
@@ -122,6 +126,7 @@ def _completed_turn(turn_id: str, *items: dict) -> dict:
         "items": list(items),
         "itemsView": "full",
     }
+
 
 def test_codex_provider_routes_to_app_server() -> None:
     descriptor, model = provider_router.get_runtime_descriptor("codex/gpt-5.4-mini")
@@ -262,6 +267,7 @@ def test_codex_notification_correlation_must_match_active_turn() -> None:
 
     assert exc_info.value.details["code"] == "invalid_codex_event"
 
+
 def test_codex_child_environment_excludes_credentials(monkeypatch) -> None:
     canaries = {
         "OPENAI_API_KEY": "e3-codex-openai-canary",
@@ -303,6 +309,7 @@ def test_codex_invalid_child_output_is_secret_free() -> None:
     assert canary not in serialized
     assert set(exc_info.value.details) == {"line_bytes"}
 
+
 @pytest.mark.parametrize(
     "method",
     (
@@ -317,9 +324,7 @@ def test_codex_app_server_fails_closed_on_approval_request(method) -> None:
         env={},
     )
 
-    assert client._handle_server_request({"method": method}) == {
-        "decision": "cancel"
-    }
+    assert client._handle_server_request({"method": method}) == {"decision": "cancel"}
 
 
 def test_codex_app_server_uses_restricted_process_builder(
@@ -368,6 +373,7 @@ def test_codex_app_server_uses_restricted_process_builder(
                 "shell": False,
                 "environment": {"PATH": "/trusted/bin"},
                 "protected_paths": (str(protected),),
+                "allow_network": True,
             },
         )
     ]
@@ -426,12 +432,12 @@ def test_codex_app_server_isolation_failure_is_secret_free_and_never_retries(
     assert build_calls == 1
     assert canary not in rendered
     assert canary not in json.dumps(exc_info.value.details)
-    assert exc_info.value.details == {
-        "error_type": "ProcessIsolationUnavailable"
-    }
+    assert exc_info.value.details == {"error_type": "ProcessIsolationUnavailable"}
 
 
-def test_codex_runtime_starts_threads_read_only_without_approvals(monkeypatch, tmp_path) -> None:
+def test_codex_runtime_starts_threads_read_only_without_approvals(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.delenv("BREADBOARD_CODEX_APP_SERVER_POOL", raising=False)
     runtime_codex_module._reset_codex_client_pool_for_tests()
     thread_starts: list[dict] = []
@@ -453,7 +459,9 @@ def test_codex_runtime_starts_threads_read_only_without_approvals(monkeypatch, t
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr(runtime_codex_module, "_CodexJsonRpcClient", _ReadOnlyFakeClient)
+    monkeypatch.setattr(
+        runtime_codex_module, "_CodexJsonRpcClient", _ReadOnlyFakeClient
+    )
     descriptor, model = provider_router.get_runtime_descriptor("codex/gpt-5.5")
     runtime = provider_registry.create_runtime(descriptor)
 
@@ -473,13 +481,13 @@ def test_codex_runtime_starts_threads_read_only_without_approvals(monkeypatch, t
     runtime._release_leased_client(healthy=True)
 
 
-def test_codex_runtime_streams_commentary_tool_exec_and_final_answer(monkeypatch) -> None:
+def test_codex_runtime_streams_commentary_tool_exec_and_final_answer(
+    monkeypatch,
+) -> None:
     descriptor, model = provider_router.get_runtime_descriptor("codex/gpt-5.4-mini")
     runtime = provider_registry.create_runtime(descriptor)
     commentary_start = _agent_item("commentary-1", "", phase="commentary")
-    commentary_done = _agent_item(
-        "commentary-1", "Checking now.", phase="commentary"
-    )
+    commentary_done = _agent_item("commentary-1", "Checking now.", phase="commentary")
     command_start = _command_item(
         "call-1", "pwd", status="inProgress", process_id="proc-1"
     )
@@ -577,7 +585,9 @@ def test_codex_runtime_streams_commentary_tool_exec_and_final_answer(monkeypatch
     runtime._thread_id = "thread-1"
     monkeypatch.setattr(runtime, "_ensure_client", lambda **_kwargs: fake_client)
     session_state = _FakeSessionState()
-    context = ProviderRuntimeContext(session_state=session_state, agent_config={}, stream=True)
+    context = ProviderRuntimeContext(
+        session_state=session_state, agent_config={}, stream=True
+    )
 
     result = runtime.invoke(
         client={"api_key": "codex"},
@@ -646,16 +656,19 @@ def test_codex_runtime_streams_commentary_tool_exec_and_final_answer(monkeypatch
     assert "tool.exec.end" in event_types
     assert "assistant.message.delta" in event_types
     assert session_state.tool_events == [
-        (3, "shell_command", True, {"is_run_shell": True, "exit_code": 0, "call_id": "call-1"})
+        (
+            3,
+            "shell_command",
+            True,
+            {"is_run_shell": True, "exit_code": 0, "call_id": "call-1"},
+        )
     ]
 
 
 def test_codex_nonstream_preserves_reasoning_without_session_state(
     monkeypatch,
 ) -> None:
-    descriptor, model = provider_router.get_runtime_descriptor(
-        "codex/gpt-5.4-mini"
-    )
+    descriptor, model = provider_router.get_runtime_descriptor("codex/gpt-5.4-mini")
     runtime = provider_registry.create_runtime(descriptor)
     reasoning_start = {
         "id": "reasoning-1",
@@ -688,9 +701,7 @@ def test_codex_nonstream_preserves_reasoning_without_session_state(
             {
                 "method": "turn/completed",
                 "params": {
-                    "turn": _completed_turn(
-                        "turn-1", reasoning_done, final_done
-                    )
+                    "turn": _completed_turn("turn-1", reasoning_done, final_done)
                 },
             },
         ]
@@ -717,7 +728,9 @@ def test_codex_nonstream_preserves_reasoning_without_session_state(
     assert result.reasoning_summaries == ["summary"]
 
 
-def test_codex_runtime_reuses_warm_app_server_client_across_runtime_instances(monkeypatch) -> None:
+def test_codex_runtime_reuses_warm_app_server_client_across_runtime_instances(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("BREADBOARD_CODEX_APP_SERVER_POOL", "1")
     runtime_codex_module._reset_codex_client_pool_for_tests()
     created_clients: list["_WarmFakeClient"] = []
@@ -796,7 +809,9 @@ def test_codex_runtime_reuses_warm_app_server_client_across_runtime_instances(mo
         messages=messages,
         tools=None,
         stream=False,
-        context=ProviderRuntimeContext(session_state=_FakeSessionState(), agent_config={}, stream=False),
+        context=ProviderRuntimeContext(
+            session_state=_FakeSessionState(), agent_config={}, stream=False
+        ),
     )
     timing1 = result1.metadata.get("provider_runtime_timing") or {}
     assert timing1.get("client_cache_hit") is False
@@ -808,7 +823,9 @@ def test_codex_runtime_reuses_warm_app_server_client_across_runtime_instances(mo
         messages=messages,
         tools=None,
         stream=False,
-        context=ProviderRuntimeContext(session_state=_FakeSessionState(), agent_config={}, stream=False),
+        context=ProviderRuntimeContext(
+            session_state=_FakeSessionState(), agent_config={}, stream=False
+        ),
     )
     timing2 = result2.metadata.get("provider_runtime_timing") or {}
     assert timing2.get("client_cache_hit") is True
@@ -890,7 +907,9 @@ def test_codex_prewarm_populates_pool_for_first_runtime_invoke(monkeypatch) -> N
 
     monkeypatch.setattr(runtime_codex_module, "_CodexJsonRpcClient", _fake_client_ctor)
 
-    warm = runtime_codex_module.prewarm_codex_app_server(model="gpt-5.4-mini", cwd="/tmp/workspace")
+    warm = runtime_codex_module.prewarm_codex_app_server(
+        model="gpt-5.4-mini", cwd="/tmp/workspace"
+    )
     assert warm["cache_hit"] is False
     assert len(created_clients) == 1
     assert created_clients[0].started == 1
@@ -905,7 +924,9 @@ def test_codex_prewarm_populates_pool_for_first_runtime_invoke(monkeypatch) -> N
         messages=[{"role": "user", "content": "Say hello"}],
         tools=None,
         stream=False,
-        context=ProviderRuntimeContext(session_state=_FakeSessionState(), agent_config={}, stream=False),
+        context=ProviderRuntimeContext(
+            session_state=_FakeSessionState(), agent_config={}, stream=False
+        ),
     )
     timing = result.metadata.get("provider_runtime_timing") or {}
     assert timing.get("client_cache_hit") is True
@@ -992,7 +1013,9 @@ def test_codex_runtime_does_not_pool_app_server_clients_by_default(monkeypatch) 
             messages=messages,
             tools=None,
             stream=False,
-            context=ProviderRuntimeContext(session_state=_FakeSessionState(), agent_config={}, stream=False),
+            context=ProviderRuntimeContext(
+                session_state=_FakeSessionState(), agent_config={}, stream=False
+            ),
         )
         timing = result.metadata.get("provider_runtime_timing") or {}
         assert timing.get("client_cache_hit") is False
@@ -1003,6 +1026,8 @@ def test_codex_runtime_does_not_pool_app_server_clients_by_default(monkeypatch) 
     assert [client.thread_starts for client in created_clients] == [1, 1]
     assert [client.closed for client in created_clients] == [1, 1]
 
-    warm = runtime_codex_module.prewarm_codex_app_server(model="gpt-5.4-mini", cwd="/tmp/workspace")
+    warm = runtime_codex_module.prewarm_codex_app_server(
+        model="gpt-5.4-mini", cwd="/tmp/workspace"
+    )
     assert warm["disabled"] is True
     assert len(created_clients) == 2

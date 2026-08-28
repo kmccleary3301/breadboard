@@ -133,7 +133,11 @@ class DockerSandboxV2:
     def stat(self, path: str) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
         if not ok:
-            return {"path": abs_path, "exists": False, "error": "path_outside_workspace"}
+            return {
+                "path": abs_path,
+                "exists": False,
+                "error": "path_outside_workspace",
+            }
         try:
             info = self._workspace_files.stat(path)
         except FileNotFoundError:
@@ -369,7 +373,10 @@ class DockerSandboxV2:
                 payload,
             ]
         try:
-            host_env = build_child_environment(overrides=env)
+            host_env = build_child_environment(
+                overrides=env,
+                allowed_override_keys=env or (),
+            )
         except ValueError:
             payload = {
                 "exit": 126,
@@ -386,11 +393,7 @@ class DockerSandboxV2:
                 payload["stderr"],
                 payload,
             ]
-        env_names = tuple(
-            str(key)
-            for key in (env or {})
-            if str(key) in host_env
-        )
+        env_names = tuple(str(key) for key in (env or {}) if str(key) in host_env)
         try:
             validate_workspace_credential_boundary(
                 self.workspace,

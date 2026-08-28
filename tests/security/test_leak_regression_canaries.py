@@ -338,6 +338,7 @@ class TestChildEnvironmentBoundary:
         assert is_provider_credential_env_key("BREADBOARD_CREDENTIAL_DB")
 
     def test_ray_runtime_controls_survive_sanitization(self):
+
         from breadboard_engine.security import build_child_environment
 
         ray_environment = {
@@ -357,6 +358,20 @@ class TestChildEnvironmentBoundary:
         )
 
         assert child == ray_environment
+
+    def test_short_credential_does_not_poison_path_filtering(self) -> None:
+        from breadboard_engine.security import build_child_environment
+
+        child = build_child_environment(
+            source={
+                "PATH": "/usr/bin:/opt/a-tools",
+                "NODE_PATH": "a",
+                "OPENAI_API_KEY": "a",
+            }
+        )
+        assert child["PATH"] == "/usr/bin:/opt/a-tools"
+        assert "NODE_PATH" not in child
+        assert "OPENAI_API_KEY" not in child
 
     def test_hidden_credentials_restore_after_exception(self):
         from breadboard_engine.security import provider_credentials_hidden
@@ -465,6 +480,60 @@ class TestChildEnvironmentBoundary:
             assert os.environ.get(key) is None
             assert f"{key}=" not in output
             assert value not in output
+
+    def test_sandbox_admits_caller_declared_env_key_after_screening(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from breadboard.sandbox import DevSandboxV2
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        sandbox_type = DevSandboxV2.__ray_metadata__.modified_class
+        sandbox = sandbox_type(
+            image="python-dev:latest",
+            session_id="custom-env",
+            workspace=str(workspace),
+        )
+        result = sandbox.run_shell(
+            'printf %s "$SANDBOX_FLAG"',
+            env={"SANDBOX_FLAG": "kept"},
+            stream=False,
+        )
+        assert result["exit"] == 0
+        assert result["stdout"] == "kept"
+
+    def test_docker_sandbox_admits_caller_declared_env_key_after_screening(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        from breadboard import sandbox_docker
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        calls = []
+        actor_type = sandbox_docker.DockerSandboxV2.__ray_metadata__.modified_class
+        actor = actor_type(
+            image="python-dev:latest",
+            session_id="docker-custom-env",
+            workspace=str(workspace),
+            docker_bin="/usr/bin/docker",
+        )
+        monkeypatch.setattr(
+            sandbox_docker.shutil, "which", lambda _name: "/usr/bin/docker"
+        )
+        monkeypatch.setattr(
+            sandbox_docker.subprocess,
+            "run",
+            lambda command, **kwargs: (
+                calls.append((command, kwargs))
+                or SimpleNamespace(returncode=0, stdout="ok", stderr="")
+            ),
+        )
+        result = actor.run_shell("printf ok", env={"DOCKER_FLAG": "kept"}, stream=False)
+        assert result["exit"] == 0
+        assert ("--env", "DOCKER_FLAG") in tuple(zip(calls[0][0], calls[0][0][1:]))
 
     def test_sandbox_rejects_provider_credential_in_process_input(
         self,
@@ -1019,6 +1088,71 @@ class TestChildEnvironmentBoundary:
                 environment=child_environment,
             )
 
+    def test_workspace_launcher_requires_exact_trust_entry(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        from breadboard_engine.security import launch_policy, process_isolation
+
+        workspace = tmp_path / "workspace"
+        launcher = workspace / ".venv" / "bin" / "helper"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        launcher.chmod(0o755)
+        monkeypatch.setattr(launch_policy.platform, "system", lambda: "Linux")
+
+        with pytest.raises(
+            process_isolation.ProcessIsolationUnavailable,
+            match="explicitly trusted launcher",
+        ):
+            process_isolation.build_restricted_process_command(
+                (str(launcher),),
+                workspace=workspace,
+                working_directory=workspace,
+                shell=False,
+                environment={"PATH": "/usr/bin"},
+            )
+
+        argv, _ = process_isolation.build_restricted_process_command(
+            (str(launcher),),
+            workspace=workspace,
+            working_directory=workspace,
+            shell=False,
+            environment={"PATH": "/usr/bin"},
+            trusted_launchers=(str(launcher),),
+        )
+        assert "--trusted-launcher" in argv
+        assert str(launcher) in argv
+
+    def test_restricted_children_keep_network_denied_by_default(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        from breadboard_engine.security import launch_policy, process_isolation
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        monkeypatch.setattr(launch_policy.platform, "system", lambda: "Linux")
+        denied, _ = process_isolation.build_restricted_process_command(
+            ("true",),
+            workspace=workspace,
+            working_directory=workspace,
+            shell=False,
+            environment={"PATH": "/usr/bin"},
+        )
+        allowed, _ = process_isolation.build_restricted_process_command(
+            ("true",),
+            workspace=workspace,
+            working_directory=workspace,
+            shell=False,
+            environment={"PATH": "/usr/bin"},
+            allow_network=True,
+        )
+        assert "--allow-network" not in denied
+        assert "--allow-network" in allowed
+
 
 class TestE7CredentialBoundary:
     def test_custom_db_paths_propagate_across_sanitized_sandbox_hop(
@@ -1537,7 +1671,7 @@ class TestE7CredentialBoundary:
         assert builder_calls
         assert canary not in json.dumps(popen_calls[0][1].get("env", {}))
 
-    def test_container_lsp_validates_workspace_without_wrapping_docker(
+    def test_container_lsp_uses_explicit_docker_transport_capability(
         self,
         tmp_path: Path,
         monkeypatch,
@@ -1547,18 +1681,14 @@ class TestE7CredentialBoundary:
         monkeypatch.setenv("LSP_USE_CONTAINERS", "1")
         server_type = lsp_module.LSPServer.__ray_metadata__.modified_class
         server = server_type("python", str(tmp_path))
-        validated = []
+        builder_calls = []
         popen_calls = []
         monkeypatch.setattr(
             lsp_module,
-            "validate_workspace_credential_boundary",
-            lambda workspace, **kwargs: validated.append((workspace, kwargs)),
-        )
-        monkeypatch.setattr(
-            lsp_module,
             "build_restricted_process_command",
-            lambda *_args, **_kwargs: pytest.fail(
-                "docker client must retain daemon connectivity"
+            lambda command, **kwargs: (
+                builder_calls.append((command, kwargs))
+                or (tuple(command), {"PATH": "/usr/bin"})
             ),
         )
         monkeypatch.setattr(
@@ -1570,11 +1700,13 @@ class TestE7CredentialBoundary:
         process = asyncio.run(server._spawn_server())
 
         assert process is not None
-        assert validated == [
-            (
-                server.workspace_root,
-                {"protected_paths": server._protected_paths},
-            )
+        assert builder_calls
+        assert builder_calls[0][1]["allow_network"] is True
+        assert builder_calls[0][0][:4] == [
+            "docker",
+            "run",
+            "-i",
+            "--rm",
         ]
         assert popen_calls[0][0][0][:4] == (
             "docker",

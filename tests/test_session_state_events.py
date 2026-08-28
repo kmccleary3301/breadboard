@@ -11,10 +11,14 @@ import pytest
 
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import (
-    SessionCreateRequest, SessionInputRequest, SessionStatus,
+    SessionCreateRequest,
+    SessionInputRequest,
+    SessionStatus,
 )
 from breadboard_engine.api.cli_bridge.registry import (
-    SessionRecord, SessionRegistry, TurnRecord,
+    SessionRecord,
+    SessionRegistry,
+    TurnRecord,
 )
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.runtime_event_projector import (
@@ -35,10 +39,14 @@ class EventCollector:
     def __init__(self) -> None:
         self.events: List[Tuple[str, Dict[str, Any], Optional[int]]] = []
 
-    def __call__(self, event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> None:
+    def __call__(
+        self, event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None
+    ) -> None:
         self.events.append((event_type, payload, turn))
 
-    def of_type(self, event_type: str) -> List[Tuple[str, Dict[str, Any], Optional[int]]]:
+    def of_type(
+        self, event_type: str
+    ) -> List[Tuple[str, Dict[str, Any], Optional[int]]]:
         return [evt for evt in self.events if evt[0] == event_type]
 
 
@@ -110,7 +118,9 @@ def test_session_state_emits_unique_assistant_events_with_legacy_payload_shape_p
     # Begin a turn and emit assistant messages with both transcript and provider copies.
     collector.events.clear()
     state.begin_turn(1)
-    state.add_message({"role": "assistant", "content": "draft patch"}, to_provider=False)
+    state.add_message(
+        {"role": "assistant", "content": "draft patch"}, to_provider=False
+    )
     state.add_message({"role": "assistant", "content": "draft patch"}, to_provider=True)
 
     assistant_events = collector.of_type("assistant_message")
@@ -120,9 +130,13 @@ def test_session_state_emits_unique_assistant_events_with_legacy_payload_shape_p
         "seq": 7,
     }
     assert assistant_events[0][2] == 1
-    assistant_messages = [message for message in state.messages if message.get("role") == "assistant"]
+    assistant_messages = [
+        message for message in state.messages if message.get("role") == "assistant"
+    ]
     assistant_provider_messages = [
-        message for message in state.provider_messages if message.get("role") == "assistant"
+        message
+        for message in state.provider_messages
+        if message.get("role") == "assistant"
     ]
     assert len(assistant_messages) == 1
     assert len(assistant_provider_messages) == 1
@@ -158,7 +172,9 @@ def test_session_state_hides_internal_validation_user_messages_from_transcript_e
 
     state.add_message({"role": "user", "content": "real request"}, to_provider=True)
     state.begin_turn(1)
-    state.add_message({"role": "user", "content": "<VALIDATION_ERROR>\nretry\n</VALIDATION_ERROR>"}, to_provider=True,
+    state.add_message(
+        {"role": "user", "content": "<VALIDATION_ERROR>\nretry\n</VALIDATION_ERROR>"},
+        to_provider=True,
     )
     state.add_message(
         {
@@ -184,7 +200,10 @@ def test_session_state_tool_events_cover_calls_and_results() -> None:
             "role": "assistant",
             "content": "",
             "tool_calls": [
-                {"id": "call-1", "type": "function", "function": {"name": "run_shell", "arguments": "{}"},
+                {
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {"name": "run_shell", "arguments": "{}"},
                 }
             ],
         },
@@ -207,9 +226,14 @@ def test_session_state_tool_events_cover_calls_and_results() -> None:
     assert (
         len(tool_result_events) == 2
     )  # one from record_tool_event, one from tool role message
-    names = {evt[1].get("tool") or evt[1].get("message", {}).get("role") for evt in tool_result_events}
+    names = {
+        evt[1].get("tool") or evt[1].get("message", {}).get("role")
+        for evt in tool_result_events
+    }
     assert "run_shell" in names
-    engine_tool_result = next(evt for evt in tool_result_events if evt[1].get("tool") == "run_shell")
+    engine_tool_result = next(
+        evt for evt in tool_result_events if evt[1].get("tool") == "run_shell"
+    )
     assert engine_tool_result[1]["result"]["stdout"] == "/tmp\n"
     assert engine_tool_result[1]["result"]["exit"] == 0
 
@@ -234,7 +258,9 @@ def test_session_state_tracks_successful_user_facing_write_targets() -> None:
 
     assert state.tool_usage_summary["successful_writes"] == 1
     assert state.tool_usage_summary["successful_user_facing_writes"] == 1
-    assert state.tool_usage_summary["successful_requested_write_targets"] == ["Makefile"]
+    assert state.tool_usage_summary["successful_requested_write_targets"] == [
+        "Makefile"
+    ]
     assert state.tool_usage_summary["successful_user_facing_write_targets"] == [
         "dummy_smtp.c",
         "README.md",
@@ -262,7 +288,9 @@ def test_session_state_builds_kernel_event_record_and_normalizes_transcript() ->
     state = SessionState("ws", "image", {}, event_emitter=collector)
     state.set_provider_metadata("session_id", "sess-123")
 
-    record = state.build_kernel_event_record("assistant_message", {"message": {"role": "assistant"}}, turn=4, seq=9)
+    record = state.build_kernel_event_record(
+        "assistant_message", {"message": {"role": "assistant"}}, turn=4, seq=9
+    )
     assert record["type"] == "assistant_message"
     assert record["turn"] == 4
     assert record["seq"] == 9
@@ -331,7 +359,9 @@ def test_session_state_builds_permission_task_and_guardrail_records() -> None:
     assert task_record["lifecycle_status"] == "running"
     assert task_record["ctree_node_id"] == "ctree-7"
 
-    guardrail_record = state.build_guardrail_record("context_window_warning", {"remaining": 1024})
+    guardrail_record = state.build_guardrail_record(
+        "context_window_warning", {"remaining": 1024}
+    )
     assert guardrail_record["type"] == "context_window_warning"
     assert guardrail_record["turn"] == 7
     assert guardrail_record["payload"]["remaining"] == 1024
@@ -414,7 +444,8 @@ def test_session_state_coordination_inspection_snapshot_is_read_only() -> None:
     assert snapshot["latest_signal_by_code"]["human_required"]["signal_id"] == "sig-1"
     assert snapshot["unresolved_interventions"][0]["review_verdict_id"] == "rev-1"
     assert (
-        snapshot["unresolved_interventions"][0]["required_input"] == "Confirm deploy target"
+        snapshot["unresolved_interventions"][0]["required_input"]
+        == "Confirm deploy target"
     )
     assert snapshot["unresolved_interventions"][0]["allowed_host_actions"] == []
     assert snapshot["resolved_interventions"] == []
@@ -463,7 +494,8 @@ def test_session_state_coordination_inspection_marks_host_responses_as_resolved(
     assert snapshot["resolved_interventions"][0]["review_verdict_id"] == "rev-2"
     assert snapshot["resolved_interventions"][0]["allowed_host_actions"] == []
     assert (
-        snapshot["resolved_interventions"][0]["host_responses"][0]["directive_id"] == "dir-2"
+        snapshot["resolved_interventions"][0]["host_responses"][0]["directive_id"]
+        == "dir-2"
     )
 
 
@@ -480,16 +512,16 @@ def test_cli_bridge_runtime_event_sets_match_kernel_vs_projection_boundary() -> 
     for event_type in KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES:
         if event_type in {"tool.result"}:
             continue
-        assert (
-            event_type in registry
-        ), f"{event_type} should be classified in SessionState registry"
+        assert event_type in registry, (
+            f"{event_type} should be classified in SessionState registry"
+        )
 
     for event_type in (
         BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES | BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES
     ):
-        assert (
-            event_type not in registry
-        ), f"{event_type} should remain outside kernel registry"
+        assert event_type not in registry, (
+            f"{event_type} should remain outside kernel registry"
+        )
 
 
 def test_session_runner_translates_runtime_events() -> None:
@@ -538,6 +570,19 @@ def test_session_runner_translates_runtime_events() -> None:
     assert payload["message_id"] == "m1"
     assert turn == 3
     assert contract["visibility"] == "transcript"
+
+    for stream_event, stream_payload in (
+        ("assistant.message.start", {"message_id": "m1"}),
+        ("assistant.message.delta", {"message_id": "m1", "delta": "chunk"}),
+        ("assistant.message.end", {"message_id": "m1", "text": "chunk"}),
+    ):
+        stream_translation = runner._translate_runtime_event(
+            stream_event,
+            stream_payload,
+            turn=3,
+        )
+        assert stream_translation is not None
+        assert stream_translation[3]["family"] == "message.assistant.stream"
 
     tool_delta_translated = runner._translate_runtime_event(
         "assistant.tool_call.delta",
@@ -601,7 +646,9 @@ def test_session_runner_translates_runtime_events() -> None:
 
     todo_translated = runner._translate_runtime_event(
         "todo_event",
-        {"call_id": "todo:1", "todo": {"op": "replace", "revision": 1, "scopeKey": "main", "items": []},
+        {
+            "call_id": "todo:1",
+            "todo": {"op": "replace", "revision": 1, "scopeKey": "main", "items": []},
         },
         turn=3,
     )
@@ -635,12 +682,15 @@ def test_session_event_envelope_carries_visibility_contract() -> None:
     assert envelope["visibility"] == "transcript"
 
 
-def test_session_runner_recognizes_replay_after_injected_system_reminder(tmp_path,
+def test_session_runner_recognizes_replay_after_injected_system_reminder(
+    tmp_path,
 ) -> None:
     fixture = tmp_path / "fixture.jsonl"
     request = SessionCreateRequest(config_path="cfg.yaml", task="", stream=False)
     runner = SessionRunner(
-        session=SessionRecord(session_id="sess-replay-reminder", status=SessionStatus.STARTING),
+        session=SessionRecord(
+            session_id="sess-replay-reminder", status=SessionStatus.STARTING
+        ),
         registry=SessionRegistry(),
         request=request,
     )
@@ -657,11 +707,15 @@ def test_session_runner_recognizes_replay_after_injected_system_reminder(tmp_pat
 @pytest.mark.asyncio
 async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None:
     registry = SessionRegistry()
-    record = SessionRecord(session_id="sess-input-receipt", status=SessionStatus.RUNNING)
+    record = SessionRecord(
+        session_id="sess-input-receipt", status=SessionStatus.RUNNING
+    )
 
     class Runner:
         def __init__(self) -> None:
-            self.inputs: list[tuple[str, list[str], str | None, str | None, str | None]] = []
+            self.inputs: list[
+                tuple[str, list[str], str | None, str | None, str | None]
+            ] = []
 
         async def enqueue_input(
             self,
@@ -671,7 +725,9 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
             input_id: str | None = None,
             turn_id: str | None = None,
         ) -> str:
-            self.inputs.append((content, attachments, input_id, turn_id, record.active_turn_id))
+            self.inputs.append(
+                (content, attachments, input_id, turn_id, record.active_turn_id)
+            )
             return content
 
     runner = Runner()
@@ -702,10 +758,13 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
 
 
 @pytest.mark.asyncio
-async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_path: Path,
+async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(
+    tmp_path: Path,
 ) -> None:
     registry = SessionRegistry(state_root=tmp_path)
-    record = SessionRecord(session_id="sess-turn-promotion", status=SessionStatus.RUNNING)
+    record = SessionRecord(
+        session_id="sess-turn-promotion", status=SessionStatus.RUNNING
+    )
     first = TurnRecord(
         input_id="input-1",
         turn_id="turn-1",
@@ -833,10 +892,15 @@ async def test_finish_turn_rejects_unknown_provider_completion_semantics(
 async def test_replay_events_preserve_active_turn_correlation(tmp_path) -> None:
     fixture = tmp_path / "fixture.jsonl"
     fixture.write_text(
-        json.dumps({"type": "assistant_message", "payload": {"text": "done"}, "turn": 1}) + "\n",
+        json.dumps(
+            {"type": "assistant_message", "payload": {"text": "done"}, "turn": 1}
+        )
+        + "\n",
         encoding="utf-8",
     )
-    record = SessionRecord(session_id="sess-replay-correlation", status=SessionStatus.RUNNING)
+    record = SessionRecord(
+        session_id="sess-replay-correlation", status=SessionStatus.RUNNING
+    )
     turn = TurnRecord(
         input_id="input-1",
         turn_id="turn-1",
@@ -855,7 +919,9 @@ async def test_replay_events_preserve_active_turn_correlation(tmp_path) -> None:
     )
     published: list[tuple[EventType, dict[str, Any]]] = []
 
-    async def capture(event_type: EventType, _payload: Dict[str, Any], **kwargs: Any) -> None:
+    async def capture(
+        event_type: EventType, _payload: Dict[str, Any], **kwargs: Any
+    ) -> None:
         published.append((event_type, kwargs))
 
     runner.publish_event_async = capture  # type: ignore[method-assign]
@@ -865,10 +931,13 @@ async def test_replay_events_preserve_active_turn_correlation(tmp_path) -> None:
         input_id=turn.input_id,
         turn_id=turn.turn_id,
     )
-    assistant = next(kwargs for event_type, kwargs in published if event_type is EventType.ASSISTANT_MESSAGE)
+    assistant = next(
+        kwargs
+        for event_type, kwargs in published
+        if event_type is EventType.ASSISTANT_MESSAGE
+    )
     assert assistant["input_id"] == "input-1"
     assert assistant["turn_id"] == "turn-1"
-
 
 
 @pytest.mark.asyncio
@@ -938,6 +1007,7 @@ async def test_replay_completion_strips_nested_control_sentinels(tmp_path) -> No
         }
     }
 
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "invalid_entries",
@@ -952,9 +1022,7 @@ async def test_replay_completion_strips_nested_control_sentinels(tmp_path) -> No
         [
             {
                 "type": "completion",
-                "payload": {
-                    "summary": {"completed": True, "reason": "replay"}
-                },
+                "payload": {"summary": {"completed": True, "reason": "replay"}},
             },
             {"type": "assistant_message", "payload": {"text": "too late"}},
         ],
@@ -1027,9 +1095,7 @@ async def test_replay_rejects_entire_fixture_before_publication(
     assert "replay_fixture" not in record.metadata
 
 
-def test_execute_task_withholds_success_terminals_until_exchange_validates() -> (
-    None
-):
+def test_execute_task_withholds_success_terminals_until_exchange_validates() -> None:
     record = SessionRecord(
         session_id="sess-invalid-exchange",
         status=SessionStatus.RUNNING,
@@ -1093,7 +1159,6 @@ def test_execute_task_withholds_success_terminals_until_exchange_validates() -> 
     assert EventType.RUN_FINISHED not in published
 
 
-
 @pytest.mark.asyncio
 async def test_session_runner_replay_task_skips_agent_init(tmp_path) -> None:
     registry = SessionRegistry(state_root=tmp_path)
@@ -1104,10 +1169,18 @@ async def test_session_runner_replay_task_skips_agent_init(tmp_path) -> None:
         "\n".join(
             [
                 "# replay fixture",
-                json.dumps({"type": "assistant_delta", "payload": {"message_id": "m1", "text": "hello"},
-                    }),
-                json.dumps({"type": "warning", "payload": {"message": "resize 160x45 -> 140x40"},
-                    }),
+                json.dumps(
+                    {
+                        "type": "assistant_delta",
+                        "payload": {"message_id": "m1", "text": "hello"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "warning",
+                        "payload": {"message": "resize 160x45 -> 140x40"},
+                    }
+                ),
                 json.dumps(
                     {
                         "type": "tool_result",
@@ -1129,17 +1202,25 @@ async def test_session_runner_replay_task_skips_agent_init(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    request = SessionCreateRequest(config_path="cfg.yaml", task=f"replay:{fixture}", stream=False)
+    request = SessionCreateRequest(
+        config_path="cfg.yaml", task=f"replay:{fixture}", stream=False
+    )
 
     called = {"count": 0}
 
-    def agent_factory(config_path: str, workspace_dir: Optional[str], overrides: Optional[Dict[str, Any]],
+    def agent_factory(
+        config_path: str,
+        workspace_dir: Optional[str],
+        overrides: Optional[Dict[str, Any]],
     ) -> Any:
         called["count"] += 1
         raise AssertionError("agent_factory should not be called for replay tasks")
+
     await registry.create(record)
 
-    runner = SessionRunner(session=record, registry=registry, request=request, agent_factory=agent_factory)
+    runner = SessionRunner(
+        session=record, registry=registry, request=request, agent_factory=agent_factory
+    )
     await runner.start()
 
     seen_types: List[str] = []
@@ -1161,7 +1242,9 @@ async def test_session_runner_replay_task_skips_agent_init(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_session_runner_lazy_init_initializes_agent_for_non_replay(tmp_path, monkeypatch) -> None:
+async def test_session_runner_lazy_init_initializes_agent_for_non_replay(
+    tmp_path, monkeypatch
+) -> None:
     registry = SessionRegistry(state_root=tmp_path)
     record = SessionRecord(session_id="sess-nonreplay", status=SessionStatus.STARTING)
     await registry.create(record)
@@ -1258,12 +1341,17 @@ async def test_session_runner_lazy_init_initializes_agent_for_non_replay(tmp_pat
                 },
             }
 
-    def agent_factory(config_path: str, workspace_dir: Optional[str], overrides: Optional[Dict[str, Any]],
+    def agent_factory(
+        config_path: str,
+        workspace_dir: Optional[str],
+        overrides: Optional[Dict[str, Any]],
     ) -> Any:
         called["count"] += 1
         return FakeAgent()
 
-    runner = SessionRunner(session=record, registry=registry, request=request, agent_factory=agent_factory)
+    runner = SessionRunner(
+        session=record, registry=registry, request=request, agent_factory=agent_factory
+    )
     monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
     await runner.prepare_start()
     runner.schedule_start()
@@ -1306,7 +1394,10 @@ async def test_session_runner_lazy_init_initializes_agent_for_non_replay(tmp_pat
     correlations = {(event.input_id, event.turn_id) for event in correlated_events}
     assert len(correlations) == 1
     assert (
-        next(event for event in correlated_events if event.type is EventType.TURN_START).payload == {}
+        next(
+            event for event in correlated_events if event.type is EventType.TURN_START
+        ).payload
+        == {}
     )
     reloaded_registry = SessionRegistry(state_root=tmp_path)
     reloaded_record = await reloaded_registry.get(record.session_id)
@@ -1333,9 +1424,13 @@ async def test_session_runner_lazy_init_initializes_agent_for_non_replay(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_session_runner_emits_completion_final_message_when_agent_has_no_assistant_event(tmp_path, monkeypatch) -> None:
+async def test_session_runner_emits_completion_final_message_when_agent_has_no_assistant_event(
+    tmp_path, monkeypatch
+) -> None:
     registry = SessionRegistry(state_root=tmp_path)
-    record = SessionRecord(session_id="sess-final-message", status=SessionStatus.STARTING)
+    record = SessionRecord(
+        session_id="sess-final-message", status=SessionStatus.STARTING
+    )
     request = SessionCreateRequest(config_path="cfg.yaml", task="hello", stream=False)
     await registry.create(record)
     monkeypatch.delenv("BREADBOARD_ENABLE_REMOTE_STREAM", raising=False)
@@ -1391,14 +1486,12 @@ async def test_session_runner_emits_completion_final_message_when_agent_has_no_a
 
     for _ in range(100):
         if any(
-            turn.terminal_resolution_committed
-            for turn in record.turns_by_id.values()
+            turn.terminal_resolution_committed for turn in record.turns_by_id.values()
         ):
             break
         await asyncio.sleep(0.01)
     assert any(
-        turn.terminal_resolution_committed
-        for turn in record.turns_by_id.values()
+        turn.terminal_resolution_committed for turn in record.turns_by_id.values()
     )
     await runner.stop()
     assert seen_assistant is not None
@@ -1422,7 +1515,9 @@ def test_session_runner_queue_pump_processes_events() -> None:
 
     captured: List[Tuple[str, Dict[str, Any], Optional[int]]] = []
 
-    def capture(event_type: str, payload: Dict[str, Any], turn: Optional[int] = None) -> None:
+    def capture(
+        event_type: str, payload: Dict[str, Any], turn: Optional[int] = None
+    ) -> None:
         captured.append((event_type, payload, turn))
 
     class FakeQueue:
@@ -1449,6 +1544,7 @@ def test_session_runner_queue_pump_processes_events() -> None:
     assert captured
     assert captured[0][0] == "assistant_message"
     assert captured[0][1]["message"]["content"] == "stream"
+
 
 def test_remote_observation_sink_failure_prevents_task_success(
     monkeypatch: pytest.MonkeyPatch,
@@ -1505,9 +1601,7 @@ def test_remote_observation_sink_failure_prevents_task_success(
 
     sink = FailingSink()
     product_session = ProductSession.start(
-        EffectiveHarnessLock._from_record(
-            {"graph_hash": "sha256:" + "a" * 64}
-        ),
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}),
         "task",
         session_id="sink-failure",
         sink=sink,
@@ -1545,9 +1639,7 @@ def test_remote_observation_sink_failure_prevents_task_success(
         RuntimeError,
         match="runtime event persistence failed",
     ) as failure:
-        runner._execute_task(
-            "task", input_id=turn.input_id, turn_id=turn.turn_id
-        )
+        runner._execute_task("task", input_id=turn.input_id, turn_id=turn.turn_id)
     assert isinstance(failure.value.__cause__, OSError)
     assert product_session.read_model.status == "running"
     assert product_session.read_model.event_count == 1
@@ -1562,8 +1654,14 @@ async def test_session_service_event_stream_yields_ordered_events() -> None:
 
     async def producer() -> None:
         await asyncio.sleep(0.01)
-        await record.event_queue.put(SessionEvent(EventType.TURN_START, "sess-stream", {"turn": 1}, turn=1))
-        await record.event_queue.put(SessionEvent(EventType.ASSISTANT_MESSAGE, "sess-stream", {"text": "hi"}, turn=1))
+        await record.event_queue.put(
+            SessionEvent(EventType.TURN_START, "sess-stream", {"turn": 1}, turn=1)
+        )
+        await record.event_queue.put(
+            SessionEvent(
+                EventType.ASSISTANT_MESSAGE, "sess-stream", {"text": "hi"}, turn=1
+            )
+        )
 
     task = asyncio.create_task(producer())
     stream = service.event_stream("sess-stream")
@@ -1591,7 +1689,11 @@ async def test_session_service_event_stream_handles_completion() -> None:
 
     async def producer() -> None:
         await asyncio.sleep(0.01)
-        await record.event_queue.put(SessionEvent(EventType.COMPLETION, "sess-complete", {"summary": {"completed": True}}))
+        await record.event_queue.put(
+            SessionEvent(
+                EventType.COMPLETION, "sess-complete", {"summary": {"completed": True}}
+            )
+        )
 
     task = asyncio.create_task(producer())
     stream = service.event_stream("sess-complete")
@@ -1613,8 +1715,14 @@ async def test_session_service_injects_todo_snapshot_on_connect() -> None:
     record = SessionRecord(
         session_id="sess-todo-connect",
         status=SessionStatus.RUNNING,
-        metadata={"todo_last_update": {"op": "replace", "revision": 3, "scopeKey": "main", "items": [],
-            }},
+        metadata={
+            "todo_last_update": {
+                "op": "replace",
+                "revision": 3,
+                "scopeKey": "main",
+                "items": [],
+            }
+        },
     )
     await registry.create(record)
 
@@ -1627,6 +1735,8 @@ async def test_session_service_injects_todo_snapshot_on_connect() -> None:
 
     assert injected.type is EventType.TOOL_RESULT
     assert injected.payload["todo"]["revision"] == 3
+
+
 def test_session_state_kernel_v2_preserves_admitted_ids_without_numeric_synthesis() -> (
     None
 ):

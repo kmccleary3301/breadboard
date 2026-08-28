@@ -15,7 +15,7 @@ describe("todo stale semantics", () => {
       session_id: "session-reconnect",
       status: "running",
     })
-    vi.spyOn(CliProviders.sdk.api(), "getSessionSummary").mockResolvedValue({
+    vi.spyOn(CliProviders.sdk.api(), "getSession").mockResolvedValue({
       created_at: "2026-07-13T00:00:00Z",
       last_activity_at: "2026-07-13T00:00:00Z",
       session_id: "session-reconnect",

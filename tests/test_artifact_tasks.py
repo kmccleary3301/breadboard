@@ -311,6 +311,22 @@ def test_evaluator_strips_provider_credentials_from_child_and_artifacts(
             )
 
 
+def test_evaluator_admits_only_screened_caller_env_keys(tmp_path: Path) -> None:
+    output_dir = tmp_path / "custom-env-out"
+    spec = EvaluatorSpec(
+        name="custom-env",
+        command=[
+            sys.executable,
+            "-c",
+            "import os; print(os.environ['EVALUATOR_FLAG'])",
+        ],
+        env={"EVALUATOR_FLAG": "kept"},
+    )
+    result = run_evaluator(spec, root=tmp_path, output_dir=output_dir)
+    assert result.status == "passed"
+    assert (output_dir / "stdout.txt").read_text(encoding="utf-8").strip() == "kept"
+
+
 def test_evaluator_rejects_provider_credential_in_argv(
     tmp_path: Path,
     monkeypatch,

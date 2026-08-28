@@ -109,7 +109,7 @@ describe("recent session re-entry helpers", () => {
     const emitChange = vi.fn()
     const pushHint = vi.fn()
     const resolveProviderCapabilitiesSnapshot = vi.fn()
-    const getSessionSummary = vi.fn(async (sessionId: string) => ({
+    const getSession = vi.fn(async (sessionId: string) => ({
       session_id: sessionId,
       status: "ready",
       mode: "build",
@@ -126,7 +126,7 @@ describe("recent session re-entry helpers", () => {
     controller.pushHint = pushHint
     controller.resolveProviderCapabilitiesSnapshot = resolveProviderCapabilitiesSnapshot
     controller.api = () => ({
-      getSessionSummary,
+      getSession,
       getCtreeSnapshot,
     })
 
@@ -134,7 +134,7 @@ describe("recent session re-entry helpers", () => {
 
     expect(attached).toBe(true)
     expect(stop).toHaveBeenCalled()
-    expect(getSessionSummary).toHaveBeenCalledWith("target-session")
+    expect(getSession).toHaveBeenCalledWith("target-session")
     expect(resolveProviderCapabilitiesSnapshot).toHaveBeenCalledWith("reentry-model")
     expect(controller.sessionId).toBe("target-session")
     expect(controller.conversation).toEqual([])

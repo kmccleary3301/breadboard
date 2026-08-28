@@ -663,7 +663,7 @@ export class ReplSessionController extends EventEmitter {
     const session = await this.api().createSession(payload)
     this.sessionId = session.session_id
     try {
-      const summary = await this.api().getSessionSummary(this.sessionId)
+      const summary = await this.api().getSession(this.sessionId)
       if (!requestedModel && summary?.model && typeof summary.model === "string") {
         this.stats.model = summary.model
         this.resolveProviderCapabilitiesSnapshot(summary.model)

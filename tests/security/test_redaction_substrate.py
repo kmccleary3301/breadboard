@@ -74,15 +74,11 @@ class TestRegisteredValues:
             assert not redaction.contains_registered_secret_mapping_key(
                 {"outer": [{"description": secret}]}
             )
-            assert redaction.contains_registered_secret_text(
-                f"prefix-{secret}-suffix"
-            )
+            assert redaction.contains_registered_secret_text(f"prefix-{secret}-suffix")
             assert not redaction.contains_registered_secret_text("description")
         assert redaction.iter_registered_secret_values() == ()
         assert not redaction.contains_registered_secret_mapping_key(payload)
-        assert not redaction.contains_registered_secret_text(
-            f"prefix-{secret}-suffix"
-        )
+        assert not redaction.contains_registered_secret_text(f"prefix-{secret}-suffix")
 
     def test_registered_secret_scrubs_mapping_key_and_problem_path(self):
         secret = "mapping-key-canary-value"
@@ -105,9 +101,7 @@ class TestRegisteredValues:
     def test_registered_numeric_secret_scrubs_json_scalar(self):
         secret = "4827"
         with redaction.secret_value_scope(secret):
-            scrubbed, problems = redaction.scrub_structure(
-                {"nested": [int(secret)]}
-            )
+            scrubbed, problems = redaction.scrub_structure({"nested": [int(secret)]})
         assert scrubbed == {"nested": [redaction.REDACTED]}
         assert problems == [
             redaction.RedactionProblem(
@@ -117,6 +111,17 @@ class TestRegisteredValues:
             )
         ]
         assert redaction.iter_registered_secret_values() == ()
+
+    def test_short_numeric_secret_only_scrubs_exact_scalars(self):
+        with redaction.secret_value_scope("42", allow_short=True):
+            scrubbed, _ = redaction.scrub_structure({"credential": 42, "status": 429})
+            assert scrubbed == {
+                "credential": redaction.REDACTED,
+                "status": 429,
+            }
+            assert redaction.scrub_text("request failed with status 429") == (
+                "request failed with status 429"
+            )
 
     def test_credential_material_extracts_nested_and_encoded_secrets(self):
         assert redaction.credential_secret_values(
@@ -129,8 +134,7 @@ class TestRegisteredValues:
                     "Content-Type": "application/json",
                 },
                 "base_url": (
-                    "https://url-user:url-password@example.test/v1"
-                    "?api_key=query-secret"
+                    "https://url-user:url-password@example.test/v1?api_key=query-secret"
                 ),
                 "routing": {
                     "nested": {"refresh_token": "routing-secret"},
@@ -139,24 +143,20 @@ class TestRegisteredValues:
             }
         ) == (
             "primary-secret",
-            "Authorization",
             "Bearer authorization-secret",
             "authorization-secret",
-            "x-api-key",
             "header-secret",
-            "Cookie",
             "sid=cookie-secret",
             "cookie-secret",
             "application/json",
             "url-user",
             "url-password",
             "query-secret",
-            "refresh_token",
             "routing-secret",
         )
         assert redaction.credential_secret_values(
             {"headers": {"x-api-key": "abc"}}
-        ) == ("x-api-key", "abc")
+        ) == ("abc",)
         assert redaction.credential_secret_values(
             {"headers": {"X-Custom": "custom-header-secret"}}
         ) == ("custom-header-secret",)
@@ -170,9 +170,7 @@ class TestRegisteredValues:
                     "XAuthorization": "Bearer compact-secret",
                     "Proxy-Authentication": f"Basic {basic_credential}",
                     "Cookie": 'sid="cookie%2Dencoded"',
-                    "Set-Cookie": (
-                        'session_token="set%2Dcookie"; Path=/; HttpOnly'
-                    ),
+                    "Set-Cookie": ('session_token="set%2Dcookie"; Path=/; HttpOnly'),
                     "Content-Type": "application/json",
                 },
                 "routing": {
@@ -181,35 +179,28 @@ class TestRegisteredValues:
                 },
             }
         ) == (
-            "X-Authorization",
             "Bearer prefixed-secret",
             "prefixed-secret",
-            "XAuthorization",
             "Bearer compact-secret",
             "compact-secret",
-            "Proxy-Authentication",
             f"Basic {basic_credential}",
             basic_credential,
             "basic-user:basic-password",
             "basic-user",
             "basic-password",
-            "Cookie",
             'sid="cookie%2Dencoded"',
             "cookie%2Dencoded",
             "cookie-encoded",
-            "Set-Cookie",
             'session_token="set%2Dcookie"; Path=/; HttpOnly',
-            "session_token",
             "set%2Dcookie",
             "set-cookie",
             "application/json",
-            "access_token",
             "4827",
             "4827.0",
         )
         assert redaction.credential_secret_values(
             {"routing": {"access_token": 123}}
-        ) == ("access_token", "123", "123.0")
+        ) == ("123", "123.0")
 
     def test_credential_material_keeps_raw_and_decoded_url_credentials(self):
         assert redaction.credential_secret_values(
@@ -236,44 +227,29 @@ class TestRegisteredValues:
     def test_credential_scope_registers_short_values(self):
         with redaction.secret_value_scope("abc", allow_short=True):
             assert redaction.iter_registered_secret_values() == ("abc",)
-            assert redaction.scrub_text("echo abc") == (
-                f"echo {redaction.REDACTED}"
-            )
+            assert redaction.scrub_text("echo abc") == (f"echo {redaction.REDACTED}")
         assert redaction.iter_registered_secret_values() == ()
 
-    def test_short_secret_scrubs_error_text_without_invalidating_identities(self):
+    def test_short_secret_scrubs_only_exact_scalar_values(self):
         with redaction.secret_value_scope("a", allow_short=True):
             assert (
-                redaction.contains_registered_secret_text(
-                    "provider call failed a"
-                )
-                is True
-            )
-            assert (
-                redaction.contains_registered_secret_identity("anthropic")
-                is False
-            )
-            assert (
-                redaction.contains_registered_secret_mapping_key(
-                    {"label": "safe"}
-                )
+                redaction.contains_registered_secret_text("provider call failed a")
                 is False
             )
             assert redaction.scrub_text("provider call failed a") == (
-                f"provider c{redaction.REDACTED}ll "
-                f"f{redaction.REDACTED}iled {redaction.REDACTED}"
+                "provider call failed a"
             )
             scrubbed, _ = redaction.scrub_structure(
-                {"label": "a"},
+                {"label": "a", "message": "provider call failed a"},
                 identity_mapping_keys=True,
             )
-            assert scrubbed == {"label": redaction.REDACTED}
+            assert scrubbed == {
+                "label": redaction.REDACTED,
+                "message": "provider call failed a",
+            }
 
         with redaction.secret_value_scope("ant", allow_short=True):
-            assert (
-                redaction.contains_registered_secret_identity("anthropic")
-                is False
-            )
+            assert redaction.contains_registered_secret_identity("anthropic") is False
             assert redaction.contains_registered_secret_text("anthropic") is True
 
     def test_scopes_are_isolated_between_operation_contexts(self):

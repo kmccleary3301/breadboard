@@ -1,39 +1,37 @@
 from __future__ import annotations
 
-import asyncio
-from contextlib import asynccontextmanager
 import hashlib
 import json
-import math
 import os
-import secrets
-import time
 import tempfile
-from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import (
-    Any, Awaitable, Callable, Deque, Dict, Iterable, Optional, Tuple, TypeVar,
+    Any,
+    Dict,
+    Iterable,
+    Optional,
 )
 
-from ..engine_identity_config import EngineProcessIdentity, LaunchBootstrapVerifier
-from ..events import EventType, SessionEvent, replay_retention_facts
+from ..events import EventType, SessionEvent
 from ..models import (
-    BeginControlDrainRequest, BootstrapChallengeRequest, BootstrapChallengeResponse,
-    ClientLeaseRequest, ClientRegisterRequest, ClientRegistrationResponse,
-    DrainControlRequest, DrainControlResponse, GracefulControlResultRequest,
-    HardSignalCommitRequest, HardSignalPreparationResponse, HardSignalPermitResponse,
-    HardSignalOutcomeRequest, HardSignalPrepareRequest, OwnerAcquireRequest,
-    OwnerLeaseRequest, OwnerLeaseResponse, SessionStatus, SessionSummary,
+    SessionStatus,
+    SessionSummary,
     TurnAdmission,
 )
 
 from .records import (
-    _STATE_SCHEMA_VERSION, _TERMINAL_EVENT_TYPES, _retained_model_id, _utcnow,
-    CancellationRecord, EventType, SessionRecord, SessionRecordDeletedError,
-    SessionEvent, SessionStatus, TurnAdmission, TurnRecord, cancellation_body_digest,
-    identity_digest, submission_body_digest,
+    _STATE_SCHEMA_VERSION,
+    _TERMINAL_EVENT_TYPES,
+    _retained_model_id,
+    _utcnow,
+    CancellationRecord,
+    SessionRecord,
+    SessionRecordDeletedError,
+    TurnRecord,
+    cancellation_body_digest,
+    identity_digest,
+    submission_body_digest,
 )
 
 _TURN_COMPLETED_FIELDS = {
@@ -150,7 +148,8 @@ def _retained_terminal_payload(event_type: EventType, value: Any) -> Dict[str, A
         return {
             "reason": (
                 reason
-                if reason in {"user_requested", "timeout", "superseded"}
+                if reason
+                in {"user_requested", "timeout", "superseded", "stop_requested"}
                 else "user_requested"
             )
         }
@@ -174,6 +173,7 @@ class PersistenceMixin:
     async def get(self, session_id: str) -> Optional[SessionRecord]:
         async with self._lock:
             return self._records.get(session_id)
+
     async def records(self) -> list[SessionRecord]:
         async with self._lock:
             return list(self._records.values())
@@ -191,9 +191,7 @@ class PersistenceMixin:
                 record.product_session is not None
                 and status is not record.projected_status()
             ):
-                raise RuntimeError(
-                    "bridge status disagrees with product Session"
-                )
+                raise RuntimeError("bridge status disagrees with product Session")
             record.status = status
             record.last_activity_at = _utcnow()
             self._persist_record_locked(record)
@@ -211,6 +209,13 @@ class PersistenceMixin:
             record = self._records.get(session_id)
             if not record:
                 return
+            previous = (
+                record.logging_dir,
+                record.completion_summary,
+                record.reward_summary,
+                record.metadata,
+                record.last_activity_at,
+            )
             if logging_dir:
                 record.logging_dir = logging_dir
             if completion_summary is not None:
@@ -220,7 +225,17 @@ class PersistenceMixin:
             if metadata is not None:
                 record.metadata = metadata
             record.last_activity_at = _utcnow()
-            self._persist_record_locked(record)
+            try:
+                self._persist_record_locked(record)
+            except Exception:
+                (
+                    record.logging_dir,
+                    record.completion_summary,
+                    record.reward_summary,
+                    record.metadata,
+                    record.last_activity_at,
+                ) = previous
+                raise
 
     async def delete(self, session_id: str) -> None:
         async with self._lock:
@@ -259,9 +274,12 @@ class PersistenceMixin:
                 if terminal_event.turn_id is not None:
                     resolution_turn = record.turns_by_id.get(terminal_event.turn_id)
                     if (
-                        resolution_turn is None or resolution_turn.terminal_outcome is None
+                        resolution_turn is None
+                        or resolution_turn.terminal_outcome is None
                     ):
-                        raise RuntimeError("terminal event does not resolve an admitted turn")
+                        raise RuntimeError(
+                            "terminal event does not resolve an admitted turn"
+                        )
                     resolution_was_committed = (
                         resolution_turn.terminal_resolution_committed
                     )
@@ -296,7 +314,12 @@ class PersistenceMixin:
             delete=False,
         ) as handle:
             temp_path = Path(handle.name)
-            json.dump(payload, handle, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+            json.dump(
+                payload,
+                handle,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
             )
             handle.flush()
             os.fsync(handle.fileno())
@@ -343,11 +366,15 @@ class PersistenceMixin:
 
         cancellations = []
         for key, cancellation in record.cancellations_by_key.items():
-            cancellations.append(self._serialize_cancellation(identity_digest(key), cancellation))
+            cancellations.append(
+                self._serialize_cancellation(identity_digest(key), cancellation)
+            )
         known_cancellation_digests = {item["key_digest"] for item in cancellations}
         for key_digest, cancellation in record.cancellations_by_key_digest.items():
             if key_digest not in known_cancellation_digests:
-                cancellations.append(self._serialize_cancellation(key_digest, cancellation))
+                cancellations.append(
+                    self._serialize_cancellation(key_digest, cancellation)
+                )
 
         turns = [
             {
@@ -395,14 +422,17 @@ class PersistenceMixin:
     def _serialize_submission(key_digest: str, turn: TurnRecord) -> Dict[str, Any]:
         return {
             "key_digest": key_digest,
-            "body_digest": turn.body_digest or submission_body_digest(turn.content, turn.attachments),
+            "body_digest": turn.body_digest
+            or submission_body_digest(turn.content, turn.attachments),
             "input_id": turn.input_id,
             "turn_id": turn.turn_id,
             "original_disposition": turn.original_disposition,
         }
 
     @staticmethod
-    def _serialize_cancellation(key_digest: str, cancellation: CancellationRecord) -> Dict[str, Any]:
+    def _serialize_cancellation(
+        key_digest: str, cancellation: CancellationRecord
+    ) -> Dict[str, Any]:
         return {
             "key_digest": key_digest,
             "body_digest": cancellation.body_digest
@@ -479,7 +509,6 @@ class PersistenceMixin:
             turn_id=turn_id,
         )
 
-
     def _load_retained_records(self) -> None:
         assert self._state_root is not None
         for path in sorted(self._state_root.glob("*.json")):
@@ -519,9 +548,8 @@ class PersistenceMixin:
             )
 
             restored = validate_model_role_lock(role_lock)
-            active_role = (
-                str(session.get("active_model_role") or "").strip()
-                or str((restored.get("defaults") or {}).get("role") or "")
+            active_role = str(session.get("active_model_role") or "").strip() or str(
+                (restored.get("defaults") or {}).get("role") or ""
             )
             if active_role not in restored["roles"]:
                 raise ValueError(

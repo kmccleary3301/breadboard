@@ -361,7 +361,7 @@ export async function attachExistingSession(this: any, sessionId: string): Promi
   clearSessionReplayState(this)
   this.sessionId = target
   try {
-    const summary = await this.api().getSessionSummary(target)
+    const summary = await this.api().getSession(target)
     await rememberSession(summary)
     const cached = (await loadSessionCache()).sessions[target]
     this.stats.model =
@@ -495,7 +495,7 @@ export async function openInspectMenu(this: any): Promise<void> {
   this.inspectMenu = { status: "loading" }
   this.emitChange()
   try {
-    const session = (await this.api().getSessionSummary(this.sessionId)) as unknown as Record<string, unknown>
+    const session = (await this.api().getSession(this.sessionId)) as unknown as Record<string, unknown>
     let skills: Record<string, unknown> | null = null
     try {
       skills = (await this.api().getSkillsCatalog(this.sessionId)) as unknown as Record<string, unknown>
@@ -526,7 +526,7 @@ export async function refreshInspectMenu(this: any): Promise<void> {
   this.inspectMenu = { status: "loading" }
   this.emitChange()
   try {
-    const session = (await this.api().getSessionSummary(this.sessionId)) as unknown as Record<string, unknown>
+    const session = (await this.api().getSession(this.sessionId)) as unknown as Record<string, unknown>
     let skills: Record<string, unknown> | null = null
     try {
       skills = (await this.api().getSkillsCatalog(this.sessionId)) as unknown as Record<string, unknown>
@@ -794,7 +794,7 @@ export async function waitForCompletion(
     while (Date.now() <= deadline) {
       attempts += 1
       try {
-        const summary = await this.api().getSessionSummary(this.sessionId)
+        const summary = await this.api().getSession(this.sessionId)
         if (summary.completion_summary || ["completed", "failed", "canceled", "stopped"].includes(summary.status)) {
           this.completionSeen = true
           const cs = summary.completion_summary
