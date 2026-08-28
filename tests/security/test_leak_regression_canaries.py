@@ -766,7 +766,6 @@ class TestChildEnvironmentBoundary:
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == str(target)
 
-
     def test_macos_rejects_model_process_with_startup_credentials(
         self,
         tmp_path: Path,
@@ -810,18 +809,16 @@ class TestChildEnvironmentBoundary:
         monkeypatch.setattr(launch_policy.platform, "system", lambda: "Linux")
         secret = "late-provider-secret"
 
-        _, child_environment = (
-            process_isolation.build_restricted_process_command(
-                ["/usr/bin/true"],
-                workspace=workspace,
-                shell=False,
-                environment={
-                    "PATH": "/usr/bin",
-                    "OPENAI_API_KEY": secret,
-                    "SECRET_ALIAS": secret,
-                    "CUSTOM_RUNTIME_FLAG": "kept",
-                },
-            )
+        _, child_environment = process_isolation.build_restricted_process_command(
+            ["/usr/bin/true"],
+            workspace=workspace,
+            shell=False,
+            environment={
+                "PATH": "/usr/bin",
+                "OPENAI_API_KEY": secret,
+                "SECRET_ALIAS": secret,
+                "CUSTOM_RUNTIME_FLAG": "kept",
+            },
         )
 
         assert "OPENAI_API_KEY" not in child_environment
@@ -829,6 +826,70 @@ class TestChildEnvironmentBoundary:
         assert child_environment["CUSTOM_RUNTIME_FLAG"] == "kept"
         assert child_environment["HOME"] == str(workspace)
 
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason="symlink creation is not reliably available on Windows CI",
+    )
+    def test_restricted_process_rejects_symlinked_temp_without_mutating_target(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        from breadboard_engine.security import launch_policy, process_isolation
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        outside = tmp_path / "outside-temp"
+        outside.mkdir()
+        marker = outside / "marker"
+        marker.write_text("outside-content", encoding="utf-8")
+        breadboard = workspace / ".breadboard"
+        breadboard.mkdir()
+        temp_link = breadboard / "tmp"
+        temp_link.symlink_to(outside, target_is_directory=True)
+        before_mode = outside.stat().st_mode & 0o7777
+        before_content = marker.read_bytes()
+        monkeypatch.setattr(launch_policy.platform, "system", lambda: "Linux")
+
+        with pytest.raises(
+            process_isolation.ProcessIsolationUnavailable,
+            match="process temporary directory",
+        ):
+            process_isolation.build_restricted_process_command(
+                ["/usr/bin/true"],
+                workspace=workspace,
+                shell=False,
+                environment={"PATH": "/usr/bin"},
+            )
+
+        assert temp_link.is_symlink()
+        assert outside.stat().st_mode & 0o7777 == before_mode
+        assert marker.read_bytes() == before_content
+
+    def test_linux_parser_rejects_virtual_read_mount(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        if not Path("/proc").is_dir():
+            pytest.skip("Linux virtual read mount is unavailable")
+        from breadboard_engine.security import linux_isolation
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        with pytest.raises(
+            linux_isolation.ProcessIsolationUnavailable,
+            match="virtual system mount",
+        ):
+            linux_isolation._parse_args(
+                [
+                    "--workspace",
+                    str(workspace),
+                    "--read-root",
+                    "/proc",
+                    "--",
+                    "true",
+                ]
+            )
 
     def test_linux_helper_loads_without_package_context(self) -> None:
         import subprocess
@@ -904,7 +965,11 @@ class TestChildEnvironmentBoundary:
         tmp_path: Path,
         monkeypatch,
     ) -> None:
-        from breadboard_engine.security import launch_policy, linux_isolation, process_isolation
+        from breadboard_engine.security import (
+            launch_policy,
+            linux_isolation,
+            process_isolation,
+        )
 
         workspace = tmp_path / "workspace"
         workspace.mkdir()
@@ -1499,8 +1564,7 @@ class TestE7CredentialBoundary:
         monkeypatch.setattr(
             lsp_module.subprocess,
             "Popen",
-            lambda *args, **kwargs: popen_calls.append((args, kwargs))
-            or object(),
+            lambda *args, **kwargs: popen_calls.append((args, kwargs)) or object(),
         )
 
         process = asyncio.run(server._spawn_server())
@@ -1518,8 +1582,6 @@ class TestE7CredentialBoundary:
             "-i",
             "--rm",
         )
-
-
 
     def test_lsp_linter_uses_restricted_builder_and_scrubs_canary_output(
         self, tmp_path: Path, monkeypatch

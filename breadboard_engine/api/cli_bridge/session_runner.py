@@ -9,7 +9,6 @@ import logging
 import os
 import tempfile
 import threading
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,7 +31,6 @@ from breadboard_engine.skills.registry import (
     apply_skill_selection,
 )
 from breadboard_engine.plugins.loader import discover_plugin_manifests, plugin_snapshot
-from breadboard_engine.guardrail import GuardrailCoordinator
 from breadboard_engine.permissions import (
     build_permission_overrides,
     load_permission_rules,
@@ -41,15 +39,22 @@ from breadboard_engine.permissions import (
 
 from .events import EventType, SessionEvent
 from .models import SessionCreateRequest, SessionStatus
-from .registry import SessionRecord, SessionRegistry, TurnRecord, submission_body_digest, identity_digest
+from .registry import (
+    SessionRecord,
+    SessionRegistry,
+    TurnRecord,
+    submission_body_digest,
+    identity_digest,
+)
 from .runtime_event_projector import (
     RuntimeEventProjector,
-    RuntimeProtocolError,
     TranslatedRuntimeEvent,
     _safe_runtime_error_code,
 )
 from .session_control import SessionControlController
 from .task_execution import TaskExecutionOwner
+from .session_lifecycle import SessionLifecycleOwner
+
 
 logger = logging.getLogger(__name__)
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
@@ -104,13 +109,15 @@ class SessionRunner:
         self.session.metadata = initial_metadata
         task_context = dict(initial_metadata.get("task_context") or {})
         task_context.setdefault("session_id", self.session.session_id)
-        if not isinstance(task_context.get("input_id"), str) or not task_context[
-            "input_id"
-        ]:
+        if (
+            not isinstance(task_context.get("input_id"), str)
+            or not task_context["input_id"]
+        ):
             task_context["input_id"] = f"input-{uuid.uuid4()}"
-        if not isinstance(task_context.get("turn_id"), str) or not task_context[
-            "turn_id"
-        ]:
+        if (
+            not isinstance(task_context.get("turn_id"), str)
+            or not task_context["turn_id"]
+        ):
             task_context["turn_id"] = f"turn-{uuid.uuid4()}"
         initial_metadata["task_context"] = task_context
         self._model_role_lock: Any = initial_metadata.get("model_role_lock")
@@ -132,7 +139,11 @@ class SessionRunner:
             product_tool_completions=self._product_tool_completions,
         )
         self._control_controller = SessionControlController(self)
-        self._task_execution = TaskExecutionOwner(self)
+        self._task_execution = TaskExecutionOwner(
+            self,
+            permission_projection=self._control_controller.rehydrate_pending_permissions,
+        )
+        self._lifecycle_owner = SessionLifecycleOwner(self, self._task_execution)
 
     def _default_factory(
         self,
@@ -141,7 +152,10 @@ class SessionRunner:
         overrides: Optional[Dict[str, Any]],
     ) -> Any:
         from breadboard_engine.agent import create_agent
-        metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+
+        metadata = (
+            self.session.metadata if isinstance(self.session.metadata, dict) else {}
+        )
         force_local_mode = bool(metadata.get("cli_force_local_mode", True))
         return create_agent(
             config_path,
@@ -155,7 +169,10 @@ class SessionRunner:
             raise RuntimeError("runner already started")
         loop = asyncio.get_running_loop()
         self._loop = loop
-        self._task = loop.create_task(self._run_after_start_authority(), name=f"kyle-session-{self.session.session_id}")
+        self._task = loop.create_task(
+            self._run_after_start_authority(),
+            name=f"kyle-session-{self.session.session_id}",
+        )
 
     async def prepare_start(self, *, admission_serialized: bool = False) -> None:
         """Retain an initial turn before execution becomes runnable."""
@@ -181,7 +198,9 @@ class SessionRunner:
         )
         self.session.turns_by_id[turn_id] = turn
         self.session.submissions_by_key[client_message_id] = turn
-        self.session.submissions_by_key_digest[identity_digest(client_message_id)] = turn
+        self.session.submissions_by_key_digest[identity_digest(client_message_id)] = (
+            turn
+        )
         self.session.active_turn_id = turn_id
 
     def authorize_start(self) -> None:
@@ -224,11 +243,11 @@ class SessionRunner:
     def _request_stop(self, reason: str) -> bool:
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
-            stopping = (
-                not product_session
-                or product_session.read_model.status
-                not in {"completed", "failed", "canceled"}
-            )
+            stopping = not product_session or product_session.read_model.status not in {
+                "completed",
+                "failed",
+                "canceled",
+            }
             try:
                 if stopping:
                     self.transition_product_session("cancel", reason)
@@ -262,7 +281,9 @@ class SessionRunner:
     async def stop(self, reason: str = "operator request") -> None:
         if self._closed:
             return
-        cancelled_before_start = self._task is None or not self._start_authority.is_set()
+        cancelled_before_start = (
+            self._task is None or not self._start_authority.is_set()
+        )
         self._request_stop(reason)
         if self._task and not self._start_authority.is_set():
             self._task.cancel()
@@ -295,21 +316,16 @@ class SessionRunner:
                     if outcome == "failed"
                     else "completed"
                 ),
-                error_code=(
-                    "runtime_failure" if outcome == "failed" else None
-                ),
+                error_code=("runtime_failure" if outcome == "failed" else None),
             )
             final_status = {
                 "completed": SessionStatus.COMPLETED,
                 "failed": SessionStatus.FAILED,
                 "cancelled": SessionStatus.STOPPED,
             }[outcome]
-            await self.registry.update_status(
-                self.session.session_id, final_status
-            )
+            await self.registry.update_status(self.session.session_id, final_status)
             self._closed = True
             await self._enqueue_termination()
-
 
     async def enqueue_input(
         self,
@@ -345,18 +361,34 @@ class SessionRunner:
         if not (admitted_active or admitted_queued):
             raise RuntimeError("turn is not active or queued for execution")
 
-
-        attachment_ids = list(dict.fromkeys(item.strip() for item in (attachments or []) if isinstance(item, str) and item.strip()))
+        attachment_ids = list(
+            dict.fromkeys(
+                item.strip()
+                for item in (attachments or [])
+                if isinstance(item, str) and item.strip()
+            )
+        )
         if admitted_turn.content != content:
             raise RuntimeError("input content does not match the admitted turn")
         if admitted_turn.attachments != tuple(attachment_ids):
             raise RuntimeError("attachments do not match the admitted turn")
         with self._product_session_lock:
             artifacts = getattr(self.session, "product_artifacts", {})
-            unknown = [item for item in attachment_ids if not isinstance(artifacts, dict) or item not in artifacts]
-            if unknown: raise ValueError(f"unknown attachment IDs: {', '.join(unknown)}")
-            total_bytes = sum(int(getattr(artifacts[item], "size_bytes", MAX_ATTACHMENT_BYTES + 1)) for item in attachment_ids)
-            if total_bytes > MAX_ATTACHMENT_BYTES: raise ValueError(f"selected attachments exceed {MAX_ATTACHMENT_BYTES}-byte handoff limit")
+            unknown = [
+                item
+                for item in attachment_ids
+                if not isinstance(artifacts, dict) or item not in artifacts
+            ]
+            if unknown:
+                raise ValueError(f"unknown attachment IDs: {', '.join(unknown)}")
+            total_bytes = sum(
+                int(getattr(artifacts[item], "size_bytes", MAX_ATTACHMENT_BYTES + 1))
+                for item in attachment_ids
+            )
+            if total_bytes > MAX_ATTACHMENT_BYTES:
+                raise ValueError(
+                    f"selected attachments exceed {MAX_ATTACHMENT_BYTES}-byte handoff limit"
+                )
             content = self._sanitize_interactive_input_content(content)
             payload = {
                 "content": content,
@@ -366,8 +398,12 @@ class SessionRunner:
             }
             product_session = getattr(self.session, "product_session", None)
             if product_session is not None:
-                product_session.input(content, [artifacts[item] for item in attachment_ids])
-                self.session.metadata["session_contract"] = product_session.read_model.as_dict()
+                product_session.input(
+                    content, [artifacts[item] for item in attachment_ids]
+                )
+                self.session.metadata["session_contract"] = (
+                    product_session.read_model.as_dict()
+                )
             self._input_queue.put_nowait(payload)
         return content
 
@@ -376,11 +412,20 @@ class SessionRunner:
             product_session = getattr(self.session, "product_session", None)
             if product_session is None:
                 return
-            if transition in {"complete", "fail", "cancel"} and product_session.read_model.status in {
-                "completed", "failed", "canceled"}:
+            if transition in {
+                "complete",
+                "fail",
+                "cancel",
+            } and product_session.read_model.status in {
+                "completed",
+                "failed",
+                "canceled",
+            }:
                 return
             getattr(product_session, transition)(*args)
-            self.session.metadata["session_contract"] = product_session.read_model.as_dict()
+            self.session.metadata["session_contract"] = (
+                product_session.read_model.as_dict()
+            )
 
     # Provider-supplied names are not public identities until they resolve into
     # the active, configured tool surface.
@@ -388,7 +433,9 @@ class SessionRunner:
         raw = payload.get("tool")
         if not isinstance(raw, str) or not raw or len(raw) > 128 or not raw.isascii():
             return None
-        if not raw[0].isalnum() or any(not (character.isalnum() or character in "_.-") for character in raw):
+        if not raw[0].isalnum() or any(
+            not (character.isalnum() or character in "_.-") for character in raw
+        ):
             return None
         canonical = raw
         executor = getattr(self._agent, "agent_executor", None)
@@ -400,21 +447,32 @@ class SessionRunner:
                     canonical = candidate
             except Exception:
                 return None
-        if len(canonical) > 128 or not canonical.isascii() or not canonical[0].isalnum() or any(not (character.isalnum() or character in "_.-") for character in canonical):
+        if (
+            len(canonical) > 128
+            or not canonical.isascii()
+            or not canonical[0].isalnum()
+            or any(
+                not (character.isalnum() or character in "_.-")
+                for character in canonical
+            )
+        ):
             return None
         active_names = getattr(self._agent, "_active_tool_names", ())
-        allowed = {
-            name
-            for name in active_names
-            if isinstance(name, str)
-        } if isinstance(active_names, Sequence) and not isinstance(active_names, (str, bytes)) else set()
+        allowed = (
+            {name for name in active_names if isinstance(name, str)}
+            if isinstance(active_names, Sequence)
+            and not isinstance(active_names, (str, bytes))
+            else set()
+        )
         config = self.current_runtime_config()
         modes = config.get("modes")
         for mode in modes if isinstance(modes, list) else ():
             if not isinstance(mode, dict):
                 continue
             enabled_names = mode.get("tools_enabled")
-            if isinstance(enabled_names, Sequence) and not isinstance(enabled_names, (str, bytes)):
+            if isinstance(enabled_names, Sequence) and not isinstance(
+                enabled_names, (str, bytes)
+            ):
                 allowed.update(name for name in enabled_names if isinstance(name, str))
         configured_tools = config.get("tools")
         if isinstance(configured_tools, dict):
@@ -465,9 +523,7 @@ class SessionRunner:
                 len(suffix),
             )
             meta = (
-                self.session.metadata
-                if isinstance(self.session.metadata, dict)
-                else {}
+                self.session.metadata if isinstance(self.session.metadata, dict) else {}
             )
             repairs = (
                 list(meta.get("input_boundary_repairs") or [])
@@ -510,7 +566,6 @@ class SessionRunner:
         finally:
             self._request_stop(detail)
 
-
     async def handle_command(
         self,
         command: str,
@@ -521,6 +576,7 @@ class SessionRunner:
         return await self._control_controller.handle_command(
             command, payload, durable_reconfigure=durable_reconfigure
         )
+
     @staticmethod
     def _target_route(target: Mapping[str, Any]) -> str:
         route = str(target.get("route_id") or "").strip()
@@ -535,23 +591,46 @@ class SessionRunner:
     def _locked_target(self, role: str | None = None) -> dict[str, Any]:
         lock = self._model_role_lock
         if not isinstance(lock, Mapping):
-            raise ModelRoleResolutionError(ModelRoleProblem("known_role_unbound", "no model-role lock is active", "$.roles"))
-        chosen = str(role or self._active_model_role or (lock.get("defaults") or {}).get("role") or "").strip()
+            raise ModelRoleResolutionError(
+                ModelRoleProblem(
+                    "known_role_unbound", "no model-role lock is active", "$.roles"
+                )
+            )
+        chosen = str(
+            role
+            or self._active_model_role
+            or (lock.get("defaults") or {}).get("role")
+            or ""
+        ).strip()
         if not chosen:
-            raise ModelRoleResolutionError(ModelRoleProblem("known_role_unbound", "no active model role is bound", "$.defaults.role"))
+            raise ModelRoleResolutionError(
+                ModelRoleProblem(
+                    "known_role_unbound",
+                    "no active model role is bound",
+                    "$.defaults.role",
+                )
+            )
         return select_role_target(lock, chosen)
 
     def install_model_role_lock(self, lock: Mapping[str, Any]) -> Dict[str, Any]:
-        self._model_role_lock = lock.as_dict() if hasattr(lock, "as_dict") else dict(lock)
-        role = str((self._model_role_lock.get("defaults") or {}).get("role") or "").strip()
+        self._model_role_lock = (
+            lock.as_dict() if hasattr(lock, "as_dict") else dict(lock)
+        )
+        role = str(
+            (self._model_role_lock.get("defaults") or {}).get("role") or ""
+        ).strip()
         route = self._target_route(self._locked_target(role))
         self._active_model_role, self._model_override = role, route
-        self.session.metadata.update({
-            "model_role_lock": dict(self._model_role_lock),
-            "model_role_lock_hash": str(self._model_role_lock.get("lock_hash") or ""),
-            "active_model_role": role,
-            "model": route,
-        })
+        self.session.metadata.update(
+            {
+                "model_role_lock": dict(self._model_role_lock),
+                "model_role_lock_hash": str(
+                    self._model_role_lock.get("lock_hash") or ""
+                ),
+                "active_model_role": role,
+                "model": route,
+            }
+        )
         prepared = self.prepare_runtime_config()
         prepared["model_role_lock"] = dict(self._model_role_lock)
         prepared["active_model_role"] = role
@@ -561,9 +640,11 @@ class SessionRunner:
         return dict(prepared)
 
     def _load_base_config(self) -> Dict[str, Any]:
-        if isinstance(self._base_config_cache, dict): return dict(self._base_config_cache)
+        if isinstance(self._base_config_cache, dict):
+            return dict(self._base_config_cache)
         cfg = load_agent_config(self.request.config_path)
-        if not isinstance(cfg, dict): raise TypeError("agent config loader must return a mapping")
+        if not isinstance(cfg, dict):
+            raise TypeError("agent config loader must return a mapping")
         self._base_config_cache = dict(cfg)
         return dict(self._base_config_cache)
 
@@ -576,7 +657,15 @@ class SessionRunner:
             overrides["providers.default_model"] = self._model_override.strip()
         if isinstance(self._mode, str) and self._mode.strip():
             overrides["mode"] = self._mode.strip()
-        permission_mode = (self.request.permission_mode or self.session.metadata.get("permission_mode") or "").strip().lower()
+        permission_mode = (
+            (
+                self.request.permission_mode
+                or self.session.metadata.get("permission_mode")
+                or ""
+            )
+            .strip()
+            .lower()
+        )
         if permission_mode in {"prompt", "ask", "interactive"}:
             overrides.setdefault("permissions.options.mode", "prompt")
             overrides.setdefault("permissions.options.default_response", "reject")
@@ -597,9 +686,15 @@ class SessionRunner:
                 rules = load_permission_rules(workspace_guess_path)
             except Exception:
                 rules = []
-            for key, value in build_permission_overrides(base_cfg, rules).items() if rules else ():
+            for key, value in (
+                build_permission_overrides(base_cfg, rules).items() if rules else ()
+            ):
                 existing = overrides.get(key)
-                if key in overrides and isinstance(existing, list) and isinstance(value, list):
+                if (
+                    key in overrides
+                    and isinstance(existing, list)
+                    and isinstance(value, list)
+                ):
                     value = existing + [item for item in value if item not in existing]
                 overrides[key] = value
         self.request.overrides = overrides
@@ -607,37 +702,54 @@ class SessionRunner:
         return dict(self._prepared_runtime_config)
 
     def current_runtime_config(self) -> Dict[str, Any]:
-        return dict(config) if isinstance((config := getattr(self._agent, "config", None)), dict) else self.prepare_runtime_config()
+        return (
+            dict(config)
+            if isinstance((config := getattr(self._agent, "config", None)), dict)
+            else self.prepare_runtime_config()
+        )
 
     def _resolve_workspace_guess(self, base_cfg: Dict[str, Any]) -> Optional[Path]:
         candidate: Any = self.request.workspace
         if not candidate and isinstance(base_cfg, dict):
             workspace = base_cfg.get("workspace")
-            candidate = (workspace.get("root") or workspace.get("path")) if isinstance(workspace, dict) else None
-        candidate = candidate or f"tmp/agent_ws_{os.path.basename(self.request.config_path).split('.')[0]}"
+            candidate = (
+                (workspace.get("root") or workspace.get("path"))
+                if isinstance(workspace, dict)
+                else None
+            )
+        candidate = (
+            candidate
+            or f"tmp/agent_ws_{os.path.basename(self.request.config_path).split('.')[0]}"
+        )
         try:
             path = Path(str(candidate)).expanduser()
             if not path.is_absolute():
                 root = Path(__file__).resolve().parents[3]
-                path = root / path if path.parts[:1] == ("tmp",) else root / "tmp" / path
+                path = (
+                    root / path if path.parts[:1] == ("tmp",) else root / "tmp" / path
+                )
             return path.resolve()
         except Exception:
             return None
 
-
     def _parse_replay_path(self, task_text: str) -> Optional[Path]:
         return self._task_execution.parse_replay_path(task_text)
 
-
-    async def _maybe_publish_todo_snapshot(self, workspace_dir: Optional[Path], *, call_id: str) -> None:
-        return await self._task_execution.maybe_publish_todo_snapshot(workspace_dir, call_id=call_id)
+    async def _maybe_publish_todo_snapshot(
+        self, workspace_dir: Optional[Path], *, call_id: str
+    ) -> None:
+        return await self._task_execution.maybe_publish_todo_snapshot(
+            workspace_dir, call_id=call_id
+        )
 
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
             return
         overrides = dict(self.request.overrides or {})
         frozen = self.current_runtime_config()
-        if redaction.contains_provider_auth_runtime(frozen) or redaction.contains_provider_auth_runtime(overrides):
+        if redaction.contains_provider_auth_runtime(
+            frozen
+        ) or redaction.contains_provider_auth_runtime(overrides):
             logger.warning(
                 "Ignoring inline provider credentials; attach credentials through the provider broker."
             )
@@ -645,20 +757,31 @@ class SessionRunner:
         overrides = redaction.strip_provider_auth_runtime(overrides)
         descriptor, snapshot = tempfile.mkstemp(suffix=".json")
         try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream: json.dump(frozen, stream, sort_keys=True); stream.flush(); os.fsync(stream.fileno())
-            self._agent = self.agent_factory(snapshot, self.request.workspace, overrides or None)
-            if hasattr(self._agent, "config_path"): self._agent.config_path = self.request.config_path
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(frozen, stream, sort_keys=True)
+                stream.flush()
+                os.fsync(stream.fileno())
+            self._agent = self.agent_factory(
+                snapshot, self.request.workspace, overrides or None
+            )
+            if hasattr(self._agent, "config_path"):
+                self._agent.config_path = self.request.config_path
             await asyncio.to_thread(self._agent.initialize)
-        finally: Path(snapshot).unlink(missing_ok=True)
+        finally:
+            Path(snapshot).unlink(missing_ok=True)
         workspace_dir = Path(self._agent.workspace_dir).resolve()
         workspace_dir.mkdir(parents=True, exist_ok=True)
         self._workspace_path = workspace_dir
         if self._model_override:
             self._apply_model_override()
         if self._todo_enabled:
-            meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+            meta = (
+                self.session.metadata if isinstance(self.session.metadata, dict) else {}
+            )
             if not isinstance(meta.get("todo_last_update"), dict):
-                await self._maybe_publish_todo_snapshot(workspace_dir, call_id="todo:snapshot:init")
+                await self._maybe_publish_todo_snapshot(
+                    workspace_dir, call_id="todo:snapshot:init"
+                )
         try:
             if self._checkpoint_manager is None:
                 self._checkpoint_manager = CheckpointManager(workspace_dir)
@@ -666,12 +789,10 @@ class SessionRunner:
         except Exception:
             self._checkpoint_manager = None
 
-
     def _require_execution_correlation(
         self, input_id: Optional[str], turn_id: Optional[str]
     ) -> Dict[str, str]:
         return self._task_execution.require_execution_correlation(input_id, turn_id)
-
 
     async def _execute_replay_task(
         self,
@@ -685,346 +806,11 @@ class SessionRunner:
         )
 
     async def _run(self) -> None:
-        session_started_at = time.monotonic()
-        input_inflight = False
-        await self.registry.update_status(
-            self.session.session_id, SessionStatus.RUNNING
-        )
-        try:
-            # Safety: never auto-wipe an existing workspace when running interactive sessions
-            # via the CLI bridge. The engine historically treated workspaces as disposable
-            # sandboxes; for a Claude Code-style experience we must preserve the user's
-            # working directory unless explicitly overridden by the caller.
-            os.environ.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
-            initial_task = (self.request.task or "").strip()
-            base_cfg = (
-                {}
-                if self._parse_replay_path(initial_task) is not None
-                else self.prepare_runtime_config()
-            )
-            try:
-                todo_cfg = GuardrailCoordinator(base_cfg).todo_config()
-            except Exception:
-                todo_cfg = {"enabled": False}
-            self._todo_enabled = bool(todo_cfg.get("enabled"))
-            await self._maybe_publish_todo_snapshot(
-                self._workspace_path, call_id="todo:snapshot:init"
-            )
-            try:
-                if self._workspace_path and self._checkpoint_manager is None:
-                    self._checkpoint_manager = CheckpointManager(self._workspace_path)
-                    self._checkpoint_manager.create_checkpoint("Session start")
-            except Exception:
-                self._checkpoint_manager = None
-            try:
-                catalog_payload = self.get_skill_catalog()
-                await self.publish_event_async(
-                    EventType.SKILLS_CATALOG, catalog_payload
-                )
-                selection = (
-                    (catalog_payload.get("selection") or {})
-                    if isinstance(catalog_payload, dict)
-                    else {}
-                )
-                if selection:
-                    await self.publish_event_async(
-                        EventType.SKILLS_SELECTION, {"selection": selection}
-                    )
-            except Exception:
-                pass
-            if initial_task:
-                self._accepted_task_texts.append(initial_task)
-                initial_turn = self.session.turns_by_id.get(
-                    self.session.active_turn_id or ""
-                )
-                if initial_turn is None:
-                    raise RuntimeProtocolError("runtime_protocol_error")
-                self._input_queue.put_nowait(
-                    {
-                        "content": initial_task,
-                        "attachments": [],
-                        "input_id": initial_turn.input_id,
-                        "turn_id": initial_turn.turn_id,
-                    }
-                )
+        await self._lifecycle_owner.run()
 
-            while not self._stop_event.is_set():
-                try:
-                    next_input = await self._input_queue.get()
-                    input_inflight = True
-                except asyncio.CancelledError:  # pragma: no cover - defensive
-                    break
-                if next_input is None:
-                    self._input_queue.task_done()
-                    input_inflight = False
-                    break
-                await self._resume_event.wait()
-                if self._stop_event.is_set():
-                    self._input_queue.task_done()
-                    input_inflight = False
-                    break
-                task_payload = dict(next_input)
-                task_text = str(task_payload.get("content", ""))
-                task_input_id = task_payload.get("input_id")
-                task_turn_id = task_payload.get("turn_id")
-                task_turn = (
-                    self.session.turns_by_id.get(task_turn_id)
-                    if isinstance(task_turn_id, str)
-                    else None
-                )
-                if (
-                    task_turn is not None
-                    and self.session.active_turn_id != task_turn.turn_id
-                ):
-                    raise RuntimeError("turn queue correlation mismatch")
-                task_received_at = time.monotonic()
-                if self._parse_replay_path(task_text) is not None:
-                    result = await self._execute_replay_task(
-                        task_text,
-                        input_id=(
-                            task_input_id
-                            if isinstance(task_input_id, str)
-                            else None
-                        ),
-                        turn_id=(
-                            task_turn_id
-                            if isinstance(task_turn_id, str)
-                            else None
-                        ),
-                    )
-                    after_execute_task_at = time.monotonic()
-                else:
-                    attachment_ids = task_payload.get("attachments") or []
-                    await self._ensure_agent_initialized()
-                    if self._stop_event.is_set():
-                        self._input_queue.task_done()
-                        input_inflight = False
-                        break
-                    after_agent_init_at = time.monotonic()
-                    accepted_text = task_text
-                    attachment_text = self._format_attachment_helper(attachment_ids)
-                    if attachment_text:
-                        task_text = f"{task_text.rstrip()}\n\n{attachment_text}"
-                    if accepted_text.strip():
-                        self._accepted_task_texts.append(accepted_text)
-                        self._accepted_task_texts = self._accepted_task_texts[-20:]
-                    if self._profile_timing_enabled:
-                        self._active_bridge_timing_context = {
-                            "session_to_task_received_seconds": round(
-                                task_received_at - session_started_at, 6
-                            ),
-                            "task_received_to_agent_initialized_seconds": round(
-                                after_agent_init_at - task_received_at, 6
-                            ),
-                        }
-                    result = await asyncio.to_thread(
-                        self._execute_task,
-                        task_text,
-                        input_id=(
-                            task_input_id
-                            if isinstance(task_input_id, str)
-                            else None
-                        ),
-                        turn_id=(
-                            task_turn_id
-                            if isinstance(task_turn_id, str)
-                            else None
-                        ),
-                    )
-                    after_execute_task_at = time.monotonic()
-                    if self._profile_timing_enabled and isinstance(result, dict):
-                        timing = result.setdefault("bridge_timing", {})
-                        if isinstance(timing, dict):
-                            timing.update(
-                                {
-                                    "session_to_task_received_seconds": round(
-                                        task_received_at - session_started_at, 6
-                                    ),
-                                    "task_received_to_agent_initialized_seconds": round(
-                                        after_agent_init_at - task_received_at, 6
-                                    ),
-                                    "execute_task_wall_seconds": round(
-                                        after_execute_task_at - after_agent_init_at, 6
-                                    ),
-                                }
-                            )
-                    self._active_bridge_timing_context = None
-                metadata = (
-                    self.session.metadata
-                    if isinstance(self.session.metadata, dict)
-                    else {}
-                )
-                one_shot = bool(
-                    metadata.get("non_interactive_cli_session")
-                    or metadata.get("cli_session_kind") == "oneshot"
-                )
-                with self._product_session_lock:
-                    product_session = getattr(self.session, "product_session", None)
-                    if product_session is None:
-                        durable_success = True
-                    else:
-                        product_status = product_session.read_model
-                        if (
-                            one_shot
-                            and product_status.status == "running"
-                            and not self._stop_event.is_set()
-                        ):
-                            self.transition_product_session("complete")
-                        durable_success = (
-                            product_session.read_model.status == "completed"
-                            if one_shot
-                            else product_status.status not in {"failed", "canceled"}
-                        )
-                if durable_success:
-                    try:
-                        await self.registry.update_metadata(
-                            self.session.session_id,
-                            completion_summary=result.get("completion_summary"),
-                            reward_summary=result.get("reward_metrics"),
-                            logging_dir=result.get("logging_dir"),
-                            metadata=self.session.metadata,
-                        )
-                    except Exception:
-                        product_status = getattr(
-                            getattr(product_session, "read_model", None),
-                            "status",
-                            None,
-                        )
-                        if product_status != "completed":
-                            raise
-                        logger.warning(
-                            "Session %s metadata projection failed after durable completion",
-                            self.session.session_id,
-                        )
-                        durable_success = False
-                if task_turn is not None:
-                    completion_summary = result.get("completion_summary") or {}
-                    completion_reason = str(
-                        completion_summary.get("reason")
-                        or completion_summary.get("exit_kind")
-                        or "turn_execution_failed"
-                    )
-                    if self._stop_event.is_set():
-                        await self._finish_turn(
-                            task_turn, "cancelled", reason=completion_reason
-                        )
-                    elif bool(completion_summary.get("completed")):
-                        await self._finish_turn(
-                            task_turn,
-                            "completed",
-                            completed_payload=result.get("_turn_completion_payload"),
-                        )
-                    else:
-                        await self._finish_turn(
-                            task_turn,
-                            "failed",
-                            reason=completion_reason,
-                            error_code=completion_reason,
-                        )
-                if durable_success:
-                    for (
-                        event_type,
-                        event_payload,
-                        event_turn,
-                        event_contract,
-                    ) in result.pop("_terminal_events", ()):
-                        await self.publish_event_async(
-                            event_type,
-                            event_payload,
-                            turn=event_turn,
-                            input_id=event_contract.get("input_id"),
-                            turn_id=event_contract.get("turn_id"),
-                            classification=event_contract.get("classification"),
-                            family=event_contract.get("family"),
-                            actor=event_contract.get("actor"),
-                            visibility=event_contract.get("visibility"),
-                        )
-                after_registry_update_at = time.monotonic()
-                if self._profile_timing_enabled and isinstance(result, dict):
-                    timing = result.setdefault("bridge_timing", {})
-                    if isinstance(timing, dict):
-                        timing["post_execute_registry_update_seconds"] = round(
-                            after_registry_update_at - after_execute_task_at, 6
-                        )
-                self._input_queue.task_done()
-                input_inflight = False
-                if one_shot or not durable_success:
-                    break
-            if self._stop_event.is_set():
-                await self._terminalize_admitted_turns(
-                    outcome="cancelled", reason="stop_requested"
-                )
-
-            product_session = getattr(self.session, "product_session", None)
-            if product_session is None:
-                metadata = (
-                    self.session.metadata
-                    if isinstance(self.session.metadata, dict)
-                    else {}
-                )
-                legacy_one_shot = bool(
-                    metadata.get("non_interactive_cli_session")
-                    or metadata.get("cli_session_kind") == "oneshot"
-                )
-                final_status = (
-                    SessionStatus.STOPPED
-                    if self._stop_event.is_set() and not legacy_one_shot
-                    else SessionStatus.COMPLETED
-                )
-            else:
-                product_state = product_session.read_model.status
-                if product_state == "running" and not self._stop_event.is_set():
-                    self.transition_product_session("complete")
-                elif product_state not in {"completed", "failed", "canceled"}:
-                    self.transition_product_session("cancel", "runtime stopped")
-                product_state = product_session.read_model.status
-                final_status = {
-                    "completed": SessionStatus.COMPLETED,
-                    "failed": SessionStatus.FAILED,
-                    "canceled": SessionStatus.STOPPED,
-                }[product_state]
-            await self.registry.update_status(self.session.session_id, final_status)
-        except Exception as exc:  # noqa: BLE001
-            error_code = _safe_runtime_error_code(
-                getattr(exc, "code", None),
-                default=(
-                    "runtime_protocol_error"
-                    if isinstance(exc, RuntimeProtocolError)
-                    else "worker_crash"
-                ),
-            )
-            if input_inflight:
-                self._input_queue.task_done()
-                input_inflight = False
-            logger.error(
-                "Session %s failed with code=%s", self.session.session_id, error_code
-            )
-            await self._terminalize_admitted_turns(
-                outcome="failed", reason=error_code, error_code=error_code
-            )
-            self.transition_product_session("fail", error_code, "runtime failure")
-            product_state = getattr(
-                getattr(
-                    getattr(self.session, "product_session", None), "read_model", None
-                ),
-                "status",
-                "failed",
-            )
-            await self.registry.update_status(
-                self.session.session_id,
-                {
-                    "completed": SessionStatus.COMPLETED,
-                    "failed": SessionStatus.FAILED,
-                    "canceled": SessionStatus.STOPPED,
-                }.get(product_state, SessionStatus.FAILED),
-            )
-            await self._publish_session_failure(error_code)
-        finally:
-            self._closed = True
-            await self._enqueue_termination()
-
-
-    def _load_todo_envelope_from_disk(self, workspace_dir: Path) -> Optional[Dict[str, Any]]:
+    def _load_todo_envelope_from_disk(
+        self, workspace_dir: Path
+    ) -> Optional[Dict[str, Any]]:
         return self._task_execution.load_todo_envelope_from_disk(workspace_dir)
 
     async def _terminalize_admitted_turns(
@@ -1034,45 +820,11 @@ class SessionRunner:
         reason: str,
         error_code: Optional[str] = None,
     ) -> None:
-        """Persist one terminal event for every admitted nonterminal turn."""
-        if outcome not in {"completed", "failed", "cancelled"}:
-            raise ValueError("unsupported bulk terminal outcome")
-        async with self.session.admission_lock:
-            ordered_ids: list[str] = []
-            if self.session.active_turn_id:
-                ordered_ids.append(self.session.active_turn_id)
-            ordered_ids.extend(
-                turn_id
-                for turn_id in self.session.queued_turn_ids
-                if turn_id not in ordered_ids
-            )
-            ordered_ids.extend(
-                turn_id
-                for turn_id, turn in self.session.turns_by_id.items()
-                if turn.terminal_outcome is None and turn_id not in ordered_ids
-            )
-        for turn_id in ordered_ids:
-            turn = self.session.turns_by_id.get(turn_id)
-            if turn is None or turn.terminal_outcome is not None:
-                continue
-            await self._finish_turn(
-                turn,
-                outcome,
-                reason=reason,
-                error_code=error_code,
-                advance_queue=False,
-            )
-        while True:
-            try:
-                self._input_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-            else:
-                self._input_queue.task_done()
-        async with self.session.admission_lock:
-            self.session.active_turn_id = None
-            self.session.queued_turn_ids.clear()
-            self.session.turn_admission = self.session.turn_admission.__class__.IDLE
+        await self._lifecycle_owner.terminalize_admitted_turns(
+            outcome=outcome,
+            reason=reason,
+            error_code=error_code,
+        )
 
     async def _publish_session_failure(self, error_code: str) -> None:
         if self._session_failure_published:
@@ -1092,14 +844,26 @@ class SessionRunner:
         try:
             await queue.put(None)
         except asyncio.QueueFull:  # pragma: no cover - defensive
-            logger.warning("Event queue full while terminating session %s", self.session.session_id)
+            logger.warning(
+                "Event queue full while terminating session %s", self.session.session_id
+            )
 
-    def _rollback_runtime_overrides(self, overrides: Dict[str, Any], restore: Optional[tuple[str, bool, Any]] = None) -> bool:
-        try: rolled_back = not self._agent or self._agent.apply_runtime_overrides(overrides) is not False
-        except Exception: logger.exception("Failed to roll back runtime configuration"); return False
+    def _rollback_runtime_overrides(
+        self, overrides: Dict[str, Any], restore: Optional[tuple[str, bool, Any]] = None
+    ) -> bool:
+        try:
+            rolled_back = (
+                not self._agent
+                or self._agent.apply_runtime_overrides(overrides) is not False
+            )
+        except Exception:
+            logger.exception("Failed to roll back runtime configuration")
+            return False
         if self._agent and restore:
-            if restore[1]: self._agent.config[restore[0]] = restore[2]
-            else: self._agent.config.pop(restore[0], None)
+            if restore[1]:
+                self._agent.config[restore[0]] = restore[2]
+            else:
+                self._agent.config.pop(restore[0], None)
         return rolled_back
 
     def _apply_model_override(self) -> bool:
@@ -1136,22 +900,19 @@ class SessionRunner:
         except Exception:
             pass
 
-
     def _debug_permissions_enabled(self) -> bool:
         return self._control_controller.debug_permissions_enabled()
 
-
-    async def _emit_debug_permission_request(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    async def _emit_debug_permission_request(
+        self, payload: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         return await self._control_controller.emit_debug_permission_request(payload)
-
 
     def _pending_permission_key(self, entry: Dict[str, Any]) -> tuple[str, str, str]:
         return self._control_controller.pending_permission_key(entry)
 
-
     def _infer_permission_category(self, request_id: str) -> Optional[str]:
         return self._control_controller.infer_permission_category(request_id)
-
 
     def _update_pending_permissions(
         self,
@@ -1172,16 +933,15 @@ class SessionRunner:
             consume_fifo=consume_fifo,
         )
 
-
     def _discard_undeliverable_permission(self, request_id: str) -> None:
         return self._control_controller.discard_undeliverable_permission(request_id)
-
 
     def _rehydrate_pending_permissions(
         self, event_type: str, payload: Dict[str, Any]
     ) -> Optional[List[Dict[str, Any]]]:
-        return self._control_controller.rehydrate_pending_permissions(event_type, payload)
-
+        return self._control_controller.rehydrate_pending_permissions(
+            event_type, payload
+        )
 
     def _execute_task(
         self,
@@ -1193,7 +953,6 @@ class SessionRunner:
         return self._task_execution.execute_task(
             task_text, input_id=input_id, turn_id=turn_id
         )
-
 
     async def _finish_turn(
         self,
@@ -1277,14 +1036,19 @@ class SessionRunner:
             if running_loop and running_loop is loop:
                 loop.create_task(self._enqueue_event_async(event))
                 return
-            future = asyncio.run_coroutine_threadsafe(self._enqueue_event_async(event), loop)
+            future = asyncio.run_coroutine_threadsafe(
+                self._enqueue_event_async(event), loop
+            )
             future.result()
             return
         try:
             self.session.event_queue.put_nowait(event)
             self._published_events += 1
         except asyncio.QueueFull:  # pragma: no cover - defensive
-            logger.warning("Event queue full for session %s, dropping event", self.session.session_id)
+            logger.warning(
+                "Event queue full for session %s, dropping event",
+                self.session.session_id,
+            )
 
     async def _enqueue_event_async(self, event: SessionEvent) -> None:
         await self.session.event_queue.put(event)
@@ -1296,7 +1060,6 @@ class SessionRunner:
         except Exception:
             pass
 
-
     def _start_queue_pump(
         self,
         event_queue: Any,
@@ -1304,8 +1067,9 @@ class SessionRunner:
         *,
         errors: Optional[List[BaseException]] = None,
     ) -> tuple[Any, Any]:
-        return self._task_execution.start_queue_pump(event_queue, handle_event, errors=errors)
-
+        return self._task_execution.start_queue_pump(
+            event_queue, handle_event, errors=errors
+        )
 
     def _drain_event_queue(
         self,
@@ -1318,7 +1082,9 @@ class SessionRunner:
         if self._workspace_path:
             self._workspace_path.mkdir(parents=True, exist_ok=True)
             return self._workspace_path
-        candidate = getattr(self._agent, "workspace_dir", None) or self.request.workspace
+        candidate = (
+            getattr(self._agent, "workspace_dir", None) or self.request.workspace
+        )
         if candidate:
             path = Path(candidate).resolve()
             path.mkdir(parents=True, exist_ok=True)
@@ -1367,12 +1133,15 @@ class SessionRunner:
             )
         return "\n".join(helper_lines)
 
-
     def _load_run_summary(self, logging_dir: Optional[str]) -> Optional[Dict[str, Any]]:
         return self._task_execution.load_run_summary(logging_dir)
 
-    def _normalize_usage_payload(self, usage: Dict[str, Any], *, latency_ms: Optional[int] = None) -> Dict[str, Any]:
-        return self._task_execution.normalize_usage_payload(usage, latency_ms=latency_ms)
+    def _normalize_usage_payload(
+        self, usage: Dict[str, Any], *, latency_ms: Optional[int] = None
+    ) -> Dict[str, Any]:
+        return self._task_execution.normalize_usage_payload(
+            usage, latency_ms=latency_ms
+        )
 
     def _usage_from_run_summary(self, summary: Dict[str, Any]) -> Dict[str, Any]:
         return self._task_execution.usage_from_run_summary(summary)
@@ -1384,8 +1153,9 @@ class SessionRunner:
         *,
         elapsed_ms: Optional[int] = None,
     ) -> Dict[str, Any]:
-        return self._task_execution.extract_usage_metrics(result, logging_dir, elapsed_ms=elapsed_ms)
-
+        return self._task_execution.extract_usage_metrics(
+            result, logging_dir, elapsed_ms=elapsed_ms
+        )
 
     def _normalize_tool_call_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return self._runtime_event_projector._normalize_tool_call_payload(payload)
@@ -1393,10 +1163,14 @@ class SessionRunner:
     def _normalize_tool_result_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return self._runtime_event_projector._normalize_tool_result_payload(payload)
 
-    def _extract_artifact_ref(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _extract_artifact_ref(
+        self, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         return self._runtime_event_projector._extract_artifact_ref(payload)
 
-    def _normalize_artifact_ref(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _normalize_artifact_ref(
+        self, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         return self._runtime_event_projector._normalize_artifact_ref(payload)
 
     def _normalize_permission_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -1421,7 +1195,9 @@ class SessionRunner:
         workspace = self.get_workspace_dir()
         if not workspace:
             ws_cfg = (config.get("workspace") or {}) if isinstance(config, dict) else {}
-            workspace = Path(str(ws_cfg.get("root") or self.request.workspace or ".")).resolve()
+            workspace = Path(
+                str(ws_cfg.get("root") or self.request.workspace or ".")
+            ).resolve()
         plugin_manifests = discover_plugin_manifests(config, str(workspace))
         plugin_skill_paths: List[Path] = []
         for manifest in plugin_manifests:
@@ -1436,9 +1212,15 @@ class SessionRunner:
             str(workspace),
             plugin_skill_paths=plugin_skill_paths,
         )
-        selection = normalize_skill_selection(config, self.session.metadata.get("skills_selection"))
-        _, _, enabled_map = apply_skill_selection(prompt_skills, graph_skills, selection)
-        catalog = build_skill_catalog(prompt_skills, graph_skills, selection=selection, enabled_map=enabled_map)
+        selection = normalize_skill_selection(
+            config, self.session.metadata.get("skills_selection")
+        )
+        _, _, enabled_map = apply_skill_selection(
+            prompt_skills, graph_skills, selection
+        )
+        catalog = build_skill_catalog(
+            prompt_skills, graph_skills, selection=selection, enabled_map=enabled_map
+        )
         snapshot = None
         try:
             snapshot = plugin_snapshot(plugin_manifests)
@@ -1463,7 +1245,11 @@ class SessionRunner:
             self._skills_catalog_cache = self._resolve_skill_catalog()
         except Exception:
             if self._skills_catalog_cache is None:
-                self._skills_catalog_cache = {"catalog": {"skills": []}, "selection": {}, "sources": {}}
+                self._skills_catalog_cache = {
+                    "catalog": {"skills": []},
+                    "selection": {},
+                    "sources": {},
+                }
         return dict(self._skills_catalog_cache or {})
 
     def get_ctree_snapshot(self) -> Dict[str, Any]:
