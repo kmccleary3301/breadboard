@@ -9,15 +9,22 @@ import os
 import threading
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Protocol, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence
 
 from breadboard_engine.auth.enforcer import apply_dotted_overrides
 from breadboard_engine.checkpointing.checkpoint_manager import CheckpointManager
-from breadboard_engine.compilation.effective_operation_policy import policy_pack_for_config_authority
-from breadboard_engine.model_roles import ModelRoleProblem, ModelRoleResolutionError, resolve_role_name
+from breadboard_engine.compilation.effective_operation_policy import (
+    policy_pack_for_config_authority,
+)
+from breadboard_engine.model_roles import (
+    ModelRoleProblem,
+    ModelRoleResolutionError,
+    resolve_role_name,
+)
 from breadboard_engine.permissions.broker import PermissionBroker
 from breadboard_engine.security import WorkspaceFilesystem
 from breadboard_engine.skills.registry import normalize_skill_selection
+from breadboard_engine.permissions import upsert_permission_rule
 
 from .events import EventType
 
@@ -25,62 +32,178 @@ logger = logging.getLogger(__name__)
 
 
 class SessionControlHost(Protocol):
-    """Narrow runtime surface needed by command and permission control."""
+    """Explicit host port retained by command and permission control."""
 
     session: Any
     registry: Any
     request: Any
+    _closed: bool
+    _checkpoint_manager: Any
+    _permission_queue: Any
     _permission_decision_lock: asyncio.Lock
     _product_session_lock: threading.RLock
+    _resume_event: asyncio.Event
+    _agent: Any
+    _model_role_lock: Any
+    _active_model_role: Optional[str]
+    _model_override: Optional[str]
+    _mode: Optional[str]
+    _prepared_runtime_config: Optional[Dict[str, Any]]
+    _skills_catalog_cache: Optional[Dict[str, Any]]
+    _consumed_permission_responses: Dict[tuple[str, str, str], int]
 
-_PERMISSION_ALIASES = {alias: decision for decision, aliases in {
-    "once": "once allow approve approved ok okay yes y allow-once allow_once", "always": "always allow-always allow_always",
-    "reject": "reject deny denied no n deny-once deny_once deny-always deny_always deny-stop deny_stop",
-}.items() for alias in aliases.split()}
+    def get_workspace_dir(self) -> Optional[Path]: ...
+    async def publish_event_async(
+        self, event_type: EventType, payload: Dict[str, Any], **kwargs: Any
+    ) -> Any: ...
+    def _persist_metadata_snapshot_threadsafe(self) -> None: ...
+    def transition_product_session(self, transition: str, *args: Any) -> None: ...
+    def current_runtime_config(self) -> Dict[str, Any]: ...
+    def _rollback_runtime_overrides(
+        self, overrides: Dict[str, Any], restore: Optional[tuple[str, bool, Any]] = None
+    ) -> bool: ...
+    def get_skill_catalog(self) -> Dict[str, Any]: ...
+    def _signal_control(self, kind: str) -> bool: ...
+    def _fail_control_transition(self, code: str, detail: str) -> None: ...
+    def _request_stop(self, reason: str) -> bool: ...
+    def _locked_target(self, role: Optional[str] = None) -> Dict[str, Any]: ...
+    @staticmethod
+    def _target_route(target: Mapping[str, Any]) -> str: ...
+    def _apply_model_override(self) -> bool: ...
+
+
+_PERMISSION_ALIASES = {
+    alias: decision
+    for decision, aliases in {
+        "once": "once allow approve approved ok okay yes y allow-once allow_once",
+        "always": "always allow-always allow_always",
+        "reject": "reject deny denied no n deny-once deny_once deny-always deny_always deny-stop deny_stop",
+    }.items()
+    for alias in aliases.split()
+}
 
 
 def _permission_response_tokens(value: Any) -> list[str]:
-    if isinstance(value, dict): return [token for nested in value.values() for token in _permission_response_tokens(nested)]
+    if isinstance(value, dict):
+        return [
+            token
+            for nested in value.values()
+            for token in _permission_response_tokens(nested)
+        ]
     return [value.strip().lower()] if isinstance(value, str) and value.strip() else []
 
 
-def _permission_item_ids(request: Any) -> list[str]: return [str(item["item_id"]) for item in request.get("items", []) if isinstance(item, dict) and item.get("item_id")] if isinstance(request, dict) else []
+def _permission_item_ids(request: Any) -> list[str]:
+    return (
+        [
+            str(item["item_id"])
+            for item in request.get("items", [])
+            if isinstance(item, dict) and item.get("item_id")
+        ]
+        if isinstance(request, dict)
+        else []
+    )
 
 
-def _permission_default_response(config: Any) -> str: return PermissionBroker((config.get("permissions") or {}) if isinstance(config, dict) else {})._default_response
+def _permission_default_response(config: Any) -> str:
+    return PermissionBroker(
+        (config.get("permissions") or {}) if isinstance(config, dict) else {}
+    )._default_response
 
 
-def _canonical_permission_resolution(response: Any, responses: Any, requested_ids: Sequence[str] = (), missing_response: str = "reject") -> str:
-    explicit = responses.get("items") if isinstance(responses, dict) else None; wrapped = isinstance(explicit, dict)
-    if not wrapped and isinstance(responses, dict) and requested_ids and any(item_id in responses for item_id in requested_ids): explicit = responses
-    if isinstance(responses, dict) and "default" in responses: tokens = _permission_response_tokens(responses["default"])
+def _canonical_permission_resolution(
+    response: Any,
+    responses: Any,
+    requested_ids: Sequence[str] = (),
+    missing_response: str = "reject",
+) -> str:
+    explicit = responses.get("items") if isinstance(responses, dict) else None
+    wrapped = isinstance(explicit, dict)
+    if (
+        not wrapped
+        and isinstance(responses, dict)
+        and requested_ids
+        and any(item_id in responses for item_id in requested_ids)
+    ):
+        explicit = responses
+    if isinstance(responses, dict) and "default" in responses:
+        tokens = _permission_response_tokens(responses["default"])
     elif isinstance(explicit, dict):
-        fallback = (responses.get("fallback") or responses.get("default_response") or missing_response) if wrapped else missing_response
-        tokens = [_permission_response_tokens(explicit.get(item_id, fallback)) for item_id in requested_ids] if requested_ids else [_permission_response_tokens(value) for value in explicit.values()]; tokens = [token for group in tokens for token in group]
-    else: tokens = _permission_response_tokens(responses if isinstance(responses, dict) else response)
-    values = [PermissionBroker._coerce_response(_PERMISSION_ALIASES.get(token, token)) for token in tokens]
-    if not values: raise ValueError("permission response contains no valid decisions")
-    return "reject" if "reject" in values else "always" if all(value == "always" for value in values) else "once"
+        fallback = (
+            (
+                responses.get("fallback")
+                or responses.get("default_response")
+                or missing_response
+            )
+            if wrapped
+            else missing_response
+        )
+        tokens = (
+            [
+                _permission_response_tokens(explicit.get(item_id, fallback))
+                for item_id in requested_ids
+            ]
+            if requested_ids
+            else [_permission_response_tokens(value) for value in explicit.values()]
+        )
+        tokens = [token for group in tokens for token in group]
+    else:
+        tokens = _permission_response_tokens(
+            responses if isinstance(responses, dict) else response
+        )
+    values = [
+        PermissionBroker._coerce_response(_PERMISSION_ALIASES.get(token, token))
+        for token in tokens
+    ]
+    if not values:
+        raise ValueError("permission response contains no valid decisions")
+    return (
+        "reject"
+        if "reject" in values
+        else "always"
+        if all(value == "always" for value in values)
+        else "once"
+    )
 
 
-def _control_kind(item: Any) -> str: return "stop" if item is None else item.strip().lower() if isinstance(item, str) else str(item.get("kind") or item.get("type") or ("stop" if item.get("stop") else "")).strip().lower() if isinstance(item, dict) else ""
+def _control_kind(item: Any) -> str:
+    return (
+        "stop"
+        if item is None
+        else item.strip().lower()
+        if isinstance(item, str)
+        else str(
+            item.get("kind") or item.get("type") or ("stop" if item.get("stop") else "")
+        )
+        .strip()
+        .lower()
+        if isinstance(item, dict)
+        else ""
+    )
 
 
 class _PauseAwareControlQueue:
-    def __init__(self, queue: Any) -> None: self._queue = queue
+    def __init__(self, queue: Any) -> None:
+        self._queue = queue
+
     def __getattr__(self, name: str) -> Any:
         queue = object.__getattribute__(self, "_queue")
         return getattr(queue, name)
+
     def get_nowait(self) -> Any:
         item = self._queue.get_nowait()
-        while _control_kind(item) == "pause": item = self._queue.get()
+        while _control_kind(item) == "pause":
+            item = self._queue.get()
         return item
 
 
 def _canonical_permission_responses(responses: Dict[str, Any]) -> Dict[str, Any]:
-    return {key: _canonical_permission_responses(value) if isinstance(value, dict)
-            else _canonical_permission_resolution(value, None) for key, value in responses.items()}
-
+    return {
+        key: _canonical_permission_responses(value)
+        if isinstance(value, dict)
+        else _canonical_permission_resolution(value, None)
+        for key, value in responses.items()
+    }
 
 
 class SessionControlController:
@@ -88,6 +211,23 @@ class SessionControlController:
 
     def __init__(self, runner: SessionControlHost) -> None:
         self._runner = runner
+
+    def _upsert_permission_rule(
+        self,
+        workspace_dir: Path | str,
+        *,
+        category: str,
+        pattern: str,
+        decision: str,
+        scope: str,
+    ) -> bool:
+        return upsert_permission_rule(
+            workspace_dir,
+            category=category,
+            pattern=pattern,
+            decision=decision,
+            scope=scope,
+        )
 
     async def handle_command(
         self,
@@ -251,7 +391,7 @@ class SessionControlController:
                         payload.get("note"),
                     )
                     category = (
-                        runner._infer_permission_category(request_id) if rule else None
+                        self.infer_permission_category(request_id) if rule else None
                     )
                     workspace_dir = runner.get_workspace_dir() if rule else None
                     if rule:
@@ -276,14 +416,19 @@ class SessionControlController:
                             and workspace_dir
                         )
                         try:
-                            persisted = not persist_rule or runner._upsert_permission_rule(
-                                workspace_dir,
-                                category=category,
-                                pattern=str(rule).strip(),
-                                decision=(
-                                    "deny" if normalized.startswith("deny") else "allow"
-                                ),
-                                scope=str(scope or "project"),
+                            persisted = (
+                                not persist_rule
+                                or self._upsert_permission_rule(
+                                    workspace_dir,
+                                    category=category,
+                                    pattern=str(rule).strip(),
+                                    decision=(
+                                        "deny"
+                                        if normalized.startswith("deny")
+                                        else "allow"
+                                    ),
+                                    scope=str(scope or "project"),
+                                )
                             )
                         except Exception as exc:
                             runner.transition_product_session(
@@ -318,14 +463,14 @@ class SessionControlController:
                                 "Permission metadata projection failed after durable rule commit",
                                 exc_info=True,
                             )
-                    detail = await runner.handle_command(
+                    detail = await self.handle_command(
                         "respond_permission",
                         {"request_id": request_id, "response": response_value},
                     )
                     if normalized in {"deny-stop", "deny_stop"} or bool(
                         payload.get("stop")
                     ):
-                        await runner.handle_command("stop", {})
+                        await self.handle_command("stop", {})
                     return {
                         "status": "ok",
                         "request_id": request_id,
@@ -366,7 +511,8 @@ class SessionControlController:
                     try:
                         if (
                             runner._agent
-                            and runner._agent.apply_runtime_overrides(overrides) is False
+                            and runner._agent.apply_runtime_overrides(overrides)
+                            is False
                         ):
                             raise RuntimeError("failed to apply skills configuration")
                         prepared = apply_dotted_overrides(previous, overrides)
@@ -440,7 +586,7 @@ class SessionControlController:
                             else {}
                         )
                         (
-                            runner._update_pending_permissions(
+                            self.update_pending_permissions(
                                 "permission_request",
                                 request,
                                 source=str(head.get("source") or "session"),
@@ -489,9 +635,7 @@ class SessionControlController:
                     requested = str(
                         payload.get("role") or payload.get("model_role") or ""
                     ).strip()
-                    role = resolve_role_name(
-                        runner._model_role_lock, requested or None
-                    )
+                    role = resolve_role_name(runner._model_role_lock, requested or None)
                     target = runner._locked_target(role)
                     route = runner._target_route(target)
                     with runner._product_session_lock:
@@ -501,20 +645,14 @@ class SessionControlController:
                         previous_metadata = dict(runner.session.metadata)
                         prepared = dict(previous_config)
                         prepared["active_model_role"] = role
-                        prepared["model_role_lock"] = dict(
-                            runner._model_role_lock
-                        )
-                        prepared["providers"] = dict(
-                            prepared.get("providers") or {}
-                        )
+                        prepared["model_role_lock"] = dict(runner._model_role_lock)
+                        prepared["providers"] = dict(prepared.get("providers") or {})
                         prepared["providers"]["default_model"] = route
                         runner._active_model_role = role
                         runner._model_override = route
                         try:
                             if not runner._apply_model_override():
-                                raise RuntimeError(
-                                    "failed to apply locked model role"
-                                )
+                                raise RuntimeError("failed to apply locked model role")
                             runner.session.metadata.update(
                                 {"active_model_role": role, "model": route}
                             )
@@ -623,7 +761,10 @@ class SessionControlController:
                 mode_value = mode_value.strip()
                 with runner._product_session_lock:
                     overrides = {"mode": mode_value}
-                    previous, previous_mode = runner.current_runtime_config(), runner._mode
+                    previous, previous_mode = (
+                        runner.current_runtime_config(),
+                        runner._mode,
+                    )
                     agent_config = (
                         getattr(runner._agent, "config", {}) if runner._agent else {}
                     )
@@ -636,7 +777,8 @@ class SessionControlController:
                     try:
                         if (
                             runner._agent
-                            and runner._agent.apply_runtime_overrides(overrides) is False
+                            and runner._agent.apply_runtime_overrides(overrides)
+                            is False
                         ):
                             raise RuntimeError("failed to apply mode configuration")
                         if durable_reconfigure is not None:
@@ -711,8 +853,8 @@ class SessionControlController:
                     "parent_session_id": parent_session_id,
                 }
             case "run_tests":
-                if runner._debug_permissions_enabled():
-                    event_payload = await runner._emit_debug_permission_request(payload)
+                if self.debug_permissions_enabled():
+                    event_payload = await self.emit_debug_permission_request(payload)
                     return {
                         "status": "ok",
                         "debug": True,
@@ -771,7 +913,7 @@ class SessionControlController:
                 )
                 queue = getattr(runner, "_permission_queue", None)
                 if queue is None:
-                    if runner._debug_permissions_enabled():
+                    if self.debug_permissions_enabled():
                         response_payload: Dict[str, Any] = {
                             "request_id": normalized_request_id
                         }
@@ -781,7 +923,7 @@ class SessionControlController:
                             response_payload["response"] = resolution
                             response_payload["decision"] = resolution
                         with runner._product_session_lock:
-                            runner._update_pending_permissions(
+                            self.update_pending_permissions(
                                 "permission_response",
                                 response_payload,
                                 source="session",
@@ -796,7 +938,7 @@ class SessionControlController:
                             "delivered": response_payload,
                             "debug": True,
                         }
-                    runner._discard_undeliverable_permission(normalized_request_id)
+                    self.discard_undeliverable_permission(normalized_request_id)
                     raise ValueError("no permission request is active")
                 if canonical_responses is not None:
                     item: Dict[str, Any] = {
@@ -831,7 +973,7 @@ class SessionControlController:
                         raise RuntimeError(
                             f"failed to deliver permission response: {exc}"
                         ) from exc
-                    runner._update_pending_permissions(
+                    self.update_pending_permissions(
                         "permission_response", item, source="session", consume_fifo=True
                     )
                 return {
@@ -843,7 +985,6 @@ class SessionControlController:
             case _:
                 raise ValueError(f"Unsupported command: {command}")
 
-
     def debug_permissions_enabled(self) -> bool:
         runner = self._runner
         try:
@@ -854,13 +995,16 @@ class SessionControlController:
             pass
         return bool(os.environ.get("BREADBOARD_DEBUG_PERMISSIONS"))
 
-
-    async def emit_debug_permission_request(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    async def emit_debug_permission_request(
+        self, payload: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         runner = self._runner
         data = dict(payload or {})
         request_id = data.get("request_id") or f"debug-perm-{uuid.uuid4().hex[:8]}"
         suite = data.get("suite") if isinstance(data.get("suite"), str) else None
-        summary = f"Tool requests permission to run bash{f' ({suite})' if suite else ''}."
+        summary = (
+            f"Tool requests permission to run bash{f' ({suite})' if suite else ''}."
+        )
         event_payload = {
             "request_id": str(request_id),
             "tool": "bash",
@@ -874,18 +1018,17 @@ class SessionControlController:
                 "kind": "run",
             },
         }
-        runner._update_pending_permissions("permission_request", event_payload, source="session")
+        self.update_pending_permissions(
+            "permission_request", event_payload, source="session"
+        )
         await runner.publish_event_async(EventType.PERMISSION_REQUEST, event_payload)
         return event_payload
 
-
     def pending_permission_key(self, entry: Dict[str, Any]) -> tuple[str, str, str]:
-        runner = self._runner
         source = str(entry.get("source") or "session")
         task_id = str(entry.get("task_session_id") or "")
         req_id = str(entry.get("request_id") or entry.get("id") or "")
         return source, task_id, req_id
-
 
     def infer_permission_category(self, request_id: str) -> Optional[str]:
         runner = self._runner
@@ -911,123 +1054,313 @@ class SessionControlController:
             return None
         return None
 
-
     def update_pending_permissions(
-        self, kind: str, info: Dict[str, Any], *, source: str = "session",
-        task_session_id: Optional[str] = None, subagent_type: Optional[str] = None,
+        self,
+        kind: str,
+        info: Dict[str, Any],
+        *,
+        source: str = "session",
+        task_session_id: Optional[str] = None,
+        subagent_type: Optional[str] = None,
         consume_fifo: bool = False,
     ) -> Optional[List[Dict[str, Any]]]:
         runner = self._runner
-        req_id = next((info.get(key) for key in ("request_id", "requestId", "permission_id", "permissionId", "id")
-                       if info.get(key)), None)
-        if not isinstance(req_id, str) or not req_id.strip(): return None
+        req_id = next(
+            (
+                info.get(key)
+                for key in (
+                    "request_id",
+                    "requestId",
+                    "permission_id",
+                    "permissionId",
+                    "id",
+                )
+                if info.get(key)
+            ),
+            None,
+        )
+        if not isinstance(req_id, str) or not req_id.strip():
+            return None
         request_id = req_id.strip()
         with runner._product_session_lock:
             pending = runner.session.metadata.get("pending_permissions")
             pending = pending if isinstance(pending, list) else []
-            entry: Dict[str, Any] = {"source": str(source or "session"), "request_id": request_id}
-            entry.update({key: value for key, value in (("task_session_id", task_session_id), ("subagent_type", subagent_type)) if value})
-            entry_key = runner._pending_permission_key(entry); activate = None; ready = None
+            entry: Dict[str, Any] = {
+                "source": str(source or "session"),
+                "request_id": request_id,
+            }
+            entry.update(
+                {
+                    key: value
+                    for key, value in (
+                        ("task_session_id", task_session_id),
+                        ("subagent_type", subagent_type),
+                    )
+                    if value
+                }
+            )
+            entry_key = self.pending_permission_key(entry)
+            activate = None
+            ready = None
             project_before_activation = kind == "permission_response"
             if kind == "permission_request":
                 entry["request"] = dict(info or {})
-                match = next((i for i, item in enumerate(pending) if runner._pending_permission_key(item) == entry_key), None)
-                normalized = list(pending); project_before_activation = match is not None
+                match = next(
+                    (
+                        i
+                        for i, item in enumerate(pending)
+                        if self.pending_permission_key(item) == entry_key
+                    ),
+                    None,
+                )
+                normalized = list(pending)
+                project_before_activation = match is not None
                 if match is None:
-                    normalized.append(entry); activate = entry if not pending else None
+                    normalized.append(entry)
+                    activate = entry if not pending else None
                 else:
-                    normalized[match] = entry; activate = entry if match == 0 else None
+                    normalized[match] = entry
+                    activate = entry if match == 0 else None
             elif kind == "permission_response":
                 if not consume_fifo:
                     suppressed = runner._consumed_permission_responses.get(entry_key, 0)
                     if suppressed:
-                        if suppressed == 1: runner._consumed_permission_responses.pop(entry_key)
-                        else: runner._consumed_permission_responses[entry_key] = suppressed - 1
+                        if suppressed == 1:
+                            runner._consumed_permission_responses.pop(entry_key)
+                        else:
+                            runner._consumed_permission_responses[entry_key] = (
+                                suppressed - 1
+                            )
                         return None
-                match = next((i for i, item in enumerate(pending) if
-                              (str(item.get("request_id") or item.get("id") or "") == request_id if consume_fifo else runner._pending_permission_key(item) == entry_key)), None)
+                match = next(
+                    (
+                        i
+                        for i, item in enumerate(pending)
+                        if (
+                            str(item.get("request_id") or item.get("id") or "")
+                            == request_id
+                            if consume_fifo
+                            else self.pending_permission_key(item) == entry_key
+                        )
+                    ),
+                    None,
+                )
                 normalized = list(pending)
                 if match is not None and not consume_fifo and match:
-                    normalized[match] = {**normalized[match], "deferred_response": dict(info)}; ready = []
+                    normalized[match] = {
+                        **normalized[match],
+                        "deferred_response": dict(info),
+                    }
+                    ready = []
                 elif match is not None:
                     product_session = getattr(runner.session, "product_session", None)
                     if not consume_fifo:
                         if product_session:
-                            request = normalized[match].get("request"); responses = info.get("responses") or info.get("items"); runner.transition_product_session("resolve_approval", request_id, _canonical_permission_resolution(info.get("response") or info.get("decision"), responses, _permission_item_ids(request), _permission_default_response(runner.current_runtime_config())))
+                            request = normalized[match].get("request")
+                            responses = info.get("responses") or info.get("items")
+                            runner.transition_product_session(
+                                "resolve_approval",
+                                request_id,
+                                _canonical_permission_resolution(
+                                    info.get("response") or info.get("decision"),
+                                    responses,
+                                    _permission_item_ids(request),
+                                    _permission_default_response(
+                                        runner.current_runtime_config()
+                                    ),
+                                ),
+                            )
                         ready = [dict(info)]
                     if consume_fifo:
-                        consumed_key = runner._pending_permission_key(normalized[match]); runner._consumed_permission_responses[consumed_key] = runner._consumed_permission_responses.get(consumed_key, 0) + 1
+                        consumed_key = self.pending_permission_key(normalized[match])
+                        runner._consumed_permission_responses[consumed_key] = (
+                            runner._consumed_permission_responses.get(consumed_key, 0)
+                            + 1
+                        )
                     normalized.pop(match)
-                    while ready is not None and normalized and isinstance(normalized[0].get("deferred_response"), dict):
-                        runner.session.metadata["pending_permissions"] = normalized; deferred = dict(normalized[0]["deferred_response"]); deferred_id = str(normalized[0].get("request_id") or "")
+                    while (
+                        ready is not None
+                        and normalized
+                        and isinstance(normalized[0].get("deferred_response"), dict)
+                    ):
+                        runner.session.metadata["pending_permissions"] = normalized
+                        deferred = dict(normalized[0]["deferred_response"])
+                        deferred_id = str(normalized[0].get("request_id") or "")
                         if product_session:
-                            request = normalized[0].get("request") if isinstance(normalized[0].get("request"), dict) else {}; operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
-                            runner.transition_product_session("request_approval", deferred_id, operation)
-                            runner.transition_product_session("resolve_approval", deferred_id, _canonical_permission_resolution(deferred.get("response") or deferred.get("decision"), deferred.get("responses") or deferred.get("items"), _permission_item_ids(request), _permission_default_response(runner.current_runtime_config())))
-                        normalized.pop(0); ready.append(deferred)
+                            request = (
+                                normalized[0].get("request")
+                                if isinstance(normalized[0].get("request"), dict)
+                                else {}
+                            )
+                            operation = str(
+                                request.get("operation")
+                                or request.get("tool")
+                                or request.get("category")
+                                or "runtime permission"
+                            )
+                            runner.transition_product_session(
+                                "request_approval", deferred_id, operation
+                            )
+                            runner.transition_product_session(
+                                "resolve_approval",
+                                deferred_id,
+                                _canonical_permission_resolution(
+                                    deferred.get("response")
+                                    or deferred.get("decision"),
+                                    deferred.get("responses") or deferred.get("items"),
+                                    _permission_item_ids(request),
+                                    _permission_default_response(
+                                        runner.current_runtime_config()
+                                    ),
+                                ),
+                            )
+                        normalized.pop(0)
+                        ready.append(deferred)
                     activate = normalized[0] if match == 0 and normalized else None
-            else: return None
+            else:
+                return None
             product_session = getattr(runner.session, "product_session", None)
             if project_before_activation:
-                if normalized: runner.session.metadata["pending_permissions"] = normalized
-                else: runner.session.metadata.pop("pending_permissions", None)
-            if product_session and activate and product_session.read_model.status == "running":
-                request = activate.get("request") if isinstance(activate.get("request"), dict) else {}
-                operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
-                product_session.request_approval(str(activate.get("request_id") or activate.get("id") or ""), operation)
-                runner.session.metadata["session_contract"] = product_session.read_model.as_dict()
+                if normalized:
+                    runner.session.metadata["pending_permissions"] = normalized
+                else:
+                    runner.session.metadata.pop("pending_permissions", None)
+            if (
+                product_session
+                and activate
+                and product_session.read_model.status == "running"
+            ):
+                request = (
+                    activate.get("request")
+                    if isinstance(activate.get("request"), dict)
+                    else {}
+                )
+                operation = str(
+                    request.get("operation")
+                    or request.get("tool")
+                    or request.get("category")
+                    or "runtime permission"
+                )
+                product_session.request_approval(
+                    str(activate.get("request_id") or activate.get("id") or ""),
+                    operation,
+                )
+                runner.session.metadata["session_contract"] = (
+                    product_session.read_model.as_dict()
+                )
             if not project_before_activation:
-                if normalized: runner.session.metadata["pending_permissions"] = normalized
-                else: runner.session.metadata.pop("pending_permissions", None)
+                if normalized:
+                    runner.session.metadata["pending_permissions"] = normalized
+                else:
+                    runner.session.metadata.pop("pending_permissions", None)
             runner._persist_metadata_snapshot_threadsafe()
             return ready
-
 
     def discard_undeliverable_permission(self, request_id: str) -> None:
         runner = self._runner
         with runner._product_session_lock:
             pending = runner.session.metadata.get("pending_permissions")
-            if not isinstance(pending, list): return
+            if not isinstance(pending, list):
+                return
+
             def _usable(entry: Any) -> bool:
-                return isinstance(entry, dict) and bool(str(entry.get("request_id") or ""))
-            match = next((index for index, entry in enumerate(pending)
-                          if _usable(entry) and str(entry.get("request_id")) == request_id), None)
-            if match is None: return
-            remaining = [entry for index, entry in enumerate(pending) if index != match and _usable(entry)]
-            first_valid = next((index for index, entry in enumerate(pending) if _usable(entry)), None)
+                return isinstance(entry, dict) and bool(
+                    str(entry.get("request_id") or "")
+                )
+
+            match = next(
+                (
+                    index
+                    for index, entry in enumerate(pending)
+                    if _usable(entry) and str(entry.get("request_id")) == request_id
+                ),
+                None,
+            )
+            if match is None:
+                return
+            remaining = [
+                entry
+                for index, entry in enumerate(pending)
+                if index != match and _usable(entry)
+            ]
+            first_valid = next(
+                (index for index, entry in enumerate(pending) if _usable(entry)), None
+            )
             is_head = first_valid is not None and match == first_valid
             product_session = getattr(runner.session, "product_session", None)
-            if is_head and product_session is not None and product_session.read_model.status == "awaiting_approval":
-                runner.transition_product_session("resolve_approval", request_id, "reject")
+            if (
+                is_head
+                and product_session is not None
+                and product_session.read_model.status == "awaiting_approval"
+            ):
+                runner.transition_product_session(
+                    "resolve_approval", request_id, "reject"
+                )
                 head = remaining[0] if remaining else None
                 if head is not None:
-                    request = head.get("request") if isinstance(head.get("request"), dict) else {}
-                    operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
+                    request = (
+                        head.get("request")
+                        if isinstance(head.get("request"), dict)
+                        else {}
+                    )
+                    operation = str(
+                        request.get("operation")
+                        or request.get("tool")
+                        or request.get("category")
+                        or "runtime permission"
+                    )
                     try:
-                        runner.transition_product_session("request_approval", str(head.get("request_id") or head.get("id") or ""), operation)
+                        runner.transition_product_session(
+                            "request_approval",
+                            str(head.get("request_id") or head.get("id") or ""),
+                            operation,
+                        )
                     except Exception:
-                        logger.warning("Failed to re-expose pending approval after discarding undeliverable request", exc_info=True)
-                runner.session.metadata["session_contract"] = product_session.read_model.as_dict()
-            if remaining: runner.session.metadata["pending_permissions"] = remaining
-            else: runner.session.metadata.pop("pending_permissions", None)
+                        logger.warning(
+                            "Failed to re-expose pending approval after discarding undeliverable request",
+                            exc_info=True,
+                        )
+                runner.session.metadata["session_contract"] = (
+                    product_session.read_model.as_dict()
+                )
+            if remaining:
+                runner.session.metadata["pending_permissions"] = remaining
+            else:
+                runner.session.metadata.pop("pending_permissions", None)
         runner._persist_metadata_snapshot_threadsafe()
 
-
     def rehydrate_pending_permissions(
-        self, event_type: str, payload: Dict[str, Any],
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
     ) -> Optional[List[Dict[str, Any]]]:
-        runner = self._runner
         if event_type in {"permission_request", "permission_response"}:
-            info = {**dict(payload or {}), **({"_runtime_event": (event_type, dict(payload or {}))} if event_type == "permission_response" else {})}
-            return runner._update_pending_permissions(event_type, info, source="session")
-        if event_type != "task_event": return None
+            info = {
+                **dict(payload or {}),
+                **(
+                    {"_runtime_event": (event_type, dict(payload or {}))}
+                    if event_type == "permission_response"
+                    else {}
+                ),
+            }
+            return self.update_pending_permissions(event_type, info, source="session")
+        if event_type != "task_event":
+            return None
         kind = str((payload or {}).get("kind") or "")
-        if kind not in {"permission_request", "permission_response"}: return None
+        if kind not in {"permission_request", "permission_response"}:
+            return None
         child_payload = (payload or {}).get("payload") or {}
-        child = dict(child_payload) if isinstance(child_payload, dict) else {"payload": child_payload}
-        if kind == "permission_response": child["_runtime_event"] = (event_type, dict(payload or {}))
-        return runner._update_pending_permissions(kind, child,
-            source="task", task_session_id=str((payload or {}).get("sessionId") or ""),
+        child = (
+            dict(child_payload)
+            if isinstance(child_payload, dict)
+            else {"payload": child_payload}
+        )
+        if kind == "permission_response":
+            child["_runtime_event"] = (event_type, dict(payload or {}))
+        return self.update_pending_permissions(
+            kind,
+            child,
+            source="task",
+            task_session_id=str((payload or {}).get("sessionId") or ""),
             subagent_type=str((payload or {}).get("subagent_type") or ""),
         )
-

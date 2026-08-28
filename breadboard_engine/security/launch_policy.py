@@ -23,6 +23,11 @@ from .credential_boundary import (
     protected_credential_paths,
 )
 from .isolation_errors import ProcessIsolationUnavailable
+from .path_policy import (
+    prepare_workspace_temp_directory,
+    under_virtual_read_mount,
+)
+
 
 def _command_argv(
     command: str | Sequence[str],
@@ -42,13 +47,6 @@ def _command_argv(
     if not argv or not argv[0] or any("\x00" in value for value in argv):
         raise ProcessIsolationUnavailable("process command is empty or invalid")
     return argv
-
-
-_VIRTUAL_READ_MOUNTS = tuple(Path(path) for path in ("/dev", "/proc", "/run", "/sys"))
-
-
-def _under_virtual_read_mount(path: Path) -> bool:
-    return any(path == root or root in path.parents for root in _VIRTUAL_READ_MOUNTS)
 
 
 def _toolchain_roots(
@@ -80,7 +78,7 @@ def _toolchain_roots(
         if not raw:
             continue
         resolved = _resolved_existing(raw)
-        if resolved is None or resolved == home or _under_virtual_read_mount(resolved):
+        if resolved is None or resolved == home or under_virtual_read_mount(resolved):
             continue
         if any(_paths_overlap(resolved, protected) for protected in protected_paths):
             continue
@@ -137,7 +135,7 @@ def _command_runtime_roots(
         if (
             candidate == Path("/")
             or resolved_candidate == home
-            or _under_virtual_read_mount(resolved_candidate)
+            or under_virtual_read_mount(resolved_candidate)
             or any(
                 _paths_overlap(resolved_candidate, protected)
                 for protected in protected_paths
@@ -327,12 +325,7 @@ def build_restricted_process_command(
     root = _validate_workspace(workspace, protected)
     _validate_hardlink_boundary(root, protected)
     cwd = _validate_working_directory(working_directory, root)
-    temp_root = root / ".breadboard" / "tmp"
-    temp_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    try:
-        temp_root.chmod(0o700)
-    except OSError:
-        pass
+    temp_root = prepare_workspace_temp_directory(root)
 
     child_environment = dict(environment)
     purge_provider_credentials(child_environment)
