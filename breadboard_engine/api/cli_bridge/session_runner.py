@@ -658,7 +658,7 @@ class SessionRunner:
             overrides["providers.default_model"] = self._model_override.strip()
         if isinstance(self._mode, str) and self._mode.strip():
             overrides["mode"] = self._mode.strip()
-        permission_mode = (
+        requested_permission_mode = (
             (
                 self.request.permission_mode
                 or self.session.metadata.get("permission_mode")
@@ -667,16 +667,27 @@ class SessionRunner:
             .strip()
             .lower()
         )
+        base_cfg = self._load_base_config()
+        permissions = base_cfg.get("permissions")
+        options = permissions.get("options") if isinstance(permissions, dict) else None
+        configured_permission_mode = (
+            options.get("mode") if isinstance(options, dict) else ""
+        )
+        permission_mode = (
+            (requested_permission_mode or str(configured_permission_mode or ""))
+            .strip()
+            .lower()
+        )
         if permission_mode in {"prompt", "ask", "interactive"}:
-            overrides.setdefault("permissions.options.mode", "prompt")
-            overrides.setdefault("permissions.options.default_response", "reject")
-            overrides.setdefault("permissions.edit.default", "ask")
-            overrides.setdefault("permissions.shell.default", "ask")
-            overrides.setdefault("permissions.webfetch.default", "ask")
-            overrides.setdefault("permissions.read.default", "ask")
+            if requested_permission_mode:
+                overrides.setdefault("permissions.options.mode", "prompt")
+                overrides.setdefault("permissions.options.default_response", "reject")
+                overrides.setdefault("permissions.edit.default", "ask")
+                overrides.setdefault("permissions.shell.default", "ask")
+                overrides.setdefault("permissions.webfetch.default", "ask")
+                overrides.setdefault("permissions.read.default", "ask")
             self.request.permission_mode = permission_mode
             self.session.metadata["permission_mode"] = permission_mode
-        base_cfg = self._load_base_config()
         workspace_guess_path = self._resolve_workspace_guess(base_cfg)
         if workspace_guess_path:
             self._workspace_path = workspace_guess_path

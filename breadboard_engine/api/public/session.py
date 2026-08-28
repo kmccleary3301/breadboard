@@ -4,17 +4,24 @@ import asyncio
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 from breadboard_engine.api.cli_bridge.models import (
+    AttachmentUploadResponse,
     SessionCommandRequest as BridgeSessionCommandRequest,
-)
-from breadboard_engine.api.cli_bridge.models import (
+    SessionCommandResponse,
     SessionCreateRequest as BridgeSessionCreateRequest,
-)
-from breadboard_engine.api.cli_bridge.models import (
     SessionInputRequest as BridgeSessionInputRequest,
 )
 from breadboard.product.operations import session as session_operations
@@ -38,6 +45,7 @@ from .models import (
 )
 
 router = APIRouter(tags=["public-session"])
+runtime_setup_router = APIRouter(tags=["runtime-setup"])
 
 _OBSERVATION_PAYLOAD_SCHEMAS = {
     "assistant_message": "bb.payload.message.assistant.v1",
@@ -470,6 +478,67 @@ async def cancel(
             public_operation_context(workspace),
             _LiveSessionMutationAdapter(_service(context)),
         ),
+    )
+
+
+@runtime_setup_router.post(
+    "/v1/sessions/{session_id}/pause",
+    response_model=SessionCommandResponse,
+    status_code=202,
+    include_in_schema=False,
+)
+async def pause_runtime_session(session_id: str, request: Request):
+    granted = authorize_public_operation("session.resume", keyed=True)
+    if isinstance(granted, JSONResponse):
+        return granted
+    workspace = public_workspace()
+    service = _service(request)
+    await _require_live_product_session(service, session_id, workspace)
+    return await service.execute_command(
+        session_id,
+        BridgeSessionCommandRequest(
+            command="pause",
+            payload={"reason": "public runtime setup"},
+        ),
+    )
+
+
+@runtime_setup_router.post(
+    "/v1/sessions/{session_id}/attachments",
+    response_model=AttachmentUploadResponse,
+    include_in_schema=False,
+)
+async def install_runtime_attachments(
+    session_id: str,
+    request: Request,
+    metadata: str | None = Form(default=None),
+    files: list[UploadFile] = File(...),
+):
+    granted = authorize_public_operation("session.send_input", keyed=True)
+    if isinstance(granted, JSONResponse):
+        return granted
+    workspace = public_workspace()
+    service = _service(request)
+    await _require_live_product_session(service, session_id, workspace)
+    metadata_payload = None
+    if metadata:
+        try:
+            parsed_metadata = json.loads(metadata)
+        except json.JSONDecodeError as error:
+            raise HTTPException(
+                status_code=400,
+                detail="metadata must be valid JSON",
+            ) from error
+        if not isinstance(parsed_metadata, dict):
+            raise HTTPException(
+                status_code=400,
+                detail="metadata must be a JSON object",
+            )
+        metadata_payload = parsed_metadata
+    return await service.upload_attachments(
+        session_id,
+        files,
+        metadata_payload,
     )
 
 

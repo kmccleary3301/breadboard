@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 
 from breadboard_engine.api.cli_bridge.app import create_app
+import breadboard_engine.api.cli_bridge.app as app_module
+from breadboard_engine.api.public import models as public_models
 import breadboard_engine.provider_broker as provider_broker
 from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
@@ -626,6 +628,168 @@ def test_session_start_dispatches_task_to_execution_service(client: TestClient) 
     records = _stream_records(client.get("/v1/sessions/execution-fixture/events"))
     assert records[0]["kind"] == "session.started"
     assert records[-1]["kind"] == "session.canceled"
+
+
+def test_configured_prompt_permissions_reach_public_approval(
+    client: TestClient,
+) -> None:
+    assert (
+        client.post("/v1/harnesses", json={"directory": "approval"}).status_code == 200
+    )
+    harness_path = "approval/daily_driver.v1.yaml"
+    definition = client.get(f"/v1/harnesses/{harness_path}").json()["data"][
+        "definition"
+    ]
+    definition["permissions"]["edit"] = {"default": "ask"}
+    assert (
+        client.put(
+            f"/v1/harnesses/{harness_path}",
+            json={"definition": definition},
+        ).status_code
+        == 200
+    )
+    lock_id = client.post(f"/v1/harnesses/{harness_path}/lock").json()["data"]["path"]
+    started = client.post(
+        "/v1/sessions",
+        json={
+            "lock_id": lock_id,
+            "task": "Reach a configured edit approval.",
+            "session_id": "approval-fixture",
+        },
+        headers={"Idempotency-Key": "approval-start"},
+    )
+    assert started.status_code == 202
+
+    deadline = monotonic() + 3
+    while monotonic() < deadline:
+        session = client.get("/v1/sessions/approval-fixture").json()["data"]["session"]
+        if session["status"] != "running":
+            break
+        sleep(0.025)
+    assert session["status"] == "awaiting_approval"
+    assert isinstance(session["pending_approval"], str)
+    resolved = client.post(
+        "/v1/sessions/approval-fixture/approve",
+        json={"request_id": session["pending_approval"], "decision": "deny"},
+        headers={"Idempotency-Key": "approval-deny"},
+    )
+    assert resolved.status_code == 202
+    deadline = monotonic() + 3
+    while monotonic() < deadline:
+        session = client.get("/v1/sessions/approval-fixture").json()["data"]["session"]
+        if session["status"] in {"completed", "failed"}:
+            break
+        sleep(0.025)
+    assert session["status"] == "completed"
+
+
+def test_runtime_setup_pause_resume_and_artifact_install(
+    client: TestClient,
+) -> None:
+    lock_id = _locked_harness(client)
+    started = client.post(
+        "/v1/sessions",
+        json={
+            "lock_id": lock_id,
+            "task": "Exercise supported runtime setup.",
+            "session_id": "runtime-setup",
+        },
+        headers={"Idempotency-Key": "runtime-setup-start"},
+    )
+    assert started.status_code == 202
+
+    paused = client.post("/v1/sessions/runtime-setup/pause")
+    try:
+        assert paused.status_code == 202, paused.text
+        assert paused.json()["detail"] == {"status": "ok", "paused": True}
+        uploaded = client.post(
+            "/v1/sessions/runtime-setup/attachments",
+            data={"metadata": json.dumps({"source": "public-runtime-setup"})},
+            files={"files": ("fixture.txt", b"real artifact bytes\n", "text/plain")},
+        )
+        assert uploaded.status_code == 200, uploaded.text
+        attachment = uploaded.json()["attachments"][0]
+        assert attachment == {
+            "id": attachment["id"],
+            "filename": "fixture.txt",
+            "mime": "text/plain",
+            "size_bytes": len(b"real artifact bytes\n"),
+        }
+
+        session_artifacts = client.get("/v1/sessions/runtime-setup/artifacts").json()[
+            "data"
+        ]["artifacts"]
+        assert len(session_artifacts) == 1
+        artifact = session_artifacts[0]
+        assert artifact["name"] == attachment["id"]
+        assert artifact["media_type"] == "text/plain"
+        assert artifact["size_bytes"] == len(b"real artifact bytes\n")
+        artifact_id = artifact["digest"]
+
+        listed = client.get("/v1/artifacts").json()["data"]
+        assert listed["count"] >= 1
+        assert artifact_id in {candidate["digest"] for candidate in listed["artifacts"]}
+        assert client.get(f"/v1/artifacts/{artifact_id}").json()["ok"] is True
+        verified = client.post(f"/v1/artifacts/{artifact_id}/verify").json()
+        assert verified["ok"] is True
+        assert verified["data"]["verified"] is True
+
+        resumed = client.post(
+            "/v1/sessions/runtime-setup/resume",
+            headers={"Idempotency-Key": "runtime-setup-resume"},
+        )
+        assert resumed.status_code == 202
+        assert resumed.json()["data"]["session"]["status"] == "running"
+
+        assert (
+            client.post(
+                "/v1/sessions/runtime-setup/command",
+                json={"command": "pause"},
+            ).status_code
+            == 404
+        )
+        openapi_paths = client.get("/openapi.json").json()["paths"]
+        assert "/v1/sessions/{session_id}/pause" not in openapi_paths
+        assert "/v1/sessions/{session_id}/attachments" not in openapi_paths
+    finally:
+        session = client.get("/v1/sessions/runtime-setup").json()["data"]["session"]
+        if session["status"] == "paused":
+            client.post(
+                "/v1/sessions/runtime-setup/resume",
+                headers={"Idempotency-Key": "runtime-setup-final-resume"},
+            )
+            session = client.get("/v1/sessions/runtime-setup").json()["data"]["session"]
+        if session["status"] in {"running", "awaiting_approval"}:
+            client.post(
+                "/v1/sessions/runtime-setup/cancel",
+                json={},
+                headers={"Idempotency-Key": "runtime-setup-cleanup"},
+            )
+
+
+def test_runtime_setup_routes_require_execute_capability(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        app_module,
+        "_public_request_principal",
+        lambda _request, _required_token: public_models.PublicPrincipal("anonymous"),
+    )
+    denied = (
+        client.post("/v1/sessions/missing/pause"),
+        client.post(
+            "/v1/sessions/missing/attachments",
+            files={"files": ("fixture.txt", b"content", "text/plain")},
+        ),
+    )
+    assert all(response.status_code == 403 for response in denied), [
+        response.text for response in denied
+    ]
+    assert all(
+        response.json()["error"]["error_code"] == "capability_required"
+        for response in denied
+    )
 
 
 def _new_durable_session(workspace: Path, session_id: str) -> None:
