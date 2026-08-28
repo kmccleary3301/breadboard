@@ -1653,6 +1653,7 @@ class SQLiteCredentialStore:
             merged_metadata = self._decode_json(account["metadata_json"])
             if isinstance(metadata, Mapping):
                 merged_metadata.update(dict(metadata))
+            merged_metadata = dict(self._safe_metadata(merged_metadata, material))
             account_update = connection.execute(
                 """UPDATE accounts
                    SET status = 'active', secret_version = ?, updated_at_ms = ?,
