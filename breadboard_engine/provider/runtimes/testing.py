@@ -272,7 +272,12 @@ class CliMockRuntime(ProviderRuntime):
 
         def _mk_tool_call(name: str, args: Dict[str, Any]) -> ProviderToolCall:
             payload = json.dumps(args)
-            call = ProviderToolCall(id=None, name=name, arguments=payload, type="function")
+            call = ProviderToolCall(
+                id=f"cli-mock-call-{prior_calls + 1}-{name.replace('.', '-')}",
+                name=name,
+                arguments=payload,
+                type="function",
+            )
             try:
                 from types import SimpleNamespace as _SNS
                 setattr(call, "function", _SNS(name=name, arguments=payload))
