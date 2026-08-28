@@ -941,8 +941,8 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     assert record.dispatcher_task is not None
     assert not record.dispatcher_task.done()
 
-    # Compact retention stores terminal envelopes only, so later completion
-    # bookkeeping must not be advertised as a replayable head.
+    # Retention stores only sanitized terminal envelopes plus the exact durable
+    # cursor identity, never the payload behind a nonterminal replay head.
     completion_tail = SessionEvent(
         EventType.COMPLETION,
         record.session_id,
@@ -957,13 +957,14 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     )
     record.event_log.extend((completion_tail, replay_head))
     record.event_seq = 3
-    await registry.persist(record)
+    await registry.persist(record, cursor_event=replay_head)
     retained_bytes = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
     assert "completion-payload-must-not-persist" not in retained_bytes
     assert "path-must-not-persist" not in retained_bytes
     retained = json.loads(retained_bytes)
-    assert retained["session"]["event_seq"] == terminal_envelope["seq"]
-    assert retained["session"]["event_head_id"] == terminal_envelope["id"]
+    assert retained["session"]["event_seq"] == replay_head.seq
+    assert retained["session"]["replay_head_sequence"] == replay_head.seq
+    assert retained["session"]["event_head_id"] == replay_head.event_id
 
     await record.event_queue.put(None)
     await record.dispatcher_task
@@ -971,12 +972,24 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     restored = await restarted.get(record.session_id)
     assert restored is not None
     summary = restored.to_summary()
-    assert summary.head_sequence == terminal_envelope["seq"]
-    assert summary.head_event_id == terminal_envelope["id"]
+    assert summary.head_sequence == replay_head.seq
+    assert summary.head_event_id == replay_head.event_id
     assert summary.terminal_event_envelopes == [terminal_envelope]
     stream_open = SessionService._stream_open_event(restored)
-    assert stream_open.payload["headSequence"] == terminal_envelope["seq"]
-    assert stream_open.payload["headEventId"] == terminal_envelope["id"]
+    assert stream_open.payload["headSequence"] == replay_head.seq
+    assert stream_open.payload["headEventId"] == replay_head.event_id
+    assert restored.event_seq == replay_head.seq
+    assert [event.seq for event in restored.event_log] == [terminal_envelope["seq"]]
+    replay_queue: asyncio.Queue[SessionEvent | None] = asyncio.Queue()
+    restarted_service = SessionService(registry=restarted)
+    await restarted_service._register_subscriber(
+        restored,
+        replay_queue,
+        replay=True,
+        from_id=replay_head.event_id,
+    )
+    assert replay_queue.empty()
+    await restarted_service._unregister_subscriber(restored, replay_queue)
 
 @pytest.mark.asyncio
 async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner(
@@ -1001,6 +1014,9 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
     record.turns_by_id[interrupted.turn_id] = interrupted
     record.active_turn_id = interrupted.turn_id
     await registry.create(record)
+    record.event_seq = 390
+    record.replay_head_sequence = 390
+    record.replay_head_event_id = "event-before-process-death"
     await registry.persist(record)
 
     replacement_profile = tmp_path / "replacement-session.yaml"
@@ -1025,6 +1041,10 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
         assert restored.turn_admission.value == "idle"
         assert len(restored.terminal_event_envelopes) == 1
         terminal = restored.terminal_event_envelopes[0]
+        assert terminal["seq"] == 391
+        summary = restored.to_summary()
+        assert summary.head_sequence == 391
+        assert summary.head_event_id == terminal["id"]
         assert terminal["type"] == "turn_failed"
         assert terminal["input_id"] == interrupted.input_id
         assert terminal["turn_id"] == interrupted.turn_id

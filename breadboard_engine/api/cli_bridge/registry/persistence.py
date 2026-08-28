@@ -237,6 +237,7 @@ class PersistenceMixin:
         record: SessionRecord,
         *,
         terminal_event: SessionEvent | None = None,
+        cursor_event: SessionEvent | None = None,
     ) -> None:
         async with self._lock:
             if self._records.get(record.session_id) is not record:
@@ -245,30 +246,50 @@ class PersistenceMixin:
                 )
             if terminal_event is not None and self._state_root is None:
                 raise RuntimeError("durable terminal retention is unavailable")
-            retained: Dict[str, Any] | None = None
+            head_event = terminal_event or cursor_event
             resolution_turn: TurnRecord | None = None
             resolution_was_committed = False
-            if terminal_event is not None:
-                candidate = self._retained_terminal_envelope(terminal_event)
-                if candidate is not None and not any(
-                    item.get("id") == candidate.get("id")
-                    for item in record.terminal_event_envelopes
-                ):
-                    retained = candidate
-                    record.terminal_event_envelopes.append(candidate)
-                if terminal_event.turn_id is not None:
-                    resolution_turn = record.turns_by_id.get(terminal_event.turn_id)
-                    if (
-                        resolution_turn is None or resolution_turn.terminal_outcome is None
-                    ):
-                        raise RuntimeError("terminal event does not resolve an admitted turn")
-                    resolution_was_committed = (
-                        resolution_turn.terminal_resolution_committed
-                    )
-                    resolution_turn.terminal_resolution_committed = True
+            if terminal_event is not None and terminal_event.turn_id is not None:
+                resolution_turn = record.turns_by_id.get(terminal_event.turn_id)
+                if resolution_turn is None or resolution_turn.terminal_outcome is None:
+                    raise RuntimeError("terminal event does not resolve an admitted turn")
+                resolution_was_committed = resolution_turn.terminal_resolution_committed
+
+            previous_event_seq = record.event_seq
+            previous_event_seq_value = head_event.seq if head_event is not None else None
+            if head_event is not None:
+                if head_event.seq is None:
+                    record.event_seq += 1
+                    head_event.seq = record.event_seq
+                else:
+                    record.event_seq = max(record.event_seq, int(head_event.seq))
+            candidate = (
+                self._retained_terminal_envelope(terminal_event)
+                if terminal_event is not None
+                else None
+            )
+            retained: Dict[str, Any] | None = None
+            previous_replay_head_sequence = record.replay_head_sequence
+            previous_replay_head_event_id = record.replay_head_event_id
+            if head_event is not None:
+                record.replay_head_sequence = int(head_event.seq)
+                record.replay_head_event_id = head_event.event_id
+            if candidate is not None and not any(
+                item.get("id") == candidate.get("id")
+                for item in record.terminal_event_envelopes
+            ):
+                retained = candidate
+                record.terminal_event_envelopes.append(candidate)
+            if resolution_turn is not None:
+                resolution_turn.terminal_resolution_committed = True
             try:
                 self._persist_record_locked(record)
             except Exception:
+                record.event_seq = previous_event_seq
+                if head_event is not None:
+                    head_event.seq = previous_event_seq_value
+                record.replay_head_sequence = previous_replay_head_sequence
+                record.replay_head_event_id = previous_replay_head_event_id
                 if retained is not None:
                     record.terminal_event_envelopes.remove(retained)
                 if resolution_turn is not None:
@@ -310,6 +331,8 @@ class PersistenceMixin:
 
     @staticmethod
     def _durable_replay_head(record: SessionRecord) -> tuple[int, str | None]:
+        if record.replay_head_sequence > 0 and record.replay_head_event_id:
+            return record.replay_head_sequence, record.replay_head_event_id
         for envelope in reversed(record.terminal_event_envelopes):
             sequence = envelope.get("seq")
             event_id = envelope.get("id")
@@ -361,7 +384,7 @@ class PersistenceMixin:
         if not isinstance(role_lock, dict):
             role_lock = None
         active_role = metadata.get("active_model_role")
-        durable_event_seq, durable_head_event_id = self._durable_replay_head(record)
+        durable_head_sequence, durable_head_event_id = self._durable_replay_head(record)
         return {
             "schema_version": _STATE_SCHEMA_VERSION,
             "session": {
@@ -369,7 +392,8 @@ class PersistenceMixin:
                 "status": record.status.value,
                 "created_at": record.created_at.isoformat(),
                 "last_activity_at": record.last_activity_at.isoformat(),
-                "event_seq": durable_event_seq,
+                "event_seq": record.event_seq,
+                "replay_head_sequence": durable_head_sequence,
                 "event_head_id": durable_head_event_id,
                 "model": _retained_model_id(metadata.get("model")),
                 "config_path": str(metadata.get("config_path") or ""),
@@ -493,13 +517,23 @@ class PersistenceMixin:
         session = payload["session"]
         session_id = str(session["session_id"])
         persisted_event_seq = int(session.get("event_seq") or 0)
+        persisted_replay_head_sequence = int(
+            session.get("replay_head_sequence", persisted_event_seq) or 0
+        )
         persisted_head_event_id = session.get("event_head_id")
+        if (
+            persisted_replay_head_sequence < 0
+            or persisted_replay_head_sequence > persisted_event_seq
+        ):
+            raise ValueError("retained replay head sequence is invalid")
         if persisted_head_event_id is not None and (
             not isinstance(persisted_head_event_id, str) or not persisted_head_event_id
         ):
             raise ValueError("retained replay head identity is invalid")
-        if persisted_event_seq == 0 and persisted_head_event_id is not None:
+        if persisted_replay_head_sequence == 0 and persisted_head_event_id is not None:
             raise ValueError("empty retained replay has a head identity")
+        if persisted_replay_head_sequence > 0 and persisted_head_event_id is None:
+            raise ValueError("retained replay head has no identity")
         model = _retained_model_id(session.get("model"))
         metadata: Dict[str, Any] = {}
         if model is not None:
@@ -545,6 +579,7 @@ class PersistenceMixin:
             event_seq=persisted_event_seq,
             replay_history_partial=bool(persisted_event_seq),
             replay_head_event_id=persisted_head_event_id,
+            replay_head_sequence=persisted_replay_head_sequence,
             metadata=metadata,
             loaded_from_retained_state=True,
         )
@@ -604,13 +639,14 @@ class PersistenceMixin:
             record.event_log.extend(
                 sorted(rehydrated_events, key=lambda event: int(event.seq or 0))
             )
-        if record.event_seq > 0 and record.replay_head_event_id is None:
+        if record.replay_head_sequence > 0 and record.replay_head_event_id is None:
             if record.event_log:
                 legacy_head = record.event_log[-1]
-                record.event_seq = int(legacy_head.seq or 0)
+                record.replay_head_sequence = int(legacy_head.seq or 0)
                 record.replay_head_event_id = legacy_head.event_id
             else:
                 record.event_seq = 0
+                record.replay_head_sequence = 0
         committed_turn_ids = {
             str(item.get("turn_id"))
             for item in record.terminal_event_envelopes

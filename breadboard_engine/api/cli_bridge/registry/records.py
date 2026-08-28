@@ -214,6 +214,7 @@ class SessionRecord:
     event_seq: int = 0
     replay_history_partial: bool = False
     replay_head_event_id: Optional[str] = None
+    replay_head_sequence: int = 0
     terminal_event_envelopes: list[Dict[str, Any]] = field(default_factory=list, repr=False)
     subscribers: Dict["asyncio.Queue[Optional[SessionEvent]]", SubscriberState] = field(
         default_factory=dict,
@@ -261,7 +262,11 @@ class SessionRecord:
             mode = self.metadata.get("mode")
         replay = replay_retention_facts(
             self.event_log,
-            head_sequence=self.event_seq,
+            head_sequence=(
+                self.replay_head_sequence or self.event_seq
+                if self.replay_history_partial
+                else self.event_seq
+            ),
             retained_history_partial=self.replay_history_partial,
             persisted_head_event_id=self.replay_head_event_id,
         )
