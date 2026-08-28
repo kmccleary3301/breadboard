@@ -219,6 +219,7 @@ def _apply_linux_landlock(
     workspace: Path,
     read_roots: Sequence[Path],
     trusted_launchers: Sequence[Path] = (),
+    writable_roots: Sequence[Path] = (),
 ) -> None:
     libc = ctypes.CDLL(None, use_errno=True)
     try:
@@ -272,6 +273,13 @@ def _apply_linux_landlock(
             if device is not None:
                 _landlock_add_path_rule(libc, ruleset_fd, device, device_access)
         _landlock_add_path_rule(libc, ruleset_fd, workspace, workspace_access)
+        for writable_root in writable_roots:
+            _landlock_add_path_rule(
+                libc,
+                ruleset_fd,
+                writable_root,
+                workspace_access,
+            )
         for launcher in trusted_launchers:
             _landlock_add_path_rule(libc, ruleset_fd, launcher, _ACCESS_FS_EXECUTE)
         _syscall(
@@ -290,11 +298,20 @@ def _apply_linux_landlock(
 
 def _parse_linux_launch(
     argv: Sequence[str],
-) -> tuple[Path, Path, tuple[Path, ...], tuple[Path, ...], tuple[str, ...], bool]:
+) -> tuple[
+    Path,
+    Path,
+    tuple[Path, ...],
+    tuple[Path, ...],
+    tuple[Path, ...],
+    tuple[str, ...],
+    bool,
+]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--working-directory")
     parser.add_argument("--read-root", action="append", default=[])
+    parser.add_argument("--write-root", action="append", default=[])
     parser.add_argument("--trusted-launcher", action="append", default=[])
     parser.add_argument("--allow-network", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
@@ -321,6 +338,18 @@ def _parse_linux_launch(
                 "Linux read root exposes a virtual system mount"
             )
         read_roots.append(root)
+    writable_roots: list[Path] = []
+    for raw in namespace.write_root:
+        root = _resolved_existing(raw)
+        if root is None or not root.is_dir():
+            raise ProcessIsolationUnavailable("Linux write root is unavailable")
+        if _paths_overlap(root, workspace):
+            raise ProcessIsolationUnavailable("Linux write root overlaps workspace")
+        if under_virtual_read_mount(root):
+            raise ProcessIsolationUnavailable(
+                "Linux write root exposes a virtual system mount"
+            )
+        writable_roots.append(root)
     trusted_launchers: list[Path] = []
     for raw in namespace.trusted_launcher:
         launcher = _resolved_existing(raw)
@@ -335,6 +364,7 @@ def _parse_linux_launch(
         workspace,
         working_directory,
         tuple(dict.fromkeys(read_roots)),
+        tuple(dict.fromkeys(writable_roots)),
         tuple(dict.fromkeys(trusted_launchers)),
         command,
         bool(namespace.allow_network),
@@ -343,9 +373,15 @@ def _parse_linux_launch(
 
 def _parse_args(argv: Sequence[str]) -> tuple[Path, tuple[str, ...]]:
     """Compatibility parser used by focused policy tests."""
-    workspace, _working_directory, _read_roots, _launchers, command, _network = (
-        _parse_linux_launch(argv)
-    )
+    (
+        workspace,
+        _working_directory,
+        _read_roots,
+        _write_roots,
+        _launchers,
+        command,
+        _network,
+    ) = _parse_linux_launch(argv)
     return workspace, command
 
 
@@ -355,6 +391,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             workspace,
             working_directory,
             read_roots,
+            writable_roots,
             trusted_launchers,
             command,
             allow_network,
@@ -362,7 +399,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         libc = ctypes.CDLL(None, use_errno=True)
         _set_no_new_privileges(libc)
         _install_linux_seccomp(libc, allow_network=allow_network)
-        _apply_linux_landlock(workspace, read_roots, trusted_launchers)
+        _apply_linux_landlock(
+            workspace,
+            read_roots,
+            trusted_launchers,
+            writable_roots,
+        )
         os.chdir(working_directory)
         os.execvpe(command[0], command, os.environ)
     except ProcessIsolationUnavailable as exc:

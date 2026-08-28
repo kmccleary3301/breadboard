@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import select
@@ -11,7 +12,8 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, Dict, List, Optional, Sequence, Tuple
+from pathlib import Path
+from typing import Any, Deque, Dict, List, Mapping, Optional, Sequence, Tuple
 from breadboard_engine.security import (
     ProcessIsolationUnavailable,
     build_child_environment,
@@ -40,12 +42,12 @@ _POOL_MAX_IDLE_PER_KEY = 1
 @dataclass
 class _PooledCodexClientEntry:
     client: "_CodexJsonRpcClient"
-    key: Tuple[str, str, str]
+    key: Tuple[str, str, str, str]
     env: Dict[str, str]
 
 
 _POOL_LOCK = threading.Lock()
-_CLIENT_POOL: Dict[Tuple[str, str, str], List[_PooledCodexClientEntry]] = {}
+_CLIENT_POOL: Dict[Tuple[str, str, str, str], List[_PooledCodexClientEntry]] = {}
 
 
 def _codex_pool_enabled() -> bool:
@@ -61,13 +63,83 @@ def _resolve_codex_bin_path() -> str:
     explicit = (os.getenv(_CODEX_BIN_ENV) or "").strip()
     if explicit:
         return explicit
-    found = shutil.which("codex")
+    direct_path = os.pathsep.join(
+        entry
+        for entry in os.get_exec_path()
+        if "cmux-cli-shims" not in Path(entry).parts
+    )
+    found = shutil.which("codex", path=direct_path)
     if found:
         return found
     raise ProviderRuntimeError(
         "Codex binary not found in PATH",
         details={"env_var": _CODEX_BIN_ENV},
     )
+
+
+def _codex_launch_contract(
+    client: Mapping[str, Any] | None,
+    *,
+    source_environment: Mapping[str, str] | None = None,
+) -> tuple[Dict[str, str], Dict[str, str], Tuple[str, ...], str]:
+    source = os.environ if source_environment is None else source_environment
+    environment = build_child_environment(source=source)
+    configured = dict(client or {})
+    headers = configured.get("default_headers")
+    if isinstance(headers, Mapping) and headers:
+        raise ProviderRuntimeError(
+            "Codex app-server does not support custom provider headers",
+            kind="configuration",
+            details={"code": "unsupported_codex_provider_headers"},
+        )
+    base_url = str(configured.get("base_url") or "").strip()
+    if base_url:
+        environment["OPENAI_BASE_URL"] = base_url
+
+    api_key = str(configured.get("api_key") or "codex").strip()
+    trusted_credentials: Dict[str, str] = {}
+    provider_read_roots: Tuple[str, ...] = ()
+    if api_key and api_key != "codex":
+        trusted_credentials["OPENAI_API_KEY"] = api_key
+    else:
+        raw_home = str(source.get("CODEX_HOME") or "").strip()
+        if raw_home:
+            codex_home = Path(raw_home).expanduser()
+        else:
+            raw_user_home = str(source.get("HOME") or "").strip()
+            user_home = (
+                Path(raw_user_home).expanduser() if raw_user_home else Path.home()
+            )
+            codex_home = user_home / ".codex"
+        try:
+            codex_home = codex_home.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise ProviderRuntimeError(
+                "Provider-managed Codex credential home is unavailable",
+                kind="configuration",
+                details={"code": "codex_credential_home_unavailable"},
+            ) from exc
+        if not codex_home.is_dir():
+            raise ProviderRuntimeError(
+                "Provider-managed Codex credential home is unavailable",
+                kind="configuration",
+                details={"code": "codex_credential_home_unavailable"},
+            )
+        environment["CODEX_HOME"] = str(codex_home)
+        provider_read_roots = (str(codex_home),)
+
+    identity_payload = json.dumps(
+        {
+            "environment": sorted(environment.items()),
+            "provider_read_roots": provider_read_roots,
+            "trusted_credentials": sorted(trusted_credentials.items()),
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    auth_identity = hashlib.sha256(identity_payload).hexdigest()
+    return environment, trusted_credentials, provider_read_roots, auth_identity
 
 
 class _CodexJsonRpcClient:
@@ -79,17 +151,26 @@ class _CodexJsonRpcClient:
         codex_bin: str,
         cwd: str,
         env: Dict[str, str],
+        trusted_credentials: Mapping[str, str] | None = None,
+        provider_read_roots: Sequence[str] = (),
         protected_paths: Optional[Sequence[str]] = None,
     ) -> None:
         self.codex_bin = codex_bin
         self.cwd = cwd
         self.env = env
+        self.trusted_credentials = dict(trusted_credentials or {})
+        self.provider_read_roots = tuple(str(path) for path in provider_read_roots)
         self.protected_paths = tuple(
-            str(path)
-            for path in (
-                protected_paths
-                if protected_paths is not None
-                else protected_credential_paths()
+            dict.fromkeys(
+                str(path)
+                for path in (
+                    *(
+                        protected_paths
+                        if protected_paths is not None
+                        else protected_credential_paths()
+                    ),
+                    *self.provider_read_roots,
+                )
             )
         )
         self._proc: Optional[subprocess.Popen[str]] = None
@@ -102,13 +183,23 @@ class _CodexJsonRpcClient:
             return
         try:
             isolated_command, isolated_environment = build_restricted_process_command(
-                [self.codex_bin, "app-server", "--listen", "stdio://"],
+                [
+                    self.codex_bin,
+                    "-c",
+                    "shell_environment_policy.inherit=none",
+                    "app-server",
+                    "--listen",
+                    "stdio://",
+                ],
                 workspace=self.cwd,
                 working_directory=self.cwd,
                 shell=False,
                 environment=self.env,
                 protected_paths=self.protected_paths,
                 allow_network=True,
+                trusted_credential_values=self.trusted_credentials,
+                provider_credential_read_roots=self.provider_read_roots,
+                provider_credential_write_roots=self.provider_read_roots,
             )
             self._proc = subprocess.Popen(
                 isolated_command,
@@ -319,12 +410,25 @@ def _reset_codex_client_pool_for_tests() -> None:
 
 
 def _acquire_pooled_client(
-    *, codex_bin: str, cwd: str, model: str, env: Dict[str, str]
+    *,
+    codex_bin: str,
+    cwd: str,
+    model: str,
+    env: Dict[str, str],
+    trusted_credentials: Mapping[str, str],
+    provider_read_roots: Sequence[str],
+    auth_identity: str,
 ) -> tuple[_CodexJsonRpcClient, bool]:
     if not _codex_pool_enabled():
-        client = _CodexJsonRpcClient(codex_bin=codex_bin, cwd=cwd, env=env)
+        client = _CodexJsonRpcClient(
+            codex_bin=codex_bin,
+            cwd=cwd,
+            env=env,
+            trusted_credentials=trusted_credentials,
+            provider_read_roots=provider_read_roots,
+        )
         return client, False
-    key = (codex_bin, cwd, model)
+    key = (codex_bin, cwd, model, auth_identity)
     with _POOL_LOCK:
         bucket = _CLIENT_POOL.get(key)
         if bucket:
@@ -332,7 +436,13 @@ def _acquire_pooled_client(
             if not bucket:
                 _CLIENT_POOL.pop(key, None)
             return entry.client, True
-    client = _CodexJsonRpcClient(codex_bin=codex_bin, cwd=cwd, env=env)
+    client = _CodexJsonRpcClient(
+        codex_bin=codex_bin,
+        cwd=cwd,
+        env=env,
+        trusted_credentials=trusted_credentials,
+        provider_read_roots=provider_read_roots,
+    )
     return client, False
 
 
@@ -341,6 +451,7 @@ def _release_pooled_client(
     codex_bin: str,
     cwd: str,
     model: str,
+    auth_identity: str,
     env: Dict[str, str],
     client: _CodexJsonRpcClient,
     healthy: bool,
@@ -351,7 +462,7 @@ def _release_pooled_client(
         except Exception:
             pass
         return
-    key = (codex_bin, cwd, model)
+    key = (codex_bin, cwd, model, auth_identity)
     entry = _PooledCodexClientEntry(client=client, key=key, env=dict(env))
     extras: List[_PooledCodexClientEntry] = []
     with _POOL_LOCK:
@@ -381,7 +492,15 @@ def prewarm_codex_app_server(
             "reason": f"{_CODEX_POOL_ENV} is not enabled",
             "model": normalized_model,
         }
-    warm_env = build_child_environment(source=env)
+    (
+        warm_env,
+        trusted_credentials,
+        provider_read_roots,
+        auth_identity,
+    ) = _codex_launch_contract(
+        {"api_key": "codex"},
+        source_environment=env,
+    )
     codex_bin = _resolve_codex_bin_path()
     started_at = time.monotonic()
     client, cache_hit = _acquire_pooled_client(
@@ -389,6 +508,9 @@ def prewarm_codex_app_server(
         cwd=normalized_cwd,
         model=normalized_model,
         env=warm_env,
+        trusted_credentials=trusted_credentials,
+        provider_read_roots=provider_read_roots,
+        auth_identity=auth_identity,
     )
     acquired_at = time.monotonic()
     healthy = False
@@ -421,6 +543,7 @@ def prewarm_codex_app_server(
             cwd=normalized_cwd,
             model=normalized_model,
             env=warm_env,
+            auth_identity=auth_identity,
             client=client,
             healthy=healthy,
         )
@@ -435,7 +558,7 @@ class CodexAppServerRuntime(ProviderRuntime):
         self._thread_id: Optional[str] = None
         self._session_model: Optional[str] = None
         self._session_cwd: Optional[str] = None
-        self._leased_client_key: Optional[Tuple[str, str, str]] = None
+        self._leased_client_key: Optional[Tuple[str, str, str, str]] = None
         self._leased_client_env: Optional[Dict[str, str]] = None
         self._message_phase_by_item_id: Dict[str, str] = {}
         self._final_message_chunks: Dict[str, List[str]] = {}
@@ -472,14 +595,20 @@ class CodexAppServerRuntime(ProviderRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
     ) -> ProviderResult:
-        del client, tools
+        del tools
+        if not isinstance(client, Mapping):
+            raise ProviderRuntimeError(
+                "Codex app-server client configuration is invalid",
+                kind="configuration",
+                details={"code": "invalid_codex_client_configuration"},
+            )
         context.raise_if_cancelled()
         session_state = context.session_state
         cwd = self._resolve_cwd(context)
         invoke_started_at = time.monotonic()
         healthy_client = False
         try:
-            app_client = self._ensure_client(model=model, cwd=cwd)
+            app_client = self._ensure_client(model=model, cwd=cwd, client=client)
             invoke_after_client_at = time.monotonic()
             user_input = self._extract_latest_user_input(messages, context=context)
             if not user_input:
@@ -700,14 +829,27 @@ class CodexAppServerRuntime(ProviderRuntime):
         finally:
             self._release_leased_client(healthy=healthy_client)
 
-    def _ensure_client(self, *, model: str, cwd: str) -> _CodexJsonRpcClient:
+    def _ensure_client(
+        self,
+        *,
+        model: str,
+        cwd: str,
+        client: Mapping[str, Any],
+    ) -> _CodexJsonRpcClient:
         codex_bin = self._resolve_codex_bin()
-        env = build_child_environment()
+        (
+            env,
+            trusted_credentials,
+            provider_read_roots,
+            auth_identity,
+        ) = _codex_launch_contract(client)
         if (
             self._client is not None
             and self._thread_id
             and self._session_model == model
             and self._session_cwd == cwd
+            and self._leased_client_key is not None
+            and self._leased_client_key[3] == auth_identity
         ):
             self._last_client_setup_timing = {
                 "client_cache_hit": True,
@@ -719,19 +861,25 @@ class CodexAppServerRuntime(ProviderRuntime):
 
         self._release_leased_client(healthy=True)
         spawn_started_at = time.monotonic()
-        client, cache_hit = _acquire_pooled_client(
-            codex_bin=codex_bin, cwd=cwd, model=model, env=env
+        client_instance, cache_hit = _acquire_pooled_client(
+            codex_bin=codex_bin,
+            cwd=cwd,
+            model=model,
+            env=env,
+            trusted_credentials=trusted_credentials,
+            provider_read_roots=provider_read_roots,
+            auth_identity=auth_identity,
         )
         after_acquire_at = time.monotonic()
         after_initialize_at = after_acquire_at
         if not cache_hit:
-            client.start()
+            client_instance.start()
             after_start_at = time.monotonic()
-            client.initialize()
+            client_instance.initialize()
             after_initialize_at = time.monotonic()
         else:
             after_start_at = spawn_started_at
-        thread_result = client.thread_start(
+        thread_result = client_instance.thread_start(
             {
                 "model": model,
                 "cwd": cwd,
@@ -748,17 +896,17 @@ class CodexAppServerRuntime(ProviderRuntime):
         )
         thread_id = thread.get("id") if isinstance(thread, dict) else None
         if not isinstance(thread_id, str) or not thread_id:
-            client.close()
+            client_instance.close()
             raise ProviderRuntimeError(
                 "Codex app-server thread/start did not return a valid thread id",
                 kind="protocol",
                 details={"code": "invalid_codex_thread_start"},
             )
-        self._client = client
+        self._client = client_instance
         self._thread_id = thread_id
         self._session_model = model
         self._session_cwd = cwd
-        self._leased_client_key = (codex_bin, cwd, model)
+        self._leased_client_key = (codex_bin, cwd, model, auth_identity)
         self._leased_client_env = dict(env)
         self._last_client_setup_timing = {
             "client_cache_hit": cache_hit,
@@ -772,7 +920,7 @@ class CodexAppServerRuntime(ProviderRuntime):
                 after_thread_start_at - after_initialize_at, 6
             ),
         }
-        return client
+        return client_instance
 
     def _release_leased_client(self, *, healthy: bool) -> None:
         client = self._client
@@ -790,6 +938,7 @@ class CodexAppServerRuntime(ProviderRuntime):
             codex_bin=key[0],
             cwd=key[1],
             model=key[2],
+            auth_identity=key[3],
             env=env,
             client=client,
             healthy=healthy,

@@ -31,10 +31,22 @@ def _git(*arguments: str) -> str:
 
 
 def _source_identity() -> tuple[str, str, str]:
-    commit = os.environ.get("BREADBOARD_BUILD_SOURCE_COMMIT")
-    tree = os.environ.get("BREADBOARD_BUILD_SOURCE_TREE")
-    repository = os.environ.get("BREADBOARD_BUILD_SOURCE_REPOSITORY")
-    if commit is None or tree is None or repository is None:
+    overrides = (
+        os.environ.get("BREADBOARD_BUILD_SOURCE_REPOSITORY"),
+        os.environ.get("BREADBOARD_BUILD_SOURCE_COMMIT"),
+        os.environ.get("BREADBOARD_BUILD_SOURCE_TREE"),
+    )
+    if any(value is not None for value in overrides) and not all(
+        value is not None for value in overrides
+    ):
+        raise RuntimeError("wheel provenance source overrides must be complete")
+
+    try:
+        in_checkout = _git("rev-parse", "--is-inside-work-tree") == "true"
+    except (OSError, subprocess.CalledProcessError):
+        in_checkout = False
+
+    if in_checkout:
         status = _git(
             "status",
             "--porcelain",
@@ -48,9 +60,26 @@ def _source_identity() -> tuple[str, str, str]:
         )
         if status:
             raise RuntimeError("wheel provenance requires clean engine build inputs")
-        commit = _git("rev-parse", "HEAD")
-        tree = _git("rev-parse", "HEAD^{tree}")
-        repository = _git("remote", "get-url", "origin")
+        actual = (
+            _git("remote", "get-url", "origin"),
+            _git("rev-parse", "HEAD"),
+            _git("rev-parse", "HEAD^{tree}"),
+        )
+        if all(value is not None for value in overrides) and overrides != actual:
+            raise RuntimeError(
+                "wheel provenance source overrides do not match the Git checkout"
+            )
+        repository, commit, tree = actual
+    elif all(value is not None for value in overrides):
+        repository, commit, tree = overrides
+    else:
+        raise RuntimeError(
+            "wheel provenance requires a Git checkout or complete source overrides"
+        )
+
+    assert repository is not None
+    assert commit is not None
+    assert tree is not None
     if _HEX40.fullmatch(commit) is None or _HEX40.fullmatch(tree) is None:
         raise RuntimeError(
             "wheel provenance requires exact lowercase commit and tree IDs"

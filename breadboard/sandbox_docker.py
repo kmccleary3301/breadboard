@@ -4,8 +4,9 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import ray
 from breadboard_engine.security import (
@@ -297,15 +298,49 @@ class DockerSandboxV2:
             matches = []
         return {"matches": matches}
 
-    def _docker_prefix(self, *, env_names: Iterable[str] = ()) -> List[str]:
-        if shutil.which(self.docker_bin) is None and self.docker_bin != "docker":
-            raise RuntimeError(f"docker binary not found: {self.docker_bin}")
-        if shutil.which("docker") is None and self.docker_bin == "docker":
-            raise RuntimeError("docker not available on this host")
+    def _resolve_docker_executable(self) -> str:
+        configured = str(self.docker_bin or "docker").strip()
+        resolved = shutil.which(configured)
+        if resolved is None:
+            raise RuntimeError(f"docker binary not found: {configured}")
+        return str(Path(resolved).resolve(strict=False))
 
+    @staticmethod
+    def _write_target_env_file(environment: Mapping[str, str]) -> str:
+        lines: list[str] = []
+        for raw_key, raw_value in environment.items():
+            key = str(raw_key)
+            value = str(raw_value)
+            if (
+                not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+                or any(char in key for char in "=\x00\n\r")
+                or "\x00" in value
+                or "\n" in value
+                or "\r" in value
+            ):
+                raise ValueError("Docker environment file entry is invalid")
+            lines.append(f"{key}={value}\n")
+        descriptor, path = tempfile.mkstemp(prefix=".breadboard-docker-env-")
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.writelines(lines)
+        except BaseException:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
+        return path
+
+    def _docker_prefix(self, *, env_file: str | None = None) -> List[str]:
         workspace = str(Path(self.workspace).resolve())
         args: List[str] = [
-            self.docker_bin,
+            self._resolve_docker_executable(),
             "run",
             "--rm",
             "--volume",
@@ -317,8 +352,8 @@ class DockerSandboxV2:
             args.extend(["--network", self.network])
         if self.runtime:
             args.extend(["--runtime", self.runtime])
-        for key in env_names:
-            args.extend(["--env", str(key)])
+        if env_file:
+            args.extend(["--env-file", env_file])
         args.append(self.image)
         return args
 
@@ -373,10 +408,12 @@ class DockerSandboxV2:
                 payload,
             ]
         try:
-            host_env = build_child_environment(
+            target_environment = build_child_environment(
+                source={},
                 overrides=env,
                 allowed_override_keys=env or (),
             )
+            host_env = build_child_environment()
         except ValueError:
             payload = {
                 "exit": 126,
@@ -393,7 +430,6 @@ class DockerSandboxV2:
                 payload["stderr"],
                 payload,
             ]
-        env_names = tuple(str(key) for key in (env or {}) if str(key) in host_env)
         try:
             validate_workspace_credential_boundary(
                 self.workspace,
@@ -415,42 +451,49 @@ class DockerSandboxV2:
                 payload["stderr"],
                 payload,
             ]
-        docker_cmd = [
-            *self._docker_prefix(env_names=env_names),
-            "sh",
-            "-lc",
-            cmd,
-        ]
-        with redaction.secret_value_scope(*secret_values):
+        env_file = self._write_target_env_file(target_environment)
+        try:
+            docker_cmd = [
+                *self._docker_prefix(env_file=env_file),
+                "sh",
+                "-lc",
+                cmd,
+            ]
+            with redaction.secret_value_scope(*secret_values):
+                try:
+                    result = subprocess.run(
+                        docker_cmd,
+                        timeout=timeout,
+                        input=stdin_data,
+                        env=host_env,
+                        capture_output=True,
+                        text=True,
+                    )
+                    payload = {
+                        "exit": result.returncode,
+                        "stdout": redaction.scrub_text(result.stdout or ""),
+                        "stderr": redaction.scrub_text(result.stderr or ""),
+                    }
+                except subprocess.TimeoutExpired:
+                    payload = {
+                        "exit": 124,
+                        "stdout": "",
+                        "stderr": "Command timed out",
+                    }
+                except Exception as exc:  # noqa: BLE001
+                    payload = {
+                        "exit": 1,
+                        "stdout": "",
+                        "stderr": redaction.safe_exception_message(
+                            exc,
+                            operation="Docker sandbox command",
+                        ),
+                    }
+        finally:
             try:
-                result = subprocess.run(
-                    docker_cmd,
-                    timeout=timeout,
-                    input=stdin_data,
-                    env=host_env,
-                    capture_output=True,
-                    text=True,
-                )
-                payload = {
-                    "exit": result.returncode,
-                    "stdout": redaction.scrub_text(result.stdout or ""),
-                    "stderr": redaction.scrub_text(result.stderr or ""),
-                }
-            except subprocess.TimeoutExpired:
-                payload = {
-                    "exit": 124,
-                    "stdout": "",
-                    "stderr": "Command timed out",
-                }
-            except Exception as exc:  # noqa: BLE001
-                payload = {
-                    "exit": 1,
-                    "stdout": "",
-                    "stderr": redaction.safe_exception_message(
-                        exc,
-                        operation="Docker sandbox command",
-                    ),
-                }
+                os.unlink(env_file)
+            except FileNotFoundError:
+                pass
 
         if not stream:
             return payload

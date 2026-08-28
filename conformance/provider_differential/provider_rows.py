@@ -21,6 +21,7 @@ from breadboard_engine.provider.contracts import (
     normalize_request_messages,
     normalize_usage,
 )
+from breadboard_engine.provider.runtime_codex import _codex_launch_contract
 from breadboard_engine.provider.normalizer import (
     normalized_result_messages,
     normalized_result_replay,
@@ -687,6 +688,24 @@ def _codex_client(
     return Client()
 
 
+def _bind_codex_fixture_client(runtime: Any, model: str, client: Any) -> dict[str, str]:
+    fixture_client = {"api_key": "fixture-key"}
+    _environment, _credentials, _roots, auth_identity = _codex_launch_contract(
+        fixture_client
+    )
+    runtime._client = client
+    runtime._thread_id = "thread-fixture"
+    runtime._session_model = model
+    runtime._session_cwd = "/bb-fixture/workspace"
+    runtime._leased_client_key = (
+        "fixture-codex",
+        runtime._session_cwd,
+        model,
+        auth_identity,
+    )
+    return fixture_client
+
+
 def _run_stream(
     provider: str, *, tools: bool = False, usage: bool = False
 ) -> tuple[ProviderResult, ProviderExchangeRecorder]:
@@ -695,12 +714,13 @@ def _run_stream(
     context = _context(recorder)
     if provider == "codex":
         runtime = provider_registry.create_runtime(descriptor)
-        runtime._client = _codex_client(tools=tools, usage=usage)
-        runtime._thread_id = "thread-fixture"
-        runtime._session_model = model
-        runtime._session_cwd = "/bb-fixture/workspace"
+        fixture_client = _bind_codex_fixture_client(
+            runtime,
+            model,
+            _codex_client(tools=tools, usage=usage),
+        )
         result = runtime.invoke(
-            client={},
+            client=fixture_client,
             model=model,
             messages=_REQUEST_MESSAGES,
             tools=_TOOL_SCHEMA,
@@ -796,11 +816,11 @@ def _runtime_failure_probe(provider: str, case: Mapping[str, Any]) -> dict[str, 
                     },
                 }
 
-        runtime._client = CodexFailureClient()
-        runtime._thread_id = "thread-fixture"
-        runtime._session_model = model
-        runtime._session_cwd = "/bb-fixture/workspace"
-        client: Any = {}
+        client = _bind_codex_fixture_client(
+            runtime,
+            model,
+            CodexFailureClient(),
+        )
     elif provider == "anthropic":
         if malformed:
             malformed_stream = _AnthropicStream(
@@ -1497,15 +1517,15 @@ def _cancel_client(
 ) -> Any:
     text = str(_SCENARIO["fake"]["cancel"]["after_partial"]["delta"])
     if provider == "codex":
-        runtime._client = _codex_client(
-            text=text,
-            cancel_signal=signal,
-            cancel_before_notification=3 if after_partial else 1,
+        return _bind_codex_fixture_client(
+            runtime,
+            model,
+            _codex_client(
+                text=text,
+                cancel_signal=signal,
+                cancel_before_notification=3 if after_partial else 1,
+            ),
         )
-        runtime._thread_id = "thread-fixture"
-        runtime._session_model = model
-        runtime._session_cwd = "/bb-fixture/workspace"
-        return {}
     if provider == "anthropic":
         return _AnthropicClient(
             _anthropic_cancel_stream(signal, after_partial=after_partial)

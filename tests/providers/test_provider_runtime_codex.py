@@ -366,7 +366,14 @@ def test_codex_app_server_uses_restricted_process_builder(
 
     assert builder_calls == [
         (
-            ["/trusted/bin/codex", "app-server", "--listen", "stdio://"],
+            [
+                "/trusted/bin/codex",
+                "-c",
+                "shell_environment_policy.inherit=none",
+                "app-server",
+                "--listen",
+                "stdio://",
+            ],
             {
                 "workspace": str(tmp_path),
                 "working_directory": str(tmp_path),
@@ -374,6 +381,9 @@ def test_codex_app_server_uses_restricted_process_builder(
                 "environment": {"PATH": "/trusted/bin"},
                 "protected_paths": (str(protected),),
                 "allow_network": True,
+                "trusted_credential_values": {},
+                "provider_credential_read_roots": (),
+                "provider_credential_write_roots": (),
             },
         )
     ]
@@ -389,6 +399,52 @@ def test_codex_app_server_uses_restricted_process_builder(
     }
     assert popen_calls[0][1]["cwd"] == str(tmp_path)
     assert popen_calls[0][1]["shell"] is False
+
+
+def test_codex_launch_contract_binds_provider_managed_home(tmp_path) -> None:
+    home = tmp_path / "home"
+    codex_home = home / ".codex"
+    codex_home.mkdir(parents=True)
+
+    environment, credentials, read_roots, auth_identity = (
+        runtime_codex_module._codex_launch_contract(
+            {"api_key": "codex"},
+            source_environment={"PATH": "/usr/bin", "HOME": str(home)},
+        )
+    )
+
+    assert environment["CODEX_HOME"] == str(codex_home)
+    assert credentials == {}
+    assert read_roots == (str(codex_home),)
+    assert len(auth_identity) == 64
+
+
+def test_codex_launch_contract_uses_scoped_client_auth_and_rejects_headers() -> None:
+    first = runtime_codex_module._codex_launch_contract(
+        {"api_key": "first-key", "base_url": "http://127.0.0.1:8080/v1"},
+        source_environment={"PATH": "/usr/bin"},
+    )
+    second = runtime_codex_module._codex_launch_contract(
+        {"api_key": "second-key", "base_url": "http://127.0.0.1:8080/v1"},
+        source_environment={"PATH": "/usr/bin"},
+    )
+
+    assert first[0]["OPENAI_BASE_URL"] == "http://127.0.0.1:8080/v1"
+    assert "OPENAI_API_KEY" not in first[0]
+    assert first[1] == {"OPENAI_API_KEY": "first-key"}
+    assert first[2] == ()
+    assert first[3] != second[3]
+    with pytest.raises(
+        runtime_codex_module.ProviderRuntimeError,
+        match="does not support custom provider headers",
+    ):
+        runtime_codex_module._codex_launch_contract(
+            {
+                "api_key": "test-key",
+                "default_headers": {"X-Custom": "value"},
+            },
+            source_environment={"PATH": "/usr/bin"},
+        )
 
 
 def test_codex_app_server_isolation_failure_is_secret_free_and_never_retries(
@@ -443,7 +499,7 @@ def test_codex_runtime_starts_threads_read_only_without_approvals(
     thread_starts: list[dict] = []
 
     class _ReadOnlyFakeClient:
-        def __init__(self, *, codex_bin: str, cwd: str, env: dict) -> None:
+        def __init__(self, *, codex_bin: str, cwd: str, env: dict, **_kwargs) -> None:
             del codex_bin, cwd, env
 
         def start(self) -> None:
@@ -465,7 +521,11 @@ def test_codex_runtime_starts_threads_read_only_without_approvals(
     descriptor, model = provider_router.get_runtime_descriptor("codex/gpt-5.5")
     runtime = provider_registry.create_runtime(descriptor)
 
-    runtime._ensure_client(model=model, cwd=str(tmp_path))
+    runtime._ensure_client(
+        model=model,
+        cwd=str(tmp_path),
+        client={"api_key": "test-key"},
+    )
 
     assert thread_starts == [
         {
@@ -792,7 +852,7 @@ def test_codex_runtime_reuses_warm_app_server_client_across_runtime_instances(
         def close(self) -> None:
             self.closed += 1
 
-    def _fake_client_ctor(*, codex_bin: str, cwd: str, env: dict):
+    def _fake_client_ctor(*, codex_bin: str, cwd: str, env: dict, **_kwargs):
         client = _WarmFakeClient(codex_bin=codex_bin, cwd=cwd, env=env)
         created_clients.append(client)
         return client
@@ -804,7 +864,7 @@ def test_codex_runtime_reuses_warm_app_server_client_across_runtime_instances(
 
     runtime1 = provider_registry.create_runtime(descriptor)
     result1 = runtime1.invoke(
-        client={"api_key": "codex"},
+        client={"api_key": "test-key"},
         model=model,
         messages=messages,
         tools=None,
@@ -818,7 +878,7 @@ def test_codex_runtime_reuses_warm_app_server_client_across_runtime_instances(
 
     runtime2 = provider_registry.create_runtime(descriptor)
     result2 = runtime2.invoke(
-        client={"api_key": "codex"},
+        client={"api_key": "test-key"},
         model=model,
         messages=messages,
         tools=None,
@@ -840,10 +900,16 @@ def test_codex_runtime_reuses_warm_app_server_client_across_runtime_instances(
     assert created_clients[0].closed == 1
 
 
-def test_codex_prewarm_populates_pool_for_first_runtime_invoke(monkeypatch) -> None:
+def test_codex_prewarm_populates_pool_for_first_runtime_invoke(
+    monkeypatch,
+    tmp_path,
+) -> None:
     monkeypatch.setenv("BREADBOARD_CODEX_APP_SERVER_POOL", "1")
     runtime_codex_module._reset_codex_client_pool_for_tests()
     created_clients: list["_WarmFakeClient"] = []
+    codex_home = tmp_path / ".codex"
+    codex_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
     class _WarmFakeClient:
         def __init__(self, *, codex_bin: str, cwd: str, env: dict) -> None:
@@ -900,7 +966,7 @@ def test_codex_prewarm_populates_pool_for_first_runtime_invoke(monkeypatch) -> N
         def close(self) -> None:
             self.closed += 1
 
-    def _fake_client_ctor(*, codex_bin: str, cwd: str, env: dict):
+    def _fake_client_ctor(*, codex_bin: str, cwd: str, env: dict, **_kwargs):
         client = _WarmFakeClient(codex_bin=codex_bin, cwd=cwd, env=env)
         created_clients.append(client)
         return client
@@ -996,7 +1062,7 @@ def test_codex_runtime_does_not_pool_app_server_clients_by_default(monkeypatch) 
         def close(self) -> None:
             self.closed += 1
 
-    def _fake_client_ctor(*, codex_bin: str, cwd: str, env: dict):
+    def _fake_client_ctor(*, codex_bin: str, cwd: str, env: dict, **_kwargs):
         client = _FreshFakeClient(codex_bin=codex_bin, cwd=cwd, env=env)
         created_clients.append(client)
         return client
@@ -1008,7 +1074,7 @@ def test_codex_runtime_does_not_pool_app_server_clients_by_default(monkeypatch) 
     for _ in range(2):
         runtime = provider_registry.create_runtime(descriptor)
         result = runtime.invoke(
-            client={"api_key": "codex"},
+            client={"api_key": "test-key"},
             model=model,
             messages=messages,
             tools=None,
