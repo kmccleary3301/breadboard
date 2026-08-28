@@ -452,6 +452,7 @@ class SessionLifecycleOwner:
         if outcome not in {"completed", "failed", "cancelled"}:
             raise ValueError("unsupported bulk terminal outcome")
         async with host.session.admission_lock:
+            host._closed = True
             ordered_ids: list[str] = []
             if host.session.active_turn_id:
                 ordered_ids.append(host.session.active_turn_id)
