@@ -667,10 +667,22 @@ class SessionControlController:
                             runner._prepared_runtime_config = previous_config
                             runner._apply_model_override()
                             raise
-                    await runner.registry.update_metadata(
-                        runner.session.session_id,
-                        metadata=dict(runner.session.metadata or {}),
-                    )
+                    try:
+                        await runner.registry.update_metadata(
+                            runner.session.session_id,
+                            metadata=dict(runner.session.metadata or {}),
+                        )
+                    except Exception:
+                        with runner._product_session_lock:
+                            runner._active_model_role = previous_role
+                            runner._model_override = previous_model
+                            runner.session.metadata.clear()
+                            runner.session.metadata.update(previous_metadata)
+                            runner._prepared_runtime_config = previous_config
+                            runner._apply_model_override()
+                            if durable_reconfigure is not None:
+                                durable_reconfigure(previous_config)
+                        raise
                     return {
                         "status": "ok",
                         "role": role,

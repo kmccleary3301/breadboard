@@ -370,12 +370,23 @@ def test_fixed_digest_is_exact_and_excludes_lifecycle_operations(tmp_path: Path)
         ("DELETE", "/v1/sessions/{session_id}"),
     ]
     assert p30_session_schema_sha256(contract) == (
-        "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"
+        "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
     )
     assert p30_session_schema_sha256(contract) == P30_SESSION_SCHEMA_SHA256
     assert contract["event_stream"]["envelope_schema"]["properties"]["payload"] == {
         "type": "object"
     }
+    payload_schemas = contract["event_stream"]["payload_schemas"]
+    assert set(payload_schemas["turn_completed"]["properties"]) == {
+        "exchange_ref",
+        "finish_reason",
+        "output_emitted",
+        "raw_provider_finish",
+        "usage",
+    }
+    assert "stop_requested" in payload_schemas["turn_cancelled"]["properties"][
+        "reason"
+    ]["enum"]
 
     encoded = json.dumps(contract, sort_keys=True, separators=(",", ":")).lower()
     for excluded in ("registration", "owner", "drain", "control", "capability"):

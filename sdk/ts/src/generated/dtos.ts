@@ -1,6 +1,6 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
-// openapi-schema-sha256: d776432f53d774d2179a721069a5c6867698712efbd059f0b2be5beb7e334a37
+// openapi-schema-sha256: aca2a3e5eb4783edd9f8c27d49938838e837c610bb8b7b5756f0c9461fd64af8
 // app-source-sha256: 5bf6ab6afb45db20956f24cfdd816f51f7229eb8b6a9bbdbee2ee1f63191174c
 
 export interface AuthActionResponse { "detail"?: { [key: string]: unknown; } | null; "ok": boolean; }
@@ -21,9 +21,9 @@ export interface BootstrapChallengeResponse { "challenge": string; "challenge_id
 
 export interface ClientLeaseRequest { "client_instance_id": string; "engine_instance_id": string; "registration_generation": number; "registration_id": string; }
 
-export interface ClientRegisterRequest { "client_instance_id": string; "engine_instance_id": string; "first_slice_contract_id"?: "p30-e4-session-v1"; "first_slice_schema_sha256"?: "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"; "lifecycle_mode": "local-owned" | "local-external" | "remote" | "off"; "workspace_id": string; }
+export interface ClientRegisterRequest { "client_instance_id": string; "engine_instance_id": string; "first_slice_contract_id"?: "p30-e4-session-v1"; "first_slice_schema_sha256"?: "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"; "lifecycle_mode": "local-owned" | "local-external" | "remote" | "off"; "workspace_id": string; }
 
-export interface ClientRegistrationResponse { "admission_epoch": number; "client_instance_id": string; "engine_instance_id": string; "expires_at_unix"?: number | null; "first_slice_contract_id"?: "p30-e4-session-v1"; "first_slice_schema_sha256"?: "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"; "lease_ttl_seconds"?: 30; "lifecycle_mode": "local-owned" | "local-external" | "remote"; "registered_at_unix": number; "registration_generation": number; "registration_id": string; "renewal_interval_seconds"?: 10; "result": "registered" | "renewed" | "detached" | "already_detached"; "schema_version"?: "bb.engine_client_registration.v1"; "workspace_id": string; }
+export interface ClientRegistrationResponse { "admission_epoch": number; "client_instance_id": string; "engine_instance_id": string; "expires_at_unix"?: number | null; "first_slice_contract_id"?: "p30-e4-session-v1"; "first_slice_schema_sha256"?: "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"; "lease_ttl_seconds"?: 30; "lifecycle_mode": "local-owned" | "local-external" | "remote"; "registered_at_unix": number; "registration_generation": number; "registration_id": string; "renewal_interval_seconds"?: 10; "result": "registered" | "renewed" | "detached" | "already_detached"; "schema_version"?: "bb.engine_client_registration.v1"; "workspace_id": string; }
 
 export interface CompleteAuthLoginRequest { "account_label"?: string | null; "alias"?: string | null; "authorization_code"?: string | null; "callback_url"?: string | null; "code"?: string | null; "state"?: string | null; }
 
@@ -43,7 +43,7 @@ export interface EngineProcessStart { "engine_boot_id": string; "engine_instance
 
 export interface EngineProtocolIdentity { "protocol_version"?: "1.0"; }
 
-export interface EngineSessionContractIdentity { "compatibility": "compatible" | "incompatible"; "contract_id"?: "p30-e4-session-v1"; "schema_sha256"?: "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"; "sessionReplayContractDigest": string; }
+export interface EngineSessionContractIdentity { "compatibility": "compatible" | "incompatible"; "contract_id"?: "p30-e4-session-v1"; "schema_sha256"?: "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"; "sessionReplayContractDigest": string; }
 
 export interface EngineSessionReadiness { "ready": boolean; "reason": "ready" | "session_contract_missing" | "session_contract_mismatch"; }
 
