@@ -300,7 +300,7 @@ async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_one_shot_session_rejects_follow_up_input(
+async def test_one_shot_completion_terminalizes_queued_turns(
     monkeypatch, tmp_path
 ) -> None:
     service, response, record = await _create(
@@ -311,20 +311,59 @@ async def test_one_shot_session_rejects_follow_up_input(
             "non_interactive_cli_session": True,
         },
     )
-    admitted_turn_ids = set(record.turns_by_id)
+    initial_turn = next(iter(record.turns_by_id.values()))
+    accepted = []
 
-    with pytest.raises(HTTPException) as rejected:
-        await service.send_input(
-            response.session_id,
-            SessionInputRequest(content="second task"),
+    async def initialize_lifecycle() -> None:
+        record.runner._input_queue.put_nowait(
+            {
+                "content": initial_turn.content,
+                "attachments": [],
+                "input_id": initial_turn.input_id,
+                "turn_id": initial_turn.turn_id,
+            }
+        )
+        accepted.append(
+            await service.send_input(
+                response.session_id,
+                SessionInputRequest(content="second task"),
+            )
         )
 
-    assert rejected.value.status_code == 409
-    assert rejected.value.detail["code"] == "one_shot_input_closed"
-    assert set(record.turns_by_id) == admitted_turn_ids
+    async def initialize_agent() -> None:
+        return None
+
+    monkeypatch.setattr(
+        record.runner._lifecycle_owner,
+        "_initialize",
+        initialize_lifecycle,
+    )
+    monkeypatch.setattr(record.runner, "_ensure_agent_initialized", initialize_agent)
+    monkeypatch.setattr(
+        record.runner._task_execution,
+        "execute_task",
+        lambda *_args, **_kwargs: {
+            "completion_summary": {"completed": True, "reason": "completed"},
+            "reward_metrics": {},
+            "logging_dir": None,
+        },
+    )
+
+    await record.runner._run()
+
+    queued_turn = next(
+        turn
+        for turn in record.turns_by_id.values()
+        if turn.turn_id != initial_turn.turn_id
+    )
+    assert accepted[0].disposition == "queued"
+    assert initial_turn.terminal_outcome == "completed"
+    assert queued_turn.terminal_outcome == "cancelled"
+    assert record.product_session.read_model.status == "completed"
+    assert record.status is SessionStatus.COMPLETED
+    assert record.active_turn_id is None
     assert not record.queued_turn_ids
     assert record.runner._input_queue.empty()
-    await service.stop_session(response.session_id)
     await _stop(record)
 
 
