@@ -263,11 +263,12 @@ class CliMockRuntime(ProviderRuntime):
                     name = name or call.get("name")
                 if not name:
                     continue
-                if name.startswith("todo."):
+                normalized_name = name.strip().lower()
+                if normalized_name.startswith("todo."):
                     has_todo = True
-                elif name.startswith("write") or name == "create_file_from_block":
+                elif normalized_name.startswith("write") or normalized_name == "create_file_from_block":
                     has_write = True
-                elif name.startswith("run_shell") or name == "bash.run":
+                elif normalized_name.startswith("run_shell") or normalized_name == "bash.run":
                     has_shell = True
 
         def _mk_tool_call(name: str, args: Dict[str, Any]) -> ProviderToolCall:
