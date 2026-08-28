@@ -146,6 +146,93 @@ def _command_runtime_roots(
     return tuple(roots.values())
 
 
+def _resolve_executable_path(
+    value: str | os.PathLike[str],
+    *,
+    working_directory: Path,
+    environment: Mapping[str, str],
+) -> tuple[Path, Path | None]:
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute() or candidate.parent != Path("."):
+        lexical = Path(
+            os.path.abspath(
+                candidate if candidate.is_absolute() else working_directory / candidate
+            )
+        )
+    else:
+        lexical = next(
+            (
+                Path(directory) / candidate
+                for directory in os.get_exec_path(dict(environment))
+                if _resolved_existing(Path(directory) / candidate) is not None
+            ),
+            working_directory / candidate,
+        )
+        lexical = Path(os.path.abspath(lexical))
+    return lexical, _resolved_existing(lexical)
+
+
+def _validated_trusted_launchers(
+    launchers: Sequence[str | os.PathLike[str]],
+    *,
+    working_directory: Path,
+    environment: Mapping[str, str],
+    protected_paths: Sequence[Path],
+) -> tuple[Path, ...]:
+    trusted: dict[str, Path] = {}
+    for raw in launchers:
+        lexical, resolved = _resolve_executable_path(
+            raw,
+            working_directory=working_directory,
+            environment=environment,
+        )
+        if (
+            resolved is None
+            or not resolved.is_file()
+            or not os.access(resolved, os.X_OK)
+        ):
+            raise ProcessIsolationUnavailable("trusted process launcher is unavailable")
+        if any(
+            _paths_overlap(candidate, protected)
+            for candidate in (lexical, resolved)
+            for protected in protected_paths
+        ):
+            raise ProcessIsolationUnavailable(
+                "trusted process launcher overlaps a protected credential location"
+            )
+        trusted[str(lexical)] = resolved
+    return tuple(trusted.values())
+
+
+def _reject_untrusted_workspace_launcher(
+    command: Sequence[str],
+    *,
+    workspace: Path,
+    working_directory: Path,
+    environment: Mapping[str, str],
+    trusted_launchers: Sequence[str | os.PathLike[str]],
+) -> None:
+    lexical, _resolved = _resolve_executable_path(
+        command[0],
+        working_directory=working_directory,
+        environment=environment,
+    )
+    if not _paths_overlap(lexical, workspace):
+        return
+    trusted_lexical = {
+        _resolve_executable_path(
+            launcher,
+            working_directory=working_directory,
+            environment=environment,
+        )[0]
+        for launcher in trusted_launchers
+    }
+    if lexical not in trusted_lexical:
+        raise ProcessIsolationUnavailable(
+            "workspace executable is not an explicitly trusted launcher"
+        )
+
+
 def _linux_read_roots(
     workspace: Path,
     environment: Mapping[str, str],
@@ -230,6 +317,9 @@ def _darwin_profile(
     workspace: Path,
     protected_paths: Sequence[Path],
     read_roots: Sequence[Path],
+    *,
+    trusted_launchers: Sequence[Path] = (),
+    allow_network: bool = False,
 ) -> str:
     def selector(path: Path, operation: str) -> str:
         return f'({operation} "{_profile_string(path)}")'
@@ -263,6 +353,11 @@ def _darwin_profile(
     metadata_rules = " ".join(
         selector(path, "literal") for path in sorted(metadata_roots.values(), key=str)
     )
+    executable_paths = tuple(dict.fromkeys((*read_roots, *trusted_launchers)))
+    exec_rules = " ".join(
+        selector(path, "subpath" if path.is_dir() else "literal")
+        for path in executable_paths
+    )
     write_rules = " ".join(
         (
             selector(workspace, "subpath"),
@@ -274,20 +369,20 @@ def _darwin_profile(
     for path in protected_paths:
         selectors = " ".join((selector(path, "literal"), selector(path, "subpath")))
         protected_rules.extend(
-            (
-                f"(deny file-read* {selectors})",
-                f"(deny file-write* {selectors})",
-            )
+            (f"(deny file-read* {selectors})", f"(deny file-write* {selectors})")
         )
     return "\n".join(
         (
             "(version 1)",
             "(deny default)",
-            "(allow process-exec)",
+            f"(allow process-exec {exec_rules})"
+            if exec_rules
+            else "(deny process-exec)",
             "(allow process-fork)",
             "(allow signal (target self))",
             '(allow sysctl-read (sysctl-name-regex #"^hw\\."))',
             '(allow sysctl-read (sysctl-name "kern.hostname"))',
+            *(("(allow network*)",) if allow_network else ()),
             '(allow sysctl-read (sysctl-name "kern.osrelease"))',
             '(allow sysctl-read (sysctl-name "kern.ostype"))',
             '(allow sysctl-read (sysctl-name "kern.version"))',
@@ -311,6 +406,8 @@ def build_restricted_process_command(
     environment: Mapping[str, str],
     protected_paths: Sequence[str | os.PathLike[str]] = (),
     working_directory: str | os.PathLike[str] | None = None,
+    trusted_launchers: Sequence[str | os.PathLike[str]] = (),
+    allow_network: bool = False,
 ) -> tuple[tuple[str, ...], dict[str, str]]:
     """Return isolated argv/environment, or fail before process creation."""
     protected = tuple(
@@ -338,6 +435,19 @@ def build_restricted_process_command(
         }
     )
     target = _command_argv(command, shell=shell)
+    trusted_launcher_paths = _validated_trusted_launchers(
+        trusted_launchers,
+        working_directory=cwd,
+        environment=environment,
+        protected_paths=protected,
+    )
+    _reject_untrusted_workspace_launcher(
+        target,
+        workspace=root,
+        working_directory=cwd,
+        environment=environment,
+        trusted_launchers=trusted_launchers,
+    )
     system = platform.system()
     if system == "Darwin":
         if initial_provider_credential_keys():
@@ -369,6 +479,8 @@ def build_restricted_process_command(
                     root,
                     protected,
                     read_roots,
+                    trusted_launchers=trusted_launcher_paths,
+                    allow_network=allow_network,
                 ),
                 "--",
                 *target,
@@ -415,6 +527,10 @@ def build_restricted_process_command(
         ]
         for read_root in read_roots:
             wrapper.extend(("--read-root", str(read_root)))
+        for launcher in trusted_launcher_paths:
+            wrapper.extend(("--trusted-launcher", str(launcher)))
+        if allow_network:
+            wrapper.append("--allow-network")
         wrapper.extend(("--", *target))
         return tuple(wrapper), child_environment
     raise ProcessIsolationUnavailable(

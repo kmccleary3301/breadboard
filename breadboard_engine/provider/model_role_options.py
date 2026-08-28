@@ -112,6 +112,11 @@ def openai_responses_role_options(context: ProviderRuntimeContext) -> dict[str, 
 
     binding = _active_binding(context)
     request = _generation(binding)
+    if "seed" in request:
+        _unsupported(
+            "OpenAI Responses does not accept a seed",
+            "unsupported_role_generation_seed",
+        )
     if binding is not None and binding.get("service_tier") not in (None, "default"):
         request["service_tier"] = binding["service_tier"]
     reasoning = _reasoning(binding)
@@ -160,6 +165,13 @@ def anthropic_role_options(context: ProviderRuntimeContext) -> dict[str, Any]:
         )
     reasoning = _reasoning(binding)
     mode = reasoning.get("mode", "inherit")
+    if mode in {"budget", "effort"} and any(
+        field in request for field in ("temperature", "top_p")
+    ):
+        _unsupported(
+            "Anthropic thinking does not accept sampling overrides",
+            "unsupported_role_generation_sampling_with_thinking",
+        )
     if mode == "disabled":
         request["thinking"] = {"type": "disabled"}
     elif mode == "budget":

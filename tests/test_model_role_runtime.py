@@ -83,6 +83,7 @@ def _conductor(config: dict) -> object:
     instance._active_model_role = config.get("active_model_role", "")
     return instance
 
+
 def _role_policy_context(binding: dict) -> ProviderRuntimeContext:
     return ProviderRuntimeContext(
         session_state=SimpleNamespace(set_provider_metadata=lambda *_args: None),
@@ -141,12 +142,11 @@ def test_role_policy_translates_provider_native_request_options() -> None:
         _role_policy_context(
             {
                 "reasoning": {"mode": "budget", "budget_tokens": 4096},
-                "generation": {"top_p": 0.8, "max_output_tokens": 8192},
+                "generation": {"max_output_tokens": 8192},
             }
         )
     )
     assert anthropic == {
-        "top_p": 0.8,
         "max_tokens": 8192,
         "thinking": {"type": "enabled", "budget_tokens": 4096},
     }
@@ -170,6 +170,43 @@ def test_role_policy_translates_provider_native_request_options() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("translator", "binding", "error_code"),
+    [
+        (
+            openai_responses_role_options,
+            {"generation": {"seed": 7}},
+            "unsupported_role_generation_seed",
+        ),
+        (
+            anthropic_role_options,
+            {
+                "reasoning": {"mode": "budget", "budget_tokens": 4096},
+                "generation": {"temperature": 0.2},
+            },
+            "unsupported_role_generation_sampling_with_thinking",
+        ),
+        (
+            anthropic_role_options,
+            {
+                "reasoning": {"mode": "effort", "effort": "high"},
+                "generation": {"top_p": 0.8},
+            },
+            "unsupported_role_generation_sampling_with_thinking",
+        ),
+    ],
+)
+def test_role_policy_rejects_provider_incompatible_generation_options(
+    translator,
+    binding: dict,
+    error_code: str,
+) -> None:
+    with pytest.raises(ProviderRuntimeError) as error:
+        translator(_role_policy_context(binding))
+
+    assert error.value.details["code"] == error_code
+
+
 def test_service_compiles_configured_catalog_into_session_lock() -> None:
     lock = SessionService._compile_session_role_lock(
         {
@@ -188,7 +225,9 @@ def test_service_compiles_configured_catalog_into_session_lock() -> None:
     assert lock["dispatch"]["subagents"]["reviewer"] == "slow"
 
 
-def test_session_role_switch_updates_live_agent_and_rejects_direct_model_mutation() -> None:
+def test_session_role_switch_updates_live_agent_and_rejects_direct_model_mutation() -> (
+    None
+):
     lock = compile_model_roles(_document())
     record = SessionRecord(
         session_id="role-switch",
@@ -200,9 +239,7 @@ def test_session_role_switch_updates_live_agent_and_rejects_direct_model_mutatio
         registry=SessionRegistry(),
         request=SessionCreateRequest(config_path="unused.json"),
     )
-    runner._prepared_runtime_config = {
-        "providers": {"default_model": "mock/pre-lock"}
-    }
+    runner._prepared_runtime_config = {"providers": {"default_model": "mock/pre-lock"}}
     runner.install_model_role_lock(lock)
 
     class ActiveAgent:
@@ -212,12 +249,10 @@ def test_session_role_switch_updates_live_agent_and_rejects_direct_model_mutatio
 
         def apply_runtime_overrides(self, overrides: dict) -> bool:
             self.calls.append(dict(overrides))
-            self.config.setdefault("providers", {})[
-                "default_model"
-            ] = overrides["providers.default_model"]
-            self.config["active_model_role"] = overrides[
-                "active_model_role"
+            self.config.setdefault("providers", {})["default_model"] = overrides[
+                "providers.default_model"
             ]
+            self.config["active_model_role"] = overrides["active_model_role"]
             self.config["model_role_lock"] = overrides["model_role_lock"]
             return True
 
@@ -225,9 +260,7 @@ def test_session_role_switch_updates_live_agent_and_rejects_direct_model_mutatio
     runner._agent = active
     durable: list[tuple[str, object]] = []
 
-    async def persist_metadata(
-        session_id: str, *, metadata: dict
-    ) -> SessionRecord:
+    async def persist_metadata(session_id: str, *, metadata: dict) -> SessionRecord:
         assert session_id == record.session_id
         durable.append(("metadata", metadata["active_model_role"]))
         return record
@@ -346,12 +379,10 @@ async def test_role_switch_survives_product_session_rebuild() -> None:
             self.config = copy.deepcopy(runtime_config)
 
         def apply_runtime_overrides(self, overrides: dict) -> bool:
-            self.config.setdefault("providers", {})[
-                "default_model"
-            ] = overrides["providers.default_model"]
-            self.config["active_model_role"] = overrides[
-                "active_model_role"
+            self.config.setdefault("providers", {})["default_model"] = overrides[
+                "providers.default_model"
             ]
+            self.config["active_model_role"] = overrides["active_model_role"]
             self.config["model_role_lock"] = overrides["model_role_lock"]
             return True
 
@@ -383,14 +414,11 @@ async def test_role_switch_survives_product_session_rebuild() -> None:
         "unused.json",
     )
     assert record.metadata["active_model_role"] == "slow"
+    assert product_session.read_model.effective_lock_hash == effective["graph_hash"]
     assert (
-        product_session.read_model.effective_lock_hash
-        == effective["graph_hash"]
+        rebuild(product_session.events).effective_lock_hash == effective["graph_hash"]
     )
-    assert (
-        rebuild(product_session.events).effective_lock_hash
-        == effective["graph_hash"]
-    )
+
 
 def test_session_role_switch_rejects_active_turn() -> None:
     lock = compile_model_roles(_document())
@@ -405,9 +433,7 @@ def test_session_role_switch_rejects_active_turn() -> None:
         registry=SessionRegistry(),
         request=SessionCreateRequest(config_path="unused.json"),
     )
-    runner._prepared_runtime_config = {
-        "providers": {"default_model": "mock/pre-lock"}
-    }
+    runner._prepared_runtime_config = {"providers": {"default_model": "mock/pre-lock"}}
     runner.install_model_role_lock(lock)
 
     with pytest.raises(ModelRoleResolutionError) as error:
@@ -429,9 +455,7 @@ def test_failed_live_role_switch_restores_prior_role_and_model() -> None:
         registry=SessionRegistry(),
         request=SessionCreateRequest(config_path="unused.json"),
     )
-    runner._prepared_runtime_config = {
-        "providers": {"default_model": "mock/pre-lock"}
-    }
+    runner._prepared_runtime_config = {"providers": {"default_model": "mock/pre-lock"}}
     runner.install_model_role_lock(lock)
 
     class RejectingAgent:
@@ -447,7 +471,64 @@ def test_failed_live_role_switch_restores_prior_role_and_model() -> None:
 
     assert record.metadata["active_model_role"] == "default"
     assert record.metadata["model"] == "mock/primary"
-    assert runner.current_runtime_config()["providers"]["default_model"] == "mock/primary"
+    assert (
+        runner.current_runtime_config()["providers"]["default_model"] == "mock/primary"
+    )
+
+
+def test_role_switch_rolls_back_when_registry_persistence_fails() -> None:
+    lock = compile_model_roles(_document())
+    record = SessionRecord(
+        session_id="role-persistence-rollback",
+        status=SessionStatus.STARTING,
+        metadata={},
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(config_path="unused.json"),
+    )
+    runner._prepared_runtime_config = {"providers": {"default_model": "mock/pre-lock"}}
+    runner.install_model_role_lock(lock)
+
+    class ActiveAgent:
+        def __init__(self, config: dict) -> None:
+            self.config = copy.deepcopy(config)
+
+        def apply_runtime_overrides(self, overrides: dict) -> bool:
+            self.config.setdefault("providers", {})["default_model"] = overrides[
+                "providers.default_model"
+            ]
+            self.config["active_model_role"] = overrides["active_model_role"]
+            self.config["model_role_lock"] = overrides["model_role_lock"]
+            return True
+
+    async def fail_persistence(_session_id: str, *, metadata: dict) -> None:
+        record.metadata = metadata
+        raise OSError("state volume unavailable")
+
+    runner._agent = ActiveAgent(runner.current_runtime_config())
+    runner.registry.update_metadata = fail_persistence  # type: ignore[method-assign]
+    durable_roles: list[str] = []
+
+    with pytest.raises(OSError, match="state volume unavailable"):
+        asyncio.run(
+            runner.handle_command(
+                "set_role",
+                {"role": "slow"},
+                durable_reconfigure=lambda config: durable_roles.append(
+                    config["active_model_role"]
+                ),
+            )
+        )
+
+    assert record.metadata["active_model_role"] == "default"
+    assert record.metadata["model"] == "mock/primary"
+    assert (
+        runner.current_runtime_config()["providers"]["default_model"] == "mock/primary"
+    )
+    assert runner._agent.config["providers"]["default_model"] == "mock/primary"
+    assert durable_roles == ["slow", "default"]
 
 
 def test_conductor_refreshes_cached_lock_and_role_on_runtime_override() -> None:
@@ -474,28 +555,21 @@ def test_conductor_refreshes_cached_lock_and_role_on_runtime_override() -> None:
     assert conductor._active_model_role == "slow"
     assert conductor._locked_target_for_role()["route_id"] == "mock/slow-new"
 
+
 def test_subagent_dispatch_uses_explicit_task_or_inherits_active_role() -> None:
     inherited_document = _document()
     inherited_document["dispatch"]["subagents"] = {"*": "task"}
-    inherited_document["roles"]["task"]["metadata"] = {
-        "source_provenance": "inherited"
-    }
+    inherited_document["roles"]["task"]["metadata"] = {"source_provenance": "inherited"}
     inherited = compile_model_roles(inherited_document).as_dict()
-    conductor = _conductor(
-        {"model_role_lock": inherited, "active_model_role": "slow"}
-    )
+    conductor = _conductor({"model_role_lock": inherited, "active_model_role": "slow"})
 
     assert conductor._locked_subagent_role("reviewer") == "slow"
 
     explicit_document = _document()
     explicit_document["dispatch"]["subagents"] = {"*": "task"}
-    explicit_document["roles"]["task"]["metadata"] = {
-        "source_provenance": "explicit"
-    }
+    explicit_document["roles"]["task"]["metadata"] = {"source_provenance": "explicit"}
     explicit = compile_model_roles(explicit_document).as_dict()
-    conductor = _conductor(
-        {"model_role_lock": explicit, "active_model_role": "slow"}
-    )
+    conductor = _conductor({"model_role_lock": explicit, "active_model_role": "slow"})
 
     assert conductor._locked_subagent_role("reviewer") == "task"
 
@@ -509,12 +583,9 @@ def test_unbound_vision_never_resolves_to_text_default() -> None:
     assert error.value.problem.code == "known_role_unbound"
 
 
-
 def test_provider_lease_enforces_exact_locked_route_and_credential_origin() -> None:
     lock = compile_model_roles(_document()).as_dict()
-    conductor = _conductor(
-        {"model_role_lock": lock, "active_model_role": "default"}
-    )
+    conductor = _conductor({"model_role_lock": lock, "active_model_role": "default"})
     conductor._active_session_state = SimpleNamespace(
         get_provider_metadata=lambda key, default=None: (
             "lease-session" if key == "session_id" else default
@@ -551,45 +622,63 @@ def test_provider_lease_enforces_exact_locked_route_and_credential_origin() -> N
             pass
     assert restored_error.value.safe_code == "policy_rejection"
 
-    conductor._model_role_lock["roles"]["default"]["primary"][
-        "account_binding"
-    ] = {"kind": "provider_managed", "pin": "session"}
+    conductor._model_role_lock["roles"]["default"]["primary"]["account_binding"] = {
+        "kind": "provider_managed",
+        "pin": "session",
+    }
     with pytest.raises(ProviderRuntimeError) as error:
         with conductor._provider_client_lease("mock/primary", Runtime()):
             pass
     assert error.value.safe_code == "policy_rejection"
 
 
-def test_provider_error_fallback_reason_is_structured_and_never_auth_or_output() -> None:
-    assert ProviderRuntimeError(
-        "limited",
-        details={"classification": "rate_limited"},
-        kind="provider",
-    ).model_fallback_reason == "rate_limited"
-    assert ProviderRuntimeError(
-        "timeout",
-        details={"classification": "timeout"},
-        kind="transport",
-    ).model_fallback_reason == "timeout_before_output"
-    assert ProviderRuntimeError(
-        "auth",
-        details={"status_code": 401},
-        kind="provider",
-        model_fallback_reason="provider_unavailable",
-    ).model_fallback_reason is None
-    assert ProviderRuntimeError(
-        "output",
-        details={"code": "rate_limited"},
-        kind="provider",
-        output_emitted=True,
-        model_fallback_reason="rate_limited",
-    ).model_fallback_reason is None
-    assert ProviderRuntimeError(
-        "protocol",
-        details={"code": "stream_protocol_error"},
-        kind="protocol",
-        model_fallback_reason="provider_unavailable",
-    ).model_fallback_reason is None
+def test_provider_error_fallback_reason_is_structured_and_never_auth_or_output() -> (
+    None
+):
+    assert (
+        ProviderRuntimeError(
+            "limited",
+            details={"classification": "rate_limited"},
+            kind="provider",
+        ).model_fallback_reason
+        == "rate_limited"
+    )
+    assert (
+        ProviderRuntimeError(
+            "timeout",
+            details={"classification": "timeout"},
+            kind="transport",
+        ).model_fallback_reason
+        == "timeout_before_output"
+    )
+    assert (
+        ProviderRuntimeError(
+            "auth",
+            details={"status_code": 401},
+            kind="provider",
+            model_fallback_reason="provider_unavailable",
+        ).model_fallback_reason
+        is None
+    )
+    assert (
+        ProviderRuntimeError(
+            "output",
+            details={"code": "rate_limited"},
+            kind="provider",
+            output_emitted=True,
+            model_fallback_reason="rate_limited",
+        ).model_fallback_reason
+        is None
+    )
+    assert (
+        ProviderRuntimeError(
+            "protocol",
+            details={"code": "stream_protocol_error"},
+            kind="protocol",
+            model_fallback_reason="provider_unavailable",
+        ).model_fallback_reason
+        is None
+    )
 
 
 def _invocation_state() -> tuple[SessionState, ProviderRuntimeContext]:
@@ -623,7 +712,9 @@ def _invoker(callback) -> ProviderInvoker:
     return ProviderInvoker(
         provider_metrics=ProviderMetricsCollector(),
         route_health=RouteHealthManager(),
-        logger_v2=SimpleNamespace(run_dir=None, append_text=lambda *args, **kwargs: None),
+        logger_v2=SimpleNamespace(
+            run_dir=None, append_text=lambda *args, **kwargs: None
+        ),
         md_writer=SimpleNamespace(system=lambda text: text),
         retry_with_fallback=callback,
         update_health_metadata=lambda state: None,
@@ -632,7 +723,9 @@ def _invoker(callback) -> ProviderInvoker:
     )
 
 
-def test_stream_protocol_retry_is_same_model_but_rate_limit_uses_declared_model_fallback() -> None:
+def test_stream_protocol_retry_is_same_model_but_rate_limit_uses_declared_model_fallback() -> (
+    None
+):
     state, context = _invocation_state()
 
     class ProtocolRuntime:

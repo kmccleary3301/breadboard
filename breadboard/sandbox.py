@@ -125,7 +125,11 @@ class DevSandboxV2:
     def stat(self, path: str) -> Dict[str, Any]:
         abs_path, ok = self._resolve_checked(path)
         if not ok:
-            return {"path": abs_path, "exists": False, "error": "path_outside_workspace"}
+            return {
+                "path": abs_path,
+                "exists": False,
+                "error": "path_outside_workspace",
+            }
         try:
             info = self._workspace_files.stat(path)
         except FileNotFoundError:
@@ -326,8 +330,7 @@ class DevSandboxV2:
                 "exit": 126,
                 "stdout": "",
                 "stderr": (
-                    "sandbox command rejected: provider credential "
-                    "in process input"
+                    "sandbox command rejected: provider credential in process input"
                 ),
             }
             if not stream:
@@ -338,14 +341,16 @@ class DevSandboxV2:
                 payload,
             ]  # type: ignore[return-value]
         try:
-            child_env = build_child_environment(overrides=env)
+            child_env = build_child_environment(
+                overrides=env,
+                allowed_override_keys=env or (),
+            )
         except ValueError:
             payload = {
                 "exit": 126,
                 "stdout": "",
                 "stderr": (
-                    "sandbox environment rejected: override key "
-                    "is not allowlisted"
+                    "sandbox environment rejected: override key is not allowlisted"
                 ),
             }
             if not stream:
@@ -368,8 +373,7 @@ class DevSandboxV2:
                 "exit": 126,
                 "stdout": "",
                 "stderr": (
-                    "sandbox command rejected: filesystem isolation "
-                    "is unavailable"
+                    "sandbox command rejected: filesystem isolation is unavailable"
                 ),
             }
             if not stream:
@@ -446,11 +450,15 @@ class DevSandboxV2:
                 payload,
                 path="$.sandbox_result",
             )
-            payload = scrubbed if isinstance(scrubbed, dict) else {
-                "exit": 1,
-                "stdout": "",
-                "stderr": "sandbox result unavailable",
-            }
+            payload = (
+                scrubbed
+                if isinstance(scrubbed, dict)
+                else {
+                    "exit": 1,
+                    "stdout": "",
+                    "stderr": "sandbox result unavailable",
+                }
+            )
 
         if not stream:
             return payload
@@ -498,7 +506,9 @@ class DevSandboxV2:
         self._touch_lsp(abs_path)
         return {"ok": True, "path": abs_path}
 
-    def multiedit(self, edits: List[Dict[str, Any]], encoding: str = "utf-8") -> Dict[str, Any]:
+    def multiedit(
+        self, edits: List[Dict[str, Any]], encoding: str = "utf-8"
+    ) -> Dict[str, Any]:
         """Apply multiple edits in sequence.
 
         Each edit may contain:
@@ -514,7 +524,11 @@ class DevSandboxV2:
             if not path:
                 continue
             if "content" in edit:
-                results.append(self.write_text(path, str(edit.get("content") or ""), encoding=encoding))
+                results.append(
+                    self.write_text(
+                        path, str(edit.get("content") or ""), encoding=encoding
+                    )
+                )
                 continue
             old = str(edit.get("old") or edit.get("old_string") or "")
             new = str(edit.get("new") or edit.get("new_string") or "")
@@ -550,7 +564,11 @@ class DevSandboxV2:
             return result
 
     def vcs(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        action = (request or {}).get("action") or (request or {}).get("operation") or "status"
+        action = (
+            (request or {}).get("action")
+            or (request or {}).get("operation")
+            or "status"
+        )
         action = str(action).strip().lower()
         params = (request or {}).get("params") or {}
         if not isinstance(params, dict):
@@ -560,15 +578,23 @@ class DevSandboxV2:
             if action == "init":
                 user = (request or {}).get("user") or {}
                 self._run_git(["init"])
-                name = (user.get("name") if isinstance(user, dict) else None) or "BreadBoard"
-                email = (user.get("email") if isinstance(user, dict) else None) or "breadboard@local"
+                name = (
+                    user.get("name") if isinstance(user, dict) else None
+                ) or "BreadBoard"
+                email = (
+                    user.get("email") if isinstance(user, dict) else None
+                ) or "breadboard@local"
                 self._run_git(["config", "user.name", str(name)])
                 self._run_git(["config", "user.email", str(email)])
                 return {"ok": True}
 
             if action == "add":
                 res = self._run_git(["add", "-A"])
-                return {"ok": res.returncode == 0, "stdout": res.stdout, "stderr": res.stderr}
+                return {
+                    "ok": res.returncode == 0,
+                    "stdout": res.stdout,
+                    "stderr": res.stderr,
+                }
 
             if action == "commit":
                 message = str((params or {}).get("message") or "update")
@@ -578,7 +604,11 @@ class DevSandboxV2:
 
             if action == "status":
                 res = self._run_git(["status", "--porcelain"])
-                return {"ok": res.returncode == 0, "data": {"output": res.stdout}, "stderr": res.stderr}
+                return {
+                    "ok": res.returncode == 0,
+                    "data": {"output": res.stdout},
+                    "stderr": res.stderr,
+                }
 
             if action == "diff":
                 staged = bool((params or {}).get("staged"))
@@ -600,8 +630,7 @@ class DevSandboxV2:
                     return {"ok": False, "error": "empty patch"}
                 args = ["apply"]
                 three_way = bool(
-                    (params or {}).get("three_way")
-                    or (params or {}).get("threeWay")
+                    (params or {}).get("three_way") or (params or {}).get("threeWay")
                 )
                 if three_way:
                     refresh = self._run_git(["update-index", "--refresh"], timeout=20)
@@ -636,7 +665,11 @@ class DevSandboxV2:
                     pass
                 except Exception:
                     pass
-                return {"ok": res.returncode == 0, "stdout": res.stdout, "stderr": res.stderr}
+                return {
+                    "ok": res.returncode == 0,
+                    "stdout": res.stdout,
+                    "stderr": res.stderr,
+                }
 
             return {"ok": False, "error": f"Unsupported vcs action: {action}"}
         except Exception as exc:
@@ -648,7 +681,11 @@ class DevSandboxV2:
             return {}
         try:
             diagnostics = getattr(actor, "diagnostics", None)
-            remote = getattr(diagnostics, "remote", None) if diagnostics is not None else None
+            remote = (
+                getattr(diagnostics, "remote", None)
+                if diagnostics is not None
+                else None
+            )
             if callable(remote):
                 return ray.get(remote())
             if callable(diagnostics):
@@ -674,7 +711,11 @@ def new_dev_sandbox_v2(
     This is the primary constructor used by tests and higher-level engine code.
     """
 
-    from .sandbox_driver import SandboxLaunchSpec, create_sandbox, resolve_driver_from_env
+    from .sandbox_driver import (
+        SandboxLaunchSpec,
+        create_sandbox,
+        resolve_driver_from_env,
+    )
 
     resolved_driver = (driver or resolve_driver_from_env()).strip().lower()
     spec = SandboxLaunchSpec(

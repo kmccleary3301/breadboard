@@ -750,8 +750,8 @@
             "type": "string"
           },
           "first_slice_schema_sha256": {
-            "const": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
-            "default": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
+            "const": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
+            "default": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
             "title": "First Slice Schema Sha256",
             "type": "string"
           },
@@ -815,8 +815,8 @@
             "type": "string"
           },
           "first_slice_schema_sha256": {
-            "const": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
-            "default": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
+            "const": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
+            "default": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
             "title": "First Slice Schema Sha256",
             "type": "string"
           },
@@ -1302,8 +1302,8 @@
             "type": "string"
           },
           "schema_sha256": {
-            "const": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
-            "default": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
+            "const": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
+            "default": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
             "title": "Schema Sha256",
             "type": "string"
           },

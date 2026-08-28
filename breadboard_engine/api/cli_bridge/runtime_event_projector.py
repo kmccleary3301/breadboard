@@ -86,9 +86,7 @@ _PUBLIC_RUNTIME_ERROR_CODES = frozenset(
     }
 )
 _REPLAY_EVENT_PAYLOAD_FIELDS = {
-    EventType.ASSISTANT_MESSAGE_START: frozenset(
-        {"message_id", "item_id", "index"}
-    ),
+    EventType.ASSISTANT_MESSAGE_START: frozenset({"message_id", "item_id", "index"}),
     EventType.ASSISTANT_MESSAGE_DELTA: frozenset(
         {"message_id", "item_id", "index", "delta", "text", "content"}
     ),
@@ -128,15 +126,9 @@ _REPLAY_EVENT_PAYLOAD_FIELDS = {
     EventType.TOOL_EXEC_START: frozenset(
         {"call_id", "exec_id", "tool", "tool_name", "command"}
     ),
-    EventType.TOOL_EXEC_STDOUT_DELTA: frozenset(
-        {"call_id", "exec_id", "delta"}
-    ),
-    EventType.TOOL_EXEC_STDERR_DELTA: frozenset(
-        {"call_id", "exec_id", "delta"}
-    ),
-    EventType.TOOL_EXEC_END: frozenset(
-        {"call_id", "exec_id", "exit_code"}
-    ),
+    EventType.TOOL_EXEC_STDOUT_DELTA: frozenset({"call_id", "exec_id", "delta"}),
+    EventType.TOOL_EXEC_STDERR_DELTA: frozenset({"call_id", "exec_id", "delta"}),
+    EventType.TOOL_EXEC_END: frozenset({"call_id", "exec_id", "exit_code"}),
     EventType.ASSISTANT_MESSAGE: frozenset({"text", "message", "source"}),
     EventType.ASSISTANT_DELTA: frozenset({"text", "message_id"}),
     EventType.TOOL_CALL: frozenset(
@@ -243,9 +235,7 @@ def _validate_replay_event_payload(
         ):
             raise RuntimeProtocolError("runtime_protocol_error")
     elif event_type in {EventType.TOOL_RESULT, EventType.TOOL_RESULT_DOT}:
-        if "status" not in normalized or not isinstance(
-            normalized.get("error"), bool
-        ):
+        if "status" not in normalized or not isinstance(normalized.get("error"), bool):
             raise RuntimeProtocolError("runtime_protocol_error")
     elif event_type in {EventType.REWARD_UPDATE, EventType.COMPLETION}:
         field = "summary"
@@ -329,7 +319,9 @@ def _runtime_event_is_session_scoped(event_type: str) -> bool:
 
 
 RuntimeEventContract = Dict[str, Optional[str]]
-TranslatedRuntimeEvent = Tuple[EventType, Dict[str, Any], Optional[int], RuntimeEventContract]
+TranslatedRuntimeEvent = Tuple[
+    EventType, Dict[str, Any], Optional[int], RuntimeEventContract
+]
 
 
 def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
@@ -347,22 +339,76 @@ def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
                 "actor": metadata["actor"],
                 "visibility": metadata["visibility"],
             }
-    if event_name in {"assistant_message", "assistant_delta", "assistant.message.start", "assistant.message.delta", "assistant.message.end"}:
-        return {"classification": "bridge_stream", "family": "message.assistant", "actor": "engine", "visibility": "transcript"}
+    if event_name in {
+        "assistant_delta",
+        "assistant.message.start",
+        "assistant.message.delta",
+        "assistant.message.end",
+    }:
+        return {
+            "classification": "bridge_stream",
+            "family": "message.assistant.stream",
+            "actor": "engine",
+            "visibility": "transcript",
+        }
     if event_name == "user_message":
-        return {"classification": "kernel", "family": "message.user", "actor": "human", "visibility": "transcript"}
+        return {
+            "classification": "kernel",
+            "family": "message.user",
+            "actor": "human",
+            "visibility": "transcript",
+        }
     if event_name in {"assistant.reasoning.delta", "assistant.thought_summary.delta"}:
-        return {"classification": "bridge_stream", "family": "reasoning.delta", "actor": "engine", "visibility": "diagnostic"}
+        return {
+            "classification": "bridge_stream",
+            "family": "reasoning.delta",
+            "actor": "engine",
+            "visibility": "diagnostic",
+        }
     if event_name.startswith("assistant.tool_call."):
-        return {"classification": "bridge_stream", "family": "tool.call.delta", "actor": "engine", "visibility": "tool"}
-    if event_name.startswith("tool.") or event_name in {"tool_call", "tool_result", "tool.result", "todo_event"}:
-        return {"classification": "kernel", "family": "tool.event", "actor": "tool", "visibility": "tool"}
+        return {
+            "classification": "bridge_stream",
+            "family": "tool.call.delta",
+            "actor": "engine",
+            "visibility": "tool",
+        }
+    if event_name.startswith("tool.") or event_name in {
+        "tool_call",
+        "tool_result",
+        "tool.result",
+        "todo_event",
+    }:
+        return {
+            "classification": "kernel",
+            "family": "tool.event",
+            "actor": "tool",
+            "visibility": "tool",
+        }
     if event_name in {"ctree_node", "turn_start", "lifecycle_event", "guardrail_event"}:
-        return {"classification": "kernel", "family": f"audit.{event_name}", "actor": "service", "visibility": "audit"}
-    if event_name in BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES or event_name in {"permission_request", "permission_response", "task_event", "ctree_snapshot"}:
-        return {"classification": "bridge_host", "family": f"host.{event_name}", "actor": "service", "visibility": "host"}
-    return {"classification": "legacy_unclassified", "family": "legacy.unclassified", "actor": "engine", "visibility": "audit"}
-
+        return {
+            "classification": "kernel",
+            "family": f"audit.{event_name}",
+            "actor": "service",
+            "visibility": "audit",
+        }
+    if event_name in BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES or event_name in {
+        "permission_request",
+        "permission_response",
+        "task_event",
+        "ctree_snapshot",
+    }:
+        return {
+            "classification": "bridge_host",
+            "family": f"host.{event_name}",
+            "actor": "service",
+            "visibility": "host",
+        }
+    return {
+        "classification": "legacy_unclassified",
+        "family": "legacy.unclassified",
+        "actor": "engine",
+        "visibility": "audit",
+    }
 
 
 class RuntimeEventProjector:
@@ -419,7 +465,10 @@ class RuntimeEventProjector:
             return
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
-            if product_session is None or product_session.read_model.status != "running":
+            if (
+                product_session is None
+                or product_session.read_model.status != "running"
+            ):
                 return
             if family == "message.assistant":
                 text = payload.get("text")
@@ -445,7 +494,9 @@ class RuntimeEventProjector:
                     if duplicate_count == 1:
                         del self._product_tool_completions[fingerprint]
                     else:
-                        self._product_tool_completions[fingerprint] = duplicate_count - 1
+                        self._product_tool_completions[fingerprint] = (
+                            duplicate_count - 1
+                        )
                     return
                 product_session.tool_completed(tool, bool(payload.get("error")))
                 if not message_projection and fingerprint is not None:
@@ -458,21 +509,29 @@ class RuntimeEventProjector:
                             next(iter(self._product_tool_completions))
                         )
                     self._product_tool_completions[fingerprint] = duplicate_count + 1
-            self.session.metadata["session_contract"] = product_session.read_model.as_dict()
+            self.session.metadata["session_contract"] = (
+                product_session.read_model.as_dict()
+            )
 
     def _normalize_tool_call_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         call = payload.get("call") or payload.get("tool_call") or payload.get("tool")
         if not isinstance(call, dict):
             return payload
         call_id = call.get("id") or call.get("call_id") or call.get("tool_call_id")
-        function = call.get("function") if isinstance(call.get("function"), dict) else None
+        function = (
+            call.get("function") if isinstance(call.get("function"), dict) else None
+        )
         tool_name = call.get("name") or (function or {}).get("name")
         arguments = call.get("arguments")
         if arguments is None and isinstance(function, dict):
             arguments = function.get("arguments")
         action = None
         if isinstance(arguments, dict):
-            action = arguments.get("action") or arguments.get("command") or arguments.get("operation")
+            action = (
+                arguments.get("action")
+                or arguments.get("command")
+                or arguments.get("operation")
+            )
         diff_preview = call.get("diff_preview") if isinstance(call, dict) else None
         progress = call.get("progress") if isinstance(call, dict) else None
         normalized = dict(payload)
@@ -490,7 +549,6 @@ class RuntimeEventProjector:
             normalized["progress"] = progress
         return normalized
 
-
     def _normalize_tool_result_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         normalized = dict(payload)
         message = normalized.get("message")
@@ -504,7 +562,10 @@ class RuntimeEventProjector:
             content = message.get("content")
             normalized.setdefault("call_id", call_id)
             normalized.setdefault("result", content)
-            normalized.setdefault("status", message.get("status") or ("error" if message.get("error") else "ok"))
+            normalized.setdefault(
+                "status",
+                message.get("status") or ("error" if message.get("error") else "ok"),
+            )
             normalized.setdefault("error", bool(message.get("error")))
             if not normalized.get("tool"):
                 tool = message.get("name") or message.get("tool")
@@ -517,8 +578,9 @@ class RuntimeEventProjector:
             normalized["artifact_ref"] = artifact_ref
         return normalized
 
-
-    def _extract_artifact_ref(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _extract_artifact_ref(
+        self, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         candidate = payload.get("artifact_ref")
         if isinstance(candidate, dict):
             normalized = self._normalize_artifact_ref(candidate)
@@ -538,8 +600,9 @@ class RuntimeEventProjector:
                     return normalized
         return None
 
-
-    def _normalize_artifact_ref(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _normalize_artifact_ref(
+        self, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         path = payload.get("path")
         sha256 = payload.get("sha256")
         schema_version = payload.get("schema_version") or "artifact_ref_v1"
@@ -575,7 +638,6 @@ class RuntimeEventProjector:
             normalized["preview"] = preview
         return normalized
 
-
     def _normalize_permission_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         normalized = dict(payload or {})
         request_id = normalized.get("request_id") or normalized.get("id")
@@ -585,8 +647,16 @@ class RuntimeEventProjector:
         pattern = normalized.get("pattern") or first_item.get("pattern")
         metadata = normalized.get("metadata") or first_item.get("metadata") or {}
         tool = metadata.get("function") or category
-        summary = metadata.get("summary") or metadata.get("command") or metadata.get("path") or pattern or category
-        kind = metadata.get("kind") or (str(category).title() if category else "Permission")
+        summary = (
+            metadata.get("summary")
+            or metadata.get("command")
+            or metadata.get("path")
+            or pattern
+            or category
+        )
+        kind = metadata.get("kind") or (
+            str(category).title() if category else "Permission"
+        )
         normalized.setdefault("request_id", request_id)
         normalized.setdefault("tool", tool)
         normalized.setdefault("kind", kind)
@@ -600,9 +670,12 @@ class RuntimeEventProjector:
         if "default_scope" not in normalized:
             normalized["default_scope"] = metadata.get("default_scope") or "project"
         if "rewindable" not in normalized:
-            normalized["rewindable"] = bool(metadata.get("rewindable")) if isinstance(metadata, dict) else False
+            normalized["rewindable"] = (
+                bool(metadata.get("rewindable"))
+                if isinstance(metadata, dict)
+                else False
+            )
         return normalized
-
 
     def _normalize_permission_response(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         normalized = dict(payload or {})
@@ -623,13 +696,11 @@ class RuntimeEventProjector:
             normalized.setdefault("decision", decision)
         return normalized
 
-
     def _normalize_task_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return normalize_task_event_payload(
             payload,
             parent_session_id=getattr(self.session, "session_id", None),
         )
-
 
     def translate(
         self,
@@ -695,9 +766,7 @@ class RuntimeEventProjector:
         if evt is EventType.TURN_START:
             normalized_payload = {}
         elif evt is EventType.ASSISTANT_MESSAGE:
-            message = _strip_completion_sentinels(
-                normalized_payload.get("message")
-            )
+            message = _strip_completion_sentinels(normalized_payload.get("message"))
             candidate_text = normalized_payload.get("text")
             if not isinstance(candidate_text, str) and isinstance(message, dict):
                 candidate_text = message.get("content")
@@ -737,8 +806,7 @@ class RuntimeEventProjector:
                     text = "\n".join(
                         str(block.get("text") or "")
                         for block in content
-                        if isinstance(block, dict)
-                        and block.get("type") == "text"
+                        if isinstance(block, dict) and block.get("type") == "text"
                     )
             normalized_payload = {"text": text, "message": message}
         elif evt is EventType.TOOL_CALL:
@@ -764,4 +832,3 @@ class RuntimeEventProjector:
         if _runtime_event_is_session_scoped(event_type):
             turn = None
         return evt, normalized_payload, turn, event_contract
-

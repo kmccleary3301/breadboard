@@ -112,6 +112,7 @@ _CREDENTIAL_MARKERS = (
     "PRIVATE_KEY",
     "AUTH_HEADERS",
 )
+_MIN_CREDENTIAL_SUBSTRING_LENGTH = 3
 _ENVIRONMENT_LOCK = threading.RLock()
 
 
@@ -181,11 +182,23 @@ def contains_provider_credential_value(
     seen: set[int] = set()
 
     def contains(item: object) -> bool:
+        def matches(text: str, secret: str) -> bool:
+            return (
+                text == secret
+                if len(secret) < _MIN_CREDENTIAL_SUBSTRING_LENGTH
+                else secret in text
+            )
+
         if isinstance(item, str):
-            return any(secret in item for secret in candidates)
+            return any(matches(item, secret) for secret in candidates)
         if isinstance(item, (bytes, bytearray, memoryview)):
             raw = bytes(item)
-            return any(secret.encode("utf-8") in raw for secret in candidates)
+            return any(
+                raw == secret.encode("utf-8")
+                if len(secret) < _MIN_CREDENTIAL_SUBSTRING_LENGTH
+                else secret.encode("utf-8") in raw
+                for secret in candidates
+            )
         marker = id(item)
         if marker in seen:
             return False

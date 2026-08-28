@@ -35,7 +35,8 @@ export type TurnAdmission = "idle" | "active"
 export type RetainedHistory = "complete" | "partial"
 export type SubmitDisposition = "started" | "queued" | "deduplicated"
 export type OriginalSubmitDisposition = "started" | "queued"
-export type CancellationReason = "user_requested" | "timeout" | "superseded"
+export type CancellationRequestReason = "user_requested" | "timeout" | "superseded"
+export type CancellationReason = CancellationRequestReason | "stop_requested"
 export type CancellationDisposition = "cancellation_requested" | "queued_cancelled" | "deduplicated"
 export type OriginalCancellationDisposition = "cancellation_requested" | "queued_cancelled"
 export type TerminalOutcome = "completed" | "failed" | "cancelled"
@@ -77,7 +78,7 @@ export interface SessionSnapshot extends SessionReplayFacts {
 }
 
 export interface CreateSessionRequest {
-  readonly configPath: string
+  readonly configPath?: string
   readonly task?: string
   readonly overrides?: Readonly<{ [key: string]: unknown }>
   readonly metadata?: Readonly<{ [key: string]: unknown }>
@@ -123,7 +124,7 @@ export interface SubmitReceipt {
 export interface CancelTurnRequest {
   readonly turnId: TurnId | string
   readonly cancellationRequestKey?: CancellationRequestKey | string
-  readonly reason?: CancellationReason
+  readonly reason?: CancellationRequestReason
 }
 
 export interface CancellationReceipt {
@@ -872,7 +873,7 @@ const parseCancellationReason = (
     reason: requiredEnum(
       own(payload, "reason"),
       "turn_cancellation_reason",
-      ["user_requested", "timeout", "superseded"] as const,
+      ["user_requested", "timeout", "superseded", "stop_requested"] as const,
     ),
   }
 }
@@ -1609,16 +1610,26 @@ const decodePermissionDecisionReceipt = (
 }
 
 
-const createRequestBody = (request: CreateSessionRequest): RawObject => ({
-  config_path: request.configPath,
-  task: request.task ?? "",
-  ...(request.overrides === undefined ? {} : { overrides: request.overrides }),
-  ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
-  ...(request.workspace === undefined ? {} : { workspace: request.workspace }),
-  ...(request.maxSteps === undefined ? {} : { max_steps: request.maxSteps }),
-  ...(request.permissionMode === undefined ? {} : { permission_mode: request.permissionMode }),
-  ...(request.stream === undefined ? {} : { stream: request.stream }),
-})
+const createRequestBody = (request: CreateSessionRequest): RawObject => {
+  const body: {
+    task: string
+    config_path?: string
+    overrides?: CreateSessionRequest["overrides"]
+    metadata?: CreateSessionRequest["metadata"]
+    workspace?: string
+    max_steps?: number
+    permission_mode?: string
+    stream?: boolean
+  } = { task: request.task ?? "" }
+  if (request.configPath !== undefined) body.config_path = request.configPath
+  if (request.overrides !== undefined) body.overrides = request.overrides
+  if (request.metadata !== undefined) body.metadata = request.metadata
+  if (request.workspace !== undefined) body.workspace = request.workspace
+  if (request.maxSteps !== undefined) body.max_steps = request.maxSteps
+  if (request.permissionMode !== undefined) body.permission_mode = request.permissionMode
+  if (request.stream !== undefined) body.stream = request.stream
+  return body
+}
 
 interface RawSseItem {
   readonly data: string
@@ -2134,7 +2145,7 @@ export const createCanonicalE4Client = (config: CanonicalE4ClientConfig): Canoni
   }
   return {
     create: async (request) => {
-      if (!request.configPath) throw new CanonicalE4ClientError({ kind: "protocol", code: "missing_config_path" })
+      if (request.configPath !== undefined && !request.configPath) throw new CanonicalE4ClientError({ kind: "protocol", code: "missing_config_path" })
       const response = await requestJson(context, "/v1/sessions", "POST", createRequestBody(request))
       if (!isRawObject(response)) throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_create_response" })
       const sessionId = requiredString(own(response, "session_id"), "session_id") as SessionId

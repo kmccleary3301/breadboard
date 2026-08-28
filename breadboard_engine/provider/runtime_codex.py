@@ -37,8 +37,6 @@ _CODEX_POOL_ENV = "BREADBOARD_CODEX_APP_SERVER_POOL"
 _POOL_MAX_IDLE_PER_KEY = 1
 
 
-
-
 @dataclass
 class _PooledCodexClientEntry:
     client: "_CodexJsonRpcClient"
@@ -51,7 +49,11 @@ _CLIENT_POOL: Dict[Tuple[str, str, str], List[_PooledCodexClientEntry]] = {}
 
 
 def _codex_pool_enabled() -> bool:
-    return (os.getenv(_CODEX_POOL_ENV) or "").strip().lower() in {"1", "true", "yes", "on",
+    return (os.getenv(_CODEX_POOL_ENV) or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
     }
 
 
@@ -106,6 +108,7 @@ class _CodexJsonRpcClient:
                 shell=False,
                 environment=self.env,
                 protected_paths=self.protected_paths,
+                allow_network=True,
             )
             self._proc = subprocess.Popen(
                 isolated_command,
@@ -176,7 +179,9 @@ class _CodexJsonRpcClient:
         overrides: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         if isinstance(input_items, str):
-            normalized_input: List[Dict[str, Any]] = [{"type": "text", "text": input_items}]
+            normalized_input: List[Dict[str, Any]] = [
+                {"type": "text", "text": input_items}
+            ]
         elif isinstance(input_items, dict):
             normalized_input = [input_items]
         else:
@@ -191,9 +196,13 @@ class _CodexJsonRpcClient:
     def notify(self, method: str, params: Optional[Dict[str, Any]] | None) -> None:
         self._write_message({"method": method, "params": params})
 
-    def request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def request(
+        self, method: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         request_id = f"bb-{os.getpid()}-{threading.get_ident()}-{id(self)}"
-        self._write_message({"id": request_id, "method": method, "params": params or {}})
+        self._write_message(
+            {"id": request_id, "method": method, "params": params or {}}
+        )
         while True:
             msg = self._read_message()
             if "method" in msg and "id" in msg:
@@ -217,7 +226,9 @@ class _CodexJsonRpcClient:
             result = msg.get("result")
             return result if isinstance(result, dict) else {"result": result}
 
-    def next_notification(self, timeout_s: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    def next_notification(
+        self, timeout_s: Optional[float] = None
+    ) -> Optional[Dict[str, Any]]:
         while True:
             msg = self._read_message(timeout_s=timeout_s)
             if msg is None:
@@ -246,7 +257,9 @@ class _CodexJsonRpcClient:
             proc.stdin.write(json.dumps(payload) + "\n")
             proc.stdin.flush()
 
-    def _read_message(self, timeout_s: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    def _read_message(
+        self, timeout_s: Optional[float] = None
+    ) -> Optional[Dict[str, Any]]:
         proc = self._proc
         if proc is None or proc.stdout is None:
             raise ProviderRuntimeError("Codex app-server is not running")
@@ -305,7 +318,9 @@ def _reset_codex_client_pool_for_tests() -> None:
                     pass
 
 
-def _acquire_pooled_client(*, codex_bin: str, cwd: str, model: str, env: Dict[str, str]) -> tuple[_CodexJsonRpcClient, bool]:
+def _acquire_pooled_client(
+    *, codex_bin: str, cwd: str, model: str, env: Dict[str, str]
+) -> tuple[_CodexJsonRpcClient, bool]:
     if not _codex_pool_enabled():
         client = _CodexJsonRpcClient(codex_bin=codex_bin, cwd=cwd, env=env)
         return client, False
@@ -351,7 +366,9 @@ def _release_pooled_client(
             pass
 
 
-def prewarm_codex_app_server(*, model: str, cwd: str, env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def prewarm_codex_app_server(
+    *, model: str, cwd: str, env: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
     """Best-effort process warmup for the pooled Codex app-server client."""
 
     normalized_cwd = str(cwd or "").strip() or os.getcwd()
@@ -464,9 +481,7 @@ class CodexAppServerRuntime(ProviderRuntime):
         try:
             app_client = self._ensure_client(model=model, cwd=cwd)
             invoke_after_client_at = time.monotonic()
-            user_input = self._extract_latest_user_input(
-                messages, context=context
-            )
+            user_input = self._extract_latest_user_input(messages, context=context)
             if not user_input:
                 raise ProviderRuntimeError(
                     "Codex runtime requires a latest user message to execute"
@@ -497,7 +512,9 @@ class CodexAppServerRuntime(ProviderRuntime):
             turn_index = None
             if session_state is not None:
                 try:
-                    turn_index = session_state.get_provider_metadata("current_turn_index")
+                    turn_index = session_state.get_provider_metadata(
+                        "current_turn_index"
+                    )
                 except Exception:
                     turn_index = None
 
@@ -535,9 +552,7 @@ class CodexAppServerRuntime(ProviderRuntime):
                 if first_notification_at is None:
                     first_notification_at = time.monotonic()
                 if not isinstance(notification, dict):
-                    raise self._protocol_error(
-                        "Malformed Codex notification", context
-                    )
+                    raise self._protocol_error("Malformed Codex notification", context)
                 method = notification.get("method")
                 params = notification.get("params")
                 if (
@@ -594,8 +609,7 @@ class CodexAppServerRuntime(ProviderRuntime):
             final_texts = self._completed_agent_texts(phase="final_answer")
             reasoning_blocks = self._completed_reasoning_blocks()
             text_blocks = [
-                {"type": "text", "text": text}
-                for text in self._completed_agent_texts()
+                {"type": "text", "text": text} for text in self._completed_agent_texts()
             ]
             tool_calls = [
                 item["tool_call"]
@@ -656,19 +670,27 @@ class CodexAppServerRuntime(ProviderRuntime):
                     "provider_turn_completion_method": "codex_app_server",
                     "provider_turn_completion_reason": "codex_turn_completed",
                     "provider_runtime_timing": {
-                        "invoke_total_seconds": round(time.monotonic() - invoke_started_at, 6),
-                        "client_ready_seconds": round(invoke_after_client_at - invoke_started_at, 6),
-                        "turn_start_seconds": round(invoke_after_turn_start_at - invoke_after_client_at, 6),
-                        "post_turn_wait_seconds": round(time.monotonic() - invoke_after_turn_start_at, 6),
+                        "invoke_total_seconds": round(
+                            time.monotonic() - invoke_started_at, 6
+                        ),
+                        "client_ready_seconds": round(
+                            invoke_after_client_at - invoke_started_at, 6
+                        ),
+                        "turn_start_seconds": round(
+                            invoke_after_turn_start_at - invoke_after_client_at, 6
+                        ),
+                        "post_turn_wait_seconds": round(
+                            time.monotonic() - invoke_after_turn_start_at, 6
+                        ),
                         "first_notification_seconds": (
                             round(first_notification_at - invoke_started_at, 6)
-                        if first_notification_at is not None
-                        else None
+                            if first_notification_at is not None
+                            else None
                         ),
                         "first_final_answer_delta_seconds": (
                             round(first_final_answer_delta_at - invoke_started_at, 6)
-                        if first_final_answer_delta_at is not None
-                        else None
+                            if first_final_answer_delta_at is not None
+                            else None
                         ),
                         "notification_count": notification_count,
                         **self._last_client_setup_timing,
@@ -677,11 +699,15 @@ class CodexAppServerRuntime(ProviderRuntime):
             )
         finally:
             self._release_leased_client(healthy=healthy_client)
+
     def _ensure_client(self, *, model: str, cwd: str) -> _CodexJsonRpcClient:
         codex_bin = self._resolve_codex_bin()
         env = build_child_environment()
         if (
-            self._client is not None and self._thread_id and self._session_model == model and self._session_cwd == cwd
+            self._client is not None
+            and self._thread_id
+            and self._session_model == model
+            and self._session_cwd == cwd
         ):
             self._last_client_setup_timing = {
                 "client_cache_hit": True,
@@ -693,7 +719,9 @@ class CodexAppServerRuntime(ProviderRuntime):
 
         self._release_leased_client(healthy=True)
         spawn_started_at = time.monotonic()
-        client, cache_hit = _acquire_pooled_client(codex_bin=codex_bin, cwd=cwd, model=model, env=env)
+        client, cache_hit = _acquire_pooled_client(
+            codex_bin=codex_bin, cwd=cwd, model=model, env=env
+        )
         after_acquire_at = time.monotonic()
         after_initialize_at = after_acquire_at
         if not cache_hit:
@@ -740,7 +768,9 @@ class CodexAppServerRuntime(ProviderRuntime):
             "client_initialize_seconds": (
                 round(after_initialize_at - after_start_at, 6) if not cache_hit else 0.0
             ),
-            "client_thread_start_seconds": round(after_thread_start_at - after_initialize_at, 6),
+            "client_thread_start_seconds": round(
+                after_thread_start_at - after_initialize_at, 6
+            ),
         }
         return client
 
@@ -795,9 +825,7 @@ class CodexAppServerRuntime(ProviderRuntime):
                         continue
                     if block.get("type") == "media":
                         media = resolve_input_media(block, context)
-                        media_parts.append(
-                            {"type": "image", "url": media.data_url}
-                        )
+                        media_parts.append({"type": "image", "url": media.data_url})
                         continue
                     text = block.get("text")
                     if isinstance(text, str) and text.strip():
@@ -805,9 +833,8 @@ class CodexAppServerRuntime(ProviderRuntime):
                 text = "\n\n".join(text_parts).strip()
                 if media_parts:
                     return (
-                        ([{"type": "text", "text": text}] if text else [])
-                        + media_parts
-                    )
+                        [{"type": "text", "text": text}] if text else []
+                    ) + media_parts
                 if text:
                     return text
         return ""
@@ -823,8 +850,7 @@ class CodexAppServerRuntime(ProviderRuntime):
             message,
             kind="protocol",
             output_emitted=bool(
-                context.exchange_recorder
-                and context.exchange_recorder.output_emitted
+                context.exchange_recorder and context.exchange_recorder.output_emitted
             ),
             details={"code": code},
         )
@@ -867,9 +893,7 @@ class CodexAppServerRuntime(ProviderRuntime):
                 if fields is None or any(
                     not isinstance(block.get(field), str) for field in fields
                 ):
-                    raise self._protocol_error(
-                        "Malformed Codex user content", context
-                    )
+                    raise self._protocol_error("Malformed Codex user content", context)
         elif item_type == "hookPrompt":
             fragments = item.get("fragments")
             if not isinstance(fragments, list) or any(
@@ -886,9 +910,7 @@ class CodexAppServerRuntime(ProviderRuntime):
                     "Codex agent item has an invalid phase", context
                 )
             if not isinstance(item.get("text"), str):
-                raise self._protocol_error(
-                    "Codex agent item has invalid text", context
-                )
+                raise self._protocol_error("Codex agent item has invalid text", context)
         elif item_type == "reasoning":
             for field in ("content", "summary"):
                 value = item.get(field, [])
@@ -938,18 +960,14 @@ class CodexAppServerRuntime(ProviderRuntime):
                 "unifiedExecStartup",
                 "unifiedExecInteraction",
             }:
-                raise self._protocol_error(
-                    "Codex command source is malformed", context
-                )
+                raise self._protocol_error("Codex command source is malformed", context)
             if completed and item.get("status") == "inProgress":
                 raise self._protocol_error(
                     "Completed Codex command is still in progress", context
                 )
             aggregated = item.get("aggregatedOutput")
             if aggregated is not None and not isinstance(aggregated, str):
-                raise self._protocol_error(
-                    "Codex command output is malformed", context
-                )
+                raise self._protocol_error("Codex command output is malformed", context)
             exit_code = item.get("exitCode")
             if exit_code is not None and (
                 not isinstance(exit_code, int) or isinstance(exit_code, bool)
@@ -996,9 +1014,7 @@ class CodexAppServerRuntime(ProviderRuntime):
                 or not isinstance(turn.get("items"), list)
                 or not isinstance(payload.get("threadId"), str)
             ):
-                raise self._protocol_error(
-                    "Malformed Codex turn start", context
-                )
+                raise self._protocol_error("Malformed Codex turn start", context)
             context.record_provider_event("response_start")
             return False
 
@@ -1037,9 +1053,7 @@ class CodexAppServerRuntime(ProviderRuntime):
                 )
             elif item_type == "reasoning":
                 self._reasoning_chunks[item_id] = list(item.get("content", []))
-                self._reasoning_summary_chunks[item_id] = list(
-                    item.get("summary", [])
-                )
+                self._reasoning_summary_chunks[item_id] = list(item.get("summary", []))
                 context.record_provider_event(
                     "thinking_start",
                     {"content_index": 0, "message_id": item_id},
@@ -1075,9 +1089,7 @@ class CodexAppServerRuntime(ProviderRuntime):
                         "name": "shell_command",
                     },
                 )
-                self._emit_tool_exec_start(
-                    session_state, item, turn_index=turn_index
-                )
+                self._emit_tool_exec_start(session_state, item, turn_index=turn_index)
             return False
 
         if method == "item/completed":
@@ -1116,9 +1128,7 @@ class CodexAppServerRuntime(ProviderRuntime):
                 final_answer = phase == "final_answer"
             elif item_type == "reasoning":
                 self._reasoning_chunks[item_id] = list(item.get("content", []))
-                self._reasoning_summary_chunks[item_id] = list(
-                    item.get("summary", [])
-                )
+                self._reasoning_summary_chunks[item_id] = list(item.get("summary", []))
                 context.record_provider_event(
                     "thinking_end",
                     {"content_index": 0, "message_id": item_id},
@@ -1144,8 +1154,7 @@ class CodexAppServerRuntime(ProviderRuntime):
                 if (
                     existing is not None
                     and isinstance(existing.get("tool_call"), ProviderToolCall)
-                    and existing["tool_call"].arguments_json
-                    != tool_call.arguments_json
+                    and existing["tool_call"].arguments_json != tool_call.arguments_json
                 ):
                     raise self._protocol_error(
                         "Codex command changed during execution", context
@@ -1155,11 +1164,12 @@ class CodexAppServerRuntime(ProviderRuntime):
                     buffers = self._tool_output_buffers.get(
                         item_id, {"stdout": "", "stderr": ""}
                     )
-                    aggregated = f"{buffers.get('stdout', '')}{buffers.get('stderr', '')}"
-                failed = (
-                    item["status"] in {"failed", "declined"}
-                    or item.get("exitCode") not in {None, 0}
-                )
+                    aggregated = (
+                        f"{buffers.get('stdout', '')}{buffers.get('stderr', '')}"
+                    )
+                failed = item["status"] in {"failed", "declined"} or item.get(
+                    "exitCode"
+                ) not in {None, 0}
                 tool_result = {
                     "call_id": item_id,
                     "error" if failed else "result": aggregated,
@@ -1178,9 +1188,7 @@ class CodexAppServerRuntime(ProviderRuntime):
                         "arguments": tool_call.parsed_arguments,
                     },
                 )
-                self._emit_tool_exec_end(
-                    session_state, item, turn_index=turn_index
-                )
+                self._emit_tool_exec_end(session_state, item, turn_index=turn_index)
             self._completed_item_ids.add(item_id)
             return final_answer
 
@@ -1321,10 +1329,7 @@ class CodexAppServerRuntime(ProviderRuntime):
 
         if method == "thread/started":
             thread = payload.get("thread")
-            if (
-                not isinstance(thread, dict)
-                or thread.get("id") != self._thread_id
-            ):
+            if not isinstance(thread, dict) or thread.get("id") != self._thread_id:
                 raise self._protocol_error(
                     "Malformed Codex thread lifecycle event", context
                 )
@@ -1365,9 +1370,7 @@ class CodexAppServerRuntime(ProviderRuntime):
             payload.get("threadId") != self._thread_id
             or payload.get("turnId") != expected_turn_id
         ):
-            raise self._protocol_error(
-                "Codex usage correlation mismatch", context
-            )
+            raise self._protocol_error("Codex usage correlation mismatch", context)
         token_usage = payload.get("tokenUsage")
         if not isinstance(token_usage, dict):
             raise self._protocol_error("Malformed Codex token usage", context)
@@ -1404,9 +1407,7 @@ class CodexAppServerRuntime(ProviderRuntime):
             or isinstance(context_window, bool)
             or context_window < 0
         ):
-            raise self._protocol_error(
-                "Malformed Codex model context window", context
-            )
+            raise self._protocol_error("Malformed Codex model context window", context)
         extensions: Dict[str, Any] = {
             "codex_total": {
                 "cache_read_tokens": total["cachedInputTokens"],
@@ -1441,9 +1442,7 @@ class CodexAppServerRuntime(ProviderRuntime):
         if not isinstance(turn, dict):
             raise self._protocol_error("Malformed Codex turn completion", context)
         if payload.get("threadId") != self._thread_id:
-            raise self._protocol_error(
-                "Codex turn completion thread mismatch", context
-            )
+            raise self._protocol_error("Codex turn completion thread mismatch", context)
         if turn.get("id") != expected_turn_id:
             raise self._protocol_error(
                 "Codex turn completion identifier mismatch", context
@@ -1519,9 +1518,7 @@ class CodexAppServerRuntime(ProviderRuntime):
             )
         return dict(turn)
 
-    def _completed_agent_texts(
-        self, *, phase: str = "final_answer"
-    ) -> List[str]:
+    def _completed_agent_texts(self, *, phase: str = "final_answer") -> List[str]:
         texts: List[str] = []
         for item_id, chunks in self._final_message_chunks.items():
             if self._message_phase_by_item_id.get(item_id) != phase:
@@ -1544,9 +1541,7 @@ class CodexAppServerRuntime(ProviderRuntime):
         for text in self._completed_agent_texts(phase="commentary"):
             blocks.append({"type": "thinking", "text": text})
         for chunks in self._reasoning_chunks.values():
-            blocks.extend(
-                {"type": "thinking", "text": text} for text in chunks if text
-            )
+            blocks.extend({"type": "thinking", "text": text} for text in chunks if text)
         for text in self._completed_reasoning_summaries():
             blocks.append({"type": "thinking", "text": text})
         return blocks

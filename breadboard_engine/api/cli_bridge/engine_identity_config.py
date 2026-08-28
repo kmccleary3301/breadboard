@@ -27,17 +27,6 @@ from .events import (
     REPLAY_RETENTION_MAX_AGE_MS,
     REPLAY_RETENTION_MAX_EVENTS,
     SNAPSHOT_RECOVERY_ACTION,
-    replay_configuration_digest,
-)
-from .models import (
-    ErrorEnvelope,
-    SessionCreateRequest,
-    SessionCreateResponse,
-    SessionInputRequest,
-    SessionInputResponse,
-    SessionSummary,
-    SessionTurnCancelRequest,
-    SessionTurnCancelResponse,
 )
 
 ENGINE_IDENTITY_SCHEMA_VERSION = "bb.engine_identity.v1"
@@ -45,7 +34,9 @@ P30_SESSION_CONTRACT_ID = "p30-e4-session-v1"
 P30_SESSION_CONTRACT_SCHEMA_VERSION = "bb.p30.e4_session.v1"
 # This value is intentionally fixed. A landed session-schema change makes readiness
 # false until the contract change is explicitly reviewed and this digest is updated.
-P30_SESSION_SCHEMA_SHA256 = "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"
+P30_SESSION_SCHEMA_SHA256 = (
+    "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
+)
 P30_SESSION_REPLAY_CONTRACT_DIGEST = (
     "sha256:a107aea87bdc7075d68495d3c0bf2b68e85e38a2b2fef1000bf3f1eaee77f743"
 )
@@ -75,7 +66,12 @@ P30_SESSION_ROUTE_BINDINGS: tuple[tuple[str, str, str, str], ...] = (
         "cancel_turn",
         "cancel_turn",
     ),
-    ("GET", "/v1/sessions/{session_id}/events", "stream_events", "prepare_event_stream"),
+    (
+        "GET",
+        "/v1/sessions/{session_id}/events",
+        "stream_events",
+        "prepare_event_stream",
+    ),
     ("DELETE", "/v1/sessions/{session_id}", "delete_session", "stop_session"),
 )
 
@@ -107,7 +103,6 @@ class EngineProcessIdentity:
     engine_artifact_sha256: str
 
 
-
 class LaunchBootstrapVerifier:
     """One-use verifier whose credential arrives only through a protected descriptor."""
 
@@ -117,7 +112,9 @@ class LaunchBootstrapVerifier:
             identity.engine_boot_id,
             identity.engine_instance_id,
         )
-        self._digest: bytearray | None = bytearray(self._bound_digest(secret, self._binding))
+        self._digest: bytearray | None = bytearray(
+            self._bound_digest(secret, self._binding)
+        )
         self._consumed = False
         self._challenge: tuple[str, str, float] | None = None
 
@@ -144,11 +141,17 @@ class LaunchBootstrapVerifier:
         try:
             descriptor = os.fstat(fd)
             if descriptor.st_uid != os.geteuid():
-                raise EngineIdentityConfigError("launch bootstrap descriptor owner is invalid")
+                raise EngineIdentityConfigError(
+                    "launch bootstrap descriptor owner is invalid"
+                )
             if stat.S_ISREG(descriptor.st_mode) and descriptor.st_mode & 0o077:
-                raise EngineIdentityConfigError("launch bootstrap descriptor permissions are invalid")
+                raise EngineIdentityConfigError(
+                    "launch bootstrap descriptor permissions are invalid"
+                )
             if startup_deadline_seconds <= 0:
-                raise EngineIdentityConfigError("launch bootstrap startup deadline is invalid")
+                raise EngineIdentityConfigError(
+                    "launch bootstrap startup deadline is invalid"
+                )
             os.set_blocking(fd, False)
             deadline = time.monotonic() + startup_deadline_seconds
             while True:
@@ -170,11 +173,17 @@ class LaunchBootstrapVerifier:
                     break
                 material.extend(chunk)
                 if len(material) > 43:
-                    raise EngineIdentityConfigError("launch bootstrap descriptor payload is invalid")
-            if len(material) != 43 or _OPAQUE_ID_PATTERN.fullmatch(
-                material.decode("ascii", "ignore")
-            ) is None:
-                raise EngineIdentityConfigError("launch bootstrap descriptor payload is invalid")
+                    raise EngineIdentityConfigError(
+                        "launch bootstrap descriptor payload is invalid"
+                    )
+            if (
+                len(material) != 43
+                or _OPAQUE_ID_PATTERN.fullmatch(material.decode("ascii", "ignore"))
+                is None
+            ):
+                raise EngineIdentityConfigError(
+                    "launch bootstrap descriptor payload is invalid"
+                )
             return cls(material, identity)
         finally:
             for index in range(len(material)):
@@ -194,10 +203,14 @@ class LaunchBootstrapVerifier:
         if raw_fd is None:
             return None
         if not raw_fd.isascii() or not raw_fd.isdecimal():
-            raise EngineIdentityConfigError("launch bootstrap descriptor must be a decimal integer")
+            raise EngineIdentityConfigError(
+                "launch bootstrap descriptor must be a decimal integer"
+            )
         fd = int(raw_fd)
         if fd < 3:
-            raise EngineIdentityConfigError("launch bootstrap descriptor must not use a standard stream")
+            raise EngineIdentityConfigError(
+                "launch bootstrap descriptor must not use a standard stream"
+            )
         return cls.from_inherited_fd(fd, identity)
 
     @property
@@ -268,7 +281,9 @@ class LaunchBootstrapVerifier:
                 identity.engine_instance_id,
             )
             owner_digest = bytearray(self._bound_digest(owner_credential, binding))
-            if self._digest is not None and secrets.compare_digest(owner_digest, self._digest):
+            if self._digest is not None and secrets.compare_digest(
+                owner_digest, self._digest
+            ):
                 return False
             challenge = self._challenge
             if (
@@ -298,21 +313,26 @@ class LaunchBootstrapVerifier:
             self._digest = None
             return True
         finally:
-            for value in (message, candidate, owner_digest if "owner_digest" in locals() else bytearray()):
+            for value in (
+                message,
+                candidate,
+                owner_digest if "owner_digest" in locals() else bytearray(),
+            ):
                 for index in range(len(value)):
                     value[index] = 0
+
 
 def engine_source_artifact_sha256(source_root: Path) -> str:
     """Hash the exact Python source artifact served by this engine process."""
 
     root = source_root.resolve()
     source_paths = sorted(
-        path
-        for path in root.rglob("*.py")
-        if path.is_file() and not path.is_symlink()
+        path for path in root.rglob("*.py") if path.is_file() and not path.is_symlink()
     )
     if not source_paths:
-        raise EngineIdentityConfigError("engine source artifact contains no Python source files")
+        raise EngineIdentityConfigError(
+            "engine source artifact contains no Python source files"
+        )
 
     digest = hashlib.sha256(b"breadboard-engine-python-source-v1\0")
     for path in source_paths:
@@ -398,9 +418,9 @@ def _linux_process_start(pid: int) -> _OSProcessStart:
         stat_fields = stat_payload[stat_payload.rindex(")") + 2 :].split()
         start_ticks = int(stat_fields[19])
         clock_ticks = int(os.sysconf("SC_CLK_TCK"))
-        boot_id = Path("/proc/sys/kernel/random/boot_id").read_text(
-            encoding="ascii"
-        ).strip()
+        boot_id = (
+            Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip()
+        )
         boot_time_line = next(
             line
             for line in Path("/proc/stat").read_text(encoding="ascii").splitlines()
@@ -462,7 +482,9 @@ def _new_process_identity(pid: int) -> EngineProcessIdentity:
         engine_boot_id=secrets.token_urlsafe(32),
         launch_id=launch_id,
         launch_source=launch_source,
-        started_at=datetime.fromtimestamp(process_start.started_at_unix, tz=timezone.utc),
+        started_at=datetime.fromtimestamp(
+            process_start.started_at_unix, tz=timezone.utc
+        ),
         started_at_unix=process_start.started_at_unix,
         engine_artifact_sha256=engine_source_artifact_sha256(_ENGINE_SOURCE_ROOT),
     )
@@ -478,7 +500,9 @@ def _new_process_identity_and_bootstrap(
 class _ProcessIdentityProvider:
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._identity, self._bootstrap_verifier = _new_process_identity_and_bootstrap(os.getpid())
+        self._identity, self._bootstrap_verifier = _new_process_identity_and_bootstrap(
+            os.getpid()
+        )
         if hasattr(os, "register_at_fork"):
             os.register_at_fork(after_in_child=self._after_fork)
 
@@ -491,7 +515,9 @@ class _ProcessIdentityProvider:
         pid = os.getpid()
         with self._lock:
             if self._identity is None or self._identity.pid != pid:
-                self._identity, self._bootstrap_verifier = _new_process_identity_and_bootstrap(pid)
+                self._identity, self._bootstrap_verifier = (
+                    _new_process_identity_and_bootstrap(pid)
+                )
             return self._identity
 
     def bootstrap_verifier(self) -> LaunchBootstrapVerifier | None:
@@ -578,7 +604,21 @@ P30_SESSION_EVENT_STREAM_CONTRACT: dict[str, Any] = {
         EventType.TURN_COMPLETED.value: {
             "type": "object",
             "additionalProperties": False,
-            "maxProperties": 0,
+            "properties": {
+                "exchange_ref": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["exchange_id", "schema_version"],
+                    "properties": {
+                        "exchange_id": {"type": "string"},
+                        "schema_version": {"const": "bb.provider_exchange.v2"},
+                    },
+                },
+                "finish_reason": {"type": "string"},
+                "output_emitted": {"type": "boolean"},
+                "raw_provider_finish": {"type": "string"},
+                "usage": {"type": "object"},
+            },
         },
         EventType.TURN_FAILED.value: {
             "type": "object",
@@ -598,7 +638,14 @@ P30_SESSION_EVENT_STREAM_CONTRACT: dict[str, Any] = {
             "additionalProperties": False,
             "required": ["reason"],
             "properties": {
-                "reason": {"enum": ["user_requested", "timeout", "superseded"]}
+                "reason": {
+                    "enum": [
+                        "user_requested",
+                        "timeout",
+                        "superseded",
+                        "stop_requested",
+                    ]
+                }
             },
         },
         EventType.STREAM_GAP.value: {
@@ -671,4 +718,691 @@ def p30_session_schema_sha256(contract: dict[str, Any]) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
-P30_SESSION_BASELINE_HTTP = {'delivery_chaos_config': None, 'missing_routes': [], 'operations': [{'method': 'POST', 'parameters': [], 'path': '/v1/sessions', 'requestBody': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/SessionCreateRequest'}}}, 'required': True}, 'responses': {'200': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/SessionCreateResponse'}}}, 'description': 'Successful Response'}, '400': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/ErrorResponse'}}}, 'description': 'Bad Request'}, '422': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/HTTPValidationError'}}}, 'description': 'Validation Error'}}}, {'method': 'GET', 'parameters': [{'in': 'path', 'name': 'session_id', 'required': True, 'schema': {'title': 'Session Id', 'type': 'string'}}], 'path': '/v1/sessions/{session_id}', 'requestBody': None, 'responses': {'200': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/SessionSummary'}}}, 'description': 'Successful Response'}, '404': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/ErrorResponse'}}}, 'description': 'Not Found'}, '422': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/HTTPValidationError'}}}, 'description': 'Validation Error'}}}, {'method': 'POST', 'parameters': [{'in': 'path', 'name': 'session_id', 'required': True, 'schema': {'title': 'Session Id', 'type': 'string'}}], 'path': '/v1/sessions/{session_id}/input', 'requestBody': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/SessionInputRequest'}}}, 'required': True}, 'responses': {'202': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/SessionInputResponse'}}}, 'description': 'Successful Response'}, '400': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/ErrorResponse'}}}, 'description': 'Bad Request'}, '404': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/ErrorResponse'}}}, 'description': 'Not Found'}, '409': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/ErrorResponse'}}}, 'description': 'Conflict'}, '422': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/HTTPValidationError'}}}, 'description': 'Validation Error'}}}, {'method': 'POST', 'parameters': [{'in': 'path', 'name': 'session_id', 'required': True, 'schema': {'title': 'Session Id', 'type': 'string'}}, {'in': 'path', 'name': 'turn_id', 'required': True, 'schema': {'title': 'Turn Id', 'type': 'string'}}], 'path': '/v1/sessions/{session_id}/turns/{turn_id}/cancel', 'requestBody': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/SessionTurnCancelRequest'}}}, 'required': True}, 'responses': {'202': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/SessionTurnCancelResponse'}}}, 'description': 'Successful Response'}, '400': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/ErrorResponse'}}}, 'description': 'Bad Request'}, '404': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/ErrorResponse'}}}, 'description': 'Not Found'}, '409': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/ErrorResponse'}}}, 'description': 'Conflict'}, '422': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/HTTPValidationError'}}}, 'description': 'Validation Error'}}}, {'method': 'GET', 'parameters': [{'in': 'path', 'name': 'session_id', 'required': True, 'schema': {'title': 'Session Id', 'type': 'string'}}, {'in': 'query', 'name': 'replay', 'required': False, 'schema': {'default': False, 'title': 'Replay', 'type': 'boolean'}}, {'in': 'query', 'name': 'limit', 'required': False, 'schema': {'anyOf': [{'type': 'integer'}, {'type': 'null'}], 'title': 'Limit'}}, {'in': 'query', 'name': 'from_id', 'required': False, 'schema': {'anyOf': [{'type': 'string'}, {'type': 'null'}], 'title': 'From Id'}}], 'path': '/v1/sessions/{session_id}/events', 'requestBody': None, 'responses': {'200': {'content': {'application/json': {'schema': {}}}, 'description': 'Successful Response'}, '404': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/ErrorResponse'}}}, 'description': 'Not Found'}, '422': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/HTTPValidationError'}}}, 'description': 'Validation Error'}}}, {'method': 'DELETE', 'parameters': [{'in': 'path', 'name': 'session_id', 'required': True, 'schema': {'title': 'Session Id', 'type': 'string'}}], 'path': '/v1/sessions/{session_id}', 'requestBody': None, 'responses': {'204': {'description': 'Successful Response'}, '404': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/ErrorResponse'}}}, 'description': 'Not Found'}, '422': {'content': {'application/json': {'schema': {'$ref': '#/components/schemas/HTTPValidationError'}}}, 'description': 'Validation Error'}}}], 'schemas': {'ErrorResponse': {'description': 'Backward-compatible OpenAPI name for legacy response declarations.', 'properties': {'detail': {'anyOf': [{'type': 'string'}, {'additionalProperties': True, 'type': 'object'}, {'type': 'null'}], 'title': 'Detail'}, 'error': {'title': 'Error', 'type': 'string'}, 'path': {'anyOf': [{'type': 'string'}, {'type': 'null'}], 'title': 'Path'}}, 'required': ['error'], 'title': 'ErrorResponse', 'type': 'object'}, 'HTTPValidationError': {'properties': {'detail': {'items': {'$ref': '#/components/schemas/ValidationError'}, 'title': 'Detail', 'type': 'array'}}, 'title': 'HTTPValidationError', 'type': 'object'}, 'SessionCreateRequest': {'description': 'Incoming payload for POST /sessions.', 'properties': {'config_path': {'description': 'Path to agent config YAML/JSON.', 'title': 'Config Path', 'type': 'string'}, 'max_steps': {'anyOf': [{'type': 'integer'}, {'type': 'null'}], 'description': 'Override max steps for the loop.', 'title': 'Max Steps'}, 'metadata': {'anyOf': [{'additionalProperties': True, 'type': 'object'}, {'type': 'null'}], 'description': 'Opaque metadata for UX features.', 'title': 'Metadata'}, 'overrides': {'anyOf': [{'additionalProperties': True, 'type': 'object'}, {'type': 'null'}], 'description': 'Dotted-key override map.', 'title': 'Overrides'}, 'permission_mode': {'anyOf': [{'type': 'string'}, {'type': 'null'}], 'description': 'Agent permission preset.', 'title': 'Permission Mode'}, 'stream': {'default': True, 'description': 'Request streaming responses when supported.', 'title': 'Stream', 'type': 'boolean'}, 'task': {'default': '', 'description': 'Optional initial task; omit for an idle session.', 'title': 'Task', 'type': 'string'}, 'workspace': {'anyOf': [{'type': 'string'}, {'type': 'null'}], 'description': 'Optional explicit workspace root.', 'title': 'Workspace'}}, 'required': ['config_path'], 'title': 'SessionCreateRequest', 'type': 'object'}, 'SessionCreateResponse': {'properties': {'created_at': {'format': 'date-time', 'title': 'Created At', 'type': 'string'}, 'logging_dir': {'anyOf': [{'type': 'string'}, {'type': 'null'}], 'title': 'Logging Dir'}, 'session_id': {'title': 'Session Id', 'type': 'string'}, 'status': {'$ref': '#/components/schemas/SessionStatus'}}, 'required': ['session_id', 'status', 'created_at'], 'title': 'SessionCreateResponse', 'type': 'object'}, 'SessionInputRequest': {'properties': {'attachments': {'anyOf': [{'items': {'type': 'string'}, 'type': 'array'}, {'type': 'null'}], 'description': 'Attachment IDs returned by /attachments.', 'title': 'Attachments'}, 'client_message_id': {'description': 'Stable idempotency key for this input.', 'title': 'Client Message Id', 'type': 'string'}, 'content': {'description': 'User supplied input text.', 'title': 'Content', 'type': 'string'}}, 'required': ['content', 'client_message_id'], 'title': 'SessionInputRequest', 'type': 'object'}, 'SessionInputResponse': {'properties': {'client_message_id': {'title': 'Client Message Id', 'type': 'string'}, 'disposition': {'enum': ['started', 'queued', 'deduplicated'], 'title': 'Disposition', 'type': 'string'}, 'input_id': {'title': 'Input Id', 'type': 'string'}, 'original_disposition': {'enum': ['started', 'queued'], 'title': 'Original Disposition', 'type': 'string'}, 'status': {'const': 'accepted', 'default': 'accepted', 'title': 'Status', 'type': 'string'}, 'turn_id': {'title': 'Turn Id', 'type': 'string'}}, 'required': ['client_message_id', 'input_id', 'turn_id', 'disposition', 'original_disposition'], 'title': 'SessionInputResponse', 'type': 'object'}, 'SessionStatus': {'description': 'Lifecycle marker for a session.', 'enum': ['starting', 'running', 'completed', 'failed', 'stopped'], 'title': 'SessionStatus', 'type': 'string'}, 'SessionSummary': {'properties': {'active_turn_id': {'anyOf': [{'type': 'string'}, {'type': 'null'}], 'title': 'Active Turn Id'}, 'completion_summary': {'anyOf': [{'additionalProperties': True, 'type': 'object'}, {'type': 'null'}], 'title': 'Completion Summary'}, 'created_at': {'format': 'date-time', 'title': 'Created At', 'type': 'string'}, 'earliestRetainedEventId': {'anyOf': [{'type': 'string'}, {'type': 'null'}], 'title': 'Earliestretainedeventid'}, 'earliestRetainedSequence': {'anyOf': [{'type': 'integer'}, {'type': 'null'}], 'title': 'Earliestretainedsequence'}, 'headEventId': {'anyOf': [{'type': 'string'}, {'type': 'null'}], 'title': 'Headeventid'}, 'headSequence': {'default': 0, 'title': 'Headsequence', 'type': 'integer'}, 'last_activity_at': {'format': 'date-time', 'title': 'Last Activity At', 'type': 'string'}, 'logging_dir': {'anyOf': [{'type': 'string'}, {'type': 'null'}], 'title': 'Logging Dir'}, 'metadata': {'anyOf': [{'additionalProperties': True, 'type': 'object'}, {'type': 'null'}], 'title': 'Metadata'}, 'mode': {'anyOf': [{'type': 'string'}, {'type': 'null'}], 'title': 'Mode'}, 'model': {'anyOf': [{'type': 'string'}, {'type': 'null'}], 'title': 'Model'}, 'queued_turn_count': {'default': 0, 'title': 'Queued Turn Count', 'type': 'integer'}, 'replayRetention': {'additionalProperties': True, 'title': 'Replayretention', 'type': 'object'}, 'retainedHistory': {'default': 'complete', 'enum': ['complete', 'partial'], 'title': 'Retainedhistory', 'type': 'string'}, 'reward_summary': {'anyOf': [{'additionalProperties': True, 'type': 'object'}, {'type': 'null'}], 'title': 'Reward Summary'}, 'sessionReplayContractDigest': {'default': '', 'title': 'Sessionreplaycontractdigest', 'type': 'string'}, 'session_id': {'title': 'Session Id', 'type': 'string'}, 'status': {'$ref': '#/components/schemas/SessionStatus'}, 'terminalEventEnvelopes': {'items': {'additionalProperties': True, 'type': 'object'}, 'title': 'Terminaleventenvelopes', 'type': 'array'}, 'terminalTurns': {'items': {'additionalProperties': True, 'type': 'object'}, 'title': 'Terminalturns', 'type': 'array'}, 'turn_admission': {'$ref': '#/components/schemas/TurnAdmission', 'default': 'idle'}}, 'required': ['session_id', 'status', 'created_at', 'last_activity_at'], 'title': 'SessionSummary', 'type': 'object'}, 'SessionTurnCancelRequest': {'properties': {'cancellation_request_key': {'description': 'Stable idempotency key for this cancellation.', 'title': 'Cancellation Request Key', 'type': 'string'}, 'reason': {'default': 'user_requested', 'enum': ['user_requested', 'timeout', 'superseded'], 'title': 'Reason', 'type': 'string'}}, 'required': ['cancellation_request_key'], 'title': 'SessionTurnCancelRequest', 'type': 'object'}, 'SessionTurnCancelResponse': {'properties': {'cancellation_request_id': {'title': 'Cancellation Request Id', 'type': 'string'}, 'cancellation_request_key': {'title': 'Cancellation Request Key', 'type': 'string'}, 'disposition': {'enum': ['cancellation_requested', 'queued_cancelled', 'deduplicated'], 'title': 'Disposition', 'type': 'string'}, 'input_id': {'title': 'Input Id', 'type': 'string'}, 'original_disposition': {'enum': ['cancellation_requested', 'queued_cancelled'], 'title': 'Original Disposition', 'type': 'string'}, 'status': {'const': 'accepted', 'default': 'accepted', 'title': 'Status', 'type': 'string'}, 'turn_id': {'title': 'Turn Id', 'type': 'string'}}, 'required': ['cancellation_request_id', 'cancellation_request_key', 'input_id', 'turn_id', 'disposition', 'original_disposition'], 'title': 'SessionTurnCancelResponse', 'type': 'object'}, 'TurnAdmission': {'description': 'Whether a session can start a newly admitted turn immediately.', 'enum': ['idle', 'active'], 'title': 'TurnAdmission', 'type': 'string'}, 'ValidationError': {'properties': {'ctx': {'title': 'Context', 'type': 'object'}, 'input': {'title': 'Input'}, 'loc': {'items': {'anyOf': [{'type': 'string'}, {'type': 'integer'}]}, 'title': 'Location', 'type': 'array'}, 'msg': {'title': 'Message', 'type': 'string'}, 'type': {'title': 'Error Type', 'type': 'string'}}, 'required': ['loc', 'msg', 'type'], 'title': 'ValidationError', 'type': 'object'}}}
+P30_SESSION_BASELINE_HTTP = {
+    "delivery_chaos_config": None,
+    "missing_routes": [],
+    "operations": [
+        {
+            "method": "POST",
+            "parameters": [],
+            "path": "/v1/sessions",
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/SessionCreateRequest"}
+                    }
+                },
+                "required": True,
+            },
+            "responses": {
+                "200": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SessionCreateResponse"
+                            }
+                        }
+                    },
+                    "description": "Successful Response",
+                },
+                "400": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    },
+                    "description": "Bad Request",
+                },
+                "422": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HTTPValidationError"
+                            }
+                        }
+                    },
+                    "description": "Validation Error",
+                },
+            },
+        },
+        {
+            "method": "GET",
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "session_id",
+                    "required": True,
+                    "schema": {"title": "Session Id", "type": "string"},
+                }
+            ],
+            "path": "/v1/sessions/{session_id}",
+            "requestBody": None,
+            "responses": {
+                "200": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/SessionSummary"}
+                        }
+                    },
+                    "description": "Successful Response",
+                },
+                "404": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    },
+                    "description": "Not Found",
+                },
+                "422": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HTTPValidationError"
+                            }
+                        }
+                    },
+                    "description": "Validation Error",
+                },
+            },
+        },
+        {
+            "method": "POST",
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "session_id",
+                    "required": True,
+                    "schema": {"title": "Session Id", "type": "string"},
+                }
+            ],
+            "path": "/v1/sessions/{session_id}/input",
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/SessionInputRequest"}
+                    }
+                },
+                "required": True,
+            },
+            "responses": {
+                "202": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SessionInputResponse"
+                            }
+                        }
+                    },
+                    "description": "Successful Response",
+                },
+                "400": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    },
+                    "description": "Bad Request",
+                },
+                "404": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    },
+                    "description": "Not Found",
+                },
+                "409": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    },
+                    "description": "Conflict",
+                },
+                "422": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HTTPValidationError"
+                            }
+                        }
+                    },
+                    "description": "Validation Error",
+                },
+            },
+        },
+        {
+            "method": "POST",
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "session_id",
+                    "required": True,
+                    "schema": {"title": "Session Id", "type": "string"},
+                },
+                {
+                    "in": "path",
+                    "name": "turn_id",
+                    "required": True,
+                    "schema": {"title": "Turn Id", "type": "string"},
+                },
+            ],
+            "path": "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/SessionTurnCancelRequest"
+                        }
+                    }
+                },
+                "required": True,
+            },
+            "responses": {
+                "202": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SessionTurnCancelResponse"
+                            }
+                        }
+                    },
+                    "description": "Successful Response",
+                },
+                "400": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    },
+                    "description": "Bad Request",
+                },
+                "404": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    },
+                    "description": "Not Found",
+                },
+                "409": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    },
+                    "description": "Conflict",
+                },
+                "422": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HTTPValidationError"
+                            }
+                        }
+                    },
+                    "description": "Validation Error",
+                },
+            },
+        },
+        {
+            "method": "GET",
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "session_id",
+                    "required": True,
+                    "schema": {"title": "Session Id", "type": "string"},
+                },
+                {
+                    "in": "query",
+                    "name": "replay",
+                    "required": False,
+                    "schema": {"default": False, "title": "Replay", "type": "boolean"},
+                },
+                {
+                    "in": "query",
+                    "name": "limit",
+                    "required": False,
+                    "schema": {
+                        "anyOf": [{"type": "integer"}, {"type": "null"}],
+                        "title": "Limit",
+                    },
+                },
+                {
+                    "in": "query",
+                    "name": "from_id",
+                    "required": False,
+                    "schema": {
+                        "anyOf": [{"type": "string"}, {"type": "null"}],
+                        "title": "From Id",
+                    },
+                },
+            ],
+            "path": "/v1/sessions/{session_id}/events",
+            "requestBody": None,
+            "responses": {
+                "200": {
+                    "content": {"application/json": {"schema": {}}},
+                    "description": "Successful Response",
+                },
+                "404": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    },
+                    "description": "Not Found",
+                },
+                "422": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HTTPValidationError"
+                            }
+                        }
+                    },
+                    "description": "Validation Error",
+                },
+            },
+        },
+        {
+            "method": "DELETE",
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "session_id",
+                    "required": True,
+                    "schema": {"title": "Session Id", "type": "string"},
+                }
+            ],
+            "path": "/v1/sessions/{session_id}",
+            "requestBody": None,
+            "responses": {
+                "204": {"description": "Successful Response"},
+                "404": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    },
+                    "description": "Not Found",
+                },
+                "422": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HTTPValidationError"
+                            }
+                        }
+                    },
+                    "description": "Validation Error",
+                },
+            },
+        },
+    ],
+    "schemas": {
+        "ErrorResponse": {
+            "description": "Backward-compatible OpenAPI name for legacy response declarations.",
+            "properties": {
+                "detail": {
+                    "anyOf": [
+                        {"type": "string"},
+                        {"additionalProperties": True, "type": "object"},
+                        {"type": "null"},
+                    ],
+                    "title": "Detail",
+                },
+                "error": {"title": "Error", "type": "string"},
+                "path": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "title": "Path",
+                },
+            },
+            "required": ["error"],
+            "title": "ErrorResponse",
+            "type": "object",
+        },
+        "HTTPValidationError": {
+            "properties": {
+                "detail": {
+                    "items": {"$ref": "#/components/schemas/ValidationError"},
+                    "title": "Detail",
+                    "type": "array",
+                }
+            },
+            "title": "HTTPValidationError",
+            "type": "object",
+        },
+        "SessionCreateRequest": {
+            "description": "Incoming payload for POST /sessions.",
+            "properties": {
+                "config_path": {
+                    "description": "Path to agent config YAML/JSON.",
+                    "title": "Config Path",
+                    "type": "string",
+                },
+                "max_steps": {
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    "description": "Override max steps for the loop.",
+                    "title": "Max Steps",
+                },
+                "metadata": {
+                    "anyOf": [
+                        {"additionalProperties": True, "type": "object"},
+                        {"type": "null"},
+                    ],
+                    "description": "Opaque metadata for UX features.",
+                    "title": "Metadata",
+                },
+                "overrides": {
+                    "anyOf": [
+                        {"additionalProperties": True, "type": "object"},
+                        {"type": "null"},
+                    ],
+                    "description": "Dotted-key override map.",
+                    "title": "Overrides",
+                },
+                "permission_mode": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "description": "Agent permission preset.",
+                    "title": "Permission Mode",
+                },
+                "stream": {
+                    "default": True,
+                    "description": "Request streaming responses when supported.",
+                    "title": "Stream",
+                    "type": "boolean",
+                },
+                "task": {
+                    "default": "",
+                    "description": "Optional initial task; omit for an idle session.",
+                    "title": "Task",
+                    "type": "string",
+                },
+                "workspace": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "description": "Optional explicit workspace root.",
+                    "title": "Workspace",
+                },
+            },
+            "required": ["config_path"],
+            "title": "SessionCreateRequest",
+            "type": "object",
+        },
+        "SessionCreateResponse": {
+            "properties": {
+                "created_at": {
+                    "format": "date-time",
+                    "title": "Created At",
+                    "type": "string",
+                },
+                "logging_dir": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "title": "Logging Dir",
+                },
+                "session_id": {"title": "Session Id", "type": "string"},
+                "status": {"$ref": "#/components/schemas/SessionStatus"},
+            },
+            "required": ["session_id", "status", "created_at"],
+            "title": "SessionCreateResponse",
+            "type": "object",
+        },
+        "SessionInputRequest": {
+            "properties": {
+                "attachments": {
+                    "anyOf": [
+                        {"items": {"type": "string"}, "type": "array"},
+                        {"type": "null"},
+                    ],
+                    "description": "Attachment IDs returned by /attachments.",
+                    "title": "Attachments",
+                },
+                "client_message_id": {
+                    "description": "Stable idempotency key for this input.",
+                    "title": "Client Message Id",
+                    "type": "string",
+                },
+                "content": {
+                    "description": "User supplied input text.",
+                    "title": "Content",
+                    "type": "string",
+                },
+            },
+            "required": ["content", "client_message_id"],
+            "title": "SessionInputRequest",
+            "type": "object",
+        },
+        "SessionInputResponse": {
+            "properties": {
+                "client_message_id": {"title": "Client Message Id", "type": "string"},
+                "disposition": {
+                    "enum": ["started", "queued", "deduplicated"],
+                    "title": "Disposition",
+                    "type": "string",
+                },
+                "input_id": {"title": "Input Id", "type": "string"},
+                "original_disposition": {
+                    "enum": ["started", "queued"],
+                    "title": "Original Disposition",
+                    "type": "string",
+                },
+                "status": {
+                    "const": "accepted",
+                    "default": "accepted",
+                    "title": "Status",
+                    "type": "string",
+                },
+                "turn_id": {"title": "Turn Id", "type": "string"},
+            },
+            "required": [
+                "client_message_id",
+                "input_id",
+                "turn_id",
+                "disposition",
+                "original_disposition",
+            ],
+            "title": "SessionInputResponse",
+            "type": "object",
+        },
+        "SessionStatus": {
+            "description": "Lifecycle marker for a session.",
+            "enum": ["starting", "running", "completed", "failed", "stopped"],
+            "title": "SessionStatus",
+            "type": "string",
+        },
+        "SessionSummary": {
+            "properties": {
+                "active_turn_id": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "title": "Active Turn Id",
+                },
+                "completion_summary": {
+                    "anyOf": [
+                        {"additionalProperties": True, "type": "object"},
+                        {"type": "null"},
+                    ],
+                    "title": "Completion Summary",
+                },
+                "created_at": {
+                    "format": "date-time",
+                    "title": "Created At",
+                    "type": "string",
+                },
+                "earliestRetainedEventId": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "title": "Earliestretainedeventid",
+                },
+                "earliestRetainedSequence": {
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    "title": "Earliestretainedsequence",
+                },
+                "headEventId": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "title": "Headeventid",
+                },
+                "headSequence": {
+                    "default": 0,
+                    "title": "Headsequence",
+                    "type": "integer",
+                },
+                "last_activity_at": {
+                    "format": "date-time",
+                    "title": "Last Activity At",
+                    "type": "string",
+                },
+                "logging_dir": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "title": "Logging Dir",
+                },
+                "metadata": {
+                    "anyOf": [
+                        {"additionalProperties": True, "type": "object"},
+                        {"type": "null"},
+                    ],
+                    "title": "Metadata",
+                },
+                "mode": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "title": "Mode",
+                },
+                "model": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "title": "Model",
+                },
+                "queued_turn_count": {
+                    "default": 0,
+                    "title": "Queued Turn Count",
+                    "type": "integer",
+                },
+                "replayRetention": {
+                    "additionalProperties": True,
+                    "title": "Replayretention",
+                    "type": "object",
+                },
+                "retainedHistory": {
+                    "default": "complete",
+                    "enum": ["complete", "partial"],
+                    "title": "Retainedhistory",
+                    "type": "string",
+                },
+                "reward_summary": {
+                    "anyOf": [
+                        {"additionalProperties": True, "type": "object"},
+                        {"type": "null"},
+                    ],
+                    "title": "Reward Summary",
+                },
+                "sessionReplayContractDigest": {
+                    "default": "",
+                    "title": "Sessionreplaycontractdigest",
+                    "type": "string",
+                },
+                "session_id": {"title": "Session Id", "type": "string"},
+                "status": {"$ref": "#/components/schemas/SessionStatus"},
+                "terminalEventEnvelopes": {
+                    "items": {"additionalProperties": True, "type": "object"},
+                    "title": "Terminaleventenvelopes",
+                    "type": "array",
+                },
+                "terminalTurns": {
+                    "items": {"additionalProperties": True, "type": "object"},
+                    "title": "Terminalturns",
+                    "type": "array",
+                },
+                "turn_admission": {
+                    "$ref": "#/components/schemas/TurnAdmission",
+                    "default": "idle",
+                },
+            },
+            "required": ["session_id", "status", "created_at", "last_activity_at"],
+            "title": "SessionSummary",
+            "type": "object",
+        },
+        "SessionTurnCancelRequest": {
+            "properties": {
+                "cancellation_request_key": {
+                    "description": "Stable idempotency key for this cancellation.",
+                    "title": "Cancellation Request Key",
+                    "type": "string",
+                },
+                "reason": {
+                    "default": "user_requested",
+                    "enum": ["user_requested", "timeout", "superseded"],
+                    "title": "Reason",
+                    "type": "string",
+                },
+            },
+            "required": ["cancellation_request_key"],
+            "title": "SessionTurnCancelRequest",
+            "type": "object",
+        },
+        "SessionTurnCancelResponse": {
+            "properties": {
+                "cancellation_request_id": {
+                    "title": "Cancellation Request Id",
+                    "type": "string",
+                },
+                "cancellation_request_key": {
+                    "title": "Cancellation Request Key",
+                    "type": "string",
+                },
+                "disposition": {
+                    "enum": [
+                        "cancellation_requested",
+                        "queued_cancelled",
+                        "deduplicated",
+                    ],
+                    "title": "Disposition",
+                    "type": "string",
+                },
+                "input_id": {"title": "Input Id", "type": "string"},
+                "original_disposition": {
+                    "enum": ["cancellation_requested", "queued_cancelled"],
+                    "title": "Original Disposition",
+                    "type": "string",
+                },
+                "status": {
+                    "const": "accepted",
+                    "default": "accepted",
+                    "title": "Status",
+                    "type": "string",
+                },
+                "turn_id": {"title": "Turn Id", "type": "string"},
+            },
+            "required": [
+                "cancellation_request_id",
+                "cancellation_request_key",
+                "input_id",
+                "turn_id",
+                "disposition",
+                "original_disposition",
+            ],
+            "title": "SessionTurnCancelResponse",
+            "type": "object",
+        },
+        "TurnAdmission": {
+            "description": "Whether a session can start a newly admitted turn immediately.",
+            "enum": ["idle", "active"],
+            "title": "TurnAdmission",
+            "type": "string",
+        },
+        "ValidationError": {
+            "properties": {
+                "ctx": {"title": "Context", "type": "object"},
+                "input": {"title": "Input"},
+                "loc": {
+                    "items": {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+                    "title": "Location",
+                    "type": "array",
+                },
+                "msg": {"title": "Message", "type": "string"},
+                "type": {"title": "Error Type", "type": "string"},
+            },
+            "required": ["loc", "msg", "type"],
+            "title": "ValidationError",
+            "type": "object",
+        },
+    },
+}

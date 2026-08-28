@@ -46,6 +46,7 @@ from conformance.provider_differential.gate import (
     load_oracle,
 )
 from conformance.provider_differential.provider_rows import observe_provider_row
+from scripts.quality import run_provider_differential
 
 ROOT = Path(__file__).parents[1]
 MATRIX_PATH = ROOT / "conformance/provider_differential/matrix.v1.json"
@@ -156,6 +157,36 @@ def _artifact_observations() -> list[dict]:
             "evidence": ["loopback:http+sse"],
         },
     ]
+
+
+def test_oracle_subprocess_environment_is_allowlisted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PATH", "/safe/bin")
+    monkeypatch.setenv("GITHUB_TOKEN", "github-secret")
+    monkeypatch.setenv("GH_TOKEN", "gh-secret")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
+    monkeypatch.setenv("UNRELATED_AMBIENT_VALUE", "ambient")
+
+    environment = run_provider_differential._safe_environment()
+
+    assert environment["PATH"] == "/safe/bin"
+    assert {
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
+        "AWS_SECRET_ACCESS_KEY",
+        "UNRELATED_AMBIENT_VALUE",
+    }.isdisjoint(environment)
+    assert set(environment) <= (
+        run_provider_differential._SAFE_ORACLE_ENV
+        | {
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "NO_PROXY",
+            "BUN_TELEMETRY_DISABLE",
+        }
+    )
 
 
 def test_matrix_and_oracle_are_exact_and_bound_to_f1(matrix, oracle):

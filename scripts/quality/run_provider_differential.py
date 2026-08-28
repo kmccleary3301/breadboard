@@ -55,7 +55,9 @@ REFERENCE_TESTS = (
     "packages/coding-agent/test/issue-985-subagent-auth-fallback.test.ts",
 )
 EXPECTED_REFERENCE_TEST_PASSES = 237
-_SECRET_ENV = re.compile(r"(?:API_KEY|AUTH_TOKEN|OAUTH_TOKEN|SECRET|PASSWORD)$", re.I)
+_SAFE_ORACLE_ENV = frozenset(
+    {"PATH", "SYSTEMROOT", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "TZ"}
+)
 
 
 class GateError(RuntimeError):
@@ -89,11 +91,8 @@ def _run(
 
 def _safe_environment() -> dict[str, str]:
     environment = {
-        key: value
-        for key, value in os.environ.items()
-        if _SECRET_ENV.search(key) is None
+        key: os.environ[key] for key in _SAFE_ORACLE_ENV if key in os.environ
     }
-    environment.pop("PYTHONPATH", None)
     environment.update(
         {
             "HTTP_PROXY": "http://127.0.0.1:9",
