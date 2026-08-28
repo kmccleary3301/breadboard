@@ -5206,7 +5206,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "__mvi_text_output": "Plan updated",
             }
         if normalized == "create_file_from_block":
-            target = self._normalize_workspace_path(str(args.get("file_name", "")))
+            target = self._normalize_workspace_path(
+                str(args.get("file_name") or args.get("filePath") or args.get("path") or "")
+            )
             content = str(args.get("content", ""))
             return (
                 {"error": "private workspace storage is unavailable to model tools"} if self._private_workspace_path(target) else self._ray_get(self.sandbox.write_text.remote(target, content)))
@@ -5384,7 +5386,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if name == "todoread":
             return self._execute_todo_tool("todo.list", args)
         if name in {"create_file_from_block", "Write"}:
-            path = self._normalize_workspace_path(str(args.get("file_name", "")))
+            path = self._normalize_workspace_path(
+                str(args.get("file_name") or args.get("filePath") or args.get("path") or "")
+            )
             content = str(args.get("content", ""))
             return self._ray_get(self.sandbox.write_text.remote(path, content))
         if name == "mark_task_complete":

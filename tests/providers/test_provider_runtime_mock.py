@@ -88,9 +88,9 @@ def test_cli_mock_runtime_emits_contract_valid_tool_sequence() -> None:
         [
             {
                 "role": "assistant",
-                "tool_calls": [
-                    {"name": "todo.write_board"},
-                    {"name": "Write"},
+                "content": [
+                    {"type": "tool_call", "name": "todo.write_board"},
+                    {"type": "tool_call", "name": "Write"},
                 ],
             }
         ]
