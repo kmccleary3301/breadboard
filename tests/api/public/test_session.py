@@ -802,9 +802,18 @@ def test_runtime_setup_routes_require_execute_capability(
     assert multipart_parsed is False
 
 
+@pytest.mark.parametrize(
+    ("root_path", "request_path"),
+    [
+        ("/prefix", "/prefix/v1/sessions/missing/attachments"),
+        ("/prefix/", "/prefix//v1/sessions/missing/attachments"),
+    ],
+)
 def test_runtime_setup_guard_honors_mounted_root_path(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
+    root_path: str,
+    request_path: str,
 ) -> None:
     multipart_parsed = False
 
@@ -821,10 +830,10 @@ def test_runtime_setup_guard_honors_mounted_root_path(
     )
     with TestClient(
         create_app(include_atp_routes=False),
-        root_path="/prefix",
+        root_path=root_path,
     ) as mounted_client:
         denied = mounted_client.post(
-            "/prefix/v1/sessions/missing/attachments",
+            request_path,
             files={"files": ("fixture.txt", b"content", "text/plain")},
         )
     assert denied.status_code == 403

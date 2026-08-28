@@ -1,7 +1,7 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
 // openapi-schema-sha256: 41ca899616a5d5a705fff06eb685d8763acf7726790253cf52add5dc09ba6193
-// app-source-sha256: 4e022ce9d2392dcb86cd042e8562ba6a73cd4892e874e62afb28ee1c7eb8df02
+// app-source-sha256: 24291bef5735c5bc3df15083e4f7a555e61032f5fec7717bb1dc2e550fdf13b2
 
 export interface RouteEntry { path: string; method: string; operationId: string }
 
