@@ -9,6 +9,7 @@ import select
 import shutil
 import subprocess
 import threading
+import tempfile
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -96,37 +97,20 @@ def _codex_launch_contract(
     if base_url:
         environment["OPENAI_BASE_URL"] = base_url
 
-    api_key = str(configured.get("api_key") or "codex").strip()
+    api_key = str(configured.get("api_key") or "").strip()
+    access_token = str(configured.get("access_token") or "").strip()
     trusted_credentials: Dict[str, str] = {}
     provider_read_roots: Tuple[str, ...] = ()
-    if api_key and api_key != "codex":
-        trusted_credentials["OPENAI_API_KEY"] = api_key
+    if access_token:
+        trusted_credentials["CODEX_ACCESS_TOKEN"] = access_token
+    elif api_key and api_key != "codex":
+        trusted_credentials["CODEX_API_KEY"] = api_key
     else:
-        raw_home = str(source.get("CODEX_HOME") or "").strip()
-        if raw_home:
-            codex_home = Path(raw_home).expanduser()
-        else:
-            raw_user_home = str(source.get("HOME") or "").strip()
-            user_home = (
-                Path(raw_user_home).expanduser() if raw_user_home else Path.home()
-            )
-            codex_home = user_home / ".codex"
-        try:
-            codex_home = codex_home.resolve(strict=True)
-        except (OSError, RuntimeError) as exc:
-            raise ProviderRuntimeError(
-                "Provider-managed Codex credential home is unavailable",
-                kind="configuration",
-                details={"code": "codex_credential_home_unavailable"},
-            ) from exc
-        if not codex_home.is_dir():
-            raise ProviderRuntimeError(
-                "Provider-managed Codex credential home is unavailable",
-                kind="configuration",
-                details={"code": "codex_credential_home_unavailable"},
-            )
-        environment["CODEX_HOME"] = str(codex_home)
-        provider_read_roots = (str(codex_home),)
+        raise ProviderRuntimeError(
+            "Codex provider credentials are unavailable",
+            kind="configuration",
+            details={"code": "codex_credentials_unavailable"},
+        )
 
     identity_payload = json.dumps(
         {
@@ -157,30 +141,44 @@ class _CodexJsonRpcClient:
     ) -> None:
         self.codex_bin = codex_bin
         self.cwd = cwd
-        self.env = env
+        self.env = dict(env)
         self.trusted_credentials = dict(trusted_credentials or {})
         self.provider_read_roots = tuple(str(path) for path in provider_read_roots)
         self.protected_paths = tuple(
-            dict.fromkeys(
-                str(path)
-                for path in (
-                    *(
-                        protected_paths
-                        if protected_paths is not None
-                        else protected_credential_paths()
-                    ),
-                    *self.provider_read_roots,
-                )
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
             )
         )
+        self._state_home: Optional[Path] = None
         self._proc: Optional[subprocess.Popen[str]] = None
         self._lock = threading.Lock()
         self._stderr_lines: Deque[str] = deque(maxlen=400)
         self._stderr_thread: Optional[threading.Thread] = None
 
+    def _prepare_state_home(self) -> None:
+        if self._state_home is not None:
+            return
+        state_home = Path(
+            tempfile.mkdtemp(prefix=".breadboard-codex-", dir=self.cwd)
+        ).resolve(strict=True)
+        state_home.chmod(0o700)
+        self._state_home = state_home
+        self.env["CODEX_HOME"] = str(state_home)
+        self.env["CODEX_SQLITE_HOME"] = str(state_home)
+
+    def _remove_state_home(self) -> None:
+        state_home = self._state_home
+        self._state_home = None
+        if state_home is not None:
+            shutil.rmtree(state_home, ignore_errors=True)
+
     def start(self) -> None:
         if self._proc is not None:
             return
+        self._prepare_state_home()
         try:
             isolated_command, isolated_environment = build_restricted_process_command(
                 [
@@ -214,6 +212,7 @@ class _CodexJsonRpcClient:
             )
         except (ProcessIsolationUnavailable, OSError) as exc:
             self._proc = None
+            self._remove_state_home()
             raise ProviderRuntimeError(
                 "Codex app-server isolation is unavailable",
                 details={"error_type": exc.__class__.__name__},
@@ -224,6 +223,7 @@ class _CodexJsonRpcClient:
         proc = self._proc
         self._proc = None
         if proc is None:
+            self._remove_state_home()
             return
         try:
             if proc.stdin:
@@ -241,6 +241,7 @@ class _CodexJsonRpcClient:
         if self._stderr_thread and self._stderr_thread.is_alive():
             self._stderr_thread.join(timeout=0.5)
         self._stderr_lines.clear()
+        self._remove_state_home()
 
     def initialize(self) -> Dict[str, Any]:
         result = self.request(
@@ -478,7 +479,11 @@ def _release_pooled_client(
 
 
 def prewarm_codex_app_server(
-    *, model: str, cwd: str, env: Optional[Dict[str, str]] = None
+    *,
+    model: str,
+    cwd: str,
+    env: Optional[Dict[str, str]] = None,
+    client: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Best-effort process warmup for the pooled Codex app-server client."""
 
@@ -492,13 +497,27 @@ def prewarm_codex_app_server(
             "reason": f"{_CODEX_POOL_ENV} is not enabled",
             "model": normalized_model,
         }
+    if client is None:
+        from ..provider_broker import get_provider_broker
+
+        with get_provider_broker().execution_material(
+            "codex",
+            endpoint_id=f"prewarm:{normalized_model}",
+            environment=env,
+        ) as material:
+            return prewarm_codex_app_server(
+                model=normalized_model,
+                cwd=normalized_cwd,
+                env=env,
+                client=material,
+            )
     (
         warm_env,
         trusted_credentials,
         provider_read_roots,
         auth_identity,
     ) = _codex_launch_contract(
-        {"api_key": "codex"},
+        client,
         source_environment=env,
     )
     codex_bin = _resolve_codex_bin_path()

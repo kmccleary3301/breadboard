@@ -29,7 +29,9 @@ from .path_policy import (
     under_virtual_read_mount,
 )
 
-_TRUSTED_CREDENTIAL_ENV_KEYS = frozenset({"OPENAI_API_KEY", "CODEX_AUTH_TOKEN"})
+_TRUSTED_CREDENTIAL_ENV_KEYS = frozenset(
+    {"CODEX_ACCESS_TOKEN", "CODEX_API_KEY"}
+)
 
 
 def _validate_trusted_credential_values(
@@ -526,17 +528,28 @@ def build_restricted_process_command(
     child_environment = {
         str(key): str(value)
         for key, value in environment.items()
-        if not is_loader_environment_key(key) and str(key) != "CODEX_HOME"
+        if not is_loader_environment_key(key)
     }
     purge_provider_credentials(child_environment)
     child_environment.update(
         _validate_trusted_credential_values(trusted_credential_values)
     )
-    codex_home = environment.get("CODEX_HOME")
-    if codex_home and authorized_provider_roots:
-        resolved_codex_home = _resolved_existing(codex_home)
-        if resolved_codex_home in authorized_provider_roots:
-            child_environment["CODEX_HOME"] = str(resolved_codex_home)
+    child_environment.pop("CODEX_HOME", None)
+    child_environment.pop("CODEX_SQLITE_HOME", None)
+    for state_key in ("CODEX_HOME", "CODEX_SQLITE_HOME"):
+        state_value = environment.get(state_key)
+        if not state_value:
+            continue
+        resolved_state = _resolved_existing(state_value)
+        if resolved_state is None:
+            continue
+        if resolved_state == root or resolved_state.is_relative_to(root):
+            child_environment[state_key] = str(resolved_state)
+        elif (
+            state_key == "CODEX_HOME"
+            and resolved_state in authorized_provider_roots
+        ):
+            child_environment[state_key] = str(resolved_state)
     child_environment.update(
         {
             "HOME": str(root),

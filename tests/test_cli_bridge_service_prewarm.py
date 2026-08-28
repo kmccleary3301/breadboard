@@ -359,6 +359,7 @@ async def test_one_shot_completion_terminalizes_queued_turns(
     assert accepted[0].disposition == "queued"
     assert initial_turn.terminal_outcome == "completed"
     assert queued_turn.terminal_outcome == "cancelled"
+    assert record.terminal_event_envelopes[-1]["payload"]["reason"] == "superseded"
     assert record.product_session.read_model.status == "completed"
     assert record.status is SessionStatus.COMPLETED
     assert record.active_turn_id is None

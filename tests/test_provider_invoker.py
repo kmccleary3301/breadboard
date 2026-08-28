@@ -293,6 +293,7 @@ def test_provider_invoker_stream_failure_falls_back_to_retry():
     assert exchange["provider"] == fallback_result.metadata[
         "provider_exchange_identity"
     ]
+    assert exchange["request"]["stream"] is False
 
 
 def test_provider_invoker_resets_lifecycle_only_events_before_safe_retry():

@@ -917,6 +917,54 @@ class TestChildEnvironmentBoundary:
         assert child_environment["CUSTOM_RUNTIME_FLAG"] == "kept"
         assert child_environment["HOME"] == str(workspace)
 
+    def test_restricted_process_scopes_codex_auth_to_workspace_state(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        from breadboard_engine.security import launch_policy, process_isolation
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        state_home = workspace / ".breadboard-codex-state"
+        state_home.mkdir(mode=0o700)
+        host_home = tmp_path / "host-codex"
+        host_home.mkdir()
+        monkeypatch.setattr(launch_policy.platform, "system", lambda: "Linux")
+
+        _, child_environment = process_isolation.build_restricted_process_command(
+            ["/usr/bin/true"],
+            workspace=workspace,
+            shell=False,
+            environment={
+                "PATH": "/usr/bin",
+                "CODEX_HOME": str(host_home),
+                "CODEX_SQLITE_HOME": str(tmp_path / "missing-state"),
+            },
+            trusted_credential_values={
+                "CODEX_ACCESS_TOKEN": "scoped-access-token",
+            },
+        )
+        assert "CODEX_HOME" not in child_environment
+        assert "CODEX_SQLITE_HOME" not in child_environment
+        assert child_environment["CODEX_ACCESS_TOKEN"] == "scoped-access-token"
+
+        _, child_environment = process_isolation.build_restricted_process_command(
+            ["/usr/bin/true"],
+            workspace=workspace,
+            shell=False,
+            environment={
+                "PATH": "/usr/bin",
+                "CODEX_HOME": str(state_home),
+                "CODEX_SQLITE_HOME": str(state_home),
+            },
+            trusted_credential_values={
+                "CODEX_ACCESS_TOKEN": "scoped-access-token",
+            },
+        )
+        assert child_environment["CODEX_HOME"] == str(state_home)
+        assert child_environment["CODEX_SQLITE_HOME"] == str(state_home)
+
     @pytest.mark.skipif(
         os.name == "nt",
         reason="symlink creation is not reliably available on Windows CI",

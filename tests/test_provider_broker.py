@@ -784,6 +784,8 @@ def test_codex_auth_file_never_substitutes_openai_credentials(
     with broker.execution_material("codex", environment={}) as material:
         assert material is not None
         assert material["api_key"] == secret
+        assert material["access_token"] == secret
+        assert material["codex_auth_kind"] == "access_token"
         assert material["credential_origin"] == origin
     assert material == {}
 
