@@ -35,7 +35,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MAINTAINER_ROOTS = (
     _REPO_ROOT / "contracts",
     _REPO_ROOT / "docs",
-    _REPO_ROOT.parent / "docs_tmp",
+    _REPO_ROOT / "docs_tmp",
 )
 _STATUS_BY_EXIT = {2: 422, 3: 404, 4: 500, 5: 409, 6: 409}
 _IDEMPOTENCY_LOCKS: weakref.WeakValueDictionary[str, asyncio.Lock] = (

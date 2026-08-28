@@ -1,8 +1,10 @@
 from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
+import pytest
 from fastapi.testclient import TestClient
 from breadboard_engine.api.cli_bridge.app import create_app
+from breadboard_engine.api.public import models as public_models
 from breadboard_engine.api.public.models import scrub_public
 from breadboard.product.cli import harness as cli_harness
 from breadboard.product.operations import harness as harness_operations
@@ -246,16 +248,23 @@ def test_public_api_cannot_write_maintainer_evidence_trees(
     monkeypatch, tmp_path: Path
 ) -> None:
 
-    maintainer_tree = Path(__file__).resolve().parents[4] / "docs_tmp"
+    repository_evidence = Path(__file__).resolve().parents[3] / "docs_tmp"
+    assert repository_evidence in public_models._MAINTAINER_ROOTS
+    maintainer_tree = tmp_path / "docs_tmp"
+    maintainer_tree.mkdir()
+    monkeypatch.setattr(
+        public_models,
+        "_MAINTAINER_ROOTS",
+        (*public_models._MAINTAINER_ROOTS, maintainer_tree),
+    )
     marker = maintainer_tree / "daily_driver.v1.yaml"
     existed = marker.exists()
-    response = _client(monkeypatch, maintainer_tree).post("/v1/harnesses", json={})
-    if maintainer_tree.is_symlink():
-        assert response.status_code == 422
-        assert response.json()["error"]["error_code"] == "invalid_state"
-    else:
-        assert response.status_code == 404
-        assert response.json()["error"]["error_code"] == "path_unavailable"
+    client = _client(monkeypatch, maintainer_tree)
+    with pytest.raises(PermissionError, match="maintainer evidence trees"):
+        public_models.public_workspace()
+    response = client.post("/v1/harnesses", json={})
+    assert response.status_code == 404
+    assert response.json()["error"]["error_code"] == "path_unavailable"
     assert marker.exists() is existed
     workspace = tmp_path / "workspace"
     workspace.mkdir()
