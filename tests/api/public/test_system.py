@@ -49,18 +49,18 @@ def test_system_describe_matches_cli_result(monkeypatch, tmp_path: Path) -> None
     assert response.json()["data"]["operation_count"] == 26
     assert response.json()["data"]["internal_extensions"] == []
     assert response.json()["hashes"]["profile"] == (
-        "sha256:165d34c5ed177005fa289544da0b451294c89bb51b0d289f2372c4bd081eff43"
+        "sha256:6ea299b2d3ee382a8d8397cd5ed32080e99f8ae8b6a48006fce1ecad6859c10f"
     )
     assert response.json()["data"]["default_profile"] == {
         "profile_id": "daily_driver.v1",
         "definition_ref": "agent_configs/templates/daily_driver.v1.yaml",
         "schema_version": "bb.harness_definition.v1",
         "source_sha256": (
-            "sha256:155e9db1dabee3975739a221324215993002438dc33dd73402959dc4649709f5"
+            "sha256:4a53aa79a94224dff33182107d19436a9037c9661e31555e56ce16b3786d0ac9"
         ),
         "effective_lock_schema_version": "bb.effective_config_graph.v1",
         "effective_lock_hash": (
-            "sha256:165d34c5ed177005fa289544da0b451294c89bb51b0d289f2372c4bd081eff43"
+            "sha256:6ea299b2d3ee382a8d8397cd5ed32080e99f8ae8b6a48006fce1ecad6859c10f"
         ),
         "resources": [
             {

@@ -344,7 +344,7 @@ print(json.dumps({{
         "generated_operation_count": 26,
         "profile_id": "daily_driver.v1",
         "profile_hash": (
-            "sha256:165d34c5ed177005fa289544da0b451294c89bb51b0d289f2372c4bd081eff43"
+            "sha256:6ea299b2d3ee382a8d8397cd5ed32080e99f8ae8b6a48006fce1ecad6859c10f"
         ),
         "e4_import_count": 0,
     }

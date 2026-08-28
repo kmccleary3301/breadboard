@@ -21,6 +21,12 @@ prompts:
     base:
       system: prompts/daily_driver_system.md
 
+# Todo state is part of the ordinary coding workflow and its durable transcript.
+features:
+  todos:
+    enabled: true
+    strict: true
+
 # The packaged runtime registry supplies these ordinary coding tools.
 tools:
   mark_task_complete: true
