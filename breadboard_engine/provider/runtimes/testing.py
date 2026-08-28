@@ -250,12 +250,10 @@ class CliMockRuntime(ProviderRuntime):
         for msg in messages:
             if msg.get("role") != "assistant":
                 continue
-            tool_calls: List[Dict[str, Any]] = []
+            tool_calls: List[Any] = []
             direct_calls = msg.get("tool_calls")
             if isinstance(direct_calls, list):
-                tool_calls.extend(
-                    call for call in direct_calls if isinstance(call, dict)
-                )
+                tool_calls.extend(direct_calls)
             content = msg.get("content")
             if isinstance(content, list):
                 tool_calls.extend(
@@ -273,7 +271,10 @@ class CliMockRuntime(ProviderRuntime):
                     if isinstance(fn_block, dict):
                         name = fn_block.get("name")
                     name = name or call.get("name")
-                if not name:
+                else:
+                    fn_block = getattr(call, "function", None)
+                    name = getattr(fn_block, "name", None) or getattr(call, "name", None)
+                if not isinstance(name, str) or not name.strip():
                     continue
                 normalized_name = name.strip().lower()
                 if normalized_name.startswith("todo."):
