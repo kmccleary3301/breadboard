@@ -532,6 +532,11 @@ def test_provider_lease_enforces_exact_locked_route_and_credential_origin() -> N
             pass
     assert error.value.safe_code == "policy_rejection"
 
+    with pytest.raises(ProviderRuntimeError) as inactive_error:
+        with conductor._provider_client_lease("mock/slow", Runtime()):
+            pass
+    assert inactive_error.value.safe_code == "policy_rejection"
+
     conductor._model_role_lock["roles"]["default"]["primary"][
         "account_binding"
     ] = {"kind": "provider_managed", "pin": "session"}

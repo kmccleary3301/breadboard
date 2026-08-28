@@ -11,6 +11,7 @@ from typing import Any, Dict
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.provider_routing import ProviderDescriptor
 from breadboard_engine.provider_runtime import ProviderMessage, ProviderResult, ProviderRuntimeError
+from breadboard_engine.model_roles import compile_model_roles
 from breadboard_engine.provider.health import RouteHealthManager
 from breadboard_engine.provider.invoker import ProviderInvoker
 from breadboard_engine.provider.metrics import ProviderMetricsCollector
@@ -581,6 +582,110 @@ def test_llm_batch_query_honors_per_branch_concurrency_cap(monkeypatch: Any, tmp
     assert peak_by_branch.get("shared") == 1
     summary = out.get("summary") or {}
     assert int(summary.get("max_concurrency_per_branch") or 0) == 1
+
+
+def test_llm_query_model_argument_cannot_escape_active_role_lock(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    def _handler(
+        messages: list[Dict[str, Any]],
+        context: Any,
+    ) -> ProviderResult:
+        _ = (messages, context)
+        return ProviderResult(
+            messages=[ProviderMessage(role="assistant", content="locked")],
+            raw_response={},
+            usage={},
+        )
+
+    registry = _install_stub_provider(monkeypatch, _handler)
+    assert registry.router is not None
+    config = {
+        "features": {
+            "rlm": {
+                "enabled": True,
+                "scheduling": {"mode": "sync"},
+            }
+        },
+        "providers": {"default_model": "mock/slow"},
+    }
+    conductor = _make_conductor(config, tmp_path)
+    conductor._model_role_lock = compile_model_roles(
+        {
+            "schema_version": "bb.model_roles.v1",
+            "defaults": {
+                "role": "default",
+                "known_but_unbound_role": "error",
+                "unknown_role": "error",
+            },
+            "roles": {
+                "default": {
+                    "primary": {
+                        "provider_id": "mock",
+                        "model_id": "primary",
+                    },
+                    "fallbacks": [],
+                    "fallback_on": [],
+                },
+                "slow": {
+                    "primary": {
+                        "provider_id": "mock",
+                        "model_id": "slow",
+                    },
+                    "fallbacks": [],
+                    "fallback_on": [],
+                },
+            },
+            "dispatch": {
+                "subagents": {},
+                "lanes": {
+                    "main": "default",
+                    "balanced": "slow",
+                },
+            },
+            "policy": {
+                "allow_environment_overrides": False,
+                "cross_provider_fallback": "forbidden",
+                "account_failover": "forbidden",
+            },
+        }
+    ).as_dict()
+    conductor._active_model_role = "default"
+    leased_routes: list[str] = []
+
+    @contextmanager
+    def client_lease(model_route: str, _runtime: Any):
+        leased_routes.append(model_route)
+        yield object()
+
+    conductor.provider_invoker.client_lease = client_lease
+
+    result = conductor._exec_raw(
+        {
+            "function": "llm.query",
+            "arguments": {
+                "prompt": "use the active role",
+                "model": "mock/slow",
+            },
+        }
+    )
+    mapped_result = conductor._exec_raw(
+        {
+            "function": "llm.query",
+            "arguments": {
+                "prompt": "use the mapped lane",
+                "model": "mock/primary",
+                "lane": "balanced",
+            },
+        }
+    )
+
+
+    assert result.get("text") == "locked", result
+    assert result["route_id"] == "mock/primary"
+    assert mapped_result["route_id"] == "mock/slow"
+    assert leased_routes == ["mock/primary", "mock/slow"]
 
 
 def test_llm_query_artifact_write_handles_non_serializable_usage(monkeypatch: Any, tmp_path: Path) -> None:
