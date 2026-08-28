@@ -106,7 +106,6 @@ class _CodexJsonRpcClient:
                 shell=False,
                 environment=self.env,
                 protected_paths=self.protected_paths,
-                allow_network=True,
             )
             self._proc = subprocess.Popen(
                 isolated_command,
