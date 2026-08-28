@@ -38,6 +38,34 @@ def _execute_task(runner: SessionRunner, text: str = "task"):
 
 
 def _product_runner(session_id: str) -> tuple[SessionRunner, ProductSession]: runner = _runner(session_id); session = ProductSession.start(EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}), "task", session_id=session_id); runner.session.product_session = session; return runner, session
+@pytest.mark.parametrize(
+    ("base_mode", "override_mode"),
+    [
+        ("prompt", "auto_allow"),
+        ("auto_allow", "prompt"),
+    ],
+)
+def test_permission_mode_tracks_effective_runtime_override(
+    base_mode: str,
+    override_mode: str,
+) -> None:
+    runner = _runner(f"permission-{base_mode}-{override_mode}")
+    runner._base_config_cache = {
+        "permissions": {
+            "options": {
+                "mode": base_mode,
+            },
+        },
+    }
+    runner.request.overrides = {"permissions.options.mode": override_mode}
+
+    prepared = runner.prepare_runtime_config()
+
+    assert prepared["permissions"]["options"]["mode"] == override_mode
+    assert runner.request.permission_mode == override_mode
+    assert runner.session.metadata["permission_mode"] == override_mode
+
+
 async def _initialized() -> None: pass
 @pytest.mark.asyncio
 async def test_runner_admission_requires_exact_registry_correlation() -> None:
