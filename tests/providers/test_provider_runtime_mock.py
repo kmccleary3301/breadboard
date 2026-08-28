@@ -3,6 +3,8 @@ import pytest
 
 from breadboard_engine.provider_routing import provider_router
 from breadboard_engine.provider_runtime import ProviderRuntimeContext, provider_registry
+from breadboard_engine.provider.normalizer import normalize_provider_result
+
 
 EXACT_ZERO_USAGE = {
     "inputTokens": 0,
@@ -53,3 +55,19 @@ def test_synthetic_runtimes_report_exact_zero_usage(model_id: str) -> None:
     )
 
     assert result.usage == EXACT_ZERO_USAGE
+
+
+def test_cli_mock_runtime_emits_contract_valid_tool_calls() -> None:
+    descriptor, model = provider_router.get_runtime_descriptor("cli_mock/reference")
+    runtime = provider_registry.create_runtime(descriptor)
+    result = runtime.invoke(
+        client=runtime.create_client(api_key=descriptor.provider_id),
+        model=model,
+        messages=[{"role": "user", "content": "Hello"}],
+        tools=None,
+        stream=False,
+        context=ProviderRuntimeContext(session_state=object(), agent_config={}),
+    )
+
+    normalize_provider_result(result)
+    assert result.messages[0].tool_calls[0].id == "cli-mock-call-1-todo-write_board"
