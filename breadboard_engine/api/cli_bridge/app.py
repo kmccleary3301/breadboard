@@ -130,8 +130,11 @@ from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
 from breadboard_engine.api.public import mount_public_routes
 from breadboard_engine.api.public.models import (
+    PUBLIC_CAPABILITIES,
+    PublicPrincipal,
     is_public_operation_request,
     problem_response,
+    public_principal_scope,
 )
 
 logger = logging.getLogger(__name__)
@@ -146,6 +149,20 @@ def _is_loopback_host(host: str | None) -> bool:
         return False
     host = str(host).strip().lower()
     return host in {"127.0.0.1", "localhost", "::1"}
+
+
+def _public_request_principal(
+    request: Request,
+    required_token: str,
+) -> PublicPrincipal:
+    if required_token:
+        return PublicPrincipal("api-bearer", PUBLIC_CAPABILITIES)
+    client_host = request.client.host if request.client is not None else ""
+    if client_host == "testclient" or (
+        _is_loopback_host(request.url.hostname) and _is_loopback_host(client_host)
+    ):
+        return PublicPrincipal("local", PUBLIC_CAPABILITIES)
+    return PublicPrincipal("anonymous")
 
 
 def _load_chaos_config() -> Dict[str, float] | None:
@@ -323,7 +340,13 @@ def _decode_engine_build_provenance(
         target = payload["target"]
         if not isinstance(target, dict) or set(target) != {"platform", "architecture"}:
             return None
-        runtime_platform = "darwin" if sys.platform == "darwin" else "linux" if sys.platform.startswith("linux") else None
+        runtime_platform = (
+            "darwin"
+            if sys.platform == "darwin"
+            else "linux"
+            if sys.platform.startswith("linux")
+            else None
+        )
         runtime_architecture = {
             "arm64": "arm64",
             "aarch64": "arm64",
@@ -380,8 +403,7 @@ def _compute_engine_provenance(
         return revision
 
     packaged = _decode_engine_build_provenance(
-        packaged_provenance_path
-        or package_root / ENGINE_BUILD_PROVENANCE_FILENAME,
+        packaged_provenance_path or package_root / ENGINE_BUILD_PROVENANCE_FILENAME,
         package_root,
     )
     if packaged is not None:
@@ -931,20 +953,21 @@ def create_app(
 
     @app.middleware("http")
     async def _auth_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
-        if not required_token:
+        if required_token:
+            header = request.headers.get("authorization") or ""
+            token = ""
+            if header.lower().startswith("bearer "):
+                token = header[7:].strip()
+            if not token or token != required_token:
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content=ErrorEnvelope(
+                        error="unauthorized", detail="unauthorized", path=None
+                    ).model_dump(),
+                )
+        principal = _public_request_principal(request, required_token)
+        with public_principal_scope(principal):
             return await call_next(request)
-        header = request.headers.get("authorization") or ""
-        token = ""
-        if header.lower().startswith("bearer "):
-            token = header[7:].strip()
-        if not token or token != required_token:
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content=ErrorEnvelope(
-                    error="unauthorized", detail="unauthorized", path=None
-                ).model_dump(),
-            )
-        return await call_next(request)
 
     @app.on_event("startup")
     async def _ensure_ray_initialized() -> None:

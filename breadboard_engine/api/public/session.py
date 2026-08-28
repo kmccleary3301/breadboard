@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 from breadboard_engine.api.cli_bridge.models import (
@@ -26,6 +26,7 @@ from .models import (
     SessionCancelRequest,
     SessionInputRequest,
     SessionStartRequest,
+    authorize_public_operation,
     from_public_exception,
     invoke_async,
     invoke_idempotent_async,
@@ -484,11 +485,14 @@ async def events(
     ),
     limit: int = Query(default=256, ge=1, le=1000),
 ):
+    granted = authorize_public_operation("session.events")
+    if isinstance(granted, JSONResponse):
+        return granted
     workspace = None
     start_after = resume_token if resume_token is not None else last_event_id or 0
     try:
         workspace = public_workspace()
-        context = public_operation_context(workspace)
+        context = public_operation_context(workspace, capabilities=granted)
         live_port = _LiveSessionAdapter(_service(request))
         first_batch = await session_operations.read_session_event_batch(
             session_operations.ListSessionEventsRequest(

@@ -727,6 +727,32 @@ def test_pending_session_intent_repairs_split_projection(
     assert not list(tmp_path.rglob("*.tmp"))
 
 
+def test_oversized_sparse_session_intent_is_rejected_before_reads_or_writes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    session_id = "oversized-intent"
+    _new_durable_session(tmp_path, session_id)
+    event_path = session_store.session_event_path(tmp_path, session_id)
+    metadata_path = session_store.session_metadata_path(tmp_path, session_id)
+    before = event_path.read_bytes(), metadata_path.read_bytes()
+    intent = event_path.parent / ".session.intent.json"
+    with intent.open("wb") as stream:
+        stream.seek(session_store._MAX_TRANSACTION_INTENT_BYTES)
+        stream.write(b"x")
+
+    def unbounded_read_forbidden(*_args, **_kwargs):
+        raise AssertionError("intent recovery used unbounded read")
+
+    monkeypatch.setattr(
+        session_store.AnchoredStorage,
+        "read_at",
+        staticmethod(unbounded_read_forbidden),
+    )
+    with pytest.raises(ValueError, match="oversized"):
+        session_store.load_session(tmp_path, session_id)
+    assert (event_path.read_bytes(), metadata_path.read_bytes()) == before
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [

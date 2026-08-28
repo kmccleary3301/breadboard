@@ -303,6 +303,28 @@ def _assert_posix_target(parent: int, name: str) -> None:
         raise OSError(f"unsafe session target: {name}")
 
 
+def _read_posix_file(parent: int, name: str, max_bytes: int) -> bytes:
+    if max_bytes < 0:
+        raise ValueError("maximum read size must be nonnegative")
+    descriptor = os.open(
+        name,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        dir_fd=parent,
+    )
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise OSError(f"unsafe session intent: {name}")
+        if metadata.st_size > max_bytes:
+            raise ValueError("session transaction intent is oversized")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            return stream.read(max_bytes + 1)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def _recover_intent_posix(
     parent: int,
     session_id: str,
@@ -313,7 +335,11 @@ def _recover_intent_posix(
     metadata_name = f"{session_id}.json" if legacy else "session.json"
     intent_name = _intent_name(session_id, legacy=legacy)
     try:
-        body = AnchoredStorage.read_at(parent, intent_name)
+        body = _read_posix_file(
+            parent,
+            intent_name,
+            _MAX_TRANSACTION_INTENT_BYTES,
+        )
     except FileNotFoundError:
         return
     event_payload, metadata_payload = _decode_intent(
@@ -330,10 +356,19 @@ def _recover_intent_posix(
     os.fsync(parent)
 
 
-def _read_windows_file(path: Path) -> bytes:
+def _read_windows_file(path: Path, max_bytes: int) -> bytes:
+    if max_bytes < 0:
+        raise ValueError("maximum read size must be nonnegative")
     descriptor = AnchoredStorage.windows_file_descriptor(path, create=False)
-    with os.fdopen(descriptor, "rb") as stream:
-        return stream.read()
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise OSError(f"unsafe session intent: {path.name}")
+        if metadata.st_size > max_bytes:
+            raise ValueError("session transaction intent is oversized")
+        return os.read(descriptor, max_bytes + 1)
+    finally:
+        os.close(descriptor)
 
 
 def _recover_intent_windows(
@@ -346,7 +381,10 @@ def _recover_intent_windows(
     metadata_name = f"{session_id}.json" if legacy else "session.json"
     intent_name = _intent_name(session_id, legacy=legacy)
     try:
-        body = _read_windows_file(parent / intent_name)
+        body = _read_windows_file(
+            parent / intent_name,
+            _MAX_TRANSACTION_INTENT_BYTES,
+        )
     except FileNotFoundError:
         return
     event_payload, metadata_payload = _decode_intent(

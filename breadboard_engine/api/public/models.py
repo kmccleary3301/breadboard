@@ -7,9 +7,11 @@ import os
 import re
 import weakref
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Literal
+from typing import Any, Awaitable, Iterator, Literal
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
@@ -44,10 +46,40 @@ _ALL_PUBLIC_CAPABILITIES: frozenset[str] = frozenset(
     for binding in PUBLIC_OPERATION_BINDINGS
     for capability in binding.required_capabilities
 )
+PUBLIC_CAPABILITIES = _ALL_PUBLIC_CAPABILITIES
+_EMPTY_PUBLIC_CAPABILITIES: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class PublicPrincipal:
+    subject: str
+    capabilities: frozenset[str] = _EMPTY_PUBLIC_CAPABILITIES
+
+    def __post_init__(self) -> None:
+        subject = self.subject.strip()
+        if not subject:
+            raise ValueError("public principal subject is required")
+        object.__setattr__(self, "subject", subject)
+        object.__setattr__(self, "capabilities", frozenset(self.capabilities))
+
+
+_PUBLIC_PRINCIPAL: ContextVar[PublicPrincipal | None] = ContextVar(
+    "public_principal",
+    default=None,
+)
 _GRANTED_CAPABILITIES: ContextVar[frozenset[str] | None] = ContextVar(
     "public_granted_capabilities",
     default=None,
 )
+
+
+@contextmanager
+def public_principal_scope(principal: PublicPrincipal) -> Iterator[None]:
+    token = _PUBLIC_PRINCIPAL.set(principal)
+    try:
+        yield
+    finally:
+        _PUBLIC_PRINCIPAL.reset(token)
 
 
 def _operation_contract() -> tuple[
@@ -166,7 +198,10 @@ def _granted_capabilities(
     if capabilities is not None:
         return frozenset(capabilities)
     inherited = _GRANTED_CAPABILITIES.get()
-    return _ALL_PUBLIC_CAPABILITIES if inherited is None else inherited
+    if inherited is not None:
+        return inherited
+    principal = _PUBLIC_PRINCIPAL.get()
+    return _EMPTY_PUBLIC_CAPABILITIES if principal is None else principal.capabilities
 
 
 def public_operation_context(
@@ -255,6 +290,22 @@ def _enforce_dispatch(
             f"Missing required capabilities: {', '.join(missing)}",
         )
     return binding, granted
+
+
+def authorize_public_operation(
+    operation_id: str,
+    *,
+    keyed: bool = False,
+    capabilities: frozenset[str] | None = None,
+) -> frozenset[str] | JSONResponse:
+    enforced = _enforce_dispatch(
+        operation_id,
+        keyed=keyed,
+        capabilities=capabilities,
+    )
+    if isinstance(enforced, JSONResponse):
+        return enforced
+    return enforced[1]
 
 
 def scrub_public(value: Any, workspace: Path | None = None) -> Any:

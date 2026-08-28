@@ -7,8 +7,9 @@ from fastapi.testclient import TestClient
 import pytest
 from jsonschema.exceptions import SchemaError
 from breadboard_engine.api.cli_bridge.app import create_app
-from breadboard.product.cli import system as system_operations
+import breadboard_engine.api.cli_bridge.app as app_module
 from breadboard.product.cli.main import main as cli_main
+from breadboard.product.cli import system as system_operations
 from breadboard.product.harness import (
     default_profile,
     resolution as harness_resolution,
@@ -19,6 +20,7 @@ from breadboard.product.operations.system import (
     DescribeSystemRequest,
     describe_system,
 )
+from breadboard_engine.api.public import artifact as public_artifact
 from breadboard_engine.api.public import models as public_models
 
 
@@ -591,6 +593,7 @@ def test_generated_capability_policy_gates_dispatch_before_callbacks(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
+    assert public_models.public_operation_context(tmp_path).capabilities == frozenset()
     calls: list[frozenset[str]] = []
 
     def callback(workspace: Path) -> OperationResult:
@@ -628,9 +631,38 @@ def test_generated_capability_policy_gates_dispatch_before_callbacks(
     assert keyed_denied.status_code == 403
     assert calls == []
 
-    allowed = public_models.invoke("artifact.list", callback)
+    allowed = public_models.invoke(
+        "artifact.list",
+        callback,
+        capabilities=public_models.PUBLIC_CAPABILITIES,
+    )
     assert allowed.status_code == 200
     assert calls == [public_models._ALL_PUBLIC_CAPABILITIES]
+
+
+def test_http_capability_grant_gates_effect_before_public_callback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[frozenset[str]] = []
+
+    def list_effect(_request, context):
+        calls.append(context.capabilities)
+        return OperationResult.success(["artifact", "list"], stage="artifact.list")
+
+    monkeypatch.setattr(public_artifact, "run_list_artifacts", list_effect)
+    allowed = _client(monkeypatch, tmp_path).get("/v1/artifacts")
+    assert allowed.status_code == 200
+    assert calls == [public_models.PUBLIC_CAPABILITIES]
+
+    monkeypatch.setattr(
+        app_module,
+        "_public_request_principal",
+        lambda _request, _required_token: public_models.PublicPrincipal("anonymous"),
+    )
+    denied = _client(monkeypatch, tmp_path).get("/v1/artifacts")
+    assert denied.status_code == 403
+    assert denied.json()["error"]["error_code"] == "capability_required"
+    assert calls == [public_models.PUBLIC_CAPABILITIES]
     assert "public.artifact.read" in calls[0]
 
 
