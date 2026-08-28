@@ -244,22 +244,38 @@ class SessionLifecycleOwner:
                 metadata.get("non_interactive_cli_session")
                 or metadata.get("cli_session_kind") == "oneshot"
             )
+            completion_summary = result.get("completion_summary") or {}
+            completion_reason = str(
+                completion_summary.get("reason")
+                or completion_summary.get("exit_kind")
+                or "turn_execution_failed"
+            )
+            execution_completed = bool(completion_summary.get("completed"))
+            failure_code = _safe_runtime_error_code(
+                completion_reason,
+                default="runtime_failure",
+            )
             with host._product_session_lock:
                 product_session = getattr(host.session, "product_session", None)
                 if product_session is None:
-                    durable_success = True
+                    durable_success = execution_completed
                 else:
-                    product_status = product_session.read_model
-                    if (
-                        one_shot
-                        and product_status.status == "running"
-                        and not host._stop_event.is_set()
-                    ):
-                        host.transition_product_session("complete")
+                    product_state = product_session.read_model.status
+                    if product_state == "running" and not host._stop_event.is_set():
+                        if execution_completed:
+                            if one_shot:
+                                host.transition_product_session("complete")
+                        else:
+                            host.transition_product_session(
+                                "fail",
+                                failure_code,
+                                completion_reason,
+                            )
+                    product_state = product_session.read_model.status
                     durable_success = (
-                        product_session.read_model.status == "completed"
+                        product_state == "completed"
                         if one_shot
-                        else product_status.status not in {"failed", "canceled"}
+                        else product_state not in {"failed", "canceled"}
                     )
             if durable_success:
                 try:
@@ -284,12 +300,6 @@ class SessionLifecycleOwner:
                     )
                     durable_success = False
             if task_turn is not None:
-                completion_summary = result.get("completion_summary") or {}
-                completion_reason = str(
-                    completion_summary.get("reason")
-                    or completion_summary.get("exit_kind")
-                    or "turn_execution_failed"
-                )
                 if host._stop_event.is_set():
                     await execution.finish_turn(
                         task_turn, "cancelled", reason=completion_reason
@@ -305,7 +315,7 @@ class SessionLifecycleOwner:
                         task_turn,
                         "failed",
                         reason=completion_reason,
-                        error_code=completion_reason,
+                        error_code=failure_code,
                     )
             if durable_success:
                 for (
