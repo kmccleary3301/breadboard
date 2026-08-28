@@ -36,26 +36,72 @@ logger = logging.getLogger(__name__)
 
 
 class TaskExecutionHost(Protocol):
-    """Narrow runner surface retained as the execution integration seam."""
+    """Explicit host port retained by task execution."""
 
     session: Any
     request: Any
+    registry: Any
     _agent: Any
     _stop_event: asyncio.Event
     _profile_timing_enabled: bool
     _mode: Optional[str]
+    _todo_enabled: bool
+    _model_override: Optional[str]
+    _product_tool_completions: Dict[str, int]
+    _published_events: int
+    _ctree_last_node: Optional[Dict[str, Any]]
+    _ctree_snapshot_cache: Optional[Dict[str, Any]]
+    _permission_queue: Any
+    _active_attachment_capabilities: Dict[str, Dict[str, Any]]
+    _active_input_media: List[Dict[str, str]]
+    _active_bridge_timing_context: Optional[Dict[str, float]]
+
+    def _persist_metadata_snapshot_threadsafe(self) -> None: ...
+    async def publish_event_async(
+        self, event_type: EventType, payload: Dict[str, Any], **kwargs: Any
+    ) -> None: ...
+    def publish_event(
+        self, event_type: EventType, payload: Dict[str, Any], **kwargs: Any
+    ) -> None: ...
+    def _translate_runtime_event(
+        self, event_type: str, payload: Dict[str, Any], turn: Optional[int]
+    ) -> Optional[TranslatedRuntimeEvent]: ...
+    def _record_product_observation(
+        self,
+        family: Optional[str],
+        payload: Dict[str, Any],
+        *,
+        message_projection: bool = False,
+    ) -> None: ...
+    def _apply_model_override(self) -> bool: ...
+    def _install_control_queue(self, queue: Any) -> None: ...
+    async def _enqueue_event_async(self, event: SessionEvent) -> None: ...
 
 
+PermissionProjection = Callable[[str, Dict[str, Any]], Optional[List[Dict[str, Any]]]]
 
 
 class TaskExecutionOwner:
     """Owns replay/task execution and durable turn terminalization."""
 
-    def __init__(self, runner: TaskExecutionHost) -> None:
+    def __init__(
+        self,
+        runner: TaskExecutionHost,
+        *,
+        permission_projection: Optional[PermissionProjection] = None,
+    ) -> None:
         self._runner = runner
+        self._permission_projection = permission_projection
+
+    def _project_pending_permissions(
+        self, event_type: str, payload: Dict[str, Any]
+    ) -> Optional[List[Dict[str, Any]]]:
+        projection = self._permission_projection
+        if projection is None:
+            return None
+        return projection(event_type, payload)
 
     def parse_replay_path(self, task_text: str) -> Optional[Path]:
-        runner = self._runner
         text = (task_text or "").strip()
         if not text:
             return None
@@ -81,12 +127,13 @@ class TaskExecutionOwner:
             path = path.resolve()
         return path
 
-
-    async def maybe_publish_todo_snapshot(self, workspace_dir: Optional[Path], *, call_id: str) -> None:
+    async def maybe_publish_todo_snapshot(
+        self, workspace_dir: Optional[Path], *, call_id: str
+    ) -> None:
         runner = self._runner
         if not runner._todo_enabled or not workspace_dir:
             return
-        envelope = runner._load_todo_envelope_from_disk(workspace_dir)
+        envelope = self.load_todo_envelope_from_disk(workspace_dir)
         if envelope is None:
             return
         runner.session.metadata["todo_last_update"] = envelope
@@ -95,7 +142,6 @@ class TaskExecutionOwner:
             EventType.TOOL_RESULT,
             {"call_id": call_id, "todo": envelope},
         )
-
 
     def require_execution_correlation(
         self, input_id: Optional[str], turn_id: Optional[str]
@@ -115,7 +161,6 @@ class TaskExecutionOwner:
             raise RuntimeProtocolError("runtime_protocol_error")
         return {"input_id": input_id, "turn_id": turn_id}
 
-
     async def execute_replay_task(
         self,
         task_text: str,
@@ -124,10 +169,10 @@ class TaskExecutionOwner:
         turn_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         runner = self._runner
-        replay_path = runner._parse_replay_path(task_text)
+        replay_path = self.parse_replay_path(task_text)
         if replay_path is None:
             raise ValueError("replay task missing path (expected replay:<path>)")
-        correlation = runner._require_execution_correlation(input_id, turn_id)
+        correlation = self.require_execution_correlation(input_id, turn_id)
         if not replay_path.exists():
             raise FileNotFoundError(f"replay fixture not found: {replay_path}")
 
@@ -179,15 +224,9 @@ class TaskExecutionOwner:
                     try:
                         event_type = EventType(type_raw.strip())
                     except ValueError:
-                        raise RuntimeProtocolError(
-                            "runtime_protocol_error"
-                        ) from None
-                    payload_raw = (
-                        entry[payload_fields[0]] if payload_fields else {}
-                    )
-                    payload = _validate_replay_event_payload(
-                        event_type, payload_raw
-                    )
+                        raise RuntimeProtocolError("runtime_protocol_error") from None
+                    payload_raw = entry[payload_fields[0]] if payload_fields else {}
+                    payload = _validate_replay_event_payload(event_type, payload_raw)
                     delay_ms = entry[delay_fields[0]] if delay_fields else 0
                     if (
                         not isinstance(delay_ms, int)
@@ -197,17 +236,12 @@ class TaskExecutionOwner:
                         raise RuntimeProtocolError("runtime_protocol_error")
                     turn = entry.get("turn")
                     if turn is not None and (
-                        not isinstance(turn, int)
-                        or isinstance(turn, bool)
-                        or turn < 0
+                        not isinstance(turn, int) or isinstance(turn, bool) or turn < 0
                     ):
                         raise RuntimeProtocolError("runtime_protocol_error")
                     if seen_run_finished:
                         raise RuntimeProtocolError("runtime_protocol_error")
-                    if (
-                        seen_completion
-                        and event_type is not EventType.RUN_FINISHED
-                    ):
+                    if seen_completion and event_type is not EventType.RUN_FINISHED:
                         raise RuntimeProtocolError("runtime_protocol_error")
                     if event_type is EventType.COMPLETION:
                         if seen_completion:
@@ -241,16 +275,12 @@ class TaskExecutionOwner:
             raise RuntimeProtocolError("runtime_protocol_error") from None
 
         meta = (
-            runner.session.metadata
-            if isinstance(runner.session.metadata, dict)
-            else {}
+            runner.session.metadata if isinstance(runner.session.metadata, dict) else {}
         )
         meta = dict(meta)
         meta["replay_fixture"] = {"path": str(replay_path)}
         runner.session.metadata = meta
-        await runner.registry.update_metadata(
-            runner.session.session_id, metadata=meta
-        )
+        await runner.registry.update_metadata(runner.session.session_id, metadata=meta)
 
         terminal_events: list[TranslatedRuntimeEvent] = []
         published_events = 0
@@ -275,9 +305,7 @@ class TaskExecutionOwner:
             }:
                 for field in ("text", "delta", "content", "message"):
                     if field in payload:
-                        payload[field] = _strip_completion_sentinels(
-                            payload[field]
-                        )
+                        payload[field] = _strip_completion_sentinels(payload[field])
             if event_type in {EventType.TOOL_RESULT, EventType.TOOL_RESULT_DOT}:
                 todo_update = payload.get("todo")
                 if isinstance(todo_update, dict):
@@ -344,16 +372,17 @@ class TaskExecutionOwner:
             "_terminal_events": terminal_events,
         }
 
-
-    def load_todo_envelope_from_disk(self, workspace_dir: Path) -> Optional[Dict[str, Any]]:
-        runner = self._runner
+    def load_todo_envelope_from_disk(
+        self, workspace_dir: Path
+    ) -> Optional[Dict[str, Any]]:
         try:
             store = TodoStore(str(workspace_dir), load_existing=True)
             snapshot = store.snapshot()
-            return project_store_snapshot_to_tui_envelope(snapshot, scope_key="main", scope_label="main")
+            return project_store_snapshot_to_tui_envelope(
+                snapshot, scope_key="main", scope_label="main"
+            )
         except Exception:
             return None
-
 
     def execute_task(
         self,
@@ -373,7 +402,7 @@ class TaskExecutionOwner:
         }
         runner._published_events = 0
         runner._product_tool_completions.clear()
-        correlation = runner._require_execution_correlation(input_id, turn_id)
+        correlation = self.require_execution_correlation(input_id, turn_id)
         terminal_events: list[TranslatedRuntimeEvent] = []
         runtime_event_lock = threading.Lock()
         is_local_agent = bool(getattr(runner._agent, "_local_mode", False))
@@ -435,7 +464,7 @@ class TaskExecutionOwner:
                         runner._ctree_snapshot_cache = dict(payload)
                 except Exception:
                     pass
-            ready_responses = runner._rehydrate_pending_permissions(
+            ready_responses = self._project_pending_permissions(
                 event_type, dict(payload or {})
             )
             permission_response_event = (
@@ -539,7 +568,9 @@ class TaskExecutionOwner:
             runner._apply_model_override()
         if interactive_permissions:
             try:
-                perms = getattr(runner._agent, "config", {}).setdefault("permissions", {})  # type: ignore[attr-defined]
+                perms = getattr(runner._agent, "config", {}).setdefault(
+                    "permissions", {}
+                )  # type: ignore[attr-defined]
                 if not isinstance(perms, dict):
                     perms = {}
                     runner._agent.config["permissions"] = perms  # type: ignore[attr-defined]
@@ -560,7 +591,7 @@ class TaskExecutionOwner:
                 Queue = None  # type: ignore[misc]
             if Queue is not None:
                 event_queue = Queue()
-                queue_stop, queue_thread = runner._start_queue_pump(
+                queue_stop, queue_thread = self.start_queue_pump(
                     event_queue,
                     handle_runtime_event,
                     errors=queue_errors,
@@ -604,7 +635,9 @@ class TaskExecutionOwner:
             task_context = {}
             try:
                 if isinstance(runner.session.metadata, dict):
-                    task_context = dict(runner.session.metadata.get("task_context") or {})
+                    task_context = dict(
+                        runner.session.metadata.get("task_context") or {}
+                    )
                     if (
                         "task_type" in runner.session.metadata
                         and "task_type" not in task_context
@@ -690,7 +723,7 @@ class TaskExecutionOwner:
                 queue_thread.join()
             if event_queue is not None:
                 try:
-                    runner._drain_event_queue(event_queue, handle_runtime_event)
+                    self.drain_event_queue(event_queue, handle_runtime_event)
                 except BaseException:
                     if run_task_error is None:
                         raise
@@ -714,9 +747,7 @@ class TaskExecutionOwner:
         exchange_ids: set[str] = set()
         try:
             for raw_exchange in raw_provider_exchanges:
-                exchange = strip_provider_exchange_completion_sentinels(
-                    raw_exchange
-                )
+                exchange = strip_provider_exchange_completion_sentinels(raw_exchange)
                 if (
                     exchange["correlation"] != expected_provider_correlation
                     or exchange["exchange_id"] in exchange_ids
@@ -726,9 +757,7 @@ class TaskExecutionOwner:
                 provider_exchanges.append(exchange)
             raw_provider_exchange = result.get("provider_exchange")
             provider_exchange = (
-                strip_provider_exchange_completion_sentinels(
-                    raw_provider_exchange
-                )
+                strip_provider_exchange_completion_sentinels(raw_provider_exchange)
                 if raw_provider_exchange is not None
                 else None
             )
@@ -765,9 +794,7 @@ class TaskExecutionOwner:
         if not emitted_flags["assistant"] and isinstance(messages, list):
             for entry in reversed(messages):
                 if isinstance(entry, dict) and entry.get("role") == "assistant":
-                    content = _strip_completion_sentinels(
-                        entry.get("content", "")
-                    )
+                    content = _strip_completion_sentinels(entry.get("content", ""))
                     text = _assistant_visible_text(content)
                     runner.publish_event(
                         EventType.ASSISTANT_MESSAGE,
@@ -803,10 +830,13 @@ class TaskExecutionOwner:
                 )
         after_fallback_emit_at = time.monotonic()
         logging_dir = result.get("logging_dir") or result.get("run_dir")
-        usage_payload = runner._extract_usage_metrics(
+        usage_payload = self.extract_usage_metrics(
             result, logging_dir, elapsed_ms=elapsed_ms
         )
-        completion_payload: Dict[str, Any] = {"summary": completion, "mode": runner._mode}
+        completion_payload: Dict[str, Any] = {
+            "summary": completion,
+            "mode": runner._mode,
+        }
         if runner._profile_timing_enabled:
             provider_timing = None
             candidate = result.get("provider_runtime_timing")
@@ -910,7 +940,6 @@ class TaskExecutionOwner:
             )
         return result_payload
 
-
     async def finish_turn(
         self,
         turn: TurnRecord,
@@ -929,21 +958,26 @@ class TaskExecutionOwner:
             turn.terminal_outcome = outcome
             turn.state = outcome
         if outcome == "completed":
-            event_type, payload = EventType.TURN_COMPLETED, dict(
-                completed_payload or {}
+            event_type, payload = (
+                EventType.TURN_COMPLETED,
+                dict(completed_payload or {}),
             )
         elif outcome == "cancelled":
-            event_type, payload = EventType.TURN_CANCELLED, {
-                "reason": reason or "user_requested"
-            }
+            event_type, payload = (
+                EventType.TURN_CANCELLED,
+                {"reason": reason or "user_requested"},
+            )
         else:
-            event_type, payload = EventType.TURN_FAILED, {
-                "error": {
-                    "code": _safe_runtime_error_code(
-                        error_code, default="turn_execution_failed"
-                    )
-                }
-            }
+            event_type, payload = (
+                EventType.TURN_FAILED,
+                {
+                    "error": {
+                        "code": _safe_runtime_error_code(
+                            error_code, default="turn_execution_failed"
+                        )
+                    }
+                },
+            )
         terminal_event = SessionEvent(
             type=event_type,
             session_id=runner.session.session_id,
@@ -1002,7 +1036,6 @@ class TaskExecutionOwner:
             )
         return True
 
-
     def start_queue_pump(
         self,
         event_queue: Any,
@@ -1010,10 +1043,11 @@ class TaskExecutionOwner:
         *,
         errors: Optional[List[BaseException]] = None,
     ) -> tuple[Any, Any]:
-        runner = self._runner
         import threading
         from queue import Empty
+
         stop_signal = threading.Event()
+
         def runner() -> None:
             while not stop_signal.is_set():
                 try:
@@ -1035,10 +1069,10 @@ class TaskExecutionOwner:
                         errors.append(error)
                     stop_signal.set()
                     return
+
         thread = threading.Thread(target=runner, daemon=True)
         thread.start()
         return stop_signal, thread
-
 
     def drain_event_queue(
         self,
@@ -1047,6 +1081,7 @@ class TaskExecutionOwner:
     ) -> None:
         runner = self._runner
         from queue import Empty
+
         while True:
             try:
                 item = event_queue.get_nowait()
@@ -1061,11 +1096,13 @@ class TaskExecutionOwner:
             if event_type is None:
                 continue
             handle_event(event_type, payload, turn=turn)
-        logger.info("session(%s) published %s events", runner.session.session_id, runner._published_events)
-
+        logger.info(
+            "session(%s) published %s events",
+            runner.session.session_id,
+            runner._published_events,
+        )
 
     def load_run_summary(self, logging_dir: Optional[str]) -> Optional[Dict[str, Any]]:
-        runner = self._runner
         if not logging_dir:
             return None
         try:
@@ -1076,30 +1113,47 @@ class TaskExecutionOwner:
         except Exception:
             return None
 
-
-    def normalize_usage_payload(self, usage: Dict[str, Any], *, latency_ms: Optional[int] = None) -> Dict[str, Any]:
-        runner = self._runner
+    def normalize_usage_payload(
+        self, usage: Dict[str, Any], *, latency_ms: Optional[int] = None
+    ) -> Dict[str, Any]:
         if not isinstance(usage, dict):
             return {}
+
         def _to_int(value: Any) -> int:
             try:
                 return int(value)
             except Exception:
                 return 0
+
         def _to_float(value: Any) -> Optional[float]:
             try:
                 return float(value)
             except Exception:
                 return None
-        prompt_tokens = _to_int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
-        completion_tokens = _to_int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
-        total_tokens = _to_int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
-        cache_read = _to_int(usage.get("cache_read_tokens") or usage.get("cache_read") or 0)
-        cache_write = _to_int(usage.get("cache_write_tokens") or usage.get("cache_write") or 0)
-        cost_usd = _to_float(usage.get("cost_usd") or usage.get("cost") or usage.get("total_cost"))
+
+        prompt_tokens = _to_int(
+            usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+        )
+        completion_tokens = _to_int(
+            usage.get("completion_tokens") or usage.get("output_tokens") or 0
+        )
+        total_tokens = _to_int(
+            usage.get("total_tokens") or (prompt_tokens + completion_tokens)
+        )
+        cache_read = _to_int(
+            usage.get("cache_read_tokens") or usage.get("cache_read") or 0
+        )
+        cache_write = _to_int(
+            usage.get("cache_write_tokens") or usage.get("cache_write") or 0
+        )
+        cost_usd = _to_float(
+            usage.get("cost_usd") or usage.get("cost") or usage.get("total_cost")
+        )
         latency_ms_val = _to_int(usage.get("latency_ms") or 0)
         if not latency_ms_val:
-            latency_s = _to_float(usage.get("latency_s") or usage.get("latency_seconds"))
+            latency_s = _to_float(
+                usage.get("latency_s") or usage.get("latency_seconds")
+            )
             if latency_s is not None:
                 latency_ms_val = int(latency_s * 1000)
         if not latency_ms_val and latency_ms is not None:
@@ -1119,9 +1173,7 @@ class TaskExecutionOwner:
             normalized["latency_ms"] = latency_ms_val
         return normalized
 
-
     def usage_from_run_summary(self, summary: Dict[str, Any]) -> Dict[str, Any]:
-        runner = self._runner
         diagnostics = summary.get("turn_diagnostics")
         if not isinstance(diagnostics, list):
             return {}
@@ -1141,16 +1193,28 @@ class TaskExecutionOwner:
             usage = entry.get("usage")
             if isinstance(usage, dict):
                 saw_usage = True
-                totals["prompt_tokens"] += int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
-                totals["completion_tokens"] += int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+                totals["prompt_tokens"] += int(
+                    usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+                )
+                totals["completion_tokens"] += int(
+                    usage.get("completion_tokens") or usage.get("output_tokens") or 0
+                )
                 total_tokens = usage.get("total_tokens")
                 if total_tokens is None:
-                    total_tokens = (usage.get("prompt_tokens") or usage.get("input_tokens") or 0) + (
-                        usage.get("completion_tokens") or usage.get("output_tokens") or 0
+                    total_tokens = (
+                        usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+                    ) + (
+                        usage.get("completion_tokens")
+                        or usage.get("output_tokens")
+                        or 0
                     )
                 totals["total_tokens"] += int(total_tokens or 0)
-                totals["cache_read_tokens"] += int(usage.get("cache_read_tokens") or usage.get("cache_read") or 0)
-                totals["cache_write_tokens"] += int(usage.get("cache_write_tokens") or usage.get("cache_write") or 0)
+                totals["cache_read_tokens"] += int(
+                    usage.get("cache_read_tokens") or usage.get("cache_read") or 0
+                )
+                totals["cache_write_tokens"] += int(
+                    usage.get("cache_write_tokens") or usage.get("cache_write") or 0
+                )
                 cost_value = usage.get("cost_usd") or usage.get("cost")
                 if isinstance(cost_value, (int, float)):
                     cost_total += float(cost_value)
@@ -1159,14 +1223,15 @@ class TaskExecutionOwner:
                 latency_total += float(latency_value)
         if not saw_usage:
             return {}
-        totals["total_tokens"] = totals["total_tokens"] or (totals["prompt_tokens"] + totals["completion_tokens"])
-        normalized = runner._normalize_usage_payload(totals)
+        totals["total_tokens"] = totals["total_tokens"] or (
+            totals["prompt_tokens"] + totals["completion_tokens"]
+        )
+        normalized = self.normalize_usage_payload(totals)
         if latency_total:
             normalized["latency_ms"] = int(latency_total * 1000)
         if cost_total:
             normalized["cost_usd"] = cost_total
         return normalized
-
 
     def extract_usage_metrics(
         self,
@@ -1175,16 +1240,15 @@ class TaskExecutionOwner:
         *,
         elapsed_ms: Optional[int] = None,
     ) -> Dict[str, Any]:
-        runner = self._runner
         for key in ("usage", "usage_summary", "usage_metrics"):
             usage = result.get(key)
             if isinstance(usage, dict):
-                normalized = runner._normalize_usage_payload(usage, latency_ms=elapsed_ms)
+                normalized = self.normalize_usage_payload(usage, latency_ms=elapsed_ms)
                 if normalized:
                     return normalized
-        summary = runner._load_run_summary(logging_dir)
+        summary = self.load_run_summary(logging_dir)
         if summary:
-            normalized = runner._usage_from_run_summary(summary)
+            normalized = self.usage_from_run_summary(summary)
             if normalized:
                 if elapsed_ms and not normalized.get("latency_ms"):
                     normalized["latency_ms"] = int(elapsed_ms)
@@ -1192,4 +1256,3 @@ class TaskExecutionOwner:
         if elapsed_ms:
             return {"latency_ms": int(elapsed_ms)}
         return {}
-

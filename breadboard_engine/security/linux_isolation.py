@@ -20,7 +20,7 @@ from .credential_boundary import (
     _validate_working_directory,
 )
 from .isolation_errors import ProcessIsolationUnavailable
-from .launch_policy import _under_virtual_read_mount
+from .path_policy import under_virtual_read_mount
 
 _LANDLOCK_CREATE_RULESET_VERSION = 1
 _LANDLOCK_RULE_PATH_BENEATH = 1
@@ -71,8 +71,6 @@ _DENIED_SYSCALLS: dict[str, tuple[int, tuple[int, ...]]] = {
         (117, 198, 203, 241, 270, 271, 272, 280, 425, 438),
     ),
 }
-
-
 
 
 class _SockFilter(ctypes.Structure):
@@ -305,7 +303,7 @@ def _parse_linux_launch(
             raise ProcessIsolationUnavailable("Linux read root is unavailable")
         if _paths_overlap(root, workspace):
             raise ProcessIsolationUnavailable("Linux read root overlaps workspace")
-        if _under_virtual_read_mount(root):
+        if under_virtual_read_mount(root):
             raise ProcessIsolationUnavailable(
                 "Linux read root exposes a virtual system mount"
             )
@@ -320,9 +318,7 @@ def _parse_linux_launch(
 
 def _parse_args(argv: Sequence[str]) -> tuple[Path, tuple[str, ...]]:
     """Compatibility parser used by focused policy tests."""
-    workspace, _working_directory, _read_roots, command = _parse_linux_launch(
-        argv
-    )
+    workspace, _working_directory, _read_roots, command = _parse_linux_launch(argv)
     return workspace, command
 
 

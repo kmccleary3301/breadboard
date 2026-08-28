@@ -367,7 +367,7 @@ async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_p
     with pytest.raises(OSError, match="sink unavailable"): await service.send_input(response.session_id, SessionInputRequest(content="next"))
     assert record.runner._input_queue.empty(); assert [event.kind for event in record.product_session.events] == ["session.started"]
     record.product_session._sink = sink; record.runner._rehydrate_pending_permissions("permission_request", {"request_id": "perm-1", "category": "shell"}); record.runner._permission_queue = _Failing(); persisted = []
-    monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_runner.upsert_permission_rule", lambda *_args, **_kwargs: persisted.append(True) or True); request = SessionCommandRequest(command="permission_decision", payload={"request_id": "perm-1", "decision": "always", "rule": "*.sh"})
+    monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_control.upsert_permission_rule", lambda *_args, **_kwargs: persisted.append(True) or True); request = SessionCommandRequest(command="permission_decision", payload={"request_id": "perm-1", "decision": "always", "rule": "*.sh"})
     with pytest.raises(HTTPException) as error: await service.execute_command(response.session_id, request)
     assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["approval.resolved", "session.failed"]; assert record.status.value == "failed"
     assert persisted == [True] and record.metadata["permission_rules"][0]["rule"] == "*.sh"
