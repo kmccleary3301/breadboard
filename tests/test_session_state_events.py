@@ -655,6 +655,47 @@ def test_session_runner_recognizes_replay_after_injected_system_reminder(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_session_runner_can_defer_execution_until_after_admission_response() -> None:
+    registry = SessionRegistry()
+    record = SessionRecord(session_id="sess-deferred-execution", status=SessionStatus.RUNNING)
+    turn = TurnRecord(
+        input_id="input-deferred",
+        turn_id="turn-deferred",
+        client_message_id="client-deferred",
+        content="continue",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+    deferred: list[Any] = []
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+
+    accepted = await runner.enqueue_input(
+        "continue",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+        defer_execution=deferred.append,
+    )
+
+    assert accepted == "continue"
+    assert runner._input_queue.empty()
+    assert len(deferred) == 1
+    await deferred[0]()
+    assert await runner._input_queue.get() == {
+        "content": "continue",
+        "attachments": [],
+        "input_id": turn.input_id,
+        "turn_id": turn.turn_id,
+    }
+
+
+@pytest.mark.asyncio
 async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None:
     registry = SessionRegistry()
     record = SessionRecord(session_id="sess-input-receipt", status=SessionStatus.RUNNING)
@@ -670,8 +711,17 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
             *,
             input_id: str | None = None,
             turn_id: str | None = None,
+            defer_execution: Any = None,
         ) -> str:
-            self.inputs.append((content, attachments, input_id, turn_id, record.active_turn_id))
+            async def execute() -> None:
+                self.inputs.append(
+                    (content, attachments, input_id, turn_id, record.active_turn_id)
+                )
+
+            if defer_execution is None:
+                await execute()
+            else:
+                defer_execution(execute)
             return content
 
     runner = Runner()
@@ -699,6 +749,38 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
         ("continue", [], first.input_id, first.turn_id, first.turn_id),
     ]
     assert record.active_turn_id == first.turn_id
+
+
+@pytest.mark.asyncio
+async def test_session_input_is_durable_before_deferred_execution(tmp_path: Path) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(session_id="sess-durable-admission", status=SessionStatus.RUNNING)
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    record.runner = runner
+    await registry.create(record)
+    service = SessionService(registry=registry)
+    deferred: list[Any] = []
+
+    receipt = await service.send_input(
+        record.session_id,
+        SessionInputRequest(content="continue", client_message_id="client-durable"),
+        defer_execution=deferred.append,
+    )
+
+    assert runner._input_queue.empty()
+    assert len(deferred) == 1
+    restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+    assert restored is not None
+    assert restored.turns_by_id[receipt.turn_id].input_id == receipt.input_id
+    assert restored.turns_by_id[receipt.turn_id].state == "active"
+    await deferred[0]()
+    queued = await runner._input_queue.get()
+    assert queued["input_id"] == receipt.input_id
+    assert queued["turn_id"] == receipt.turn_id
 
 
 @pytest.mark.asyncio

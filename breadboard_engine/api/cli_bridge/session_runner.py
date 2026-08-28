@@ -10,7 +10,7 @@ import time
 import uuid, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Mapping, Optional, Sequence, List, Tuple
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence, List, Tuple
 from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard.product.runtime.artifacts import _validate_artifact_name
 from breadboard_engine.auth.enforcer import apply_dotted_overrides
@@ -728,6 +728,7 @@ class SessionRunner:
         *,
         input_id: Optional[str] = None,
         turn_id: Optional[str] = None,
+        defer_execution: Optional[Callable[[Callable[[], Awaitable[None]]], None]] = None,
     ) -> str:
         if self._closed:
             raise RuntimeError("session is closed")
@@ -774,11 +775,13 @@ class SessionRunner:
                 "input_id": input_id,
                 "turn_id": turn_id,
             }
-            product_session = getattr(self.session, "product_session", None)
-            if product_session is not None:
-                product_session.input(content, [artifacts[item] for item in attachment_ids])
-                self.session.metadata["session_contract"] = product_session.read_model.as_dict()
-            self._input_queue.put_nowait(payload)
+            if defer_execution is None:
+                self._input_queue.put_nowait(payload)
+            else:
+                async def enqueue_after_response() -> None:
+                    self._input_queue.put_nowait(payload)
+
+                defer_execution(enqueue_after_response)
         return content
 
     def transition_product_session(self, transition: str, *args: Any) -> None:

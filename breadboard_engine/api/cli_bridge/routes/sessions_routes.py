@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import AsyncIterator
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from ..models import (
@@ -128,8 +128,17 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
             400: {"model": ErrorResponse},
         },
     )
-    async def post_input(session_id: str, payload: SessionInputRequest, svc: SessionService = Depends(get_service)):
-        return await svc.send_input(session_id, payload)
+    async def post_input(
+        session_id: str,
+        payload: SessionInputRequest,
+        background_tasks: BackgroundTasks,
+        svc: SessionService = Depends(get_service),
+    ):
+        return await svc.send_input(
+            session_id,
+            payload,
+            defer_execution=lambda operation: background_tasks.add_task(operation),
+        )
 
     @app.post(
         "/v1/sessions/{session_id}/turns/{turn_id}/cancel",

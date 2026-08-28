@@ -10,7 +10,7 @@ import uuid, weakref
 from pathlib import Path
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, AsyncIterator, Mapping, Optional, Sequence
+from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, Sequence
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import AnchoredStorage, ArtifactStore, Session as ProductSession
 from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
@@ -1061,7 +1061,13 @@ class SessionService:
         async with self._session_lock(session_id):
             await self._stop_session_locked(session_id)
             await self.registry.delete(session_id)
-    async def send_input(self, session_id: str, payload: SessionInputRequest) -> SessionInputResponse:
+    async def send_input(
+        self,
+        session_id: str,
+        payload: SessionInputRequest,
+        *,
+        defer_execution: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+    ) -> SessionInputResponse:
         record = await self.ensure_session(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
@@ -1105,13 +1111,19 @@ class SessionService:
                 else:
                     record.queued_turn_ids.append(turn.turn_id)
                 record.turn_admission = record.turn_admission.__class__.ACTIVE
+                scheduled_operations: list[Callable[[], Awaitable[None]]] = []
                 try:
                     accepted_content = await runner.enqueue_input(
                         payload.content,
                         attachments=list(attachments),
                         input_id=turn.input_id,
                         turn_id=turn.turn_id,
+                        defer_execution=scheduled_operations.append,
                     )
+                    if len(scheduled_operations) != 1:
+                        raise RuntimeError("input execution was not scheduled exactly once")
+                    turn.content = accepted_content
+                    await self.registry.persist(record)
                 except (ValueError, RuntimeError) as exc:
                     record.turns_by_id.pop(turn.turn_id, None)
                     record.submissions_by_key.pop(client_message_id, None)
@@ -1134,7 +1146,11 @@ class SessionService:
                         else status.HTTP_409_CONFLICT
                     )
                     raise HTTPException(status_code=http_status, detail=str(exc)) from exc
-                turn.content = accepted_content
+                scheduled_operation = scheduled_operations[0]
+                if defer_execution is None:
+                    await scheduled_operation()
+                else:
+                    defer_execution(scheduled_operation)
                 return SessionInputResponse(
                     client_message_id=client_message_id,
                     input_id=turn.input_id,
