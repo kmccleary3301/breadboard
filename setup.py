@@ -34,6 +34,7 @@ _WHEEL_INPUT_PATHS = (
     "requirements.txt",
     "requirements_web.txt",
     ":(exclude)docs/conformance/evidence_snapshots/**",
+    ":(exclude)docs/conformance/e4_target_support/**",
     ":(exclude)scripts/archive/**",
 )
 
