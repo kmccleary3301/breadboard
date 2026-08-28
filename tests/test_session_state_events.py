@@ -12,6 +12,7 @@ import pytest
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest, SessionInputRequest, SessionStatus,
+    SessionTurnCancelRequest,
 )
 from breadboard_engine.api.cli_bridge.registry import (
     SessionRecord, SessionRegistry, TurnRecord,
@@ -697,6 +698,116 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
         ("continue", [], first.input_id, first.turn_id, first.turn_id),
     ]
     assert record.active_turn_id == first.turn_id
+
+
+@pytest.mark.asyncio
+async def test_cancel_turn_requests_only_the_active_turn_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(session_id="sess-active-cancel", status=SessionStatus.RUNNING)
+    turn = TurnRecord(
+        input_id="input-active",
+        turn_id="turn-active",
+        client_message_id="client-active",
+        content="active",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+
+    class Runner:
+        def __init__(self) -> None:
+            self.requests: list[str] = []
+
+        def request_turn_cancellation(self, turn_id: str) -> bool:
+            self.requests.append(turn_id)
+            return True
+
+        async def finish_queued_turn_cancellation(
+            self, queued_turn: TurnRecord, reason: str,
+        ) -> None:
+            raise AssertionError((queued_turn, reason))
+
+    runner = Runner()
+    record.runner = runner
+    await registry.create(record)
+    service = SessionService(registry=registry)
+    request = SessionTurnCancelRequest(
+        cancellation_request_key="cancel-active",
+        reason="user_requested",
+    )
+
+    first = await service.cancel_turn(record.session_id, turn.turn_id, request)
+    duplicate = await service.cancel_turn(record.session_id, turn.turn_id, request)
+
+    assert first.disposition == "cancellation_requested"
+    assert first.original_disposition == "cancellation_requested"
+    assert duplicate.disposition == "deduplicated"
+    assert duplicate.cancellation_request_id == first.cancellation_request_id
+    assert runner.requests == [turn.turn_id]
+    assert turn.cancellation_requested is True
+    assert turn.cancellation_reason == "user_requested"
+    assert turn.terminal_outcome is None
+    assert record.status is SessionStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_cancel_turn_terminalizes_queued_turn_without_stopping_session(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(session_id="sess-queued-cancel", status=SessionStatus.RUNNING)
+    active = TurnRecord(
+        input_id="input-active",
+        turn_id="turn-active",
+        client_message_id="client-active",
+        content="active",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    queued = TurnRecord(
+        input_id="input-queued",
+        turn_id="turn-queued",
+        client_message_id="client-queued",
+        content="queued",
+        attachments=(),
+        original_disposition="queued",
+        state="queued",
+    )
+    record.turns_by_id = {active.turn_id: active, queued.turn_id: queued}
+    record.active_turn_id = active.turn_id
+    record.queued_turn_ids.append(queued.turn_id)
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    record.runner = runner
+    await registry.create(record)
+    service = SessionService(registry=registry)
+
+    response = await service.cancel_turn(
+        record.session_id,
+        queued.turn_id,
+        SessionTurnCancelRequest(
+            cancellation_request_key="cancel-queued",
+            reason="superseded",
+        ),
+    )
+
+    assert response.disposition == "queued_cancelled"
+    assert queued.terminal_outcome == "cancelled"
+    assert queued.terminal_resolution_committed is True
+    assert record.active_turn_id == active.turn_id
+    assert list(record.queued_turn_ids) == []
+    assert record.status is SessionStatus.RUNNING
+    assert [envelope["turn_id"] for envelope in record.terminal_event_envelopes] == [
+        queued.turn_id
+    ]
 
 
 @pytest.mark.asyncio

@@ -626,6 +626,7 @@ class SessionRunner:
             self._control_queue = queue
             if queue is None: return
             if self._stop_event.is_set(): queue.put({"kind": "stop"})
+            elif self._active_turn_cancellation_requested(): queue.put({"kind": "stop"})
             elif not self._resume_event.is_set(): queue.put({"kind": "pause"})
 
     def _request_stop(self, reason: str) -> bool:
@@ -642,6 +643,31 @@ class SessionRunner:
                 try: remote() if callable(remote) else request_stop() if callable(request_stop) else None
                 except Exception: pass
             return stopping
+
+    def _active_turn_cancellation_requested(self) -> bool:
+        turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
+        return bool(turn is not None and turn.cancellation_requested and turn.terminal_outcome is None)
+
+    def request_turn_cancellation(self, turn_id: str) -> bool:
+        with self._product_session_lock:
+            turn = self.session.turns_by_id.get(turn_id)
+            if (
+                turn is None
+                or self.session.active_turn_id != turn_id
+                or not turn.cancellation_requested
+                or turn.terminal_outcome is not None
+            ):
+                return False
+            self._signal_control("stop")
+            return True
+
+    async def finish_queued_turn_cancellation(self, turn: TurnRecord, reason: str) -> None:
+        await self._finish_turn(
+            turn,
+            "cancelled",
+            reason=reason,
+            advance_queue=False,
+        )
 
     async def stop(self, reason: str = "operator request") -> None:
         if self._closed:
@@ -2182,6 +2208,10 @@ class SessionRunner:
                     if isinstance(task_turn_id, str)
                     else None
                 )
+                if task_turn is not None and task_turn.terminal_outcome is not None:
+                    self._input_queue.task_done()
+                    input_inflight = False
+                    continue
                 if (
                     task_turn is not None
                     and self.session.active_turn_id != task_turn.turn_id
@@ -2314,7 +2344,13 @@ class SessionRunner:
                         or completion_summary.get("exit_kind")
                         or "turn_execution_failed"
                     )
-                    if self._stop_event.is_set():
+                    if task_turn.cancellation_requested:
+                        await self._finish_turn(
+                            task_turn,
+                            "cancelled",
+                            reason=task_turn.cancellation_reason or "user_requested",
+                        )
+                    elif self._stop_event.is_set():
                         await self._finish_turn(
                             task_turn, "cancelled", reason=completion_reason
                         )
@@ -2331,7 +2367,10 @@ class SessionRunner:
                             reason=completion_reason,
                             error_code=completion_reason,
                         )
-                if durable_success:
+                turn_was_cancelled = bool(
+                    task_turn is not None and task_turn.cancellation_requested
+                )
+                if durable_success and not turn_was_cancelled:
                     for (
                         event_type,
                         event_payload,
