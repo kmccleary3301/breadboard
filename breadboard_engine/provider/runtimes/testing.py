@@ -333,7 +333,7 @@ class CliMockRuntime(ProviderRuntime):
             out_messages.append(
                 ProviderMessage(
                     role="assistant",
-                    content="TASK COMPLETE",
+                    content="Bubble sort validation complete.\n\nTASK COMPLETE",
                     tool_calls=[],
                     finish_reason="stop",
                     index=0,
