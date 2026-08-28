@@ -542,7 +542,12 @@ def _observe_api_key_precedence(root: pathlib.Path) -> dict[str, Any]:
         source="stored",
         material={"api_key": sources["stored_api_key"]},
     )
-    broker.set_runtime_api_key("openai", sources["runtime"])
+    session_id = "auth-role-precedence-session"
+    broker.set_runtime_api_key(
+        "openai",
+        sources["runtime"],
+        session_id=session_id,
+    )
     broker.set_config_api_key("openai", sources["config"])
     environment = {"OPENAI_API_KEY": sources["env"]}
 
@@ -553,6 +558,7 @@ def _observe_api_key_precedence(root: pathlib.Path) -> dict[str, Any]:
             _origin_leg(
                 broker.get_credential_origin(
                     "openai",
+                    session_id=session_id,
                     environment_key="OPENAI_API_KEY",
                     environment=env,
                 )
@@ -560,7 +566,7 @@ def _observe_api_key_precedence(root: pathlib.Path) -> dict[str, Any]:
         )
 
     resolve(environment)
-    broker.remove_runtime_api_key("openai")
+    broker.remove_runtime_api_key("openai", session_id=session_id)
     resolve(environment)
     broker.clear_config_api_keys()
     resolve(environment)
@@ -617,7 +623,10 @@ def _observe_codex_oauth_precedence(root: pathlib.Path) -> dict[str, Any]:
         clock,
         provider_id="codex",
     )
-    origin = broker.get_credential_origin("codex")
+    origin = broker.get_credential_origin(
+        "codex",
+        session_id="auth-role-codex-session",
+    )
     _assert(
         origin is not None and origin.get("kind") == "oauth",
         "Codex OAuth was not selected",
@@ -649,8 +658,12 @@ def _observe_explicit_account_binding(root: pathlib.Path) -> dict[str, Any]:
         "auth-role-explicit-second-canary",
         alias="second",
     )
-    broker.set_runtime_api_key("openai", "auth-role-runtime-canary")
     session_id = "auth-role-explicit-session"
+    broker.set_runtime_api_key(
+        "openai",
+        "auth-role-runtime-canary",
+        session_id=session_id,
+    )
     with broker.execution_material(
         "openai",
         session_id=session_id,
@@ -1099,6 +1112,7 @@ def _observe_revoke_during_refresh(root: pathlib.Path) -> dict[str, Any]:
         try:
             with refresher.execution_material(
                 "anthropic",
+                session_id="auth-role-race-session",
                 account_selector={"account_id": account["account_id"]},
                 minimum_validity_ms=5_000,
             ) as material:

@@ -121,15 +121,27 @@ class ProviderBroker:
         self._codex_auth_path = (
             Path(codex_auth_path).expanduser().resolve()
             if codex_auth_path is not None
-            else (Path.home() / ".codex" / "auth.json").resolve()
+            else None
         )
         register = getattr(security, "register_protected_credential_path", None)
-        if register is not None:
+        if register is not None and self._codex_auth_path is not None:
             register(str(self._codex_auth_path), sqlite_sidecars=False)
-        self._runtime_overrides: dict[str, dict[str, Any]] = {}
+        self._runtime_overrides: dict[tuple[str, str], dict[str, Any]] = {}
         self._config_overrides: dict[str, dict[str, Any]] = {}
         self._audit: list[dict[str, Any]] = []
         self._lock = threading.RLock()
+
+    @staticmethod
+    def _validated_runtime_session_id(session_id: Any) -> str:
+        if not isinstance(session_id, str) or not session_id.strip():
+            raise ValueError("session_id is required")
+        return session_id
+
+    @staticmethod
+    def _runtime_session_key(session_id: Any) -> str | None:
+        if not isinstance(session_id, str) or not session_id.strip():
+            return None
+        return session_id
 
     @staticmethod
     def _value(input_data: Any, *names: str, default: Any = None) -> Any:
@@ -203,7 +215,7 @@ class ProviderBroker:
         self,
         provider_id: str,
     ) -> dict[str, Any] | None:
-        if provider_id != "codex":
+        if provider_id != "codex" or self._codex_auth_path is None:
             return None
         try:
             payload = json.loads(self._codex_auth_path.read_text(encoding="utf-8"))
@@ -249,6 +261,7 @@ class ProviderBroker:
         if (
             provider == "codex"
             and self._fallback_resolver is None
+            and self._codex_auth_path is not None
             and self._codex_auth_path.is_file()
         ):
             return "codex_auth_file"
@@ -277,17 +290,22 @@ class ProviderBroker:
 
     def _set_override(
         self,
-        target: dict[str, dict[str, Any]],
+        target: dict[Any, dict[str, Any]],
         provider_id: str,
         material: dict[str, Any],
+        *,
+        session_id: str | None = None,
     ) -> None:
         normalized = str(provider_id).strip().lower()
         if not normalized:
             self._clear_mutable_material(material)
             raise ValueError("provider_id is required")
+        key: str | tuple[str, str] = (
+            normalized if session_id is None else (session_id, normalized)
+        )
         with self._lock:
-            previous = target.pop(normalized, None)
-            target[normalized] = material
+            previous = target.pop(key, None)
+            target[key] = material
         if previous is not None:
             self._clear_mutable_material(previous)
 
@@ -296,10 +314,12 @@ class ProviderBroker:
         provider_id: str,
         api_key: str,
         *,
+        session_id: str,
         base_url: str | None = None,
         headers: Mapping[str, Any] | None = None,
     ) -> None:
-        """Install a process-lifetime override inside the broker boundary."""
+        """Install a session-local override inside the broker boundary."""
+        session = self._validated_runtime_session_id(session_id)
         self._set_override(
             self._runtime_overrides,
             provider_id,
@@ -308,12 +328,14 @@ class ProviderBroker:
                 base_url=base_url,
                 headers=headers,
             ),
+            session_id=session,
         )
 
-    def remove_runtime_api_key(self, provider_id: str) -> None:
+    def remove_runtime_api_key(self, provider_id: str, *, session_id: str) -> None:
+        session = self._validated_runtime_session_id(session_id)
         with self._lock:
             material = self._runtime_overrides.pop(
-                str(provider_id).strip().lower(),
+                (session, str(provider_id).strip().lower()),
                 None,
             )
         if material is not None:
@@ -824,9 +846,7 @@ class ProviderBroker:
                         raise ValueError(
                             "credential identity fields cannot contain credential material"
                         )
-                    if redaction.contains_registered_secret_mapping_key(
-                        metadata_value
-                    ):
+                    if redaction.contains_registered_secret_mapping_key(metadata_value):
                         raise ValueError(
                             "metadata keys cannot contain credential material"
                         )
@@ -1404,20 +1424,20 @@ class ProviderBroker:
 
     def _override_copy(
         self,
-        target: Mapping[str, Mapping[str, Any]],
-        provider_id: str,
+        target: Mapping[Any, Mapping[str, Any]],
+        key: Any,
     ) -> dict[str, Any] | None:
         with self._lock:
-            material = target.get(provider_id)
+            material = target.get(key)
             return self._copy_material(material) if material is not None else None
 
     def _has_override(
         self,
-        target: Mapping[str, Mapping[str, Any]],
-        provider_id: str,
+        target: Mapping[Any, Mapping[str, Any]],
+        key: Any,
     ) -> bool:
         with self._lock:
-            return provider_id in target
+            return key in target
 
     @staticmethod
     def _apply_origin(
@@ -1439,6 +1459,7 @@ class ProviderBroker:
         """Return the selected credential's provenance without secret material."""
         provider = str(provider_id).strip().lower()
         session = str(session_id).strip()
+        runtime_session = self._runtime_session_key(session_id)
         account_id, credential_id, label, alias = self._selector_values(
             account_selector
         )
@@ -1483,7 +1504,9 @@ class ProviderBroker:
                     allow_expired=True,
                 )
             return self._account_origin(account).to_dict() if account else None
-        if self._has_override(self._runtime_overrides, provider):
+        if runtime_session is not None and self._has_override(
+            self._runtime_overrides, (runtime_session, provider)
+        ):
             return CredentialOrigin(kind="runtime").to_dict()
         if self._has_override(self._config_overrides, provider):
             return CredentialOrigin(kind="config").to_dict()
@@ -1531,6 +1554,7 @@ class ProviderBroker:
     ) -> dict[str, Any] | None:
         provider = str(provider_id).strip().lower()
         session = str(session_id).strip()
+        runtime_session = self._runtime_session_key(session_id)
         account_id, credential_id, label, alias = self._selector_values(
             account_selector
         )
@@ -1573,16 +1597,21 @@ class ProviderBroker:
                     self._account_origin(selected),
                 )
             return None
-        for kind, target in (
-            ("runtime", self._runtime_overrides),
-            ("config", self._config_overrides),
-        ):
-            override = self._override_copy(target, provider)
+        if runtime_session is not None:
+            override = self._override_copy(
+                self._runtime_overrides, (runtime_session, provider)
+            )
             if override is not None:
                 return self._apply_origin(
                     override,
-                    CredentialOrigin(kind=kind),
+                    CredentialOrigin(kind="runtime"),
                 )
+        override = self._override_copy(self._config_overrides, provider)
+        if override is not None:
+            return self._apply_origin(
+                override,
+                CredentialOrigin(kind="config"),
+            )
         for credential_class in ("oauth", "login_api_key"):
             stored = self._issue_stored_execution_material(
                 provider,
