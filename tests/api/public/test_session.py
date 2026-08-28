@@ -802,6 +802,36 @@ def test_runtime_setup_routes_require_execute_capability(
     assert multipart_parsed is False
 
 
+def test_runtime_setup_guard_honors_mounted_root_path(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    multipart_parsed = False
+
+    async def parse_forbidden(_parser) -> None:
+        nonlocal multipart_parsed
+        multipart_parsed = True
+        raise AssertionError("mounted unauthorized multipart body was parsed")
+
+    monkeypatch.setattr(MultiPartParser, "parse", parse_forbidden)
+    monkeypatch.setattr(
+        app_module,
+        "_public_request_principal",
+        lambda _request, _required_token: public_models.PublicPrincipal("anonymous"),
+    )
+    with TestClient(
+        create_app(include_atp_routes=False),
+        root_path="/prefix",
+    ) as mounted_client:
+        denied = mounted_client.post(
+            "/prefix/v1/sessions/missing/attachments",
+            files={"files": ("fixture.txt", b"content", "text/plain")},
+        )
+    assert denied.status_code == 403
+    assert denied.json()["error"]["error_code"] == "capability_required"
+    assert multipart_parsed is False
+
+
 def test_runtime_setup_routes_reject_cross_site_loopback_before_lookup(
     client: TestClient,
 ) -> None:
@@ -818,8 +848,6 @@ def test_runtime_setup_routes_reject_cross_site_loopback_before_lookup(
     assert upload.status_code == 403
     assert pause.json()["error"]["error_code"] == "forbidden"
     assert upload.json()["error"]["error_code"] == "forbidden"
-
-
 
 
 def _new_durable_session(workspace: Path, session_id: str) -> None:

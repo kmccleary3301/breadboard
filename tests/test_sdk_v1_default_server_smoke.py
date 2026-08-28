@@ -16,25 +16,27 @@ import uvicorn
 
 from breadboard_engine.api.cli_bridge import app as app_module
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+from breadboard_engine.api.cli_bridge.task_execution import TaskExecutionOwner
 from breadboard.product.runtime.artifacts import ArtifactStore
 from breadboard_sdk import ApiError, BreadBoardClient
 
 
 def _hold_fixture_completion_until_input() -> tuple[object, object]:
-    original_execute = SessionRunner._execute_task
+    original_execute = TaskExecutionOwner.execute_task
     original_enqueue = SessionRunner.enqueue_input
 
     def is_smoke_session(session) -> bool:
         return str(getattr(session, "session_id", "")).endswith("smoke-session")
 
     def gated_execute(self, *args, **kwargs):
-        if not is_smoke_session(self.session):
+        runner = self._runner
+        if not is_smoke_session(runner.session):
             return original_execute(self, *args, **kwargs)
-        if not getattr(self, "_smoke_input_admitted", False):
-            gate = getattr(self, "_smoke_input_gate", None)
+        if not getattr(runner, "_smoke_input_admitted", False):
+            gate = getattr(runner, "_smoke_input_gate", None)
             if gate is None:
                 gate = threading.Event()
-                self._smoke_input_gate = gate
+                runner._smoke_input_gate = gate
             if not gate.wait(timeout=10):
                 raise RuntimeError(
                     "default smoke input was not admitted before completion"
@@ -49,7 +51,7 @@ def _hold_fixture_completion_until_input() -> tuple[object, object]:
             gate.set()
         return result
 
-    SessionRunner._execute_task = gated_execute
+    TaskExecutionOwner.execute_task = gated_execute
     SessionRunner.enqueue_input = gated_enqueue
     return original_execute, original_enqueue
 
@@ -110,7 +112,7 @@ def _running_default_server(workspace_path: str | None = None) -> Iterator[str]:
         server.should_exit = True
         thread.join(timeout=10)
         listener.close()
-        SessionRunner._execute_task = original_execute
+        TaskExecutionOwner.execute_task = original_execute
         SessionRunner.enqueue_input = original_enqueue
         if thread.is_alive():
             raise RuntimeError("default create_app server did not stop")

@@ -163,6 +163,17 @@ def _is_public_runtime_setup_request(method: str, path: str) -> bool:
     )
 
 
+def _request_route_path(request: Request) -> str:
+    path = str(request.scope.get("path") or request.url.path)
+    root_path = str(request.scope.get("root_path") or "").rstrip("/")
+    if not root_path or not path.startswith(root_path):
+        return path
+    boundary = len(root_path)
+    if len(path) == boundary:
+        return "/"
+    return path[boundary:] if path[boundary] == "/" else path
+
+
 def _public_request_principal(
     request: Request,
     required_token: str,
@@ -981,7 +992,9 @@ def create_app(
         if (
             public_api_enabled
             and not legacy_routes_enabled
-            and _is_public_runtime_setup_request(request.method, request.url.path)
+            and _is_public_runtime_setup_request(
+                request.method, _request_route_path(request)
+            )
         ):
             try:
                 _require_local_control_request(request)

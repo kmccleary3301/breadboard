@@ -705,9 +705,15 @@ class SessionRunner:
             if isinstance(options, dict)
             else ""
         )
-        self.request.permission_mode = effective_permission_mode or None
-        if effective_permission_mode:
-            self.session.metadata["permission_mode"] = effective_permission_mode
+        resolved_permission_mode = (
+            requested_permission_mode
+            if requested_permission_mode
+            and requested_permission_mode not in {"prompt", "ask", "interactive"}
+            else effective_permission_mode
+        )
+        self.request.permission_mode = resolved_permission_mode or None
+        if resolved_permission_mode:
+            self.session.metadata["permission_mode"] = resolved_permission_mode
         else:
             self.session.metadata.pop("permission_mode", None)
         return dict(self._prepared_runtime_config)

@@ -66,6 +66,24 @@ def test_permission_mode_tracks_effective_runtime_override(
     assert runner.session.metadata["permission_mode"] == override_mode
 
 
+def test_explicit_noninteractive_permission_mode_survives_prompt_config() -> None:
+    runner = _runner("permission-bypass")
+    runner._base_config_cache = {
+        "permissions": {
+            "options": {
+                "mode": "prompt",
+            },
+        },
+    }
+    runner.request.permission_mode = "bypass"
+
+    prepared = runner.prepare_runtime_config()
+
+    assert prepared["permissions"]["options"]["mode"] == "prompt"
+    assert runner.request.permission_mode == "bypass"
+    assert runner.session.metadata["permission_mode"] == "bypass"
+
+
 async def _initialized() -> None: pass
 @pytest.mark.asyncio
 async def test_runner_admission_requires_exact_registry_correlation() -> None:
@@ -362,7 +380,7 @@ async def test_concurrent_set_mode_failure_wins_oneshot_completion(monkeypatch) 
     release.set(); await running; visible = {event.type for event in runner.session.event_queue._queue if event}; assert calls[-2:] == [("apply", "broken"), ("apply", "review")] and runner.session.metadata["mode"] == "review"; assert (runner.session.status, session.read_model.status, runner.session.completion_summary) == (SessionStatus.FAILED, "failed", None) and not visible.intersection({EventType.COMPLETION, EventType.RUN_FINISHED})
 @pytest.mark.asyncio
 async def test_stop_wakes_oneshot_and_wins_terminal_status(monkeypatch) -> None:
-    runner, session = _product_runner("stopped"); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized); monkeypatch.setattr(runner, "_execute_task", lambda _task, **_kwargs: (runner._request_stop("race"), {"completion_summary": {"completed": True}})[1]); await runner._run()
+    runner, session = _product_runner("stopped"); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized); monkeypatch.setattr(runner._task_execution, "execute_task", lambda _task, **_kwargs: (runner._request_stop("race"), {"completion_summary": {"completed": True}})[1]); await runner._run()
     assert (
         runner.session.status,
         session.read_model.status,
@@ -393,7 +411,7 @@ def test_resume_cannot_overtake_seeded_pause() -> None:
     assert not installer.is_alive() and not resumer.is_alive() and control.get_nowait() == {"kind": "resume"}
 @pytest.mark.asyncio
 async def test_stop_during_agent_initialization_never_executes_task(monkeypatch) -> None:
-    runner, session = _product_runner("init-stop"); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); calls = []; monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", lambda: asyncio.sleep(0, result=runner._request_stop("init"))); monkeypatch.setattr(runner, "_execute_task", lambda task: calls.append(task)); await runner._run(); assert calls == [] and session.read_model.status == "canceled"
+    runner, session = _product_runner("init-stop"); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); calls = []; monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", lambda: asyncio.sleep(0, result=runner._request_stop("init"))); monkeypatch.setattr(runner._task_execution, "execute_task", lambda task: calls.append(task)); await runner._run(); assert calls == [] and session.read_model.status == "canceled"
 @pytest.mark.asyncio
 async def test_pause_during_agent_initialization_seeds_control_gate(monkeypatch) -> None:
     runner, session = _product_runner("init-pause"); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); entered, release = asyncio.Event(), asyncio.Event(); started, returned, signals = threading.Event(), threading.Event(), []
@@ -410,7 +428,7 @@ async def test_pause_blocks_dequeued_work_until_resume_and_stop_signals_active_a
     await runner.handle_command("resume", {}); assert await asyncio.to_thread(started.wait, 1); await runner.handle_command("pause", {}); assert await asyncio.to_thread(paused.wait, 1) and session.read_model.status == "paused"; await runner.handle_command("resume", {}); runner._request_stop("operator"); await running; assert stopped.is_set() and session.read_model.status == "canceled"
 @pytest.mark.asyncio
 async def test_legacy_oneshot_runner_without_product_session_completes(monkeypatch) -> None:
-    runner = _runner("legacy"); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized); monkeypatch.setattr(runner, "_execute_task", lambda _task, **_kwargs: {"completion_summary": {"completed": True}}); await runner._run()
+    runner = _runner("legacy"); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized); monkeypatch.setattr(runner._task_execution, "execute_task", lambda _task, **_kwargs: {"completion_summary": {"completed": True}}); await runner._run()
     record = await runner.registry.get(runner.session.session_id); assert record is not None and (record.status, record.completion_summary) == (SessionStatus.COMPLETED, {"completed": True}) and None in runner.session.event_queue._queue; assert not any(event and event.type is EventType.ERROR for event in runner.session.event_queue._queue)
 @pytest.mark.asyncio
 async def test_oneshot_success_is_hidden_until_durable_complete(monkeypatch) -> None:
