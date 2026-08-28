@@ -31,6 +31,8 @@ from breadboard_engine.skills.registry import (
 )
 from breadboard_engine.provider.contracts import (
     strip_provider_exchange_completion_sentinels,
+    strip_public_completion_sentinel_lines,
+    strip_public_completion_sentinel_tree,
 )
 from breadboard_engine.plugins.loader import discover_plugin_manifests, plugin_snapshot
 from breadboard_engine.guardrail import GuardrailCoordinator
@@ -169,12 +171,6 @@ _PUBLIC_RUNTIME_ERROR_CODES = frozenset(
         "turn_execution_failed",
         "permission_delivery_failed",
         "runtime_cancelled",
-    }
-)
-_VISIBLE_COMPLETION_SENTINELS = frozenset(
-    {
-        ">>>>>> END RESPONSE",
-        "TASK COMPLETE",
     }
 )
 _REPLAY_EVENT_PAYLOAD_FIELDS = {
@@ -381,16 +377,7 @@ def _safe_runtime_error_code(value: Any, *, default: str = "runtime_failure") ->
 
 def _strip_completion_sentinels(value: Any) -> Any:
     if isinstance(value, str):
-        lines = value.splitlines(keepends=True)
-        removed = any(
-            line.strip() in _VISIBLE_COMPLETION_SENTINELS for line in lines
-        )
-        filtered = "".join(
-            line
-            for line in lines
-            if line.strip() not in _VISIBLE_COMPLETION_SENTINELS
-        )
-        return filtered.rstrip("\r\n") if removed else filtered
+        return strip_public_completion_sentinel_lines(value)
     if isinstance(value, list):
         return [_strip_completion_sentinels(item) for item in value]
     if isinstance(value, dict):
@@ -399,22 +386,6 @@ def _strip_completion_sentinels(value: Any) -> Any:
             if key in normalized:
                 normalized[key] = _strip_completion_sentinels(normalized[key])
         return normalized
-    return value
-
-
-def _strip_public_completion_sentinels(value: Any) -> Any:
-    """Remove control-only sentinels from every nested completion field."""
-    if isinstance(value, str):
-        return _strip_completion_sentinels(value)
-    if isinstance(value, list):
-        return [_strip_public_completion_sentinels(item) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_strip_public_completion_sentinels(item) for item in value)
-    if isinstance(value, dict):
-        return {
-            key: _strip_public_completion_sentinels(item)
-            for key, item in value.items()
-        }
     return value
 
 
@@ -617,30 +588,62 @@ class SessionRunner:
 
     def _signal_control(self, kind: str) -> bool:
         queue = getattr(self, "_control_queue", None)
-        put = (getattr(queue, "put_nowait", None) or getattr(queue, "put", None)) if queue is not None else None
-        if not callable(put): return False
-        put({"kind": kind}); return True
+        put = (
+            getattr(queue, "put_nowait", None) or getattr(queue, "put", None)
+            if queue is not None
+            else None
+        )
+        if not callable(put):
+            return False
+        put({"kind": kind})
+        return True
 
     def _install_control_queue(self, queue: Any) -> None:
         with self._product_session_lock:
             self._control_queue = queue
-            if queue is None: return
-            if self._stop_event.is_set(): queue.put({"kind": "stop"})
-            elif not self._resume_event.is_set(): queue.put({"kind": "pause"})
+            if queue is None:
+                return
+            if self._stop_event.is_set():
+                queue.put({"kind": "stop"})
+            elif not self._resume_event.is_set():
+                queue.put({"kind": "pause"})
 
     def _request_stop(self, reason: str) -> bool:
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
-            stopping = not product_session or product_session.read_model.status not in {"completed", "failed", "canceled"}
+            stopping = (
+                not product_session
+                or product_session.read_model.status
+                not in {"completed", "failed", "canceled"}
+            )
             try:
-                if stopping: self.transition_product_session("cancel", reason)
+                if stopping:
+                    self.transition_product_session("cancel", reason)
             finally:
-                self._stop_event.set(); self._resume_event.set(); self._input_queue.put_nowait(None)
-                try: delivered = self._signal_control("stop")
-                except Exception: delivered = False
-                request_stop = getattr(getattr(self._agent, "agent", None), "request_stop", None) if not delivered else None; remote = getattr(request_stop, "remote", None)
-                try: remote() if callable(remote) else request_stop() if callable(request_stop) else None
-                except Exception: pass
+                self._stop_event.set()
+                self._resume_event.set()
+                self._input_queue.put_nowait(None)
+                try:
+                    delivered = self._signal_control("stop")
+                except Exception:
+                    delivered = False
+                request_stop = (
+                    getattr(
+                        getattr(self._agent, "agent", None),
+                        "request_stop",
+                        None,
+                    )
+                    if not delivered
+                    else None
+                )
+                remote = getattr(request_stop, "remote", None)
+                try:
+                    if callable(remote):
+                        remote()
+                    elif callable(request_stop):
+                        request_stop()
+                except Exception:
+                    pass
             return stopping
 
     async def stop(self, reason: str = "operator request") -> None:
@@ -904,9 +907,23 @@ class SessionRunner:
                 len(prior),
                 len(suffix),
             )
-            meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
-            repairs = list(meta.get("input_boundary_repairs") or []) if isinstance(meta.get("input_boundary_repairs"), list) else []
-            repairs.append({"prior_len": len(prior), "raw_len": len(raw), "suffix_len": len(suffix)})
+            meta = (
+                self.session.metadata
+                if isinstance(self.session.metadata, dict)
+                else {}
+            )
+            repairs = (
+                list(meta.get("input_boundary_repairs") or [])
+                if isinstance(meta.get("input_boundary_repairs"), list)
+                else []
+            )
+            repairs.append(
+                {
+                    "prior_len": len(prior),
+                    "raw_len": len(raw),
+                    "suffix_len": len(suffix),
+                }
+            )
             meta["input_boundary_repairs"] = repairs[-10:]
             self.session.metadata = meta
             self._persist_metadata_snapshot_threadsafe()
@@ -914,8 +931,10 @@ class SessionRunner:
         return raw
 
     def _fail_control_transition(self, code: str, detail: str) -> None:
-        try: self.transition_product_session("fail", code, detail)
-        finally: self._request_stop(detail)
+        try:
+            self.transition_product_session("fail", code, detail)
+        finally:
+            self._request_stop(detail)
 
     async def handle_command(
         self,
@@ -2032,7 +2051,7 @@ class SessionRunner:
                         metadata=self.session.metadata,
                     )
             if event_type in {EventType.COMPLETION, EventType.RUN_FINISHED}:
-                payload = _strip_public_completion_sentinels(payload)
+                payload = strip_public_completion_sentinel_tree(payload)
                 terminal_events.append(
                     (
                         event_type,
@@ -3117,7 +3136,7 @@ class SessionRunner:
         if provider_exchange is not None:
             result["provider_exchange"] = provider_exchange
             result["provider_exchanges"] = provider_exchanges
-        completion = _strip_public_completion_sentinels(
+        completion = strip_public_completion_sentinel_tree(
             result.get("completion_summary") or {}
         )
         if not isinstance(completion, dict):

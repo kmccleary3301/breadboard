@@ -24,7 +24,9 @@ from breadboard_engine.api.cli_bridge.session_runner import (
     RuntimeProtocolError,
     SessionRunner,
     _strip_completion_sentinels,
-    _strip_public_completion_sentinels,
+)
+from breadboard_engine.provider.contracts import (
+    strip_public_completion_sentinel_tree,
 )
 from breadboard_engine.state.session_state import SessionState
 
@@ -83,7 +85,7 @@ def test_public_completion_sentinel_scrubbing_covers_every_nested_field() -> Non
         "mode": "build",
     }
 
-    assert _strip_public_completion_sentinels(payload) == {
+    assert strip_public_completion_sentinel_tree(payload) == {
         "summary": {
             "final_message": "answer",
             "nested": {"opaque": ["", {"reason": "safe"}]},
