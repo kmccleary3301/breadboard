@@ -8,7 +8,6 @@ import json
 import math
 import os
 from contextlib import contextmanager
-from contextvars import ContextVar
 import random
 import shlex
 import subprocess
@@ -159,11 +158,6 @@ from .rlm import (
     get_rlm_config,
     init_budget_state,
     is_rlm_enabled,
-)
-
-_provider_role_context: ContextVar[Optional[str]] = ContextVar(
-    "breadboard_provider_role_context",
-    default=None,
 )
 
 
@@ -2762,8 +2756,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if not isinstance(lock, dict):
             return None
         route = str(route_id or "").strip()
+        from .model_roles import current_execution_model_role
+
         chosen_role = str(
-            _provider_role_context.get()
+            current_execution_model_role()
             or self._active_model_role
             or (lock.get("defaults") or {}).get("role")
             or ""
@@ -4023,8 +4019,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         )
 
         try:
-            role_token = _provider_role_context.set(locked_role)
-            try:
+            from .model_roles import execution_model_role
+
+            with execution_model_role(locked_role):
                 execution = self._execute_rlm_provider_subcall(
                     model_route=model_route,
                     messages=messages,
@@ -4041,8 +4038,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         ),
                     },
                 )
-            finally:
-                _provider_role_context.reset(role_token)
             runtime_model = execution.resolved_model
             text = execution.text
             usage = execution.usage
@@ -4352,13 +4347,29 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 or ((self.config.get("providers") or {}).get("default_model") if isinstance(getattr(self, "config", None), dict) else "")
                 or ""
             ).strip()
+            locked_role: Optional[str] = None
             if isinstance(getattr(self, "_model_role_lock", None), dict):
                 lane_role = str(
-                    ((self._model_role_lock.get("dispatch") or {}).get("lanes") or {}).get(item.get("lane") or "") or ""
+                    (
+                        (self._model_role_lock.get("dispatch") or {}).get(
+                            "lanes"
+                        )
+                        or {}
+                    ).get(item.get("lane") or "")
+                    or ""
                 ).strip()
-                if lane_role:
-                    target = self._locked_target_for_role(lane_role)
-                    model_route = str(target.get("route_id") or "") if isinstance(target, dict) else ""
+                locked_role = str(
+                    lane_role
+                    or self._active_model_role
+                    or (self._model_role_lock.get("defaults") or {}).get("role")
+                    or ""
+                ).strip()
+                target = self._locked_target_for_role(locked_role or None)
+                model_route = (
+                    str(target.get("route_id") or "")
+                    if isinstance(target, dict)
+                    else ""
+                )
             if not model_route:
                 return {
                     "request_index": request_index,
@@ -4383,21 +4394,26 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             for attempt in range(retries + 1):
                 started = time.time()
                 try:
-                    execution = self._execute_rlm_provider_subcall(
-                        model_route=model_route,
-                        messages=messages,
-                        runtime_extra={
-                            "rlm_subcall": True,
-                            "rlm_batch_subcall": True,
-                            "branch_id": branch_id,
-                            "batch_id": batch_id,
-                            "request_index": request_index,
-                            "max_completion_tokens": item.get("max_completion_tokens"),
-                            "temperature": item.get("temperature"),
-                        },
-                        started_at=started,
-                        timeout_seconds=timeout_seconds,
-                    )
+                    from .model_roles import execution_model_role
+
+                    with execution_model_role(locked_role):
+                        execution = self._execute_rlm_provider_subcall(
+                            model_route=model_route,
+                            messages=messages,
+                            runtime_extra={
+                                "rlm_subcall": True,
+                                "rlm_batch_subcall": True,
+                                "branch_id": branch_id,
+                                "batch_id": batch_id,
+                                "request_index": request_index,
+                                "max_completion_tokens": item.get(
+                                    "max_completion_tokens"
+                                ),
+                                "temperature": item.get("temperature"),
+                            },
+                            started_at=started,
+                            timeout_seconds=timeout_seconds,
+                        )
                     return {
                         "request_index": request_index,
                         "status": "completed",

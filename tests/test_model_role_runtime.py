@@ -19,7 +19,12 @@ from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegi
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.messaging.markdown_logger import MarkdownLogger
-from breadboard_engine.model_roles import ModelRoleResolutionError, compile_model_roles, resolve_role_name
+from breadboard_engine.model_roles import (
+    ModelRoleResolutionError,
+    compile_model_roles,
+    execution_model_role,
+    resolve_role_name,
+)
 from breadboard_engine.provider.contracts import (
     ProviderMessage,
     ProviderResult,
@@ -536,6 +541,15 @@ def test_provider_lease_enforces_exact_locked_route_and_credential_origin() -> N
         with conductor._provider_client_lease("mock/slow", Runtime()):
             pass
     assert inactive_error.value.safe_code == "policy_rejection"
+
+    with execution_model_role("slow"):
+        with conductor._provider_client_lease("mock/slow", Runtime()) as client:
+            assert client["api_key"] == "mock"
+
+    with pytest.raises(ProviderRuntimeError) as restored_error:
+        with conductor._provider_client_lease("mock/slow", Runtime()):
+            pass
+    assert restored_error.value.safe_code == "policy_rejection"
 
     conductor._model_role_lock["roles"]["default"]["primary"][
         "account_binding"
