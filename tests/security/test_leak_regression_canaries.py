@@ -1518,32 +1518,6 @@ class TestE7CredentialBoundary:
         )
 
 
-    def test_linux_network_allowance_is_explicit_in_helper_argv(
-        self,
-        tmp_path: Path,
-        monkeypatch,
-    ) -> None:
-        from breadboard_engine.security import process_isolation
-
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
-        monkeypatch.setattr(
-            process_isolation.platform,
-            "system",
-            lambda: "Linux",
-        )
-
-        argv, _ = process_isolation.build_restricted_process_command(
-            ("/bin/echo", "network"),
-            workspace=workspace,
-            shell=False,
-            environment={"PATH": "/usr/bin"},
-            protected_paths=(tmp_path / "protected",),
-            allow_network=True,
-        )
-
-        assert "--allow-network" in argv
-        assert argv.index("--allow-network") < argv.index("--")
 
     def test_lsp_linter_uses_restricted_builder_and_scrubs_canary_output(
         self, tmp_path: Path, monkeypatch

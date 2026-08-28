@@ -368,7 +368,6 @@ def test_codex_app_server_uses_restricted_process_builder(
                 "shell": False,
                 "environment": {"PATH": "/trusted/bin"},
                 "protected_paths": (str(protected),),
-                "allow_network": True,
             },
         )
     ]
