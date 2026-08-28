@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from pathlib import Path
-from threading import Thread
+from threading import Barrier, Lock, Thread
 from time import monotonic, sleep
 from types import SimpleNamespace
 
@@ -16,6 +16,8 @@ import breadboard_engine.provider_broker as provider_broker
 from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
 from breadboard.product.runtime import session_store
+from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.product.runtime.events import Session
 
 
 @pytest.fixture
@@ -623,3 +625,216 @@ def test_session_start_dispatches_task_to_execution_service(client: TestClient) 
     records = _stream_records(client.get("/v1/sessions/execution-fixture/events"))
     assert records[0]["kind"] == "session.started"
     assert records[-1]["kind"] == "session.canceled"
+
+
+def _new_durable_session(workspace: Path, session_id: str) -> None:
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64})
+    session_store.create_session(
+        workspace,
+        Session.start(lock, "durability test", session_id=session_id),
+    )
+
+
+def test_durable_mutations_are_serialized_and_contiguous(tmp_path: Path) -> None:
+    session_id = "serialized"
+    _new_durable_session(tmp_path, session_id)
+    barrier = Barrier(2)
+    callback_guard = Lock()
+    active = 0
+    maximum_active = 0
+    errors: list[BaseException] = []
+
+    def mutation(session: Session, content: str) -> object:
+        nonlocal active, maximum_active
+        with callback_guard:
+            active += 1
+            maximum_active = max(maximum_active, active)
+        try:
+            sleep(0.02)
+            return session.input(content)
+        finally:
+            with callback_guard:
+                active -= 1
+
+    def worker(content: str) -> None:
+        try:
+            barrier.wait(timeout=5)
+            session_store.mutate_session(
+                tmp_path,
+                session_id,
+                lambda session: mutation(session, content),
+            )
+        except BaseException as error:
+            errors.append(error)
+
+    workers = [
+        Thread(target=worker, args=("concurrent input A",)),
+        Thread(target=worker, args=("concurrent input B",)),
+    ]
+    for worker_thread in workers:
+        worker_thread.start()
+    for worker_thread in workers:
+        worker_thread.join(timeout=5)
+    assert all(not worker_thread.is_alive() for worker_thread in workers)
+    assert not errors
+    assert maximum_active == 1
+    restored, _ = session_store.load_session(tmp_path, session_id)
+    assert [event.sequence for event in restored.events] == [1, 2, 3]
+    input_hashes = {
+        event.payload["content_hash"]
+        for event in restored.events
+        if event.kind == "input.accepted"
+    }
+    assert len(input_hashes) == 2
+
+
+def test_pending_session_intent_repairs_split_projection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    session_id = "repairable"
+    _new_durable_session(tmp_path, session_id)
+    original_write = session_store.AnchoredStorage.write_at
+    failed = False
+
+    def fail_metadata(parent: int, name: str, content: bytes) -> None:
+        nonlocal failed
+        if name == "session.json" and not failed:
+            failed = True
+            raise OSError("injected metadata failure")
+        original_write(parent, name, content)
+
+    monkeypatch.setattr(
+        session_store.AnchoredStorage,
+        "write_at",
+        staticmethod(fail_metadata),
+    )
+    with pytest.raises(OSError, match="injected metadata failure"):
+        session_store.mutate_session(
+            tmp_path,
+            session_id,
+            lambda session: session.input("repair me"),
+        )
+    intent = tmp_path / ".breadboard" / "sessions" / session_id / ".session.intent.json"
+    assert intent.is_file()
+    monkeypatch.setattr(
+        session_store.AnchoredStorage,
+        "write_at",
+        staticmethod(original_write),
+    )
+    restored, _ = session_store.load_session(tmp_path, session_id)
+    assert restored.read_model.event_count == 2
+    assert not intent.exists()
+    assert not list(tmp_path.rglob("*.tmp"))
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("event_sha256", "sha256:" + "0" * 64, "digest mismatch"),
+        ("session_id", "other-session", "mismatched"),
+    ],
+)
+def test_corrupt_session_intent_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    session_id = "corrupt-intent"
+    _new_durable_session(tmp_path, session_id)
+    original_write = session_store.AnchoredStorage.write_at
+
+    def fail_metadata(parent: int, name: str, content: bytes) -> None:
+        if name == "session.json":
+            raise OSError("injected metadata failure")
+        original_write(parent, name, content)
+
+    monkeypatch.setattr(
+        session_store.AnchoredStorage,
+        "write_at",
+        staticmethod(fail_metadata),
+    )
+    with pytest.raises(OSError):
+        session_store.mutate_session(
+            tmp_path,
+            session_id,
+            lambda session: session.input("leave intent"),
+        )
+    intent = tmp_path / ".breadboard" / "sessions" / session_id / ".session.intent.json"
+    event_path = session_store.session_event_path(tmp_path, session_id)
+    metadata_path = session_store.session_metadata_path(tmp_path, session_id)
+    before = event_path.read_bytes(), metadata_path.read_bytes()
+    corrupt = json.loads(intent.read_text(encoding="utf-8"))
+    corrupt[field] = value
+    intent.write_text(json.dumps(corrupt), encoding="utf-8")
+    monkeypatch.setattr(
+        session_store.AnchoredStorage,
+        "write_at",
+        staticmethod(original_write),
+    )
+    with pytest.raises(ValueError, match=message):
+        session_store.load_session(tmp_path, session_id)
+    assert (event_path.read_bytes(), metadata_path.read_bytes()) == before
+
+
+def test_session_intent_rejects_foreign_projection_identity(tmp_path: Path) -> None:
+    session_id = "intent-owner"
+    _new_durable_session(tmp_path, session_id)
+    event_path = session_store.session_event_path(tmp_path, session_id)
+    metadata_path = session_store.session_metadata_path(tmp_path, session_id)
+    before = event_path.read_bytes(), metadata_path.read_bytes()
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "c" * 64})
+    foreign = Session.start(lock, "foreign", session_id="foreign-session")
+    intent = event_path.parent / ".session.intent.json"
+    intent.write_bytes(
+        session_store._intent_bytes(
+            session_id,
+            "session_events.jsonl",
+            "session.json",
+            session_store._event_bytes(foreign),
+            session_store._metadata_bytes(foreign),
+        )
+    )
+
+    with pytest.raises(ValueError, match="event identity mismatch"):
+        session_store.load_session(tmp_path, session_id)
+    assert (event_path.read_bytes(), metadata_path.read_bytes()) == before
+
+
+def test_session_name_inventory_excludes_transaction_locks(tmp_path: Path) -> None:
+    session_id = "listed-session"
+    _new_durable_session(tmp_path, session_id)
+    session_store.load_session(tmp_path, session_id)
+
+    assert session_store.session_names(tmp_path) == [session_id]
+    locks = list((tmp_path / ".breadboard" / "sessions").glob("*.lock"))
+    assert len(locks) == 1
+
+
+def test_concurrent_durable_create_has_one_winner(tmp_path: Path) -> None:
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "b" * 64})
+    sessions = [
+        Session.start(lock, "duplicate create", session_id="duplicate-create")
+        for _ in range(2)
+    ]
+    barrier = Barrier(2)
+    outcomes: list[object] = []
+
+    def worker(session: Session) -> None:
+        barrier.wait(timeout=5)
+        try:
+            outcomes.append(session_store.create_session(tmp_path, session))
+        except BaseException as error:
+            outcomes.append(error)
+
+    threads = [Thread(target=worker, args=(session,)) for session in sessions]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+    assert all(not thread.is_alive() for thread in threads)
+    assert sum(isinstance(outcome, tuple) for outcome in outcomes) == 1
+    assert sum(isinstance(outcome, ValueError) for outcome in outcomes) == 1
+    assert not list(tmp_path.rglob("*.tmp"))
+    assert not list(tmp_path.rglob("*.intent.json"))

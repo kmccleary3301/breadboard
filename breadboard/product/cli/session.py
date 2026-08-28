@@ -84,9 +84,11 @@ class _DurableSessionMutationAdapter:
             _MutationOutcome,
         ],
     ) -> _MutationOutcome:
-        session, event_path = session_store.load_session(workspace, session_id)
-        view = mutation(session)
-        session_store.persist_session(workspace, session, event_path)
+        view, event_path = session_store.mutate_session(
+            workspace,
+            session_id,
+            mutation,
+        )
         return _DurableSessionMutationAdapter._outcome(
             view,
             event_path,
@@ -102,24 +104,15 @@ class _DurableSessionMutationAdapter:
         _source_path: Path,
     ) -> session_operations.StartSessionOutcome:
         def create() -> session_operations.StartSessionOutcome:
-            if request.session_id is not None:
-                try:
-                    session_store.load_session(context.workspace, request.session_id)
-                except FileNotFoundError:
-                    pass
-                else:
-                    raise ValueError(f"session already exists: {request.session_id}")
             session = Session.start(
                 effective_lock,
                 request.task,
                 session_id=request.session_id,
             )
-            event_path = session_store.session_event_path(
+            session, event_path = session_store.create_session(
                 context.workspace,
-                session.read_model.session_id,
+                session,
             )
-            event_path.parent.mkdir(parents=True, exist_ok=True)
-            session_store.persist_session(context.workspace, session, event_path)
             return self._outcome(
                 session.read_model,
                 event_path,

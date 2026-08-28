@@ -234,11 +234,7 @@ def _session_result(
 def _durable_sessions(
     context: OperationContext,
 ) -> tuple[list[tuple[Session, str]], list[str]]:
-    suffix = ".events.jsonl"
-    names = session_names(context.workspace)
-    session_ids = {
-        name[: -len(suffix)] if name.endswith(suffix) else name for name in names
-    }
+    session_ids = set(session_names(context.workspace))
     sessions: list[tuple[Session, str]] = []
     refs: list[str] = []
     for session_id in sorted(session_ids):
