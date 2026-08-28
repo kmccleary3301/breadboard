@@ -794,6 +794,7 @@ class SessionService:
             "effective_lock_schema_version",
             "effective_lock_hash",
             "resources",
+            "workspace",
         ):
             request_metadata.pop(reserved_key, None)
         if default_profile is not None:
@@ -814,6 +815,10 @@ class SessionService:
         )
         runner = SessionRunner(session=record, registry=self.registry, request=request)
         runtime_config = runner.prepare_runtime_config()
+        if runner.request.workspace:
+            metadata["workspace"] = str(
+                Path(runner.request.workspace).expanduser().resolve()
+            )
         runtime_providers = (
             runtime_config.get("providers")
             if isinstance(runtime_config, dict)
@@ -1174,8 +1179,72 @@ class SessionService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="session not found"
             )
+        if record.loaded_from_retained_state:
+            async with self._session_lock(session_id):
+                if record.loaded_from_retained_state:
+                    await self._resume_retained_session(record)
         return record
 
+    async def _resume_retained_session(self, record: SessionRecord) -> None:
+        profile = resolve_default_profile()
+        default_identity = profile.public_identity()
+        metadata = dict(record.metadata or {})
+        recorded_config_path = str(metadata.get("config_path") or "").strip()
+        config_path = (
+            str(profile.source_path)
+            if not recorded_config_path
+            or recorded_config_path == default_identity["definition_ref"]
+            else recorded_config_path
+        )
+        recorded_workspace = metadata.get("workspace")
+        workspace = (
+            str(recorded_workspace).strip()
+            if isinstance(recorded_workspace, str) and recorded_workspace.strip()
+            else None
+        )
+        permission_mode = str(
+            metadata.get("permission_mode") or "configured"
+        ).strip().lower()
+        if permission_mode not in {"prompt", "ask", "interactive", "configured"}:
+            permission_mode = "configured"
+        metadata["permission_mode"] = permission_mode
+        record.metadata = metadata
+        runner = SessionRunner(
+            session=record,
+            registry=self.registry,
+            request=SessionCreateRequest(
+                config_path=config_path,
+                task="",
+                metadata=metadata,
+                workspace=workspace,
+                permission_mode=permission_mode,
+            ),
+        )
+        runner.prepare_runtime_config()
+        for turn in record.turns_by_id.values():
+            if turn.terminal_outcome is not None:
+                continue
+            if turn.cancellation_requested:
+                await runner._finish_turn(
+                    turn,
+                    "cancelled",
+                    reason=turn.cancellation_reason,
+                    advance_queue=False,
+                )
+            else:
+                await runner._finish_turn(
+                    turn,
+                    "failed",
+                    error_code="runtime_failure",
+                    advance_queue=False,
+                )
+        record.active_turn_id = None
+        record.queued_turn_ids.clear()
+        record.turn_admission = record.turn_admission.__class__.IDLE
+        record.runner = runner
+        runner.schedule_start()
+        runner.authorize_start()
+        record.loaded_from_retained_state = False
     async def event_stream(
         self,
         session_id: str,
