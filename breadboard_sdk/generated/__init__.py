@@ -1,6 +1,6 @@
 # GENERATED FILE - do not edit by hand.
 # generator: scripts/quality/generate_public_bindings.py
-# generator-version: 2
+# generator-version: 3
 # catalog-id: bb.public_operation_catalog.v2
 # catalog-sha256: sha256:4deb87f3b82f7ccdf922fb609a9784840fb01ee591793e95f2af42acd2097674
 

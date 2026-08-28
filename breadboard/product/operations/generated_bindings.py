@@ -1,6 +1,6 @@
 # GENERATED FILE - do not edit by hand.
 # generator: scripts/quality/generate_public_bindings.py
-# generator-version: 2
+# generator-version: 3
 # catalog-id: bb.public_operation_catalog.v2
 # catalog-sha256: sha256:4deb87f3b82f7ccdf922fb609a9784840fb01ee591793e95f2af42acd2097674
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Final, Mapping
+from typing import Final, Literal, Mapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +24,10 @@ class PublicOperationBinding:
     typescript_method: str
     action_id: str
     action_kind: str
+    lifecycle: Literal["sync", "async"]
+    idempotency_mode: Literal["idempotent", "keyed"]
+    auth_mode: Literal["none", "capability_gated"]
+    required_capabilities: tuple[str, ...]
 
 
 PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
@@ -39,6 +43,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="getArtifact",
         action_id="public.artifact.get",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.artifact.read",),
     ),
     PublicOperationBinding(
         operation_id="artifact.list",
@@ -52,6 +60,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="listArtifact",
         action_id="public.artifact.list",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.artifact.read",),
     ),
     PublicOperationBinding(
         operation_id="artifact.verify",
@@ -65,6 +77,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="verifyArtifact",
         action_id="public.artifact.verify",
         action_kind="action",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.artifact.verify",),
     ),
     PublicOperationBinding(
         operation_id="harness.create",
@@ -78,6 +94,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="createHarness",
         action_id="public.harness.create",
         action_kind="action",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.harness.write",),
     ),
     PublicOperationBinding(
         operation_id="harness.explain",
@@ -91,6 +111,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="explainHarness",
         action_id="public.harness.explain",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.harness.read",),
     ),
     PublicOperationBinding(
         operation_id="harness.get",
@@ -104,6 +128,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="getHarness",
         action_id="public.harness.get",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.harness.read",),
     ),
     PublicOperationBinding(
         operation_id="harness.list",
@@ -117,6 +145,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="listHarness",
         action_id="public.harness.list",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.harness.read",),
     ),
     PublicOperationBinding(
         operation_id="harness.lock",
@@ -130,6 +162,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="lockHarness",
         action_id="public.harness.lock",
         action_kind="action",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.harness.write",),
     ),
     PublicOperationBinding(
         operation_id="harness.update",
@@ -143,6 +179,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="updateHarness",
         action_id="public.harness.update",
         action_kind="action",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.harness.write",),
     ),
     PublicOperationBinding(
         operation_id="harness.validate",
@@ -156,6 +196,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="validateHarness",
         action_id="public.harness.validate",
         action_kind="action",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.harness.verify",),
     ),
     PublicOperationBinding(
         operation_id="harness_lock.get",
@@ -169,6 +213,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="getHarnessLock",
         action_id="public.harness_lock.get",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.harness_lock.read",),
     ),
     PublicOperationBinding(
         operation_id="integration.get",
@@ -182,6 +230,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="getIntegration",
         action_id="public.integration.get",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.integration.read",),
     ),
     PublicOperationBinding(
         operation_id="integration.list",
@@ -195,6 +247,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="listIntegration",
         action_id="public.integration.list",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.integration.read",),
     ),
     PublicOperationBinding(
         operation_id="integration.probe",
@@ -208,6 +264,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="probeIntegration",
         action_id="public.integration.probe",
         action_kind="action",
+        lifecycle="async",
+        idempotency_mode="keyed",
+        auth_mode="capability_gated",
+        required_capabilities=("public.integration.execute",),
     ),
     PublicOperationBinding(
         operation_id="session.approve",
@@ -221,6 +281,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="approveSession",
         action_id="public.session.approve",
         action_kind="action",
+        lifecycle="async",
+        idempotency_mode="keyed",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.execute",),
     ),
     PublicOperationBinding(
         operation_id="session.artifacts",
@@ -234,6 +298,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="artifactsSession",
         action_id="public.session.artifacts",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.read",),
     ),
     PublicOperationBinding(
         operation_id="session.cancel",
@@ -247,6 +315,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="cancelSession",
         action_id="public.session.cancel",
         action_kind="action",
+        lifecycle="async",
+        idempotency_mode="keyed",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.execute",),
     ),
     PublicOperationBinding(
         operation_id="session.events",
@@ -260,6 +332,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="eventsSession",
         action_id="public.session.events",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.read",),
     ),
     PublicOperationBinding(
         operation_id="session.get",
@@ -273,6 +349,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="getSession",
         action_id="public.session.get",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.read",),
     ),
     PublicOperationBinding(
         operation_id="session.list",
@@ -286,6 +366,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="listSession",
         action_id="public.session.list",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.read",),
     ),
     PublicOperationBinding(
         operation_id="session.resume",
@@ -299,6 +383,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="resumeSession",
         action_id="public.session.resume",
         action_kind="action",
+        lifecycle="async",
+        idempotency_mode="keyed",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.execute",),
     ),
     PublicOperationBinding(
         operation_id="session.send_input",
@@ -312,6 +400,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="sendInputSession",
         action_id="public.session.send_input",
         action_kind="action",
+        lifecycle="async",
+        idempotency_mode="keyed",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.execute",),
     ),
     PublicOperationBinding(
         operation_id="session.start",
@@ -325,6 +417,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="startSession",
         action_id="public.session.start",
         action_kind="action",
+        lifecycle="async",
+        idempotency_mode="keyed",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.execute",),
     ),
     PublicOperationBinding(
         operation_id="system.describe",
@@ -338,6 +434,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="describeSystem",
         action_id="public.system.describe",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="none",
+        required_capabilities=(),
     ),
     PublicOperationBinding(
         operation_id="system.health",
@@ -351,6 +451,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="healthSystem",
         action_id="public.system.health",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="none",
+        required_capabilities=(),
     ),
     PublicOperationBinding(
         operation_id="system.schemas",
@@ -364,6 +468,10 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_method="schemasSystem",
         action_id="public.system.schemas",
         action_kind="view",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="none",
+        required_capabilities=(),
     ),
 )
 

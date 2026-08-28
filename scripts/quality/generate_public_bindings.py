@@ -16,7 +16,7 @@ from typing import Any, Final, Mapping, Sequence
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG_RELATIVE: Final = Path("contracts/public/operations.v2.json")
 GENERATOR_PATH: Final = "scripts/quality/generate_public_bindings.py"
-GENERATOR_VERSION: Final = "2"
+GENERATOR_VERSION: Final = "3"
 SCHEMA_VERSION: Final = "bb.public_client_binding_manifest.v1"
 GENERATED_FILE_MODE: Final = 0o644
 DOCUMENT_MARKER: Final = "<!-- GENERATED FILE - do not edit by hand. -->"
@@ -56,6 +56,12 @@ NORMALIZED_FIELDS: Final = (
     "typescript_method",
     "action_id",
     "action_kind",
+)
+POLICY_FIELDS: Final = (
+    "lifecycle",
+    "idempotency_mode",
+    "auth_mode",
+    "required_capabilities",
 )
 _HTTP_METHODS: Final = frozenset({"DELETE", "GET", "PATCH", "POST", "PUT"})
 _IDENTIFIER = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
@@ -218,9 +224,17 @@ def _normalize_catalog(catalog: Any) -> tuple[dict[str, Any], ...]:
             raise CatalogError(
                 f"{operation_id}: required_capabilities must be an array of strings"
             )
-        capabilities = list(capabilities_value)
-        if len(capabilities) != len(set(capabilities)):
+        if len(capabilities_value) != len(set(capabilities_value)):
             raise CatalogError(f"{operation_id}: required_capabilities must be unique")
+        if auth_mode == "none" and capabilities_value:
+            raise CatalogError(
+                f"{operation_id}: auth_policy.mode=none requires no capabilities"
+            )
+        if auth_mode == "capability_gated" and not capabilities_value:
+            raise CatalogError(
+                f"{operation_id}: auth_policy.mode=capability_gated requires at least one capability"
+            )
+        capabilities = tuple(sorted(capabilities_value))
         schema_ids: dict[str, str | None] = {}
         for field in ("input_schema", "output_schema", "error_schema"):
             schema_ids[field] = _require_string(row.get(field), field, operation_id)
@@ -348,15 +362,25 @@ def _canonical_catalog_bytes(catalog: Any) -> bytes:
             isinstance(row, Mapping) and isinstance(row.get("operation_id"), str)
             for row in operations
         ):
+            normalized_operations = []
+            for row in operations:
+                normalized = dict(row)
+                capabilities = normalized.get("required_capabilities")
+                if isinstance(capabilities, list) and all(
+                    isinstance(capability, str) for capability in capabilities
+                ):
+                    normalized["required_capabilities"] = sorted(capabilities)
+                normalized_operations.append(normalized)
             catalog = dict(catalog)
             catalog["operations"] = sorted(
-                operations, key=lambda row: row["operation_id"]
+                normalized_operations,
+                key=lambda row: row["operation_id"],
             )
     return canonical_bytes(catalog)
 
 
 def canonical_catalog_sha256(catalog: Any) -> str:
-    """Hash the canonical catalog with operation order removed as an input."""
+    """Hash the catalog without semantically irrelevant collection order."""
     return _sha256(_canonical_catalog_bytes(catalog))
 
 
@@ -364,8 +388,17 @@ def _py_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _py_capabilities(value: Sequence[str]) -> str:
+    return (
+        "("
+        + ", ".join(_py_string(capability) for capability in value)
+        + ("," if len(value) == 1 else "")
+        + ")"
+    )
+
+
 def _render_python_module(
-    rows: Sequence[Mapping[str, str]], catalog_id: str, catalog_sha256: str
+    rows: Sequence[Mapping[str, Any]], catalog_id: str, catalog_sha256: str
 ) -> bytes:
     out = [
         "# GENERATED FILE - do not edit by hand.",
@@ -378,25 +411,37 @@ def _render_python_module(
         "",
         "from dataclasses import dataclass",
         "from types import MappingProxyType",
-        "from typing import Final, Mapping",
+        "from typing import Final, Literal, Mapping",
         "",
         "",
         "@dataclass(frozen=True, slots=True)",
         "class PublicOperationBinding:",
+        "    operation_id: str",
+        "    status: str",
+        "    http_method: str",
+        "    path: str",
+        "    cli_command: str",
+        "    python_client: str",
+        "    python_method: str",
+        "    typescript_client: str",
+        "    typescript_method: str",
+        "    action_id: str",
+        "    action_kind: str",
+        '    lifecycle: Literal["sync", "async"]',
+        '    idempotency_mode: Literal["idempotent", "keyed"]',
+        '    auth_mode: Literal["none", "capability_gated"]',
+        "    required_capabilities: tuple[str, ...]",
+        "",
+        "",
+        "PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (",
     ]
-    for field in NORMALIZED_FIELDS:
-        out.append(f"    {field}: str")
-    out.extend(
-        [
-            "",
-            "",
-            "PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (",
-        ]
-    )
     for row in rows:
         out.append("    PublicOperationBinding(")
-        for field in NORMALIZED_FIELDS:
+        for field in NORMALIZED_FIELDS + POLICY_FIELDS[:-1]:
             out.append(f"        {field}={_py_string(row[field])},")
+        out.append(
+            f"        required_capabilities={_py_capabilities(row['required_capabilities'])},"
+        )
         out.append("    ),")
     out.extend(
         [
@@ -454,7 +499,7 @@ def _ts_string(value: str) -> str:
 
 
 def _render_typescript(
-    rows: Sequence[Mapping[str, str]], catalog_id: str, catalog_sha256: str
+    rows: Sequence[Mapping[str, Any]], catalog_id: str, catalog_sha256: str
 ) -> bytes:
     http_methods = " | ".join(
         _ts_string(method) for method in sorted({row["http_method"] for row in rows})
@@ -484,11 +529,18 @@ def _render_typescript(
         "  readonly typescriptMethod: string;",
         "  readonly actionId: PublicActionId;",
         '  readonly actionKind: "action" | "view";',
+        '  readonly lifecycle: "sync" | "async";',
+        '  readonly idempotencyMode: "idempotent" | "keyed";',
+        '  readonly authMode: "none" | "capability_gated";',
+        "  readonly requiredCapabilities: readonly string[];",
         "}",
         "",
         "export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [",
     ]
     for row in rows:
+        capabilities = ", ".join(
+            _ts_string(capability) for capability in row["required_capabilities"]
+        )
         out.extend(
             [
                 "  {",
@@ -503,6 +555,10 @@ def _render_typescript(
                 f"    typescriptMethod: {_ts_string(row['typescript_method'])},",
                 f"    actionId: {_ts_string(row['action_id'])},",
                 f"    actionKind: {_ts_string(row['action_kind'])},",
+                f"    lifecycle: {_ts_string(row['lifecycle'])},",
+                f"    idempotencyMode: {_ts_string(row['idempotency_mode'])},",
+                f"    authMode: {_ts_string(row['auth_mode'])},",
+                f"    requiredCapabilities: [{capabilities}],",
                 "  },",
             ]
         )
@@ -760,7 +816,7 @@ def _render_document_index(
 
 
 def _render_manifest(
-    rows: Sequence[Mapping[str, str]],
+    rows: Sequence[Mapping[str, Any]],
     surface: str,
     catalog_id: str,
     catalog_sha256: str,
@@ -898,7 +954,7 @@ def _check_existing_document_ownership(
         if any(
             existing.get(key) != expected.get(key)
             for key in expected
-            if key != "catalog-sha256"
+            if key not in {"catalog-sha256", "generator-version"}
         ):
             raise CatalogError(
                 f"refusing to overwrite document owned by another generator: {path}"

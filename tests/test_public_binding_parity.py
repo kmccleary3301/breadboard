@@ -215,14 +215,14 @@ def _catalog() -> dict[str, Any]:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 
-def _expected_rows() -> list[dict[str, str]]:
+def _expected_rows() -> list[dict[str, Any]]:
     catalog = _catalog()
     operations = catalog["operations"]
     assert catalog["contract_id"] == "bb.public_operation_catalog.v2"
     assert len(operations) == 26
     operation_ids = [operation["operation_id"] for operation in operations]
     assert len(operation_ids) == len(set(operation_ids))
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, Any]] = []
     for operation in operations:
         bindings = operation["bindings"]
         rows.append(
@@ -238,6 +238,12 @@ def _expected_rows() -> list[dict[str, str]]:
                 "typescript_method": bindings["typescript_sdk"]["method"],
                 "action_id": bindings["tui"]["action_id"],
                 "action_kind": bindings["tui"]["kind"],
+                "lifecycle": operation["lifecycle"],
+                "idempotency_mode": operation["idempotency"]["mode"],
+                "auth_mode": operation["auth_policy"]["mode"],
+                "required_capabilities": tuple(
+                    sorted(operation["required_capabilities"])
+                ),
             }
         )
     return sorted(rows, key=lambda row: row["operation_id"])
@@ -264,7 +270,9 @@ def _route_tuple(route: Mapping[str, Any]) -> tuple[str, str, str]:
     return (str(route["operationId"]), str(route["method"]), str(route["path"]))
 
 
-def _expected_public_routes(rows: list[dict[str, str]]) -> set[tuple[str, str, str]]:
+def _expected_public_routes(
+    rows: list[dict[str, Any]],
+) -> set[tuple[str, str, str]]:
     return {(row["operation_id"], row["http_method"], row["path"]) for row in rows}
 
 
@@ -527,6 +535,10 @@ def test_typescript_tables_wrappers_and_root_exports_match_contract() -> None:
             "typescriptMethod": row["typescript_method"],
             "actionId": row["action_id"],
             "actionKind": row["action_kind"],
+            "lifecycle": row["lifecycle"],
+            "idempotencyMode": row["idempotency_mode"],
+            "authMode": row["auth_mode"],
+            "requiredCapabilities": list(row["required_capabilities"]),
         }
         for row in expected
     ]

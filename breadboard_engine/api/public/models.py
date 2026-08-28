@@ -1,26 +1,32 @@
 from __future__ import annotations
+
 import asyncio
-import json
 import hashlib
+import json
 import os
 import re
+import weakref
 from collections.abc import Callable, Mapping, Sequence
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Awaitable, Literal
-import weakref
+
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.concurrency import run_in_threadpool
+
+from breadboard.product.operations.generated_bindings import (
+    PUBLIC_BINDINGS_BY_OPERATION_ID,
+    PUBLIC_OPERATION_BINDINGS,
+    PublicOperationBinding,
+)
 from breadboard.product.operations.model import (
     OperationContext,
     OperationResult,
     from_exception,
 )
 from breadboard.product.runtime.events import ProcessLock
-from breadboard.product.operations.generated_bindings import (
-    PUBLIC_OPERATION_BINDINGS,
-)
 from breadboard_engine.security import redaction
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -33,15 +39,14 @@ _STATUS_BY_EXIT = {2: 422, 3: 404, 4: 500, 5: 409, 6: 409}
 _IDEMPOTENCY_LOCKS: weakref.WeakValueDictionary[str, asyncio.Lock] = (
     weakref.WeakValueDictionary()
 )
-_ASYNC_OPERATIONS = frozenset(
-    {
-        "integration.probe",
-        "session.approve",
-        "session.cancel",
-        "session.resume",
-        "session.send_input",
-        "session.start",
-    }
+_ALL_PUBLIC_CAPABILITIES: frozenset[str] = frozenset(
+    capability
+    for binding in PUBLIC_OPERATION_BINDINGS
+    for capability in binding.required_capabilities
+)
+_GRANTED_CAPABILITIES: ContextVar[frozenset[str] | None] = ContextVar(
+    "public_granted_capabilities",
+    default=None,
 )
 
 
@@ -155,10 +160,19 @@ def public_workspace() -> Path:
     return workspace
 
 
+def _granted_capabilities(
+    capabilities: frozenset[str] | None,
+) -> frozenset[str]:
+    if capabilities is not None:
+        return frozenset(capabilities)
+    inherited = _GRANTED_CAPABILITIES.get()
+    return _ALL_PUBLIC_CAPABILITIES if inherited is None else inherited
+
+
 def public_operation_context(
     workspace: Path,
     *,
-    capabilities: frozenset[str] = frozenset(),
+    capabilities: frozenset[str] | None = None,
     enabled_extensions: frozenset[str] = frozenset(),
 ) -> OperationContext:
     return OperationContext(
@@ -166,7 +180,7 @@ def public_operation_context(
         path_policy="contained-public",
         reference_root=workspace,
         protected_roots=_MAINTAINER_ROOTS,
-        capabilities=capabilities,
+        capabilities=_granted_capabilities(capabilities),
         enabled_extensions=enabled_extensions,
     )
 
@@ -203,9 +217,44 @@ def _scrub(value: Any, workspace: Path | None, secrets: Sequence[str]) -> Any:
         return {
             str(key): _scrub(item, workspace, secrets) for key, item in value.items()
         }
+
     if isinstance(value, list):
         return [_scrub(item, workspace, secrets) for item in value]
     return value
+
+
+def _enforce_dispatch(
+    operation_id: str,
+    *,
+    keyed: bool,
+    capabilities: frozenset[str] | None,
+) -> tuple[PublicOperationBinding, frozenset[str]] | JSONResponse:
+    binding = PUBLIC_BINDINGS_BY_OPERATION_ID.get(operation_id)
+    if binding is None:
+        return problem_response(
+            operation_id,
+            404,
+            "unknown_operation",
+            f"Unknown public operation: {operation_id}",
+        )
+    expected_mode = "keyed" if keyed else "idempotent"
+    if binding.idempotency_mode != expected_mode:
+        return problem_response(
+            operation_id,
+            422,
+            "idempotency_mode_mismatch",
+            f"Public operation requires {binding.idempotency_mode} dispatch",
+        )
+    granted = _granted_capabilities(capabilities)
+    missing = tuple(sorted(set(binding.required_capabilities).difference(granted)))
+    if missing:
+        return problem_response(
+            operation_id,
+            403,
+            "capability_required",
+            f"Missing required capabilities: {', '.join(missing)}",
+        )
+    return binding, granted
 
 
 def scrub_public(value: Any, workspace: Path | None = None) -> Any:
@@ -220,7 +269,16 @@ def result_response(
 ) -> JSONResponse:
     content = _scrub(result.as_dict(), workspace, _secret_values())
     PublicResult.model_validate(content)
-    status_code = 202 if result.ok and operation_id in _ASYNC_OPERATIONS else 200
+    binding = (
+        PUBLIC_BINDINGS_BY_OPERATION_ID.get(operation_id)
+        if operation_id is not None
+        else None
+    )
+    status_code = (
+        202
+        if result.ok and binding is not None and binding.lifecycle == "async"
+        else 200
+    )
     return JSONResponse(
         status_code=status_code
         if result.ok
@@ -253,26 +311,48 @@ def from_public_exception(operation_id: str, error: Exception) -> OperationResul
 
 
 def invoke(
-    operation_id: str, function: Callable[[Path], OperationResult]
+    operation_id: str,
+    function: Callable[[Path], OperationResult],
+    *,
+    capabilities: frozenset[str] | None = None,
 ) -> JSONResponse:
+    enforced = _enforce_dispatch(operation_id, keyed=False, capabilities=capabilities)
+    if isinstance(enforced, JSONResponse):
+        return enforced
+    _, granted = enforced
     workspace: Path | None = None
+    token = _GRANTED_CAPABILITIES.set(granted)
     try:
-        workspace = public_workspace()
-        result = function(workspace)
-    except Exception as error:
-        result = from_public_exception(operation_id, error)
+        try:
+            workspace = public_workspace()
+            result = function(workspace)
+        except Exception as error:
+            result = from_public_exception(operation_id, error)
+    finally:
+        _GRANTED_CAPABILITIES.reset(token)
     return result_response(result, workspace=workspace, operation_id=operation_id)
 
 
 async def invoke_async(
-    operation_id: str, function: Callable[[Path], Awaitable[OperationResult]]
+    operation_id: str,
+    function: Callable[[Path], Awaitable[OperationResult]],
+    *,
+    capabilities: frozenset[str] | None = None,
 ) -> JSONResponse:
+    enforced = _enforce_dispatch(operation_id, keyed=False, capabilities=capabilities)
+    if isinstance(enforced, JSONResponse):
+        return enforced
+    _, granted = enforced
     workspace: Path | None = None
+    token = _GRANTED_CAPABILITIES.set(granted)
     try:
-        workspace = public_workspace()
-        result = await function(workspace)
-    except Exception as error:
-        result = from_public_exception(operation_id, error)
+        try:
+            workspace = public_workspace()
+            result = await function(workspace)
+        except Exception as error:
+            result = from_public_exception(operation_id, error)
+    finally:
+        _GRANTED_CAPABILITIES.reset(token)
     return result_response(result, workspace=workspace, operation_id=operation_id)
 
 
@@ -302,50 +382,71 @@ def invoke_idempotent(
     idempotency_key: str | None,
     canonical_input: Mapping[str, Any],
     function: Callable[[Path], OperationResult],
+    *,
+    capabilities: frozenset[str] | None = None,
 ) -> JSONResponse:
+    enforced = _enforce_dispatch(operation_id, keyed=True, capabilities=capabilities)
+    if isinstance(enforced, JSONResponse):
+        return enforced
+    binding, granted = enforced
     if not idempotency_key:
         return problem_response(
             operation_id, 422, "idempotency_key_required", "Idempotency-Key is required"
         )
     workspace: Path | None = None
+    token = _GRANTED_CAPABILITIES.set(granted)
     try:
-        workspace = public_workspace()
-        encoded = json.dumps(
-            canonical_input, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        ).encode()
-        input_sha256 = "sha256:" + hashlib.sha256(encoded).hexdigest()
-        bucket = hashlib.sha256(
-            f"{operation_id}\0{idempotency_key}".encode()
-        ).hexdigest()
-        directory = workspace_path(".breadboard/public_api/idempotency", workspace)
-        directory.mkdir(parents=True, exist_ok=True)
-        record_path = workspace_path(
-            str(directory.joinpath(f"{bucket}.json").relative_to(workspace)), workspace
-        )
-        with ProcessLock(record_path):
-            if record_path.exists():
-                record = json.loads(record_path.read_text())
-                if record.get("input_sha256") != input_sha256:
-                    return problem_response(
-                        operation_id,
-                        409,
-                        "idempotency_conflict",
-                        "Idempotency-Key was used with different input",
+        try:
+            workspace = public_workspace()
+            encoded = json.dumps(
+                canonical_input,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+            input_sha256 = "sha256:" + hashlib.sha256(encoded).hexdigest()
+            bucket = hashlib.sha256(
+                f"{operation_id}\0{idempotency_key}".encode()
+            ).hexdigest()
+            directory = workspace_path(".breadboard/public_api/idempotency", workspace)
+            directory.mkdir(parents=True, exist_ok=True)
+            record_path = workspace_path(
+                str(directory.joinpath(f"{bucket}.json").relative_to(workspace)),
+                workspace,
+            )
+            with ProcessLock(record_path):
+                if record_path.exists():
+                    record = json.loads(record_path.read_text())
+                    if record.get("input_sha256") != input_sha256:
+                        return problem_response(
+                            operation_id,
+                            409,
+                            "idempotency_conflict",
+                            "Idempotency-Key was used with different input",
+                        )
+                    cached = scrub_public(record["result"], workspace)
+                    PublicResult.model_validate(cached)
+                    return JSONResponse(
+                        status_code=202 if binding.lifecycle == "async" else 200,
+                        content=cached,
                     )
-                cached = scrub_public(record["result"], workspace)
-                PublicResult.model_validate(cached)
-                return JSONResponse(status_code=202, content=cached)
-            result = function(workspace)
-            if result.ok:
-                content = scrub_public(result.as_dict(), workspace)
-                PublicResult.model_validate(content)
-                record = json.dumps(
-                    {"input_sha256": input_sha256, "result": content}, sort_keys=True
-                ).encode()
-                _write_idempotency_record(record_path, record)
-                return JSONResponse(status_code=202, content=content)
-    except Exception as error:
-        result = from_public_exception(operation_id, error)
+                result = function(workspace)
+                if result.ok:
+                    content = scrub_public(result.as_dict(), workspace)
+                    PublicResult.model_validate(content)
+                    record = json.dumps(
+                        {"input_sha256": input_sha256, "result": content},
+                        sort_keys=True,
+                    ).encode()
+                    _write_idempotency_record(record_path, record)
+                    return JSONResponse(
+                        status_code=202 if binding.lifecycle == "async" else 200,
+                        content=content,
+                    )
+        except Exception as error:
+            result = from_public_exception(operation_id, error)
+    finally:
+        _GRANTED_CAPABILITIES.reset(token)
     return result_response(result, workspace=workspace, operation_id=operation_id)
 
 
@@ -354,7 +455,13 @@ async def invoke_idempotent_async(
     idempotency_key: str | None,
     canonical_input: Mapping[str, Any],
     function: Callable[[Path], Awaitable[OperationResult]],
+    *,
+    capabilities: frozenset[str] | None = None,
 ) -> JSONResponse:
+    enforced = _enforce_dispatch(operation_id, keyed=True, capabilities=capabilities)
+    if isinstance(enforced, JSONResponse):
+        return enforced
+    binding, granted = enforced
     if not idempotency_key:
         return problem_response(
             operation_id, 422, "idempotency_key_required", "Idempotency-Key is required"
@@ -364,49 +471,61 @@ async def invoke_idempotent_async(
     entered = False
     local_lock: asyncio.Lock | None = None
     local_lock_entered = False
+    token = _GRANTED_CAPABILITIES.set(granted)
     try:
-        workspace = public_workspace()
-        encoded = json.dumps(
-            canonical_input, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        ).encode()
-        input_sha256 = "sha256:" + hashlib.sha256(encoded).hexdigest()
-        bucket = hashlib.sha256(
-            f"{operation_id}\0{idempotency_key}".encode()
-        ).hexdigest()
-        directory = workspace_path(".breadboard/public_api/idempotency", workspace)
-        directory.mkdir(parents=True, exist_ok=True)
-        record_path = workspace_path(
-            str(directory.joinpath(f"{bucket}.json").relative_to(workspace)), workspace
-        )
-        local_lock = _IDEMPOTENCY_LOCKS.setdefault(str(record_path), asyncio.Lock())
-        await local_lock.acquire()
-        local_lock_entered = True
-        lock = ProcessLock(record_path)
-        await run_in_threadpool(lock.__enter__)
-        entered = True
-        if await run_in_threadpool(record_path.exists):
-            record = json.loads(await run_in_threadpool(record_path.read_text))
-            if record.get("input_sha256") != input_sha256:
-                return problem_response(
-                    operation_id,
-                    409,
-                    "idempotency_conflict",
-                    "Idempotency-Key was used with different input",
-                )
-            cached = scrub_public(record["result"], workspace)
-            PublicResult.model_validate(cached)
-            return JSONResponse(status_code=202, content=cached)
-        result = await function(workspace)
-        if result.ok:
-            content = scrub_public(result.as_dict(), workspace)
-            PublicResult.model_validate(content)
-            record = json.dumps(
-                {"input_sha256": input_sha256, "result": content}, sort_keys=True
+        try:
+            workspace = public_workspace()
+            encoded = json.dumps(
+                canonical_input,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
             ).encode()
-            await run_in_threadpool(_write_idempotency_record, record_path, record)
-            return JSONResponse(status_code=202, content=content)
-    except Exception as error:
-        result = from_public_exception(operation_id, error)
+            input_sha256 = "sha256:" + hashlib.sha256(encoded).hexdigest()
+            bucket = hashlib.sha256(
+                f"{operation_id}\0{idempotency_key}".encode()
+            ).hexdigest()
+            directory = workspace_path(".breadboard/public_api/idempotency", workspace)
+            directory.mkdir(parents=True, exist_ok=True)
+            record_path = workspace_path(
+                str(directory.joinpath(f"{bucket}.json").relative_to(workspace)),
+                workspace,
+            )
+            local_lock = _IDEMPOTENCY_LOCKS.setdefault(str(record_path), asyncio.Lock())
+            await local_lock.acquire()
+            local_lock_entered = True
+            lock = ProcessLock(record_path)
+            await run_in_threadpool(lock.__enter__)
+            entered = True
+            if await run_in_threadpool(record_path.exists):
+                record = json.loads(await run_in_threadpool(record_path.read_text))
+                if record.get("input_sha256") != input_sha256:
+                    return problem_response(
+                        operation_id,
+                        409,
+                        "idempotency_conflict",
+                        "Idempotency-Key was used with different input",
+                    )
+                cached = scrub_public(record["result"], workspace)
+                PublicResult.model_validate(cached)
+                return JSONResponse(
+                    status_code=202 if binding.lifecycle == "async" else 200,
+                    content=cached,
+                )
+            result = await function(workspace)
+            if result.ok:
+                content = scrub_public(result.as_dict(), workspace)
+                PublicResult.model_validate(content)
+                record = json.dumps(
+                    {"input_sha256": input_sha256, "result": content}, sort_keys=True
+                ).encode()
+                await run_in_threadpool(_write_idempotency_record, record_path, record)
+                return JSONResponse(
+                    status_code=202 if binding.lifecycle == "async" else 200,
+                    content=content,
+                )
+        except Exception as error:
+            result = from_public_exception(operation_id, error)
     finally:
         try:
             if entered and lock is not None:
@@ -414,6 +533,7 @@ async def invoke_idempotent_async(
         finally:
             if local_lock_entered and local_lock is not None:
                 local_lock.release()
+            _GRANTED_CAPABILITIES.reset(token)
     return result_response(result, workspace=workspace, operation_id=operation_id)
 
 

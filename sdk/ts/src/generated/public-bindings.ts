@@ -1,6 +1,6 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/quality/generate_public_bindings.py
-// generator-version: 2
+// generator-version: 3
 // catalog-id: bb.public_operation_catalog.v2
 // catalog-sha256: sha256:4deb87f3b82f7ccdf922fb609a9784840fb01ee591793e95f2af42acd2097674
 
@@ -20,6 +20,10 @@ export interface PublicOperationBinding {
   readonly typescriptMethod: string;
   readonly actionId: PublicActionId;
   readonly actionKind: "action" | "view";
+  readonly lifecycle: "sync" | "async";
+  readonly idempotencyMode: "idempotent" | "keyed";
+  readonly authMode: "none" | "capability_gated";
+  readonly requiredCapabilities: readonly string[];
 }
 
 export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
@@ -35,6 +39,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "getArtifact",
     actionId: "public.artifact.get",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.artifact.read"],
   },
   {
     operationId: "artifact.list",
@@ -48,6 +56,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "listArtifact",
     actionId: "public.artifact.list",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.artifact.read"],
   },
   {
     operationId: "artifact.verify",
@@ -61,6 +73,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "verifyArtifact",
     actionId: "public.artifact.verify",
     actionKind: "action",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.artifact.verify"],
   },
   {
     operationId: "harness.create",
@@ -74,6 +90,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "createHarness",
     actionId: "public.harness.create",
     actionKind: "action",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.harness.write"],
   },
   {
     operationId: "harness.explain",
@@ -87,6 +107,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "explainHarness",
     actionId: "public.harness.explain",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.harness.read"],
   },
   {
     operationId: "harness.get",
@@ -100,6 +124,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "getHarness",
     actionId: "public.harness.get",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.harness.read"],
   },
   {
     operationId: "harness.list",
@@ -113,6 +141,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "listHarness",
     actionId: "public.harness.list",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.harness.read"],
   },
   {
     operationId: "harness.lock",
@@ -126,6 +158,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "lockHarness",
     actionId: "public.harness.lock",
     actionKind: "action",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.harness.write"],
   },
   {
     operationId: "harness.update",
@@ -139,6 +175,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "updateHarness",
     actionId: "public.harness.update",
     actionKind: "action",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.harness.write"],
   },
   {
     operationId: "harness.validate",
@@ -152,6 +192,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "validateHarness",
     actionId: "public.harness.validate",
     actionKind: "action",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.harness.verify"],
   },
   {
     operationId: "harness_lock.get",
@@ -165,6 +209,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "getHarnessLock",
     actionId: "public.harness_lock.get",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.harness_lock.read"],
   },
   {
     operationId: "integration.get",
@@ -178,6 +226,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "getIntegration",
     actionId: "public.integration.get",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.integration.read"],
   },
   {
     operationId: "integration.list",
@@ -191,6 +243,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "listIntegration",
     actionId: "public.integration.list",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.integration.read"],
   },
   {
     operationId: "integration.probe",
@@ -204,6 +260,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "probeIntegration",
     actionId: "public.integration.probe",
     actionKind: "action",
+    lifecycle: "async",
+    idempotencyMode: "keyed",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.integration.execute"],
   },
   {
     operationId: "session.approve",
@@ -217,6 +277,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "approveSession",
     actionId: "public.session.approve",
     actionKind: "action",
+    lifecycle: "async",
+    idempotencyMode: "keyed",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.session.execute"],
   },
   {
     operationId: "session.artifacts",
@@ -230,6 +294,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "artifactsSession",
     actionId: "public.session.artifacts",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.session.read"],
   },
   {
     operationId: "session.cancel",
@@ -243,6 +311,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "cancelSession",
     actionId: "public.session.cancel",
     actionKind: "action",
+    lifecycle: "async",
+    idempotencyMode: "keyed",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.session.execute"],
   },
   {
     operationId: "session.events",
@@ -256,6 +328,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "eventsSession",
     actionId: "public.session.events",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.session.read"],
   },
   {
     operationId: "session.get",
@@ -269,6 +345,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "getSession",
     actionId: "public.session.get",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.session.read"],
   },
   {
     operationId: "session.list",
@@ -282,6 +362,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "listSession",
     actionId: "public.session.list",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.session.read"],
   },
   {
     operationId: "session.resume",
@@ -295,6 +379,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "resumeSession",
     actionId: "public.session.resume",
     actionKind: "action",
+    lifecycle: "async",
+    idempotencyMode: "keyed",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.session.execute"],
   },
   {
     operationId: "session.send_input",
@@ -308,6 +396,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "sendInputSession",
     actionId: "public.session.send_input",
     actionKind: "action",
+    lifecycle: "async",
+    idempotencyMode: "keyed",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.session.execute"],
   },
   {
     operationId: "session.start",
@@ -321,6 +413,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "startSession",
     actionId: "public.session.start",
     actionKind: "action",
+    lifecycle: "async",
+    idempotencyMode: "keyed",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.session.execute"],
   },
   {
     operationId: "system.describe",
@@ -334,6 +430,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "describeSystem",
     actionId: "public.system.describe",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "none",
+    requiredCapabilities: [],
   },
   {
     operationId: "system.health",
@@ -347,6 +447,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "healthSystem",
     actionId: "public.system.health",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "none",
+    requiredCapabilities: [],
   },
   {
     operationId: "system.schemas",
@@ -360,6 +464,10 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     typescriptMethod: "schemasSystem",
     actionId: "public.system.schemas",
     actionKind: "view",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "none",
+    requiredCapabilities: [],
   },
 ] as const;
 

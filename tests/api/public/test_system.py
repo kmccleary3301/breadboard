@@ -14,7 +14,7 @@ from breadboard.product.harness import (
     resolution as harness_resolution,
     templates as harness_templates,
 )
-from breadboard.product.operations.model import OperationContext
+from breadboard.product.operations.model import OperationContext, OperationResult
 from breadboard.product.operations.system import (
     DescribeSystemRequest,
     describe_system,
@@ -584,3 +584,80 @@ def test_problem_response_preserves_status_exit_semantics() -> None:
     )
     assert send_input["command"] == ["session", "send-input"]
     assert send_input["stage_outcomes"][0]["stage"] == "session.send-input"
+
+
+def test_generated_capability_policy_gates_dispatch_before_callbacks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
+    calls: list[frozenset[str]] = []
+
+    def callback(workspace: Path) -> OperationResult:
+        calls.append(public_models.public_operation_context(workspace).capabilities)
+        return OperationResult.success(["artifact", "list"], stage="artifact.list")
+
+    denied = public_models.invoke(
+        "artifact.list",
+        callback,
+        capabilities=frozenset(),
+    )
+    assert denied.status_code == 403
+    denied_payload = json.loads(denied.body)
+    assert denied_payload["schema_version"] == "bb.cli.result.v1"
+    assert denied_payload["error"]["error_code"] == "capability_required"
+
+    unknown = public_models.invoke("unknown.operation", callback)
+    assert unknown.status_code == 404
+    assert json.loads(unknown.body)["error"]["error_code"] == "unknown_operation"
+
+    wrong_dispatch = public_models.invoke("session.start", callback)
+    assert wrong_dispatch.status_code == 422
+    assert (
+        json.loads(wrong_dispatch.body)["error"]["error_code"]
+        == "idempotency_mode_mismatch"
+    )
+
+    keyed_denied = public_models.invoke_idempotent(
+        "session.start",
+        "start-key",
+        {},
+        callback,
+        capabilities=frozenset(),
+    )
+    assert keyed_denied.status_code == 403
+    assert calls == []
+
+    allowed = public_models.invoke("artifact.list", callback)
+    assert allowed.status_code == 200
+    assert calls == [public_models._ALL_PUBLIC_CAPABILITIES]
+    assert "public.artifact.read" in calls[0]
+
+
+@pytest.mark.asyncio
+async def test_generated_capability_policy_gates_async_dispatch_before_callbacks() -> (
+    None
+):
+    calls = 0
+
+    async def callback(_workspace: Path) -> OperationResult:
+        nonlocal calls
+        calls += 1
+        return OperationResult.success(["artifact", "list"], stage="artifact.list")
+
+    denied = await public_models.invoke_async(
+        "artifact.list",
+        callback,
+        capabilities=frozenset(),
+    )
+    keyed_denied = await public_models.invoke_idempotent_async(
+        "session.start",
+        "start-key",
+        {},
+        callback,
+        capabilities=frozenset(),
+    )
+
+    assert denied.status_code == 403
+    assert keyed_denied.status_code == 403
+    assert calls == 0

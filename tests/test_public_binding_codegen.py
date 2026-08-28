@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -82,6 +83,88 @@ def test_catalog_reordering_does_not_change_outputs(tmp_path: Path) -> None:
         json.dumps(catalog), encoding="utf-8"
     )
     assert generator.build_outputs(root) == original
+
+
+def test_generated_bindings_carry_immutable_catalog_policy(tmp_path: Path) -> None:
+    root, catalog = _staged_catalog(tmp_path)
+    outputs = generator.build_outputs(root)
+    namespace: dict[str, object] = {}
+    exec(
+        outputs[root / "breadboard/product/operations/generated_bindings.py"],
+        namespace,
+    )
+    bindings = namespace["PUBLIC_BINDINGS_BY_OPERATION_ID"]
+    assert isinstance(bindings, Mapping)
+    operation = catalog["operations"][0]
+    binding = bindings[operation["operation_id"]]
+    required_capabilities = getattr(binding, "required_capabilities")
+
+    assert getattr(binding, "lifecycle") == operation["lifecycle"]
+    assert getattr(binding, "idempotency_mode") == operation["idempotency"]["mode"]
+    assert getattr(binding, "auth_mode") == operation["auth_policy"]["mode"]
+    assert required_capabilities == tuple(sorted(operation["required_capabilities"]))
+    assert isinstance(required_capabilities, tuple)
+
+    typescript = outputs[root / "sdk/ts/src/generated/public-bindings.ts"].decode()
+    assert 'readonly lifecycle: "sync" | "async"' in typescript
+    assert 'readonly idempotencyMode: "idempotent" | "keyed"' in typescript
+    assert 'readonly authMode: "none" | "capability_gated"' in typescript
+    assert "readonly requiredCapabilities: readonly string[]" in typescript
+
+
+def test_capability_reordering_does_not_change_outputs(tmp_path: Path) -> None:
+    root, catalog = _staged_catalog(tmp_path)
+    operation = next(
+        row
+        for row in catalog["operations"]
+        if row["auth_policy"]["mode"] == "capability_gated"
+    )
+    operation["required_capabilities"] = ["public.zeta", "public.alpha"]
+    catalog_path = root / "contracts/public/operations.v2.json"
+    catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+    original = generator.build_outputs(root)
+
+    operation["required_capabilities"].reverse()
+    catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    assert generator.build_outputs(root) == original
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ("none-with-capability", "requires no capabilities"),
+        ("gated-without-capability", "requires at least one capability"),
+        ("duplicate-capability", "must be unique"),
+    ],
+)
+def test_invalid_capability_policy_is_rejected(
+    tmp_path: Path,
+    case: str,
+    message: str,
+) -> None:
+    root, catalog = _staged_catalog(tmp_path)
+    if case == "none-with-capability":
+        operation = next(
+            row for row in catalog["operations"] if row["auth_policy"]["mode"] == "none"
+        )
+        operation["required_capabilities"] = ["public.invalid"]
+    else:
+        operation = next(
+            row
+            for row in catalog["operations"]
+            if row["auth_policy"]["mode"] == "capability_gated"
+        )
+        operation["required_capabilities"] = (
+            [] if case == "gated-without-capability" else ["public.same", "public.same"]
+        )
+    (root / "contracts/public/operations.v2.json").write_text(
+        json.dumps(catalog),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(generator.CatalogError, match=message):
+        generator.build_outputs(root)
 
 
 @pytest.mark.parametrize(
