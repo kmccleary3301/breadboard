@@ -64,8 +64,7 @@ def test_google_oauth_requires_a_deployment_owned_client_id(monkeypatch, tmp_pat
     assert unavailable["problem"]["code"] == "flow_unavailable"
     assert unavailable["problem"]["details"]["configuration_key"] == env_name
     assert not any(
-        item["provider_id"] == "google-gemini-cli"
-        for item in broker.listProviders()
+        item["provider_id"] == "google-gemini-cli" for item in broker.listProviders()
     )
     entry = get_provider_catalog_entry("google-gemini-cli")
     assert entry is not None
@@ -633,12 +632,15 @@ def test_refresh_terminal_operations_reject_owner_after_lease_takeover(
         expires_at_ms=base_ms + 10_000,
     )
     account_id = credential["account_id"]
-    assert stale.claim_oauth_refresh(
-        account_id=account_id,
-        expected_secret_version=1,
-        owner_id="stale-owner",
-        lease_duration_ms=100,
-    )["status"] == "acquired"
+    assert (
+        stale.claim_oauth_refresh(
+            account_id=account_id,
+            expected_secret_version=1,
+            owner_id="stale-owner",
+            lease_duration_ms=100,
+        )["status"]
+        == "acquired"
+    )
 
     monkeypatch.setattr(store_module, "now_ms", lambda: base_ms + 101)
     takeover = current.claim_oauth_refresh(
@@ -677,6 +679,58 @@ def test_refresh_terminal_operations_reject_owner_after_lease_takeover(
     assert current.inspect_refresh_state(account_id)["status"] == "refreshing"
 
 
+def test_refresh_completion_scrubs_new_material_from_metadata(tmp_path) -> None:
+    store = SQLiteCredentialStore(tmp_path / "refresh-metadata.sqlite3")
+    now = int(time.time() * 1000)
+    credential = store.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="refresh-metadata",
+        material={
+            "access_token": "refresh-access-old",
+            "refresh_token": "refresh-token-old",
+        },
+        expires_at_ms=now + 10_000,
+        metadata={"stable": "preserved"},
+    )
+    account_id = credential["account_id"]
+    assert (
+        store.claim_oauth_refresh(
+            account_id=account_id,
+            expected_secret_version=1,
+            owner_id="refresh-owner",
+            lease_duration_ms=10_000,
+        )["status"]
+        == "acquired"
+    )
+    material = {
+        "access_token": "refresh-access-new",
+        "refresh_token": "refresh-token-new",
+    }
+
+    completed = store.complete_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="refresh-owner",
+        material=material,
+        expires_at_ms=now + 20_000,
+        metadata={
+            "access_alias": material["access_token"],
+            "refresh_alias": material["refresh_token"],
+        },
+    )
+
+    assert completed["status"] == "completed"
+    assert completed["credential"]["metadata"] == {
+        "access_alias": redaction.REDACTED,
+        "refresh_alias": redaction.REDACTED,
+        "stable": "preserved",
+    }
+    serialized = json.dumps(store.list_accounts())
+    assert material["access_token"] not in serialized
+    assert material["refresh_token"] not in serialized
+
+
 def test_refresh_terminal_operations_preserve_concurrent_rotation(
     tmp_path,
 ):
@@ -695,12 +749,15 @@ def test_refresh_terminal_operations_preserve_concurrent_rotation(
         expires_at_ms=now + 10_000,
     )
     account_id = credential["account_id"]
-    assert stale.claim_oauth_refresh(
-        account_id=account_id,
-        expected_secret_version=1,
-        owner_id="stale-owner",
-        lease_duration_ms=10_000,
-    )["status"] == "acquired"
+    assert (
+        stale.claim_oauth_refresh(
+            account_id=account_id,
+            expected_secret_version=1,
+            owner_id="stale-owner",
+            lease_duration_ms=10_000,
+        )["status"]
+        == "acquired"
+    )
     rotated = current.put_oauth(
         provider_id="anthropic",
         auth_scheme_id="oauth2",
@@ -764,12 +821,15 @@ def test_refresh_terminal_transition_holds_write_ownership(
         expires_at_ms=now + 10_000,
     )
     account_id = credential["account_id"]
-    assert stale.claim_oauth_refresh(
-        account_id=account_id,
-        expected_secret_version=1,
-        owner_id="terminal-owner",
-        lease_duration_ms=10_000,
-    )["status"] == "acquired"
+    assert (
+        stale.claim_oauth_refresh(
+            account_id=account_id,
+            expected_secret_version=1,
+            owner_id="terminal-owner",
+            lease_duration_ms=10_000,
+        )["status"]
+        == "acquired"
+    )
 
     terminal_entered = threading.Event()
     release_terminal = threading.Event()
@@ -1087,10 +1147,7 @@ def test_expired_legacy_oauth_without_refresh_token_is_tombstoned(
     view = broker.listCredentials("anthropic")[0]
     assert view["status"] == "revoked"
     assert view["refresh_state"]["last_failure_class"] == "definitive"
-    assert (
-        view["refresh_state"]["last_failure_code"]
-        == "oauth_refresh_unavailable"
-    )
+    assert view["refresh_state"]["last_failure_code"] == "oauth_refresh_unavailable"
 
 
 def test_definitive_refresh_failure_tombstones_and_relogin_creates_new_account(
@@ -1250,7 +1307,9 @@ def test_revoke_during_refresh_cannot_resurrect_tombstone(tmp_path):
     assert view["secret_version"] == 1
 
 
-def _login_storage_row(store, login_session_id: str) -> tuple[str, int, int, str | None]:
+def _login_storage_row(
+    store, login_session_id: str
+) -> tuple[str, int, int, str | None]:
     with store._transaction() as connection:
         row = connection.execute(
             """SELECT status, created_at_ms, updated_at_ms, flow_json
@@ -1296,9 +1355,9 @@ def test_completed_oauth_login_clears_internal_flow_json(tmp_path, monkeypatch):
     assert status == "pending"
     assert flow_json
 
-    flow = broker.store.get_login(
-        started["login_session_id"], include_flow=True
-    )["flow"]
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
     completed = broker.completeLogin(
         {
             "login_session_id": started["login_session_id"],
@@ -1328,9 +1387,9 @@ def test_failed_oauth_login_clears_internal_flow_json(tmp_path):
         oauth_transport=transport,
     )
     started = broker.beginLogin({"provider_id": "codex"})
-    flow = broker.store.get_login(
-        started["login_session_id"], include_flow=True
-    )["flow"]
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
 
     failed = broker.completeLogin(
         {
@@ -1584,9 +1643,9 @@ def test_expired_oauth_login_is_rejected_without_transport(tmp_path, monkeypatch
         oauth_transport=transport,
     )
     started = broker.beginLogin({"provider_id": "codex"})
-    flow = broker.store.get_login(
-        started["login_session_id"], include_flow=True
-    )["flow"]
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
 
     clock.advance_ms(10 * 60 * 1000 + 1)
     expired = broker.completeLogin(

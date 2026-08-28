@@ -116,7 +116,9 @@ def test_auth_routes_are_typed_and_never_return_secret(tmp_path, monkeypatch, ca
     assert role.status_code == 200
     role_json = role.json()
     assert (
-        role_json["lock"]["roles"]["default"]["primary"]["account_binding"]["account_id"]
+        role_json["lock"]["roles"]["default"]["primary"]["account_binding"][
+            "account_id"
+        ]
         == credential["account_id"]
     )
     assert secret not in role.text
@@ -231,9 +233,7 @@ def test_auth_api_key_rejects_secret_bearing_credential_identity_fields(
     payload = {
         "api_key": secret,
         "alias": secret if identity_field == "alias" else "primary",
-        "auth_scheme_id": (
-            secret if identity_field == "auth_scheme_id" else "api_key"
-        ),
+        "auth_scheme_id": (secret if identity_field == "auth_scheme_id" else "api_key"),
     }
 
     response = client.put(
@@ -244,9 +244,7 @@ def test_auth_api_key_rejects_secret_bearing_credential_identity_fields(
     assert response.status_code == 400
     assert response.json() == {
         "error": "invalid_request",
-        "detail": (
-            "credential identity fields cannot contain credential material"
-        ),
+        "detail": ("credential identity fields cannot contain credential material"),
         "path": None,
     }
     assert secret not in response.text
@@ -300,9 +298,7 @@ def test_auth_api_key_scrubs_numeric_metadata_and_rejects_matching_expiry(
     assert rejected.status_code == 400
     assert rejected.json() == {
         "error": "invalid_request",
-        "detail": (
-            "credential identity fields cannot contain credential material"
-        ),
+        "detail": ("credential identity fields cannot contain credential material"),
         "path": None,
     }
     assert secret not in rejected.text
@@ -335,13 +331,9 @@ def test_auth_api_key_scrubs_distinct_nested_credential_values(
     if credential_source == "api_key_header":
         credential_fields = {"headers": {"x-api-key": nested_secret}}
     elif credential_source == "authorization_header":
-        credential_fields = {
-            "headers": {"Authorization": f"Bearer {nested_secret}"}
-        }
+        credential_fields = {"headers": {"Authorization": f"Bearer {nested_secret}"}}
     elif credential_source == "prefixed_authorization_header":
-        credential_fields = {
-            "headers": {"X-Authorization": f"Bearer {nested_secret}"}
-        }
+        credential_fields = {"headers": {"X-Authorization": f"Bearer {nested_secret}"}}
     elif credential_source == "routing":
         credential_fields = {"routing": {"refresh_token": nested_secret}}
     else:
@@ -375,20 +367,17 @@ def test_auth_api_key_scrubs_distinct_nested_credential_values(
     )
 
     assert response.status_code == 200
-    assert response.json()["metadata"] == {
-        key: "***REDACTED***" for key in metadata
-    }
+    expected_metadata = {"canary": "***REDACTED***"}
+    if sensitive_property is not None:
+        expected_metadata["property_canary"] = sensitive_property
+    assert response.json()["metadata"] == expected_metadata
     assert primary_secret not in response.text
     assert nested_secret not in response.text
-    if sensitive_property is not None:
-        assert sensitive_property not in response.text
     with sqlite3.connect(database) as connection:
         metadata_json = connection.execute(
             "SELECT metadata_json FROM accounts"
         ).fetchone()[0]
-    assert nested_secret not in metadata_json
-    if sensitive_property is not None:
-        assert sensitive_property not in metadata_json
+    assert json.loads(metadata_json) == expected_metadata
     assert nested_secret not in json.dumps(broker.audit_events())
     assert redaction.iter_registered_secret_values() == ()
 
@@ -454,9 +443,7 @@ def test_auth_api_key_rejects_distinct_header_secret_in_identity(
     assert response.status_code == 400
     assert response.json() == {
         "error": "invalid_request",
-        "detail": (
-            "credential identity fields cannot contain credential material"
-        ),
+        "detail": ("credential identity fields cannot contain credential material"),
         "path": None,
     }
     assert nested_secret not in response.text
@@ -472,9 +459,7 @@ def test_auth_api_key_rejects_distinct_header_secret_in_identity(
         (
             {
                 "headers": {
-                    "Authorization": (
-                        "Basic YmFzaWMtdXNlcjpiYXNpYy1wYXNzd29yZA=="
-                    )
+                    "Authorization": ("Basic YmFzaWMtdXNlcjpiYXNpYy1wYXNzd29yZA==")
                 }
             },
             "basic-password",

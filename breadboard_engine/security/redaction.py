@@ -87,10 +87,57 @@ def safe_exception_message(
     return f"{operation} failed ({error.__class__.__name__})"
 
 
+def _fail_closed_short_secret_strings(value: Any) -> Any:
+    short_secrets = tuple(
+        secret for secret in iter_registered_secret_values() if len(secret) < 3
+    )
+    if not short_secrets:
+        return value
+
+    def visit(item: Any, seen: set[int]) -> Any:
+        if isinstance(item, str):
+            if any(secret in item for secret in short_secrets):
+                return REDACTED
+            return item
+        if isinstance(item, Mapping):
+            identity = id(item)
+            if identity in seen:
+                return REDACTED
+            seen.add(identity)
+            try:
+                return {key: visit(child, seen) for key, child in item.items()}
+            finally:
+                seen.remove(identity)
+        if isinstance(item, list):
+            identity = id(item)
+            if identity in seen:
+                return REDACTED
+            seen.add(identity)
+            try:
+                return [visit(child, seen) for child in item]
+            finally:
+                seen.remove(identity)
+        if isinstance(item, tuple):
+            identity = id(item)
+            if identity in seen:
+                return REDACTED
+            seen.add(identity)
+            try:
+                return tuple(visit(child, seen) for child in item)
+            finally:
+                seen.remove(identity)
+        return item
+
+    return visit(value, set())
+
+
 def scrub_exception_in_place(error: BaseException) -> BaseException:
     """Scrub exception fields before an operation releases its secret scope."""
     try:
-        scrubbed_args, _ = scrub_structure(error.args, path="$.exception.args")
+        scrubbed_args, _ = scrub_structure(
+            _fail_closed_short_secret_strings(error.args),
+            path="$.exception.args",
+        )
         error.args = tuple(scrubbed_args)
     except Exception:
         pass
@@ -98,7 +145,7 @@ def scrub_exception_in_place(error: BaseException) -> BaseException:
         details = getattr(error, "details", None)
         if isinstance(details, Mapping):
             scrubbed_details, _ = scrub_structure(
-                details,
+                _fail_closed_short_secret_strings(details),
                 path="$.exception.details",
             )
             error.details = scrubbed_details
@@ -107,7 +154,10 @@ def scrub_exception_in_place(error: BaseException) -> BaseException:
     try:
         notes = getattr(error, "__notes__", None)
         if isinstance(notes, list):
-            error.__notes__ = [scrub_text(str(note)) for note in notes]
+            error.__notes__ = [
+                scrub_text(str(_fail_closed_short_secret_strings(note)))
+                for note in notes
+            ]
     except Exception:
         pass
     return error

@@ -252,6 +252,18 @@ class TestRegisteredValues:
             assert redaction.contains_registered_secret_identity("anthropic") is False
             assert redaction.contains_registered_secret_text("anthropic") is True
 
+    def test_exception_scrubbing_fails_closed_for_embedded_short_secret(self):
+        error = RuntimeError("provider call failed a")
+        error.details = {"message": "nested provider failure a"}
+        error.add_note("provider note a")
+
+        with redaction.secret_value_scope("a", allow_short=True):
+            redaction.scrub_exception_in_place(error)
+
+        assert str(error) == redaction.REDACTED
+        assert error.details == {"message": redaction.REDACTED}
+        assert error.__notes__ == [redaction.REDACTED]
+
     def test_scopes_are_isolated_between_operation_contexts(self):
         outer_secret = "outer-operation-secret"
         inner_secret = "inner-operation-secret"

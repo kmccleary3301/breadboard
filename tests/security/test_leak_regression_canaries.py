@@ -337,6 +337,20 @@ class TestChildEnvironmentBoundary:
         assert is_provider_credential_env_key("BREADBOARD_CREDENTIAL_STORE_PATH")
         assert is_provider_credential_env_key("BREADBOARD_CREDENTIAL_DB")
 
+    @pytest.mark.parametrize(
+        "name",
+        ["LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "GCONV_PATH"],
+    )
+    def test_loader_controls_cannot_be_reallowed(self, name: str) -> None:
+        from breadboard_engine.security import build_child_environment
+
+        with pytest.raises(ValueError, match="not permitted"):
+            build_child_environment(
+                source={"PATH": "/usr/bin"},
+                overrides={name: "/workspace/attacker-library"},
+                allowed_override_keys=(name,),
+            )
+
     def test_ray_runtime_controls_survive_sanitization(self):
 
         from breadboard_engine.security import build_child_environment
@@ -512,7 +526,7 @@ class TestChildEnvironmentBoundary:
 
         workspace = tmp_path / "workspace"
         workspace.mkdir()
-        calls = []
+        observed: dict[str, object] = {}
         actor_type = sandbox_docker.DockerSandboxV2.__ray_metadata__.modified_class
         actor = actor_type(
             image="python-dev:latest",
@@ -523,17 +537,25 @@ class TestChildEnvironmentBoundary:
         monkeypatch.setattr(
             sandbox_docker.shutil, "which", lambda _name: "/usr/bin/docker"
         )
-        monkeypatch.setattr(
-            sandbox_docker.subprocess,
-            "run",
-            lambda command, **kwargs: (
-                calls.append((command, kwargs))
-                or SimpleNamespace(returncode=0, stdout="ok", stderr="")
-            ),
-        )
+
+        def run_docker(command, **kwargs):
+            env_file_index = command.index("--env-file") + 1
+            env_file = Path(command[env_file_index])
+            observed["command"] = command
+            observed["host_env"] = kwargs["env"]
+            observed["env_file"] = env_file
+            observed["env_file_mode"] = env_file.stat().st_mode & 0o777
+            observed["env_file_content"] = env_file.read_text(encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+        monkeypatch.setattr(sandbox_docker.subprocess, "run", run_docker)
         result = actor.run_shell("printf ok", env={"DOCKER_FLAG": "kept"}, stream=False)
+
         assert result["exit"] == 0
-        assert ("--env", "DOCKER_FLAG") in tuple(zip(calls[0][0], calls[0][0][1:]))
+        assert observed["env_file_mode"] == 0o600
+        assert observed["env_file_content"] == "DOCKER_FLAG=kept\n"
+        assert "DOCKER_FLAG" not in observed["host_env"]
+        assert not observed["env_file"].exists()
 
     def test_sandbox_rejects_provider_credential_in_process_input(
         self,

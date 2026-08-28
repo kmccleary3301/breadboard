@@ -89,16 +89,14 @@ def test_stored_alternate_credentials_are_scoped_through_provider_errors(
                 "X-Authorization": f"Bearer {header_secret}",
                 "X-Custom": short_header_secret,
             },
-            "base_url": (
-                f"https://url-user:{encoded_url_secret}@example.test/v1"
-            ),
+            "base_url": (f"https://url-user:{encoded_url_secret}@example.test/v1"),
             "routing": {"access_token": int(numeric_secret)},
         }
     )
     monkeypatch.setattr(broker_module, "_default_broker", broker)
     router = ProviderRouter()
 
-    with pytest.raises(RuntimeError, match="provider") as error:
+    with pytest.raises(RuntimeError) as error:
         with router.execution_client_config("openai/gpt-5.4-mini"):
             assert {
                 header_secret,
