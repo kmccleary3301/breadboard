@@ -478,6 +478,8 @@ def _darwin_profile(
     workspace: Path,
     protected_paths: Sequence[Path],
     read_roots: Sequence[Path],
+    *,
+    allow_network: bool,
 ) -> str:
     def selector(path: Path, operation: str) -> str:
         return f'({operation} "{_profile_string(path)}")'
@@ -527,6 +529,7 @@ def _darwin_profile(
                 f"(deny file-write* {selectors})",
             )
         )
+    network_rules = ("(allow network*)",) if allow_network else ()
     return "\n".join(
         (
             "(version 1)",
@@ -536,6 +539,7 @@ def _darwin_profile(
             "(allow signal (target self))",
             '(allow sysctl-read (sysctl-name-regex #"^hw\\."))',
             '(allow sysctl-read (sysctl-name "kern.hostname"))',
+            *network_rules,
             '(allow sysctl-read (sysctl-name "kern.osrelease"))',
             '(allow sysctl-read (sysctl-name "kern.ostype"))',
             '(allow sysctl-read (sysctl-name "kern.version"))',
@@ -559,6 +563,7 @@ def build_restricted_process_command(
     environment: Mapping[str, str],
     protected_paths: Sequence[str | os.PathLike[str]] = (),
     working_directory: str | os.PathLike[str] | None = None,
+    allow_network: bool = False,
 ) -> tuple[tuple[str, ...], dict[str, str]]:
     """Return isolated argv/environment, or fail before process creation."""
     protected = tuple(
@@ -618,7 +623,12 @@ def build_restricted_process_command(
             (
                 str(sandbox_exec),
                 "-p",
-                _darwin_profile(root, protected, read_roots),
+                _darwin_profile(
+                    root,
+                    protected,
+                    read_roots,
+                    allow_network=allow_network,
+                ),
                 "--",
                 *target,
             ),
@@ -664,6 +674,8 @@ def build_restricted_process_command(
         ]
         for read_root in read_roots:
             wrapper.extend(("--read-root", str(read_root)))
+        if allow_network:
+            wrapper.append("--allow-network")
         wrapper.extend(("--", *target))
         return tuple(wrapper), child_environment
     raise ProcessIsolationUnavailable(
@@ -720,6 +732,12 @@ _DENIED_SYSCALLS: dict[str, tuple[int, tuple[int, ...]]] = {
         (117, 198, 203, 241, 270, 271, 272, 280, 425, 438),
     ),
 }
+_NETWORK_SYSCALLS: dict[str, frozenset[int]] = {
+    "x86_64": frozenset((41, 42)),
+    "aarch64": frozenset((198, 203)),
+    "arm64": frozenset((198, 203)),
+}
+
 
 
 
@@ -762,13 +780,24 @@ def _set_no_new_privileges(libc: ctypes.CDLL) -> None:
         raise OSError(error_number, os.strerror(error_number))
 
 
-def _install_linux_seccomp(libc: ctypes.CDLL) -> None:
-    architecture = _DENIED_SYSCALLS.get(platform.machine().lower())
+def _install_linux_seccomp(
+    libc: ctypes.CDLL,
+    *,
+    allow_network: bool = False,
+) -> None:
+    machine = platform.machine().lower()
+    architecture = _DENIED_SYSCALLS.get(machine)
     if architecture is None:
         raise ProcessIsolationUnavailable(
             "Linux process-memory isolation is unsupported on this architecture"
         )
     audit_arch, denied = architecture
+    if allow_network:
+        denied = tuple(
+            number
+            for number in denied
+            if number not in _NETWORK_SYSCALLS[machine]
+        )
     instructions: list[_SockFilter] = [
         _SockFilter(_BPF_LD_W_ABS, 0, 0, 4),
         _SockFilter(_BPF_JMP_JEQ_K, 1, 0, audit_arch),
@@ -928,11 +957,12 @@ def _apply_linux_landlock(workspace: Path, read_roots: Sequence[Path]) -> None:
 
 def _parse_linux_launch(
     argv: Sequence[str],
-) -> tuple[Path, Path, tuple[Path, ...], tuple[str, ...]]:
+) -> tuple[Path, Path, tuple[Path, ...], tuple[str, ...], bool]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--working-directory")
     parser.add_argument("--read-root", action="append", default=[])
+    parser.add_argument("--allow-network", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     namespace = parser.parse_args(list(argv))
     command = tuple(namespace.command)
@@ -957,23 +987,35 @@ def _parse_linux_launch(
                 "Linux read root exposes a virtual system mount"
             )
         read_roots.append(root)
-    return workspace, working_directory, tuple(dict.fromkeys(read_roots)), command
+    return (
+        workspace,
+        working_directory,
+        tuple(dict.fromkeys(read_roots)),
+        command,
+        bool(namespace.allow_network),
+    )
 
 
 def _parse_args(argv: Sequence[str]) -> tuple[Path, tuple[str, ...]]:
     """Compatibility parser used by focused policy tests."""
-    workspace, _working_directory, _read_roots, command = _parse_linux_launch(argv)
+    workspace, _working_directory, _read_roots, command, _allow_network = (
+        _parse_linux_launch(argv)
+    )
     return workspace, command
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     try:
-        workspace, working_directory, read_roots, command = _parse_linux_launch(
-            sys.argv[1:] if argv is None else argv
-        )
+        (
+            workspace,
+            working_directory,
+            read_roots,
+            command,
+            allow_network,
+        ) = _parse_linux_launch(sys.argv[1:] if argv is None else argv)
         libc = ctypes.CDLL(None, use_errno=True)
         _set_no_new_privileges(libc)
-        _install_linux_seccomp(libc)
+        _install_linux_seccomp(libc, allow_network=allow_network)
         _apply_linux_landlock(workspace, read_roots)
         os.chdir(working_directory)
         os.execvpe(command[0], command, os.environ)
