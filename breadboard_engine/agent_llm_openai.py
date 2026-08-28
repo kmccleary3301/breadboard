@@ -8,6 +8,7 @@ import json
 import math
 import os
 from contextlib import contextmanager
+from contextvars import ContextVar
 import random
 import shlex
 import subprocess
@@ -159,6 +160,12 @@ from .rlm import (
     init_budget_state,
     is_rlm_enabled,
 )
+
+_provider_role_context: ContextVar[Optional[str]] = ContextVar(
+    "breadboard_provider_role_context",
+    default=None,
+)
+
 
 ZERO_TOOL_WARN_TURNS = 2
 ZERO_TOOL_ABORT_TURNS = 4
@@ -2755,38 +2762,25 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if not isinstance(lock, dict):
             return None
         route = str(route_id or "").strip()
-        roles = lock.get("roles") or {}
-        active = roles.get(self._active_model_role)
-        if isinstance(active, dict):
-            for target in (
-                active.get("primary"),
-                *(active.get("fallbacks") or ()),
-            ):
-                if (
-                    isinstance(target, dict)
-                    and str(target.get("route_id") or "") == route
-                ):
-                    return dict(target)
-        matches = [
-            dict(target)
-            for binding in roles.values()
-            if isinstance(binding, dict)
-            for target in (
-                binding.get("primary"),
-                *(binding.get("fallbacks") or ()),
-            )
-            if isinstance(target, dict)
-            and str(target.get("route_id") or "") == route
-        ]
-        if len(matches) > 1 and any(
-            match.get("account_binding")
-            != matches[0].get("account_binding")
-            for match in matches[1:]
+        chosen_role = str(
+            _provider_role_context.get()
+            or self._active_model_role
+            or (lock.get("defaults") or {}).get("role")
+            or ""
+        ).strip()
+        binding = (lock.get("roles") or {}).get(chosen_role)
+        if not isinstance(binding, dict):
+            return None
+        for target in (
+            binding.get("primary"),
+            *(binding.get("fallbacks") or ()),
         ):
-            raise ProviderContractError(
-                "locked route has ambiguous credential bindings"
-            )
-        return matches[0] if matches else None
+            if (
+                isinstance(target, dict)
+                and str(target.get("route_id") or "") == route
+            ):
+                return dict(target)
+        return None
 
     def _select_fallback_route(
         self,
@@ -3976,13 +3970,27 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             or ((self.config.get("providers") or {}).get("default_model") if isinstance(getattr(self, "config", None), dict) else "")
             or ""
         ).strip()
+        locked_role: Optional[str] = None
         if isinstance(getattr(self, "_model_role_lock", None), dict):
             lane_role = str(
-                ((self._model_role_lock.get("dispatch") or {}).get("lanes") or {}).get(lane) or ""
+                (
+                    (self._model_role_lock.get("dispatch") or {}).get("lanes")
+                    or {}
+                ).get(lane)
+                or ""
             ).strip()
-            if lane_role:
-                target = self._locked_target_for_role(lane_role)
-                model_route = str(target.get("route_id") or "") if isinstance(target, dict) else ""
+            locked_role = str(
+                lane_role
+                or self._active_model_role
+                or (self._model_role_lock.get("defaults") or {}).get("role")
+                or ""
+            ).strip()
+            target = self._locked_target_for_role(locked_role or None)
+            model_route = (
+                str(target.get("route_id") or "")
+                if isinstance(target, dict)
+                else ""
+            )
         if not model_route:
             return self._rlm_mvi_error("model_unresolved", "Could not resolve a route/model for llm.query.")
 
@@ -4015,16 +4023,26 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         )
 
         try:
-            execution = self._execute_rlm_provider_subcall(
-                model_route=model_route,
-                messages=messages,
-                runtime_extra={
-                    "rlm_subcall": True,
-                    "branch_id": branch_id,
-                    "max_completion_tokens": args.get("max_completion_tokens") or subcall_cfg.get("max_completion_tokens"),
-                    "temperature": args.get("temperature", subcall_cfg.get("temperature")),
-                },
-            )
+            role_token = _provider_role_context.set(locked_role)
+            try:
+                execution = self._execute_rlm_provider_subcall(
+                    model_route=model_route,
+                    messages=messages,
+                    runtime_extra={
+                        "rlm_subcall": True,
+                        "branch_id": branch_id,
+                        "max_completion_tokens": args.get(
+                            "max_completion_tokens"
+                        )
+                        or subcall_cfg.get("max_completion_tokens"),
+                        "temperature": args.get(
+                            "temperature",
+                            subcall_cfg.get("temperature"),
+                        ),
+                    },
+                )
+            finally:
+                _provider_role_context.reset(role_token)
             runtime_model = execution.resolved_model
             text = execution.text
             usage = execution.usage
