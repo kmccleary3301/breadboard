@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
+from starlette.formparsers import MultiPartParser
 
 from breadboard_engine.api.cli_bridge.app import create_app
 import breadboard_engine.api.cli_bridge.app as app_module
@@ -771,6 +772,14 @@ def test_runtime_setup_routes_require_execute_capability(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    multipart_parsed = False
+
+    async def parse_forbidden(_parser) -> None:
+        nonlocal multipart_parsed
+        multipart_parsed = True
+        raise AssertionError("unauthorized multipart body was parsed")
+
+    monkeypatch.setattr(MultiPartParser, "parse", parse_forbidden)
     monkeypatch.setattr(
         app_module,
         "_public_request_principal",
@@ -790,6 +799,27 @@ def test_runtime_setup_routes_require_execute_capability(
         response.json()["error"]["error_code"] == "capability_required"
         for response in denied
     )
+    assert multipart_parsed is False
+
+
+def test_runtime_setup_routes_reject_cross_site_loopback_before_lookup(
+    client: TestClient,
+) -> None:
+    pause = client.post(
+        "/v1/sessions/missing/pause",
+        headers={"Sec-Fetch-Site": "cross-site"},
+    )
+    upload = client.post(
+        "/v1/sessions/missing/attachments",
+        headers={"Origin": "https://attacker.example"},
+        files={"files": ("fixture.txt", b"content", "text/plain")},
+    )
+    assert pause.status_code == 403
+    assert upload.status_code == 403
+    assert pause.json()["error"]["error_code"] == "forbidden"
+    assert upload.json()["error"]["error_code"] == "forbidden"
+
+
 
 
 def _new_durable_session(workspace: Path, session_id: str) -> None:

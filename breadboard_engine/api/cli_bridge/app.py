@@ -151,6 +151,18 @@ def _is_loopback_host(host: str | None) -> bool:
     return host in {"127.0.0.1", "localhost", "::1"}
 
 
+def _is_public_runtime_setup_request(method: str, path: str) -> bool:
+    parts = path.split("/")
+    return (
+        method.upper() == "POST"
+        and len(parts) == 5
+        and parts[0] == ""
+        and parts[1:3] == ["v1", "sessions"]
+        and bool(parts[3])
+        and parts[4] in {"pause", "attachments"}
+    )
+
+
 def _public_request_principal(
     request: Request,
     required_token: str,
@@ -966,6 +978,28 @@ def create_app(
                     ).model_dump(),
                 )
         principal = _public_request_principal(request, required_token)
+        if (
+            public_api_enabled
+            and not legacy_routes_enabled
+            and _is_public_runtime_setup_request(request.method, request.url.path)
+        ):
+            try:
+                _require_local_control_request(request)
+            except HTTPException as error:
+                return problem_response(
+                    "public.runtime_setup",
+                    error.status_code,
+                    "forbidden",
+                    str(error.detail),
+                )
+            required_capability = "public.session.execute"
+            if required_capability not in principal.capabilities:
+                return problem_response(
+                    "public.runtime_setup",
+                    status.HTTP_403_FORBIDDEN,
+                    "capability_required",
+                    f"Missing required capabilities: {required_capability}",
+                )
         with public_principal_scope(principal):
             return await call_next(request)
 
