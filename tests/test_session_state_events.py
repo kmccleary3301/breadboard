@@ -941,8 +941,8 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     assert record.dispatcher_task is not None
     assert not record.dispatcher_task.done()
 
-    # Completion bookkeeping can advance the observed cursor after the retained
-    # terminal envelope. Persist only its head identity, never its payload.
+    # Compact retention stores terminal envelopes only, so later completion
+    # bookkeeping must not be advertised as a replayable head.
     completion_tail = SessionEvent(
         EventType.COMPLETION,
         record.session_id,
@@ -962,8 +962,8 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     assert "completion-payload-must-not-persist" not in retained_bytes
     assert "path-must-not-persist" not in retained_bytes
     retained = json.loads(retained_bytes)
-    assert retained["session"]["event_seq"] == replay_head.seq
-    assert retained["session"]["event_head_id"] == replay_head.event_id
+    assert retained["session"]["event_seq"] == terminal_envelope["seq"]
+    assert retained["session"]["event_head_id"] == terminal_envelope["id"]
 
     await record.event_queue.put(None)
     await record.dispatcher_task
@@ -971,12 +971,12 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     restored = await restarted.get(record.session_id)
     assert restored is not None
     summary = restored.to_summary()
-    assert summary.head_sequence == replay_head.seq
-    assert summary.head_event_id == replay_head.event_id
+    assert summary.head_sequence == terminal_envelope["seq"]
+    assert summary.head_event_id == terminal_envelope["id"]
     assert summary.terminal_event_envelopes == [terminal_envelope]
     stream_open = SessionService._stream_open_event(restored)
-    assert stream_open.payload["headSequence"] == replay_head.seq
-    assert stream_open.payload["headEventId"] == replay_head.event_id
+    assert stream_open.payload["headSequence"] == terminal_envelope["seq"]
+    assert stream_open.payload["headEventId"] == terminal_envelope["id"]
 
 @pytest.mark.asyncio
 async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner(
