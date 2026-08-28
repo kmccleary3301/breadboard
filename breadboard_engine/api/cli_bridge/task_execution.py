@@ -555,7 +555,12 @@ class TaskExecutionOwner:
             .strip()
             .lower()
         )
-        interactive_permissions = permission_mode in {"prompt", "ask", "interactive"}
+        interactive_permissions = permission_mode in {
+            "prompt",
+            "ask",
+            "interactive",
+            "configured",
+        }
         logger.info(
             "session(%s) task=%s stream=%s local=%s remote_toggle=%s",
             runner.session.session_id,

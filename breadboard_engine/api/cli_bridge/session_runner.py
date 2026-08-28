@@ -704,6 +704,9 @@ class SessionRunner:
             overrides.setdefault("permissions.shell.default", "ask")
             overrides.setdefault("permissions.webfetch.default", "ask")
             overrides.setdefault("permissions.read.default", "ask")
+        if requested_permission_mode in {"prompt", "ask", "interactive", "configured"}:
+            self.request.permission_mode = requested_permission_mode
+            self.session.metadata["permission_mode"] = requested_permission_mode
         workspace_guess_path = self._resolve_workspace_guess(base_cfg)
         if workspace_guess_path:
             self._workspace_path = workspace_guess_path
@@ -999,6 +1002,7 @@ class SessionRunner:
         return self._task_execution.execute_task(
             task_text, input_id=input_id, turn_id=turn_id
         )
+
 
     async def _finish_turn(
         self,
