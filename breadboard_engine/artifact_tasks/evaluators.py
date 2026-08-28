@@ -26,7 +26,6 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-
 def _lexical_absolute(path: str | os.PathLike[str]) -> Path:
     try:
         return Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
@@ -66,7 +65,9 @@ def validate_output_destination(
         roots.append(_path_forms(workspace_root))
     roots.extend(_path_forms(item) for item in protected_paths)
     for root_lexical, root_resolved in roots:
-        if _paths_overlap(lexical, root_lexical) or _paths_overlap(resolved, root_resolved):
+        if _paths_overlap(lexical, root_lexical) or _paths_overlap(
+            resolved, root_resolved
+        ):
             raise WorkspacePathError("output_path_overlaps_trusted_boundary")
     return lexical
 
@@ -307,7 +308,10 @@ def _run_evaluator(
                 failure_reasons=("credential_in_environment",),
             )
         try:
-            env = build_child_environment(overrides=spec.env)
+            env = build_child_environment(
+                overrides=spec.env,
+                allowed_override_keys=spec.env,
+            )
         except ValueError:
             error_text = (
                 "evaluator environment rejected: override key is not allowlisted"
@@ -363,6 +367,7 @@ def _run_evaluator(
                 shell=spec.shell,
                 environment=env,
                 protected_paths=protected_paths,
+                trusted_launchers=() if spec.shell else command[:1],
             )
             proc = subprocess.run(
                 isolated_command,

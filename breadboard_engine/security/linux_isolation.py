@@ -112,7 +112,11 @@ def _set_no_new_privileges(libc: ctypes.CDLL) -> None:
         raise OSError(error_number, os.strerror(error_number))
 
 
-def _install_linux_seccomp(libc: ctypes.CDLL) -> None:
+def _install_linux_seccomp(
+    libc: ctypes.CDLL,
+    *,
+    allow_network: bool = False,
+) -> None:
     machine = platform.machine().lower()
     architecture = _DENIED_SYSCALLS.get(machine)
     if architecture is None:
@@ -120,6 +124,11 @@ def _install_linux_seccomp(libc: ctypes.CDLL) -> None:
             "Linux process-memory isolation is unsupported on this architecture"
         )
     audit_arch, denied = architecture
+    if allow_network:
+        network = {"x86_64": {41, 42}, "aarch64": {198, 203}, "arm64": {198, 203}}[
+            machine
+        ]
+        denied = tuple(number for number in denied if number not in network)
     instructions: list[_SockFilter] = [
         _SockFilter(_BPF_LD_W_ABS, 0, 0, 4),
         _SockFilter(_BPF_JMP_JEQ_K, 1, 0, audit_arch),
@@ -130,12 +139,7 @@ def _install_linux_seccomp(libc: ctypes.CDLL) -> None:
         instructions.extend(
             (
                 _SockFilter(_BPF_JMP_JEQ_K, 0, 1, syscall_number),
-                _SockFilter(
-                    _BPF_RET_K,
-                    0,
-                    0,
-                    _SECCOMP_RET_ERRNO | errno.EPERM,
-                ),
+                _SockFilter(_BPF_RET_K, 0, 0, _SECCOMP_RET_ERRNO | errno.EPERM),
             )
         )
     instructions.append(_SockFilter(_BPF_RET_K, 0, 0, _SECCOMP_RET_ALLOW))
@@ -211,7 +215,11 @@ def _landlock_add_path_rule(
         os.close(path_fd)
 
 
-def _apply_linux_landlock(workspace: Path, read_roots: Sequence[Path]) -> None:
+def _apply_linux_landlock(
+    workspace: Path,
+    read_roots: Sequence[Path],
+    trusted_launchers: Sequence[Path] = (),
+) -> None:
     libc = ctypes.CDLL(None, use_errno=True)
     try:
         abi = _syscall(
@@ -248,6 +256,7 @@ def _apply_linux_landlock(workspace: Path, read_roots: Sequence[Path]) -> None:
     read_access = handled & (
         _ACCESS_FS_EXECUTE | _ACCESS_FS_READ_FILE | _ACCESS_FS_READ_DIR
     )
+    workspace_access = handled & ~_ACCESS_FS_EXECUTE
     device_access = read_access | _ACCESS_FS_WRITE_FILE
     try:
         for path in read_roots:
@@ -262,7 +271,9 @@ def _apply_linux_landlock(workspace: Path, read_roots: Sequence[Path]) -> None:
             device = _resolved_existing(raw_device)
             if device is not None:
                 _landlock_add_path_rule(libc, ruleset_fd, device, device_access)
-        _landlock_add_path_rule(libc, ruleset_fd, workspace, handled)
+        _landlock_add_path_rule(libc, ruleset_fd, workspace, workspace_access)
+        for launcher in trusted_launchers:
+            _landlock_add_path_rule(libc, ruleset_fd, launcher, _ACCESS_FS_EXECUTE)
         _syscall(
             libc,
             _LANDLOCK_RESTRICT_SELF,
@@ -279,11 +290,13 @@ def _apply_linux_landlock(workspace: Path, read_roots: Sequence[Path]) -> None:
 
 def _parse_linux_launch(
     argv: Sequence[str],
-) -> tuple[Path, Path, tuple[Path, ...], tuple[str, ...]]:
+) -> tuple[Path, Path, tuple[Path, ...], tuple[Path, ...], tuple[str, ...], bool]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--working-directory")
     parser.add_argument("--read-root", action="append", default=[])
+    parser.add_argument("--trusted-launcher", action="append", default=[])
+    parser.add_argument("--allow-network", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     namespace = parser.parse_args(list(argv))
     command = tuple(namespace.command)
@@ -308,17 +321,31 @@ def _parse_linux_launch(
                 "Linux read root exposes a virtual system mount"
             )
         read_roots.append(root)
+    trusted_launchers: list[Path] = []
+    for raw in namespace.trusted_launcher:
+        launcher = _resolved_existing(raw)
+        if (
+            launcher is None
+            or not launcher.is_file()
+            or not os.access(launcher, os.X_OK)
+        ):
+            raise ProcessIsolationUnavailable("trusted process launcher is unavailable")
+        trusted_launchers.append(launcher)
     return (
         workspace,
         working_directory,
         tuple(dict.fromkeys(read_roots)),
+        tuple(dict.fromkeys(trusted_launchers)),
         command,
+        bool(namespace.allow_network),
     )
 
 
 def _parse_args(argv: Sequence[str]) -> tuple[Path, tuple[str, ...]]:
     """Compatibility parser used by focused policy tests."""
-    workspace, _working_directory, _read_roots, command = _parse_linux_launch(argv)
+    workspace, _working_directory, _read_roots, _launchers, command, _network = (
+        _parse_linux_launch(argv)
+    )
     return workspace, command
 
 
@@ -328,12 +355,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             workspace,
             working_directory,
             read_roots,
+            trusted_launchers,
             command,
+            allow_network,
         ) = _parse_linux_launch(sys.argv[1:] if argv is None else argv)
         libc = ctypes.CDLL(None, use_errno=True)
         _set_no_new_privileges(libc)
-        _install_linux_seccomp(libc)
-        _apply_linux_landlock(workspace, read_roots)
+        _install_linux_seccomp(libc, allow_network=allow_network)
+        _apply_linux_landlock(workspace, read_roots, trusted_launchers)
         os.chdir(working_directory)
         os.execvpe(command[0], command, os.environ)
     except ProcessIsolationUnavailable as exc:
