@@ -317,6 +317,23 @@ class SessionLifecycleOwner:
                         reason=completion_reason,
                         error_code=failure_code,
                     )
+            if one_shot:
+                if host._stop_event.is_set():
+                    await self.terminalize_admitted_turns(
+                        outcome="cancelled",
+                        reason="stop_requested",
+                    )
+                elif execution_completed:
+                    await self.terminalize_admitted_turns(
+                        outcome="cancelled",
+                        reason="one_shot_complete",
+                    )
+                else:
+                    await self.terminalize_admitted_turns(
+                        outcome="failed",
+                        reason=completion_reason,
+                        error_code=failure_code,
+                    )
             if durable_success:
                 for (
                     event_type,
