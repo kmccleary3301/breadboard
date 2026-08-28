@@ -116,6 +116,12 @@ _MIN_CREDENTIAL_SUBSTRING_LENGTH = 3
 _ENVIRONMENT_LOCK = threading.RLock()
 
 
+def is_loader_environment_key(name: object) -> bool:
+    """Return whether ``name`` can influence executable loading/bootstrap."""
+    normalized = str(name).strip().upper()
+    return normalized.startswith(("LD_", "DYLD_", "_RLD")) or normalized == "GCONV_PATH"
+
+
 def is_provider_credential_env_key(name: object) -> bool:
     normalized = str(name).strip().upper()
     if normalized in _EXACT_PROVIDER_CREDENTIAL_KEYS:
@@ -244,7 +250,7 @@ def build_child_environment(
         child[_REMOTE_BROKER_URL_ENV] = "configured"
     for key in _SAFE_CHILD_ENV_KEYS:
         value = environment.get(key)
-        if value is None:
+        if value is None or is_loader_environment_key(key):
             continue
         if contains_provider_credential_value(
             value,
@@ -259,6 +265,7 @@ def build_child_environment(
             value is None
             or name not in permitted_override_keys
             or is_provider_credential_env_key(name)
+            or is_loader_environment_key(name)
         ):
             rejected.append(name)
             continue

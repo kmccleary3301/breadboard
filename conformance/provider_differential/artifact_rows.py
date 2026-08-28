@@ -22,15 +22,19 @@ ARTIFACT_ROW_IDS = (
     "artifact.sdk_local_responses",
     "artifact.installed_end_to_end_trace",
 )
-_PROVIDER_ENV = (
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "ANTHROPIC_OAUTH_TOKEN",
-    "CODEX_AUTH_TOKEN",
-    "OPENAI_API_KEY",
-    "OPENAI_AUTH_TOKEN",
-    "OPENROUTER_API_KEY",
-    "OPENROUTER_AUTH_TOKEN",
+_SAFE_ARTIFACT_AMBIENT_ENV = frozenset(
+    {
+        "COMSPEC",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "PATH",
+        "PATHEXT",
+        "SSL_CERT_DIR",
+        "SSL_CERT_FILE",
+        "SYSTEMROOT",
+        "WINDIR",
+    }
 )
 _CANARY = "F6_ARTIFACT_SECRET_CANARY_7b61d29f"
 
@@ -59,15 +63,11 @@ def _canonical(value: Any) -> str:
 
 
 def _safe_environment(*, home: Path | None = None) -> dict[str, str]:
-    environment = dict(os.environ)
-    for name in _PROVIDER_ENV:
-        environment.pop(name, None)
-    for name in tuple(environment):
-        if name.upper().endswith(("_API_KEY", "_AUTH_TOKEN", "_OAUTH_TOKEN")):
-            environment.pop(name, None)
-    environment.pop("PYTHONPATH", None)
-    environment.pop("BREADBOARD_API_TOKEN", None)
-    environment.pop("BREADBOARD_LEGACY_ROUTES", None)
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name.upper() in _SAFE_ARTIFACT_AMBIENT_ENV
+    }
     environment.update(
         {
             "NO_PROXY": "127.0.0.1,localhost,::1",

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import copy
+import runpy
 import hashlib
 import json
 from pathlib import Path
 from typing import Mapping
 
 import pytest
+import setuptools
 
 from breadboard_engine.provider.contracts import (
     ProviderCorrelation,
@@ -21,6 +23,7 @@ from breadboard_engine.provider.routing import (
     provider_router,
 )
 from breadboard_engine.provider.runtimes.testing import SmokeRuntime
+from conformance.provider_differential import artifact_rows
 from conformance.provider_differential.auth_role_rows import (
     AUTH_ROLE_ROW_IDS,
     auth_role_observation_sha256,
@@ -187,6 +190,64 @@ def test_oracle_subprocess_environment_is_allowlisted(
             "BUN_TELEMETRY_DISABLE",
         }
     )
+
+
+def test_artifact_environment_strips_credential_control_locators(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    control_environment = {
+        "BREADBOARD_AUTH_BROKER_CONFIGURED": "1",
+        "BREADBOARD_AUTH_BROKER_TOKEN": "broker-token",
+        "BREADBOARD_AUTH_BROKER_URL": "https://broker.invalid/session",
+        "BREADBOARD_CREDENTIAL_DB": str(tmp_path / "credentials.sqlite3"),
+        "BREADBOARD_CREDENTIAL_STORE_PATH": str(tmp_path / "store.sqlite3"),
+        "BREADBOARD_STATE_DIR": str(tmp_path / "state"),
+    }
+    for name, value in control_environment.items():
+        monkeypatch.setenv(name, value)
+
+    environment = artifact_rows._safe_environment(home=tmp_path / "home")
+
+    assert control_environment.keys().isdisjoint(environment)
+
+
+def test_wheel_provenance_rejects_checkout_identity_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(setuptools, "setup", lambda **_kwargs: None)
+    namespace = runpy.run_path(str(ROOT / "setup.py"), run_name="bb_setup_test")
+    actual_repository = "https://github.com/kmccleary3301/breadboard.git"
+    actual_commit = "a" * 40
+    actual_tree = "b" * 40
+
+    def fake_git(*arguments: str) -> str:
+        values = {
+            ("rev-parse", "--is-inside-work-tree"): "true",
+            (
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+                "--",
+                "breadboard_engine",
+                "pyproject.toml",
+                "setup.py",
+                "requirements.txt",
+                "requirements_web.txt",
+            ): "",
+            ("remote", "get-url", "origin"): actual_repository,
+            ("rev-parse", "HEAD"): actual_commit,
+            ("rev-parse", "HEAD^{tree}"): actual_tree,
+        }
+        return values[arguments]
+
+    namespace["_source_identity"].__globals__["_git"] = fake_git
+    monkeypatch.setenv("BREADBOARD_BUILD_SOURCE_REPOSITORY", actual_repository)
+    monkeypatch.setenv("BREADBOARD_BUILD_SOURCE_COMMIT", "c" * 40)
+    monkeypatch.setenv("BREADBOARD_BUILD_SOURCE_TREE", actual_tree)
+
+    with pytest.raises(RuntimeError, match="do not match the Git checkout"):
+        namespace["_source_identity"]()
 
 
 def test_matrix_and_oracle_are_exact_and_bound_to_f1(matrix, oracle):
