@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from threading import Barrier, Lock, Thread
@@ -750,6 +751,38 @@ def test_oversized_sparse_session_intent_is_rejected_before_reads_or_writes(
     )
     with pytest.raises(ValueError, match="oversized"):
         session_store.load_session(tmp_path, session_id)
+    assert (event_path.read_bytes(), metadata_path.read_bytes()) == before
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or not hasattr(os, "mkfifo"),
+    reason="POSIX FIFO semantics required",
+)
+def test_session_intent_fifo_is_rejected_without_blocking(tmp_path: Path) -> None:
+    session_id = "fifo-intent"
+    _new_durable_session(tmp_path, session_id)
+    event_path = session_store.session_event_path(tmp_path, session_id)
+    metadata_path = session_store.session_metadata_path(tmp_path, session_id)
+    before = event_path.read_bytes(), metadata_path.read_bytes()
+    intent = event_path.parent / ".session.intent.json"
+    os.mkfifo(intent)
+    result: dict[str, BaseException] = {}
+
+    def load() -> None:
+        try:
+            session_store.load_session(tmp_path, session_id)
+        except BaseException as error:
+            result["error"] = error
+
+    worker = Thread(target=load, daemon=True)
+    worker.start()
+    worker.join(timeout=1)
+
+    assert not worker.is_alive()
+    error = result.get("error")
+    assert isinstance(error, FileNotFoundError)
+    assert error.__cause__ is not None
+    assert "unsafe session intent" in str(error.__cause__)
     assert (event_path.read_bytes(), metadata_path.read_bytes()) == before
 
 

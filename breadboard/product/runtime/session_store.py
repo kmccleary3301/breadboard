@@ -308,7 +308,10 @@ def _read_posix_file(parent: int, name: str, max_bytes: int) -> bytes:
         raise ValueError("maximum read size must be nonnegative")
     descriptor = os.open(
         name,
-        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_CLOEXEC", 0),
         dir_fd=parent,
     )
     try:
