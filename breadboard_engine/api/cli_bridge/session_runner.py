@@ -90,6 +90,7 @@ class SessionRunner:
         self._published_events = 0
         self._session_failure_published = False
         self._workspace_path: Optional[Path] = None
+        self._checkpoint_manager: Optional[CheckpointManager] = None
         self._closed = False
         self._attachment_store: Dict[str, Dict[str, Any]] = {}
         self._active_attachment_capabilities: Dict[str, Dict[str, Any]] = {}
