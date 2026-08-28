@@ -384,6 +384,12 @@ class PersistenceMixin:
                 "config_path": str(metadata.get("config_path") or ""),
                 "model_role_lock": role_lock,
                 "active_model_role": str(active_role) if active_role else None,
+                "permission_mode": (
+                    str(metadata.get("permission_mode") or "").strip().lower()
+                    if str(metadata.get("permission_mode") or "").strip().lower()
+                    in {"prompt", "ask", "interactive", "configured"}
+                    else None
+                ),
             },
             "turns": turns,
             "submissions": submissions,
@@ -509,6 +515,9 @@ class PersistenceMixin:
             metadata["model"] = model
         if session.get("config_path"):
             metadata["config_path"] = str(session["config_path"])
+        permission_mode = str(session.get("permission_mode") or "").strip().lower()
+        if permission_mode in {"prompt", "ask", "interactive", "configured"}:
+            metadata["permission_mode"] = permission_mode
         role_lock = session.get("model_role_lock")
         if role_lock is not None:
             if not isinstance(role_lock, dict):
@@ -546,6 +555,7 @@ class PersistenceMixin:
             replay_history_partial=bool(persisted_event_seq),
             replay_head_event_id=persisted_head_event_id,
             metadata=metadata,
+            loaded_from_retained_state=True,
         )
         for item in payload.get("turns") or []:
             turn = TurnRecord(

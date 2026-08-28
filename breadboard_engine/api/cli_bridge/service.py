@@ -721,7 +721,58 @@ class SessionService:
         record = await self.registry.get(session_id)
         if not record:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+        if record.loaded_from_retained_state:
+            async with self._session_lock(session_id):
+                if record.loaded_from_retained_state:
+                    await self._resume_retained_session(record)
         return record
+
+    async def _resume_retained_session(self, record: SessionRecord) -> None:
+        profile = resolve_default_profile()
+        metadata = dict(record.metadata or {})
+        permission_mode = str(metadata.get("permission_mode") or "configured").strip().lower()
+        if permission_mode not in {"prompt", "ask", "interactive", "configured"}:
+            permission_mode = "configured"
+        metadata["config_path"] = str(profile.source_path)
+        metadata["permission_mode"] = permission_mode
+        record.metadata = metadata
+        runner = SessionRunner(
+            session=record,
+            registry=self.registry,
+            request=SessionCreateRequest(
+                config_path=str(profile.source_path),
+                task="",
+                metadata=metadata,
+                workspace=os.getcwd(),
+                permission_mode=permission_mode,
+            ),
+        )
+        runner.prepare_runtime_config()
+        for turn in record.turns_by_id.values():
+            if turn.terminal_outcome is not None:
+                continue
+            if turn.cancellation_requested:
+                await runner._finish_turn(
+                    turn,
+                    "cancelled",
+                    reason=turn.cancellation_reason,
+                    advance_queue=False,
+                )
+            else:
+                await runner._finish_turn(
+                    turn,
+                    "failed",
+                    error_code="runtime_failure",
+                    advance_queue=False,
+                )
+        record.active_turn_id = None
+        record.queued_turn_ids.clear()
+        record.turn_admission = record.turn_admission.__class__.IDLE
+        record.runner = runner
+        runner.schedule_start()
+        runner.authorize_start()
+        record.loaded_from_retained_state = False
+
     async def event_stream(
         self,
         session_id: str,

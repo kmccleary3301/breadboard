@@ -5,6 +5,7 @@ import json
 import queue
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
@@ -894,6 +895,67 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     stream_open = SessionService._stream_open_event(restored)
     assert stream_open.payload["headSequence"] == replay_head.seq
     assert stream_open.payload["headEventId"] == replay_head.event_id
+
+@pytest.mark.asyncio
+async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-restart-interrupted",
+        status=SessionStatus.RUNNING,
+        metadata={"permission_mode": "configured"},
+    )
+    interrupted = TurnRecord(
+        input_id="input-interrupted",
+        turn_id="turn-interrupted",
+        client_message_id="client-interrupted",
+        content="must-not-persist",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    record.turns_by_id[interrupted.turn_id] = interrupted
+    record.active_turn_id = interrupted.turn_id
+    await registry.create(record)
+    await registry.persist(record)
+
+    replacement_profile = tmp_path / "replacement-session.yaml"
+    replacement_profile.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
+        lambda: SimpleNamespace(source_path=replacement_profile),
+    )
+    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+
+    restarted = SessionRegistry(state_root=tmp_path)
+    service = SessionService(registry=restarted)
+    restored = await service.ensure_session(record.session_id)
+    try:
+        await asyncio.sleep(0)
+        assert restored.loaded_from_retained_state is False
+        assert restored.runner is not None
+        restored_turn = restored.turns_by_id[interrupted.turn_id]
+        assert restored_turn.terminal_outcome == "failed"
+        assert restored_turn.terminal_resolution_committed is True
+        assert restored.active_turn_id is None
+        assert restored.turn_admission.value == "idle"
+        assert len(restored.terminal_event_envelopes) == 1
+        terminal = restored.terminal_event_envelopes[0]
+        assert terminal["type"] == "turn_failed"
+        assert terminal["input_id"] == interrupted.input_id
+        assert terminal["turn_id"] == interrupted.turn_id
+        assert terminal["payload"] == {"error": {"code": "runtime_failure"}}
+        assert (await service.ensure_session(record.session_id)).runner is restored.runner
+        retained = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
+        assert retained["session"]["permission_mode"] == "configured"
+        assert retained["turns"][0]["terminal_resolution_committed"] is True
+        assert len(retained["terminal_event_envelopes"]) == 1
+    finally:
+        if restored.runner is not None:
+            await restored.runner.stop()
+
 
 
 @pytest.mark.asyncio

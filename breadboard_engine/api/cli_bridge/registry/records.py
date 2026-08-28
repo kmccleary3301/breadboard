@@ -234,6 +234,7 @@ class SessionRecord:
     lifecycle_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
     deleting: bool = field(default=False, repr=False)
     admission_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
+    loaded_from_retained_state: bool = field(default=False, repr=False)
 
     def projected_status(self) -> SessionStatus:
         if self.product_session is None:
