@@ -1724,7 +1724,11 @@ class SessionRunner:
             overrides["providers.default_model"] = self._model_override.strip()
         if isinstance(self._mode, str) and self._mode.strip():
             overrides["mode"] = self._mode.strip()
-        permission_mode = (self.request.permission_mode or self.session.metadata.get("permission_mode") or "").strip().lower()
+        permission_mode = (
+            self.request.permission_mode
+            or self.session.metadata.get("permission_mode")
+            or ""
+        ).strip().lower()
         if permission_mode in {"prompt", "ask", "interactive"}:
             overrides.setdefault("permissions.options.mode", "prompt")
             overrides.setdefault("permissions.options.default_response", "reject")
@@ -1732,6 +1736,7 @@ class SessionRunner:
             overrides.setdefault("permissions.shell.default", "ask")
             overrides.setdefault("permissions.webfetch.default", "ask")
             overrides.setdefault("permissions.read.default", "ask")
+        if permission_mode in {"prompt", "ask", "interactive", "configured"}:
             self.request.permission_mode = permission_mode
             self.session.metadata["permission_mode"] = permission_mode
         base_cfg = self._load_base_config()
@@ -2889,7 +2894,12 @@ class SessionRunner:
             .strip()
             .lower()
         )
-        interactive_permissions = permission_mode in {"prompt", "ask", "interactive"}
+        interactive_permissions = permission_mode in {
+            "prompt",
+            "ask",
+            "interactive",
+            "configured",
+        }
         logger.info(
             "session(%s) task=%s stream=%s local=%s remote_toggle=%s",
             self.session.session_id,

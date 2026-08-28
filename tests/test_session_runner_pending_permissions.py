@@ -39,6 +39,25 @@ def _execute_task(runner: SessionRunner, text: str = "task"):
 
 def _product_runner(session_id: str) -> tuple[SessionRunner, ProductSession]: runner = _runner(session_id); session = ProductSession.start(EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}), "task", session_id=session_id); runner.session.product_session = session; return runner, session
 async def _initialized() -> None: pass
+def test_configured_permission_mode_preserves_profile_rules() -> None:
+    runner = _runner("configured-permissions")
+    runner.request.permission_mode = "configured"
+    runner._base_config_cache = {
+        "permissions": {
+            "options": {"mode": "prompt"},
+            "shell": {"default": "ask"},
+        }
+    }
+
+    prepared = runner.prepare_runtime_config()
+
+    assert prepared["permissions"] == {
+        "options": {"mode": "prompt"},
+        "shell": {"default": "ask"},
+    }
+    assert runner.session.metadata["permission_mode"] == "configured"
+
+
 @pytest.mark.asyncio
 async def test_runner_admission_requires_exact_registry_correlation() -> None:
     runner = _runner("correlation")
