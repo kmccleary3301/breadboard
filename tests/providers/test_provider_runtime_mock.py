@@ -85,15 +85,7 @@ def test_cli_mock_runtime_emits_contract_valid_tool_sequence() -> None:
     assert write_call.parsed_arguments["filePath"] == "bubble_sort.py"
 
     shell_call = invoke(
-        [
-            {
-                "role": "assistant",
-                "content": [
-                    {"type": "tool_call", "name": "todo.write_board"},
-                    {"type": "tool_call", "name": "Write"},
-                ],
-            }
-        ]
+        [{"role": "assistant", "tool_calls": [todo_call, write_call]}]
     )
     assert shell_call.id == "cli-mock-call-3-run_shell"
     assert shell_call.parsed_arguments["command"] == "python3 bubble_sort.py"
