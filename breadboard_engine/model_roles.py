@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -49,6 +50,30 @@ _SECRET_KEYS = frozenset(
         "secret_version",
     }
 )
+
+
+_execution_model_role: ContextVar[str | None] = ContextVar(
+    "breadboard_execution_model_role",
+    default=None,
+)
+
+
+def current_execution_model_role() -> str | None:
+    """Return the operation-local role authorized for provider leasing."""
+
+    return _execution_model_role.get()
+
+
+@contextmanager
+def execution_model_role(role: str | None) -> Iterator[None]:
+    """Bind provider leasing to one explicit role for this operation."""
+
+    normalized = str(role or "").strip() or None
+    token = _execution_model_role.set(normalized)
+    try:
+        yield
+    finally:
+        _execution_model_role.reset(token)
 
 
 @dataclass(frozen=True, slots=True)
