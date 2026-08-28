@@ -150,12 +150,41 @@ def test_router_session_id_reuses_durable_account_binding_after_broker_restart(
         assert client_config["credential_origin"] == bound_origin
 
 
+def test_codex_execution_lease_scopes_broker_access_token(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+    from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialStore
+
+    secret = "codex-router-access-token"
+    auth_path = tmp_path / "auth.json"
+    auth_path.write_text(
+        json.dumps({"tokens": {"access_token": secret}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        broker_module,
+        "_default_broker",
+        ProviderBroker(
+            SQLiteCredentialStore(tmp_path / "credentials.sqlite3"),
+            codex_auth_path=auth_path,
+        ),
+    )
+    router = ProviderRouter()
+
+    with router.execution_client_config("codex/gpt-5.4") as client_config:
+        assert client_config["access_token"] == secret
+        assert client_config["credential_origin"] == {
+            "kind": "fallback",
+            "source": "codex_auth_file",
+        }
+    assert client_config == {}
+
+
 @pytest.mark.parametrize(
     ("route", "api_key", "source"),
-    (
-        ("codex/gpt-5.4", "codex", "provider_managed"),
-        ("mock/dev", "mock", "synthetic"),
-    ),
+    (("mock/dev", "mock", "synthetic"),),
 )
 def test_provider_managed_exceptions_do_not_consult_broker(
     route,

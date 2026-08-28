@@ -215,13 +215,15 @@ class ProviderBroker:
         if isinstance(api_key, str) and api_key.strip():
             return {
                 "api_key": api_key.strip(),
+                "codex_auth_kind": "api_key",
                 "_origin_source": "codex_auth_file",
             }
         token = self._find_token(payload)
         if token:
             return {
                 "api_key": token,
-                "headers": {"Authorization": f"Bearer {token}"},
+                "access_token": token,
+                "codex_auth_kind": "access_token",
                 "_origin_source": "codex_auth_file",
             }
         return None
