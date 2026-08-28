@@ -297,6 +297,80 @@ async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch
         assert [item["name"] for item in work] == ["work_item_created", "work_item_lease_acquired", "work_item_attempt_started", "work_item_snapshot"] and [item["record"].get("kind") for item in work] == ["work_item.created", "lease.acquired", "attempt.started", None] and work[-1]["schema_version"] == "bb.work_item.v2"
         assert work[-1]["record"]["title"] == title and record.product_session.events[0].payload["task_hash"] == "sha256:" + hashlib.sha256(title.encode()).hexdigest() and record.runner.request.task == "" and record.runner._input_queue.empty()
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.STOPPED and type(record.product_session).restore(record.product_session.events).read_model.status == "canceled"; await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_one_shot_session_rejects_follow_up_input(
+    monkeypatch, tmp_path
+) -> None:
+    service, response, record = await _create(
+        monkeypatch,
+        tmp_path,
+        metadata={
+            "cli_session_kind": "oneshot",
+            "non_interactive_cli_session": True,
+        },
+    )
+    admitted_turn_ids = set(record.turns_by_id)
+
+    with pytest.raises(HTTPException) as rejected:
+        await service.send_input(
+            response.session_id,
+            SessionInputRequest(content="second task"),
+        )
+
+    assert rejected.value.status_code == 409
+    assert rejected.value.detail["code"] == "one_shot_input_closed"
+    assert set(record.turns_by_id) == admitted_turn_ids
+    assert not record.queued_turn_ids
+    assert record.runner._input_queue.empty()
+    await service.stop_session(response.session_id)
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_incomplete_execution_fails_product_session(
+    monkeypatch, tmp_path
+) -> None:
+    service, response, record = await _create(
+        monkeypatch,
+        tmp_path,
+        metadata={
+            "cli_session_kind": "oneshot",
+            "non_interactive_cli_session": True,
+        },
+    )
+    turn = next(iter(record.turns_by_id.values()))
+
+    async def initialize_agent() -> None:
+        return None
+
+    monkeypatch.setattr(record.runner, "_ensure_agent_initialized", initialize_agent)
+    monkeypatch.setattr(
+        record.runner._task_execution,
+        "execute_task",
+        lambda *_args, **_kwargs: {
+            "completion_summary": {
+                "completed": False,
+                "reason": "provider_error",
+            },
+            "reward_metrics": {},
+            "logging_dir": None,
+        },
+    )
+
+    await record.runner._run()
+
+    assert record.product_session.read_model.status == "failed"
+    assert record.status is SessionStatus.FAILED
+    assert turn.state == "failed"
+    assert turn.terminal_outcome == "failed"
+    assert record.product_session.read_model.terminal_outcome == {
+        "outcome": "failed",
+        "error": "runtime_failure",
+        "detail": "provider_error",
+    }
+    await _stop(record)
 @pytest.mark.asyncio
 async def test_session_summary_projects_effective_model(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(monkeypatch, tmp_path)
