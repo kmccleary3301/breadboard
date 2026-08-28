@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 import pytest
 
 from fastapi.testclient import TestClient
@@ -654,6 +655,54 @@ loop:
         True,
     ]
     assert [issue["code"] for issue in payload["issues"]] == ["deferred_provider"]
+
+
+def test_daily_driver_catalog_exposes_explicit_synthetic_route(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "agent_configs"
+        / "templates"
+        / "daily_driver.v1.yaml"
+    )
+
+    response = TestClient(create_app()).get(
+        "/v1/models",
+        params={"config_path": str(config_path)},
+    )
+
+    assert response.status_code == 200, response.text
+    models = {row["id"]: row for row in response.json()["models"]}
+    synthetic = models["cli_mock/reference"]
+    assert {
+        key: synthetic[key]
+        for key in (
+            "provider",
+            "canonical_provider",
+            "adapter",
+            "support_tier",
+            "available",
+            "availability_reason",
+            "discovery",
+            "source",
+        )
+    } == {
+        "provider": "cli_mock",
+        "canonical_provider": "cli_mock",
+        "adapter": "cli_mock_chat",
+        "support_tier": "evidence",
+        "available": True,
+        "availability_reason": None,
+        "discovery": "configured_only",
+        "source": "configured",
+    }
 
 
 def test_credential_state_rejects_rebinding_and_cross_site_requests_without_token(

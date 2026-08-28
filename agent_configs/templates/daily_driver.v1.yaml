@@ -12,6 +12,8 @@ providers:
   models:
     - id: mock/reference
       adapter: mock_chat
+    - id: cli_mock/reference
+      adapter: cli_mock_chat
 
 # Prompt files are package resources and immutable inputs to the effective lock.
 prompts:
