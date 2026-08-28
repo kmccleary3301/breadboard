@@ -222,19 +222,18 @@ def test_wheel_provenance_rejects_checkout_identity_overrides(
     actual_tree = "b" * 40
 
     def fake_git(*arguments: str) -> str:
+        if arguments[:4] == (
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+            "--",
+        ):
+            assert "breadboard" in arguments
+            assert "contracts" in arguments
+            assert "agent_configs" in arguments
+            return ""
         values = {
             ("rev-parse", "--is-inside-work-tree"): "true",
-            (
-                "status",
-                "--porcelain",
-                "--untracked-files=all",
-                "--",
-                "breadboard_engine",
-                "pyproject.toml",
-                "setup.py",
-                "requirements.txt",
-                "requirements_web.txt",
-            ): "",
             ("remote", "get-url", "origin"): actual_repository,
             ("rev-parse", "HEAD"): actual_commit,
             ("rev-parse", "HEAD^{tree}"): actual_tree,
@@ -247,6 +246,29 @@ def test_wheel_provenance_rejects_checkout_identity_overrides(
     monkeypatch.setenv("BREADBOARD_BUILD_SOURCE_TREE", actual_tree)
 
     with pytest.raises(RuntimeError, match="do not match the Git checkout"):
+        namespace["_source_identity"]()
+
+def test_wheel_provenance_rejects_dirty_non_engine_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(setuptools, "setup", lambda **_kwargs: None)
+    namespace = runpy.run_path(str(ROOT / "setup.py"), run_name="bb_setup_test")
+
+    def fake_git(*arguments: str) -> str:
+        if arguments == ("rev-parse", "--is-inside-work-tree"):
+            return "true"
+        if arguments[:4] == (
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+            "--",
+        ):
+            return "?? breadboard/untracked_runtime.py"
+        raise AssertionError(arguments)
+
+    namespace["_source_identity"].__globals__["_git"] = fake_git
+
+    with pytest.raises(RuntimeError, match="clean wheel build inputs"):
         namespace["_source_identity"]()
 
 

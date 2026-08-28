@@ -326,7 +326,7 @@ class SessionLifecycleOwner:
                 elif execution_completed:
                     await self.terminalize_admitted_turns(
                         outcome="cancelled",
-                        reason="one_shot_complete",
+                        reason="superseded",
                     )
                 else:
                     await self.terminalize_admitted_turns(
