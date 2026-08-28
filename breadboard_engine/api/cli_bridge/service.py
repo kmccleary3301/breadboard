@@ -518,7 +518,11 @@ class SessionService:
             key != "workspace.root"
             for key in (request.overrides or {})
         )
-        if default_profile is not None and not default_profile_overridden:
+        if (
+            default_profile is not None
+            and not default_profile_overridden
+            and role_lock is None
+        ):
             runtime_lock = default_profile.compilation.lock
         elif effective_lock is not None:
             selected_graph = effective_lock.as_dict()

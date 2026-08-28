@@ -15,8 +15,8 @@ from typing import Any, Deque, Dict, List, Optional, Sequence, Tuple
 from breadboard_engine.security import (
     ProcessIsolationUnavailable,
     build_child_environment,
+    build_restricted_process_command,
     protected_credential_paths,
-    validate_workspace_credential_boundary,
 )
 
 from .contracts import (
@@ -99,18 +99,23 @@ class _CodexJsonRpcClient:
         if self._proc is not None:
             return
         try:
-            validate_workspace_credential_boundary(
-                self.cwd,
+            isolated_command, isolated_environment = build_restricted_process_command(
+                [self.codex_bin, "app-server", "--listen", "stdio://"],
+                workspace=self.cwd,
+                working_directory=self.cwd,
+                shell=False,
+                environment=self.env,
                 protected_paths=self.protected_paths,
+                allow_network=True,
             )
             self._proc = subprocess.Popen(
-                [self.codex_bin, "app-server", "--listen", "stdio://"],
+                isolated_command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=self.cwd,
-                env=self.env,
+                env=isolated_environment,
                 bufsize=1,
                 shell=False,
             )
