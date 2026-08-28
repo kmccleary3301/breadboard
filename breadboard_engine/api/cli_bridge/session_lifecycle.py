@@ -172,6 +172,10 @@ class SessionLifecycleOwner:
                 if isinstance(task_turn_id, str)
                 else None
             )
+            if task_turn is not None and task_turn.terminal_outcome is not None:
+                host._input_queue.task_done()
+                state.input_inflight = False
+                continue
             if (
                 task_turn is not None
                 and host.session.active_turn_id != task_turn.turn_id
@@ -300,7 +304,13 @@ class SessionLifecycleOwner:
                     )
                     durable_success = False
             if task_turn is not None:
-                if host._stop_event.is_set():
+                if task_turn.cancellation_requested:
+                    await execution.finish_turn(
+                        task_turn,
+                        "cancelled",
+                        reason=task_turn.cancellation_reason or "user_requested",
+                    )
+                elif host._stop_event.is_set():
                     await execution.finish_turn(
                         task_turn, "cancelled", reason=completion_reason
                     )
@@ -317,6 +327,9 @@ class SessionLifecycleOwner:
                         reason=completion_reason,
                         error_code=failure_code,
                     )
+            turn_was_cancelled = bool(
+                task_turn is not None and task_turn.cancellation_requested
+            )
             if one_shot:
                 if host._stop_event.is_set():
                     await self.terminalize_admitted_turns(
@@ -334,7 +347,7 @@ class SessionLifecycleOwner:
                         reason=completion_reason,
                         error_code=failure_code,
                     )
-            if durable_success:
+            if durable_success and not turn_was_cancelled:
                 for (
                     event_type,
                     event_payload,

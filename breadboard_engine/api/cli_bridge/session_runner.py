@@ -265,6 +265,8 @@ class SessionRunner:
                 return
             if self._stop_event.is_set():
                 queue.put({"kind": "stop"})
+            elif self._active_turn_cancellation_requested():
+                queue.put({"kind": "stop"})
             elif not self._resume_event.is_set():
                 queue.put({"kind": "pause"})
 
@@ -305,6 +307,31 @@ class SessionRunner:
                 except Exception:
                     pass
             return stopping
+
+    def _active_turn_cancellation_requested(self) -> bool:
+        turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
+        return bool(turn is not None and turn.cancellation_requested and turn.terminal_outcome is None)
+
+    def request_turn_cancellation(self, turn_id: str) -> bool:
+        with self._product_session_lock:
+            turn = self.session.turns_by_id.get(turn_id)
+            if (
+                turn is None
+                or self.session.active_turn_id != turn_id
+                or not turn.cancellation_requested
+                or turn.terminal_outcome is not None
+            ):
+                return False
+            self._signal_control("stop")
+            return True
+
+    async def finish_queued_turn_cancellation(self, turn: TurnRecord, reason: str) -> None:
+        await self._finish_turn(
+            turn,
+            "cancelled",
+            reason=reason,
+            advance_queue=False,
+        )
 
     async def stop(self, reason: str = "operator request") -> None:
         if self._closed:
