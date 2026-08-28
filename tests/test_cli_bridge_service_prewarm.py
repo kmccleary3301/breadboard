@@ -465,6 +465,54 @@ async def test_failure_recovery_preserves_terminal_product_session(
     assert record.status is SessionStatus.FAILED
     assert turn.terminal_outcome == "failed"
     await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_terminalization_closes_admission_before_async_resolution(
+    monkeypatch, tmp_path
+) -> None:
+    service, response, record = await _create(monkeypatch, tmp_path)
+    turn = next(iter(record.turns_by_id.values()))
+    finish_started = asyncio.Event()
+    finish_release = asyncio.Event()
+    real_finish_turn = record.runner._task_execution.finish_turn
+
+    async def blocking_finish(turn_record, outcome, **kwargs):
+        finish_started.set()
+        await finish_release.wait()
+        return await real_finish_turn(turn_record, outcome, **kwargs)
+
+    monkeypatch.setattr(
+        record.runner._task_execution,
+        "finish_turn",
+        blocking_finish,
+    )
+    terminalizing = asyncio.create_task(
+        record.runner._lifecycle_owner.terminalize_admitted_turns(
+            outcome="failed",
+            reason="worker_crash",
+            error_code="worker_crash",
+        )
+    )
+    await finish_started.wait()
+
+    with pytest.raises(HTTPException) as rejected:
+        await service.send_input(
+            response.session_id,
+            SessionInputRequest(content="racing task"),
+        )
+
+    assert rejected.value.status_code == 409
+    assert rejected.value.detail == "session is closed"
+    finish_release.set()
+    await terminalizing
+
+    assert set(record.turns_by_id) == {turn.turn_id}
+    assert turn.terminal_outcome == "failed"
+    assert record.active_turn_id is None
+    assert not record.queued_turn_ids
+    assert record.runner._input_queue.empty()
+    await _stop(record)
 @pytest.mark.asyncio
 async def test_session_summary_projects_effective_model(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(monkeypatch, tmp_path)
