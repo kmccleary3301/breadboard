@@ -46,6 +46,7 @@ def replay_retention_facts(
     retained = [event for event in events if event.stable_cursor and event.seq is not None]
     first = retained[0] if retained else None
     head = retained[-1] if retained and retained[-1].seq == head_sequence else None
+    virtual_head_retained = head_sequence > 0 and persisted_head_event_id is not None
     retained_history = (
         "partial" if retained_history_partial or (head_sequence and first is None) else "complete"
     )
@@ -55,8 +56,13 @@ def replay_retention_facts(
             "maxAgeMs": REPLAY_RETENTION_MAX_AGE_MS,
             "configurationDigest": replay_configuration_digest(),
         },
-        "earliestRetainedSequence": first.seq if first is not None else None,
-        "earliestRetainedEventId": first.event_id if first is not None else None,
+        "earliestRetainedSequence": (
+            first.seq if first is not None else head_sequence if virtual_head_retained else None
+        ),
+        "earliestRetainedEventId": (
+            first.event_id if first is not None
+            else persisted_head_event_id if virtual_head_retained else None
+        ),
         "headSequence": head_sequence,
         "headEventId": (
             head.event_id

@@ -1299,7 +1299,12 @@ class SessionService:
                 events = list(record.event_log)
                 if from_id:
                     start_index = self._resolve_start_index(events, from_id)
-                    if start_index is None:
+                    if start_index is None and self._is_retained_head_cursor(record, from_id):
+                        events = [
+                            event for event in events
+                            if event.seq is not None and event.seq > record.replay_head_sequence
+                        ]
+                    elif start_index is None:
                         if not validated:
                             raise HTTPException(
                                 status_code=status.HTTP_409_CONFLICT,
@@ -1387,20 +1392,21 @@ class SessionService:
                         event.seq = record.event_seq
                     else:
                         record.event_seq = max(record.event_seq, int(event.seq))
-                    if event.type in {
-                        EventType.TURN_COMPLETED,
-                        EventType.TURN_FAILED,
-                        EventType.TURN_CANCELLED,
-                    }:
-                        try:
+                    try:
+                        if event.type in {
+                            EventType.TURN_COMPLETED,
+                            EventType.TURN_FAILED,
+                            EventType.TURN_CANCELLED,
+                        }:
                             await self.registry.persist(record, terminal_event=event)
-                        except Exception:
-                            record.event_seq = previous_event_seq
-                            event.seq = previous_event_seq_value
-                            # A terminal event without durable retention is not safe
-                            # to expose as resolved evidence.
-                            setattr(record, "_dispatcher_complete", True)
-                            break
+                        else:
+                            await self.registry.persist(record, cursor_event=event)
+                    except Exception:
+                        record.event_seq = previous_event_seq
+                        event.seq = previous_event_seq_value
+                        # Never expose an event cursor that is not durably resumable.
+                        setattr(record, "_dispatcher_complete", True)
+                        break
                     record.event_log.append(event)
                     if record.subscribers:
                         for subscriber in list(record.subscribers):
@@ -1564,7 +1570,7 @@ class SessionService:
             self._ensure_event_sequence(record)
             events = list(record.event_log)
             start_index = self._resolve_start_index(events, from_id)
-            if start_index is None:
+            if start_index is None and not self._is_retained_head_cursor(record, from_id):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
@@ -1586,6 +1592,13 @@ class SessionService:
             else:
                 seq = max(seq, int(event.seq))
         record.event_seq = seq
+    @staticmethod
+    def _is_retained_head_cursor(record: SessionRecord, from_id: str) -> bool:
+        return (
+            record.replay_head_sequence > 0
+            and record.replay_head_event_id is not None
+            and from_id == record.replay_head_event_id
+        )
 
     def _resolve_start_index(
         self, events: list[SessionEvent], from_id: str

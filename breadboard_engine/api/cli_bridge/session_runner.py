@@ -436,9 +436,10 @@ class SessionRunner:
             ]
             if unknown:
                 raise ValueError(f"unknown attachment IDs: {', '.join(unknown)}")
+            selected_artifacts = [artifacts[item] for item in attachment_ids]
             total_bytes = sum(
-                int(getattr(artifacts[item], "size_bytes", MAX_ATTACHMENT_BYTES + 1))
-                for item in attachment_ids
+                int(getattr(item, "size_bytes", MAX_ATTACHMENT_BYTES + 1))
+                for item in selected_artifacts
             )
             if total_bytes > MAX_ATTACHMENT_BYTES:
                 raise ValueError(
@@ -451,19 +452,20 @@ class SessionRunner:
                 "input_id": input_id,
                 "turn_id": turn_id,
             }
-            product_session = getattr(self.session, "product_session", None)
-            if product_session is not None:
-                product_session.input(
-                    content, [artifacts[item] for item in attachment_ids]
-                )
-                self.session.metadata["session_contract"] = (
-                    product_session.read_model.as_dict()
-                )
-            if defer_execution is None:
+            def enqueue() -> None:
+                product_session = getattr(self.session, "product_session", None)
+                if product_session is not None:
+                    product_session.input(content, selected_artifacts)
+                    self.session.metadata["session_contract"] = (
+                        product_session.read_model.as_dict()
+                    )
                 self._input_queue.put_nowait(payload)
+            if defer_execution is None:
+                enqueue()
             else:
                 async def enqueue_after_response() -> None:
-                    self._input_queue.put_nowait(payload)
+                    with self._product_session_lock:
+                        enqueue()
 
                 defer_execution(enqueue_after_response)
         return content
