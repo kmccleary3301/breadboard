@@ -410,6 +410,61 @@ async def test_incomplete_execution_fails_product_session(
         "detail": "provider_error",
     }
     await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_failure_recovery_preserves_terminal_product_session(
+    monkeypatch, tmp_path
+) -> None:
+    service, _, record = await _create(
+        monkeypatch,
+        tmp_path,
+        metadata={
+            "cli_session_kind": "oneshot",
+            "non_interactive_cli_session": True,
+        },
+    )
+    turn = next(iter(record.turns_by_id.values()))
+
+    async def initialize_agent() -> None:
+        return None
+
+    real_finish_turn = record.runner._task_execution.finish_turn
+    finish_outcomes = []
+
+    async def fail_first_finish(turn_record, outcome, **kwargs):
+        finish_outcomes.append(outcome)
+        if len(finish_outcomes) == 1:
+            raise OSError("terminal projection unavailable")
+        return await real_finish_turn(turn_record, outcome, **kwargs)
+
+    monkeypatch.setattr(record.runner, "_ensure_agent_initialized", initialize_agent)
+    monkeypatch.setattr(
+        record.runner._task_execution,
+        "execute_task",
+        lambda *_args, **_kwargs: {
+            "completion_summary": {
+                "completed": False,
+                "reason": "provider_error",
+            },
+            "reward_metrics": {},
+            "logging_dir": None,
+        },
+    )
+    monkeypatch.setattr(
+        record.runner._task_execution,
+        "finish_turn",
+        fail_first_finish,
+    )
+
+    await record.runner._run()
+
+    assert finish_outcomes == ["failed", "failed"]
+    assert record.product_session.read_model.status == "failed"
+    assert record.product_session.read_model.terminal_outcome["detail"] == "provider_error"
+    assert record.status is SessionStatus.FAILED
+    assert turn.terminal_outcome == "failed"
+    await _stop(record)
 @pytest.mark.asyncio
 async def test_session_summary_projects_effective_model(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(monkeypatch, tmp_path)
