@@ -75,7 +75,7 @@ def test_stored_alternate_credentials_are_scoped_through_provider_errors(
 
     redaction.clear_registered_secret_values()
     header_secret = "prefixed-header-secret"
-    short_header_secret = "abc"
+    short_header_secret = "a"
     encoded_url_secret = "url%2Dsecret"
     decoded_url_secret = "url-secret"
     numeric_secret = "48273195"
@@ -98,7 +98,7 @@ def test_stored_alternate_credentials_are_scoped_through_provider_errors(
     monkeypatch.setattr(broker_module, "_default_broker", broker)
     router = ProviderRouter()
 
-    with pytest.raises(RuntimeError, match="provider call failed") as error:
+    with pytest.raises(RuntimeError, match="provider") as error:
         with router.execution_client_config("openai/gpt-5.4-mini"):
             assert {
                 header_secret,

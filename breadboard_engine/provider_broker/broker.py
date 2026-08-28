@@ -804,34 +804,37 @@ class ProviderBroker:
             material["routing"] = dict(routing)
         credential_values = redaction.credential_secret_values(material)
         try:
-            with redaction.secret_value_scope(
-                *credential_values,
-                allow_short=True,
-            ):
-                identity_values = (
-                    provider_id,
-                    auth_scheme,
-                    label,
-                    alias,
-                    str(account_id) if account_id is not None else "",
-                    str(expires_at_ms) if expires_at_ms is not None else "",
-                )
-                if any(
-                    redaction.contains_registered_secret_text(value)
-                    for value in identity_values
+            with self.store.atomic():
+                with redaction.secret_value_scope(
+                    *credential_values,
+                    allow_short=True,
                 ):
-                    raise ValueError(
-                        "credential identity fields cannot contain credential material"
+                    identity_values = (
+                        provider_id,
+                        auth_scheme,
+                        label,
+                        alias,
+                        str(account_id) if account_id is not None else "",
+                        str(expires_at_ms) if expires_at_ms is not None else "",
                     )
-                if redaction.contains_registered_secret_mapping_key(metadata_value):
-                    raise ValueError(
-                        "metadata keys cannot contain credential material"
+                    if any(
+                        redaction.contains_registered_secret_identity(value)
+                        for value in identity_values
+                    ):
+                        raise ValueError(
+                            "credential identity fields cannot contain credential material"
+                        )
+                    if redaction.contains_registered_secret_mapping_key(
+                        metadata_value
+                    ):
+                        raise ValueError(
+                            "metadata keys cannot contain credential material"
+                        )
+                    scrubbed_metadata, _ = redaction.scrub_structure(
+                        metadata_value,
+                        path="$.metadata",
+                        identity_mapping_keys=True,
                     )
-                scrubbed_metadata, _ = redaction.scrub_structure(
-                    metadata_value,
-                    path="$.metadata",
-                )
-                with self.store.atomic():
                     view = self.store.put_api_key(
                         provider_id=provider_id,
                         auth_scheme_id=auth_scheme,
@@ -845,20 +848,16 @@ class ProviderBroker:
                         material=material,
                         source="login",
                     )
-                    self._emit(
-                        "credential_stored",
-                        provider_id=provider_id,
-                        account_id=view["account_id"],
-                        credential_id=view["credential_id"],
-                        secret_version=view["secret_version"],
-                    )
-                scrubbed_view, _ = redaction.scrub_structure(
-                    view,
-                    path="$.credential",
+                self._emit(
+                    "credential_stored",
+                    provider_id=provider_id,
+                    account_id=view["account_id"],
+                    credential_id=view["credential_id"],
+                    secret_version=view["secret_version"],
                 )
-                if not isinstance(scrubbed_view, Mapping):
-                    raise RuntimeError("credential store returned an invalid view")
-                return dict(scrubbed_view)
+            if not isinstance(view, Mapping):
+                raise RuntimeError("credential store returned an invalid view")
+            return dict(view)
         finally:
             self._clear_mutable_material(material)
 

@@ -266,7 +266,11 @@ def iter_registered_secret_values() -> tuple[str, ...]:
 
 
 def _registered_secret_occurs(text: str, secret: str) -> bool:
-    if len(secret) < _MIN_REGISTERED_SECRET_SUBSTRING_LENGTH:
+    return secret in text
+
+
+def _registered_secret_occurs_in_identity(text: str, secret: str) -> bool:
+    if len(secret) < MIN_REGISTERED_SECRET_LENGTH:
         return text == secret
     return secret in text
 
@@ -277,6 +281,17 @@ def contains_registered_secret_text(value: Any) -> bool:
         return False
     return any(
         _registered_secret_occurs(value, secret)
+        for secret in iter_registered_secret_values()
+    )
+
+
+def contains_registered_secret_identity(value: Any) -> bool:
+    """Return whether an identity field exposes active credential material."""
+
+    if not isinstance(value, str):
+        return False
+    return any(
+        _registered_secret_occurs_in_identity(value, secret)
         for secret in iter_registered_secret_values()
     )
 
@@ -296,7 +311,7 @@ def contains_registered_secret_mapping_key(value: Any) -> bool:
             seen.add(identity)
             return any(
                 any(
-                    _registered_secret_occurs(str(key), secret)
+                    _registered_secret_occurs_in_identity(str(key), secret)
                     for secret in secrets
                 )
                 or visit(child)
@@ -519,12 +534,21 @@ def is_secret_key(name: Any) -> bool:
     return text.endswith(_SECRET_KEY_SUFFIXES)
 
 
-def scrub_text(text: str) -> str:
+def scrub_text(
+    text: str,
+    *,
+    exact_short_registered_secrets: bool = False,
+) -> str:
     """Replace registered secret values and well-known credential shapes."""
     if not isinstance(text, str) or not text:
         return text
+    occurs = (
+        _registered_secret_occurs_in_identity
+        if exact_short_registered_secrets
+        else _registered_secret_occurs
+    )
     for secret in iter_registered_secret_values():
-        if _registered_secret_occurs(text, secret):
+        if occurs(text, secret):
             text = text.replace(secret, REDACTED)
     for pattern in SECRET_VALUE_PATTERNS:
         text = pattern.sub(REDACTED, text)
@@ -537,23 +561,43 @@ def scrub_headers(headers: Mapping[str, Any]) -> dict[str, Any]:
     return scrubbed
 
 
-def scrub_structure(value: Any, *, path: str = "$") -> tuple[Any, list[RedactionProblem]]:
+def scrub_structure(
+    value: Any,
+    *,
+    path: str = "$",
+    identity_mapping_keys: bool = False,
+) -> tuple[Any, list[RedactionProblem]]:
     """Deep-scrub a JSON-like structure.
 
-    Returns the scrubbed copy plus typed problems for every redaction made.
-    Never raises; unknown types pass through untouched.
+    ``identity_mapping_keys`` preserves non-secret key names that merely contain
+    a one- to three-character registered value. Values remain conservatively
+    scrubbed because provider errors can embed short credentials in prose.
     """
     problems: list[RedactionProblem] = []
-    scrubbed = _scrub_node(value, path, problems)
+    scrubbed = _scrub_node(
+        value,
+        path,
+        problems,
+        identity_mapping_keys=identity_mapping_keys,
+    )
     return scrubbed, problems
 
 
-def _scrub_node(value: Any, path: str, problems: list[RedactionProblem]) -> Any:
+def _scrub_node(
+    value: Any,
+    path: str,
+    problems: list[RedactionProblem],
+    *,
+    identity_mapping_keys: bool = False,
+) -> Any:
     if isinstance(value, Mapping):
         out: dict[Any, Any] = {}
         for key, item in value.items():
             key_text = str(key)
-            scrubbed_key_text = scrub_text(key_text)
+            scrubbed_key_text = scrub_text(
+                key_text,
+                exact_short_registered_secrets=identity_mapping_keys,
+            )
             output_key = scrubbed_key_text if scrubbed_key_text != key_text else key
             child = f"{path}.{scrubbed_key_text}"
             if scrubbed_key_text != key_text:
@@ -576,11 +620,21 @@ def _scrub_node(value: Any, path: str, problems: list[RedactionProblem]) -> Any:
                     RedactionProblem("secret_key", child, "secret-named key redacted")
                 )
             else:
-                out[output_key] = _scrub_node(item, child, problems)
+                out[output_key] = _scrub_node(
+                    item,
+                    child,
+                    problems,
+                    identity_mapping_keys=identity_mapping_keys,
+                )
         return out
     if isinstance(value, (list, tuple)):
         items = [
-            _scrub_node(item, f"{path}[{index}]", problems)
+            _scrub_node(
+                item,
+                f"{path}[{index}]",
+                problems,
+                identity_mapping_keys=identity_mapping_keys,
+            )
             for index, item in enumerate(value)
         ]
         return items if isinstance(value, list) else tuple(items)
