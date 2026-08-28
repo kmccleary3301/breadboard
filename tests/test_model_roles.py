@@ -94,6 +94,7 @@ def _broker(tmp_path, **kwargs: object) -> ProviderBroker:
         **kwargs,
     )
 
+
 def _error_code(callable_) -> str:
     with pytest.raises(ModelRoleResolutionError) as error:
         callable_()
@@ -130,12 +131,12 @@ def test_compile_emits_immutable_classified_lock_and_embeds_graph_hash() -> None
     }
     embedded = embed_model_role_lock(graph, lock)
     assert embedded["model_role_lock"]["lock_hash"] == lock.lock_hash
-    assert embedded["graph_hash"] == sha256_json(
-        {**embedded, "graph_hash": None}
-    )
+    assert embedded["graph_hash"] == sha256_json({**embedded, "graph_hash": None})
 
 
-def test_lock_pin_resolves_exact_account_and_secret_rotation_keeps_hash(tmp_path) -> None:
+def test_lock_pin_resolves_exact_account_and_secret_rotation_keeps_hash(
+    tmp_path,
+) -> None:
     broker = _broker(tmp_path)
     credential = broker.putApiKey(
         {
@@ -171,7 +172,9 @@ def test_lock_pin_resolves_exact_account_and_secret_rotation_keeps_hash(tmp_path
         assert material and material["api_key"] == "sk-after"
 
 
-def test_session_pin_binds_once_per_provider_and_restores_across_rotation(tmp_path) -> None:
+def test_session_pin_binds_once_per_provider_and_restores_across_rotation(
+    tmp_path,
+) -> None:
     broker = _broker(tmp_path)
     credential = broker.putApiKey(
         {
@@ -197,9 +200,10 @@ def test_session_pin_binds_once_per_provider_and_restores_across_rotation(tmp_pa
             "session_id": "session-a",
         },
     }
-    assert broker.get_session_account_binding(
-        "session-a", "openai"
-    )["account_id"] == credential["account_id"]
+    assert (
+        broker.get_session_account_binding("session-a", "openai")["account_id"]
+        == credential["account_id"]
+    )
 
     broker.putApiKey(
         {
@@ -208,9 +212,12 @@ def test_session_pin_binds_once_per_provider_and_restores_across_rotation(tmp_pa
             "api_key": "sk-after",
         }
     )
-    assert restore_model_role_lock(
-        lock.as_dict(), broker=broker, session_id="session-a"
-    ).lock_hash == lock.lock_hash
+    assert (
+        restore_model_role_lock(
+            lock.as_dict(), broker=broker, session_id="session-a"
+        ).lock_hash
+        == lock.lock_hash
+    )
     second = compile_model_roles(
         document,
         broker=broker,
@@ -295,12 +302,14 @@ def test_config_environment_and_fallback_origins_are_stable_and_fail_closed(
     configured = compile_model_roles(
         document, broker=config_broker, session_id="configured"
     )
-    assert configured["roles"]["default"]["primary"]["account_binding"][
-        "kind"
-    ] == "configured"
-    assert configured["roles"]["default"]["primary"]["account_binding"][
-        "source"
-    ] == "config"
+    assert (
+        configured["roles"]["default"]["primary"]["account_binding"]["kind"]
+        == "configured"
+    )
+    assert (
+        configured["roles"]["default"]["primary"]["account_binding"]["source"]
+        == "config"
+    )
     config_broker.remove_config_api_key("openai")
     assert (
         _error_code(
@@ -341,9 +350,7 @@ def test_config_environment_and_fallback_origins_are_stable_and_fail_closed(
     fallback_broker = _broker(
         tmp_path / "fallback",
         fallback_resolver=lambda provider: (
-            {"api_key": "sk-fallback"}
-            if provider == "openai"
-            else None
+            {"api_key": "sk-fallback"} if provider == "openai" else None
         ),
         fallback_origins={"openai": "test-fallback"},
     )
@@ -409,9 +416,7 @@ def test_role_overrides_are_policy_owned_and_immutable_after_start() -> None:
     document = _document()
     override = {"default": "mock/alternate"}
     assert (
-        _error_code(
-            lambda: compile_model_roles(document, role_overrides=override)
-        )
+        _error_code(lambda: compile_model_roles(document, role_overrides=override))
         == "environment_override_forbidden"
     )
     allowed = copy.deepcopy(document)
@@ -449,8 +454,7 @@ def test_known_unbound_roles_follow_declared_policy_but_typos_never_do() -> None
 
     strict = _document()
     assert (
-        _error_code(lambda: resolve_role_name(strict, "slow"))
-        == "known_role_unbound"
+        _error_code(lambda: resolve_role_name(strict, "slow")) == "known_role_unbound"
     )
 
 
@@ -464,12 +468,13 @@ def test_dispatch_references_and_secret_metadata_are_rejected() -> None:
     secret = _document()
     secret["roles"]["default"]["metadata"] = {"api_key": "not-allowed"}
     assert (
-        _error_code(lambda: compile_model_roles(secret))
-        == "secret_material_forbidden"
+        _error_code(lambda: compile_model_roles(secret)) == "secret_material_forbidden"
     )
 
 
-def test_catalog_admission_rejects_missing_duplicate_stale_deferred_and_capability() -> None:
+def test_catalog_admission_rejects_missing_duplicate_stale_deferred_and_capability() -> (
+    None
+):
     document = _document()
     assert (
         _error_code(
@@ -520,9 +525,7 @@ def test_catalog_admission_rejects_missing_duplicate_stale_deferred_and_capabili
         _error_code(lambda: compile_model_roles(document, catalog=deferred))
         == "deferred_catalog_target"
     )
-    requires_vision = _document(
-        roles={"default": _binding(requires={"vision": True})}
-    )
+    requires_vision = _document(roles={"default": _binding(requires={"vision": True})})
     assert (
         _error_code(
             lambda: compile_model_roles(
@@ -549,22 +552,16 @@ def test_catalog_admission_rejects_missing_duplicate_stale_deferred_and_capabili
         "issues": [{"code": "duplicate_model"}],
     }
     assert (
-        _error_code(
-            lambda: compile_model_roles(document, catalog=issue_catalog)
-        )
+        _error_code(lambda: compile_model_roles(document, catalog=issue_catalog))
         == "duplicate_catalog_target"
     )
 
 
 def test_openrouter_native_model_identity_is_not_double_prefixed(tmp_path) -> None:
     broker = _broker(tmp_path)
-    broker.set_runtime_api_key("openrouter", "sk-router")
+    broker.set_config_api_key("openrouter", "sk-router")
     document = _document(
-        roles={
-            "default": _binding(
-                _target("openrouter", "openai/gpt-5.4")
-            )
-        }
+        roles={"default": _binding(_target("openrouter", "openai/gpt-5.4"))}
     )
     lock = compile_model_roles(
         document,
@@ -579,16 +576,14 @@ def test_openrouter_native_model_identity_is_not_double_prefixed(tmp_path) -> No
         ],
     )
     assert (
-        lock["roles"]["default"]["primary"]["route_id"]
-        == "openrouter/openai/gpt-5.4"
+        lock["roles"]["default"]["primary"]["route_id"] == "openrouter/openai/gpt-5.4"
     )
+
 
 def test_catalog_provider_alias_maps_to_canonical_target(tmp_path) -> None:
     broker = _broker(tmp_path)
-    broker.set_runtime_api_key("codex", "sk-codex")
-    document = _document(
-        roles={"default": _binding(_target("codex", "gpt-5.4"))}
-    )
+    broker.set_config_api_key("codex", "sk-codex")
+    document = _document(roles={"default": _binding(_target("codex", "gpt-5.4"))})
 
     lock = compile_model_roles(
         document,
@@ -620,34 +615,46 @@ def test_fallback_is_declared_reason_gated_and_advances_exact_chain() -> None:
         }
     )
     lock = compile_model_roles(document)
-    assert select_role_target(
-        lock,
-        "default",
-        failure_reason="provider_unavailable",
-        current_route_id="mock/primary",
-    )["route_id"] == "mock/secondary"
-    assert select_role_target(
-        lock,
-        "default",
-        failure_reason="provider_unavailable",
-        current_route_id="mock/secondary",
-    )["route_id"] == "mock/tertiary"
-    assert select_role_target(
-        lock,
-        "default",
-        failure_reason="provider_unavailable",
-        current_route_id="mock/tertiary",
-    )["route_id"] == "mock/tertiary"
+    assert (
+        select_role_target(
+            lock,
+            "default",
+            failure_reason="provider_unavailable",
+            current_route_id="mock/primary",
+        )["route_id"]
+        == "mock/secondary"
+    )
+    assert (
+        select_role_target(
+            lock,
+            "default",
+            failure_reason="provider_unavailable",
+            current_route_id="mock/secondary",
+        )["route_id"]
+        == "mock/tertiary"
+    )
+    assert (
+        select_role_target(
+            lock,
+            "default",
+            failure_reason="provider_unavailable",
+            current_route_id="mock/tertiary",
+        )["route_id"]
+        == "mock/tertiary"
+    )
     emitted = SimpleNamespace(
         output_emitted=True,
         model_fallback_reason="provider_unavailable",
     )
-    assert select_role_target(
-        lock,
-        "default",
-        failure_reason=emitted,
-        current_route_id="mock/secondary",
-    )["route_id"] == "mock/secondary"
+    assert (
+        select_role_target(
+            lock,
+            "default",
+            failure_reason=emitted,
+            current_route_id="mock/secondary",
+        )["route_id"]
+        == "mock/secondary"
+    )
 
     cross = _document(
         roles={
@@ -696,8 +703,7 @@ def test_restore_rejects_hash_semantic_origin_and_account_revocation(tmp_path) -
     route["lock_hash"] = None
     route["lock_hash"] = sha256_json(route)
     assert (
-        _error_code(lambda: restore_model_role_lock(route))
-        == "invalid_model_role_lock"
+        _error_code(lambda: restore_model_role_lock(route)) == "invalid_model_role_lock"
     )
 
     broker = _broker(tmp_path / "account")
@@ -708,9 +714,7 @@ def test_restore_rejects_hash_semantic_origin_and_account_revocation(tmp_path) -
             "api_key": "sk-restore",
         }
     )
-    account_lock = compile_model_roles(
-        _account_document(pin="lock"), broker=broker
-    )
+    account_lock = compile_model_roles(_account_document(pin="lock"), broker=broker)
     broker.revoke(
         {
             "provider_id": "openai",
@@ -719,9 +723,7 @@ def test_restore_rejects_hash_semantic_origin_and_account_revocation(tmp_path) -
     )
     assert (
         _error_code(
-            lambda: restore_model_role_lock(
-                account_lock.as_dict(), broker=broker
-            )
+            lambda: restore_model_role_lock(account_lock.as_dict(), broker=broker)
         )
         == "account_binding_unavailable"
     )

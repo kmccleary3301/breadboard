@@ -50,7 +50,11 @@ def _e4_precedence_broker(
         ),
     )
     if "runtime" in enabled_sources:
-        broker.set_runtime_api_key("openai", _E4_SOURCE_KEYS["runtime"])
+        broker.set_runtime_api_key(
+            "openai",
+            _E4_SOURCE_KEYS["runtime"],
+            session_id="e4-precedence-session",
+        )
     if "config" in enabled_sources:
         broker.set_config_api_key("openai", _E4_SOURCE_KEYS["config"])
     if "oauth" in enabled_sources:
@@ -151,11 +155,10 @@ def test_broker_nine_method_surface_and_plain_data(tmp_path):
     assert broker.revoke({"account_id": credential["account_id"]})["ok"] is True
     assert broker.listCredentials("openai")[0]["status"] == "revoked"
 
+
 def test_broker_rejects_secret_bearing_account_id(tmp_path):
     secret = "credential-account-id-canary-8p4ws"
-    broker = ProviderBroker(
-        SQLiteCredentialStore(tmp_path / "credentials.sqlite3")
-    )
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
 
     with pytest.raises(
         ValueError,
@@ -173,7 +176,6 @@ def test_broker_rejects_secret_bearing_account_id(tmp_path):
     assert broker.listCredentials() == []
     assert broker.audit_events() == []
     assert secret not in redaction.iter_registered_secret_values()
-
 
 
 def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
@@ -243,8 +245,7 @@ def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
                 "Key": "abc",
             },
             "base_url": (
-                "https://url-user:url-password@example.test/v1"
-                "?api_key=query-secret"
+                "https://url-user:url-password@example.test/v1?api_key=query-secret"
             ),
             "routing": {
                 "refresh_token": "routing-secret",
@@ -459,8 +460,10 @@ def test_auth_source_precedence_covers_every_pairwise_conflict(tmp_path) -> None
             set(pair),
         )
         expected = pair[0]
+        session_id = "e4-precedence-session" if "runtime" in pair else ""
         origin = broker.get_credential_origin(
             "openai",
+            session_id=session_id,
             environment_key="OPENAI_API_KEY",
             environment=environment,
         )
@@ -479,6 +482,7 @@ def test_auth_source_precedence_covers_every_pairwise_conflict(tmp_path) -> None
 
         with broker.execution_material(
             "openai",
+            session_id=session_id,
             environment_key="OPENAI_API_KEY",
             environment=environment,
         ) as material:
@@ -531,18 +535,122 @@ def test_override_removal_re_resolves_lower_sources(tmp_path) -> None:
     def resolve():
         return broker.get_credential_origin(
             "openai",
+            session_id="e4-precedence-session",
             environment_key="OPENAI_API_KEY",
             environment=environment,
         )
 
     assert resolve() == {"kind": "runtime"}
-    broker.remove_runtime_api_key("openai")
+    broker.remove_runtime_api_key("openai", session_id="e4-precedence-session")
     assert resolve() == {"kind": "config"}
     broker.clear_config_api_keys()
     assert resolve() == {
         "kind": "env",
         "env_var": "OPENAI_API_KEY",
     }
+
+
+def test_runtime_override_is_invisible_to_other_and_unscoped_sessions(tmp_path) -> None:
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    broker.set_runtime_api_key(
+        "openai",
+        "runtime-session-a-canary",
+        session_id="session-a",
+    )
+
+    assert broker.get_credential_origin("openai", session_id="session-a") == {
+        "kind": "runtime"
+    }
+    assert broker.get_credential_origin("openai", session_id="session-b") is None
+    assert broker.get_credential_origin("openai") is None
+
+    with broker.execution_material("openai", session_id="session-a") as material:
+        assert material is not None
+        assert material["api_key"] == "runtime-session-a-canary"
+    assert material == {}
+
+    with broker.execution_material("openai", session_id="session-b") as material:
+        assert material is None
+    with broker.execution_material("openai") as material:
+        assert material is None
+
+
+def test_runtime_overrides_are_independent_and_remove_is_session_local(
+    tmp_path,
+) -> None:
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    broker.set_runtime_api_key(
+        "openai",
+        "runtime-session-a-canary",
+        session_id="session-a",
+    )
+    broker.set_runtime_api_key(
+        "openai",
+        "runtime-session-b-canary",
+        session_id="session-b",
+    )
+
+    for session_id, expected in (
+        ("session-a", "runtime-session-a-canary"),
+        ("session-b", "runtime-session-b-canary"),
+    ):
+        with broker.execution_material("openai", session_id=session_id) as material:
+            assert material is not None
+            assert material["api_key"] == expected
+        assert material == {}
+
+    broker.remove_runtime_api_key("openai", session_id="session-a")
+    assert broker.get_credential_origin("openai", session_id="session-a") is None
+    assert broker.get_credential_origin("openai", session_id="session-b") == {
+        "kind": "runtime"
+    }
+    with broker.execution_material("openai", session_id="session-b") as material:
+        assert material is not None
+        assert material["api_key"] == "runtime-session-b-canary"
+    assert material == {}
+
+    broker.remove_runtime_api_key("openai", session_id="session-b")
+    assert broker.get_credential_origin("openai", session_id="session-b") is None
+
+
+@pytest.mark.parametrize("invalid_session_id", (None, "", "   ", 123))
+def test_runtime_override_requires_nonempty_keyword_session_id(
+    tmp_path,
+    invalid_session_id,
+) -> None:
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    with pytest.raises(ValueError, match="session_id is required"):
+        broker.set_runtime_api_key(
+            "openai",
+            "runtime-invalid-session-canary",
+            session_id=invalid_session_id,
+        )
+    with pytest.raises(ValueError, match="session_id is required"):
+        broker.remove_runtime_api_key("openai", session_id=invalid_session_id)
+    with pytest.raises(TypeError):
+        broker.set_runtime_api_key("openai", "runtime-positional-canary", "session-a")
+
+
+def test_default_broker_does_not_read_codex_auth_from_home(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    secret = "default-codex-home-canary"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    auth_path = tmp_path / ".codex" / "auth.json"
+    auth_path.parent.mkdir()
+    auth_path.write_text(
+        json.dumps({"tokens": {"access_token": secret}}),
+        encoding="utf-8",
+    )
+
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+
+    assert broker._codex_auth_path is None
+    assert broker.get_credential_origin("codex", environment={}) is None
+    with broker.execution_material("codex", environment={}) as material:
+        assert material is None
+    assert secret not in json.dumps(broker.audit_events())
 
 
 def test_missing_auth_has_no_origin_or_execution_material(tmp_path) -> None:
@@ -575,6 +683,7 @@ def test_codex_auth_file_never_substitutes_openai_credentials(
     )
     store = SQLiteCredentialStore(tmp_path / "credentials.sqlite3")
     broker = ProviderBroker(store, codex_auth_path=auth_path)
+    assert broker._codex_auth_path == auth_path.resolve()
 
     assert broker.get_credential_origin("openai", environment={}) is None
     origin = broker.get_credential_origin("codex", environment={})
@@ -674,7 +783,6 @@ def test_explicit_account_selectors_persist_user_binding_and_override_implicit_s
             "api_key": "e5-second-account-canary",
         }
     )
-    broker.set_runtime_api_key("openai", "e5-runtime-override-canary")
     selectors = (
         {"account_id": selected["account_id"]},
         {"credential_id": selected["credential_id"]},
@@ -684,6 +792,11 @@ def test_explicit_account_selectors_persist_user_binding_and_override_implicit_s
 
     for index, selector in enumerate(selectors):
         session_id = f"e5-explicit-{index}"
+        broker.set_runtime_api_key(
+            "openai",
+            "e5-runtime-override-canary",
+            session_id=session_id,
+        )
         with broker.execution_material(
             "openai",
             session_id=session_id,
