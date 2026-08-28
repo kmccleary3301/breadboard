@@ -2,18 +2,8 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 439
+live_script_count: 437
 entries:
-  - path: scripts/SCRIPT_INDEX.yaml
-    class: live-wired
-    owner: kmccleary3301
-    callers: [scripts/dev/build_script_index.py, tests/test_script_index_guard.py]
-    expiry: none (durable tooling)
-  - path: scripts/SCRIPT_INDEX.yaml
-    class: live-wired
-    owner: kmccleary3301
-    callers: [scripts/dev/build_script_index.py, tests/test_script_index_guard.py]
-    expiry: none (durable tooling)
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
     owner: kmccleary3301

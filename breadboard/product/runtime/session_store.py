@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import os
@@ -69,13 +68,16 @@ _TRANSACTION_FIELDS = frozenset(
         "session_id",
         "event_name",
         "metadata_name",
-        "event_payload",
-        "metadata_payload",
+        "event_stage_name",
+        "metadata_stage_name",
+        "event_size",
+        "metadata_size",
         "event_sha256",
         "metadata_sha256",
     }
 )
-_MAX_TRANSACTION_INTENT_BYTES = 8 * 1024 * 1024
+# Only the bounded intent metadata is parsed; projections remain in staged files.
+_MAX_TRANSACTION_INTENT_BYTES = 64 * 1024
 _T = TypeVar("_T")
 _LOCAL_SESSION_LOCKS: weakref.WeakValueDictionary[tuple[str, str], threading.RLock] = (
     weakref.WeakValueDictionary()
@@ -186,22 +188,41 @@ def _intent_name(session_id: str, *, legacy: bool) -> str:
     return f".{session_id}.session.intent.json" if legacy else ".session.intent.json"
 
 
+def _stage_names(event_name: str, metadata_name: str) -> tuple[str, str]:
+    return f".{event_name}.stage", f".{metadata_name}.stage"
+
+
+def _is_digest(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 71
+        and value.startswith("sha256:")
+        and all(character in "0123456789abcdef" for character in value[7:])
+    )
+
+
 def _intent_bytes(
     session_id: str,
     event_name: str,
     metadata_name: str,
-    event_payload: bytes,
-    metadata_payload: bytes,
+    event_stage_name: str,
+    metadata_stage_name: str,
+    event_size: int,
+    metadata_size: int,
+    event_sha256: str,
+    metadata_sha256: str,
 ) -> bytes:
     document = {
         "schema_version": _TRANSACTION_SCHEMA,
         "session_id": session_id,
         "event_name": event_name,
         "metadata_name": metadata_name,
-        "event_payload": base64.b64encode(event_payload).decode("ascii"),
-        "metadata_payload": base64.b64encode(metadata_payload).decode("ascii"),
-        "event_sha256": _digest(event_payload),
-        "metadata_sha256": _digest(metadata_payload),
+        "event_stage_name": event_stage_name,
+        "metadata_stage_name": metadata_stage_name,
+        "event_size": event_size,
+        "metadata_size": metadata_size,
+        "event_sha256": event_sha256,
+        "metadata_sha256": metadata_sha256,
     }
     body = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode(
         "ascii"
@@ -217,13 +238,14 @@ def _decode_intent(
     session_id: str,
     event_name: str,
     metadata_name: str,
-) -> tuple[bytes, bytes]:
+) -> tuple[str, str, int, int, str, str]:
     if len(body) > _MAX_TRANSACTION_INTENT_BYTES:
         raise ValueError("session transaction intent is oversized")
     try:
         document = json.loads(body.decode("ascii"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("invalid session transaction intent") from error
+    event_stage_name, metadata_stage_name = _stage_names(event_name, metadata_name)
     if (
         not isinstance(document, dict)
         or set(document) != _TRANSACTION_FIELDS
@@ -231,32 +253,31 @@ def _decode_intent(
         or document.get("session_id") != session_id
         or document.get("event_name") != event_name
         or document.get("metadata_name") != metadata_name
+        or document.get("event_stage_name") != event_stage_name
+        or document.get("metadata_stage_name") != metadata_stage_name
     ):
         raise ValueError("mismatched session transaction intent")
-    try:
-        event_payload = base64.b64decode(
-            document["event_payload"],
-            validate=True,
-        )
-        metadata_payload = base64.b64decode(
-            document["metadata_payload"],
-            validate=True,
-        )
-    except (KeyError, TypeError, ValueError) as error:
-        raise ValueError("invalid session transaction intent payload") from error
+    event_size = document.get("event_size")
+    metadata_size = document.get("metadata_size")
+    event_sha256 = document.get("event_sha256")
+    metadata_sha256 = document.get("metadata_sha256")
     if (
-        len(event_payload) > _MAX_TRANSACTION_INTENT_BYTES
-        or len(metadata_payload) > _MAX_TRANSACTION_INTENT_BYTES
-        or document.get("event_sha256") != _digest(event_payload)
-        or document.get("metadata_sha256") != _digest(metadata_payload)
+        type(event_size) is not int
+        or event_size < 0
+        or type(metadata_size) is not int
+        or metadata_size < 0
+        or not _is_digest(event_sha256)
+        or not _is_digest(metadata_sha256)
     ):
-        raise ValueError("session transaction intent digest mismatch")
-    _session_from_payloads(
-        event_payload,
-        metadata_payload,
-        session_id=session_id,
+        raise ValueError("invalid session transaction intent metadata")
+    return (
+        event_stage_name,
+        metadata_stage_name,
+        event_size,
+        metadata_size,
+        event_sha256,
+        metadata_sha256,
     )
-    return event_payload, metadata_payload
 
 
 def _session_from_payloads(
@@ -328,6 +349,38 @@ def _read_posix_file(parent: int, name: str, max_bytes: int) -> bytes:
             os.close(descriptor)
 
 
+def _read_posix_staged_file(parent: int, name: str, expected_size: int) -> bytes:
+    descriptor = os.open(
+        name,
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_CLOEXEC", 0),
+        dir_fd=parent,
+    )
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise OSError(f"unsafe session staging file: {name}")
+        if metadata.st_size != expected_size:
+            raise ValueError("session transaction staging size mismatch")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            return stream.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _verify_staged_payload(
+    payload: bytes,
+    expected_size: int,
+    expected_digest: str,
+) -> None:
+    if len(payload) != expected_size or _digest(payload) != expected_digest:
+        raise ValueError("session transaction intent digest mismatch")
+
+
 def _recover_intent_posix(
     parent: int,
     session_id: str,
@@ -345,17 +398,42 @@ def _recover_intent_posix(
         )
     except FileNotFoundError:
         return
-    event_payload, metadata_payload = _decode_intent(
+    (
+        event_stage_name,
+        metadata_stage_name,
+        event_size,
+        metadata_size,
+        event_sha256,
+        metadata_sha256,
+    ) = _decode_intent(
         body,
         session_id=session_id,
         event_name=event_name,
         metadata_name=metadata_name,
     )
-    for name in (intent_name, event_name, metadata_name):
+    event_payload = _read_posix_staged_file(parent, event_stage_name, event_size)
+    metadata_payload = _read_posix_staged_file(
+        parent, metadata_stage_name, metadata_size
+    )
+    _verify_staged_payload(event_payload, event_size, event_sha256)
+    _verify_staged_payload(metadata_payload, metadata_size, metadata_sha256)
+    _session_from_payloads(
+        event_payload,
+        metadata_payload,
+        session_id=session_id,
+    )
+    for name in (
+        intent_name,
+        event_stage_name,
+        metadata_stage_name,
+        event_name,
+        metadata_name,
+    ):
         _assert_posix_target(parent, name)
     AnchoredStorage.write_at(parent, event_name, event_payload)
     AnchoredStorage.write_at(parent, metadata_name, metadata_payload)
-    os.unlink(intent_name, dir_fd=parent)
+    for name in (intent_name, event_stage_name, metadata_stage_name):
+        os.unlink(name, dir_fd=parent)
     os.fsync(parent)
 
 
@@ -374,6 +452,22 @@ def _read_windows_file(path: Path, max_bytes: int) -> bytes:
         os.close(descriptor)
 
 
+def _read_windows_staged_file(path: Path, expected_size: int) -> bytes:
+    descriptor = AnchoredStorage.windows_file_descriptor(path, create=False)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise OSError(f"unsafe session staging file: {path.name}")
+        if metadata.st_size != expected_size:
+            raise ValueError("session transaction staging size mismatch")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            return stream.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def _recover_intent_windows(
     parent: Path,
     session_id: str,
@@ -390,17 +484,42 @@ def _recover_intent_windows(
         )
     except FileNotFoundError:
         return
-    event_payload, metadata_payload = _decode_intent(
+    (
+        event_stage_name,
+        metadata_stage_name,
+        event_size,
+        metadata_size,
+        event_sha256,
+        metadata_sha256,
+    ) = _decode_intent(
         body,
         session_id=session_id,
         event_name=event_name,
         metadata_name=metadata_name,
     )
-    for name in (intent_name, event_name, metadata_name):
+    event_payload = _read_windows_staged_file(parent / event_stage_name, event_size)
+    metadata_payload = _read_windows_staged_file(
+        parent / metadata_stage_name, metadata_size
+    )
+    _verify_staged_payload(event_payload, event_size, event_sha256)
+    _verify_staged_payload(metadata_payload, metadata_size, metadata_sha256)
+    _session_from_payloads(
+        event_payload,
+        metadata_payload,
+        session_id=session_id,
+    )
+    for name in (
+        intent_name,
+        event_stage_name,
+        metadata_stage_name,
+        event_name,
+        metadata_name,
+    ):
         _assert_windows_target(parent / name)
     _write_windows_atomic(parent / event_name, event_payload)
     _write_windows_atomic(parent / metadata_name, metadata_payload)
-    (parent / intent_name).unlink()
+    for name in (intent_name, event_stage_name, metadata_stage_name):
+        (parent / name).unlink()
 
 
 def _recover_pending_intents(workspace: Path, session_id: str) -> None:
@@ -536,12 +655,17 @@ def _persist_session_locked(
     metadata_name = f"{session_id}.json" if legacy else "session.json"
     event_payload = _event_bytes(session)
     metadata_payload = _metadata_bytes(session)
+    event_stage_name, metadata_stage_name = _stage_names(event_name, metadata_name)
     intent_payload = _intent_bytes(
         session_id,
         event_name,
         metadata_name,
-        event_payload,
-        metadata_payload,
+        event_stage_name,
+        metadata_stage_name,
+        len(event_payload),
+        len(metadata_payload),
+        _digest(event_payload),
+        _digest(metadata_payload),
     )
     intent_name = _intent_name(session_id, legacy=legacy)
 
@@ -570,12 +694,21 @@ def _persist_session_locked(
                         create=True,
                     )
                 )
-            for name in (intent_name, event_name, metadata_name):
+            for name in (
+                intent_name,
+                event_stage_name,
+                metadata_stage_name,
+                event_name,
+                metadata_name,
+            ):
                 _assert_windows_target(parent / name)
+            _write_windows_atomic(parent / event_stage_name, event_payload)
+            _write_windows_atomic(parent / metadata_stage_name, metadata_payload)
             _write_windows_atomic(parent / intent_name, intent_payload)
             _write_windows_atomic(parent / event_name, event_payload)
             _write_windows_atomic(parent / metadata_name, metadata_payload)
-            (parent / intent_name).unlink()
+            for name in (intent_name, event_stage_name, metadata_stage_name):
+                (parent / name).unlink()
         finally:
             for handle in reversed(handles):
                 AnchoredStorage.close_windows_handle(handle)
@@ -607,12 +740,21 @@ def _persist_session_locked(
             )
             os.fsync(parent)
             parent = descriptors[-1]
-        for name in (intent_name, event_name, metadata_name):
+        for name in (
+            intent_name,
+            event_stage_name,
+            metadata_stage_name,
+            event_name,
+            metadata_name,
+        ):
             _assert_posix_target(parent, name)
+        AnchoredStorage.write_at(parent, event_stage_name, event_payload)
+        AnchoredStorage.write_at(parent, metadata_stage_name, metadata_payload)
         AnchoredStorage.write_at(parent, intent_name, intent_payload)
         AnchoredStorage.write_at(parent, event_name, event_payload)
         AnchoredStorage.write_at(parent, metadata_name, metadata_payload)
-        os.unlink(intent_name, dir_fd=parent)
+        for name in (intent_name, event_stage_name, metadata_stage_name):
+            os.unlink(name, dir_fd=parent)
         os.fsync(parent)
     finally:
         for descriptor in reversed(descriptors):
@@ -857,20 +999,23 @@ def session_names(workspace: Path) -> list[str]:
         )
     ]
     try:
-        for name in (".breadboard", "sessions"):
+        for component in (".breadboard", "sessions"):
             descriptors.append(
                 AnchoredStorage.open_directory(
                     descriptors[-1],
-                    name,
+                    component,
                     create=False,
                 )
             )
         for name in os.listdir(descriptors[-1]):
-            metadata = os.stat(
-                name,
-                dir_fd=descriptors[-1],
-                follow_symlinks=False,
-            )
+            try:
+                metadata = os.stat(
+                    name,
+                    dir_fd=descriptors[-1],
+                    follow_symlinks=False,
+                )
+            except (FileNotFoundError, NotADirectoryError):
+                continue
             if stat.S_ISDIR(metadata.st_mode):
                 add(name)
             elif stat.S_ISREG(metadata.st_mode) and name.endswith(suffix):

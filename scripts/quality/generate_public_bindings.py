@@ -966,10 +966,12 @@ def _write_atomic(path: Path, content: bytes) -> None:
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as handle:
-            os.fchmod(handle.fileno(), GENERATED_FILE_MODE)
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
+        # chmod(path) is available on all supported platforms; apply it to the
+        # same-directory temporary inode before the atomic replacement.
+        os.chmod(temporary, GENERATED_FILE_MODE)
         os.replace(temporary, path)
     except BaseException:
         try:

@@ -21,7 +21,7 @@ from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
 from breadboard.product.runtime import session_store
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.events import Session
+from breadboard.product.runtime.events import KernelEvent, Session
 
 
 @pytest.fixture
@@ -920,6 +920,87 @@ def test_durable_mutations_are_serialized_and_contiguous(tmp_path: Path) -> None
     assert len(input_hashes) == 2
 
 
+@pytest.mark.parametrize("race_error", [FileNotFoundError, NotADirectoryError])
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory-entry race required")
+def test_session_names_skips_disappearing_entry_races(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    race_error: type[OSError],
+) -> None:
+    _new_durable_session(tmp_path, "stable")
+    disappearing = session_store.session_directory(tmp_path) / "disappearing"
+    disappearing.mkdir()
+    original_stat = session_store.os.stat
+
+    def race_stat(path, *args, **kwargs):
+        if path == "disappearing":
+            raise race_error(2, "entry disappeared")
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(session_store.os, "stat", race_stat)
+    assert session_store.session_names(tmp_path) == ["stable"]
+
+
+def test_large_session_history_remains_mutable_after_intent_recovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    session_id = "large-history"
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64})
+    started = Session.start(lock, "large history", session_id=session_id)
+    events = list(started.events)
+    for sequence in range(2, 60_000):
+        events.append(
+            KernelEvent.create(
+                session_id,
+                sequence,
+                "assistant_message",
+                str(sequence),
+                {"metadata": {"has_content": False}},
+            )
+        )
+    large = Session.restore(events)
+    session_store.create_session(tmp_path, large)
+    event_path = session_store.session_event_path(tmp_path, session_id)
+    assert event_path.stat().st_size > 8 * 1024 * 1024
+
+    original_write = session_store.AnchoredStorage.write_at
+    failed = False
+
+    def fail_metadata(parent: int, name: str, content: bytes) -> None:
+        nonlocal failed
+        if name == "session.json" and not failed:
+            failed = True
+            raise OSError("injected metadata failure")
+        original_write(parent, name, content)
+
+    monkeypatch.setattr(
+        session_store.AnchoredStorage,
+        "write_at",
+        staticmethod(fail_metadata),
+    )
+    with pytest.raises(OSError, match="injected metadata failure"):
+        session_store.mutate_session(
+            tmp_path,
+            session_id,
+            lambda session: session.input("recover large history"),
+        )
+    monkeypatch.setattr(
+        session_store.AnchoredStorage,
+        "write_at",
+        staticmethod(original_write),
+    )
+
+    recovered, _ = session_store.load_session(tmp_path, session_id)
+    assert recovered.read_model.event_count == len(events) + 1
+    session_store.mutate_session(
+        tmp_path,
+        session_id,
+        lambda session: session.input("control mutation"),
+    )
+    controlled, _ = session_store.load_session(tmp_path, session_id)
+    assert controlled.read_model.event_count == len(events) + 2
+
+
 def test_pending_session_intent_repairs_split_projection(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1076,14 +1157,26 @@ def test_session_intent_rejects_foreign_projection_identity(tmp_path: Path) -> N
     before = event_path.read_bytes(), metadata_path.read_bytes()
     lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "c" * 64})
     foreign = Session.start(lock, "foreign", session_id="foreign-session")
+    event_payload = session_store._event_bytes(foreign)
+    metadata_payload = session_store._metadata_bytes(foreign)
+    event_stage_name, metadata_stage_name = session_store._stage_names(
+        "session_events.jsonl",
+        "session.json",
+    )
+    (event_path.parent / event_stage_name).write_bytes(event_payload)
+    (event_path.parent / metadata_stage_name).write_bytes(metadata_payload)
     intent = event_path.parent / ".session.intent.json"
     intent.write_bytes(
         session_store._intent_bytes(
             session_id,
             "session_events.jsonl",
             "session.json",
-            session_store._event_bytes(foreign),
-            session_store._metadata_bytes(foreign),
+            event_stage_name,
+            metadata_stage_name,
+            len(event_payload),
+            len(metadata_payload),
+            session_store._digest(event_payload),
+            session_store._digest(metadata_payload),
         )
     )
 

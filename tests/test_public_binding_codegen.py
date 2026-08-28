@@ -276,6 +276,16 @@ def test_generation_writes_stable_readable_modes(
     assert generator.main(["--check"]) == 0
 
 
+def test_generation_uses_portable_path_permission_operation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _staged_catalog(tmp_path)
+    monkeypatch.setattr(generator, "ROOT", root)
+    monkeypatch.delattr(generator.os, "fchmod", raising=False)
+
+    assert generator.main([]) == 0
+
+
 def test_codegen_builds_exact_operation_docs_and_index(tmp_path: Path) -> None:
     root, _ = _staged_catalog(tmp_path)
     outputs = generator.build_outputs(root)
