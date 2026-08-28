@@ -333,9 +333,7 @@ class SQLiteCredentialStore:
         return connection
 
     @contextmanager
-    def _transaction(
-        self, *, immediate: bool = False
-    ) -> Iterator[sqlite3.Connection]:
+    def _transaction(self, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
         nested = getattr(self._transaction_local, "connection", None)
         if nested is not None:
             if immediate and not nested.in_transaction:
@@ -593,8 +591,7 @@ class SQLiteCredentialStore:
         """Read the durable audit stream in occurrence order."""
         with self._transaction() as connection:
             query = (
-                "SELECT payload_json FROM audit_events "
-                "ORDER BY occurred_at_ms, rowid"
+                "SELECT payload_json FROM audit_events ORDER BY occurred_at_ms, rowid"
             )
             params: tuple[Any, ...] = ()
             if limit is not None:
@@ -622,6 +619,53 @@ class SQLiteCredentialStore:
             "expires_at_ms": row["expires_at_ms"],
             "metadata": SQLiteCredentialStore._decode_json(row["metadata_json"]),
         }
+
+    @staticmethod
+    def _validate_credential_identity(
+        view: Mapping[str, Any],
+        material: Mapping[str, Any],
+    ) -> None:
+        secret_values = redaction.credential_secret_values(material)
+        with redaction.secret_value_scope(*secret_values, allow_short=True):
+            if any(
+                redaction.contains_registered_secret_identity(
+                    str(view[field]) if view.get(field) is not None else ""
+                )
+                for field in (
+                    "provider_id",
+                    "auth_scheme_id",
+                    "label",
+                    "alias",
+                    "account_id",
+                    "credential_id",
+                    "credential_kind",
+                    "source",
+                    "secret_version",
+                    "created_at_ms",
+                    "updated_at_ms",
+                    "expires_at_ms",
+                )
+            ):
+                raise ValueError(
+                    "credential identity fields cannot contain credential material"
+                )
+
+    @staticmethod
+    def _safe_metadata(
+        metadata: Mapping[str, Any] | None,
+        material: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        value = dict(metadata) if isinstance(metadata, Mapping) else {}
+        secret_values = redaction.credential_secret_values(material)
+        with redaction.secret_value_scope(*secret_values, allow_short=True):
+            if redaction.contains_registered_secret_mapping_key(value):
+                raise ValueError("metadata keys cannot contain credential material")
+            scrubbed, _problems = redaction.scrub_structure(
+                value,
+                path="$.metadata",
+                identity_mapping_keys=True,
+            )
+        return scrubbed if isinstance(scrubbed, Mapping) else {}
 
     @staticmethod
     def _refresh_state_view(
@@ -681,9 +725,9 @@ class SQLiteCredentialStore:
             raise ValueError("provider_id and label are required")
         if not isinstance(material, Mapping) or not material.get("api_key"):
             raise ValueError("api_key material is required")
-        timestamp = now_ms()
-        encoded_metadata = self._json(metadata)
         material_copy = dict(material)
+        timestamp = now_ms()
+        encoded_metadata = self._json(self._safe_metadata(metadata, material_copy))
         with self._transaction() as connection:
             row = None
             if account_id:
@@ -702,6 +746,11 @@ class SQLiteCredentialStore:
                        ORDER BY updated_at_ms DESC LIMIT 1""",
                     (provider_id, label, alias),
                 ).fetchone()
+            if row is not None:
+                self._validate_credential_identity(
+                    self._account_view(row),
+                    material_copy,
+                )
             if row is None:
                 account_id = _id("bbacct")
                 credential_id = _id("bbcred")
@@ -760,11 +809,13 @@ class SQLiteCredentialStore:
                    VALUES (?, ?, ?, ?, ?)""",
                 (secret_id, account_id, self._json(material_copy), version, timestamp),
             )
-            return self._account_view(
+            view = self._account_view(
                 connection.execute(
                     "SELECT * FROM accounts WHERE account_id = ?", (account_id,)
                 ).fetchone()
             )
+            self._validate_credential_identity(view, material_copy)
+            return view
 
     def put_oauth(
         self,
@@ -792,6 +843,8 @@ class SQLiteCredentialStore:
             raise ValueError(
                 "provider_id, label, access_token, and refresh_token are required"
             )
+        material_copy = dict(material)
+        encoded_metadata = self._json(self._safe_metadata(metadata, material_copy))
         timestamp = now_ms()
         with self._transaction() as connection:
             row = None
@@ -809,6 +862,11 @@ class SQLiteCredentialStore:
                        AND status != 'revoked' ORDER BY updated_at_ms DESC LIMIT 1""",
                     (provider_id, label, alias),
                 ).fetchone()
+            if row is not None:
+                self._validate_credential_identity(
+                    self._account_view(row),
+                    material_copy,
+                )
             if row is None:
                 account_id = _id("bbacct")
                 credential_id = _id("bbcred")
@@ -831,7 +889,7 @@ class SQLiteCredentialStore:
                         timestamp,
                         timestamp,
                         expires_at_ms,
-                        self._json(metadata),
+                        encoded_metadata,
                     ),
                 )
             else:
@@ -848,7 +906,7 @@ class SQLiteCredentialStore:
                         version,
                         timestamp,
                         expires_at_ms,
-                        self._json(metadata),
+                        encoded_metadata,
                         account_id,
                     ),
                 )
@@ -863,13 +921,21 @@ class SQLiteCredentialStore:
             connection.execute(
                 """INSERT INTO secrets (secret_id, account_id, material, secret_version, created_at_ms)
                    VALUES (?, ?, ?, ?, ?)""",
-                (_id("bbsecret"), account_id, self._json(material), version, timestamp),
+                (
+                    _id("bbsecret"),
+                    account_id,
+                    self._json(material_copy),
+                    version,
+                    timestamp,
+                ),
             )
-            return self._account_view(
+            view = self._account_view(
                 connection.execute(
                     "SELECT * FROM accounts WHERE account_id = ?", (account_id,)
                 ).fetchone()
             )
+            self._validate_credential_identity(view, material_copy)
+            return view
 
     def list_accounts(self, provider_id: str | None = None) -> list[dict[str, Any]]:
         with self._transaction() as connection:

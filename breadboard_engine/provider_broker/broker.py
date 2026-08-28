@@ -99,6 +99,33 @@ class BrokerProblem:
 class ProviderBroker:
     """Single-process broker with an out-of-process-compatible data boundary."""
 
+    _CREDENTIAL_IDENTITY_FIELDS = (
+        "provider_id",
+        "auth_scheme_id",
+        "label",
+        "alias",
+        "account_id",
+        "credential_id",
+        "credential_kind",
+        "status",
+        "source",
+        "secret_version",
+        "created_at_ms",
+        "updated_at_ms",
+        "expires_at_ms",
+    )
+    _LOGIN_IDENTITY_FIELDS = (
+        "login_session_id",
+        "provider_id",
+        "status",
+        "created_at_ms",
+        "updated_at_ms",
+        "expires_at_ms",
+        "flow_id",
+        "flow_kind",
+        "redirect_uri",
+    )
+
     def __init__(
         self,
         store: SQLiteCredentialStore | None = None,
@@ -133,15 +160,19 @@ class ProviderBroker:
 
     @staticmethod
     def _validated_runtime_session_id(session_id: Any) -> str:
-        if not isinstance(session_id, str) or not session_id.strip():
+        if not isinstance(session_id, str):
             raise ValueError("session_id is required")
-        return session_id
+        normalized = session_id.strip()
+        if not normalized:
+            raise ValueError("session_id is required")
+        return normalized
 
     @staticmethod
     def _runtime_session_key(session_id: Any) -> str | None:
-        if not isinstance(session_id, str) or not session_id.strip():
+        if not isinstance(session_id, str):
             return None
-        return session_id
+        normalized = session_id.strip()
+        return normalized or None
 
     @staticmethod
     def _value(input_data: Any, *names: str, default: Any = None) -> Any:
@@ -163,6 +194,46 @@ class ProviderBroker:
             if value is not None and (not isinstance(value, str) or value.strip()):
                 return value
         return default
+
+    @classmethod
+    def _credential_identity_values(
+        cls,
+        view: Mapping[str, Any],
+    ) -> tuple[str, ...]:
+        return tuple(
+            str(view[name]) if view.get(name) is not None else ""
+            for name in cls._CREDENTIAL_IDENTITY_FIELDS
+        )
+
+    @classmethod
+    def _credential_identity_is_safe(cls, view: Mapping[str, Any]) -> bool:
+        return not any(
+            redaction.contains_registered_secret_identity(value)
+            for value in cls._credential_identity_values(view)
+        )
+
+    @classmethod
+    def _scrub_public_identity_view(
+        cls,
+        view: Mapping[str, Any],
+        *,
+        path: str,
+        identity_fields: tuple[str, ...],
+    ) -> dict[str, Any]:
+        scrubbed, _ = redaction.scrub_structure(view, path=path)
+        if not isinstance(scrubbed, Mapping):
+            raise ValueError("credential store returned an invalid view")
+        result = dict(scrubbed)
+        for name in identity_fields:
+            if name not in view:
+                continue
+            value = view[name]
+            if redaction.contains_registered_secret_identity(str(value)):
+                raise ValueError(
+                    "public identity fields cannot contain credential material"
+                )
+            result[name] = value
+        return result
 
     @staticmethod
     def _clear_mutable_material(value: Any) -> None:
@@ -456,8 +527,11 @@ class ProviderBroker:
         )
         return OAuthFlowAdapter(spec, transport=self._oauth_transport)
 
-    @staticmethod
-    def _public_login(login: Mapping[str, Any]) -> dict[str, Any]:
+    @classmethod
+    def _public_login(
+        cls,
+        login: Mapping[str, Any],
+    ) -> dict[str, Any]:
         allowed = {
             "login_session_id",
             "provider_id",
@@ -474,8 +548,11 @@ class ProviderBroker:
             for key in ("flow_id", "flow_kind", "authorization_url", "redirect_uri"):
                 if key in flow:
                     result[key] = flow[key]
-        scrubbed, _problems = redaction.scrub_structure(result, path="$.login")
-        return scrubbed if isinstance(scrubbed, dict) else {}
+        return cls._scrub_public_identity_view(
+            result,
+            path="$.login",
+            identity_fields=cls._LOGIN_IDENTITY_FIELDS,
+        )
 
     def beginLogin(self, input: Any = None, **kwargs: Any) -> dict[str, Any]:
         payload = input if input is not None else kwargs
@@ -635,14 +712,16 @@ class ProviderBroker:
                         ):
                             current = self.store.get_login(str(login_id)) or login
                             return self._public_login(current)
-                        provider_id = str(login["provider_id"])
+                        provider_id = str(login["provider_id"]).strip().lower()
                         entry = get_provider_catalog_entry(provider_id)
                         store_provider = (
                             entry.oauth_flows[0].store_provider_id
                             if entry and entry.oauth_flows
                             else None
                         )
-                        store_provider = store_provider or provider_id
+                        store_provider = (
+                            str(store_provider or provider_id).strip().lower()
+                        )
                         label = str(
                             self._value(
                                 payload,
@@ -651,28 +730,10 @@ class ProviderBroker:
                                 "label",
                                 default=material.get("email") or store_provider,
                             )
-                        )
-                        alias = str(self._value(payload, "alias", default=""))
+                            or store_provider
+                        ).strip()[:128]
+                        alias = str(self._value(payload, "alias", default="")).strip()
                         expires_at_ms = int(material["expires_at_ms"])
-                        identity_values = (
-                            provider_id,
-                            store_provider,
-                            "oauth2",
-                            label,
-                            alias,
-                            str(expires_at_ms),
-                        )
-                        if any(
-                            redaction.contains_registered_secret_text(value)
-                            for value in identity_values
-                        ):
-                            raise OAuthFlowError(
-                                "oauth_invalid_response",
-                                (
-                                    "OAuth credential identity fields cannot "
-                                    "contain credential material"
-                                ),
-                            )
                         metadata = {
                             key: material[key]
                             for key in (
@@ -692,38 +753,49 @@ class ProviderBroker:
                             metadata,
                             path="$.metadata",
                         )
-                        view = self.store.put_oauth(
-                            provider_id=store_provider,
-                            auth_scheme_id="oauth2",
-                            label=label,
-                            alias=alias,
-                            expires_at_ms=expires_at_ms,
-                            material=material,
-                            metadata=scrubbed_metadata,
-                            source="login",
-                        )
+                        try:
+                            view = self.store.put_oauth(
+                                provider_id=store_provider,
+                                auth_scheme_id="oauth2",
+                                label=label,
+                                alias=alias,
+                                expires_at_ms=expires_at_ms,
+                                material=material,
+                                metadata=scrubbed_metadata,
+                                source="login",
+                            )
+                        except ValueError as exc:
+                            raise OAuthFlowError(
+                                "oauth_invalid_response",
+                                "OAuth credential identity fields cannot contain credential material",
+                            ) from exc
+                        if not isinstance(
+                            view, Mapping
+                        ) or not self._credential_identity_is_safe(view):
+                            raise OAuthFlowError(
+                                "oauth_invalid_response",
+                                (
+                                    "OAuth credential identity fields cannot "
+                                    "contain credential material"
+                                ),
+                            )
                         self._emit(
                             "provider_login_completed",
                             provider_id=provider_id,
                             account_id=view["account_id"],
                             credential_id=view["credential_id"],
                         )
-                    result, _ = redaction.scrub_structure(
-                        {
-                            **self._public_login(
-                                self.store.get_login(str(login_id)) or login
-                            ),
-                            "status": "completed",
-                            "credential": view,
-                        },
-                        path="$.login",
-                    )
-                    if not isinstance(result, Mapping):
-                        raise OAuthFlowError(
-                            "oauth_invalid_response",
-                            "OAuth credential store returned an invalid view",
-                        )
-                    return dict(result)
+                    return {
+                        **self._public_login(
+                            self.store.get_login(str(login_id)) or login
+                        ),
+                        "status": "completed",
+                        "credential": self._scrub_public_identity_view(
+                            view,
+                            path="$.login.credential",
+                            identity_fields=self._CREDENTIAL_IDENTITY_FIELDS,
+                        ),
+                    }
             finally:
                 self._clear_mutable_material(material)
         except OAuthFlowError as exc:
@@ -792,15 +864,26 @@ class ProviderBroker:
         base_url = self._value(payload, "baseUrl", "base_url")
         routing = self._value(payload, "routing", default={})
         metadata = self._value(payload, "metadata", default={})
-        auth_scheme = str(
-            self._value(payload, "authSchemeId", "auth_scheme_id", default="api_key")
+        auth_scheme = (
+            str(
+                self._value(
+                    payload,
+                    "authSchemeId",
+                    "auth_scheme_id",
+                    default="api_key",
+                )
+            )
+            .strip()
+            .lower()
+            or "api_key"
         )
         label = str(
             self._value(
                 payload, "accountLabel", "account_label", "label", default=provider_id
             )
-        )
-        alias = str(self._value(payload, "alias", default=""))
+            or provider_id
+        ).strip()[:128]
+        alias = str(self._value(payload, "alias", default="")).strip()
         expires_at_ms = self._value(payload, "expiresAtMs", "expires_at_ms")
         ttl_seconds = self._value(payload, "ttlSeconds", "ttl_seconds")
         if expires_at_ms is None and ttl_seconds is not None:
@@ -812,7 +895,8 @@ class ProviderBroker:
                 )
             except (TypeError, ValueError):
                 expires_at_ms = None
-        account_id = self._value(payload, "accountId", "account_id")
+        account_ref = self._value(payload, "accountId", "account_id")
+        account_id = str(account_ref).strip() if account_ref is not None else None
         secret_value = api_key.strip()
         if len(secret_value) < redaction.MIN_REGISTERED_SECRET_LENGTH:
             raise ValueError(
@@ -860,13 +944,24 @@ class ProviderBroker:
                         auth_scheme_id=auth_scheme,
                         label=label,
                         alias=alias,
-                        account_id=str(account_id) if account_id else None,
+                        account_id=account_id,
                         expires_at_ms=(
                             int(expires_at_ms) if expires_at_ms is not None else None
                         ),
                         metadata=scrubbed_metadata,
                         material=material,
                         source="login",
+                    )
+                    if not isinstance(view, Mapping):
+                        raise RuntimeError("credential store returned an invalid view")
+                    if not self._credential_identity_is_safe(view):
+                        raise ValueError(
+                            "credential identity fields cannot contain credential material"
+                        )
+                    view = self._scrub_public_identity_view(
+                        view,
+                        path="$.credential",
+                        identity_fields=self._CREDENTIAL_IDENTITY_FIELDS,
                     )
                 self._emit(
                     "credential_stored",
@@ -875,8 +970,6 @@ class ProviderBroker:
                     credential_id=view["credential_id"],
                     secret_version=view["secret_version"],
                 )
-            if not isinstance(view, Mapping):
-                raise RuntimeError("credential store returned an invalid view")
             return dict(view)
         finally:
             self._clear_mutable_material(material)
@@ -1458,8 +1551,8 @@ class ProviderBroker:
     ) -> dict[str, str] | None:
         """Return the selected credential's provenance without secret material."""
         provider = str(provider_id).strip().lower()
-        session = str(session_id).strip()
         runtime_session = self._runtime_session_key(session_id)
+        session = runtime_session or ""
         account_id, credential_id, label, alias = self._selector_values(
             account_selector
         )
@@ -1553,8 +1646,8 @@ class ProviderBroker:
         minimum_validity_ms: int = 0,
     ) -> dict[str, Any] | None:
         provider = str(provider_id).strip().lower()
-        session = str(session_id).strip()
         runtime_session = self._runtime_session_key(session_id)
+        session = runtime_session or ""
         account_id, credential_id, label, alias = self._selector_values(
             account_selector
         )

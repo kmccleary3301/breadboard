@@ -203,10 +203,17 @@ def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
     assert broker.store.release_lease(lease_id) is False
 
 
-@pytest.mark.parametrize("header_value", ("a", "ant"))
+@pytest.mark.parametrize(
+    ("header_value", "expected_error"),
+    (
+        ("a", "provider call failed a"),
+        ("ant", f"provider call failed {redaction.REDACTED}"),
+    ),
+)
 def test_put_api_key_accepts_short_custom_header_value(
     tmp_path,
     header_value,
+    expected_error,
 ):
     broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
 
@@ -227,8 +234,94 @@ def test_put_api_key_accepts_short_custom_header_value(
         assert material["headers"] == {"X-Custom": header_value}
         scrubbed, _ = redaction.scrub_structure(material["headers"])
         assert scrubbed == {"X-Custom": redaction.REDACTED}
-        error = redaction.scrub_text(f"provider call failed {header_value}")
-        assert header_value not in error
+        assert (
+            redaction.scrub_text(f"provider call failed {header_value}")
+            == expected_error
+        )
+
+
+def test_routing_secret_property_names_do_not_collide_with_identity(tmp_path):
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    view = broker.putApiKey(
+        {
+            "provider_id": "openai",
+            "account_label": "routing",
+            "api_key": "routing-primary-secret",
+            "routing": {"api_key": "routing-value-secret"},
+        }
+    )
+    assert view["label"] == "routing"
+    assert "api_key" not in redaction.credential_secret_values(
+        {"routing": {"api_key": "routing-value-secret"}}
+    )
+    with broker.execution_material("openai") as material:
+        assert material["routing"]["api_key"] == "routing-value-secret"
+
+
+def test_identity_is_normalized_and_rotation_rejects_retained_secret_fields(tmp_path):
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    view = broker.putApiKey(
+        {
+            "provider_id": " OpenAI ",
+            "auth_scheme_id": " Custom-Scheme ",
+            "account_label": "  Work  ",
+            "alias": "  Team  ",
+            "api_key": "normalized-primary-secret",
+        }
+    )
+    assert view["provider_id"] == "openai"
+    assert view["auth_scheme_id"] == "custom-scheme"
+    assert view["label"] == "Work"
+    assert view["alias"] == "Team"
+
+    original = broker.putApiKey(
+        {
+            "provider_id": "openai",
+            "account_label": "rotation-label",
+            "alias": "rotation-alias",
+            "auth_scheme_id": "rotation-scheme",
+            "api_key": "rotation-old-secret",
+        }
+    )
+    for secret in (
+        "rotation-label",
+        "rotation-alias",
+        "rotation-scheme",
+        "openai",
+    ):
+        with pytest.raises(
+            ValueError,
+            match="credential identity fields cannot contain credential material",
+        ):
+            broker.putApiKey(
+                {
+                    "provider_id": "openai",
+                    "account_id": original["account_id"],
+                    "api_key": secret,
+                }
+            )
+    listed = json.dumps(broker.listCredentials())
+    assert "rotation-old-secret" not in listed
+    assert all(value in listed for value in ("rotation-label", "rotation-alias"))
+
+
+def test_spaced_runtime_session_uses_one_canonical_override_key(tmp_path):
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    broker.set_runtime_api_key(
+        "openai",
+        "runtime-spaced-session-secret",
+        session_id="  spaced-session  ",
+    )
+    broker.set_config_api_key("openai", "config-spaced-session-secret")
+    assert broker.get_credential_origin("openai", session_id="spaced-session") == {
+        "kind": "runtime"
+    }
+    with broker.execution_material("openai", session_id=" spaced-session ") as material:
+        assert material["api_key"] == "runtime-spaced-session-secret"
+    broker.remove_runtime_api_key("openai", session_id=" spaced-session ")
+    assert broker.get_credential_origin("openai", session_id="spaced-session") == {
+        "kind": "config"
+    }
 
 
 def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
@@ -261,17 +354,13 @@ def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
         assert {
             "anthropic-restart-secret",
             "custom-header-secret",
-            "X-Authorization",
             "Bearer prefixed-header-secret",
             "prefixed-header-secret",
-            "Key",
             "abc",
             "url-user",
             "url-password",
             "query-secret",
-            "refresh_token",
             "routing-secret",
-            "access_token",
             "48273195",
         } <= set(redaction.iter_registered_secret_values())
 
@@ -1494,6 +1583,35 @@ def test_logout_is_reversible_but_revoke_tombstone_cannot_be_reactivated(
     assert replacement["account_id"] != original["account_id"]
     views = broker.listCredentials("openai")
     assert {item["status"] for item in views} == {"active", "revoked"}
+
+
+def test_direct_oauth_store_scrubs_metadata_and_rejects_secret_identity_keys(
+    tmp_path,
+):
+    store = SQLiteCredentialStore(tmp_path / "oauth-metadata.sqlite3")
+    material = {
+        "access_token": "direct-oauth-access-secret",
+        "refresh_token": "direct-oauth-refresh-secret",
+    }
+
+    view = store.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="direct",
+        material=material,
+        metadata={"email": material["access_token"]},
+    )
+    assert view["metadata"] == {"email": redaction.REDACTED}
+
+    with pytest.raises(ValueError, match="metadata keys cannot contain"):
+        store.put_oauth(
+            provider_id="anthropic",
+            auth_scheme_id="oauth2",
+            label="rejected",
+            material=material,
+            metadata={material["refresh_token"]: "identity-key"},
+        )
+    assert [item["label"] for item in store.list_accounts()] == ["direct"]
 
 
 def test_api_key_and_oauth_rotation_delete_superseded_secret_rows(tmp_path):

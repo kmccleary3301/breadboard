@@ -80,9 +80,12 @@ def scrub_auth_url(value: str) -> str:
         return REDACTED
 
 
-def safe_exception_message(error: BaseException, *, operation: str = "provider operation") -> str:
+def safe_exception_message(
+    error: BaseException, *, operation: str = "provider operation"
+) -> str:
     """Return actionable exception metadata without copying provider text."""
     return f"{operation} failed ({error.__class__.__name__})"
+
 
 def scrub_exception_in_place(error: BaseException) -> BaseException:
     """Scrub exception fields before an operation releases its secret scope."""
@@ -108,6 +111,7 @@ def scrub_exception_in_place(error: BaseException) -> BaseException:
     except Exception:
         pass
     return error
+
 
 # Canonical lowered key names. Comparison normalizes "-" to "_", so each name
 # is written once in underscore form. Reference fields (e.g. ``secret_ref``,
@@ -216,9 +220,7 @@ _registered_values: ContextVar[tuple[str, ...]] = ContextVar(
 )
 
 
-def _normalized_secret_value(
-    value: Any, *, allow_short: bool = False
-) -> str | None:
+def _normalized_secret_value(value: Any, *, allow_short: bool = False) -> str | None:
     if not isinstance(value, str):
         return None
     text = value.strip()
@@ -235,17 +237,13 @@ class RedactionProblem:
     detail: str  # human-oriented, never contains the secret itself
 
 
-
-
 @contextmanager
 def secret_value_scope(*values: Any, allow_short: bool = False):
     """Keep exact-value redaction active only in the current operation context."""
     registered = tuple(
         text
         for value in values
-        if (
-            text := _normalized_secret_value(value, allow_short=allow_short)
-        )
+        if (text := _normalized_secret_value(value, allow_short=allow_short))
         is not None
     )
     token = _registered_values.set((*_registered_values.get(), *registered))
@@ -266,6 +264,8 @@ def iter_registered_secret_values() -> tuple[str, ...]:
 
 
 def _registered_secret_occurs(text: str, secret: str) -> bool:
+    if len(secret) < _MIN_REGISTERED_SECRET_SUBSTRING_LENGTH:
+        return text == secret
     return secret in text
 
 
@@ -344,11 +344,7 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
             candidates = (integer, f"{integer}.0")
         elif isinstance(item, float):
             number = str(item)
-            candidates = (
-                (number, str(int(item)))
-                if item.is_integer()
-                else (number,)
-            )
+            candidates = (number, str(int(item))) if item.is_integer() else (number,)
         else:
             return
         for text in candidates:
@@ -362,8 +358,7 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
             if identity in visited:
                 return
             visited.add(identity)
-            for key, child in item.items():
-                add(key)
+            for child in item.values():
                 add_all(child)
         elif isinstance(item, (list, tuple)):
             identity = id(item)
@@ -386,15 +381,6 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
 
     def add_header(name: str, item: Any) -> None:
         normalized = name.strip().lower().replace("-", "_")
-        words = normalized.split("_")
-        compact = normalized.replace("_", "")
-        credential_named = (
-            is_secret_key(name)
-            or any(word in _CREDENTIAL_HEADER_WORDS for word in words)
-            or compact.endswith(_CREDENTIAL_HEADER_SUFFIXES)
-        )
-        if credential_named:
-            add(name)
         add_all(item)
         if not isinstance(item, str):
             return
@@ -417,20 +403,16 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
                         add(username)
                         add(password)
         if normalized == "set_cookie" or normalized.endswith("_set_cookie"):
-            cookie_name, cookie_separator, cookie_value = text.split(";", 1)[
+            _cookie_name, cookie_separator, cookie_value = text.split(";", 1)[
                 0
             ].partition("=")
             if cookie_separator:
-                if is_secret_key(cookie_name):
-                    add(cookie_name)
                 add(unquoted_component(cookie_value))
                 add(decoded_component(cookie_value))
         elif normalized == "cookie" or normalized.endswith("_cookie"):
             for part in text.split(";"):
-                cookie_name, cookie_separator, cookie_value = part.partition("=")
+                _cookie_name, cookie_separator, cookie_value = part.partition("=")
                 if cookie_separator:
-                    if is_secret_key(cookie_name):
-                        add(cookie_name)
                     add(unquoted_component(cookie_value))
                     add(decoded_component(cookie_value))
 
@@ -447,15 +429,13 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
                 add(urllib.parse.unquote(parsed.password))
             for query_part in parsed.query.split("&"):
                 raw_key, separator, raw_value = query_part.partition("=")
-                if separator and is_secret_key(
-                    urllib.parse.unquote_plus(raw_key)
-                ):
+                if separator and is_secret_key(urllib.parse.unquote_plus(raw_key)):
                     add(raw_value)
                     add(urllib.parse.unquote_plus(raw_value))
         except (TypeError, ValueError):
             return
 
-    def visit(item: Any, *, include_sensitive_names: bool) -> None:
+    def visit(item: Any) -> None:
         if isinstance(item, Mapping):
             identity = id(item)
             if identity in visited:
@@ -469,20 +449,18 @@ def credential_secret_values(value: Any) -> tuple[str, ...]:
                 elif normalized == "base_url":
                     add_url(child)
                 elif is_secret_key(key):
-                    if include_sensitive_names:
-                        add(str(key))
                     add_all(child)
                 else:
-                    visit(child, include_sensitive_names=True)
+                    visit(child)
         elif isinstance(item, (list, tuple)):
             identity = id(item)
             if identity in visited:
                 return
             visited.add(identity)
             for child in item:
-                visit(child, include_sensitive_names=include_sensitive_names)
+                visit(child)
 
-    visit(value, include_sensitive_names=False)
+    visit(value)
     return tuple(values)
 
 
@@ -613,7 +591,11 @@ def _scrub_node(
                 cleaned = scrub_auth_url(item)
                 out[output_key] = cleaned
                 if cleaned != item:
-                    problems.append(RedactionProblem("auth_url", child, "auth URL query material redacted"))
+                    problems.append(
+                        RedactionProblem(
+                            "auth_url", child, "auth URL query material redacted"
+                        )
+                    )
             elif is_secret_key(key):
                 out[output_key] = REDACTED
                 problems.append(
@@ -642,7 +624,9 @@ def _scrub_node(
         cleaned = scrub_text(value)
         if cleaned != value:
             problems.append(
-                RedactionProblem("secret_value", path, "secret value scrubbed from text")
+                RedactionProblem(
+                    "secret_value", path, "secret value scrubbed from text"
+                )
             )
         return cleaned
     if isinstance(value, (bool, int, float)) and contains_registered_secret_text(
