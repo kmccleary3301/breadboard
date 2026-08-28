@@ -691,7 +691,11 @@ def test_refresh_completion_scrubs_new_material_from_metadata(tmp_path) -> None:
             "refresh_token": "refresh-token-old",
         },
         expires_at_ms=now + 10_000,
-        metadata={"stable": "preserved"},
+        metadata={
+            "access_alias": "refresh-access-old",
+            "refresh_alias": "refresh-token-old",
+            "stable": "preserved",
+        },
     )
     account_id = credential["account_id"]
     assert (
@@ -728,6 +732,8 @@ def test_refresh_completion_scrubs_new_material_from_metadata(tmp_path) -> None:
     }
     serialized = json.dumps(store.list_accounts())
     assert material["access_token"] not in serialized
+    assert "refresh-access-old" not in serialized
+    assert "refresh-token-old" not in serialized
     assert material["refresh_token"] not in serialized
 
 
