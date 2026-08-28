@@ -2,7 +2,7 @@
 // generator: scripts/quality/generate_public_bindings.py
 // generator-version: 3
 // catalog-id: bb.public_operation_catalog.v2
-// catalog-sha256: sha256:4deb87f3b82f7ccdf922fb609a9784840fb01ee591793e95f2af42acd2097674
+// catalog-sha256: sha256:60c05131d160ca2a746df72715a339798793c8ae51c5749cadcb4f97f60bdc9c
 
 export type HttpMethod = "GET" | "POST" | "PUT";
 export type PublicOperationId = "artifact.get" | "artifact.list" | "artifact.verify" | "harness.create" | "harness.explain" | "harness.get" | "harness.list" | "harness.lock" | "harness.update" | "harness.validate" | "harness_lock.get" | "integration.get" | "integration.list" | "integration.probe" | "session.approve" | "session.artifacts" | "session.cancel" | "session.events" | "session.get" | "session.list" | "session.resume" | "session.send_input" | "session.start" | "system.describe" | "system.health" | "system.schemas";
@@ -342,7 +342,7 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     pythonClient: "BreadBoardClient",
     pythonMethod: "get_session",
     typescriptClient: "BreadBoardClient",
-    typescriptMethod: "getSession",
+    typescriptMethod: "getSessionResult",
     actionId: "public.session.get",
     actionKind: "view",
     lifecycle: "sync",

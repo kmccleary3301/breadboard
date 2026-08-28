@@ -2,7 +2,7 @@
 # generator: scripts/quality/generate_public_bindings.py
 # generator-version: 3
 # catalog-id: bb.public_operation_catalog.v2
-# catalog-sha256: sha256:4deb87f3b82f7ccdf922fb609a9784840fb01ee591793e95f2af42acd2097674
+# catalog-sha256: sha256:60c05131d160ca2a746df72715a339798793c8ae51c5749cadcb4f97f60bdc9c
 
 from __future__ import annotations
 
@@ -346,7 +346,7 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         python_client="BreadBoardClient",
         python_method="get_session",
         typescript_client="BreadBoardClient",
-        typescript_method="getSession",
+        typescript_method="getSessionResult",
         action_id="public.session.get",
         action_kind="view",
         lifecycle="sync",

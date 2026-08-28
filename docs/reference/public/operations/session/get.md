@@ -2,7 +2,7 @@
 <!-- generator: scripts/quality/generate_public_bindings.py -->
 <!-- generator-version: 3 -->
 <!-- catalog-id: bb.public_operation_catalog.v2 -->
-<!-- catalog-sha256: sha256:4deb87f3b82f7ccdf922fb609a9784840fb01ee591793e95f2af42acd2097674 -->
+<!-- catalog-sha256: sha256:60c05131d160ca2a746df72715a339798793c8ae51c5749cadcb4f97f60bdc9c -->
 <!-- document-kind: operation-reference -->
 <!-- operation-id: session.get -->
 <!-- slug: operations/session/get -->
@@ -29,7 +29,7 @@ Candidate public operation reference for `session.get`.
 
 - OpenAPI: `GET /v1/sessions/{session_id}` (`session.get`)
 - Python: `BreadBoardClient.get_session`
-- TypeScript: `BreadBoardClient.getSession`
+- TypeScript: `BreadBoardClient.getSessionResult`
 - TUI: `public.session.get` (`view`)
 - CLI: `bbh session get`
 - Documentation: `product-docs owner` (`candidate`)
