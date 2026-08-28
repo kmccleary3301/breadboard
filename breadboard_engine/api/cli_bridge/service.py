@@ -970,18 +970,6 @@ class SessionService:
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
-        metadata = record.metadata if isinstance(record.metadata, dict) else {}
-        if bool(
-            metadata.get("non_interactive_cli_session")
-            or metadata.get("cli_session_kind") == "oneshot"
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "code": "one_shot_input_closed",
-                    "message": "one-shot sessions do not accept follow-up input",
-                },
-            )
         client_message_id = payload.client_message_id or uuid.uuid4().hex
         attachments = tuple(payload.attachments or ())
         body_digest = submission_body_digest(payload.content, attachments)
