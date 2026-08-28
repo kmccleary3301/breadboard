@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio, json, multiprocessing, os, pickle, queue, stat, tempfile, threading, pytest; from pathlib import Path; from breadboard.product.harness.lock import EffectiveHarnessLock; from breadboard.product.runtime import Session as ProductSession
 from breadboard_engine.api.cli_bridge.events import EventType; from breadboard_engine.permissions import load_permission_rules, upsert_permission_rule; from breadboard_engine.permissions import rules_store; from breadboard_engine.permissions.broker import PermissionBroker; from breadboard_engine.permissions.rules_store import RULES_REL_PATH, _locked_rules
-from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus; from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry, TurnRecord; from breadboard_engine.api.cli_bridge.session_runner import SessionRunner, _PauseAwareControlQueue, _canonical_permission_resolution
+from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus; from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry, TurnRecord; from breadboard_engine.api.cli_bridge.session_control import _PauseAwareControlQueue, _canonical_permission_resolution; from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.security import redaction
 from breadboard_engine.state.session_state import SessionState

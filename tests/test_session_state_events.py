@@ -17,14 +17,14 @@ from breadboard_engine.api.cli_bridge.registry import (
     SessionRecord, SessionRegistry, TurnRecord,
 )
 from breadboard_engine.api.cli_bridge.service import SessionService
-from breadboard_engine.api.cli_bridge.session_runner import (
+from breadboard_engine.api.cli_bridge.runtime_event_projector import (
     BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES,
     BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES,
     KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES,
     RuntimeProtocolError,
-    SessionRunner,
     _strip_completion_sentinels,
 )
+from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.provider.contracts import (
     strip_public_completion_sentinel_tree,
 )

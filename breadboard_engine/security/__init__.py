@@ -10,9 +10,9 @@ from .child_environment import (
     purge_provider_credentials,
     sanitized_process_environment,
 )
-from .process_isolation import (
-    ProcessIsolationUnavailable,
-    build_restricted_process_command,
+from .isolation_errors import ProcessIsolationUnavailable
+from .launch_policy import build_restricted_process_command
+from .credential_boundary import (
     protected_credential_paths,
     register_protected_credential_path,
     validate_workspace_credential_boundary,

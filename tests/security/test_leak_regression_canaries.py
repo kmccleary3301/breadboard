@@ -616,9 +616,11 @@ class TestChildEnvironmentBoundary:
         self,
         tmp_path: Path,
     ) -> None:
-        from breadboard_engine.security.process_isolation import (
-            ProcessIsolationUnavailable,
+        from breadboard_engine.security.credential_boundary import (
             validate_workspace_credential_boundary,
+        )
+        from breadboard_engine.security.isolation_errors import (
+            ProcessIsolationUnavailable,
         )
 
         protected = tmp_path / "protected"
@@ -770,17 +772,17 @@ class TestChildEnvironmentBoundary:
         tmp_path: Path,
         monkeypatch,
     ) -> None:
-        from breadboard_engine.security import process_isolation
+        from breadboard_engine.security import launch_policy, process_isolation
 
         workspace = tmp_path / "workspace"
         workspace.mkdir()
         monkeypatch.setattr(
-            process_isolation.platform,
+            launch_policy.platform,
             "system",
             lambda: "Darwin",
         )
         monkeypatch.setattr(
-            process_isolation,
+            launch_policy,
             "initial_provider_credential_keys",
             lambda: ("OPENAI_API_KEY",),
         )
@@ -801,11 +803,11 @@ class TestChildEnvironmentBoundary:
         tmp_path: Path,
         monkeypatch,
     ) -> None:
-        from breadboard_engine.security import process_isolation
+        from breadboard_engine.security import launch_policy, process_isolation
 
         workspace = tmp_path / "workspace"
         workspace.mkdir()
-        monkeypatch.setattr(process_isolation.platform, "system", lambda: "Linux")
+        monkeypatch.setattr(launch_policy.platform, "system", lambda: "Linux")
         secret = "late-provider-secret"
 
         _, child_environment = (
@@ -855,35 +857,35 @@ class TestChildEnvironmentBoundary:
         tmp_path: Path,
         monkeypatch,
     ) -> None:
-        from breadboard_engine.security import process_isolation
+        from breadboard_engine.security import linux_isolation
 
         monkeypatch.setattr(
-            process_isolation.ctypes,
+            linux_isolation.ctypes,
             "CDLL",
             lambda *_args, **_kwargs: object(),
         )
         monkeypatch.setattr(
-            process_isolation,
+            linux_isolation,
             "_syscall",
             lambda *_args, **_kwargs: 2,
         )
 
         with pytest.raises(
-            process_isolation.ProcessIsolationUnavailable,
+            linux_isolation.ProcessIsolationUnavailable,
             match="ABI v3",
         ):
-            process_isolation._apply_linux_landlock(tmp_path, ())
+            linux_isolation._apply_linux_landlock(tmp_path, ())
 
     def test_linux_rejects_protected_path_beneath_read_root(
         self,
         tmp_path: Path,
         monkeypatch,
     ) -> None:
-        from breadboard_engine.security import process_isolation
+        from breadboard_engine.security import launch_policy, process_isolation
 
         workspace = tmp_path / "workspace"
         workspace.mkdir()
-        monkeypatch.setattr(process_isolation.platform, "system", lambda: "Linux")
+        monkeypatch.setattr(launch_policy.platform, "system", lambda: "Linux")
 
         with pytest.raises(
             process_isolation.ProcessIsolationUnavailable,
@@ -902,11 +904,11 @@ class TestChildEnvironmentBoundary:
         tmp_path: Path,
         monkeypatch,
     ) -> None:
-        from breadboard_engine.security import process_isolation
+        from breadboard_engine.security import launch_policy, linux_isolation, process_isolation
 
         workspace = tmp_path / "workspace"
         workspace.mkdir()
-        monkeypatch.setattr(process_isolation.platform, "system", lambda: "Linux")
+        monkeypatch.setattr(launch_policy.platform, "system", lambda: "Linux")
         argv, child_environment = process_isolation.build_restricted_process_command(
             "true",
             workspace=workspace,
@@ -917,7 +919,7 @@ class TestChildEnvironmentBoundary:
         monkeypatch.setenv("HOME", child_environment["HOME"])
 
         workspace_arg_index = argv.index("--workspace")
-        parsed_workspace, command = process_isolation._parse_args(
+        parsed_workspace, command = linux_isolation._parse_args(
             argv[workspace_arg_index:]
         )
         assert parsed_workspace == workspace.resolve()
@@ -1218,7 +1220,7 @@ class TestE7CredentialBoundary:
     def test_linux_builder_uses_isolated_python_trusted_helper_and_fixed_roots(
         self, tmp_path: Path, monkeypatch
     ):
-        from breadboard_engine.security import process_isolation
+        from breadboard_engine.security import launch_policy, process_isolation
 
         workspace = tmp_path / "workspace"
         workspace.mkdir()
@@ -1232,7 +1234,7 @@ class TestE7CredentialBoundary:
             "HOME": str(attacker_home),
             "PYTHONPATH": str(tool_root),
         }
-        monkeypatch.setattr(process_isolation.platform, "system", lambda: "Linux")
+        monkeypatch.setattr(launch_policy.platform, "system", lambda: "Linux")
         argv, child_environment = process_isolation.build_restricted_process_command(
             ("/bin/echo", "e7"),
             workspace=workspace,
@@ -1246,7 +1248,7 @@ class TestE7CredentialBoundary:
 
         parent_environment["HOME"] = str(replacement_home)
         parent_environment["PYTHONPATH"] = str(replacement_pythonpath)
-        assert argv[0] == process_isolation.sys.executable
+        assert argv[0] == launch_policy.sys.executable
         assert Path(argv[0]).is_absolute()
         assert argv[1] == "-I"
         assert helper.is_absolute()
