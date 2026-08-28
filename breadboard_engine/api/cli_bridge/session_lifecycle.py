@@ -418,12 +418,18 @@ class SessionLifecycleOwner:
         await self.terminalize_admitted_turns(
             outcome="failed", reason=error_code, error_code=error_code
         )
-        host.transition_product_session("fail", error_code, "runtime failure")
-        product_state = getattr(
-            getattr(getattr(host.session, "product_session", None), "read_model", None),
-            "status",
-            "failed",
-        )
+        product_session = getattr(host.session, "product_session", None)
+        if product_session is None:
+            product_state = "failed"
+        else:
+            product_state = product_session.read_model.status
+            if product_state not in {"completed", "failed", "canceled"}:
+                host.transition_product_session(
+                    "fail",
+                    error_code,
+                    "runtime failure",
+                )
+                product_state = product_session.read_model.status
         await host.registry.update_status(
             host.session.session_id,
             {
