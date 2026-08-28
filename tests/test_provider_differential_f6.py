@@ -231,6 +231,9 @@ def test_wheel_provenance_rejects_checkout_identity_overrides(
             assert "breadboard" in arguments
             assert "contracts" in arguments
             assert "agent_configs" in arguments
+            assert (
+                ":(exclude)docs/conformance/e4_target_support/**" in arguments
+            )
             return ""
         values = {
             ("rev-parse", "--is-inside-work-tree"): "true",
