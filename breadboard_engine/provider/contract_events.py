@@ -420,4 +420,3 @@ def _validate_event_lifecycle(
         raise ProviderContractError(
             "done provider exchange contains unclosed content"
         )
-
