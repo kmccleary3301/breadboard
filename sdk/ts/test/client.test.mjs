@@ -14,7 +14,7 @@ test("candidate product methods preserve canonical result envelopes and routes",
     return new Response(JSON.stringify(result), { headers: { "content-type": "application/json" } })
   }
   const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
-  for (const name of ["describeSystem", "healthSystem", "schemasSystem", "createHarness", "listHarness", "getHarness", "updateHarness", "validateHarness", "explainHarness", "lockHarness", "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact", "getArtifact", "verifyArtifact", "startSession", "listSession", "listSessions", "getSession", "getSessionSummary", "sendInputSession", "approveSession", "resumeSession", "cancelSession", "artifactsSession", "eventsSession"]) assert.equal(typeof client[name], "function")
+  for (const name of ["describeSystem", "healthSystem", "schemasSystem", "createHarness", "listHarness", "getHarness", "updateHarness", "validateHarness", "explainHarness", "lockHarness", "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact", "getArtifact", "verifyArtifact", "startSession", "listSession", "listSessions", "getSession", "getSessionResult", "sendInputSession", "approveSession", "resumeSession", "cancelSession", "artifactsSession", "eventsSession"]) assert.equal(typeof client[name], "function")
   assert.equal(typeof client.eventsSession, "function")
   const calls = [
     () => client.describeSystem(), () => client.healthSystem(), () => client.schemasSystem(),
@@ -88,7 +88,7 @@ test("configured fetch transport handles JSON and attachment requests", async (t
   assert.ok(requests[1].init?.body instanceof FormData)
 })
 
-test("catalog session reader preserves the envelope and bridge reader unwraps it", async (t) => {
+test("session readers preserve the established summary and expose an explicit raw envelope", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => { globalThis.fetch = originalFetch })
   const summary = { session_id: "session-1", status: "completed", event_count: 2 }
@@ -100,17 +100,18 @@ test("catalog session reader preserves the envelope and bridge reader unwraps it
   }
   const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
   assert.deepEqual(await client.listSessions(), [summary])
-  assert.deepEqual(await client.getSessionSummary("session-1"), summary)
-  assert.deepEqual(await client.getSession("session-1"), envelope({ session: summary }))
+  assert.deepEqual(await client.getSession("session-1"), summary)
+  assert.deepEqual(await client.getSessionResult("session-1"), envelope({ session: summary }))
 })
 
-test("bridge session reader rejects canonical envelopes missing the key", async (t) => {
+test("summary session reader rejects canonical envelopes missing the key", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => { globalThis.fetch = originalFetch })
   globalThis.fetch = async () => new Response(JSON.stringify({ ok: true, data: {} }), { headers: { "content-type": "application/json" } })
   const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
-  await assert.rejects(() => client.getSessionSummary("session-1"), /Public result missing data\.session/)
+  await assert.rejects(() => client.getSession("session-1"), /Public result missing data\.session/)
 })
+
 
 
 test("broker and model-role methods use canonical typed routes", async (t) => {

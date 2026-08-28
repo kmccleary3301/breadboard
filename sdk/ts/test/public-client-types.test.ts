@@ -7,7 +7,7 @@ const catalogMethods = [
   "describeSystem", "healthSystem", "schemasSystem", "createHarness", "listHarness",
   "getHarness", "updateHarness", "validateHarness", "explainHarness", "lockHarness",
   "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact",
-  "getArtifact", "verifyArtifact", "startSession", "listSession", "getSession",
+  "getArtifact", "verifyArtifact", "startSession", "listSession", "getSession", "getSessionResult",
   "sendInputSession", "approveSession", "resumeSession", "cancelSession", "eventsSession",
   "artifactsSession",
 ] as const
