@@ -1649,10 +1649,25 @@ class SQLiteCredentialStore:
                     "status": "superseded",
                     "secret_version": current_version,
                 }
+            previous_secret = connection.execute(
+                """SELECT material FROM secrets
+                   WHERE account_id = ? AND secret_version = ?
+                     AND revoked_at_ms IS NULL
+                   ORDER BY created_at_ms DESC LIMIT 1""",
+                (account_ref, current_version),
+            ).fetchone()
+            previous_material = (
+                self._decode_json(previous_secret["material"])
+                if previous_secret is not None
+                else {}
+            )
             next_version = current_version + 1
             merged_metadata = self._decode_json(account["metadata_json"])
             if isinstance(metadata, Mapping):
                 merged_metadata.update(dict(metadata))
+            merged_metadata = dict(
+                self._safe_metadata(merged_metadata, previous_material)
+            )
             merged_metadata = dict(self._safe_metadata(merged_metadata, material))
             account_update = connection.execute(
                 """UPDATE accounts

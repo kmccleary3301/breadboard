@@ -77,6 +77,8 @@ _EXACT_PROVIDER_CREDENTIAL_KEYS = frozenset(
         "ANTHROPIC_API_KEY",
         "GOOGLE_API_KEY",
         "GEMINI_API_KEY",
+        "CODEX_ACCESS_TOKEN",
+        "CODEX_API_KEY",
         "CODEX_AUTH_TOKEN",
         "MOCK_API_KEY",
         "BREADBOARD_API_TOKEN",

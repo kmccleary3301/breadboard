@@ -395,16 +395,8 @@ class ProviderRouter:
         headers = {
             key: value for key, value in (config.default_headers or {}).items() if value
         }
-        if config.provider_id == "codex":
+        if config.provider_id in {"mock", "cli_mock", "smoke", "replay"}:
             material: dict[str, Any] = {
-                "api_key": "codex",
-                "credential_origin": {
-                    "kind": "fallback",
-                    "source": "provider_managed",
-                },
-            }
-        elif config.provider_id in {"mock", "cli_mock", "smoke", "replay"}:
-            material = {
                 "api_key": "mock",
                 "credential_origin": {
                     "kind": "fallback",
@@ -474,6 +466,9 @@ class ProviderRouter:
             "model": actual_model,
             "api_key": api_key,
         }
+        access_token = material.get("access_token")
+        if isinstance(access_token, str) and access_token:
+            result["access_token"] = access_token
         if base_url:
             result["base_url"] = base_url
         if headers:

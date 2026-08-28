@@ -16,6 +16,26 @@ from setuptools.command.build_py import build_py as _build_py
 _ROOT = Path(__file__).resolve().parent
 _PROVENANCE_FILENAME = "engine-build-provenance.v1.json"
 _HEX40 = re.compile(r"[0-9a-f]{40}")
+_WHEEL_INPUT_PATHS = (
+    "adaptive_iter.py",
+    "agent_configs",
+    "agentic_coder_prototype",
+    "breadboard",
+    "breadboard_engine",
+    "breadboard_sdk",
+    "config",
+    "conformance",
+    "contracts",
+    "docs",
+    "implementations",
+    "scripts",
+    "pyproject.toml",
+    "setup.py",
+    "requirements.txt",
+    "requirements_web.txt",
+    ":(exclude)docs/conformance/evidence_snapshots/**",
+    ":(exclude)scripts/archive/**",
+)
 
 
 def _git(*arguments: str) -> str:
@@ -52,14 +72,10 @@ def _source_identity() -> tuple[str, str, str]:
             "--porcelain",
             "--untracked-files=all",
             "--",
-            "breadboard_engine",
-            "pyproject.toml",
-            "setup.py",
-            "requirements.txt",
-            "requirements_web.txt",
+            *_WHEEL_INPUT_PATHS,
         )
         if status:
-            raise RuntimeError("wheel provenance requires clean engine build inputs")
+            raise RuntimeError("wheel provenance requires clean wheel build inputs")
         actual = (
             _git("remote", "get-url", "origin"),
             _git("rev-parse", "HEAD"),

@@ -4,6 +4,7 @@ import io
 import json
 import traceback
 import types
+from pathlib import Path
 
 import pytest
 
@@ -364,29 +365,26 @@ def test_codex_app_server_uses_restricted_process_builder(
 
     client.start()
 
-    assert builder_calls == [
-        (
-            [
-                "/trusted/bin/codex",
-                "-c",
-                "shell_environment_policy.inherit=none",
-                "app-server",
-                "--listen",
-                "stdio://",
-            ],
-            {
-                "workspace": str(tmp_path),
-                "working_directory": str(tmp_path),
-                "shell": False,
-                "environment": {"PATH": "/trusted/bin"},
-                "protected_paths": (str(protected),),
-                "allow_network": True,
-                "trusted_credential_values": {},
-                "provider_credential_read_roots": (),
-                "provider_credential_write_roots": (),
-            },
-        )
+    assert len(builder_calls) == 1
+    command, kwargs = builder_calls[0]
+    assert command == [
+        "/trusted/bin/codex",
+        "-c",
+        "shell_environment_policy.inherit=none",
+        "app-server",
+        "--listen",
+        "stdio://",
     ]
+    state_home = Path(kwargs["environment"]["CODEX_HOME"])
+    assert state_home.parent == tmp_path
+    assert kwargs["environment"]["CODEX_SQLITE_HOME"] == str(state_home)
+    assert state_home.stat().st_mode & 0o777 == 0o700
+    assert kwargs["protected_paths"] == (str(protected),)
+    assert kwargs["trusted_credential_values"] == {}
+    assert kwargs["provider_credential_read_roots"] == ()
+    assert kwargs["provider_credential_write_roots"] == ()
+    client.close()
+    assert not state_home.exists()
     assert popen_calls[0][0] == (
         "/trusted/isolation-helper",
         "--",
@@ -401,22 +399,19 @@ def test_codex_app_server_uses_restricted_process_builder(
     assert popen_calls[0][1]["shell"] is False
 
 
-def test_codex_launch_contract_binds_provider_managed_home(tmp_path) -> None:
+def test_codex_launch_contract_rejects_unscoped_provider_home(tmp_path) -> None:
     home = tmp_path / "home"
     codex_home = home / ".codex"
     codex_home.mkdir(parents=True)
 
-    environment, credentials, read_roots, auth_identity = (
+    with pytest.raises(
+        runtime_codex_module.ProviderRuntimeError,
+        match="credentials are unavailable",
+    ):
         runtime_codex_module._codex_launch_contract(
             {"api_key": "codex"},
             source_environment={"PATH": "/usr/bin", "HOME": str(home)},
         )
-    )
-
-    assert environment["CODEX_HOME"] == str(codex_home)
-    assert credentials == {}
-    assert read_roots == (str(codex_home),)
-    assert len(auth_identity) == 64
 
 
 def test_codex_launch_contract_uses_scoped_client_auth_and_rejects_headers() -> None:
@@ -430,10 +425,15 @@ def test_codex_launch_contract_uses_scoped_client_auth_and_rejects_headers() -> 
     )
 
     assert first[0]["OPENAI_BASE_URL"] == "http://127.0.0.1:8080/v1"
-    assert "OPENAI_API_KEY" not in first[0]
-    assert first[1] == {"OPENAI_API_KEY": "first-key"}
+    assert "CODEX_API_KEY" not in first[0]
+    assert first[1] == {"CODEX_API_KEY": "first-key"}
     assert first[2] == ()
     assert first[3] != second[3]
+    access_token = runtime_codex_module._codex_launch_contract(
+        {"access_token": "scoped-access-token"},
+        source_environment={"PATH": "/usr/bin"},
+    )
+    assert access_token[1] == {"CODEX_ACCESS_TOKEN": "scoped-access-token"}
     with pytest.raises(
         runtime_codex_module.ProviderRuntimeError,
         match="does not support custom provider headers",
@@ -650,7 +650,7 @@ def test_codex_runtime_streams_commentary_tool_exec_and_final_answer(
     )
 
     result = runtime.invoke(
-        client={"api_key": "codex"},
+        client={"access_token": "test-codex-access-token"},
         model=model,
         messages=[{"role": "user", "content": "Say hello"}],
         tools=None,
@@ -770,7 +770,7 @@ def test_codex_nonstream_preserves_reasoning_without_session_state(
     monkeypatch.setattr(runtime, "_ensure_client", lambda **_kwargs: fake_client)
 
     result = runtime.invoke(
-        client={"api_key": "codex"},
+        client={"access_token": "test-codex-access-token"},
         model=model,
         messages=[{"role": "user", "content": "Say hello"}],
         tools=None,
@@ -907,9 +907,7 @@ def test_codex_prewarm_populates_pool_for_first_runtime_invoke(
     monkeypatch.setenv("BREADBOARD_CODEX_APP_SERVER_POOL", "1")
     runtime_codex_module._reset_codex_client_pool_for_tests()
     created_clients: list["_WarmFakeClient"] = []
-    codex_home = tmp_path / ".codex"
-    codex_home.mkdir()
-    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    access_token = "test-codex-prewarm-token"
 
     class _WarmFakeClient:
         def __init__(self, *, codex_bin: str, cwd: str, env: dict) -> None:
@@ -974,7 +972,9 @@ def test_codex_prewarm_populates_pool_for_first_runtime_invoke(
     monkeypatch.setattr(runtime_codex_module, "_CodexJsonRpcClient", _fake_client_ctor)
 
     warm = runtime_codex_module.prewarm_codex_app_server(
-        model="gpt-5.4-mini", cwd="/tmp/workspace"
+        model="gpt-5.4-mini",
+        cwd="/tmp/workspace",
+        client={"access_token": access_token},
     )
     assert warm["cache_hit"] is False
     assert len(created_clients) == 1
@@ -985,7 +985,7 @@ def test_codex_prewarm_populates_pool_for_first_runtime_invoke(
     descriptor, model = provider_router.get_runtime_descriptor("codex/gpt-5.4-mini")
     runtime = provider_registry.create_runtime(descriptor)
     result = runtime.invoke(
-        client={"api_key": "codex"},
+        client={"access_token": access_token},
         model=model,
         messages=[{"role": "user", "content": "Say hello"}],
         tools=None,

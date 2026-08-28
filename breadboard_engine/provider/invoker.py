@@ -562,6 +562,7 @@ class ProviderInvoker:
                 _maybe_disable_stream(reason_text)
 
         if result is None:
+            recorder.rebind_request_stream(False)
             try:
                 fallback_result = self.retry_with_fallback(
                     runtime,
