@@ -250,8 +250,20 @@ class CliMockRuntime(ProviderRuntime):
         for msg in messages:
             if msg.get("role") != "assistant":
                 continue
-            tool_calls = msg.get("tool_calls")
-            if not isinstance(tool_calls, list):
+            tool_calls: List[Dict[str, Any]] = []
+            direct_calls = msg.get("tool_calls")
+            if isinstance(direct_calls, list):
+                tool_calls.extend(
+                    call for call in direct_calls if isinstance(call, dict)
+                )
+            content = msg.get("content")
+            if isinstance(content, list):
+                tool_calls.extend(
+                    block
+                    for block in content
+                    if isinstance(block, dict) and block.get("type") == "tool_call"
+                )
+            if not tool_calls:
                 continue
             prior_calls += len(tool_calls)
             for call in tool_calls:
