@@ -1281,10 +1281,18 @@ class SessionService:
             total_bytes=total_bytes,
         )
     async def list_models(self, config_path: str) -> ModelCatalogResponse:
-        if not config_path or not str(config_path).strip():
+        requested_path = str(config_path).strip()
+        if not requested_path:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="config_path required")
+        default_profile = resolve_default_profile()
+        default_identity = default_profile.public_identity()
+        resolved_path = (
+            str(default_profile.source_path)
+            if requested_path == default_identity["definition_ref"]
+            else requested_path
+        )
         try:
-            config = load_agent_config(config_path)
+            config = load_agent_config(resolved_path)
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"failed to load config: {exc}") from exc
         providers = config.get("providers") or {}
@@ -1302,7 +1310,7 @@ class SessionService:
         policy = policy_pack_for_config_authority(
             config,
             session_id="model_catalog",
-            config_path=config_path,
+            config_path=resolved_path,
             logger=logger,
         )
         if policy.model_allowlist is not None or policy.model_denylist:
@@ -1314,7 +1322,7 @@ class SessionService:
         return ModelCatalogResponse(
             models=entries,
             default_model=str(default_model) if default_model else None,
-            config_path=str(config_path),
+            config_path=requested_path,
             discovery_policy="configured_only",
             issues=issues,
         )

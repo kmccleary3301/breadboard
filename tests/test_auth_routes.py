@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from pathlib import Path
 import pytest
 
 from fastapi.testclient import TestClient
@@ -666,12 +665,8 @@ def test_daily_driver_catalog_exposes_explicit_synthetic_route(
     broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
     monkeypatch.setattr(broker_module, "_default_broker", broker)
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
-    config_path = (
-        Path(__file__).resolve().parents[1]
-        / "agent_configs"
-        / "templates"
-        / "daily_driver.v1.yaml"
-    )
+    monkeypatch.chdir(tmp_path)
+    config_path = "agent_configs/templates/daily_driver.v1.yaml"
 
     response = TestClient(create_app()).get(
         "/v1/models",
@@ -679,6 +674,7 @@ def test_daily_driver_catalog_exposes_explicit_synthetic_route(
     )
 
     assert response.status_code == 200, response.text
+    assert response.json()["config_path"] == config_path
     models = {row["id"]: row for row in response.json()["models"]}
     synthetic = models["cli_mock/reference"]
     assert {
