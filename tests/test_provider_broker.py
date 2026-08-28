@@ -201,7 +201,11 @@ def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
     assert broker.store.release_lease(lease_id) is False
 
 
-def test_put_api_key_accepts_one_character_custom_header_value(tmp_path):
+@pytest.mark.parametrize("header_value", ("a", "ant"))
+def test_put_api_key_accepts_short_custom_header_value(
+    tmp_path,
+    header_value,
+):
     broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
 
     view = broker.putApiKey(
@@ -209,16 +213,20 @@ def test_put_api_key_accepts_one_character_custom_header_value(tmp_path):
             "provider_id": "anthropic",
             "account_label": "main",
             "api_key": "anthropic-primary-secret",
-            "headers": {"X-Custom": "a"},
+            "headers": {"X-Custom": header_value},
+            "metadata": {"name": "account"},
         }
     )
 
     assert view["provider_id"] == "anthropic"
     assert view["label"] == "main"
+    assert view["metadata"]["name"] != redaction.REDACTED
     with broker.execution_material("anthropic") as material:
-        assert material["headers"] == {"X-Custom": "a"}
+        assert material["headers"] == {"X-Custom": header_value}
         scrubbed, _ = redaction.scrub_structure(material["headers"])
         assert scrubbed == {"X-Custom": redaction.REDACTED}
+        error = redaction.scrub_text(f"provider call failed {header_value}")
+        assert header_value not in error
 
 
 def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):

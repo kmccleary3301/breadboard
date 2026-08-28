@@ -148,6 +148,61 @@ def test_prewarm_sync_invokes_codex_runtime_module(monkeypatch, tmp_path) -> Non
 
 
 @pytest.mark.asyncio
+async def test_default_profile_role_metadata_defines_product_runtime_lock(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    role_document = {
+        "schema_version": "bb.model_roles.v1",
+        "defaults": {
+            "role": "default",
+            "known_but_unbound_role": "error",
+            "unknown_role": "error",
+        },
+        "roles": {
+            "default": {
+                "primary": {
+                    "provider_id": "mock",
+                    "model_id": "reference",
+                },
+                "fallbacks": [],
+                "fallback_on": [],
+            }
+        },
+        "dispatch": {"subagents": {}, "lanes": {"main": "default"}},
+        "policy": {
+            "allow_environment_overrides": False,
+            "cross_provider_fallback": "forbidden",
+            "account_failover": "forbidden",
+        },
+    }
+    service = SessionService()
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            workspace=str(workspace),
+            metadata={"bb.model_roles.v1": role_document},
+        ),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    default_lock = harness_operations.resolve_default_profile().compilation.lock
+
+    assert record.runner.current_runtime_config()["model_role_lock"]["lock_hash"]
+    assert (
+        record.product_session.read_model.effective_lock_hash
+        != default_lock["graph_hash"]
+    )
+    await service.stop_session(response.session_id)
+    await _stop(record)
+
+
+@pytest.mark.asyncio
 async def test_explicit_config_metadata_remains_custom(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(
         monkeypatch,

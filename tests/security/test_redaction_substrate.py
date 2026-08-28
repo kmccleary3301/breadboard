@@ -241,19 +241,40 @@ class TestRegisteredValues:
             )
         assert redaction.iter_registered_secret_values() == ()
 
-    def test_one_character_secret_matches_only_complete_values(self):
+    def test_short_secret_scrubs_error_text_without_invalidating_identities(self):
         with redaction.secret_value_scope("a", allow_short=True):
-            assert redaction.contains_registered_secret_text("a") is True
-            assert redaction.contains_registered_secret_text("anthropic") is False
-            assert redaction.scrub_text("a") == redaction.REDACTED
-            assert redaction.scrub_text("anthropic") == "anthropic"
-            scrubbed, _ = redaction.scrub_structure(
-                {"X-Custom": "a", "label": "anthropic"}
+            assert (
+                redaction.contains_registered_secret_text(
+                    "provider call failed a"
+                )
+                is True
             )
-            assert scrubbed == {
-                "X-Custom": redaction.REDACTED,
-                "label": "anthropic",
-            }
+            assert (
+                redaction.contains_registered_secret_identity("anthropic")
+                is False
+            )
+            assert (
+                redaction.contains_registered_secret_mapping_key(
+                    {"label": "safe"}
+                )
+                is False
+            )
+            assert redaction.scrub_text("provider call failed a") == (
+                f"provider c{redaction.REDACTED}ll "
+                f"f{redaction.REDACTED}iled {redaction.REDACTED}"
+            )
+            scrubbed, _ = redaction.scrub_structure(
+                {"label": "a"},
+                identity_mapping_keys=True,
+            )
+            assert scrubbed == {"label": redaction.REDACTED}
+
+        with redaction.secret_value_scope("ant", allow_short=True):
+            assert (
+                redaction.contains_registered_secret_identity("anthropic")
+                is False
+            )
+            assert redaction.contains_registered_secret_text("anthropic") is True
 
     def test_scopes_are_isolated_between_operation_contexts(self):
         outer_secret = "outer-operation-secret"
