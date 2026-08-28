@@ -89,3 +89,19 @@ def test_cli_mock_runtime_emits_contract_valid_tool_sequence() -> None:
     )
     assert shell_call.id == "cli-mock-call-3-run_shell"
     assert shell_call.parsed_arguments["command"] == "python3 bubble_sort.py"
+
+    completed = runtime.invoke(
+        client=client,
+        model=model,
+        messages=[
+            {
+                "role": "assistant",
+                "tool_calls": [todo_call, write_call, shell_call],
+            }
+        ],
+        tools=None,
+        stream=False,
+        context=context,
+    )
+    assert completed.messages[0].content == "Bubble sort validation complete.\n\nTASK COMPLETE"
+    assert completed.messages[0].tool_calls == []
