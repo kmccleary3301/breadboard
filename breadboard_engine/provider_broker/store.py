@@ -2034,7 +2034,8 @@ class SQLiteCredentialStore:
             """UPDATE login_sessions
                SET status = 'expired', updated_at_ms = ?,
                    problem_json = ?, flow_json = NULL
-               WHERE login_session_id = ? AND status = 'pending'
+               WHERE login_session_id = ?
+                 AND status IN ('pending', 'completing')
                  AND expires_at_ms IS NOT NULL AND expires_at_ms <= ?""",
             (
                 timestamp,
@@ -2115,7 +2116,20 @@ class SQLiteCredentialStore:
                 )
             return result
 
-    def finish_pending_login(
+    def claim_pending_login(self, login_session_id: str) -> bool:
+        with self._transaction() as connection:
+            timestamp = now_ms()
+            self._expire_stale_login(connection, str(login_session_id), timestamp)
+            result = connection.execute(
+                """UPDATE login_sessions
+                   SET status = 'completing', updated_at_ms = ?
+                   WHERE login_session_id = ? AND status = 'pending'""",
+                (timestamp, str(login_session_id)),
+            )
+            return result.rowcount > 0
+
+
+    def finish_claimed_login(
         self,
         login_session_id: str,
         status: str,
@@ -2129,7 +2143,7 @@ class SQLiteCredentialStore:
                        flow_json = CASE
                            WHEN ? IN ('completed', 'failed', 'cancelled', 'expired')
                            THEN NULL ELSE flow_json END
-                   WHERE login_session_id = ? AND status = 'pending'""",
+                   WHERE login_session_id = ? AND status = 'completing'""",
                 (
                     normalized_status,
                     now_ms(),
@@ -2147,7 +2161,8 @@ class SQLiteCredentialStore:
             result = connection.execute(
                 """UPDATE login_sessions
                    SET status = 'cancelled', updated_at_ms = ?, flow_json = NULL
-                   WHERE login_session_id = ? AND status = 'pending'""",
+                   WHERE login_session_id = ?
+                     AND status IN ('pending', 'completing')""",
                 (timestamp, str(login_session_id)),
             )
             return result.rowcount > 0

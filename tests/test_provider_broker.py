@@ -206,7 +206,7 @@ def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
 @pytest.mark.parametrize(
     ("header_value", "expected_error"),
     (
-        ("a", "provider call failed a"),
+        ("a", redaction.REDACTED),
         ("ant", f"provider call failed {redaction.REDACTED}"),
     ),
 )
@@ -223,13 +223,23 @@ def test_put_api_key_accepts_short_custom_header_value(
             "account_label": "main",
             "api_key": "anthropic-primary-secret",
             "headers": {"X-Custom": header_value},
-            "metadata": {"name": "account"},
+            "metadata": {
+                "name": "account",
+                "echo": f"credential={header_value}",
+            },
         }
     )
 
     assert view["provider_id"] == "anthropic"
     assert view["label"] == "main"
-    assert view["metadata"]["name"] != redaction.REDACTED
+    expected_name = redaction.REDACTED if header_value == "a" else "account"
+    assert view["metadata"]["name"] == expected_name
+    expected_echo = (
+        redaction.REDACTED
+        if header_value == "a"
+        else f"credential={redaction.REDACTED}"
+    )
+    assert view["metadata"]["echo"] == expected_echo
     with broker.execution_material("anthropic") as material:
         assert material["headers"] == {"X-Custom": header_value}
         scrubbed, _ = redaction.scrub_structure(material["headers"])

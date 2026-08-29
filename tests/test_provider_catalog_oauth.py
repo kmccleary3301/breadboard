@@ -1432,6 +1432,58 @@ def test_cancelled_oauth_login_clears_internal_flow_json(tmp_path):
     assert broker.cancelLogin(started["login_session_id"])["ok"] is False
 
 
+def test_concurrent_oauth_completion_has_one_exchange_owner(tmp_path) -> None:
+    db = tmp_path / "completion-owner.sqlite3"
+    entered = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    def transport(url, *, method, headers, body=None):
+        _ = (method, headers, body)
+        calls.append(url)
+        entered.set()
+        assert release.wait(2)
+        return (
+            200,
+            {},
+            json.dumps(
+                {
+                    "access_token": "completion-owner-access",
+                    "refresh_token": "completion-owner-refresh",
+                    "expires_in": 3600,
+                }
+            ).encode(),
+        )
+
+    owner = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    contender = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    started = owner.beginLogin({"provider_id": "codex"})
+    flow = owner.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
+    payload = {
+        "login_session_id": started["login_session_id"],
+        "authorization_code": "one-time-code",
+        "state": flow["state"],
+    }
+    owner_results: list[dict] = []
+    thread = threading.Thread(
+        target=lambda: owner_results.append(owner.completeLogin(payload))
+    )
+
+    thread.start()
+    assert entered.wait(2)
+    contender_result = contender.completeLogin(payload)
+    assert contender_result["status"] == "pending"
+    release.set()
+    thread.join(2)
+
+    assert not thread.is_alive()
+    assert [result["status"] for result in owner_results] == ["completed"]
+    assert len(calls) == 1
+    assert len(contender.listCredentials("codex")) == 1
+
+
 def test_cancel_during_oauth_completion_wins_without_persisting_material(tmp_path):
     db = tmp_path / "cancel-completion-race.sqlite3"
     entered = threading.Event()
