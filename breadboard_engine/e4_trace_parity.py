@@ -1188,10 +1188,14 @@ def _normalize_temporary_path(value: Any, root: str) -> str:
         raise E4ParityError("temporary path must be text")
     _validate_absolute_path(value, "temporary path")
     normalized_value = (
-        value if value.startswith("/") else value.replace("\\", "/")
+        value
+        if value.startswith("/") and not value.startswith("//")
+        else value.replace("\\", "/")
     ).rstrip("/")
     normalized_root = (
-        root if root.startswith("/") else root.replace("\\", "/")
+        root
+        if root.startswith("/") and not root.startswith("//")
+        else root.replace("\\", "/")
     ).rstrip("/")
     if normalized_value == normalized_root:
         return "<tmp>"
@@ -1212,7 +1216,7 @@ def _validate_absolute_path(value: str, field_name: str) -> None:
     normalized = value.replace("\\", "/")
     if value.startswith("\\") and not value.startswith("\\\\"):
         raise E4ParityError(f"{field_name} cannot be Windows root-relative")
-    if value.startswith("/") and "\\" in value:
+    if value.startswith("/") and not value.startswith("//") and "\\" in value:
         raise E4ParityError(f"{field_name} cannot mix path separators")
     if normalized.startswith(("//?/", "//./")):
         raise E4ParityError(f"{field_name} cannot use a device namespace")

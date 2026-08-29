@@ -294,7 +294,7 @@ def test_normalization_policy_fails_closed() -> None:
         TemporaryPathRoots("/tmp/reference\u0000root", "/tmp/clone")
     unc_comparison = compare_e4_traces(
         {"path": r"\\server\share\reference\session\result.json" + "\\"},
-        {"path": r"\\server\share\clone\session\result.json" + "\\"},
+        {"path": "//server/share/clone\\session\\result.json\\"},
         rules=(NormalizationRule("/path", "temporary_path"),),
         temporary_roots=TemporaryPathRoots(
             r"\\server\share\reference",
