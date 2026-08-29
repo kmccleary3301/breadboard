@@ -282,6 +282,21 @@ class TestRegisteredValues:
             "status_code": 429,
         }
 
+    def test_exception_rate_limit_classification_cannot_restore_exact_secret(self):
+        error = RuntimeError("provider call failed")
+        error.details = {
+            "classification": "rate_limited",
+            "status_code": 429,
+        }
+
+        with redaction.secret_value_scope("rate_limited"):
+            redaction.scrub_exception_in_place(error)
+
+        assert error.details == {
+            "classification": redaction.REDACTED,
+            "status_code": 429,
+        }
+
     def test_scopes_are_isolated_between_operation_contexts(self):
         outer_secret = "outer-operation-secret"
         inner_secret = "inner-operation-secret"

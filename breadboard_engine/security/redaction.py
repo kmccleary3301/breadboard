@@ -150,6 +150,7 @@ def scrub_exception_in_place(error: BaseException) -> BaseException:
                 if (
                     key == "classification"
                     and value == "rate_limited"
+                    and not contains_registered_secret_identity(str(value))
                     or key
                     in {
                         "status_code",
