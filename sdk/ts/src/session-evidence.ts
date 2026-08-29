@@ -565,6 +565,7 @@ const LOGGED_SESSION_EVENT_KINDS: readonly LoggedSessionEvent["kind"][] = [
   "tool_called",
   "tool_result_observed",
   "todo_updated",
+  "stream_gap_observed",
   "permission_requested",
   "permission_responded",
   "checkpoint_list_observed",
@@ -680,7 +681,7 @@ const assertDisplay = (value: unknown): void => {
     }
   } else if (display.kind === "cancellation-status") {
     exactObject(display, ["kind", "reason"], ["kind", "reason"], "cancellation display")
-    assertEnum(display.reason, ["user_requested", "timeout", "superseded"] as const, "cancellation reason")
+    assertEnum(display.reason, ["user_requested", "timeout", "superseded", "stop_requested"] as const, "cancellation reason")
   } else if (display.kind === "protocol-error" || display.kind === "gap-error") {
     exactObject(display, ["kind", "code"], ["kind", "code"], "error display")
     assertSafeCode(display.code, "display.code")

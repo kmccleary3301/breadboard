@@ -595,7 +595,7 @@ def test_packaged_build_provenance_supplies_immutable_installed_identity(
 
 @pytest.mark.parametrize(
     "failure",
-    ["source_changed", "extra_field", "wrong_target", "unsafe_permissions"],
+    ["source_changed", "extra_field", "invalid_target", "unsafe_permissions"],
 )
 def test_packaged_build_provenance_rejects_untrusted_identity(
     failure: str,
@@ -609,10 +609,10 @@ def test_packaged_build_provenance_rejects_untrusted_identity(
     elif failure == "extra_field":
         payload["untrusted"] = True
         provenance_path.write_text(json.dumps(payload), encoding="utf-8")
-    elif failure == "wrong_target":
+    elif failure == "invalid_target":
         target = payload["target"]
         assert isinstance(target, dict)
-        target["platform"] = "linux" if target["platform"] == "darwin" else "darwin"
+        target["platform"] = "windows"
         provenance_path.write_text(json.dumps(payload), encoding="utf-8")
     else:
         provenance_path.chmod(0o666)
@@ -629,6 +629,31 @@ def test_packaged_build_provenance_rejects_untrusted_identity(
 
     assert revision["commit"] is None
     assert revision["dirty"] is None
+
+
+def test_packaged_build_provenance_is_portable_across_supported_targets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    package_root = tmp_path / "site-packages" / "breadboard_engine"
+    provenance_path, payload = _write_packaged_engine_provenance(package_root)
+    target = payload["target"]
+    assert isinstance(target, dict)
+    target["platform"] = "linux" if target["platform"] == "darwin" else "darwin"
+    provenance_path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.app._run_git_command",
+        lambda *_args, **_kwargs: None,
+    )
+
+    revision = _compute_engine_provenance(
+        tmp_path / "site-packages",
+        package_root=package_root,
+        packaged_provenance_path=provenance_path,
+    )
+
+    assert revision["commit"] == "a" * 40
+    assert revision["dirty"] is False
 
 
 @pytest.mark.asyncio
