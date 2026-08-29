@@ -6,6 +6,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, cast, runtime_checkable
@@ -24,6 +25,7 @@ from .swe_bench_task import (
     EVALUATOR_TIMEOUT_SECONDS,
     EVALUATOR_TREE,
     EVALUATOR_VERSION,
+    INSTANCE_ID,
     IMAGE_INDEX_DIGEST,
     IMAGE_LEAF_DIGEST,
     IMAGE_PLATFORM,
@@ -35,6 +37,7 @@ from .swe_bench_task import (
     official_evaluator_command,
     prediction_jsonl,
     score_official_reports,
+    verify_evaluator_installation,
 )
 
 
@@ -52,6 +55,8 @@ _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}\Z")
 _SAFE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _ADAPTER_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}\Z")
 _MAX_PATCH_BYTES = 4 * 1024 * 1024
+_MAX_REPORT_BYTES = 16 * 1024 * 1024
+_MAX_EVALUATOR_BYTES = 128 * 1024 * 1024
 _MAX_RESULT_BYTES = 16 * 1024 * 1024
 _RESULT_VALIDATION_TOKEN = object()
 _CLEANUP_INVENTORY_FIELDS = (
@@ -62,6 +67,7 @@ _CLEANUP_INVENTORY_FIELDS = (
     "container_ids",
     "process_ids",
     "cgroup_paths",
+    "mount_paths",
     "workspace_paths",
     "artifact_paths",
     "secret_lease_ids",
@@ -120,7 +126,9 @@ def _canonical_digest(value: Any) -> str:
     return _digest_bytes(_canonical_bytes(value))
 
 
-def _frozen_projection(value: Mapping[str, Any], *, field_name: str) -> FrozenJsonObject:
+def _frozen_projection(
+    value: Mapping[str, Any], *, field_name: str
+) -> FrozenJsonObject:
     try:
         return freeze_json_object(
             value,
@@ -157,12 +165,19 @@ class E4ProfileIdentity:
 @dataclass(frozen=True, slots=True)
 class E4ControllerBinding:
     profile: E4ProfileIdentity
+    target_id: str
     adapter_id: str
     implementation_digest: str
 
     def __post_init__(self) -> None:
         if type(self.profile) is not E4ProfileIdentity:
             raise TypeError("controller profile must be an exact E4ProfileIdentity")
+        if (
+            type(self.target_id) is not str
+            or not self.target_id
+            or len(self.target_id) > 256
+        ):
+            raise SweBenchRunnerError("controller target_id is not a safe identity")
         _adapter_id(self.adapter_id)
         _digest(self.implementation_digest, field_name="controller implementation")
 
@@ -170,6 +185,7 @@ class E4ControllerBinding:
         return {
             "schema_version": "bb.rl.e4-controller-binding.v1",
             "profile": self.profile.identity_dict(),
+            "target_id": self.target_id,
             "adapter_id": self.adapter_id,
             "implementation_digest": self.implementation_digest,
         }
@@ -183,12 +199,6 @@ class E4ControllerBinding:
 class E4ControllerPort(Protocol):
     @property
     def binding(self) -> E4ControllerBinding: ...
-
-    def produce_patch(
-        self,
-        task: Mapping[str, str],
-        headless_result: Mapping[str, Any],
-    ) -> str: ...
 
 
 def select_e4_controller(
@@ -207,7 +217,9 @@ def select_e4_controller(
     try:
         binding = controller.binding
     except Exception as exc:
-        raise SweBenchRunnerError("installed E4 controller binding is unavailable") from exc
+        raise SweBenchRunnerError(
+            "installed E4 controller binding is unavailable"
+        ) from exc
     if type(binding) is not E4ControllerBinding or binding.profile != profile:
         raise SweBenchRunnerError("installed E4 controller profile identity mismatch")
     return controller
@@ -222,9 +234,13 @@ class SweBenchTaskBinding:
 
     def __post_init__(self) -> None:
         if type(self.task) is not PinnedSweBenchTask or self.task != PINNED_SYMPY_20590:
-            raise SweBenchRunnerError("SWE-bench task authority is not the pinned one-row task")
+            raise SweBenchRunnerError(
+                "SWE-bench task authority is not the pinned one-row task"
+            )
         if self.image_digest != IMAGE_LEAF_DIGEST:
-            raise SweBenchRunnerError("SWE-bench image must use the pinned platform digest")
+            raise SweBenchRunnerError(
+                "SWE-bench image must use the pinned platform digest"
+            )
         _digest(self.image_digest, field_name="SWE-bench image")
 
     @property
@@ -290,8 +306,16 @@ class SweBenchEvaluatorBinding:
             EVALUATOR_TREE,
             EVALUATOR_LICENSE,
         )
-        if (self.repository, self.version, self.commit, self.tree, self.license) != expected:
-            raise SweBenchRunnerError("official SWE-bench evaluator identity is not pinned")
+        if (
+            self.repository,
+            self.version,
+            self.commit,
+            self.tree,
+            self.license,
+        ) != expected:
+            raise SweBenchRunnerError(
+                "official SWE-bench evaluator identity is not pinned"
+            )
 
     def identity_dict(self) -> dict[str, str]:
         return {
@@ -323,6 +347,7 @@ class TrustedEvaluatorCommand:
     report_directory: str
     run_id: str
     patch_digest: str
+    model_name: str
     timeout_seconds: int = EVALUATOR_TIMEOUT_SECONDS
 
     @classmethod
@@ -333,6 +358,7 @@ class TrustedEvaluatorCommand:
         predictions_path: str,
         report_directory: str,
         run_id: str,
+        model_name: str,
         patch_digest: str,
         timeout_seconds: int = EVALUATOR_TIMEOUT_SECONDS,
     ) -> TrustedEvaluatorCommand:
@@ -340,6 +366,7 @@ class TrustedEvaluatorCommand:
         _absolute_path(predictions_path, field_name="predictions_path")
         _absolute_path(report_directory, field_name="report_directory")
         _safe_id(run_id, field_name="run_id")
+        _safe_id(model_name, field_name="model_name")
         _digest(patch_digest, field_name="patch")
         argv = official_evaluator_command(
             dataset_path=dataset_path,
@@ -355,21 +382,33 @@ class TrustedEvaluatorCommand:
             predictions_path=predictions_path,
             report_directory=report_directory,
             run_id=run_id,
+            model_name=model_name,
             patch_digest=patch_digest,
             timeout_seconds=timeout_seconds,
         )
 
     def __post_init__(self) -> None:
-        if type(self.evaluator) is not SweBenchEvaluatorBinding or self.evaluator != OFFICIAL_SWE_BENCH_EVALUATOR:
-            raise SweBenchRunnerError("evaluator command is not bound to the official pinned evaluator")
+        if (
+            type(self.evaluator) is not SweBenchEvaluatorBinding
+            or self.evaluator != OFFICIAL_SWE_BENCH_EVALUATOR
+        ):
+            raise SweBenchRunnerError(
+                "evaluator command is not bound to the official pinned evaluator"
+            )
         object.__setattr__(self, "argv", tuple(self.argv))
         _absolute_path(self.dataset_path, field_name="dataset_path")
         _absolute_path(self.predictions_path, field_name="predictions_path")
         _absolute_path(self.report_directory, field_name="report_directory")
         _safe_id(self.run_id, field_name="run_id")
+        _safe_id(self.model_name, field_name="model_name")
         _digest(self.patch_digest, field_name="patch")
-        if type(self.timeout_seconds) is not int or not 1 <= self.timeout_seconds <= 3_600:
-            raise SweBenchRunnerError("evaluator timeout is outside its supported range")
+        if (
+            type(self.timeout_seconds) is not int
+            or not 1 <= self.timeout_seconds <= 3_600
+        ):
+            raise SweBenchRunnerError(
+                "evaluator timeout is outside its supported range"
+            )
         expected = official_evaluator_command(
             dataset_path=self.dataset_path,
             predictions_path=self.predictions_path,
@@ -378,7 +417,9 @@ class TrustedEvaluatorCommand:
             timeout_seconds=self.timeout_seconds,
         )
         if self.argv != expected:
-            raise SweBenchRunnerError("evaluator command is not the pinned official command")
+            raise SweBenchRunnerError(
+                "evaluator command is not the pinned official command"
+            )
 
     def identity_dict(self) -> dict[str, Any]:
         return {
@@ -389,6 +430,7 @@ class TrustedEvaluatorCommand:
             "predictions_path": self.predictions_path,
             "report_directory": self.report_directory,
             "run_id": self.run_id,
+            "model_name": self.model_name,
             "patch_digest": self.patch_digest,
             "timeout_seconds": self.timeout_seconds,
         }
@@ -441,7 +483,9 @@ class SweBenchEvaluatorResult:
         if type(self.command) is not TrustedEvaluatorCommand:
             raise TypeError("command must be an exact TrustedEvaluatorCommand")
         if self._validation_token is not _RESULT_VALIDATION_TOKEN:
-            raise SweBenchRunnerError("evaluator result lacks an official report validation")
+            raise SweBenchRunnerError(
+                "evaluator result lacks an official report validation"
+            )
         _digest(self.aggregate_report_digest, field_name="aggregate report")
         _digest(self.instance_report_digest, field_name="instance report")
         report_digest = _canonical_digest(
@@ -474,15 +518,195 @@ class SweBenchEvaluatorResult:
         }
 
 
-@runtime_checkable
-class TrustedEvaluatorAdapter(Protocol):
-    @property
-    def binding(self) -> SweBenchEvaluatorBinding: ...
+def _read_json_file(path: str) -> Mapping[str, Any]:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    try:
+        descriptor = os.open(path, flags)
+        identity = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(identity.st_mode)
+            or identity.st_nlink != 1
+            or identity.st_size > _MAX_REPORT_BYTES
+        ):
+            raise SweBenchRunnerError("official evaluator report identity is invalid")
+        payload = bytearray()
+        while len(payload) <= _MAX_REPORT_BYTES:
+            chunk = os.read(
+                descriptor,
+                min(64 * 1024, _MAX_REPORT_BYTES + 1 - len(payload)),
+            )
+            if not chunk:
+                break
+            payload.extend(chunk)
+        if len(payload) > _MAX_REPORT_BYTES:
+            raise SweBenchRunnerError(
+                "official evaluator report exceeds its byte limit"
+            )
+    except OSError as exc:
+        raise SweBenchRunnerError("official evaluator report is unavailable") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
-    def evaluate(
-        self,
-        command: TrustedEvaluatorCommand,
-    ) -> SweBenchEvaluatorResult | Awaitable[SweBenchEvaluatorResult]: ...
+    def reject_duplicates(items: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for name, value in items:
+            if name in result:
+                raise SweBenchRunnerError(
+                    "official evaluator report has duplicate keys"
+                )
+            result[name] = value
+        return result
+
+    try:
+        value = json.loads(bytes(payload), object_pairs_hook=reject_duplicates)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SweBenchRunnerError("official evaluator report is malformed") from exc
+    if not isinstance(value, Mapping):
+        raise SweBenchRunnerError("official evaluator report must be an object")
+    return value
+
+
+def _measure_file(path: str, *, max_bytes: int) -> str:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    try:
+        descriptor = os.open(path, flags)
+        identity = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(identity.st_mode)
+            or identity.st_nlink != 1
+            or identity.st_size > max_bytes
+        ):
+            raise SweBenchRunnerError(
+                "official evaluator executable identity is invalid"
+            )
+        hasher = hashlib.sha256()
+        size = 0
+        while size <= max_bytes:
+            chunk = os.read(descriptor, min(64 * 1024, max_bytes + 1 - size))
+            if not chunk:
+                break
+            size += len(chunk)
+            hasher.update(chunk)
+        if size > max_bytes:
+            raise SweBenchRunnerError("official evaluator executable is too large")
+        return "sha256:" + hasher.hexdigest()
+    except OSError as exc:
+        raise SweBenchRunnerError(
+            "official evaluator executable is unavailable"
+        ) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+@dataclass(frozen=True, slots=True)
+class SubprocessOfficialEvaluator:
+    executable_path: str
+    executable_digest: str
+    installed_version: str
+    source_commit: str
+    work_directory: str
+    binding: SweBenchEvaluatorBinding = field(
+        default_factory=lambda: OFFICIAL_SWE_BENCH_EVALUATOR
+    )
+
+    def __post_init__(self) -> None:
+        _absolute_path(self.executable_path, field_name="evaluator executable")
+        _absolute_path(self.work_directory, field_name="evaluator work directory")
+        _digest(self.executable_digest, field_name="evaluator executable")
+        verify_evaluator_installation(
+            installed_version=self.installed_version,
+            source_commit=self.source_commit,
+        )
+        if (
+            type(self.binding) is not SweBenchEvaluatorBinding
+            or self.binding != OFFICIAL_SWE_BENCH_EVALUATOR
+        ):
+            raise SweBenchRunnerError("evaluator adapter is not the official binding")
+        if (
+            _measure_file(
+                self.executable_path,
+                max_bytes=_MAX_EVALUATOR_BYTES,
+            )
+            != self.executable_digest
+        ):
+            raise SweBenchRunnerError("official evaluator executable digest mismatch")
+        try:
+            work = os.stat(self.work_directory, follow_symlinks=False)
+        except OSError as exc:
+            raise SweBenchRunnerError(
+                "official evaluator work directory is unavailable"
+            ) from exc
+        if not stat.S_ISDIR(work.st_mode):
+            raise SweBenchRunnerError(
+                "official evaluator work directory is not a directory"
+            )
+
+    def evaluate(self, command: TrustedEvaluatorCommand) -> SweBenchEvaluatorResult:
+        if type(command) is not TrustedEvaluatorCommand:
+            raise TypeError("command must be an exact TrustedEvaluatorCommand")
+        if (
+            _measure_file(
+                self.executable_path,
+                max_bytes=_MAX_EVALUATOR_BYTES,
+            )
+            != self.executable_digest
+        ):
+            raise SweBenchRunnerError("official evaluator executable changed")
+        try:
+            os.mkdir(command.report_directory, 0o700)
+        except OSError as exc:
+            raise SweBenchRunnerError(
+                "official evaluator report directory must be new"
+            ) from exc
+        environment = {
+            "HOME": self.work_directory,
+            "PATH": os.pathsep.join(
+                (
+                    os.path.dirname(self.executable_path),
+                    "/usr/local/bin",
+                    "/usr/bin",
+                    "/bin",
+                )
+            ),
+            "PYTHONUNBUFFERED": "1",
+        }
+        try:
+            completed = subprocess.run(
+                (self.executable_path, *command.argv[1:]),
+                cwd=self.work_directory,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=command.timeout_seconds + 60,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SweBenchRunnerError("official SWE-bench evaluator failed") from exc
+        if completed.returncode != 0:
+            raise SweBenchRunnerError("official SWE-bench evaluator returned nonzero")
+        aggregate_path = os.path.join(
+            command.report_directory,
+            f"{command.model_name}.{command.run_id}.json",
+        )
+        instance_path = os.path.join(
+            self.work_directory,
+            "logs",
+            "run_evaluation",
+            command.run_id,
+            command.model_name,
+            INSTANCE_ID,
+            "report.json",
+        )
+        return SweBenchEvaluatorResult.from_reports(
+            command,
+            aggregate_report=_read_json_file(aggregate_path),
+            instance_report=_read_json_file(instance_path),
+        )
 
 
 @runtime_checkable
@@ -503,7 +727,9 @@ class InstalledSweBenchRequest:
     predictions_path: str
     report_directory: str
     run_id: str
-    task_binding: SweBenchTaskBinding = field(default_factory=lambda: PINNED_SWE_BENCH_TASK)
+    task_binding: SweBenchTaskBinding = field(
+        default_factory=lambda: PINNED_SWE_BENCH_TASK
+    )
     evaluator_binding: SweBenchEvaluatorBinding = field(
         default_factory=lambda: OFFICIAL_SWE_BENCH_EVALUATOR
     )
@@ -516,9 +742,13 @@ class InstalledSweBenchRequest:
         if type(self.task_binding) is not SweBenchTaskBinding:
             raise TypeError("task_binding must be an exact SweBenchTaskBinding")
         if type(self.evaluator_binding) is not SweBenchEvaluatorBinding:
-            raise TypeError("evaluator_binding must be an exact SweBenchEvaluatorBinding")
+            raise TypeError(
+                "evaluator_binding must be an exact SweBenchEvaluatorBinding"
+            )
         if self.evaluator_binding != OFFICIAL_SWE_BENCH_EVALUATOR:
-            raise SweBenchRunnerError("request evaluator is not the pinned official evaluator")
+            raise SweBenchRunnerError(
+                "request evaluator is not the pinned official evaluator"
+            )
         for value, name in (
             (self.dataset_path, "dataset_path"),
             (self.predictions_path, "predictions_path"),
@@ -530,11 +760,24 @@ class InstalledSweBenchRequest:
             raise SweBenchRunnerError("dataset and prediction paths must differ")
         workspace = self.headless_request.workspace
         if workspace.task_image_digest != self.task_binding.image_digest:
-            raise SweBenchRunnerError("headless workspace image is not the pinned SWE-bench image")
-        if workspace.repository_snapshot_digest is not None or workspace.base_commit is not None:
-            raise SweBenchRunnerError("installed SWE-bench journey must not use a source checkout")
+            raise SweBenchRunnerError(
+                "headless workspace image is not the pinned SWE-bench image"
+            )
+        if (
+            workspace.repository_snapshot_digest is not None
+            or workspace.base_commit is not None
+        ):
+            raise SweBenchRunnerError(
+                "installed SWE-bench journey must not use a source checkout"
+            )
         if self.headless_request.resolve_request.episode_id != self.run_id:
-            raise SweBenchRunnerError("run_id must equal the canonical headless episode identity")
+            raise SweBenchRunnerError(
+                "run_id must equal the canonical headless episode identity"
+            )
+        if self.headless_request.patch_path is None:
+            raise SweBenchRunnerError(
+                "installed SWE-bench journey requires canonical patch export"
+            )
 
     def public_projection(self) -> dict[str, Any]:
         return {
@@ -595,12 +838,16 @@ class InstalledSweBenchRewardReceipt:
         object.__setattr__(
             self,
             "controller_identity",
-            _frozen_projection(self.controller_identity, field_name="controller identity"),
+            _frozen_projection(
+                self.controller_identity, field_name="controller identity"
+            ),
         )
         object.__setattr__(
             self,
             "evaluator_identity",
-            _frozen_projection(self.evaluator_identity, field_name="evaluator identity"),
+            _frozen_projection(
+                self.evaluator_identity, field_name="evaluator identity"
+            ),
         )
         for value, name in (
             (self.task_binding_digest, "task binding"),
@@ -621,14 +868,21 @@ class InstalledSweBenchRewardReceipt:
         ):
             _digest(value, field_name=name)
         if self.dataset_artifact_digest != "sha256:" + DATASET_SHA256:
-            raise SweBenchRunnerError("receipt dataset artifact is not the pinned dataset")
+            raise SweBenchRunnerError(
+                "receipt dataset artifact is not the pinned dataset"
+            )
         if self.dataset_row_digest != ROW_DIGEST:
             raise SweBenchRunnerError("receipt dataset row is not the pinned row")
-        if self.image_index_digest != IMAGE_INDEX_DIGEST or self.image_leaf_digest != IMAGE_LEAF_DIGEST:
+        if (
+            self.image_index_digest != IMAGE_INDEX_DIGEST
+            or self.image_leaf_digest != IMAGE_LEAF_DIGEST
+        ):
             raise SweBenchRunnerError("receipt image authority is not pinned")
         if type(self.reward) is not float or self.reward not in {0.0, 1.0}:
             raise SweBenchRunnerError("receipt reward must be exactly 0.0 or 1.0")
-        object.__setattr__(self, "receipt_digest", _canonical_digest(self.public_projection()))
+        object.__setattr__(
+            self, "receipt_digest", _canonical_digest(self.public_projection())
+        )
 
     def public_projection(self) -> dict[str, Any]:
         return {
@@ -668,7 +922,7 @@ class InstalledSweBenchRewardReceipt:
 def _validate_headless_result(
     result: Mapping[str, Any],
     request: InstalledSweBenchRequest,
-) -> tuple[FrozenJsonObject, str, str, str]:
+) -> tuple[FrozenJsonObject, str, str, str, str]:
     frozen = _frozen_projection(result, field_name="headless result")
     payload = cast(Mapping[str, Any], thaw_json(frozen))
     if payload.get("schema_version") != HEADLESS_RESULT_SCHEMA_VERSION:
@@ -677,12 +931,18 @@ def _validate_headless_result(
         raise SweBenchRunnerError("headless result episode identity mismatch")
     terminal = payload.get("terminal")
     if not isinstance(terminal, Mapping) or terminal.get("status") != "succeeded":
-        raise SweBenchRunnerError("headless result did not produce a successful terminal outcome")
+        raise SweBenchRunnerError(
+            "headless result did not produce a successful terminal outcome"
+        )
     sandbox = payload.get("sandbox_identity")
     if not isinstance(sandbox, Mapping):
-        raise SweBenchRunnerError("headless result is missing canonical sandbox identity")
+        raise SweBenchRunnerError(
+            "headless result is missing canonical sandbox identity"
+        )
     if sandbox.get("image_digest") != request.task_binding.image_digest:
-        raise SweBenchRunnerError("headless result image is not the pinned SWE-bench image")
+        raise SweBenchRunnerError(
+            "headless result image is not the pinned SWE-bench image"
+        )
     if sandbox.get("runtime_class") not in {
         RuntimeClass.HARDENED_DOCKER.value,
         RuntimeClass.HARDENED_GVISOR.value,
@@ -701,9 +961,41 @@ def _validate_headless_result(
     if not isinstance(inventory, Mapping) or type(inventory_digest) is not str:
         raise SweBenchRunnerError("headless cleanup inventory is missing")
     _digest(inventory_digest, field_name="cleanup inventory")
-    if any(inventory.get(name) not in (None, [], (), 0) for name in _CLEANUP_INVENTORY_FIELDS):
+    expected_inventory_keys = set(_CLEANUP_INVENTORY_FIELDS) | {
+        "broker_close_receipt_ref"
+    }
+    if set(inventory) != expected_inventory_keys:
+        raise SweBenchRunnerError("headless cleanup inventory schema is incomplete")
+    if _canonical_digest(inventory) != inventory_digest:
+        raise SweBenchRunnerError("headless cleanup inventory digest mismatch")
+    if any(inventory[name] not in ([], 0) for name in _CLEANUP_INVENTORY_FIELDS):
         raise SweBenchRunnerError("headless cleanup inventory is not empty")
-    return frozen, _canonical_digest(payload), cleanup_digest, inventory_digest
+    patch = payload.get("patch")
+    evidence = payload.get("workspace_evidence")
+    requested_path = request.headless_request.patch_path
+    if (
+        not isinstance(patch, Mapping)
+        or not isinstance(evidence, Mapping)
+        or requested_path is None
+        or patch.get("requested") is not True
+        or patch.get("available") is not True
+        or patch.get("destination") != requested_path
+        or patch.get("digest") != evidence.get("patch_digest")
+    ):
+        raise SweBenchRunnerError(
+            "headless result does not bind the canonical workspace patch"
+        )
+    patch_digest = patch.get("digest")
+    if type(patch_digest) is not str:
+        raise SweBenchRunnerError("headless workspace patch digest is missing")
+    _digest(patch_digest, field_name="workspace patch")
+    return (
+        frozen,
+        _canonical_digest(payload),
+        cleanup_digest,
+        inventory_digest,
+        patch_digest,
+    )
 
 
 def _write_prediction(path: str, payload: bytes) -> None:
@@ -714,7 +1006,13 @@ def _write_prediction(path: str, payload: bytes) -> None:
         raise SweBenchRunnerError("prediction parent directory is unavailable") from exc
     if not stat.S_ISDIR(parent_stat.st_mode):
         raise SweBenchRunnerError("prediction parent is not a directory")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
     descriptor = -1
     try:
         descriptor = os.open(path, flags, 0o600)
@@ -726,7 +1024,11 @@ def _write_prediction(path: str, payload: bytes) -> None:
             written += count
         os.fsync(descriptor)
         identity = os.fstat(descriptor)
-        if not stat.S_ISREG(identity.st_mode) or identity.st_nlink != 1 or identity.st_size != len(payload):
+        if (
+            not stat.S_ISREG(identity.st_mode)
+            or identity.st_nlink != 1
+            or identity.st_size != len(payload)
+        ):
             raise SweBenchRunnerError("prediction artifact identity is not private")
     except FileExistsError as exc:
         raise SweBenchRunnerError("prediction artifact already exists") from exc
@@ -737,52 +1039,102 @@ def _write_prediction(path: str, payload: bytes) -> None:
             os.close(descriptor)
 
 
+def _read_patch(path: str, expected_digest: str) -> str:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    try:
+        descriptor = os.open(path, flags)
+        identity = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(identity.st_mode)
+            or identity.st_nlink != 1
+            or identity.st_size > _MAX_PATCH_BYTES
+        ):
+            raise SweBenchRunnerError("canonical workspace patch identity is invalid")
+        payload = bytearray()
+        while len(payload) <= _MAX_PATCH_BYTES:
+            chunk = os.read(
+                descriptor, min(64 * 1024, _MAX_PATCH_BYTES + 1 - len(payload))
+            )
+            if not chunk:
+                break
+            payload.extend(chunk)
+        if len(payload) > _MAX_PATCH_BYTES:
+            raise SweBenchRunnerError(
+                "canonical workspace patch exceeds its byte limit"
+            )
+    except OSError as exc:
+        raise SweBenchRunnerError("canonical workspace patch is unavailable") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    patch_bytes = bytes(payload)
+    if _digest_bytes(patch_bytes) != expected_digest:
+        raise SweBenchRunnerError("canonical workspace patch digest mismatch")
+    try:
+        return patch_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise SweBenchRunnerError("canonical workspace patch is not UTF-8") from exc
+
+
 async def run_installed_swe_bench(
     request: InstalledSweBenchRequest,
     *,
     controllers: Mapping[str, E4ControllerPort],
     headless: InstalledHeadlessRunner,
-    evaluator: TrustedEvaluatorAdapter,
+    evaluator: SubprocessOfficialEvaluator,
 ) -> InstalledSweBenchRewardReceipt:
     """Run one row through canonical headless execution and the pinned evaluator only."""
 
     if type(request) is not InstalledSweBenchRequest:
         raise TypeError("request must be an exact InstalledSweBenchRequest")
     controller = select_e4_controller(request.profile, controllers)
-    if not isinstance(evaluator, TrustedEvaluatorAdapter):
-        raise TypeError("evaluator must implement TrustedEvaluatorAdapter")
-    if evaluator.binding != request.evaluator_binding or evaluator.binding != OFFICIAL_SWE_BENCH_EVALUATOR:
-        raise SweBenchRunnerError("evaluator adapter is not the pinned official evaluator")
+    if type(evaluator) is not SubprocessOfficialEvaluator:
+        raise TypeError("evaluator must be an exact SubprocessOfficialEvaluator")
+    if (
+        evaluator.binding != request.evaluator_binding
+        or evaluator.binding != OFFICIAL_SWE_BENCH_EVALUATOR
+    ):
+        raise SweBenchRunnerError(
+            "evaluator adapter is not the pinned official evaluator"
+        )
     if not isinstance(headless, InstalledHeadlessRunner):
         raise TypeError("headless must implement InstalledHeadlessRunner")
 
     try:
         raw_headless = headless.run(request.headless_request)
-        headless_result = await raw_headless if inspect.isawaitable(raw_headless) else raw_headless
+        headless_result = (
+            await raw_headless if inspect.isawaitable(raw_headless) else raw_headless
+        )
     except Exception as exc:
         raise SweBenchRunnerError("canonical headless execution failed") from exc
     if not isinstance(headless_result, Mapping):
         raise SweBenchRunnerError("canonical headless result must be a mapping")
-    frozen_headless, headless_digest, cleanup_digest, cleanup_inventory_digest = _validate_headless_result(
-        headless_result, request
-    )
+    (
+        frozen_headless,
+        headless_digest,
+        cleanup_digest,
+        cleanup_inventory_digest,
+        patch_digest,
+    ) = _validate_headless_result(headless_result, request)
+    if controller.binding.target_id != request.headless_request.target_id:
+        raise SweBenchRunnerError(
+            "selected E4 controller target does not match the headless request"
+        )
 
     request.task_binding.load_verified_row(request.dataset_path)
+    patch_path = request.headless_request.patch_path
+    if patch_path is None:
+        raise SweBenchRunnerError("canonical workspace patch path is missing")
+    patch = _read_patch(patch_path, patch_digest)
     try:
-        patch = controller.produce_patch(
-            request.task_binding.model_visible_task(),
-            cast(Mapping[str, Any], thaw_json(frozen_headless)),
+        prediction = prediction_jsonl(
+            patch,
+            model_name=controller.binding.adapter_id,
         )
-    except Exception as exc:
-        raise SweBenchRunnerError("selected E4 controller could not produce a patch") from exc
-    if type(patch) is not str or len(patch.encode("utf-8")) > _MAX_PATCH_BYTES:
-        raise SweBenchRunnerError("controller patch is missing or exceeds its byte limit")
-    try:
-        prediction = prediction_jsonl(patch, model_name=controller.binding.adapter_id)
     except (SweBenchTaskError, TypeError) as exc:
         raise SweBenchRunnerError(str(exc)) from exc
     prediction_digest = _digest_bytes(prediction)
-    patch_digest = _digest_bytes(patch.encode("utf-8"))
     _write_prediction(request.predictions_path, prediction)
 
     command = TrustedEvaluatorCommand.create(
@@ -790,6 +1142,7 @@ async def run_installed_swe_bench(
         predictions_path=request.predictions_path,
         report_directory=request.report_directory,
         run_id=request.run_id,
+        model_name=controller.binding.adapter_id,
         patch_digest=patch_digest,
     )
     try:
@@ -846,7 +1199,7 @@ __all__ = [
     "SweBenchEvaluatorResult",
     "SweBenchRunnerError",
     "SweBenchTaskBinding",
-    "TrustedEvaluatorAdapter",
+    "SubprocessOfficialEvaluator",
     "TrustedEvaluatorCommand",
     "select_e4_controller",
     "run_installed_swe_bench",
