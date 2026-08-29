@@ -23,15 +23,49 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Install exact evaluator environment
         run: |
-          sudo mkdir -p /opt/breadboard
-          sudo chown "$USER:$USER" /opt/breadboard
-          uv venv --python "$(command -v python)" --relocatable /opt/breadboard/swebench-evaluator
+          PYTHON_SOURCE="$(readlink -f "$(command -v python)")"
+          PYTHON_ROOT="$(dirname "$(dirname "$PYTHON_SOURCE")")"
+          sudo mkdir -p \
+            /opt/breadboard/swebench-python-runtime/bin \
+            /opt/breadboard/swebench-python-runtime/lib
+          sudo cp "$PYTHON_SOURCE" \
+            /opt/breadboard/swebench-python-runtime/bin/python3.11
+          sudo cp -LR "$PYTHON_ROOT/lib/." \
+            /opt/breadboard/swebench-python-runtime/lib/
+          sudo rm -rf \
+            /opt/breadboard/swebench-python-runtime/lib/python3.11/site-packages
+          sudo chown -R "$USER:$USER" /opt/breadboard
+          uv venv \
+            --python /opt/breadboard/swebench-python-runtime/bin/python3.11 \
+            --relocatable \
+            /opt/breadboard/swebench-evaluator
           uv pip sync \
             --python /opt/breadboard/swebench-evaluator/bin/python \
             --link-mode copy \
             scripts/rl_phase5/swe_bench_evaluator_requirements.lock
+          mv /opt/breadboard/swebench-python-runtime \
+            /opt/breadboard/swebench-evaluator/runtime
+          sed -i \
+            's#/opt/breadboard/swebench-python-runtime#/opt/breadboard/swebench-evaluator/runtime#g' \
+            /opt/breadboard/swebench-evaluator/pyvenv.cfg
+          rm -f \
+            /opt/breadboard/swebench-evaluator/bin/python \
+            /opt/breadboard/swebench-evaluator/bin/python3 \
+            /opt/breadboard/swebench-evaluator/bin/python3.11
+          ln -s ../runtime/bin/python3.11 \
+            /opt/breadboard/swebench-evaluator/bin/python
+          ln -s ../runtime/bin/python3.11 \
+            /opt/breadboard/swebench-evaluator/bin/python3
+          ln -s ../runtime/bin/python3.11 \
+            /opt/breadboard/swebench-evaluator/bin/python3.11
+          find /opt/breadboard/swebench-evaluator \
+            -type d -name __pycache__ -prune -exec rm -rf {} +
+          find /opt/breadboard/swebench-evaluator \
+            -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
           sudo chown -R root:root /opt/breadboard/swebench-evaluator
           sudo chmod -R a-w /opt/breadboard/swebench-evaluator
+          sudo chown root:root /opt/breadboard
+          sudo chmod 755 /opt/breadboard
       - name: Measure evaluator environment
         run: |
           uv run python -c "import json; from breadboard.rl.harness.swe_bench_runner import measure_official_evaluator_environment; value=measure_official_evaluator_environment('/opt/breadboard/swebench-evaluator'); open('/tmp/evaluator-measurement.json','x',encoding='utf-8').write(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n'); print(json.dumps(value,sort_keys=True))"

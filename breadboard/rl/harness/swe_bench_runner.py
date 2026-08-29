@@ -45,7 +45,6 @@ from .swe_bench_task import (
     official_evaluator_command,
     prediction_jsonl,
     score_official_reports,
-    verify_evaluator_installation,
 )
 
 
@@ -62,6 +61,10 @@ E4_PROFILE_IDS: tuple[str, ...] = ("Pi", "OMP", "OpenHands", "mini-swe-agent")
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}\Z")
 _SAFE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _ADAPTER_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}\Z")
+_RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
+_IMMUTABLE_IMAGE_REFERENCE = (
+    IMAGE_REFERENCE.rsplit(":", 1)[0] + "@" + IMAGE_LEAF_DIGEST
+)
 _MAX_PATCH_BYTES = 4 * 1024 * 1024
 _MAX_REPORT_BYTES = 16 * 1024 * 1024
 _MAX_EVALUATOR_BYTES = 128 * 1024 * 1024
@@ -96,6 +99,12 @@ def _digest(value: str, *, field_name: str) -> str:
 def _safe_id(value: str, *, field_name: str) -> str:
     if type(value) is not str or _SAFE_ID_RE.fullmatch(value) is None:
         raise SweBenchRunnerError(f"{field_name} is not a safe identity")
+    return value
+
+
+def _run_id(value: str) -> str:
+    if type(value) is not str or _RUN_ID_RE.fullmatch(value) is None:
+        raise SweBenchRunnerError("run_id is not a safe evaluator cleanup identity")
     return value
 
 
@@ -327,7 +336,7 @@ class TrustedEvaluatorCommand:
         _absolute_path(dataset_path, field_name="dataset_path")
         _absolute_path(predictions_path, field_name="predictions_path")
         _absolute_path(report_directory, field_name="report_directory")
-        _safe_id(run_id, field_name="run_id")
+        _run_id(run_id)
         _safe_id(model_name, field_name="model_name")
         _digest(patch_digest, field_name="patch")
         argv = official_evaluator_command(
@@ -361,7 +370,7 @@ class TrustedEvaluatorCommand:
         _absolute_path(self.dataset_path, field_name="dataset_path")
         _absolute_path(self.predictions_path, field_name="predictions_path")
         _absolute_path(self.report_directory, field_name="report_directory")
-        _safe_id(self.run_id, field_name="run_id")
+        _run_id(self.run_id)
         _safe_id(self.model_name, field_name="model_name")
         _digest(self.patch_digest, field_name="patch")
         if (
@@ -538,7 +547,9 @@ def _measure_file(path: str, *, max_bytes: int) -> str:
         identity = os.fstat(descriptor)
         if (
             not stat.S_ISREG(identity.st_mode)
+            or identity.st_uid != 0
             or identity.st_nlink != 1
+            or identity.st_mode & 0o222
             or identity.st_size > max_bytes
         ):
             raise SweBenchRunnerError(
@@ -571,20 +582,109 @@ _MAX_ENVIRONMENT_FILES = 50_000
 _MAX_ENVIRONMENT_BYTES = 4 * 1024 * 1024 * 1024
 
 
+def _require_root_owned_immutable_directory(path: str) -> None:
+    current = os.path.abspath(path)
+    while True:
+        try:
+            identity = os.stat(current, follow_symlinks=False)
+        except OSError as exc:
+            raise SweBenchRunnerError(
+                "evaluator authority directory is unavailable"
+            ) from exc
+        if (
+            not stat.S_ISDIR(identity.st_mode)
+            or identity.st_uid != 0
+            or identity.st_mode & 0o222
+        ):
+            raise SweBenchRunnerError(
+                "evaluator authority directory is not root-owned and immutable"
+            )
+        parent = os.path.dirname(current)
+        if parent == current:
+            return
+        current = parent
+
+
+def _measure_immutable_tree(
+    tree_root: str,
+    *,
+    projection_root: str,
+) -> tuple[list[dict[str, Any]], int]:
+    _require_root_owned_immutable_directory(tree_root)
+    entries: list[dict[str, Any]] = []
+    total_bytes = 0
+    for directory, names, files in os.walk(tree_root, followlinks=False):
+        directory_identity = os.stat(directory, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(directory_identity.st_mode)
+            or directory_identity.st_uid != 0
+            or directory_identity.st_mode & 0o222
+        ):
+            raise SweBenchRunnerError(
+                "evaluator environment contains a mutable directory"
+            )
+        if "__pycache__" in names:
+            raise SweBenchRunnerError(
+                "evaluator environment contains executable bytecode caches"
+            )
+        names[:] = sorted(names)
+        for name in names:
+            path = os.path.join(directory, name)
+            identity = os.stat(path, follow_symlinks=False)
+            if (
+                not stat.S_ISDIR(identity.st_mode)
+                or identity.st_uid != 0
+                or identity.st_mode & 0o222
+            ):
+                raise SweBenchRunnerError(
+                    "evaluator environment contains a mutable directory"
+                )
+        for name in sorted(files):
+            if name.endswith((".pyc", ".pyo")):
+                raise SweBenchRunnerError(
+                    "evaluator environment contains executable bytecode"
+                )
+            path = os.path.join(directory, name)
+            identity = os.stat(path, follow_symlinks=False)
+            if (
+                not stat.S_ISREG(identity.st_mode)
+                or identity.st_uid != 0
+                or identity.st_nlink != 1
+                or identity.st_mode & 0o222
+                or identity.st_size > _MAX_EVALUATOR_BYTES
+            ):
+                raise SweBenchRunnerError(
+                    "evaluator environment contains an invalid file"
+                )
+            total_bytes += identity.st_size
+            if (
+                len(entries) >= _MAX_ENVIRONMENT_FILES
+                or total_bytes > _MAX_ENVIRONMENT_BYTES
+            ):
+                raise SweBenchRunnerError("evaluator environment exceeds its bounds")
+            entries.append(
+                {
+                    "path": os.path.relpath(path, projection_root),
+                    "size_bytes": identity.st_size,
+                    "executable": bool(identity.st_mode & 0o111),
+                    "digest": _measure_file(
+                        path,
+                        max_bytes=_MAX_EVALUATOR_BYTES,
+                    ),
+                }
+            )
+    if not entries:
+        raise SweBenchRunnerError("evaluator environment authority tree is empty")
+    return entries, total_bytes
+
+
 def measure_official_evaluator_environment(root: str) -> dict[str, Any]:
     """Measure the complete locked evaluator package tree and host executables."""
 
     _absolute_path(root, field_name="evaluator environment root")
-    try:
-        root_identity = os.stat(root, follow_symlinks=False)
-    except OSError as exc:
-        raise SweBenchRunnerError("evaluator environment root is unavailable") from exc
-    if (
-        not stat.S_ISDIR(root_identity.st_mode)
-        or root_identity.st_mode & 0o022
-    ):
-        raise SweBenchRunnerError("evaluator environment root is not immutable")
+    _require_root_owned_immutable_directory(root)
     library_root = os.path.join(root, "lib")
+    _require_root_owned_immutable_directory(library_root)
     try:
         python_directories = sorted(
             name
@@ -601,57 +701,33 @@ def measure_official_evaluator_environment(root: str) -> dict[str, Any]:
         python_directories[0],
         "site-packages",
     )
-    entries: list[dict[str, Any]] = []
-    total_bytes = 0
-    distribution_direct_url: Mapping[str, Any] | None = None
-    distribution_metadata: bytes | None = None
-    for directory, names, files in os.walk(site_packages, followlinks=False):
-        names[:] = sorted(name for name in names if name != "__pycache__")
-        for name in names:
-            path = os.path.join(directory, name)
-            identity = os.stat(path, follow_symlinks=False)
-            if not stat.S_ISDIR(identity.st_mode) or identity.st_mode & 0o022:
-                raise SweBenchRunnerError(
-                    "evaluator environment contains a mutable directory"
-                )
-        for name in sorted(files):
-            if name.endswith((".pyc", ".pyo")):
-                continue
-            path = os.path.join(directory, name)
-            identity = os.stat(path, follow_symlinks=False)
-            if (
-                not stat.S_ISREG(identity.st_mode)
-                or identity.st_nlink != 1
-                or identity.st_mode & 0o022
-                or identity.st_size > _MAX_EVALUATOR_BYTES
-            ):
-                raise SweBenchRunnerError(
-                    "evaluator environment contains an invalid file"
-                )
-            total_bytes += identity.st_size
-            if (
-                len(entries) >= _MAX_ENVIRONMENT_FILES
-                or total_bytes > _MAX_ENVIRONMENT_BYTES
-            ):
-                raise SweBenchRunnerError("evaluator environment exceeds its bounds")
-            relative = os.path.relpath(path, root)
-            digest = _measure_file(path, max_bytes=_MAX_EVALUATOR_BYTES)
-            entries.append(
-                {
-                    "path": relative,
-                    "size_bytes": identity.st_size,
-                    "executable": bool(identity.st_mode & 0o111),
-                    "digest": digest,
-                }
-            )
-            distribution_relative = os.path.relpath(path, site_packages)
-            if distribution_relative == "swebench-5.0.1.dist-info/direct_url.json":
-                distribution_direct_url = _read_json_file(path)
-            if distribution_relative == "swebench-5.0.1.dist-info/METADATA":
-                with open(path, "rb") as source:
-                    distribution_metadata = source.read(_MAX_REPORT_BYTES + 1)
-    if len(entries) == 0:
-        raise SweBenchRunnerError("evaluator environment is empty")
+    runtime_library = os.path.join(root, "runtime", "lib")
+    site_entries, site_bytes = _measure_immutable_tree(
+        site_packages,
+        projection_root=root,
+    )
+    runtime_entries, runtime_bytes = _measure_immutable_tree(
+        runtime_library,
+        projection_root=root,
+    )
+    entries = site_entries + runtime_entries
+    total_bytes = site_bytes + runtime_bytes
+    if (
+        len(entries) > _MAX_ENVIRONMENT_FILES
+        or total_bytes > _MAX_ENVIRONMENT_BYTES
+    ):
+        raise SweBenchRunnerError("evaluator environment exceeds its bounds")
+    distribution_root = os.path.join(
+        site_packages,
+        "swebench-5.0.1.dist-info",
+    )
+    distribution_direct_url = _read_json_file(
+        os.path.join(distribution_root, "direct_url.json")
+    )
+    metadata_path = os.path.join(distribution_root, "METADATA")
+    _measure_file(metadata_path, max_bytes=_MAX_REPORT_BYTES)
+    with open(metadata_path, "rb") as source:
+        distribution_metadata = source.read(_MAX_REPORT_BYTES + 1)
     expected_direct_url = {
         "url": "https://github.com/SWE-bench/SWE-bench.git",
         "vcs_info": {
@@ -671,6 +747,8 @@ def measure_official_evaluator_environment(root: str) -> dict[str, Any]:
         raise SweBenchRunnerError("evaluator distribution metadata is not pinned")
     python_path = os.path.realpath(os.path.join(root, "bin", "python"))
     docker_path = os.path.realpath("/usr/bin/docker")
+    _require_root_owned_immutable_directory(os.path.dirname(python_path))
+    _require_root_owned_immutable_directory(os.path.dirname(docker_path))
     python_digest = _measure_file(
         python_path,
         max_bytes=_MAX_EVALUATOR_BYTES,
@@ -831,10 +909,90 @@ def _copy_verified_dataset(
         raise SweBenchRunnerError("pinned dataset digest mismatch")
 
 
+def _private_file_digest(path: str, *, max_bytes: int) -> str:
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        identity = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(identity.st_mode)
+            or identity.st_uid != os.geteuid()
+            or identity.st_nlink != 1
+            or stat.S_IMODE(identity.st_mode) != 0o400
+            or identity.st_size > max_bytes
+        ):
+            raise SweBenchRunnerError("private evaluator input identity is invalid")
+        hasher = hashlib.sha256()
+        size = 0
+        while size <= max_bytes:
+            chunk = os.read(descriptor, min(64 * 1024, max_bytes + 1 - size))
+            if not chunk:
+                break
+            size += len(chunk)
+            hasher.update(chunk)
+        if size > max_bytes:
+            raise SweBenchRunnerError("private evaluator input exceeds its bound")
+        return "sha256:" + hasher.hexdigest()
+    except OSError as exc:
+        raise SweBenchRunnerError("private evaluator input is unavailable") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _write_digest_bound_dataset(
+    source_path: str,
+    destination_path: str,
+    task_binding: SweBenchTaskBinding,
+) -> str:
+    try:
+        import pyarrow as arrow
+        import pyarrow.parquet as parquet
+    except ImportError as exc:
+        raise SweBenchRunnerError(
+            "pyarrow is required to bind the evaluator image"
+        ) from exc
+    verified_row = task_binding.load_verified_row(source_path)
+    table = parquet.read_table(source_path)
+    rows = table.to_pylist()
+    indexes = [
+        index
+        for index, row in enumerate(rows)
+        if row.get("instance_id") == task_binding.instance_id
+    ]
+    if len(indexes) != 1 or rows[indexes[0]] != dict(verified_row):
+        raise SweBenchRunnerError("private evaluator dataset row changed after verification")
+    rows[indexes[0]] = dict(rows[indexes[0]]) | {
+        "image": _IMMUTABLE_IMAGE_REFERENCE
+    }
+    try:
+        transformed = arrow.Table.from_pylist(rows, schema=table.schema)
+        parquet.write_table(transformed, destination_path, compression="zstd")
+        os.chmod(destination_path, 0o400, follow_symlinks=False)
+        observed_rows = parquet.read_table(destination_path).to_pylist()
+    except (OSError, ValueError, TypeError) as exc:
+        raise SweBenchRunnerError(
+            "digest-bound evaluator dataset could not be staged"
+        ) from exc
+    if observed_rows != rows:
+        raise SweBenchRunnerError("digest-bound evaluator dataset is not canonical")
+    return _private_file_digest(
+        destination_path,
+        max_bytes=DATASET_SIZE_BYTES * 2,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class OfficialEvaluatorOutcome:
     evaluation: SweBenchEvaluatorResult
     cleanup_digest: str
+    evaluation_dataset_digest: str
+    image_observation_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -882,6 +1040,18 @@ class SubprocessOfficialEvaluator:
         object.__setattr__(self, "python_digest", str(measurement["python_digest"]))
         object.__setattr__(self, "docker_digest", str(measurement["docker_digest"]))
 
+    def _verify_environment(self) -> None:
+        measurement = measure_official_evaluator_environment(self.environment_root)
+        if (
+            measurement.get("environment_digest") != self.environment_digest
+            or measurement.get("python_path") != self.python_path
+            or measurement.get("python_digest") != self.python_digest
+            or measurement.get("docker_digest") != self.docker_digest
+        ):
+            raise SweBenchRunnerError(
+                "official evaluator environment changed after admission"
+            )
+
     def identity_dict(self) -> dict[str, Any]:
         return self.binding.identity_dict() | {
             "environment_digest": self.environment_digest,
@@ -902,6 +1072,58 @@ class SubprocessOfficialEvaluator:
             "PYTHONUNBUFFERED": "1",
         }
 
+    def _observe_image(
+        self,
+        *,
+        run_root: str,
+        environment: Mapping[str, str],
+    ) -> str:
+        observation_path = os.path.join(run_root, "image-observation.json")
+        observation_script = (
+            "import json,os,sys;"
+            "from swebench.harness.run_evaluation import _docker_client;"
+            "image=_docker_client().images.get(sys.argv[1]);"
+            "payload={'requested_reference':sys.argv[1],'image_id':image.id,"
+            "'repo_digests':sorted(image.attrs.get('RepoDigests') or [])};"
+            "open(sys.argv[2],'x',encoding='utf-8').write("
+            "json.dumps(payload,sort_keys=True,separators=(',',':')));"
+            "os.chmod(sys.argv[2],0o400)"
+        )
+        _run_evaluator_process(
+            (
+                self.python_path,
+                "-I",
+                "-c",
+                observation_script,
+                _IMMUTABLE_IMAGE_REFERENCE,
+                observation_path,
+            ),
+            cwd=run_root,
+            environment=environment,
+            timeout_seconds=60,
+        )
+        observation = _read_json_file(observation_path)
+        image_id = observation.get("image_id")
+        repo_digests = observation.get("repo_digests")
+        if (
+            set(observation) != {
+                "requested_reference",
+                "image_id",
+                "repo_digests",
+            }
+            or observation.get("requested_reference")
+            != _IMMUTABLE_IMAGE_REFERENCE
+            or type(image_id) is not str
+            or _DIGEST_RE.fullmatch(image_id) is None
+            or not isinstance(repo_digests, list)
+            or any(type(value) is not str for value in repo_digests)
+            or _IMMUTABLE_IMAGE_REFERENCE not in repo_digests
+        ):
+            raise SweBenchRunnerError(
+                "local evaluator image is not the pinned platform digest"
+            )
+        return _canonical_digest(observation)
+
     def _cleanup_containers(
         self,
         *,
@@ -909,10 +1131,31 @@ class SubprocessOfficialEvaluator:
         run_root: str,
         environment: Mapping[str, str],
     ) -> dict[str, Any]:
+        cleanup_path = os.path.join(run_root, "container-cleanup.json")
         cleanup_script = (
-            "import sys;"
-            "from swebench.harness.remove_containers import main;"
-            "main(run_id=sys.argv[1])"
+            "import json, os, sys\n"
+            "from swebench.harness.run_evaluation import _docker_client\n"
+            "prefix = f'sweb.eval.{sys.argv[1].lower()}.{sys.argv[2]}'\n"
+            "client = _docker_client()\n"
+            "targets = sorted(\n"
+            "    (container for container in client.containers.list(all=True)\n"
+            "     if container.name == prefix or container.name.startswith(prefix + '.')),\n"
+            "    key=lambda container: container.name,\n"
+            ")\n"
+            "removed = []\n"
+            "errors = []\n"
+            "for container in targets:\n"
+            "    try:\n"
+            "        container.remove(force=True)\n"
+            "        removed.append(container.name)\n"
+            "    except Exception as exc:\n"
+            "        errors.append({'name': container.name, 'error': type(exc).__name__})\n"
+            "with open(sys.argv[3], 'x', encoding='utf-8') as output:\n"
+            "    output.write(json.dumps(\n"
+            "        {'removed': removed, 'errors': errors},\n"
+            "        sort_keys=True, separators=(',', ':'),\n"
+            "    ))\n"
+            "os.chmod(sys.argv[3], 0o400)\n"
         )
         _run_evaluator_process(
             (
@@ -920,12 +1163,21 @@ class SubprocessOfficialEvaluator:
                 "-I",
                 "-c",
                 cleanup_script,
+                INSTANCE_ID,
                 run_id,
+                cleanup_path,
             ),
             cwd=run_root,
             environment=environment,
             timeout_seconds=120,
         )
+        cleanup = _read_json_file(cleanup_path)
+        if (
+            set(cleanup) != {"removed", "errors"}
+            or not isinstance(cleanup.get("removed"), list)
+            or cleanup.get("errors") != []
+        ):
+            raise SweBenchRunnerError("official evaluator container cleanup failed")
         inventory_path = os.path.join(run_root, "container-inventory.json")
         inventory_script = (
             "import json,sys;"
@@ -957,6 +1209,7 @@ class SubprocessOfficialEvaluator:
             "schema_version": "bb.rl.swe-bench-evaluator-cleanup.v1",
             "run_id": run_id,
             "containers": [],
+            "removed_containers": cleanup["removed"],
             "process_group_absent": True,
         }
 
@@ -972,9 +1225,10 @@ class SubprocessOfficialEvaluator:
     ) -> OfficialEvaluatorOutcome:
         if type(task_binding) is not SweBenchTaskBinding:
             raise TypeError("task_binding must be an exact SweBenchTaskBinding")
-        _safe_id(run_id, field_name="run_id")
+        _run_id(run_id)
         _safe_id(model_name, field_name="model_name")
         _digest(patch_digest, field_name="patch")
+        self._verify_environment()
         run_root = os.path.join(self.work_directory, run_id)
         try:
             os.mkdir(run_root, 0o700)
@@ -982,20 +1236,32 @@ class SubprocessOfficialEvaluator:
             raise SweBenchRunnerError(
                 "official evaluator run directory must be new"
             ) from exc
-        dataset_copy = os.path.join(run_root, "dataset.parquet")
+        dataset_copy = os.path.join(run_root, "source-dataset.parquet")
+        evaluation_dataset = os.path.join(run_root, "evaluation-dataset.parquet")
         predictions_path = os.path.join(run_root, "predictions.jsonl")
         report_directory = os.path.join(run_root, "reports")
         environment = self._environment(run_root)
         evaluation: SweBenchEvaluatorResult | None = None
         cleanup_projection: dict[str, Any] | None = None
+        evaluation_dataset_digest: str | None = None
+        image_observation_digest: str | None = None
         failure: Exception | None = None
         try:
             _copy_verified_dataset(dataset_path, dataset_copy)
             task_binding.load_verified_row(dataset_copy)
+            evaluation_dataset_digest = _write_digest_bound_dataset(
+                dataset_copy,
+                evaluation_dataset,
+                task_binding,
+            )
+            image_observation_digest = self._observe_image(
+                run_root=run_root,
+                environment=environment,
+            )
             _write_prediction(predictions_path, prediction)
             os.mkdir(report_directory, 0o700)
             command = TrustedEvaluatorCommand.create(
-                dataset_path=dataset_copy,
+                dataset_path=evaluation_dataset,
                 predictions_path=predictions_path,
                 report_directory=report_directory,
                 run_id=run_id,
@@ -1071,12 +1337,19 @@ class SubprocessOfficialEvaluator:
             )
         if failure is not None:
             raise SweBenchRunnerError("official SWE-bench evaluator failed") from failure
-        if evaluation is None or cleanup_projection is None:
+        if (
+            evaluation is None
+            or cleanup_projection is None
+            or evaluation_dataset_digest is None
+            or image_observation_digest is None
+        ):
             raise SweBenchRunnerError("official evaluator outcome is incomplete")
         cleanup_projection["run_root_absent"] = True
         return OfficialEvaluatorOutcome(
             evaluation=evaluation,
             cleanup_digest=_canonical_digest(cleanup_projection),
+            evaluation_dataset_digest=evaluation_dataset_digest,
+            image_observation_digest=image_observation_digest,
         )
 
 
@@ -1213,7 +1486,14 @@ class InstalledSweBenchRequest:
                 "request evaluator is not the pinned official evaluator"
             )
         _absolute_path(self.dataset_path, field_name="dataset_path")
-        _safe_id(self.run_id, field_name="run_id")
+        _run_id(self.run_id)
+        if (
+            self.headless_request.prompt
+            != self.task_binding.model_visible_task()["problem_statement"]
+        ):
+            raise SweBenchRunnerError(
+                "headless prompt is not the pinned SWE-bench problem statement"
+            )
         workspace = self.headless_request.workspace
         if workspace.task_image_digest != self.task_binding.image_digest:
             raise SweBenchRunnerError(
@@ -1272,6 +1552,8 @@ class InstalledSweBenchRewardReceipt:
     patch_digest: str
     image_index_digest: str
     image_leaf_digest: str
+    evaluation_dataset_digest: str
+    image_observation_digest: str
     command_digest: str
     aggregate_report_digest: str
     instance_report_digest: str
@@ -1289,7 +1571,7 @@ class InstalledSweBenchRewardReceipt:
     )
 
     def __post_init__(self) -> None:
-        _safe_id(self.run_id, field_name="run_id")
+        _run_id(self.run_id)
         _safe_id(self.episode_id, field_name="episode_id")
         if not isinstance(self.controller_identity, Mapping) or not isinstance(
             self.evaluator_identity, Mapping
@@ -1317,6 +1599,8 @@ class InstalledSweBenchRewardReceipt:
             (self.patch_digest, "patch"),
             (self.image_index_digest, "image index"),
             (self.image_leaf_digest, "image leaf"),
+            (self.evaluation_dataset_digest, "evaluation dataset"),
+            (self.image_observation_digest, "image observation"),
             (self.command_digest, "evaluator command"),
             (self.aggregate_report_digest, "aggregate report"),
             (self.instance_report_digest, "instance report"),
@@ -1360,6 +1644,8 @@ class InstalledSweBenchRewardReceipt:
             "patch_digest": self.patch_digest,
             "image_index_digest": self.image_index_digest,
             "image_leaf_digest": self.image_leaf_digest,
+            "evaluation_dataset_digest": self.evaluation_dataset_digest,
+            "image_observation_digest": self.image_observation_digest,
             "command_digest": self.command_digest,
             "aggregate_report_digest": self.aggregate_report_digest,
             "instance_report_digest": self.instance_report_digest,
@@ -1672,6 +1958,8 @@ async def run_installed_swe_bench(
         patch_digest=patch_digest,
         image_index_digest=IMAGE_INDEX_DIGEST,
         image_leaf_digest=IMAGE_LEAF_DIGEST,
+        evaluation_dataset_digest=outcome.evaluation_dataset_digest,
+        image_observation_digest=outcome.image_observation_digest,
         command_digest=evaluation.command.command_digest,
         aggregate_report_digest=evaluation.aggregate_report_digest,
         instance_report_digest=evaluation.instance_report_digest,

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Mapping
@@ -38,6 +37,7 @@ from breadboard.rl.harness.swe_bench_runner import (
     _controller_model_name,
     _copy_verified_dataset,
     _validate_headless_result,
+    _write_digest_bound_dataset,
     run_installed_swe_bench,
 )
 from breadboard.rl.harness.swe_bench_task import (
@@ -47,6 +47,7 @@ from breadboard.rl.harness.swe_bench_task import (
     IMAGE_INDEX_DIGEST,
     IMAGE_LEAF_DIGEST,
     INSTANCE_ID,
+    IMAGE_REFERENCE,
 )
 
 
@@ -153,6 +154,7 @@ def _headless_request(tmp_path: Path) -> HeadlessRunRequest:
             repository_snapshot_digest=None,
             base_commit=BASE_COMMIT,
         ),
+        prompt=PINNED_SWE_BENCH_TASK.model_visible_task()["problem_statement"],
         patch_path=str(tmp_path / "workspace.patch"),
     )
 
@@ -338,6 +340,8 @@ def test_evaluator_identity_cannot_be_self_declared(
             "docker_digest": OFFICIAL_EVALUATOR_DOCKER_DIGEST,
         },
     )
+    with pytest.raises(SweBenchRunnerError, match="changed after admission"):
+        adapter._verify_environment()
     with pytest.raises(SweBenchRunnerError, match="environment digest mismatch"):
         SubprocessOfficialEvaluator(
             environment_root=str(tmp_path / "other-environment"),
@@ -369,6 +373,43 @@ def test_dataset_is_copied_from_verified_descriptor(
         _copy_verified_dataset(str(source), str(tmp_path / "changed.parquet"))
 
 
+def test_evaluator_dataset_replaces_mutable_image_tag_with_leaf_digest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pyarrow as arrow
+    import pyarrow.parquet as parquet
+
+    row = {
+        "instance_id": INSTANCE_ID,
+        "image": IMAGE_REFERENCE,
+        "problem_statement": PINNED_SWE_BENCH_TASK.model_visible_task()[
+            "problem_statement"
+        ],
+    }
+    source = tmp_path / "source.parquet"
+    destination = tmp_path / "evaluation.parquet"
+    parquet.write_table(arrow.Table.from_pylist([row]), source)
+    monkeypatch.setattr(
+        type(PINNED_SWE_BENCH_TASK),
+        "load_verified_row",
+        lambda _self, _path: row,
+    )
+
+    digest = _write_digest_bound_dataset(
+        str(source),
+        str(destination),
+        PINNED_SWE_BENCH_TASK,
+    )
+
+    transformed = parquet.read_table(destination).to_pylist()
+    assert transformed[0]["image"] == (
+        IMAGE_REFERENCE.rsplit(":", 1)[0] + "@" + IMAGE_LEAF_DIGEST
+    )
+    assert digest.startswith("sha256:")
+    assert destination.stat().st_mode & 0o777 == 0o400
+
+
 def test_request_requires_real_base_and_launcher_binding(tmp_path: Path) -> None:
     request = _request(tmp_path)
     assert request.headless_request.workspace.base_commit == BASE_COMMIT
@@ -386,6 +427,29 @@ def test_request_requires_real_base_and_launcher_binding(tmp_path: Path) -> None
             headless_invocation=request.headless_invocation,
             dataset_path=request.dataset_path,
             run_id=request.run_id,
+        )
+
+    with pytest.raises(SweBenchRunnerError, match="prompt"):
+        InstalledSweBenchRequest(
+            profile=request.profile,
+            headless_request=request.headless_request.model_copy(
+                update={"prompt": "untrusted benchmark prompt"}
+            ),
+            headless_invocation=request.headless_invocation,
+            dataset_path=request.dataset_path,
+            run_id=request.run_id,
+        )
+    with pytest.raises(SweBenchRunnerError, match="cleanup identity"):
+        InstalledSweBenchRequest(
+            profile=request.profile,
+            headless_request=request.headless_request.model_copy(
+                update={
+                    "resolve_request": SimpleNamespace(episode_id="episode.1")
+                }
+            ),
+            headless_invocation=request.headless_invocation,
+            dataset_path=request.dataset_path,
+            run_id="episode.1",
         )
 
 
@@ -458,6 +522,8 @@ def test_installed_run_binds_canonical_headless_evaluator_and_both_cleanups(
                 instance_report=instance,
             ),
             cleanup_digest=f"sha256:{'d' * 64}",
+            evaluation_dataset_digest=f"sha256:{'e' * 64}",
+            image_observation_digest=f"sha256:{'f' * 64}",
         )
 
     monkeypatch.setattr(SubprocessOfficialEvaluator, "evaluate", evaluate)
@@ -467,6 +533,8 @@ def test_installed_run_binds_canonical_headless_evaluator_and_both_cleanups(
     assert receipt.image_index_digest == IMAGE_INDEX_DIGEST
     assert receipt.headless_cleanup_digest.startswith("sha256:")
     assert receipt.evaluator_cleanup_digest == f"sha256:{'d' * 64}"
+    assert receipt.evaluation_dataset_digest == f"sha256:{'e' * 64}"
+    assert receipt.image_observation_digest == f"sha256:{'f' * 64}"
     assert receipt.cleanup_digest.startswith("sha256:")
     public = receipt.to_public_dict()
     assert "model_patch" not in public

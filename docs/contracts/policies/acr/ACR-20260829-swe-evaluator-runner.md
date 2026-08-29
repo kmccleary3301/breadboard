@@ -35,12 +35,13 @@ The E4 RL harness needs a production path from a completed headless workspace pa
 
 ## 5) Evidence and Validation Plan
 
-- Reject task, target, image, base, patch, evaluator, report, reward, and cleanup identity mismatches.
+- Reject task, prompt, target, image, base, patch, evaluator, report, reward, and cleanup identity mismatches.
 - Reject symbolic-link, non-regular, oversized, mutable, or non-canonical patch input.
-- Hash the exact official evaluator executable and implementation commit.
+- Hash the complete locked evaluator package tree, exact official commit, Python executable, and Docker client; require root-owned non-writable authority paths with no executable bytecode caches and remeasure immediately before evaluation.
+- Transform only the verified private dataset copy from the pinned mutable image tag to the pinned platform digest, then bind the transformed artifact and live Docker image observation in the receipt.
 - Create an empty evaluator directory for every invocation so a stale report cannot satisfy a later run.
-- Use a minimal subprocess environment, bounded streaming output, process-group termination, and exact return-code/report checks.
-- Bind canonical prediction, evaluator, report, reward, and cleanup digests in the final receipt.
+- Use a minimal subprocess environment, bounded output, exact run-scoped container cleanup, process-group termination, and exact return-code/report checks.
+- Bind canonical prediction, evaluator input, image observation, report, reward, and cleanup digests in the final receipt.
 - Run the focused SWE runner, installed headless, V2 service, and verifier-snapshot suite.
 - Require exact-head correctness and security review, the danger-zone ACR guard, and full CI before merge.
 
