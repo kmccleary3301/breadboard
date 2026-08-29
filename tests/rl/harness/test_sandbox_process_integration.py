@@ -7,6 +7,8 @@ import json
 import os
 import shlex
 import signal
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,11 +31,16 @@ from breadboard.rl.harness.runners.terminal import (
 )
 from breadboard.rl.harness.sandbox import (
     SandboxLaunchError,
+    RuntimeLaunchContext,
     SandboxRuntimeManager,
     TrustedProcessBackend,
     TrustedProcessHandle,
     VerifierExecutionError,
+    VerifierSnapshotError,
     WorkspaceStateError,
+    WorkspaceStorageIdentity,
+    build_sandbox_execution_plan,
+    _sealed_repository_diff,
 )
 from tests.rl.harness.test_runner_terminal import (
     RecordingEventSink,
@@ -74,6 +81,183 @@ requires_sealed_execution = pytest.mark.skipif(
     not _sealed_execution_supported(),
     reason="requires Linux sealed-memfd descriptor execution",
 )
+
+
+def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = tmp_path / "source"
+    git_path = shutil.which("git")
+    assert git_path is not None
+
+    class PinnedGit:
+        def __init__(self) -> None:
+            self.fd = os.open(git_path, os.O_RDONLY)
+            self.proc_fd_path = git_path
+            self.digest = "sha256:" + "0" * 64
+
+        def close(self) -> None:
+            os.close(self.fd)
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
+        lambda path, expected_digest: PinnedGit(),
+    )
+    repository.mkdir()
+
+    def git(*arguments: str, cwd: Path = repository) -> str:
+        completed = subprocess.run(
+            ("git", *arguments), cwd=cwd, check=True, capture_output=True, text=True
+        )
+        return completed.stdout.strip()
+
+    git("init", "--quiet")
+    (repository / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
+    (repository / ".gitattributes").write_text(
+        "*.txt diff=hide filter=forge\n", encoding="utf-8"
+    )
+    (repository / "tracked.txt").write_text("before\n", encoding="utf-8")
+    git("add", ".")
+    git(
+        "-c", "user.name=BreadBoard",
+        "-c", "user.email=breadboard@example.invalid",
+        "commit", "--quiet", "-m", "base",
+    )
+    base_commit = git("rev-parse", "HEAD")
+    git("config", "diff.hide.command", "/usr/bin/true")
+    git("config", "filter.forge.clean", "sed s/after/forged/")
+    git("config", "filter.forge.smudge", "cat")
+    (repository / "tracked.txt").write_text("after\n", encoding="utf-8")
+    (repository / "ignored.txt").write_text("included\n", encoding="utf-8")
+    binary = b"\x00\x01\xffbinary\n"
+    (repository / "new.bin").write_bytes(binary)
+    raw_binary = b"\xffnon-UTF-8-without-NUL\n"
+    (repository / "raw.bin").write_bytes(raw_binary)
+    plan = type(
+        "SealedDiffPlan", (),
+        {
+            "runtime": type(
+                "Runtime", (), {"fixed_environment": (("PATH", os.environ["PATH"]),)}
+            )(),
+            "limits": type(
+                "Limits", (),
+                {"action_timeout_ms": 10_000, "artifact_bytes_each": 1024 * 1024},
+            )(),
+        },
+    )()
+    result = _sealed_repository_diff(
+        repository=repository,
+        scratch_directory=tmp_path,
+        base_commit=base_commit,
+        plan=plan,
+    )
+    reconstruction = tmp_path / "reconstruction"
+    subprocess.run(
+        ("git", "clone", "--quiet", str(repository), str(reconstruction)), check=True
+    )
+    subprocess.run(
+        ("git", "apply", "--binary", "-"), cwd=reconstruction,
+        input=result["stdout"].encode(), check=True,
+    )
+    assert (reconstruction / "tracked.txt").read_text(encoding="utf-8") == "after\n"
+    assert (reconstruction / "ignored.txt").read_text(encoding="utf-8") == "included\n"
+    assert (reconstruction / "new.bin").read_bytes() == binary
+    assert (reconstruction / "raw.bin").read_bytes() == raw_binary
+    (repository / "nested" / ".git" / "objects").mkdir(parents=True)
+    with pytest.raises(
+        VerifierSnapshotError, match="embedded Git repository"
+    ):
+        _sealed_repository_diff(
+            repository=repository,
+            scratch_directory=tmp_path,
+            base_commit=base_commit,
+            plan=plan,
+        )
+    shutil.rmtree(repository / "nested")
+    alternates = repository / ".git" / "objects" / "info" / "alternates"
+    alternates.parent.mkdir(exist_ok=True)
+    alternates.write_text("/tmp/attacker-objects\n", encoding="utf-8")
+    with pytest.raises(
+        VerifierSnapshotError, match="external Git object authority"
+    ):
+        _sealed_repository_diff(
+            repository=repository,
+            scratch_directory=tmp_path,
+            base_commit=base_commit,
+            plan=plan,
+        )
+
+async def test_process_backend_binds_identity_recorder_before_base_measurement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    plan = build_sandbox_execution_plan(
+        fixture.request, fixture.registries, fixture.authorities
+    )
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+    workspace_identity = os.fstat(workspace_fd)
+    pinned_fd = os.open(os.devnull, os.O_RDONLY)
+
+    class PinnedExecutable:
+        source_path = plan.runtime.executable_path
+        proc_fd_path = plan.runtime.executable_path
+        digest = plan.runtime.measured_binary_digest
+        size = 0
+        fd = pinned_fd
+
+        def close(self) -> None:
+            os.close(self.fd)
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
+        lambda path, expected_digest: PinnedExecutable(),
+    )
+    recorder_calls: list[tuple[str, object]] = []
+
+    def recorder(resource_id: str, identity: object) -> None:
+        recorder_calls.append((resource_id, identity))
+
+    async def measure(handle: TrustedProcessHandle) -> None:
+        assert handle._identity_recorder is recorder
+        return None
+
+    monkeypatch.setattr(
+        TrustedProcessHandle, "measure_repository_base_commit", measure
+    )
+
+    async def publish(_: object) -> None:
+        return None
+
+    context = RuntimeLaunchContext(
+        role="primary",
+        lease_id="lease-recorder-order",
+        workspace_id="workspace-recorder-order",
+        epoch=1,
+        storage=WorkspaceStorageIdentity(
+            authority_id="test-storage",
+            quota_enforced=False,
+            quota_bytes=plan.resources.storage_bytes,
+            owner_uid=os.getuid(),
+            owner_gid=os.getgid(),
+        ),
+        snapshot_relative_path=None,
+        result_relative_path=None,
+        publish_prepared_identity=publish,
+        workspace_fd=workspace_fd,
+        workspace_identity=(workspace_identity.st_dev, workspace_identity.st_ino),
+        owner_token="owner-token",
+        record_process_identity=recorder,
+    )
+    handle, _ = await TrustedProcessBackend().launch(
+        plan, workspace, context=context
+    )
+
+    assert handle._identity_recorder is recorder
+    assert recorder_calls == []
+    await handle.terminate()
+
 
 
 async def test_run_shell_delegates_pinned_descriptor_as_workload_argv() -> None:

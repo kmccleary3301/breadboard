@@ -16,7 +16,7 @@ The RL harness needs one production sandbox contract and one installed headless 
 - Persistent Docker execution rooted at `/testbed`, including bounded command and file operations.
 - Explicit isolation and support status for Docker, gVisor, Firecracker, and process adapters.
 - Historical process factories restricted to explicit development use.
-- Installed headless request/result entrypoint with exact E4 target, provider route/model, secret handle, sandbox, limit, event, and cleanup authority.
+- Installed headless request/result entrypoint with exact E4 target, provider route/model, secret handle, sandbox, limit, event, canonical workspace-patch export, and cleanup authority.
 - Versioned semantic message/tool-call/tool-result replay interface; sampled-token and training fields remain external UAL authority.
 - Trusted-process runtime remains non-isolating and development-only; the installed headless entrypoint rejects it before loading provider credentials.
 - Danger-zone: yes.
@@ -41,8 +41,9 @@ The RL harness needs one production sandbox contract and one installed headless 
 - Docker security plan assertions: immutable digest, no implicit pull, explicit UID/GID, network selection, CPU/memory/PID/output bounds, ownership labels, and exact-resource cleanup.
 - Packaged `SANDBOX_CAPABILITY_MATRIX.json` must load from a clean installed wheel.
 - Docker may be marked ready only after the Linux official SWE image canary proves `/testbed`, base commit, diff, cancellation, and resource absence.
-- Installed fake-policy validation must bind both E4 targets, an exact loopback route/model authority, one sampled request with retries disabled, semantic replay, result/event digests, and terminal cleanup.
+- Installed fake-policy validation must bind both E4 targets, an exact loopback route/model authority, one sampled request with retries disabled, semantic replay, result/event/patch digests, canonical patch bytes published through a distinct atomic destination, and terminal cleanup.
 - Trusted-process Linux integration covers leader exit, closed inherited descriptors, exact process-group/session/cgroup continuity, PID-reuse rejection, and descendant termination; detached sessions remain outside this explicitly non-isolating development adapter.
+- Canonical patch evidence is generated inside the verifier-seal boundary: terminate the primary runtime, snapshot the quiesced workspace, then use a sealed host-Git executable with a private repository, trusted attributes, private index, and launcher-measured base commit to derive a binary-safe patch from that immutable snapshot, including ignored and untracked files; bind its digest to the same snapshot root.
 - Exact-head correctness, security, automated review, danger-zone ACR guard, and full CI are required before merge.
 
 ## 6) Rollout Plan
