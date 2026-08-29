@@ -428,6 +428,37 @@ def test_workspace_snapshot_reserves_pending_directory_names(
     assert "nested" not in inspected
 
 
+def test_workspace_snapshot_rejects_changed_final_directory_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "stable").write_text("stable", encoding="utf-8")
+    scans = iter((("stable",), ("changed",)))
+
+    class FakeScandir:
+        def __init__(self, names: tuple[str, ...]) -> None:
+            self._names = names
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def __iter__(self):
+            return (SimpleNamespace(name=name) for name in self._names)
+
+    def fake_scandir(_directory_fd: int):
+        return FakeScandir(next(scans))
+
+    monkeypatch.setattr(os, "scandir", fake_scandir)
+    monkeypatch.setattr(os, "supports_fd", os.supports_fd | {fake_scandir})
+
+    with pytest.raises(E4ParityError, match="directory changed during snapshot"):
+        workspace_snapshot(workspace)
+
+
 def test_workspace_snapshot_rejects_oversized_name_before_stat(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
