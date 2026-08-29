@@ -1748,6 +1748,11 @@ async def test_unreadable_verifier_record_blocks_primary_reconcile_until_removed
             CleanupState.QUARANTINED,
             "verifier-lease-corrupt",
         ),
+        CleanupStepReceipt(
+            "snapshot",
+            CleanupState.QUARANTINED,
+            "dependent verifier cleanup incomplete",
+        ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt(
             "workspace",
@@ -2170,6 +2175,26 @@ async def test_reconciliation_quarantines_foreign_runtime_identity_without_clean
     assert recovery_backend.reconciled == []
     assert lease._materialized.workspace_path.exists()
     assert record_path.exists()
+    assert lease.lease_id in recovery._lease_owner_locks
+    assert await recovery.close() == ()
+    assert recovery._lease_owner_locks == {}
+    assert recovery._lease_root_fd is None
+    successor = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(31_000),
+    )
+    successor_receipts = await successor.reconcile_stale()
+    assert len(successor_receipts) == 1
+    assert all(
+        step.detail != "live_owner"
+        for step in successor_receipts[0].steps
+    )
+    assert await successor.close() == ()
     assert (await lease.close()).state is CleanupState.RELEASED
 
 

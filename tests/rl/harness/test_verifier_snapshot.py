@@ -1164,6 +1164,11 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
             "child_verifier",
             CleanupState.ALREADY_RELEASED,
         ),
+        CleanupStepReceipt(
+            "snapshot",
+            CleanupState.RELEASED,
+            snapshot.snapshot_id,
+        ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
         CleanupStepReceipt("cache_holder", CleanupState.RELEASED),

@@ -2608,6 +2608,37 @@ class SandboxRuntimeManager:
             CleanupState.RELEASED if absent else CleanupState.FAILED,
         )
 
+    async def _release_durable_snapshots_for_lease(
+        self,
+        lease_id: str,
+    ) -> CleanupStepReceipt | None:
+        release_task = asyncio.create_task(
+            asyncio.to_thread(
+                self.materialization_store.release_snapshots_for_lease,
+                lease_id,
+            )
+        )
+        try:
+            released = await asyncio.shield(release_task)
+        except asyncio.CancelledError:
+            try:
+                await release_task
+            finally:
+                raise
+        except BaseException as exc:
+            return CleanupStepReceipt(
+                "snapshot",
+                CleanupState.FAILED,
+                type(exc).__name__,
+            )
+        if not released:
+            return None
+        return CleanupStepReceipt(
+            "snapshot",
+            CleanupState.RELEASED,
+            ",".join(released),
+        )
+
 
     async def open(self, request: WorkspaceOpenRequest) -> SandboxWorkspaceLease:
         plan = build_sandbox_execution_plan(request, self.registries, self.installed_authorities)
@@ -3477,6 +3508,28 @@ class SandboxRuntimeManager:
                     else CleanupState.ALREADY_RELEASED,
                     ",".join(sorted(remaining_children)),
                 )
+            snapshot_step: CleanupStepReceipt | None = None
+            if role == "primary":
+                if child_step is not None and child_step.state in {
+                    CleanupState.RELEASED,
+                    CleanupState.ALREADY_RELEASED,
+                }:
+                    snapshot_step = (
+                        await self._release_durable_snapshots_for_lease(
+                            str(record["lease_id"])
+                        )
+                    )
+                else:
+                    snapshot_step = CleanupStepReceipt(
+                        "snapshot",
+                        CleanupState.QUARANTINED,
+                        "dependent verifier cleanup incomplete",
+                    )
+            reconciliation_prefix = tuple(
+                step
+                for step in (child_step, snapshot_step)
+                if step is not None
+            )
             runtime_authority_id = str(
                 record.get("runtime_authority_id", record.get("runtime_id", ""))
             )
@@ -3512,24 +3565,17 @@ class SandboxRuntimeManager:
                 receipts.append(
                     SandboxCleanupReceipt.from_steps(
                         str(record["lease_id"]),
-                        (
-                            (child_step,)
-                            if child_step is not None
-                            else ()
-                        )
-                        + unavailable_steps,
+                        reconciliation_prefix + unavailable_steps,
                     )
                 )
                 continue
-            raw_steps = (
-                ((child_step,) if child_step is not None else ())
-                + tuple(await reconcile(record))
-            )
+            raw_steps = reconciliation_prefix + tuple(await reconcile(record))
             if (
                 {step.resource for step in raw_steps}
                 == (
                     {
                         "child_verifier",
+                        *(("snapshot",) if snapshot_step is not None else ()),
                         "runtime",
                         "workspace",
                         "cache_holder",
@@ -3678,6 +3724,7 @@ class SandboxRuntimeManager:
                     and not self._leases
                     and not self._pending_launch_cleanups
                     and not self._snapshots
+                    and not self._lease_owner_locks
                 ):
                     return self._last_close_receipts or ()
                 self._closed = True
@@ -3703,10 +3750,12 @@ class SandboxRuntimeManager:
             not self._leases
             and not self._pending_launch_cleanups
             and not self._snapshots
-            and self._lease_root_fd is not None
         ):
-            os.close(self._lease_root_fd)
-            self._lease_root_fd = None
+            for lease_id in tuple(self._lease_owner_locks):
+                self._release_lease_owner_lock(lease_id, unlink=False)
+            if self._lease_root_fd is not None:
+                os.close(self._lease_root_fd)
+                self._lease_root_fd = None
         return result
 
 

@@ -1347,6 +1347,52 @@ def test_snapshot_references_coordinate_across_store_instances(
     second_store.close()
     store.close()
 
+def test_restart_releases_only_durable_snapshots_owned_by_stale_lease(
+    tmp_path: Path,
+) -> None:
+    store, workspace, cache_root, workspace_root = _empty_materialized_workspace(
+        tmp_path
+    )
+    (workspace.workspace_path / "answer.txt").write_bytes(b"restart")
+    limits = {
+        "max_depth": 0,
+        "max_files": 1,
+        "max_inodes": 1,
+        "max_bytes": 7,
+    }
+    stale_receipt, object_path = _seal_snapshot(store, workspace, **limits)
+    other_receipt, other_path = store.seal_snapshot(
+        workspace,
+        source_lease_id="other-live-lease",
+        effective_plan_digest=workspace.receipt.effective_plan_digest,
+        task_digest=digest("snapshot-task"),
+        verifier_digest=digest("snapshot-verifier"),
+        **limits,
+    )
+    recovery = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=store.source_reader,
+        clock=store.clock,
+        lease_ttl=store.lease_ttl,
+        storage_backend=directory_storage(),
+        random_bytes=DeterministicRandom(91_000),
+    )
+
+    assert recovery.release_snapshots_for_lease(
+        stale_receipt.source_lease_id
+    ) == (stale_receipt.snapshot_id,)
+    assert object_path == other_path
+    assert object_path.is_dir()
+    recovery.verify_snapshot(other_receipt, other_path, **limits)
+    assert recovery.release_snapshots_for_lease("other-live-lease") == (
+        other_receipt.snapshot_id,
+    )
+    assert not object_path.exists()
+    workspace.close()
+    recovery.close()
+    store.close()
+
 def test_snapshot_release_retains_last_reference_until_object_removal_succeeds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

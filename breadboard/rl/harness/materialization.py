@@ -2536,32 +2536,91 @@ class FilesystemMaterializationStore:
         ):
             raise RuntimeError("snapshot_tampered")
 
-    def release_snapshot(
-        self,
-        receipt: VerifierSnapshotReceipt,
-        path: Path,
-    ) -> bool:
-        if type(receipt) is not VerifierSnapshotReceipt:
-            raise RuntimeError("snapshot_tampered")
-        expected_suffix = receipt.root_digest.removeprefix(_DIGEST_PREFIX)
-        relative = "objects/" + expected_suffix
-        expected_path = self.cache_root / relative
-        if (
-            not receipt.root_digest.startswith(_DIGEST_PREFIX)
-            or receipt.immutable_storage_object_id
-            != "snapshot-object-" + expected_suffix
-            or Path(os.path.abspath(path)) != expected_path
-        ):
-            raise RuntimeError("snapshot_tampered")
-        marker_payload = canonical_json_bytes(
+    @staticmethod
+    def _snapshot_reference_payload(
+        *,
+        root_digest: str,
+        snapshot_id: str,
+        source_lease_id: str,
+    ) -> bytes:
+        return canonical_json_bytes(
             {
-                "root_digest": receipt.root_digest,
-                "snapshot_id": receipt.snapshot_id,
+                "root_digest": root_digest,
+                "snapshot_id": snapshot_id,
+                "source_lease_id": source_lease_id,
             }
         )
-        reference_directory = "snapshot-references/" + expected_suffix
-        reference_relative = reference_directory + "/" + receipt.snapshot_id
-        with self._lock, self._snapshot_lock(expected_suffix):
+
+    def _read_snapshot_reference(
+        self,
+        *,
+        suffix: str,
+        snapshot_id: str,
+    ) -> Mapping[str, str]:
+        if (
+            len(suffix) != 64
+            or any(character not in "0123456789abcdef" for character in suffix)
+            or not snapshot_id.startswith("snapshot-")
+            or len(snapshot_id) != 41
+            or any(
+                character not in "0123456789abcdef"
+                for character in snapshot_id.removeprefix("snapshot-")
+            )
+        ):
+            raise RuntimeError("snapshot_tampered")
+        relative = "snapshot-references/" + suffix + "/" + snapshot_id
+        marker_fd = self._cache.open_file(relative, os.O_RDONLY)
+        try:
+            metadata = os.fstat(marker_fd)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_nlink != 1
+                or metadata.st_size > 1024
+            ):
+                raise RuntimeError("snapshot_tampered")
+            observed = os.read(marker_fd, metadata.st_size + 1)
+        finally:
+            os.close(marker_fd)
+        try:
+            projection = json.loads(observed)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError("snapshot_tampered") from exc
+        if (
+            type(projection) is not dict
+            or set(projection) != {
+                "root_digest",
+                "snapshot_id",
+                "source_lease_id",
+            }
+            or type(projection.get("root_digest")) is not str
+            or type(projection.get("snapshot_id")) is not str
+            or type(projection.get("source_lease_id")) is not str
+            or projection["root_digest"] != _DIGEST_PREFIX + suffix
+            or projection["snapshot_id"] != snapshot_id
+            or not projection["source_lease_id"]
+            or len(projection["source_lease_id"]) > 256
+            or canonical_json_bytes(projection) != observed
+        ):
+            raise RuntimeError("snapshot_tampered")
+        return MappingProxyType(projection)
+
+    def _release_snapshot_reference(
+        self,
+        *,
+        root_digest: str,
+        snapshot_id: str,
+        source_lease_id: str,
+    ) -> bool:
+        suffix = root_digest.removeprefix(_DIGEST_PREFIX)
+        relative = "objects/" + suffix
+        reference_directory = "snapshot-references/" + suffix
+        reference_relative = reference_directory + "/" + snapshot_id
+        marker_payload = self._snapshot_reference_payload(
+            root_digest=root_digest,
+            snapshot_id=snapshot_id,
+            source_lease_id=source_lease_id,
+        )
+        with self._lock, self._snapshot_lock(suffix):
             try:
                 marker_fd = self._cache.open_file(reference_relative, os.O_RDONLY)
             except FileNotFoundError:
@@ -2582,22 +2641,91 @@ class FilesystemMaterializationStore:
                 other_references = tuple(
                     name
                     for name in os.listdir(reference_fd)
-                    if name != receipt.snapshot_id
+                    if name != snapshot_id
                 )
                 if other_references:
-                    os.unlink(receipt.snapshot_id, dir_fd=reference_fd)
+                    os.unlink(snapshot_id, dir_fd=reference_fd)
                     os.fsync(reference_fd)
                     return True
                 self._cache.remove_tree(relative, missing_ok=True)
                 if self._cache.exists(relative):
                     return False
-                os.unlink(receipt.snapshot_id, dir_fd=reference_fd)
+                os.unlink(snapshot_id, dir_fd=reference_fd)
                 os.fsync(reference_fd)
             finally:
                 os.close(reference_fd)
             self._cache.remove_tree(reference_directory)
             self._cache.fsync_dir("snapshot-references")
             return True
+
+    def release_snapshot(
+        self,
+        receipt: VerifierSnapshotReceipt,
+        path: Path,
+    ) -> bool:
+        if type(receipt) is not VerifierSnapshotReceipt:
+            raise RuntimeError("snapshot_tampered")
+        expected_suffix = receipt.root_digest.removeprefix(_DIGEST_PREFIX)
+        expected_path = self.cache_root / "objects" / expected_suffix
+        if (
+            not receipt.root_digest.startswith(_DIGEST_PREFIX)
+            or receipt.immutable_storage_object_id
+            != "snapshot-object-" + expected_suffix
+            or Path(os.path.abspath(path)) != expected_path
+        ):
+            raise RuntimeError("snapshot_tampered")
+        return self._release_snapshot_reference(
+            root_digest=receipt.root_digest,
+            snapshot_id=receipt.snapshot_id,
+            source_lease_id=receipt.source_lease_id,
+        )
+
+    def release_snapshots_for_lease(self, source_lease_id: str) -> tuple[str, ...]:
+        if (
+            type(source_lease_id) is not str
+            or not source_lease_id
+            or len(source_lease_id) > 256
+        ):
+            raise RuntimeError("snapshot_tampered")
+        reference_root_fd = self._cache.open_dir("snapshot-references")
+        try:
+            suffixes = tuple(sorted(os.listdir(reference_root_fd)))
+        finally:
+            os.close(reference_root_fd)
+        released: list[str] = []
+        for suffix in suffixes:
+            if (
+                len(suffix) != 64
+                or any(
+                    character not in "0123456789abcdef" for character in suffix
+                )
+            ):
+                raise RuntimeError("snapshot_tampered")
+            reference_fd = self._cache.open_dir(
+                "snapshot-references/" + suffix
+            )
+            try:
+                snapshot_ids = tuple(sorted(os.listdir(reference_fd)))
+            finally:
+                os.close(reference_fd)
+            for snapshot_id in snapshot_ids:
+                try:
+                    marker = self._read_snapshot_reference(
+                        suffix=suffix,
+                        snapshot_id=snapshot_id,
+                    )
+                except FileNotFoundError:
+                    continue
+                if marker["source_lease_id"] != source_lease_id:
+                    continue
+                if not self._release_snapshot_reference(
+                    root_digest=marker["root_digest"],
+                    snapshot_id=snapshot_id,
+                    source_lease_id=source_lease_id,
+                ):
+                    raise RuntimeError("snapshot_release_failed")
+                released.append(snapshot_id)
+        return tuple(released)
 
     def copy_snapshot(
         self,
@@ -2750,11 +2878,10 @@ class FilesystemMaterializationStore:
                 byte_count,
                 "snapshot-object-" + suffix,
             )
-            marker_payload = canonical_json_bytes(
-                {
-                    "root_digest": receipt.root_digest,
-                    "snapshot_id": receipt.snapshot_id,
-                }
+            marker_payload = self._snapshot_reference_payload(
+                root_digest=receipt.root_digest,
+                snapshot_id=receipt.snapshot_id,
+                source_lease_id=receipt.source_lease_id,
             )
             reference_directory = "snapshot-references/" + suffix
             reference_relative = reference_directory + "/" + snapshot_id
