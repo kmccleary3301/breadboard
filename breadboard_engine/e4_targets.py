@@ -6,6 +6,7 @@ from importlib import metadata
 from importlib.resources.abc import Traversable
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -68,9 +69,7 @@ def _resource_root() -> Traversable:
 
 
 def _location_key(location: object) -> str:
-    text = str(location)
-    path = Path(text)
-    return str(path.resolve()) if path.exists() else text
+    return os.path.abspath(str(location))
 
 
 def _load_e4_target_from_root(

@@ -11,6 +11,7 @@ import yaml
 from breadboard_engine.e4_targets import (
     E4TargetError,
     _load_e4_target_from_root,
+    _location_key,
     _resource_root,
     list_e4_target_ids,
     load_e4_target,
@@ -23,6 +24,22 @@ TARGET_ROOT = ROOT / "config" / "e4_targets"
 
 def test_target_resources_bind_to_loader_distribution_root() -> None:
     assert _resource_root() == TARGET_ROOT
+
+
+def test_distribution_owner_match_does_not_resolve_symlink_aliases(
+    tmp_path: Path,
+) -> None:
+    loader = tmp_path / "installed" / "breadboard_engine" / "e4_targets.py"
+    loader.parent.mkdir(parents=True)
+    loader.write_text("", encoding="utf-8")
+    alias = tmp_path / "hostile" / "breadboard_engine" / "e4_targets.py"
+    alias.parent.mkdir(parents=True)
+    try:
+        alias.symlink_to(loader)
+    except OSError:
+        pytest.skip("symlink creation is not available")
+
+    assert _location_key(alias) != _location_key(loader)
 
 
 def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> None:
