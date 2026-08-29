@@ -19,6 +19,16 @@ _NORMALIZATION_KINDS = frozenset({"timestamp", "pid", "temporary_path"})
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _GIT_OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 _WINDOWS_ABSOLUTE_RE = re.compile(r"^[A-Za-z]:/")
+_WINDOWS_RESERVED_COMPONENTS = frozenset(
+    {
+        "AUX",
+        "CON",
+        "NUL",
+        "PRN",
+        *(f"COM{index}" for index in range(1, 10)),
+        *(f"LPT{index}" for index in range(1, 10)),
+    }
+)
 _TRACE_KEYS = frozenset(
     {
         "schema_version",
@@ -406,8 +416,6 @@ def compare_e4_traces(
     rules: Sequence[NormalizationRule] = (),
     temporary_roots: TemporaryPathRoots | None = None,
 ) -> TraceComparison:
-    _validate_closed_json(reference)
-    _validate_closed_json(clone)
     if type(rules) not in {list, tuple}:
         raise TypeError("rules must be an exact list or tuple")
     if len(rules) > _MAX_NORMALIZATION_RULES:
@@ -428,11 +436,18 @@ def compare_e4_traces(
             index + 1
         ].startswith(prefix):
             raise E4ParityError(f"normalization pointers overlap at {pointer!r}")
-    if any(rule.kind == "temporary_path" for rule in rules) and temporary_roots is None:
+    requires_temporary_roots = any(rule.kind == "temporary_path" for rule in rules)
+    if requires_temporary_roots and temporary_roots is None:
         raise E4ParityError("temporary_path normalization requires both trace roots")
+    if requires_temporary_roots and type(temporary_roots) is not TemporaryPathRoots:
+        raise E4ParityError(
+            "temporary_path normalization requires exact TemporaryPathRoots"
+        )
 
     mismatches: list[TraceMismatch] = []
     normalized_fields: list[NormalizedField] = []
+    _validate_closed_json(reference)
+    _validate_closed_json(clone)
     truncated = False
 
     def record_mismatch(mismatch: TraceMismatch) -> None:
@@ -795,7 +810,12 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
                         f"could not inspect workspace directory {relative_text}"
                     ) from exc
                 finally:
-                    os.close(child_fd)
+                    try:
+                        os.close(child_fd)
+                    except OSError as exc:
+                        raise E4ParityError(
+                            f"could not close workspace directory {relative_text}"
+                        ) from exc
                 continue
             if stat.S_ISREG(initial_stat.st_mode):
                 if initial_stat.st_size > _MAX_WORKSPACE_FILE_BYTES:
@@ -859,7 +879,12 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
                         f"could not read workspace file {relative_text}"
                     ) from exc
                 finally:
-                    os.close(file_fd)
+                    try:
+                        os.close(file_fd)
+                    except OSError as exc:
+                        raise E4ParityError(
+                            f"could not close workspace file {relative_text}"
+                        ) from exc
                 continue
             raise E4ParityError(f"workspace contains unsupported entry {relative_text}")
         if not directory_names_match(directory_fd, relative, initial_names):
@@ -1243,3 +1268,10 @@ def _validate_absolute_path(value: str, field_name: str) -> None:
         for part in components
     ):
         raise E4ParityError(f"{field_name} contains an unsafe component")
+    if is_windows and any(
+        part.rstrip(" .") != part
+        or part.split(".", 1)[0].upper() in _WINDOWS_RESERVED_COMPONENTS
+        or any(character in '<>:"|?*' for character in part)
+        for part in components
+    ):
+        raise E4ParityError(f"{field_name} contains an unsafe Windows component")

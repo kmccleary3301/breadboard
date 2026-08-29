@@ -143,7 +143,20 @@ def test_only_named_timestamp_pid_and_temp_paths_can_be_normalized() -> None:
     )
 
 
-def test_normalization_policy_fails_closed() -> None:
+def test_normalization_policy_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    oversized_rules = tuple(
+        NormalizationRule(f"/field{index}", "timestamp") for index in range(1_025)
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            parity,
+            "_validate_closed_json",
+            lambda _value: (_ for _ in ()).throw(
+                AssertionError("trace validation must follow policy admission")
+            ),
+        )
+        with pytest.raises(E4ParityError, match="rule count exceeds 1024"):
+            compare_e4_traces({}, {}, rules=oversized_rules)
     with pytest.raises(E4ParityError, match="non-root JSON pointer"):
         NormalizationRule("", "timestamp")
     with pytest.raises(E4ParityError, match="timestamp, pid, or temporary_path"):
@@ -172,6 +185,16 @@ def test_normalization_policy_fails_closed() -> None:
             {"path": "/tmp/a"},
             {"path": "/tmp/a"},
             rules=(NormalizationRule("/path", "temporary_path"),),
+        )
+    with pytest.raises(E4ParityError, match="exact TemporaryPathRoots"):
+        compare_e4_traces(
+            {"path": "/tmp/reference/a"},
+            {"path": "/tmp/clone/a"},
+            rules=(NormalizationRule("/path", "temporary_path"),),
+            temporary_roots=SimpleNamespace(
+                reference="/tmp/reference",
+                clone="/tmp/clone",
+            ),
         )
 
     comparison = compare_e4_traces(
@@ -318,6 +341,15 @@ def test_normalization_policy_fails_closed() -> None:
             r"\temp\reference",
             r"\\server\share\clone",
         )
+    for reserved_path in (
+        r"C:\tmp\reference\CON",
+        r"\\server\share\reference\NUL.txt",
+    ):
+        with pytest.raises(E4ParityError, match="unsafe Windows component"):
+            TemporaryPathRoots(
+                reserved_path,
+                r"C:\tmp\clone",
+            )
 
 
 def test_trace_values_must_be_closed_json() -> None:
@@ -556,6 +588,37 @@ def test_workspace_snapshot_translates_file_read_failure(
     monkeypatch.setattr(os, "read", fail_read)
 
     with pytest.raises(E4ParityError, match="could not read workspace file source.py"):
+        workspace_snapshot(workspace)
+
+
+@pytest.mark.parametrize("entry_kind", ["directory", "file"])
+def test_workspace_snapshot_translates_child_close_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    entry_kind: str,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    child = workspace / "child"
+    if entry_kind == "directory":
+        child.mkdir()
+    else:
+        child.write_text("content", encoding="utf-8")
+    root_inode = os.stat(workspace).st_ino
+    real_close = os.close
+
+    def close_then_fail(fd: int) -> None:
+        opened_stat = os.fstat(fd)
+        real_close(fd)
+        if opened_stat.st_ino != root_inode:
+            raise OSError("simulated EIO")
+
+    monkeypatch.setattr(os, "close", close_then_fail)
+
+    with pytest.raises(
+        E4ParityError,
+        match=f"could not close workspace {entry_kind} child",
+    ):
         workspace_snapshot(workspace)
 
 
