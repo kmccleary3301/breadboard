@@ -2515,30 +2515,21 @@ class SandboxRuntimeManager:
         canonical = self._snapshots.get(snapshot_id)
         if canonical is None:
             return CleanupStepReceipt("snapshot", CleanupState.ALREADY_RELEASED)
-        _receipt, path = canonical
+        receipt, path = canonical
         release_task = asyncio.create_task(
             asyncio.to_thread(
-                self.materialization_store.storage_backend.release,
+                self.materialization_store.release_snapshot,
+                receipt,
                 path,
             )
         )
         try:
-            await asyncio.shield(release_task)
+            absent = await asyncio.shield(release_task)
         except asyncio.CancelledError:
             try:
                 await release_task
             finally:
                 raise
-        except FileNotFoundError:
-            pass
-        except BaseException as exc:
-            return CleanupStepReceipt(
-                "snapshot",
-                CleanupState.FAILED,
-                type(exc).__name__,
-            )
-        try:
-            absent = self.materialization_store.storage_backend.verify_absent(path)
         except BaseException as exc:
             return CleanupStepReceipt(
                 "snapshot",

@@ -203,6 +203,7 @@ class _DirFd:
                 if missing_ok:
                     return
                 raise
+            os.fchmod(directory, stat.S_IMODE(os.fstat(directory).st_mode) | 0o700)
             try:
                 for child_name in tuple(os.listdir(directory)):
                     metadata = os.stat(
@@ -1420,6 +1421,7 @@ class FilesystemMaterializationStore:
         self._lock = threading.RLock()
         self._released: dict[str, CacheLeaseReceipt] = {}
         self._active_workspaces: dict[str, MaterializedWorkspace] = {}
+        self._snapshot_reference_counts: dict[str, int] = {}
         try:
             hook = type(self)._authority_admitted_hook
             if hook is not None:
@@ -2504,6 +2506,34 @@ class FilesystemMaterializationStore:
         ):
             raise RuntimeError("snapshot_tampered")
 
+    def release_snapshot(
+        self,
+        receipt: VerifierSnapshotReceipt,
+        path: Path,
+    ) -> bool:
+        if type(receipt) is not VerifierSnapshotReceipt:
+            raise RuntimeError("snapshot_tampered")
+        expected_suffix = receipt.root_digest.removeprefix(_DIGEST_PREFIX)
+        relative = "objects/" + expected_suffix
+        expected_path = self.cache_root / relative
+        if (
+            not receipt.root_digest.startswith(_DIGEST_PREFIX)
+            or receipt.immutable_storage_object_id
+            != "snapshot-object-" + expected_suffix
+            or Path(os.path.abspath(path)) != expected_path
+        ):
+            raise RuntimeError("snapshot_tampered")
+        with self._lock:
+            references = self._snapshot_reference_counts.get(relative, 0)
+            if references > 1:
+                self._snapshot_reference_counts[relative] = references - 1
+                return True
+            self._cache.remove_tree(relative, missing_ok=True)
+            absent = not self._cache.exists(relative)
+            if absent:
+                self._snapshot_reference_counts.pop(relative, None)
+            return absent
+
     def copy_snapshot(
         self,
         receipt: VerifierSnapshotReceipt,
@@ -2671,6 +2701,10 @@ class FilesystemMaterializationStore:
                     max_files=max_files,
                     max_inodes=max_inodes,
                     max_bytes=max_bytes,
+                )
+            with self._lock:
+                self._snapshot_reference_counts[immutable_relative] = (
+                    self._snapshot_reference_counts.get(immutable_relative, 0) + 1
                 )
             return receipt, immutable
         except BaseException:
