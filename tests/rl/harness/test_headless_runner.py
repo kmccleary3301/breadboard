@@ -171,7 +171,13 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
     )
     result: dict[str, Any] = {}
 
-    event_bytes, patch_bytes = _project_headless_run(result, run, composition)
+    with pytest.raises(ValueError, match="base commit mismatch"):
+        _project_headless_run(
+            {}, run, composition, expected_base_commit="1" * 40
+        )
+    event_bytes, patch_bytes = _project_headless_run(
+        result, run, composition, expected_base_commit="0" * 40
+    )
 
     assert event_bytes == events
     assert patch_bytes == patch

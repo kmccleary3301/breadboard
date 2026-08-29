@@ -35,6 +35,7 @@ from breadboard.rl.harness.sandbox import (
     TrustedProcessBackend,
     TrustedProcessHandle,
     VerifierExecutionError,
+    VerifierSnapshotError,
     WorkspaceStateError,
     _sealed_repository_diff,
 )
@@ -85,12 +86,12 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
     repository = tmp_path / "source"
     git_path = shutil.which("git")
     assert git_path is not None
-    descriptor = os.open(git_path, os.O_RDONLY)
 
     class PinnedGit:
-        fd = descriptor
-        proc_fd_path = git_path
-        digest = "sha256:" + "0" * 64
+        def __init__(self) -> None:
+            self.fd = os.open(git_path, os.O_RDONLY)
+            self.proc_fd_path = git_path
+            self.digest = "sha256:" + "0" * 64
 
         def close(self) -> None:
             os.close(self.fd)
@@ -109,7 +110,9 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
 
     git("init", "--quiet")
     (repository / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
-    (repository / ".gitattributes").write_text("*.txt diff=hide\n", encoding="utf-8")
+    (repository / ".gitattributes").write_text(
+        "*.txt diff=hide filter=forge\n", encoding="utf-8"
+    )
     (repository / "tracked.txt").write_text("before\n", encoding="utf-8")
     git("add", ".")
     git(
@@ -119,10 +122,14 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
     )
     base_commit = git("rev-parse", "HEAD")
     git("config", "diff.hide.command", "/usr/bin/true")
+    git("config", "filter.forge.clean", "sed s/after/forged/")
+    git("config", "filter.forge.smudge", "cat")
     (repository / "tracked.txt").write_text("after\n", encoding="utf-8")
     (repository / "ignored.txt").write_text("included\n", encoding="utf-8")
     binary = b"\x00\x01\xffbinary\n"
     (repository / "new.bin").write_bytes(binary)
+    raw_binary = b"\xffnon-UTF-8-without-NUL\n"
+    (repository / "raw.bin").write_bytes(raw_binary)
     plan = type(
         "SealedDiffPlan", (),
         {
@@ -149,6 +156,24 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
     assert (reconstruction / "tracked.txt").read_text(encoding="utf-8") == "after\n"
     assert (reconstruction / "ignored.txt").read_text(encoding="utf-8") == "included\n"
     assert (reconstruction / "new.bin").read_bytes() == binary
+    assert (reconstruction / "raw.bin").read_bytes() == raw_binary
+    (repository / "nested" / ".git" / "objects").mkdir(parents=True)
+    with pytest.raises(
+        VerifierSnapshotError, match="embedded Git repository"
+    ):
+        _sealed_repository_diff(
+            repository=repository, base_commit=base_commit, plan=plan
+        )
+    shutil.rmtree(repository / "nested")
+    alternates = repository / ".git" / "objects" / "info" / "alternates"
+    alternates.parent.mkdir(exist_ok=True)
+    alternates.write_text("/tmp/attacker-objects\n", encoding="utf-8")
+    with pytest.raises(
+        VerifierSnapshotError, match="external Git object authority"
+    ):
+        _sealed_repository_diff(
+            repository=repository, base_commit=base_commit, plan=plan
+        )
 
 
 async def test_run_shell_delegates_pinned_descriptor_as_workload_argv() -> None:

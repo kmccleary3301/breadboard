@@ -99,7 +99,7 @@ async def _opened_snapshot(tmp_path: Path) -> tuple[RuntimeHarness, Any, Any]:
     await primary.runner_workspace.write_text("work/candidate.txt", "candidate")
     snapshot = await primary.seal_for_verifier()
     return harness, primary, snapshot
-async def test_seal_terminates_before_patch_and_binds_patch_to_snapshot(
+async def test_patch_uses_the_terminated_immutable_verifier_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fixture = make_runtime_fixture(with_writable_mount=True)
@@ -113,6 +113,7 @@ async def test_seal_terminates_before_patch_and_binds_patch_to_snapshot(
 
     def sealed_diff(**kwargs: Any) -> Mapping[str, Any]:
         assert handle.terminate_calls == 1
+        assert kwargs["repository"] != primary._materialized.workspace_path / "work"
         order.append("patch")
         return {
             "returncode": 0,
@@ -130,7 +131,7 @@ async def test_seal_terminates_before_patch_and_binds_patch_to_snapshot(
     monkeypatch.setattr(harness.store, "seal_snapshot", seal_snapshot)
     snapshot = await primary.seal_for_verifier()
     workspace_diff = primary.sealed_workspace_diff()
-    assert order == ["patch", "snapshot"]
+    assert order == ["snapshot", "patch"]
     assert workspace_diff is not None
     assert workspace_diff["snapshot_root_digest"] == snapshot.root_digest
     assert workspace_diff["patch_digest"] == digest(
