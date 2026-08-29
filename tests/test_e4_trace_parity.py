@@ -78,6 +78,10 @@ def test_trace_comparison_is_exact_by_default() -> None:
     ]
     assert comparison.normalized_fields == ()
 
+    signed_zero = compare_e4_traces({"value": -0.0}, {"value": 0.0})
+    assert not signed_zero.matches
+    assert signed_zero.mismatches[0].pointer == "/value"
+
 
 def test_only_named_timestamp_pid_and_temp_paths_can_be_normalized() -> None:
     reference = {
@@ -110,22 +114,16 @@ def test_only_named_timestamp_pid_and_temp_paths_can_be_normalized() -> None:
         {
             "pointer": "/event/timestamp",
             "kind": "timestamp",
-            "reference": "2026-08-29T06:00:00Z",
-            "clone": "2026-08-29T06:00:01+00:00",
             "normalized": "<timestamp>",
         },
         {
             "pointer": "/process/output",
             "kind": "temporary_path",
-            "reference": "/private/tmp/reference/session/result.json",
-            "clone": "/tmp/clone/session/result.json",
             "normalized": "<tmp>/session/result.json",
         },
         {
             "pointer": "/process/pid",
             "kind": "pid",
-            "reference": 1024,
-            "clone": 2048,
             "normalized": "<pid>",
         },
     ]
@@ -187,6 +185,8 @@ def test_normalization_policy_fails_closed() -> None:
         TemporaryPathRoots("/", "/tmp/clone")
     with pytest.raises(E4ParityError, match="unsafe component"):
         TemporaryPathRoots("/tmp/../reference", "/tmp/clone")
+    with pytest.raises(E4ParityError, match="unsafe component"):
+        TemporaryPathRoots("/tmp/reference\u0000root", "/tmp/clone")
     assert type_mismatch.mismatches[0].reason == "JSON types differ"
 
 
@@ -209,7 +209,7 @@ def test_trace_values_must_be_closed_json() -> None:
     with pytest.raises(E4ParityError, match="JSON depth exceeds"):
         canonical_json_bytes(nested)
 
-    with pytest.raises(E4ParityError, match="JSON byte size exceeds"):
+    with pytest.raises(E4ParityError, match=r"JSON .*byte size exceeds"):
         canonical_json_bytes({"escaped": "\x00" * (11 * 1024 * 1024)})
 
 
@@ -228,6 +228,7 @@ def test_workspace_snapshot_captures_bytes_modes_and_links(tmp_path: Path) -> No
     workspace = tmp_path / "workspace"
     source = workspace / "src"
     source.mkdir(parents=True)
+    (workspace / "src.txt").write_text("sibling", encoding="utf-8")
     script = source / "run.sh"
     script.write_bytes(b"#!/bin/sh\necho exact\n")
     script.chmod(0o750)
@@ -251,6 +252,9 @@ def test_workspace_snapshot_captures_bytes_modes_and_links(tmp_path: Path) -> No
         if "secure descriptor-relative workspace traversal is unavailable" in str(exc):
             pytest.skip(str(exc))
         raise
+    assert [entry["path"] for entry in first["entries"]] == sorted(
+        entry["path"] for entry in first["entries"]
+    )
     entries = {entry["path"]: entry for entry in first["entries"]}
     assert entries["src"]["kind"] == "directory"
     assert entries["src/run.sh"] == {
@@ -342,6 +346,13 @@ def test_parity_report_binds_every_required_identity() -> None:
 
     invalid_terminal = _trace([{"kind": "test"}])
     invalid_terminal["terminal"]["unexpected"] = True
+
+    invalid_workspace_path = _trace([{"kind": "test"}])
+    invalid_workspace_path["workspace"]["entries"] = [
+        {"path": "bad\u0000path", "kind": "directory", "mode": 0o755}
+    ]
+    with pytest.raises(E4ParityError, match="safe and relative"):
+        validate_e4_trace(invalid_workspace_path)
     with pytest.raises(E4ParityError, match="exact terminal fields"):
         validate_e4_trace(invalid_terminal)
 
@@ -400,8 +411,8 @@ def test_parity_report_binds_every_required_identity() -> None:
         {
             "pointer": "/events/0/kind",
             "reason": "values differ",
-            "reference": "done",
-            "clone": "error",
+            "reference_type": "str",
+            "clone_type": "str",
         }
     ]
 

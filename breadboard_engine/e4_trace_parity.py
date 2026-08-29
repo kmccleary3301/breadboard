@@ -34,6 +34,7 @@ _TRACE_KEYS = frozenset(
 _MAX_JSON_DEPTH = 128
 _MAX_JSON_NODES = 100_000
 _MAX_JSON_BYTES = 64 * 1024 * 1024
+_MAX_JSON_STRING_BYTES = 8 * 1024 * 1024
 _MAX_MISMATCHES = 10_000
 _MAX_NORMALIZATION_RULES = 1024
 _MAX_WORKSPACE_DEPTH = 128
@@ -72,8 +73,8 @@ class TraceMismatch:
         return {
             "pointer": self.pointer,
             "reason": self.reason,
-            "reference": self.reference,
-            "clone": self.clone,
+            "reference_type": type(self.reference).__name__,
+            "clone_type": type(self.clone).__name__,
         }
 
 
@@ -89,8 +90,6 @@ class NormalizedField:
         return {
             "pointer": self.pointer,
             "kind": self.kind,
-            "reference": self.reference,
-            "clone": self.clone,
             "normalized": self.normalized,
         }
 
@@ -116,19 +115,16 @@ class TemporaryPathRoots:
 
 
 def _json_string_bytes(value: str, pointer: str) -> int:
-    encoded_bytes = 2
     try:
-        for character in value:
-            codepoint = ord(character)
-            if character in {'"', "\\", "\b", "\f", "\n", "\r", "\t"}:
-                encoded_bytes += 2
-            elif codepoint < 0x20:
-                encoded_bytes += 6
-            else:
-                encoded_bytes += len(character.encode("utf-8"))
+        raw_bytes = len(value.encode("utf-8"))
     except UnicodeEncodeError as exc:
         raise E4ParityError(f"invalid Unicode string at {pointer or '/'}") from exc
-    return encoded_bytes
+    if raw_bytes > _MAX_JSON_STRING_BYTES:
+        raise E4ParityError(
+            f"JSON string byte size exceeds {_MAX_JSON_STRING_BYTES} "
+            f"at {pointer or '/'}"
+        )
+    return (raw_bytes * 6) + 2
 
 
 def _validate_closed_json(
@@ -357,7 +353,11 @@ def compare_e4_traces(
                     _child_pointer(pointer, str(index)),
                 )
             return
-        if reference_value != clone_value:
+        values_differ = reference_value != clone_value or (
+            type(reference_value) is float
+            and repr(reference_value) != repr(clone_value)
+        )
+        if values_differ:
             record_mismatch(
                 TraceMismatch(
                     pointer,
@@ -402,7 +402,12 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
     directory_flags = (
         os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
     )
-    file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    file_flags = (
+        os.O_RDONLY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
     entries: list[dict[str, Any]] = []
     total_bytes = 0
 
@@ -438,6 +443,10 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
                 raise E4ParityError("workspace contains an unsafe entry name")
             child_relative = relative / name
             relative_text = child_relative.as_posix()
+            if len(child_relative.parts) > _MAX_WORKSPACE_DEPTH:
+                raise E4ParityError(
+                    f"workspace depth exceeds {_MAX_WORKSPACE_DEPTH}: {relative_text}"
+                )
             try:
                 initial_stat = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
             except OSError as exc:
@@ -590,6 +599,7 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
             raise E4ParityError("workspace root changed during snapshot")
     finally:
         os.close(root_fd)
+    entries.sort(key=lambda entry: entry["path"])
     snapshot = {
         "schema_version": "bb.e4.workspace_snapshot.v1",
         "entries": entries,
@@ -638,7 +648,7 @@ def validate_workspace_snapshot(snapshot: dict[str, Any]) -> None:
             raise E4ParityError(f"{context} path must be safe and relative")
         parts = path.split("/")
         if len(parts) > _MAX_WORKSPACE_DEPTH or any(
-            part in {"", ".", ".."} for part in parts
+            part in {"", ".", ".."} or not part.isprintable() for part in parts
         ):
             raise E4ParityError(f"{context} path must be safe and relative")
         if type(mode) is not int or not 0 <= mode <= 0o7777:
@@ -765,9 +775,12 @@ def build_e4_parity_report(
         raise TypeError("upstream_identity must be an exact dict")
     if type(reference_trace) is not dict or type(clone_trace) is not dict:
         raise TypeError("traces must be exact dicts")
-    identity_snapshot = json.loads(canonical_json_bytes(upstream_identity))
-    reference_snapshot = json.loads(canonical_json_bytes(reference_trace))
-    clone_snapshot = json.loads(canonical_json_bytes(clone_trace))
+    identity_bytes = canonical_json_bytes(upstream_identity)
+    reference_bytes = canonical_json_bytes(reference_trace)
+    clone_bytes = canonical_json_bytes(clone_trace)
+    identity_snapshot = json.loads(identity_bytes)
+    reference_snapshot = json.loads(reference_bytes)
+    clone_snapshot = json.loads(clone_bytes)
     validate_e4_trace(reference_snapshot)
     validate_e4_trace(clone_snapshot)
     if (
@@ -793,13 +806,13 @@ def build_e4_parity_report(
         "target_descriptor_sha256": target_descriptor_sha256,
         "target_config_sha256": target_config_sha256,
         "upstream_identity": identity_snapshot,
-        "upstream_identity_sha256": json_sha256(identity_snapshot),
+        "upstream_identity_sha256": hashlib.sha256(identity_bytes).hexdigest(),
         "fixture_id": fixture_id,
         "fixture_sha256": fixture_sha256,
         "engine_commit": engine_commit,
         "built_package_sha256": built_package_sha256,
-        "reference_trace_sha256": json_sha256(reference_snapshot),
-        "clone_trace_sha256": json_sha256(clone_snapshot),
+        "reference_trace_sha256": hashlib.sha256(reference_bytes).hexdigest(),
+        "clone_trace_sha256": hashlib.sha256(clone_bytes).hexdigest(),
         "normalization_rules": [
             {"pointer": rule.pointer, "kind": rule.kind} for rule in rules
         ],
@@ -875,5 +888,5 @@ def _validate_absolute_path(value: str, field_name: str) -> None:
     if normalized == "/" or re.fullmatch(r"[A-Za-z]:/?", normalized):
         raise E4ParityError(f"{field_name} cannot be a filesystem root")
     components = normalized[1:].split("/") if is_posix else normalized[3:].split("/")
-    if any(part in {"", ".", ".."} for part in components):
+    if any(part in {"", ".", ".."} or not part.isprintable() for part in components):
         raise E4ParityError(f"{field_name} contains an unsafe component")
