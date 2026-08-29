@@ -115,6 +115,7 @@ async def test_composition_advances_after_cached_service_close_failure() -> None
 
     composition = ProductionComposition(
         app=None,
+        service=None,
         server=None,
         manifest=None,
         manifest_ref=None,

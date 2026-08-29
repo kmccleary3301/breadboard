@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from secrets import token_bytes
 from types import MappingProxyType
-from typing import Any, Callable, Literal, Mapping, Protocol, Sequence
+from typing import Any, Literal, Mapping, Protocol, Sequence
 
 from agentic_coder_prototype.compilation.bundle import build_dependency_closure
 from agentic_coder_prototype.compilation.contracts import (
