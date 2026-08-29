@@ -11,12 +11,10 @@ from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import load_production_composition
 from breadboard.rl.harness.qualification import (
     materialize_production_composition_fixture,
+    qualification_policy_server,
 )
 from tests.rl.harness.test_production_composition_fixture_generator import (
     production_source_occurrences,
-)
-from tests.rl.harness.test_production_composition_public_lifecycle import (
-    _policy_https_server,
 )
 
 ROOT = Path(__file__).parents[3]
@@ -62,7 +60,7 @@ def test_generated_unknown_name_is_selected_and_drives_public_v2_lifecycle(
     headers = {"Authorization": f"Bearer {fixture.api_bearer}"}
     episode_id = request.episode_id
     policy_server = (
-        _policy_https_server(fixture) if sys.platform.startswith("linux") else None
+        qualification_policy_server(fixture) if sys.platform.startswith("linux") else None
     )
     try:
         if policy_server is None:

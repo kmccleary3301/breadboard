@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import os
 import signal
 import socket
-import ssl
 import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -27,6 +25,7 @@ from breadboard.rl.harness.composition import load_production_composition
 from breadboard.rl.harness.qualification import (
     MaterializedProductionCompositionFixture,
     materialize_production_composition_fixture,
+    qualification_policy_server,
 )
 
 
@@ -199,77 +198,6 @@ class _PolicyServer(ThreadingHTTPServer):
     allow_reuse_address = False
 
 
-@contextlib.contextmanager
-def _policy_https_server(
-    fixture: MaterializedProductionCompositionFixture,
-) -> Iterator[tuple[str, int, list[dict[str, Any]]]]:
-    requests: list[dict[str, Any]] = []
-    expected_authorization = f"Bearer {fixture.policy_callback_secret}"
-    completion_payload = _CONDUCTOR_COMPLETION_PAYLOAD
-    completion_bytes = json.dumps(
-        completion_payload, sort_keys=True, separators=(",", ":")
-    ).encode()
-    responses = (
-        dict(fixture.policy_response_body),
-        {
-            "response_digest": "sha256:" + hashlib.sha256(completion_bytes).hexdigest(),
-            "response_payload": completion_payload,
-        },
-    )
-
-    class Handler(BaseHTTPRequestHandler):
-        protocol_version = _POLICY_HTTP_VERSION
-
-        def do_POST(self) -> None:  # noqa: N802
-            length = int(self.headers.get("Content-Length", "0"))
-            body = self.rfile.read(length)
-            requests.append(
-                {
-                    "path": self.path,
-                    "authorization": self.headers.get("Authorization"),
-                    "body": json.loads(body),
-                }
-            )
-            if self.headers.get("Authorization") != expected_authorization:
-                self.send_response(401)
-                self.send_header("Connection", "close")
-                self.send_header("Content-Length", "0")
-                self.close_connection = True
-                self.end_headers()
-                return
-            selected = responses[min(len(requests) - 1, len(responses) - 1)]
-            response = json.dumps(
-                selected, sort_keys=True, separators=(",", ":")
-            ).encode()
-            self.send_response(200)
-            self.send_header("Connection", "close")
-            self.close_connection = True
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(response)))
-            self.end_headers()
-            self.wfile.write(response)
-
-        def log_message(self, format: str, *args: object) -> None:
-            return
-
-    server = _PolicyServer(
-        (fixture.policy_server_host, fixture.policy_server_port), Handler
-    )
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(
-        fixture.tls_server_certificate_path, fixture.tls_server_key_path
-    )
-    server.socket = context.wrap_socket(server.socket, server_side=True)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        host, port = server.server_address
-        yield str(host), int(port), requests
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-        assert not thread.is_alive()
 
 
 def test_policy_callback_completion_is_exact_conductor_wire() -> None:
@@ -449,7 +377,7 @@ def test_public_loader_app_restart_reconcile_and_double_close(tmp_path: Path) ->
     fixture = materialize_production_composition_fixture(
         tmp_path, policy_server_port=_reserve_loopback_port()
     )
-    with _policy_https_server(fixture) as (_, _, policy_requests):
+    with qualification_policy_server(fixture) as (_, _, policy_requests):
         episode_id, first_closed = _exercise_episode(fixture)
         composition = load_production_composition(
             str(fixture.composition_ref_path), fixture.secret_files
@@ -655,7 +583,7 @@ def test_cli_serve_sigterm_leaves_no_socket_child_lease_or_secret_residue(
         fixture.policy_server_host,
         fixture.policy_server_port,
     )
-    with _policy_https_server(fixture):
+    with qualification_policy_server(fixture):
         process = subprocess.Popen(
             _cli_command(fixture, "serve"),
             cwd=Path.cwd(),

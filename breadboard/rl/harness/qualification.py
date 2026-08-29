@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
 import json
 import os
-import stat
 import secrets
+import ssl
+import stat
+import threading
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from types import MappingProxyType
@@ -19,6 +24,11 @@ QUALIFICATION_RESOURCE_PACKAGE = "breadboard.rl.harness.resources.qualification"
 FIXTURE_ROOT = files(QUALIFICATION_RESOURCE_PACKAGE)
 TLS_ROOT = FIXTURE_ROOT.joinpath("tls")
 CANONICAL_VECTORS = FIXTURE_ROOT.joinpath("canonical_artifact_vectors_v1.json")
+CANONICAL_VECTORS_SHA256 = "6ce223373def584dccd2226c502cd9d41b445a95d4d66679f42f7f1372b34ade"
+TLS_AUTHORITY_SHA256 = "96fa8fac28b11d65d100b35aa9add3665cbe170006efe6a0469f49035e508ba3"
+TLS_CA_CERTIFICATE_SHA256 = "c3538c17bb431c42327b24fe9fc60b26d1f9bb4c62398b5bf3b4aa0a6915c887"
+TLS_SERVER_CERTIFICATE_SHA256 = "329a1b6269bd66261718b852ea885e91fb814b03d9817325ba3f29637ee817dc"
+TLS_SERVER_KEY_SHA256 = "93678974306d0ef9af6c9cd68921059b23800f44e1653933dcdf5baff5122dfc"
 STORE_NAMES = (
     "cas",
     "locator",
@@ -51,14 +61,50 @@ def _write_exclusive(path: Path, payload: bytes, mode: int) -> None:
         raise RuntimeError("qualification file mode was not installed exactly")
 
 
-def _read_resource(resource: Any, *, max_bytes: int = 1024 * 1024) -> bytes:
-    payload = resource.read_bytes()
+def _read_resource(
+    resource: Any,
+    *,
+    expected_sha256: str,
+    max_bytes: int = 1024 * 1024,
+) -> bytes:
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            os.fspath(resource),
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        identity = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(identity.st_mode)
+            or identity.st_nlink != 1
+            or identity.st_size > max_bytes
+        ):
+            raise RuntimeError("qualification resource identity is invalid")
+        payload = bytearray()
+        while len(payload) <= max_bytes:
+            chunk = os.read(
+                descriptor,
+                min(64 * 1024, max_bytes + 1 - len(payload)),
+            )
+            if not chunk:
+                break
+            payload.extend(chunk)
+    except OSError as exc:
+        raise RuntimeError("qualification resource is unavailable") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
     if len(payload) > max_bytes:
         raise RuntimeError("qualification resource exceeds its byte limit")
-    return payload
+    raw = bytes(payload)
+    if hashlib.sha256(raw).hexdigest() != expected_sha256:
+        raise RuntimeError("qualification resource digest mismatch")
+    return raw
 
 
-def _load_json(resource: Any) -> Mapping[str, Any]:
+def _load_json(resource: Any, *, expected_sha256: str) -> Mapping[str, Any]:
     def reject_duplicates(items: list[tuple[str, Any]]) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for name, value in items:
@@ -67,7 +113,10 @@ def _load_json(resource: Any) -> Mapping[str, Any]:
             result[name] = value
         return result
 
-    value = json.loads(_read_resource(resource), object_pairs_hook=reject_duplicates)
+    value = json.loads(
+        _read_resource(resource, expected_sha256=expected_sha256),
+        object_pairs_hook=reject_duplicates,
+    )
     if not isinstance(value, Mapping):
         raise RuntimeError("qualification resource must contain a JSON object")
     return value
@@ -243,11 +292,122 @@ class MaterializedProductionCompositionFixture:
     cleanup_paths: tuple[Path, ...]
 
 
+@contextlib.contextmanager
+def qualification_policy_server(
+    fixture: MaterializedProductionCompositionFixture,
+) -> Iterator[tuple[str, int, list[dict[str, Any]]]]:
+    """Serve the bounded loopback policy exchange used by installed qualification."""
+
+    requests: list[dict[str, Any]] = []
+    expected_authorization = f"Bearer {fixture.policy_callback_secret}"
+    completion_payload = {
+        "output": [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "loopback-complete"}],
+            }
+        ]
+    }
+    completion_bytes = json.dumps(
+        completion_payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    responses = (
+        dict(fixture.policy_response_body),
+        {
+            "response_digest": "sha256:"
+            + hashlib.sha256(completion_bytes).hexdigest(),
+            "response_payload": completion_payload,
+        },
+    )
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_POST(self) -> None:  # noqa: N802
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                length = -1
+            if length < 0 or length > 65_536:
+                self.send_error(400)
+                return
+            body = self.rfile.read(length)
+            try:
+                parsed = json.loads(body)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self.send_error(400)
+                return
+            if not isinstance(parsed, dict):
+                self.send_error(400)
+                return
+            requests.append(
+                {
+                    "path": self.path,
+                    "authorization": self.headers.get("Authorization"),
+                    "body": parsed,
+                }
+            )
+            if self.headers.get("Authorization") != expected_authorization:
+                self.send_response(401)
+                self.send_header("Connection", "close")
+                self.send_header("Content-Length", "0")
+                self.close_connection = True
+                self.end_headers()
+                return
+            selected = responses[min(len(requests) - 1, len(responses) - 1)]
+            response = json.dumps(
+                selected,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+            self.send_response(200)
+            self.send_header("Connection", "close")
+            self.close_connection = True
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    class PolicyServer(ThreadingHTTPServer):
+        daemon_threads = True
+        allow_reuse_address = False
+
+    server = PolicyServer(
+        (fixture.policy_server_host, fixture.policy_server_port),
+        Handler,
+    )
+    tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls_context.load_cert_chain(
+        fixture.tls_server_certificate_path,
+        fixture.tls_server_key_path,
+    )
+    server.socket = tls_context.wrap_socket(server.socket, server_side=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        yield str(host), int(port), requests
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        if thread.is_alive():
+            raise RuntimeError("qualification policy server did not stop")
+
+
 @dataclass(frozen=True, slots=True)
 class InstalledFixturePaths:
     stores: Mapping[str, Path]
     secrets: Mapping[str, Path]
     tls_server_key: Path
+    tls_server_certificate: Path
+    tls_ca_certificate: Path
     launch_seeds: Mapping[str, bytes]
 
 
@@ -280,13 +440,39 @@ def install_runtime_paths(root: Path) -> InstalledFixturePaths:
         secret_paths[handle_id] = path.resolve(strict=True)
 
     tls_key = root / "policy-server.key.pem"
-    source = TLS_ROOT / "server.key.pem"
-    _write_exclusive(tls_key, _read_resource(source), 0o600)
+    _write_exclusive(
+        tls_key,
+        _read_resource(
+            TLS_ROOT / "server.key.pem",
+            expected_sha256=TLS_SERVER_KEY_SHA256,
+        ),
+        0o600,
+    )
+    tls_server_certificate = root / "policy-server.cert.pem"
+    _write_exclusive(
+        tls_server_certificate,
+        _read_resource(
+            TLS_ROOT / "server.cert.pem",
+            expected_sha256=TLS_SERVER_CERTIFICATE_SHA256,
+        ),
+        0o400,
+    )
+    tls_ca_certificate = root / "policy-ca.cert.pem"
+    _write_exclusive(
+        tls_ca_certificate,
+        _read_resource(
+            TLS_ROOT / "ca.cert.pem",
+            expected_sha256=TLS_CA_CERTIFICATE_SHA256,
+        ),
+        0o400,
+    )
 
     return InstalledFixturePaths(
         stores=MappingProxyType(stores),
         secrets=MappingProxyType(secret_paths),
         tls_server_key=tls_key.resolve(strict=True),
+        tls_server_certificate=tls_server_certificate.resolve(strict=True),
+        tls_ca_certificate=tls_ca_certificate.resolve(strict=True),
         launch_seeds=MappingProxyType(secret_payloads),
     )
 
@@ -375,7 +561,10 @@ def _base_capability_payload() -> dict[str, Any]:
     payload = copy.deepcopy(
         next(
             item["payload"]
-            for item in _load_json(CANONICAL_VECTORS)["vectors"]
+            for item in _load_json(
+                CANONICAL_VECTORS,
+                expected_sha256=CANONICAL_VECTORS_SHA256,
+            )["vectors"]
             if item["artifact_kind"] == "capability_vector"
         )
     )
@@ -628,7 +817,10 @@ def _admission_seed(
     registries = c.RegistrySnapshotSet(digests=digests, **registry_records)
     compiler_payload = next(
         item["payload"]["compiled"]["compiler"]
-        for item in _load_json(CANONICAL_VECTORS)["vectors"]
+        for item in _load_json(
+            CANONICAL_VECTORS,
+            expected_sha256=CANONICAL_VECTORS_SHA256,
+        )["vectors"]
         if item["artifact_kind"] == "admission_request"
     )
     compiler_identity = c.CompilerIdentity.model_validate(compiler_payload)
@@ -707,7 +899,10 @@ def _admission_seed(
     diagnostics = {"defaults": [], "notices": []}
     compiled_payload = next(
         item["payload"]["compiled"]
-        for item in _load_json(CANONICAL_VECTORS)["vectors"]
+        for item in _load_json(
+            CANONICAL_VECTORS,
+            expected_sha256=CANONICAL_VECTORS_SHA256,
+        )["vectors"]
         if item["artifact_kind"] == "admission_request"
     )
     compiled_payload = copy.deepcopy(compiled_payload)
@@ -1672,9 +1867,15 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
         config_bundle_ref = file_ref(
             "config-bundle.json", bundle.canonical_bytes(), "application/json"
         )
-        ca_bytes = (TLS_ROOT / "ca.cert.pem").read_bytes()
+        ca_bytes = _read_resource(
+            TLS_ROOT / "ca.cert.pem",
+            expected_sha256=TLS_CA_CERTIFICATE_SHA256,
+        )
         ca_ref = file_ref("ca.cert.pem", ca_bytes, "application/x-pem-file")
-        tls_metadata = json.loads((TLS_ROOT / "authority.json").read_bytes())
+        tls_metadata = _load_json(
+            TLS_ROOT / "authority.json",
+            expected_sha256=TLS_AUTHORITY_SHA256,
+        )
         dns = DNSPolicyDocumentV1(
             dns_policy_digest=route_values["dns_policy_digest"],
             **{**dns_projection, "allowed_addresses": ("127.0.0.1",)},
@@ -1914,8 +2115,8 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
         secret_seed_bytes=installed_paths.launch_seeds,
         tls_server_key_path=installed_paths.tls_server_key,
         api_bearer=installed_paths.launch_seeds["api-auth"].decode(),
-        tls_server_certificate_path=(TLS_ROOT / "server.cert.pem").resolve(),
-        tls_ca_certificate_path=(TLS_ROOT / "ca.cert.pem").resolve(),
+        tls_server_certificate_path=installed_paths.tls_server_certificate,
+        tls_ca_certificate_path=installed_paths.tls_ca_certificate,
         policy_callback_secret=installed_paths.launch_seeds["policy-callback"].decode(),
         server_host="127.0.0.1",
         server_port=server_port,

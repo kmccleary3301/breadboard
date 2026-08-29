@@ -15,6 +15,7 @@ from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.runners.base import RunnerOpenRequest
 from breadboard.rl.harness.runners.conductor import _project_ir, _validate_arguments
 from breadboard.rl.harness.qualification import (
+    _read_resource,
     materialize_production_composition_fixture,
 )
 
@@ -35,6 +36,16 @@ PRODUCTION_SOURCE_ROOT_NAMES = (
     "tool_calling",
     "tools",
 )
+
+
+def test_qualification_resource_requires_pinned_digest(tmp_path: Path) -> None:
+    resource = tmp_path / "resource.json"
+    resource.write_bytes(b'{"value":1}')
+    digest = hashlib.sha256(resource.read_bytes()).hexdigest()
+    assert _read_resource(resource, expected_sha256=digest) == b'{"value":1}'
+    resource.write_bytes(b'{"value":2}')
+    with pytest.raises(RuntimeError, match="digest mismatch"):
+        _read_resource(resource, expected_sha256=digest)
 PRODUCTION_SOURCE_EXTENSIONS = {
     ".cfg",
     ".ini",
