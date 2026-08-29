@@ -1542,6 +1542,165 @@ class ReconcileBackend(RecordingBackend):
         assert record["epoch"] == 1
         return (CleanupStepReceipt("runtime", CleanupState.RELEASED),)
 
+async def test_lease_record_payload_identity_must_match_record_filename(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    record_path = harness.lease_root / f"{lease.lease_id}.json"
+    alias = harness.lease_root / ("lease-" + "d" * 32 + ".json")
+    alias.write_bytes(record_path.read_bytes())
+
+    with pytest.raises(WorkspaceStateError) as captured:
+        harness.manager._read_lease_record(alias)
+
+    assert captured.value.code == "stale_identity_uncertain"
+    alias.unlink()
+    assert (await lease.close()).state is CleanupState.RELEASED
+
+
+async def test_stale_reconcile_rejects_absolute_workspace_identity(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    record_path = original.lease_root / f"{lease.lease_id}.json"
+    record = dict(original.manager._read_lease_record(record_path))
+    outside = tmp_path / "outside-workspace"
+    outside.mkdir()
+    sentinel = outside / "sentinel"
+    sentinel.write_text("retained")
+    record["workspace_id"] = str(outside)
+    record["workspace_path"] = str(outside)
+    original.manager._write_lease_record(lease.lease_id, record)
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(8_000),
+    )
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+
+    receipt = (await recovery.reconcile_stale())[0]
+
+    assert any(
+        step.resource == "workspace"
+        and step.state is CleanupState.QUARANTINED
+        and step.detail == "stale_identity_uncertain"
+        for step in receipt.steps
+    )
+    assert sentinel.read_text() == "retained"
+    assert await recovery.close() == ()
+    assert (await lease.close()).state is CleanupState.RELEASED
+
+
+async def test_invalid_owner_lock_quarantines_only_its_stale_record(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    first = await original.manager.open(fixture.request)
+    second = await original.manager.open(fixture.request)
+    original.clock.advance(minutes=5)
+    for lease in (first, second):
+        original.manager._release_lease_owner_lock(
+            lease.lease_id,
+            unlink=False,
+        )
+    invalid_lock = original.lease_root / f"{first.lease_id}.owner.lock"
+    invalid_lock.unlink()
+    invalid_lock.symlink_to(original.lease_root)
+    backend = ReconcileBackend()
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=backend,
+        docker_backend=None,
+        random_bytes=DeterministicRandom(8_500),
+    )
+
+    receipts = await recovery.reconcile_stale()
+
+    invalid = next(item for item in receipts if item.lease_id == first.lease_id)
+    assert invalid.steps == (
+        CleanupStepReceipt(
+            "lease_record",
+            CleanupState.QUARANTINED,
+            "owner_lock_invalid",
+        ),
+    )
+    assert [item["lease_id"] for item in backend.reconciled] == [second.lease_id]
+    assert await recovery.close() == ()
+    invalid_lock.unlink()
+    assert original.manager._claim_lease_owner_lock(first.lease_id)
+    await first.close()
+    await second.close()
+
+
+async def test_reconcile_and_close_serialize_owner_lock_lifecycle(
+    tmp_path: Path,
+) -> None:
+    class BlockingReconcileBackend(ReconcileBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def reconcile(
+            self,
+            record: Mapping[str, Any],
+        ) -> tuple[CleanupStepReceipt, ...]:
+            self.entered.set()
+            await self.release.wait()
+            return await super().reconcile(record)
+
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+    backend = BlockingReconcileBackend()
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=backend,
+        docker_backend=None,
+        random_bytes=DeterministicRandom(8_750),
+    )
+    first = asyncio.create_task(recovery.reconcile_stale())
+    await asyncio.wait_for(backend.entered.wait(), 1)
+    second = asyncio.create_task(recovery.reconcile_stale())
+    closing = asyncio.create_task(recovery.close())
+    await asyncio.sleep(0)
+    assert not second.done()
+    assert not closing.done()
+
+    backend.release.set()
+    first_receipts = await asyncio.wait_for(first, 1)
+    second_receipts = await asyncio.wait_for(second, 1)
+    close_receipts = await asyncio.wait_for(closing, 1)
+
+    assert len(first_receipts) == 1
+    assert second_receipts == ()
+    assert close_receipts == ()
+    assert [item["lease_id"] for item in backend.reconciled] == [lease.lease_id]
+    assert recovery._lease_owner_locks == {}
+    assert recovery._lease_root_fd is None
+    assert (await lease.close()).state in {
+        CleanupState.RELEASED,
+        CleanupState.ALREADY_RELEASED,
+    }
+
 
 async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_exact_expiry(
     tmp_path: Path,

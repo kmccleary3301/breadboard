@@ -241,7 +241,7 @@ async def test_snapshot_digest_independently_binds_every_path_byte_and_mode(
     tmp_path: Path,
 ) -> None:
     harness, primary, snapshot = await _opened_snapshot(tmp_path)
-    object_root = harness.cache_root / "objects" / snapshot.root_digest.removeprefix(
+    object_root = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
         "sha256:"
     )
     entries = _snapshot_entries(object_root)
@@ -324,7 +324,7 @@ async def test_snapshot_requires_positive_runtime_quiescence_and_starts_no_verif
     assert captured.value.code == "snapshot_not_quiescent"
     assert primary.state is WorkspaceLeaseState.QUARANTINED
     assert len(harness.backend.launches) == 1
-    assert list((harness.cache_root / "objects").glob("*/work/candidate.txt")) == []
+    assert list((harness.cache_root / "snapshot-objects").glob("*/work/candidate.txt")) == []
     assert (await primary.close()).state is CleanupState.RELEASED
 
 
@@ -377,7 +377,7 @@ async def test_verifier_uses_distinct_runtime_workspace_and_read_only_snapshot(
     assert not verifier_workspace.exists()
     assert not (
         harness.cache_root
-        / "objects"
+        / "snapshot-objects"
         / snapshot.root_digest.removeprefix("sha256:")
     ).exists()
     assert await verifier.close() == child_receipt
@@ -718,7 +718,7 @@ async def test_identical_snapshot_seal_holds_reference_during_release(
     )
     object_path = (
         harness.cache_root
-        / "objects"
+        / "snapshot-objects"
         / second_snapshot.root_digest.removeprefix("sha256:")
     )
     assert object_path.is_dir()
@@ -778,7 +778,7 @@ async def test_post_seal_snapshot_mutation_starts_no_verifier_and_cleans_primary
     tmp_path: Path,
 ) -> None:
     harness, primary, snapshot = await _opened_snapshot(tmp_path)
-    object_root = harness.cache_root / "objects" / snapshot.root_digest.removeprefix(
+    object_root = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
         "sha256:"
     )
     candidate = object_root / "work" / "candidate.txt"

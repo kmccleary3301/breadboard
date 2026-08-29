@@ -2256,6 +2256,7 @@ class SandboxRuntimeManager:
         self._pending_launch_cleanups: dict[str, _PendingLaunchCleanup] = {}
         self._lease_owner_locks: dict[str, int] = {}
         self._lock = asyncio.Lock(); self._closed = False
+        self._reconcile_lock = asyncio.Lock()
         self._close_task: asyncio.Future[list[SandboxCleanupReceipt]] | None = None
         self._last_close_receipts: tuple[SandboxCleanupReceipt, ...] | None = None
 
@@ -2444,6 +2445,12 @@ class SandboxRuntimeManager:
 
 
     def _write_lease_record(self, lease_id: str, payload: Mapping[str, Any]) -> None:
+        if payload.get("lease_id") != lease_id:
+            raise WorkspaceStateError(
+                "workspace lease record identity mismatch",
+                code="stale_identity_uncertain",
+                lease_id=lease_id,
+            )
         record = canonical_json_bytes({"payload": dict(payload), "checksum": _wp7_digest(dict(payload))})
         path = self._lease_record_path(lease_id)
         temporary = path.name + ".tmp-" + self._nonce()
@@ -2494,7 +2501,11 @@ class SandboxRuntimeManager:
                 raise ValueError
             envelope = __import__("json").loads(raw)
             payload = envelope["payload"]
-            if envelope["checksum"] != _wp7_digest(payload) or payload["schema_version"] != "bb.rl.workspace-lease.v1":
+            if (
+                envelope["checksum"] != _wp7_digest(payload)
+                or payload["schema_version"] != "bb.rl.workspace-lease.v1"
+                or payload.get("lease_id") != path.stem
+            ):
                 raise ValueError
             return MappingProxyType(payload)
         except Exception as exc:
@@ -3419,6 +3430,15 @@ class SandboxRuntimeManager:
 
 
     async def reconcile_stale(self) -> tuple[SandboxCleanupReceipt, ...]:
+        async with self._reconcile_lock:
+            if self._lease_root_fd is None:
+                return ()
+            return await self._reconcile_stale_owner()
+
+
+    async def _reconcile_stale_owner(
+        self,
+    ) -> tuple[SandboxCleanupReceipt, ...]:
         receipts: list[SandboxCleanupReceipt] = []
         receipts.extend(await self._reconcile_pending_launch_cleanups())
         now = self.materialization_store.clock.current()
@@ -3472,7 +3492,23 @@ class SandboxRuntimeManager:
             expires = datetime.fromisoformat(str(record["expires_at"]))
             if now < expires:
                 continue
-            if not self._claim_lease_owner_lock(path.stem):
+            try:
+                owner_claimed = self._claim_lease_owner_lock(path.stem)
+            except Exception:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        path.stem,
+                        (
+                            CleanupStepReceipt(
+                                "lease_record",
+                                CleanupState.QUARANTINED,
+                                "owner_lock_invalid",
+                            ),
+                        ),
+                    )
+                )
+                continue
+            if not owner_claimed:
                 receipts.append(
                     SandboxCleanupReceipt.from_steps(
                         path.stem,
@@ -3516,7 +3552,7 @@ class SandboxRuntimeManager:
                 }:
                     snapshot_step = (
                         await self._release_durable_snapshots_for_lease(
-                            str(record["lease_id"])
+                            path.stem
                         )
                     )
                 else:
@@ -3621,12 +3657,28 @@ class SandboxRuntimeManager:
             ):
                 workspace_id = record.get("workspace_id")
                 workspace_path = record.get("workspace_path")
+                workspace_prefix = (
+                    "verifier-workspace-"
+                    if role == "verifier"
+                    else "workspace-"
+                )
+                valid_workspace_id = (
+                    type(workspace_id) is str
+                    and workspace_id.startswith(workspace_prefix)
+                    and len(workspace_id) == len(workspace_prefix) + 32
+                    and all(
+                        character in "0123456789abcdef"
+                        for character in workspace_id[len(workspace_prefix):]
+                    )
+                )
                 expected_workspace = (
-                    self.materialization_store.workspace_root / str(workspace_id)
+                    self.materialization_store.workspace_root / workspace_id
+                    if valid_workspace_id
+                    else None
                 )
                 if (
-                    type(workspace_id) is str
-                    and type(workspace_path) is str
+                    type(workspace_path) is str
+                    and expected_workspace is not None
                     and Path(workspace_path) == expected_workspace
                 ):
                     await asyncio.to_thread(
@@ -3746,16 +3798,17 @@ class SandboxRuntimeManager:
         )
         if not pending:
             self._last_close_receipts = result
-        if (
-            not self._leases
-            and not self._pending_launch_cleanups
-            and not self._snapshots
-        ):
-            for lease_id in tuple(self._lease_owner_locks):
-                self._release_lease_owner_lock(lease_id, unlink=False)
-            if self._lease_root_fd is not None:
-                os.close(self._lease_root_fd)
-                self._lease_root_fd = None
+        async with self._reconcile_lock:
+            if (
+                not self._leases
+                and not self._pending_launch_cleanups
+                and not self._snapshots
+            ):
+                for lease_id in tuple(self._lease_owner_locks):
+                    self._release_lease_owner_lock(lease_id, unlink=False)
+                if self._lease_root_fd is not None:
+                    os.close(self._lease_root_fd)
+                    self._lease_root_fd = None
         return result
 
 

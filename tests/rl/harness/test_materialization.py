@@ -1393,6 +1393,102 @@ def test_restart_releases_only_durable_snapshots_owned_by_stale_lease(
     recovery.close()
     store.close()
 
+def test_restart_reclaims_durable_snapshot_staging_for_stale_lease(
+    tmp_path: Path,
+) -> None:
+    store, workspace, cache_root, workspace_root = _empty_materialized_workspace(
+        tmp_path
+    )
+    snapshot_id = "snapshot-" + "b" * 32
+    source_lease_id = workspace.cache_token.lease_id
+    store._install_snapshot_staging_record(
+        snapshot_id=snapshot_id,
+        source_lease_id=source_lease_id,
+    )
+    staging_relative = "staging/" + snapshot_id
+    store._cache.mkdir(staging_relative)
+    artifact_fd = store._cache.open_file(
+        staging_relative + "/partial",
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+        0o600,
+    )
+    os.close(artifact_fd)
+    recovery = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=store.source_reader,
+        clock=store.clock,
+        lease_ttl=store.lease_ttl,
+        storage_backend=directory_storage(),
+        random_bytes=DeterministicRandom(92_000),
+    )
+
+    assert recovery.release_snapshots_for_lease(source_lease_id) == (
+        snapshot_id,
+    )
+    assert not (cache_root / staging_relative).exists()
+    assert not (cache_root / "snapshot-staging" / snapshot_id).exists()
+    workspace.close()
+    recovery.close()
+    store.close()
+
+
+def test_snapshot_recovery_cannot_delete_materialization_object_namespace(
+    tmp_path: Path,
+) -> None:
+    store, workspace, cache_root, _ = _empty_materialized_workspace(tmp_path)
+    materialization_objects = tuple((cache_root / "objects").iterdir())
+    assert len(materialization_objects) == 1
+    materialization_object = materialization_objects[0]
+    suffix = materialization_object.name
+    snapshot_id = "snapshot-" + "c" * 32
+    source_lease_id = workspace.cache_token.lease_id
+    reference_directory = cache_root / "snapshot-references" / suffix
+    reference_directory.mkdir(mode=0o700)
+    marker = reference_directory / snapshot_id
+    marker.write_bytes(
+        store._snapshot_reference_payload(
+            root_digest="sha256:" + suffix,
+            snapshot_id=snapshot_id,
+            source_lease_id=source_lease_id,
+        )
+    )
+    marker.chmod(0o600)
+
+    assert store.release_snapshots_for_lease(source_lease_id) == (snapshot_id,)
+    assert materialization_object.is_dir()
+    assert not reference_directory.exists()
+    workspace.close()
+    store.close()
+
+
+def test_restart_quarantines_unreferenced_snapshot_object(
+    tmp_path: Path,
+) -> None:
+    store, workspace, cache_root, _ = _empty_materialized_workspace(tmp_path)
+    (workspace.workspace_path / "answer.txt").write_bytes(b"orphan")
+    receipt, object_path = _seal_snapshot(
+        store,
+        workspace,
+        max_depth=0,
+        max_files=1,
+        max_inodes=1,
+        max_bytes=6,
+    )
+    suffix = receipt.root_digest.removeprefix("sha256:")
+    reference_directory = cache_root / "snapshot-references" / suffix
+    (reference_directory / receipt.snapshot_id).unlink()
+
+    with pytest.raises(RuntimeError, match="snapshot_tampered"):
+        store.release_snapshots_for_lease(receipt.source_lease_id)
+
+    assert object_path.is_dir()
+    assert reference_directory.is_dir()
+    store._cache.remove_tree("snapshot-objects/" + suffix)
+    store._cache.remove_tree("snapshot-references/" + suffix)
+    workspace.close()
+    store.close()
+
 def test_snapshot_release_retains_last_reference_until_object_removal_succeeds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1418,7 +1514,7 @@ def test_snapshot_release_retains_last_reference_until_object_removal_succeeds(
         *,
         missing_ok: bool = False,
     ) -> None:
-        if cache is store._cache and relative == "objects/" + suffix:
+        if cache is store._cache and relative == "snapshot-objects/" + suffix:
             raise OSError("injected snapshot object removal failure")
         original_remove_tree(cache, relative, missing_ok=missing_ok)
 
@@ -1444,6 +1540,9 @@ def test_snapshot_seal_durably_creates_reference_before_publishing_object(
     (workspace.workspace_path / "answer.txt").write_bytes(b"marker")
     fsynced: list[str] = []
     objects_before = set((cache_root / "objects").iterdir())
+    snapshot_objects_before = set(
+        (cache_root / "snapshot-objects").iterdir()
+    )
     cache_type = type(store._cache)
     original_fsync_dir = cache_type.fsync_dir
     original_open_file = cache_type.open_file
@@ -1472,6 +1571,10 @@ def test_snapshot_seal_durably_creates_reference_before_publishing_object(
     assert "snapshot-references" in fsynced
     assert list((cache_root / "snapshot-references").iterdir()) == []
     assert set((cache_root / "objects").iterdir()) == objects_before
+    assert (
+        set((cache_root / "snapshot-objects").iterdir())
+        == snapshot_objects_before
+    )
     workspace.close()
     store.close()
 
@@ -1952,8 +2055,10 @@ def test_descriptor_roots_keep_constructor_mutations_on_admitted_inodes(
         assert set(os.listdir(store._cache_root_fd)) == {
             "leases",
             "objects",
+            "snapshot-objects",
             "quarantine",
             "snapshot-references",
+            "snapshot-staging",
             "staging",
         }
         assert list(cache_root.iterdir()) == []
