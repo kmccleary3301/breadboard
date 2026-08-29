@@ -296,6 +296,7 @@ class TestRegisteredValues:
             "classification": redaction.REDACTED,
             "status_code": 429,
         }
+        assert redaction.exception_is_rate_limited_429(error) is True
 
     def test_scopes_are_isolated_between_operation_contexts(self):
         outer_secret = "outer-operation-secret"

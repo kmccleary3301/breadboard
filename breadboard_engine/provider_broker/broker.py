@@ -1828,8 +1828,10 @@ class ProviderBroker:
         try:
             status_code = int(status)
         except (TypeError, ValueError):
-            return None
-        if classification != "rate_limited" or status_code != 429:
+            status_code = None
+        if not redaction.exception_is_rate_limited_429(error) and (
+            classification != "rate_limited" or status_code != 429
+        ):
             return None
         retry_after: Any = details.get(
             "retry_after_seconds",
