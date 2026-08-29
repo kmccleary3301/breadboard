@@ -1140,7 +1140,10 @@ class SessionRunner:
         async with self.session.dispatch_lock:
             if getattr(self.session, "_dispatcher_complete", False):
                 raise RuntimeError("session event dispatcher is unavailable")
-            await self.session.event_queue.put(event)
+            try:
+                self.session.event_queue.put_nowait(event)
+            except asyncio.QueueFull as error:
+                raise RuntimeError("session event queue is full") from error
             self._published_events += 1
 
     def _touch_last_activity(self) -> None:

@@ -1417,6 +1417,31 @@ async def test_dispatcher_failure_drains_queue_and_rejects_future_events(
 
 
 @pytest.mark.asyncio
+async def test_async_event_enqueue_fails_fast_when_bounded_queue_is_full() -> None:
+    record = SessionRecord(
+        session_id="session-bounded-event-queue",
+        status=SessionStatus.RUNNING,
+    )
+    record.event_queue = asyncio.Queue(maxsize=1)
+    record.event_queue.put_nowait(
+        SessionEvent(EventType.TASK_EVENT, record.session_id, {"index": 1})
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(config_path="cfg.yaml", task=""),
+    )
+
+    with pytest.raises(RuntimeError, match="event queue is full"):
+        await asyncio.wait_for(
+            runner._enqueue_event_async(
+                SessionEvent(EventType.TASK_EVENT, record.session_id, {"index": 2})
+            ),
+            timeout=1,
+        )
+
+
+@pytest.mark.asyncio
 async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
