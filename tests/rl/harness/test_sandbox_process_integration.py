@@ -32,6 +32,7 @@ from breadboard.rl.harness.sandbox import (
     SandboxRuntimeManager,
     TrustedProcessBackend,
     TrustedProcessHandle,
+    VerifierExecutionError,
     WorkspaceStateError,
 )
 from tests.rl.harness.test_runner_terminal import (
@@ -43,7 +44,6 @@ from tests.rl.harness.test_runner_terminal import (
 from tests.rl.harness.test_sandbox_runtime import RuntimeHarness
 from tests.rl.harness.wp7_fixtures import (
     DeterministicRandom,
-    digest,
     make_runtime_fixture,
 )
 pytestmark = pytest.mark.local_process
@@ -103,7 +103,7 @@ async def test_run_shell_delegates_pinned_descriptor_as_workload_argv() -> None:
         calls.append((argv, timeout_ms, output_limit))
         return expected
 
-    handle.run_argv = scripted_run_argv  # type: ignore[method-assign]
+    handle._run_pinned_argv = scripted_run_argv  # type: ignore[method-assign]
 
     result = await handle.run_shell(
         "printf delegated",
@@ -115,6 +115,136 @@ async def test_run_shell_delegates_pinned_descriptor_as_workload_argv() -> None:
     assert calls == [
         (("/proc/self/fd/71", "-lc", "printf delegated"), 1_234, 5_678)
     ]
+
+
+async def test_run_argv_executes_requested_command_through_pinned_shell() -> None:
+    handle = object.__new__(TrustedProcessHandle)
+    handle._executable = type(
+        "ScriptedPinnedExecutable",
+        (),
+        {"proc_fd_path": "/proc/self/fd/71"},
+    )()
+    calls: list[tuple[tuple[str, ...], int, int]] = []
+    expected = {"returncode": 0, "stdout": "ok\n", "stderr": ""}
+
+    async def scripted_pinned_argv(
+        argv: tuple[str, ...], *, timeout_ms: int, output_limit: int
+    ) -> dict[str, object]:
+        calls.append((argv, timeout_ms, output_limit))
+        return expected
+
+    handle._run_pinned_argv = scripted_pinned_argv  # type: ignore[method-assign]
+
+    result = await handle.run_argv(
+        ("/bin/echo", "ok"),
+        timeout_ms=1_234,
+        output_limit=5_678,
+    )
+
+    assert result is expected
+    assert calls == [
+        (
+            (
+                "/proc/self/fd/71",
+                "-lc",
+                'exec "$@"',
+                "breadboard-execute",
+                "/bin/echo",
+                "ok",
+            ),
+            1_234,
+            5_678,
+        )
+    ]
+
+
+async def test_workspace_diff_uses_nested_repository_and_types_missing_git() -> None:
+    handle = object.__new__(TrustedProcessHandle)
+    handle._executable = type(
+        "ScriptedPinnedExecutable",
+        (),
+        {"proc_fd_path": "/proc/self/fd/71"},
+    )()
+    handle._git_executable = "/usr/bin/git"
+    handle.lease_id = "lease-workspace-diff"
+    handle.plan = type(
+        "ScriptedPlan",
+        (),
+        {
+            "materialization_plan": type(
+                "ScriptedMaterializationPlan",
+                (),
+                {
+                    "entries": (
+                        type(
+                            "ScriptedEntry",
+                            (),
+                            {
+                                "role": "repository",
+                                "target_logical_path": "nested/repository",
+                            },
+                        )(),
+                    )
+                },
+            )(),
+            "limits": type(
+                "ScriptedLimits",
+                (),
+                {"action_timeout_ms": 1_234, "observation_bytes": 5_678},
+            )(),
+        },
+    )()
+    calls: list[tuple[tuple[str, ...], int, int]] = []
+    results = [
+        {"returncode": 0, "stdout": "diff", "stderr": ""},
+        {"returncode": 127, "stdout": "", "stderr": "git: not found"},
+    ]
+
+    async def scripted_run_argv(
+        argv: tuple[str, ...], *, timeout_ms: int, output_limit: int
+    ) -> dict[str, object]:
+        calls.append((argv, timeout_ms, output_limit))
+        return results.pop(0)
+
+    handle._run_pinned_argv = scripted_run_argv  # type: ignore[method-assign]
+
+    assert (await handle.workspace_diff())["stdout"] == "diff"
+    assert calls[0] == (
+        (
+            "/proc/self/fd/71",
+            "-lc",
+            'exec "$2" -C "$1" diff --no-ext-diff --binary',
+            "breadboard-workspace-diff",
+            "nested/repository",
+            "/usr/bin/git",
+        ),
+        1_234,
+        5_678,
+    )
+    with pytest.raises(SandboxLaunchError) as captured:
+        await handle.workspace_diff()
+    assert captured.value.code == "runtime_unsupported"
+
+
+@requires_sealed_execution
+async def test_missing_host_git_refuses_before_trusted_process_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True,
+        runtime_install_root=tmp_path / "runtime",
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox.shutil.which",
+        lambda *_args, **_kwargs: None,
+    )
+
+    with pytest.raises(SandboxLaunchError) as captured:
+        await harness.manager.open(fixture.request)
+
+    assert captured.value.code == "runtime_unsupported"
 
 
 async def test_unsupported_host_refuses_before_subprocess_recorder_or_workload_effect(
@@ -206,6 +336,23 @@ async def test_pinned_shell_executes_admitted_bytes_after_source_mutation(
 
     assert result["returncode"] == 0
     assert result["stdout"] == "admitted-snapshot"
+    assert (await primary.close()).state is CleanupState.RELEASED
+
+
+@requires_sealed_execution
+async def test_process_lease_execute_runs_requested_argv(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True,
+        runtime_install_root=tmp_path / "runtime",
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+
+    result = await primary.execute(("/usr/bin/printf", "requested-argv"))
+
+    assert result["returncode"] == 0
+    assert result["stdout"] == "requested-argv"
     assert (await primary.close()).state is CleanupState.RELEASED
 
 
@@ -471,7 +618,7 @@ async def test_real_process_plan_runs_through_wp5_port_seals_snapshot_and_cleans
     assert primary.measurement.isolated is False
     assert primary.measurement.reward_eligible is False
     snapshot = await primary.seal_for_verifier()
-    immutable = harness.cache_root / "objects" / snapshot.root_digest.removeprefix(
+    immutable = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
         "sha256:"
     )
     assert (immutable / "work" / "candidate.txt").read_bytes() == b"candidate"

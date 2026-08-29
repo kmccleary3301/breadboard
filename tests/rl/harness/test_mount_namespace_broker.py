@@ -1,14 +1,17 @@
 from __future__ import annotations
-from builtins import BaseExceptionGroup
 
+import asyncio
 import base64
 import hashlib
-import asyncio
+import hmac
 import os
-import socket
 import signal
+import socket
 import stat
 import sys
+import threading
+import time
+from builtins import BaseExceptionGroup
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,18 +19,328 @@ import pytest
 
 import breadboard.rl.harness.mount_namespace_broker as broker_module
 from breadboard.rl.harness.mount_namespace_broker import (
+    _MAX_MESSAGE,
     MountNamespaceBroker,
     MountNamespaceBrokerError,
-    _MAX_MESSAGE,
     _canonical,
     _decode,
     _receive,
     _send,
 )
-from breadboard.rl.harness.sandbox_docker import DockerAdapterError
+from breadboard.rl.harness.sandbox_docker import (
+    DockerAdapterError,
+    ExecutableInvocation,
+)
 
 
-def test_exception_projection_retains_all_daemon_cleanup_leaves_without_secrets() -> None:
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not hasattr(os, "memfd_create"),
+    reason="sealed memfd transport requires Linux",
+)
+async def test_broker_executor_transports_stdin_by_sealed_descriptor(
+    tmp_path: Path,
+) -> None:
+    executable_path = tmp_path / "docker"
+    executable_path.write_bytes(b"docker")
+    executable_fd = os.open(executable_path, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable_path),
+        executable_fd=executable_fd,
+        executable_descriptor_path=f"/proc/self/fd/{executable_fd}",
+        digest="sha256:" + hashlib.sha256(b"docker").hexdigest(),
+    )
+    payload = b"x" * (512 * 1024)
+    output_payload = b"o" * (3 * 1024 * 1024)
+    observed: dict[str, object] = {}
+
+    class Broker:
+        def _call(
+            self,
+            operation,
+            request,
+            descriptors,
+            *,
+            expected_return_fds,
+        ):
+            observed["operation"] = operation
+            observed["request"] = request
+            observed["descriptors"] = descriptors
+            observed["expected_return_fds"] = expected_return_fds
+            payload_fd = descriptors[1]
+            observed["payload"] = os.pread(payload_fd, len(payload) + 1, 0)
+            observed["seals"] = broker_module.fcntl.fcntl(
+                payload_fd, broker_module.fcntl.F_GET_SEALS
+            )
+            stdout_fd = broker_module._sealed_payload_fd(output_payload)
+            stderr_fd = broker_module._sealed_payload_fd(b"")
+            return (
+                {
+                    "returncode": 0,
+                    "stdout_size": len(output_payload),
+                    "stdout_digest": (
+                        "sha256:" + hashlib.sha256(output_payload).hexdigest()
+                    ),
+                    "stderr_size": 0,
+                    "stderr_digest": "sha256:" + hashlib.sha256(b"").hexdigest(),
+                    "timed_out": False,
+                    "output_limited": False,
+                },
+                (stdout_fd, stderr_fd),
+            )
+
+    try:
+        result = await broker_module.BrokerDockerCliExecutor(Broker()).execute(
+            invocation,
+            ("exec", "-i", "container", "cat"),
+            timeout_ms=1_000,
+            output_limit=len(output_payload) + 1,
+            environment=(),
+            input_bytes=payload,
+        )
+    finally:
+        os.close(executable_fd)
+
+    request = observed["request"]
+    assert observed["operation"] == "execute"
+    assert observed["payload"] == payload
+    assert request["input_size"] == len(payload)
+    assert request["input_digest"] == ("sha256:" + hashlib.sha256(payload).hexdigest())
+    required = (
+        broker_module.fcntl.F_SEAL_SEAL
+        | broker_module.fcntl.F_SEAL_SHRINK
+        | broker_module.fcntl.F_SEAL_GROW
+        | broker_module.fcntl.F_SEAL_WRITE
+    )
+    assert observed["seals"] & required == required
+    assert observed["expected_return_fds"] == 2
+    assert result.returncode == 0
+    assert result.stdout == output_payload
+    assert result.stderr == b""
+
+
+@pytest.mark.asyncio
+async def test_broker_executor_does_not_block_event_loop_during_rpc(
+    tmp_path: Path,
+) -> None:
+    executable_path = tmp_path / "docker"
+    executable_path.write_bytes(b"docker")
+    executable_fd = os.open(executable_path, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable_path),
+        executable_fd=executable_fd,
+        executable_descriptor_path=f"/proc/self/fd/{executable_fd}",
+        digest="sha256:" + hashlib.sha256(b"docker").hexdigest(),
+    )
+    started = threading.Event()
+    release = threading.Event()
+    cancelled = threading.Event()
+
+    class Broker:
+        def _call(
+            self,
+            operation,
+            request,
+            descriptors,
+            *,
+            expected_return_fds,
+        ):
+            del operation, expected_return_fds
+            assert request["cancellation_descriptor"] is True
+            started.set()
+            while not release.is_set():
+                try:
+                    signal_byte = os.read(descriptors[-1], 1)
+                except BlockingIOError:
+                    time.sleep(0.005)
+                    continue
+                if signal_byte in {b"", b"\x01"}:
+                    cancelled.set()
+                    break
+            return (
+                {
+                    "returncode": 0,
+                    "stdout_size": 0,
+                    "stdout_digest": "sha256:" + hashlib.sha256(b"").hexdigest(),
+                    "stderr_size": 0,
+                    "stderr_digest": "sha256:" + hashlib.sha256(b"").hexdigest(),
+                    "timed_out": False,
+                    "output_limited": False,
+                },
+                (os.open(os.devnull, os.O_RDONLY), os.open(os.devnull, os.O_RDONLY)),
+            )
+
+    timer = threading.Timer(0.5, release.set)
+    timer.start()
+    started_at = time.monotonic()
+    task = asyncio.create_task(
+        broker_module.BrokerDockerCliExecutor(Broker()).execute(
+            invocation,
+            ("version",),
+            timeout_ms=1_000,
+            output_limit=1,
+            environment=(),
+        )
+    )
+    try:
+        while not started.is_set():
+            if task.done():
+                await task
+            await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert time.monotonic() - started_at < 0.2
+
+
+        task.cancel()
+        cancelled_at = time.monotonic()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert time.monotonic() - cancelled_at < 0.2
+        assert cancelled.is_set()
+    finally:
+        release.set()
+        timer.cancel()
+        os.close(executable_fd)
+    await asyncio.sleep(0.05)
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not os.path.isdir("/proc/self/fd"),
+    reason="descriptor execution requires Linux procfs",
+)
+async def test_bounded_execution_interrupts_process_group_from_cancellation_pipe() -> None:
+    executable_fd = os.open("/bin/sh", os.O_RDONLY)
+    cancellation_read_fd, cancellation_write_fd = os.pipe()
+    os.set_blocking(cancellation_read_fd, False)
+    try:
+        started_at = time.monotonic()
+        execution = asyncio.create_task(
+            asyncio.to_thread(
+                broker_module._execute_bounded_descriptors,
+                ("/bin/sh", "-c", "sleep 30"),
+                executable_fd=executable_fd,
+                timeout_ms=30_000,
+                output_limit=4_096,
+                cancellation_fd=cancellation_read_fd,
+            )
+        )
+        await asyncio.sleep(0.1)
+        os.write(cancellation_write_fd, b"\x01")
+        result = await asyncio.wait_for(execution, 2)
+        assert time.monotonic() - started_at < 2
+        assert result[0] != 0
+        for descriptor in result[1]:
+            os.close(descriptor)
+    finally:
+        os.close(cancellation_read_fd)
+        os.close(cancellation_write_fd)
+        os.close(executable_fd)
+
+
+def test_broker_wire_budget_covers_encoded_maximum_observation() -> None:
+    expected = 4 * ((broker_module._MAX_ADMITTED_OUTPUT + 1 + 2) // 3) + 128
+
+    assert broker_module._MAX_OUTPUT == expected
+    assert broker_module._MAX_OUTPUT > broker_module._MAX_ADMITTED_OUTPUT
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "memfd_create"),
+    reason="sealed memfd transport requires Linux",
+)
+def test_direct_docker_execution_reads_sealed_output_descriptors(
+    tmp_path: Path,
+) -> None:
+    executable_path = tmp_path / "docker"
+    executable_path.write_bytes(b"docker")
+    executable_fd = os.open(executable_path, os.O_RDONLY)
+    broker = object.__new__(MountNamespaceBroker)
+    broker.daemon_binding = SimpleNamespace(socket_path=str(tmp_path / "docker.sock"))
+    broker._daemon_authority = SimpleNamespace(
+        docker=SimpleNamespace(
+            path=str(executable_path),
+            digest="sha256:" + hashlib.sha256(b"docker").hexdigest(),
+        )
+    )
+    broker._authority_fds = {"docker": executable_fd}
+    output_payload = b"descriptor-output"
+    returned: list[int] = []
+
+    def call(
+        operation: str,
+        request: dict[str, object],
+        descriptors: tuple[int, ...],
+        *,
+        expected_return_fds: int,
+    ) -> tuple[dict[str, object], tuple[int, int]]:
+        assert operation == "execute"
+        assert request["output_limit"] == 1024
+        assert request["cancellation_descriptor"] is True
+        assert descriptors[0] == executable_fd
+        assert len(descriptors) == 2
+        assert stat.S_ISFIFO(os.fstat(descriptors[1]).st_mode)
+        assert expected_return_fds == 2
+        stdout_fd = broker_module._sealed_payload_fd(output_payload)
+        stderr_fd = broker_module._sealed_payload_fd(b"")
+        returned.extend((stdout_fd, stderr_fd))
+        return (
+            {
+                "returncode": 0,
+                "stdout_size": len(output_payload),
+                "stdout_digest": (
+                    "sha256:" + hashlib.sha256(output_payload).hexdigest()
+                ),
+                "stderr_size": 0,
+                "stderr_digest": "sha256:" + hashlib.sha256(b"").hexdigest(),
+                "timed_out": False,
+                "output_limited": False,
+            },
+            (stdout_fd, stderr_fd),
+        )
+
+    broker._call = call
+    try:
+        result = broker.execute_docker(("version",), output_limit=1024)
+    finally:
+        os.close(executable_fd)
+
+    assert result.stdout == output_payload
+    assert result.stderr == b""
+    for descriptor in returned:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+
+
+@pytest.mark.skipif(
+    not Path("/proc/self/fd").is_dir() or not hasattr(os, "memfd_create"),
+    reason="descriptor execution transport requires Linux procfs",
+)
+def test_broker_bounded_executor_reads_sealed_stdin_descriptor() -> None:
+    payload = b"y" * (512 * 1024)
+    executable_fd = os.open("/bin/cat", os.O_RDONLY)
+    input_fd = broker_module._sealed_payload_fd(payload)
+    try:
+        result = broker_module._execute_bounded(
+            ("/bin/cat",),
+            executable_fd=executable_fd,
+            timeout_ms=1_000,
+            output_limit=len(payload) + 1,
+            input_fd=input_fd,
+        )
+    finally:
+        os.close(input_fd)
+        os.close(executable_fd)
+
+    returncode, stdout, stderr, timed_out, output_limited = result
+    assert returncode == 0
+    assert stdout == payload
+    assert stderr == b""
+    assert timed_out is False
+    assert output_limited is False
+
+
+def test_exception_projection_retains_all_daemon_cleanup_leaves_without_secrets() -> (
+    None
+):
     failures = [
         DockerAdapterError(
             f"daemon_cleanup_{index}",
@@ -57,18 +370,13 @@ def test_exception_projection_retains_all_daemon_cleanup_leaves_without_secrets(
     assert [leaf["details"]["group_path"] for leaf in leaves] == [
         [index] for index in range(4)
     ]
-    assert all(
-        leaf["details"]["secret_value"] == "[redacted]" for leaf in leaves
-    )
-    assert b"PRIVATE-DAEMON-TOKEN" not in broker_module._canonical(
-        {"leaves": leaves}
-    )
+    assert all(leaf["details"]["secret_value"] == "[redacted]" for leaf in leaves)
+    assert b"PRIVATE-DAEMON-TOKEN" not in broker_module._canonical({"leaves": leaves})
 
 
 def test_exception_projection_is_depth_count_and_byte_bounded() -> None:
     failures = [
-        RuntimeError(f"cleanup leaf {index}: " + "x" * 2048)
-        for index in range(64)
+        RuntimeError(f"cleanup leaf {index}: " + "x" * 2048) for index in range(64)
     ]
 
     leaves = broker_module._exception_leaves(
@@ -1421,3 +1729,231 @@ def test_probe_failure_after_scratch_creation_removes_exact_root(
         asyncio.run(probe.lifecycle(args))
     assert len(os.listdir("/dev/fd")) == before
     assert not tuple(tmp_path.glob("f2-private-broker-*"))
+
+
+def test_recovery_authenticates_lease_and_finalizes_observed_absence(
+    tmp_path: Path,
+) -> None:
+    journal_root = tmp_path / "journals"
+    lease_root = tmp_path / "leases"
+    journal_root.mkdir(mode=0o700)
+    lease_root.mkdir(mode=0o700)
+    lease_id = "lease-recovery"
+    owner_token = "owner-token"
+    digest = "sha256:" + "1" * 64
+    process = {
+        "pid": 9_999_999,
+        "starttime": "1",
+        "pgid": 9_999_999,
+        "executable_device": 1,
+        "executable_inode": 1,
+        "executable_ctime_ns": 1,
+        "executable_size": 1,
+        "executable_digest": digest,
+        "namespace_device": 1,
+        "namespace_inode": 1,
+    }
+    parent = tmp_path.stat()
+    daemon_root_path = tmp_path / "absent-daemon"
+    daemon_root = {
+        "path": str(daemon_root_path),
+        "device": 1,
+        "inode": 1,
+        "mode": 0o700,
+        "digest": digest,
+        "parent_path": str(tmp_path),
+        "parent_device": parent.st_dev,
+        "parent_inode": parent.st_ino,
+    }
+    path = {
+        "path": str(daemon_root_path / "config.json"),
+        "device": 1,
+        "inode": 1,
+        "mode": 0o600,
+        "digest": digest,
+        "parent_path": str(daemon_root_path),
+        "parent_device": 1,
+        "parent_inode": 1,
+    }
+    payload = {
+        "schema_version": broker_module.SUPERVISOR_JOURNAL_SCHEMA_VERSION,
+        "state": "ACTIVE",
+        "generation": (f"{lease_id}:workspace-recovery:1:primary:{digest}"),
+        "generation_digest": broker_module._journal_digest(
+            f"{lease_id}:workspace-recovery:1:primary:{digest}".encode("utf-8")
+        ),
+        "owner_token_digest": broker_module._journal_digest(
+            owner_token.encode("utf-8")
+        ),
+        "lease_id": lease_id,
+        "workspace_id": "workspace-recovery",
+        "epoch": 1,
+        "role": "primary",
+        "plan_digest": digest,
+        "broker": process,
+        "daemon": None,
+        "containerd": None,
+        "runtime": None,
+        "config": path,
+        "daemon_root": daemon_root,
+        "stage_root": {
+            **daemon_root,
+            "path": str(tmp_path / "absent-stages"),
+            "mode": 0o700,
+        },
+        "stages": [],
+        "container": {"id": None, "name": "", "labels": {}},
+        "proof": {
+            "container_absence": False,
+            "stages_absence": False,
+            "daemon_absence": False,
+            "containerd_absence": False,
+            "runtime_absence": False,
+            "config_absence": False,
+            "root_absence": False,
+        },
+    }
+    lease_payload = {
+        "lease_id": lease_id,
+        "workspace_id": "workspace-recovery",
+        "epoch": 1,
+        "role": "primary",
+        "effective_plan_digest": digest,
+        "owner_token": owner_token,
+    }
+    lease_envelope = {
+        "payload": lease_payload,
+        "checksum": broker_module._journal_digest(_canonical(lease_payload)),
+    }
+    (lease_root / f"{lease_id}.json").write_bytes(_canonical(lease_envelope))
+    secret = b"journal-test-key"
+
+    def sign(value: bytes) -> bytes:
+        return hmac.digest(secret, value, "sha256")
+
+    authenticator = SimpleNamespace(
+        key_id="journal-test",
+        algorithm="hmac-sha256-v1",
+        sign=sign,
+        verify=lambda value, signature: hmac.compare_digest(sign(value), signature),
+    )
+    journal_fd = os.open(journal_root, os.O_RDONLY | os.O_DIRECTORY)
+    lease_fd = os.open(lease_root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        broker_module._atomic_journal_write(
+            journal_fd,
+            lease_id,
+            payload,
+            authenticator=authenticator,
+        )
+        receipts = broker_module.recover_supervisor_journals(
+            journal_fd,
+            lease_fd,
+            authenticator=authenticator,
+        )
+    finally:
+        os.close(lease_fd)
+        os.close(journal_fd)
+
+    assert len(receipts) == 1
+    receipt_payload = receipts[0]["payload"]
+    assert receipt_payload["state"] == "FINAL"
+    assert all(receipt_payload["proof"].values())
+    assert broker_module.validate_supervisor_receipt(
+        dict(receipts[0]),
+        authenticator=authenticator,
+        expected_lease_id=lease_id,
+        expected_generation_digest=payload["generation_digest"],
+        expected_owner_token_digest=payload["owner_token_digest"],
+    )
+    tampered = {
+        **dict(receipts[0]),
+        "payload": {**receipt_payload, "state": "ACTIVE"},
+    }
+    assert not broker_module.validate_supervisor_receipt(
+        tampered,
+        authenticator=authenticator,
+        expected_lease_id=lease_id,
+    )
+
+
+def test_process_observation_error_is_not_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def deny_read(
+        self: Path,
+        *,
+        encoding: str | None = None,
+        errors: str | None = None,
+    ) -> str:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "read_text", deny_read)
+    with pytest.raises(PermissionError, match="denied"):
+        broker_module._journal_process_absent({"pid": 123})
+
+
+def test_path_observation_error_is_not_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def deny_lstat(path: str) -> os.stat_result:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(os, "lstat", deny_lstat)
+    with pytest.raises(PermissionError, match="denied"):
+        broker_module._journal_path_name_absent("/unobservable")
+
+
+def test_path_absence_requires_unchanged_parent_authority(
+    tmp_path: Path,
+) -> None:
+    trusted = tmp_path / "trusted"
+    trusted.mkdir()
+    parent = trusted.stat()
+    observation = {
+        "path": str(trusted / "absent"),
+        "device": 1,
+        "inode": 1,
+        "mode": 0o600,
+        "parent_path": str(trusted),
+        "parent_device": parent.st_dev,
+        "parent_inode": parent.st_ino,
+    }
+    assert broker_module._journal_path_absent(observation)
+
+    trusted.rename(tmp_path / "moved")
+    trusted.mkdir()
+    with pytest.raises(OSError, match="parent authority changed"):
+        broker_module._journal_path_absent(observation)
+
+
+def test_completed_lease_journals_compact_to_one_global_sentinel() -> None:
+    broker = object.__new__(MountNamespaceBroker)
+    broker._global_journal_lease_id = None
+    broker._journal_bindings = {"lease-a": {}, "lease-b": {}}
+    updates: list[str] = []
+    unlinked: list[str] = []
+
+    def update(lease_id: str, **changes: object) -> None:
+        del changes
+        updates.append(lease_id)
+
+    broker._journal_update = update
+    broker.unlink_supervisor_receipt = unlinked.append
+    proof = {
+        "container_absence": True,
+        "stages_absence": True,
+        "daemon_absence": False,
+        "containerd_absence": False,
+        "runtime_absence": False,
+        "config_absence": False,
+        "root_absence": False,
+    }
+
+    broker.record_cleanup_receipt("lease-a", proof=proof, state="ACTIVE")
+    broker.record_cleanup_receipt("lease-b", proof=proof, state="ACTIVE")
+
+    assert updates == ["lease-a", "lease-b"]
+    assert broker._global_journal_lease_id == "lease-a"
+    assert unlinked == ["lease-b"]
+    assert set(broker._journal_bindings) == {"lease-a"}

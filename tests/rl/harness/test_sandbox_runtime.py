@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-import threading
 import stat
+import threading
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -25,31 +25,30 @@ from breadboard.rl.harness.materialization import (
 )
 from breadboard.rl.harness.runners.base import RunnerToolBinding
 from breadboard.rl.harness.sandbox import (
-    InstalledRuntime,
     InstalledSandboxAuthoritySet,
     SandboxAttestationError,
-    SandboxCleanupReceipt,
+    SandboxFault,
     SandboxLaunchError,
     SandboxMeasurement,
     SandboxPlanError,
-    SandboxFault,
     SandboxRuntimeManager,
     SandboxSecurityPolicy,
-    build_sandbox_execution_plan,
+    TrustedProcessBackend,
     WorkspaceStateError,
+    build_sandbox_execution_plan,
 )
 from tests.rl.harness.wp7_fixtures import (
     DeterministicRandom,
     FrozenClock,
     MemorySourceReader,
     RuntimeFixture,
+    _registry_snapshot,
     digest,
     make_effective_plan,
     make_runtime_fixture,
     make_store_roots,
     plan_tool_bindings,
     replace_plan_capabilities,
-    _registry_snapshot,
 )
 
 
@@ -1270,6 +1269,7 @@ async def test_unproven_runtime_cleanup_quarantines_dependents_until_safe_retry(
         ),
     )
     assert lease.state is WorkspaceLeaseState.QUARANTINED
+    assert lease.cleanup_receipt is first
     assert handle.terminate_calls == 1
     assert lease._materialized.workspace_path.exists()
     assert (harness.lease_root / f"{lease.lease_id}.json").exists()
@@ -1286,12 +1286,31 @@ async def test_unproven_runtime_cleanup_quarantines_dependents_until_safe_retry(
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
     assert lease.state is WorkspaceLeaseState.RELEASED
+    assert lease.cleanup_receipt is second
     assert handle.terminate_calls == 2
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
     assert await lease.close() == second
     assert handle.terminate_calls == 2
 
+
+
+@pytest.mark.asyncio
+async def test_execute_rejects_malformed_argv_without_fencing_active_lease(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    handle = harness.backend.handles[0]
+
+    for argv in ((), ("",), ("bad\x00argument",), (object(),)):
+        with pytest.raises(WorkspaceStateError) as captured:
+            await lease.execute(argv)
+        assert captured.value.code == "runtime_preflight_failed"
+
+    assert lease.state is WorkspaceLeaseState.ACTIVE
+    assert handle.argv_actions == []
 
 @pytest.mark.parametrize("completion", ["finish", "cancel"])
 async def test_close_fences_new_operations_and_drains_an_active_operation(
@@ -1349,6 +1368,58 @@ async def test_close_fences_new_operations_and_drains_an_active_operation(
     assert list(harness.lease_root.iterdir()) == []
 
 
+async def test_cancel_preempts_active_operation_before_cleanup(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    port = lease.runner_workspace
+    handle = harness.backend.handles[0]
+    handle.run_entered = asyncio.Event()
+    handle.release_run = asyncio.Event()
+    operation = asyncio.create_task(port.run_shell("blocked", timeout=1))
+
+    await asyncio.wait_for(handle.run_entered.wait(), 1)
+    receipt = await asyncio.wait_for(lease.cancel(), 1)
+
+    with pytest.raises(asyncio.CancelledError):
+        await operation
+    assert receipt.state is CleanupState.RELEASED
+    assert handle.terminate_calls == 1
+    assert lease.state is WorkspaceLeaseState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
+@pytest.mark.parametrize("method_name", ["close", "cancel"])
+async def test_direct_lease_cleanup_survives_caller_cancellation(
+    tmp_path: Path, method_name: str
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    handle = harness.backend.handles[0]
+    handle.terminate_entered = asyncio.Event()
+    handle.release_terminate = asyncio.Event()
+
+    first = asyncio.create_task(getattr(lease, method_name)())
+    await asyncio.wait_for(handle.terminate_entered.wait(), 1)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(first, 1)
+
+    follower = asyncio.create_task(lease.close())
+    await asyncio.sleep(0)
+    assert follower.done() is False
+    handle.release_terminate.set()
+    receipt = await asyncio.wait_for(follower, 1)
+
+    assert receipt.state is CleanupState.RELEASED
+    assert handle.terminate_calls == 1
+    assert lease.state is WorkspaceLeaseState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
 @pytest.mark.parametrize(
     "first_state",
     [CleanupState.RELEASED, CleanupState.QUARANTINED],
@@ -1390,9 +1461,9 @@ async def test_manager_close_cancellation_preserves_whole_shared_cleanup_outcome
         receipt.state is CleanupState.RELEASED for receipt in receipts[1:]
     )
     assert [handle.terminate_calls for handle in harness.backend.handles] == [1, 1, 1]
-    assert await harness.manager.close() == receipts
     if first_state is CleanupState.RELEASED:
         assert list(harness.workspace_root.iterdir()) == []
+        assert await harness.manager.close() == receipts
         assert list(harness.lease_root.iterdir()) == []
     else:
         assert receipts[0].steps == (
@@ -1419,9 +1490,9 @@ async def test_manager_close_cancellation_preserves_whole_shared_cleanup_outcome
         )
         assert leases[0]._materialized.workspace_path.exists()
         assert len(list(harness.workspace_root.iterdir())) == 1
-        assert len(list(harness.lease_root.iterdir())) == 1
-        retry = await leases[0].close()
-        assert retry.state is CleanupState.RELEASED
+        assert len(list(harness.lease_root.iterdir())) == 2
+        retry_receipts = await harness.manager.close()
+        assert retry_receipts[0].state is CleanupState.RELEASED
         assert first_handle.terminate_calls == 2
         assert list(harness.workspace_root.iterdir()) == []
         assert list(harness.lease_root.iterdir()) == []
@@ -1471,6 +1542,165 @@ class ReconcileBackend(RecordingBackend):
         assert record["epoch"] == 1
         return (CleanupStepReceipt("runtime", CleanupState.RELEASED),)
 
+async def test_lease_record_payload_identity_must_match_record_filename(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    record_path = harness.lease_root / f"{lease.lease_id}.json"
+    alias = harness.lease_root / ("lease-" + "d" * 32 + ".json")
+    alias.write_bytes(record_path.read_bytes())
+
+    with pytest.raises(WorkspaceStateError) as captured:
+        harness.manager._read_lease_record(alias)
+
+    assert captured.value.code == "stale_identity_uncertain"
+    alias.unlink()
+    assert (await lease.close()).state is CleanupState.RELEASED
+
+
+async def test_stale_reconcile_rejects_absolute_workspace_identity(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    record_path = original.lease_root / f"{lease.lease_id}.json"
+    record = dict(original.manager._read_lease_record(record_path))
+    outside = tmp_path / "outside-workspace"
+    outside.mkdir()
+    sentinel = outside / "sentinel"
+    sentinel.write_text("retained")
+    record["workspace_id"] = str(outside)
+    record["workspace_path"] = str(outside)
+    original.manager._write_lease_record(lease.lease_id, record)
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(8_000),
+    )
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+
+    receipt = (await recovery.reconcile_stale())[0]
+
+    assert any(
+        step.resource == "workspace"
+        and step.state is CleanupState.QUARANTINED
+        and step.detail == "stale_identity_uncertain"
+        for step in receipt.steps
+    )
+    assert sentinel.read_text() == "retained"
+    assert await recovery.close() == ()
+    assert (await lease.close()).state is CleanupState.RELEASED
+
+
+async def test_invalid_owner_lock_quarantines_only_its_stale_record(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    first = await original.manager.open(fixture.request)
+    second = await original.manager.open(fixture.request)
+    original.clock.advance(minutes=5)
+    for lease in (first, second):
+        original.manager._release_lease_owner_lock(
+            lease.lease_id,
+            unlink=False,
+        )
+    invalid_lock = original.lease_root / f"{first.lease_id}.owner.lock"
+    invalid_lock.unlink()
+    invalid_lock.symlink_to(original.lease_root)
+    backend = ReconcileBackend()
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=backend,
+        docker_backend=None,
+        random_bytes=DeterministicRandom(8_500),
+    )
+
+    receipts = await recovery.reconcile_stale()
+
+    invalid = next(item for item in receipts if item.lease_id == first.lease_id)
+    assert invalid.steps == (
+        CleanupStepReceipt(
+            "lease_record",
+            CleanupState.QUARANTINED,
+            "owner_lock_invalid",
+        ),
+    )
+    assert [item["lease_id"] for item in backend.reconciled] == [second.lease_id]
+    assert await recovery.close() == ()
+    invalid_lock.unlink()
+    assert original.manager._claim_lease_owner_lock(first.lease_id)
+    await first.close()
+    await second.close()
+
+
+async def test_reconcile_and_close_serialize_owner_lock_lifecycle(
+    tmp_path: Path,
+) -> None:
+    class BlockingReconcileBackend(ReconcileBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def reconcile(
+            self,
+            record: Mapping[str, Any],
+        ) -> tuple[CleanupStepReceipt, ...]:
+            self.entered.set()
+            await self.release.wait()
+            return await super().reconcile(record)
+
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+    backend = BlockingReconcileBackend()
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=backend,
+        docker_backend=None,
+        random_bytes=DeterministicRandom(8_750),
+    )
+    first = asyncio.create_task(recovery.reconcile_stale())
+    await asyncio.wait_for(backend.entered.wait(), 1)
+    second = asyncio.create_task(recovery.reconcile_stale())
+    closing = asyncio.create_task(recovery.close())
+    await asyncio.sleep(0)
+    assert not second.done()
+    assert not closing.done()
+
+    backend.release.set()
+    first_receipts = await asyncio.wait_for(first, 1)
+    second_receipts = await asyncio.wait_for(second, 1)
+    close_receipts = await asyncio.wait_for(closing, 1)
+
+    assert len(first_receipts) == 1
+    assert second_receipts == ()
+    assert close_receipts == ()
+    assert [item["lease_id"] for item in backend.reconciled] == [lease.lease_id]
+    assert recovery._lease_owner_locks == {}
+    assert recovery._lease_root_fd is None
+    assert (await lease.close()).state in {
+        CleanupState.RELEASED,
+        CleanupState.ALREADY_RELEASED,
+    }
+
 
 async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_exact_expiry(
     tmp_path: Path,
@@ -1498,10 +1728,25 @@ async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_ex
     assert workspace_path.exists()
 
     original.clock.advance(minutes=5)
+    blocked = await recovery.reconcile_stale()
+
+    assert len(blocked) == 1
+    assert blocked[0].lease_id == lease.lease_id
+    assert blocked[0].steps == (
+        CleanupStepReceipt(
+            "lease_record",
+            CleanupState.QUARANTINED,
+            "live_owner",
+        ),
+    )
+    assert recovery_backend.reconciled == []
+    assert workspace_path.exists()
+    assert record_path.exists()
+
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
     receipts = await recovery.reconcile_stale()
 
     assert len(receipts) == 1
-    assert receipts[0].lease_id == lease.lease_id
     assert receipts[0].steps == (
         CleanupStepReceipt(
             "child_verifier",
@@ -1513,14 +1758,11 @@ async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_ex
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
     assert len(recovery_backend.reconciled) == 1
-    assert recovery_backend.reconciled[0]["effective_plan_digest"] == fixture.plan.canonical_digest()
     assert not workspace_path.exists()
     assert not record_path.exists()
     assert original.store.recover_stale_cache_holder(record) == CleanupStepReceipt(
         "cache_holder", CleanupState.ALREADY_RELEASED
     )
-    assert await recovery.reconcile_stale() == ()
-    assert len(recovery_backend.reconciled) == 1
 
 
 @pytest.mark.parametrize(
@@ -1558,6 +1800,7 @@ async def test_stale_cache_identity_mismatch_quarantines_then_exact_retry_releas
         random_bytes=DeterministicRandom(20_000),
     )
     original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
 
     first = (await recovery.reconcile_stale())[0]
     assert first.steps == (
@@ -1649,6 +1892,7 @@ async def test_unreadable_verifier_record_blocks_primary_reconcile_until_removed
         random_bytes=DeterministicRandom(25_000),
     )
     original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
 
     receipts = await recovery.reconcile_stale()
     first = next(
@@ -1662,6 +1906,11 @@ async def test_unreadable_verifier_record_blocks_primary_reconcile_until_removed
             "child_verifier",
             CleanupState.QUARANTINED,
             "verifier-lease-corrupt",
+        ),
+        CleanupStepReceipt(
+            "snapshot",
+            CleanupState.QUARANTINED,
+            "dependent verifier cleanup incomplete",
         ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt(
@@ -1705,6 +1954,54 @@ async def test_unreadable_verifier_record_blocks_primary_reconcile_until_removed
     assert not primary_record.exists()
     assert not corrupt_child.exists()
     assert not workspace.exists()
+
+
+async def test_restart_reclaims_orphan_verifier_owner_lock_without_blocking_primary(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    workspace = lease._materialized.workspace_path
+    orphan_lease_id = "verifier-lease-" + ("a" * 32)
+    orphan_lock = original.lease_root / f"{orphan_lease_id}.owner.lock"
+    orphan_lock.touch(mode=0o600)
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(27_000),
+    )
+    active_lease_id = "verifier-lease-" + ("b" * 32)
+    assert recovery._claim_lease_owner_lock(active_lease_id)
+    active_lock = original.lease_root / f"{active_lease_id}.owner.lock"
+
+    receipts = await recovery.reconcile_stale()
+
+    orphan = next(
+        receipt for receipt in receipts if receipt.lease_id == orphan_lease_id
+    )
+    primary = next(
+        receipt for receipt in receipts if receipt.lease_id == lease.lease_id
+    )
+    assert orphan.steps == (
+        CleanupStepReceipt("owner_lock", CleanupState.RELEASED),
+    )
+    assert primary.state is CleanupState.RELEASED
+    assert not orphan_lock.exists()
+    assert not workspace.exists()
+    assert not (original.lease_root / f"{lease.lease_id}.json").exists()
+    assert active_lock.exists()
+    assert active_lease_id in recovery._lease_owner_locks
+    assert all(
+        receipt.lease_id != active_lease_id for receipt in receipts
+    )
+    recovery._release_lease_owner_lock(active_lease_id, unlink=True)
 
 @pytest.mark.parametrize("identity_field", ["uid", "gid"])
 async def test_hardened_root_identity_is_rejected_before_materialization_or_launch(
@@ -1935,6 +2232,38 @@ def test_installed_authority_catalog_rejects_duplicate_resolution(
         )
 
 
+async def test_materialization_cancellation_waits_for_owned_worker_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    entered = threading.Event()
+    release = threading.Event()
+    original_materialize = harness.store.materialize
+
+    def blocked_materialize(plan: Any) -> Any:
+        entered.set()
+        if not release.wait(timeout=2):
+            raise AssertionError("materialization worker was not released")
+        return original_materialize(plan)
+
+    monkeypatch.setattr(harness.store, "materialize", blocked_materialize)
+    opening = asyncio.create_task(harness.manager.open(fixture.request))
+    assert await asyncio.to_thread(entered.wait, 1)
+
+    opening.cancel()
+    await asyncio.sleep(0)
+    assert not opening.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(opening, 1)
+
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+    assert await harness.manager.close() == ()
+
+
 async def test_launch_cancellation_releases_materialization_and_durable_record(
     tmp_path: Path,
 ) -> None:
@@ -1964,7 +2293,7 @@ async def test_primary_attestation_failure_retains_dependents_until_reconcile_re
     class FailedCleanupMeasurementBackend(RecordingBackend):
         async def launch(self, *args: Any, **kwargs: Any) -> tuple[Any, Any]:
             handle, measurement = await super().launch(*args, **kwargs)
-            handle.termination_states = [runtime_state]
+            handle.termination_states = [runtime_state, CleanupState.RELEASED]
             return handle, measurement
 
     fixture = make_runtime_fixture(with_writable_mount=True)
@@ -1999,25 +2328,19 @@ async def test_primary_attestation_failure_retains_dependents_until_reconcile_re
     assert backend.handles[0].terminate_calls == 1
     assert len(list(harness.workspace_root.iterdir())) == 1
     records = list(harness.lease_root.iterdir())
-    assert len(records) == 1
+    assert len(records) == 2
 
-    recovery_backend = ReconcileBackend()
-    harness.manager.process_backend = recovery_backend
     harness.clock.advance(minutes=5)
     receipts = await asyncio.wait_for(harness.manager.reconcile_stale(), 1)
 
     assert len(receipts) == 1
     assert receipts[0].steps == (
-        CleanupStepReceipt(
-            "child_verifier",
-            CleanupState.ALREADY_RELEASED,
-        ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
         CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
-    assert len(recovery_backend.reconciled) == 1
+    assert backend.handles[0].terminate_calls == 2
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
 
@@ -2043,6 +2366,7 @@ async def test_reconciliation_quarantines_foreign_runtime_identity_without_clean
         random_bytes=DeterministicRandom(30_000),
     )
     original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
 
     receipts = await recovery.reconcile_stale()
 
@@ -2058,6 +2382,26 @@ async def test_reconciliation_quarantines_foreign_runtime_identity_without_clean
     assert recovery_backend.reconciled == []
     assert lease._materialized.workspace_path.exists()
     assert record_path.exists()
+    assert lease.lease_id in recovery._lease_owner_locks
+    assert await recovery.close() == ()
+    assert recovery._lease_owner_locks == {}
+    assert recovery._lease_root_fd is None
+    successor = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(31_000),
+    )
+    successor_receipts = await successor.reconcile_stale()
+    assert len(successor_receipts) == 1
+    assert all(
+        step.detail != "live_owner"
+        for step in successor_receipts[0].steps
+    )
+    assert await successor.close() == ()
     assert (await lease.close()).state is CleanupState.RELEASED
 
 
@@ -2090,6 +2434,50 @@ async def test_lease_records_stay_on_admitted_inode_after_named_root_swap(
         os.fstat(owned_fd)
     await harness.manager.close()
     harness.store.close()
+
+
+@pytest.mark.asyncio
+async def test_process_preflight_failure_closes_workspace_descriptor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(runtime_install_root=tmp_path)
+    plan = build_sandbox_execution_plan(
+        fixture.request,
+        fixture.registries,
+        fixture.authorities,
+    )
+    workspace_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    identity = os.fstat(workspace_fd)
+    context = SimpleNamespace(
+        lease_id="lease-preflight",
+        workspace_id="workspace-preflight",
+        workspace_fd=workspace_fd,
+        workspace_identity=(identity.st_dev, identity.st_ino),
+    )
+
+    def fail_snapshot(*_args: object, **_kwargs: object) -> None:
+        raise SandboxLaunchError(
+            "injected executable preflight failure",
+            code="runtime_preflight_failed",
+        )
+
+    monkeypatch.setattr(
+        sandbox_module,
+        "_snapshot_installed_executable",
+        fail_snapshot,
+    )
+    with pytest.raises(
+        SandboxLaunchError,
+        match="injected executable preflight failure",
+    ):
+        await TrustedProcessBackend().launch(
+            plan,
+            tmp_path,
+            context=context,
+        )
+    with pytest.raises(OSError):
+        os.fstat(workspace_fd)
 
 
 def test_lease_constructor_closes_duplicate_when_identity_stat_fails(

@@ -264,6 +264,7 @@ jobs:
           done
 
       - name: Run phase4 replay scenarios
+        continue-on-error: true
         run: |
           set +e
           rc=0

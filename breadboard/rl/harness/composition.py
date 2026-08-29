@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import asyncio
-from builtins import ExceptionGroup
 import base64
 import hashlib
 import hmac
@@ -9,17 +9,18 @@ import ipaddress
 import json
 import os
 import re
-import stat
 import socket
+import stat
 import subprocess
+from builtins import BaseExceptionGroup, ExceptionGroup
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from secrets import token_bytes
 from types import MappingProxyType
 from typing import Any, Literal, Mapping, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
+from agentic_coder_prototype.compilation.bundle import build_dependency_closure
 from agentic_coder_prototype.compilation.contracts import (
     ClosureMember,
     CompiledConfig,
@@ -27,16 +28,17 @@ from agentic_coder_prototype.compilation.contracts import (
     ConfigBundleManifest,
     DependencyEdge,
 )
-from agentic_coder_prototype.compilation.bundle import build_dependency_closure
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
 from breadboard.rl.state.cas import ArtifactConflictError, FilesystemCAS
-from secrets import token_bytes
 
 from . import contracts as c
-from .config_runtime import CompilerSemanticView, ConfigRuntime
-from .evidence import EvidenceRoleBindingV2, EvidenceRoleSourceV2
 from .api import create_app
+from .config_runtime import CompilerSemanticView, ConfigRuntime
 from .evidence import (
     EpisodeEvidenceRepository,
+    EvidenceRoleBindingV2,
+    EvidenceRoleSourceV2,
     FilesystemEpisodeLocatorStore,
     V2EvidenceAuthority,
 )
@@ -46,21 +48,24 @@ from .materialization import (
     SealedSourceManifest,
     SourceManifestEntry,
 )
+from .mount_namespace_broker import (
+    MountNamespaceBroker,
+    recover_supervisor_journals,
+)
 from .policy_http import (
     PolicySecretAuthority,
     PolicyTlsTrustAuthority,
     RouteBoundPolicyHttpResolver,
     RouteNetworkAuthority,
 )
-from .runners.base import RunnerAdapterRegistry
+from .private_docker_daemon import (
+    OfflineImageAuthority,
+    PinnedFileAuthority,
+    PrivateDockerDaemonAuthority,
+)
+from .runners.base import RunnerAdapterDescriptor, RunnerAdapterRegistry
 from .runners.conductor import CONDUCTOR_ADAPTER_ID, ConductorAdapter
 from .runners.terminal import TERMINAL_ADAPTER_ID, TerminalResponsesAdapter
-from .service import (
-    BreadBoardV2EpisodeService,
-    V2FaultInjectionAuthority,
-    V2LifecycleDependencies,
-)
-from .runners.base import RunnerAdapterDescriptor
 from .sandbox import (
     InstalledImage,
     InstalledRuntime,
@@ -71,16 +76,15 @@ from .sandbox import (
     SandboxSecurityPolicy,
     TrustedProcessBackend,
 )
-from .mount_namespace_broker import MountNamespaceBroker
 from .sandbox_docker import (
     DockerRuntimeAdapter,
     DockerSandboxBackend,
     InspectDockerMeasurementProvider,
 )
-from .private_docker_daemon import (
-    OfflineImageAuthority,
-    PinnedFileAuthority,
-    PrivateDockerDaemonAuthority,
+from .service import (
+    BreadBoardV2EpisodeService,
+    V2FaultInjectionAuthority,
+    V2LifecycleDependencies,
 )
 
 COMPOSITION_REF_MEDIA_TYPE = (
@@ -2641,6 +2645,14 @@ class _ProductionCleanupProbe:
             remember("broker:daemon-root", getattr(broker, "_daemon_root_fd", None))
             for name, descriptor in broker._authority_fds.items():
                 remember(f"broker:{name}", descriptor)
+        journal_identity = (
+            None
+            if broker is None
+            else self._fd_identity(getattr(broker, "_journal_root_fd", -1))
+        )
+        self._supervisor_journal_identity = (
+            None if journal_identity is None else journal_identity[1:]
+        )
         self._descriptors = descriptors
 
         process_identities: dict[int, str] = {}
@@ -2736,18 +2748,8 @@ class _ProductionCleanupProbe:
     async def _release_snapshot(
         self, snapshot_id: str, close: Any
     ) -> Any:
-        receipt = await close()
-        snapshot = getattr(self._sandbox_runtime, "_snapshots", {}).get(snapshot_id)
-        state = getattr(getattr(receipt, "state", None), "value", None)
-        if snapshot is not None and state in {"released", "already_released"}:
-            _snapshot_receipt, path = snapshot
-            try:
-                self._materialization.storage_backend.release(path)
-            except FileNotFoundError:
-                pass
-            if not Path(path).exists():
-                self._sandbox_runtime._snapshots.pop(snapshot_id, None)
-        return receipt
+        del snapshot_id
+        return await close()
 
 
     @staticmethod
@@ -2803,9 +2805,42 @@ class _ProductionCleanupProbe:
             errors.append(f"{label}:{type(exc).__name__}")
             return ()
 
+    @staticmethod
+    def _lease_inventory_paths(
+        paths: tuple[Path, ...],
+        journal_identity: tuple[int, int] | None,
+        errors: list[str],
+    ) -> tuple[Path, ...]:
+        if journal_identity is None:
+            return paths
+        inventory_paths: list[Path] = []
+        for path in paths:
+            if path.name != "supervisor-journal":
+                inventory_paths.append(path)
+                continue
+            try:
+                metadata = os.stat(path, follow_symlinks=False)
+            except OSError as exc:
+                errors.append(
+                    f"supervisor_journal_inventory:{type(exc).__name__}"
+                )
+                inventory_paths.append(path)
+                continue
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or (metadata.st_dev, metadata.st_ino) != journal_identity
+            ):
+                inventory_paths.append(path)
+        return tuple(inventory_paths)
+
     def observe(self) -> ProductionCleanupInventory:
         errors: list[str] = []
         lease_paths = self._children(self._lease_root, errors, "lease_inventory")
+        lease_paths = self._lease_inventory_paths(
+            lease_paths,
+            self._supervisor_journal_identity,
+            errors,
+        )
         root_workspace_paths = self._children(
             self._workspace_root, errors, "workspace_inventory"
         )
@@ -3015,6 +3050,41 @@ class _ProductionSandboxRuntime:
         self._manager.abort_bootstrap()
 
 
+def _non_repeating_close_callback(
+    callback: Callable[[], Any],
+    *,
+    retry_cleanup: Callable[[], Any] | None = None,
+) -> Callable[[], Awaitable[None]]:
+    owner: asyncio.Task[None] | None = None
+    completed = False
+    failed = False
+
+    async def invoke(value: Callable[[], Any]) -> None:
+        result = value()
+        if hasattr(result, "__await__"):
+            await result
+
+    async def close_once() -> None:
+        nonlocal completed, failed, owner
+        if completed:
+            if failed and retry_cleanup is not None:
+                await invoke(retry_cleanup)
+            return
+        if owner is None:
+            owner = asyncio.create_task(invoke(callback))
+        try:
+            await asyncio.shield(owner)
+        except asyncio.CancelledError:
+            raise
+        except BaseException:
+            completed = True
+            failed = True
+            raise
+        completed = True
+
+    return close_once
+
+
 class ProductionComposition:
     def __init__(
         self,
@@ -3039,6 +3109,8 @@ class ProductionComposition:
         self._runtime_callbacks = list(runtime_close_callbacks)
         self._authority_callbacks = list(authority_close_callbacks)
         self._lock = asyncio.Lock()
+        self._runtime_close_lock = asyncio.Lock()
+        self._authority_close_lock = asyncio.Lock()
         self._runtime_closed = False
         self._closed = False
 
@@ -3076,49 +3148,61 @@ class ProductionComposition:
 
 
     async def close_runtime(self) -> None:
-        async with self._lock:
-            if self._runtime_closed:
-                return
-            self._runtime_closed = True
-            callbacks = tuple(reversed(self._runtime_callbacks))
-            self._runtime_callbacks.clear()
-        errors: list[BaseException] = []
-        for callback in callbacks:
-            try:
-                result = callback()
-                if hasattr(result, "__await__"):
-                    await result
-            except BaseException as exc:
-                errors.append(exc)
-        if errors:
-            raise ExceptionGroup("production runtime close failed", errors)
+        async with self._runtime_close_lock:
+            while True:
+                async with self._lock:
+                    if self._runtime_closed:
+                        return
+                    if not self._runtime_callbacks:
+                        self._runtime_closed = True
+                        return
+                    callback = self._runtime_callbacks[-1]
+                try:
+                    result = callback()
+                    if hasattr(result, "__await__"):
+                        await result
+                except BaseException as exc:
+                    raise BaseExceptionGroup(
+                        "production runtime close failed", [exc]
+                    ) from exc
+                async with self._lock:
+                    if (
+                        self._runtime_callbacks
+                        and self._runtime_callbacks[-1] is callback
+                    ):
+                        self._runtime_callbacks.pop()
 
 
     async def close(self) -> None:
-        errors: list[BaseException] = []
         try:
             await self.close_runtime()
         except BaseException as exc:
-            errors.append(exc)
-        async with self._lock:
-            if self._closed:
-                if errors:
-                    raise ExceptionGroup(
-                        "production composition close failed", errors
-                    )
-                return
-            self._closed = True
-            callbacks = tuple(reversed(self._authority_callbacks))
-            self._authority_callbacks.clear()
-        for callback in callbacks:
-            try:
-                result = callback()
-                if hasattr(result, "__await__"):
-                    await result
-            except BaseException as exc:
-                errors.append(exc)
-        if errors:
-            raise ExceptionGroup("production composition close failed", errors)
+            raise BaseExceptionGroup(
+                "production composition close failed", [exc]
+            ) from exc
+        async with self._authority_close_lock:
+            while True:
+                async with self._lock:
+                    if self._closed:
+                        return
+                    if not self._authority_callbacks:
+                        self._closed = True
+                        return
+                    callback = self._authority_callbacks[-1]
+                try:
+                    result = callback()
+                    if hasattr(result, "__await__"):
+                        await result
+                except BaseException as exc:
+                    raise BaseExceptionGroup(
+                        "production composition close failed", [exc]
+                    ) from exc
+                async with self._lock:
+                    if (
+                        self._authority_callbacks
+                        and self._authority_callbacks[-1] is callback
+                    ):
+                        self._authority_callbacks.pop()
 
 
 def _secure_read(
@@ -3775,12 +3859,52 @@ def _build_runtime_graph(
         if daemon_authority is None:
             raise ValueError("private Docker daemon authority is missing")
         private_authority = _private_daemon_authority(daemon_authority)
-        private_daemon_owner = rollback.attempt(
-            lambda: MountNamespaceBroker(
-                private_authority.mount_stage_root,
-                daemon_authority=private_authority,
+        journal_name = "supervisor-journal"
+        try:
+            os.mkdir(
+                journal_name,
+                mode=0o700,
+                dir_fd=directory_fds["lease"],
             )
+            os.fsync(directory_fds["lease"])
+        except FileExistsError:
+            pass
+        journal_fd = os.open(
+            journal_name,
+            os.O_RDONLY
+            | os.O_DIRECTORY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=directory_fds["lease"],
         )
+        try:
+            journal_metadata = os.fstat(journal_fd)
+            if (
+                not stat.S_ISDIR(journal_metadata.st_mode)
+                or journal_metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(journal_metadata.st_mode) != 0o700
+            ):
+                raise ValueError("supervisor journal authority is not sealed")
+            rollback.attempt(
+                lambda: recover_supervisor_journals(
+                    journal_fd,
+                    directory_fds["lease"],
+                    authenticator=graph.authenticator,
+                )
+            )
+            private_daemon_owner = rollback.attempt(
+                lambda: MountNamespaceBroker(
+                    private_authority.mount_stage_root,
+                    daemon_authority=private_authority,
+                    journal_root_fd=journal_fd,
+                    journal_root_path=str(
+                        Path(manifest.stores.lease.path) / journal_name
+                    ),
+                    journal_authenticator=graph.authenticator,
+                )
+            )
+        finally:
+            os.close(journal_fd)
         rollback.own(private_daemon_owner.close)
         daemon_binding = private_daemon_owner.daemon_binding
         if daemon_binding is None:
@@ -3957,6 +4081,15 @@ def _build_runtime_graph(
     except BaseException as exc:
         rollback.attempt(lambda error=exc: (_ for _ in ()).throw(error))
         raise AssertionError("unreachable")
+    async def retry_service_cleanup() -> None:
+        receipts = await sandbox_manager.close()
+        if any(
+            receipt.state.value not in {"released", "already_released"}
+            for receipt in receipts
+        ):
+            raise RuntimeError("sandbox runtime cleanup pending")
+
+
     rollback.transfer()
     return (
         app,
@@ -3967,8 +4100,15 @@ def _build_runtime_graph(
             *(() if private_daemon_owner is None else (private_daemon_owner.close,)),
             *(() if bridge_lifecycle is None else (bridge_lifecycle.close,)),
             *(() if docker_adapter is None else (docker_adapter.close,)),
-            *(() if docker_backend is None else (docker_backend.close,)),
-            service.close,
+            *(
+                ()
+                if docker_backend is None
+                else (docker_backend.close_runtime,)
+            ),
+            _non_repeating_close_callback(
+                service.close,
+                retry_cleanup=retry_service_cleanup,
+            ),
         ),
         bridge_lifecycle,
         cleanup_probe,

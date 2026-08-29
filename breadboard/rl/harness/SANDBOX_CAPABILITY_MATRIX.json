@@ -1,0 +1,124 @@
+{
+  "schema_version": "bb.rl.sandbox-capability-matrix.v1",
+  "workspace_root": "/testbed",
+  "verifier_result_max_bytes": 1048576,
+  "adapters": [
+    {
+      "adapter_id": "docker",
+      "status": "experimental",
+      "capabilities": {
+        "create": true,
+        "execute": true,
+        "file_access": true,
+        "workspace_diff": true,
+        "cancel": true,
+        "destroy": true,
+        "identity": true,
+        "cleanup_receipt": true,
+        "persistent_workspace": true,
+        "isolated": true
+      },
+      "required_host_capabilities": [
+        "linux",
+        "docker-engine",
+        "runc-registration",
+        "seccomp",
+        "apparmor-or-selinux",
+        "cgroups",
+        "private-descriptor-mount-staging"
+      ],
+      "required_image_capabilities": [
+        "git-workspace-diff",
+        "python3-workspace-helper"
+      ],
+      "unavailable_code": "runtime_unsupported",
+      "evidence_contracts": [
+        "tests/rl/harness/test_sandbox_docker.py",
+        "tests/rl/harness/test_sandbox_runtime.py"
+      ]
+    },
+    {
+      "adapter_id": "firecracker",
+      "status": "unsupported",
+      "capabilities": {
+        "create": false,
+        "execute": false,
+        "file_access": false,
+        "workspace_diff": false,
+        "cancel": false,
+        "destroy": false,
+        "identity": false,
+        "cleanup_receipt": false,
+        "persistent_workspace": false,
+        "isolated": false
+      },
+      "required_host_capabilities": [
+        "linux",
+        "firecracker",
+        "dev-kvm",
+        "jailer",
+        "networking",
+        "image-authority"
+      ],
+      "required_image_capabilities": [],
+      "unavailable_code": "runtime_unsupported",
+      "evidence_contracts": []
+    },
+    {
+      "adapter_id": "gvisor",
+      "status": "experimental",
+      "capabilities": {
+        "create": true,
+        "execute": true,
+        "file_access": true,
+        "workspace_diff": true,
+        "cancel": true,
+        "destroy": true,
+        "identity": true,
+        "cleanup_receipt": true,
+        "persistent_workspace": true,
+        "isolated": true
+      },
+      "required_host_capabilities": [
+        "linux",
+        "docker-engine",
+        "runsc-registration",
+        "pinned-runsc-binary",
+        "private-descriptor-mount-staging"
+      ],
+      "required_image_capabilities": [
+        "git-workspace-diff",
+        "python3-workspace-helper"
+      ],
+      "unavailable_code": "runtime_unsupported",
+      "evidence_contracts": [
+        "tests/rl/harness/test_sandbox_docker.py"
+      ]
+    },
+    {
+      "adapter_id": "process",
+      "status": "development_only",
+      "capabilities": {
+        "create": true,
+        "execute": true,
+        "file_access": true,
+        "workspace_diff": true,
+        "cancel": true,
+        "destroy": true,
+        "identity": true,
+        "cleanup_receipt": true,
+        "persistent_workspace": true,
+        "isolated": false
+      },
+      "required_host_capabilities": [
+        "git"
+      ],
+      "required_image_capabilities": [],
+      "unavailable_code": "runtime_unsupported",
+      "evidence_contracts": [
+        "tests/rl/harness/test_sandbox_process_integration.py",
+        "tests/rl/harness/test_sandbox_runtime.py"
+      ]
+    }
+  ]
+}

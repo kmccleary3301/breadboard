@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import inspect
 import json
-import platform
 import os
-import sys
+import platform
 import shutil
-import subprocess
 import stat
+import subprocess
+import sys
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -27,6 +29,7 @@ from breadboard.rl.harness.materialization import (
 from breadboard.rl.harness.sandbox import (
     RuntimeLaunchContext,
     RuntimePreparedIdentity,
+    SandboxFault,
     SandboxMeasurement,
     SandboxRuntimeManager,
     WorkspaceStorageIdentity,
@@ -36,15 +39,15 @@ from breadboard.rl.harness.sandbox_docker import (
     DockerAdapterError,
     DockerCommandResult,
     DockerRuntimeAdapter,
-    DockerSandboxBackend,
     DockerRuntimeHandle,
+    DockerSandboxBackend,
     ExecutableInvocation,
-    SubprocessDockerCliExecutor,
     PrivateDockerDaemonBinding,
+    SubprocessDockerCliExecutor,
     build_create_argv,
     decode_docker_inspect,
-    observe_binary_digest,
     measurement_mismatches,
+    observe_binary_digest,
     requested_measurement,
 )
 from tests.rl.harness.wp7_fixtures import (
@@ -68,6 +71,7 @@ class ScriptedDockerExecutor:
         self.trace = trace
         self.invocations: list[ExecutableInvocation] = []
         self.calls: list[tuple[tuple[str, ...], int, int, tuple[tuple[str, str], ...]]] = []
+        self.inputs: list[bytes] = []
 
     async def execute(
         self,
@@ -77,10 +81,12 @@ class ScriptedDockerExecutor:
         timeout_ms: int,
         output_limit: int,
         environment: tuple[tuple[str, str], ...],
+        input_bytes: bytes = b"",
     ) -> DockerCommandResult:
         normalized = (executable.argv0, *argv_tail)
         self.invocations.append(executable)
         self.calls.append((normalized, timeout_ms, output_limit, environment))
+        self.inputs.append(input_bytes)
         if self.trace is not None:
             self.trace.append(normalized[1])
         if not self.results:
@@ -102,11 +108,13 @@ class CancellableExecDockerExecutor(ScriptedDockerExecutor):
         timeout_ms: int,
         output_limit: int,
         environment: tuple[tuple[str, str], ...],
+        input_bytes: bytes = b"",
     ) -> DockerCommandResult:
         normalized = (executable.argv0, *argv_tail)
         if len(normalized) > 1 and normalized[1] == "exec":
             self.invocations.append(executable)
             self.calls.append((normalized, timeout_ms, output_limit, environment))
+            self.inputs.append(input_bytes)
             self.exec_started.set()
             await asyncio.wait_for(asyncio.Event().wait(), 1)
             raise AssertionError("cancelled Docker exec unexpectedly resumed")
@@ -116,6 +124,7 @@ class CancellableExecDockerExecutor(ScriptedDockerExecutor):
             timeout_ms=timeout_ms,
             output_limit=output_limit,
             environment=environment,
+            input_bytes=input_bytes,
         )
 
 
@@ -166,6 +175,78 @@ class LeaseOnlyBackend:
             reward_eligible=isolated,
         )
 
+
+class PendingLaunchBackend:
+    def __init__(self) -> None:
+        self.cleanup_pending = True
+        self.close_attempts = 0
+        self.workspace_fd = -1
+
+    async def launch(
+        self,
+        plan: Any,
+        workspace: Path,
+        *,
+        context: RuntimeLaunchContext,
+    ) -> tuple[LeaseOnlyHandle, SandboxMeasurement]:
+        del plan, workspace
+        self.workspace_fd = context.workspace_fd
+        raise DockerAdapterError(
+            "runtime_cleanup_pending",
+            "launch cleanup retained by backend",
+        )
+
+    async def reconcile_quarantined(self) -> None:
+        self.close_attempts += 1
+        if self.close_attempts == 1:
+            raise DockerAdapterError(
+                "runtime_cleanup_pending",
+                "launch cleanup still pending",
+            )
+        os.close(self.workspace_fd)
+        self.workspace_fd = -1
+        self.cleanup_pending = False
+
+
+class RetainedLaunchHandle:
+    runtime_id = "d" * 64
+
+    def __init__(self, workspace_fd: int) -> None:
+        self.workspace_fd = workspace_fd
+        self.terminate_calls = 0
+
+    async def terminate(self) -> tuple[CleanupStepReceipt, ...]:
+        self.terminate_calls += 1
+        if self.terminate_calls == 1:
+            return (CleanupStepReceipt("runtime", CleanupState.QUARANTINED),)
+        os.close(self.workspace_fd)
+        self.workspace_fd = -1
+        return (CleanupStepReceipt("runtime", CleanupState.RELEASED),)
+
+
+class ReturnedPendingLaunchBackend:
+    cleanup_pending = False
+
+    def __init__(self) -> None:
+        self.handle: RetainedLaunchHandle | None = None
+
+    async def launch(
+        self,
+        plan: Any,
+        workspace: Path,
+        *,
+        context: RuntimeLaunchContext,
+    ) -> tuple[RetainedLaunchHandle, SandboxMeasurement]:
+        _, measurement = await LeaseOnlyBackend().launch(
+            plan, workspace, context=context
+        )
+        self.handle = RetainedLaunchHandle(context.workspace_fd)
+        return self.handle, replace(
+            measurement,
+            runtime_resource_id=self.handle.runtime_id,
+            measured={"runtime_resource_id": self.handle.runtime_id},
+            mismatch=("forced post-launch admission failure",),
+        )
 
 class QuotaStorageBackend(DirectoryStorageBackend):
     def __init__(self) -> None:
@@ -368,7 +449,7 @@ def _docker_inspect_payload(
             {
                 "Type": "bind",
                 "Source": str(skeleton),
-                "Destination": "/workspace",
+                "Destination": "/testbed",
                 "RW": False,
             },
             *[
@@ -401,7 +482,9 @@ def _docker_plan(tmp_path: Path, *, gvisor: bool = False) -> tuple[Any, Path, Pa
         c.RuntimeClass.HARDENED_GVISOR if gvisor else c.RuntimeClass.HARDENED_DOCKER
     )
     fixture = make_runtime_fixture(
-        runtime_class=runtime_class, with_writable_mount=True
+        runtime_class=runtime_class,
+        with_writable_mount=True,
+        repository_mount=True,
     )
     plan = build_sandbox_execution_plan(
         fixture.request, fixture.registries, fixture.authorities
@@ -428,7 +511,7 @@ def _docker_plan(tmp_path: Path, *, gvisor: bool = False) -> tuple[Any, Path, Pa
     mounted.mkdir(mode=0o700)
     profile = tmp_path / "seccomp.json"
     profile.write_bytes(plan.security_policy.seccomp_bytes)
-    mounts = ((mounted, "/workspace/work", False),)
+    mounts = ((mounted, "/testbed/work", False),)
     return plan, skeleton, profile, mounts
 
 
@@ -478,7 +561,7 @@ def _primary_workspace(
         mounts.append(
             (
                 source,
-                "/workspace/" + entry.target_logical_path,
+                "/testbed/" + entry.target_logical_path,
                 entry.access.value == "ro",
             )
         )
@@ -540,6 +623,513 @@ async def _launch_docker_handle(
     return plan, executor, handle
 
 
+@pytest.mark.asyncio
+async def test_runtime_handle_exposes_persistent_testbed_file_and_diff_operations(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.extend(
+        [
+            _result(stdout=b'{"bytes":5,"content_base64":"aGVsbG8="}'),
+            _result(),
+            _result(stdout=b'["src/lib","src/main.py"]'),
+            _result(stdout=b"diff --git a/src/main.py b/src/main.py\n"),
+        ]
+    )
+
+    read_result = await handle.read_text("src/main.py", limit=5)
+    write_result = await handle.write_text("src/main.py", "hello")
+    list_result = await handle.list_files("src", depth=1)
+    diff_result = await handle.workspace_diff()
+
+    assert read_result == {
+        "path": "src/main.py",
+        "content": "hello",
+        "offset": 0,
+        "bytes": 5,
+    }
+    assert write_result == {"path": "src/main.py", "bytes": 5}
+    assert list_result == {
+        "path": "src",
+        "files": ["src/lib", "src/main.py"],
+    }
+    assert diff_result["stdout"].startswith("diff --git")
+    calls = [call[0][1:] for call in executor.calls]
+    assert calls[0][:5] == (
+        "exec",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert calls[0][5:] == ("read", "src/main.py", "0", "5", "0")
+    assert calls[1][:6] == (
+        "exec",
+        "-i",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert calls[1][6:] == (
+        "write",
+        "src/main.py",
+        "5",
+        hashlib.sha256(b"hello").hexdigest(),
+    )
+    assert executor.inputs[1] == b"hello"
+    assert calls[2][:5] == (
+        "exec",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert calls[2][5:] == ("list", "src", "1", "128")
+    assert calls[3] == (
+        "exec",
+        CONTAINER_ID,
+        "git",
+        "-C",
+        "/testbed/work",
+        "diff",
+        "--no-ext-diff",
+        "--binary",
+    )
+
+
+@pytest.mark.asyncio
+async def test_workspace_diff_maps_missing_image_git_to_runtime_unsupported(
+    tmp_path: Path,
+) -> None:
+    _, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.append(_result(returncode=127, stderr=b"git: not found"))
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.workspace_diff()
+
+    assert captured.value.code == "runtime_unsupported"
+    assert handle._fenced is False
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_reads_exact_observation_limit_through_json_protocol(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    content = b"x" * plan.limits.observation_bytes
+    encoded = json.dumps(
+        {
+            "bytes": len(content),
+            "content_base64": base64.b64encode(content).decode("ascii"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    executor.results.append(_result(stdout=encoded))
+
+    result = await handle.read_text("at-limit.txt")
+
+    assert result["content"].encode("utf-8") == content
+    assert result["bytes"] == plan.limits.observation_bytes
+    assert executor.calls[0][2] == (
+        4 * ((plan.limits.observation_bytes + 3) // 3) + 128
+    )
+    assert executor.calls[0][2] > len(encoded)
+
+
+@pytest.mark.asyncio
+async def test_verifier_artifact_read_uses_artifact_ceiling_not_observation_ceiling(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    plan = replace(
+        plan,
+        limits=c.ExecutionLimits(
+            **{
+                **plan.limits.model_dump(),
+                "artifact_bytes_each": 1024 * 1024 * 1024,
+                "artifact_bytes_total": 1024 * 1024 * 1024,
+            }
+        ),
+    )
+    handle.plan = plan
+    content = b'{"resolved":true}'
+    executor.results.append(
+        _result(
+            stdout=json.dumps(
+                {
+                    "bytes": len(content),
+                    "content_base64": base64.b64encode(content).decode("ascii"),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("ascii")
+        )
+    )
+    ceiling = docker_module.VERIFIER_RESULT_MAX_BYTES
+    assert plan.limits.artifact_bytes_each > ceiling
+    assert ceiling > plan.limits.observation_bytes
+
+    result = await handle.read_artifact_text("result/verifier-result.json")
+
+    assert result["content"] == content.decode("utf-8")
+    assert executor.calls[0][0][-5:] == (
+        "read",
+        "result/verifier-result.json",
+        "0",
+        str(ceiling),
+        "1",
+    )
+    assert executor.calls[0][2] == 4 * ((ceiling + 3) // 3) + 128
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_zero_byte_read_is_a_nonfencing_success(
+    tmp_path: Path,
+) -> None:
+    _, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.extend(
+        [
+            _result(stdout=b'{"bytes":0,"content_base64":""}'),
+            _result(stdout=b'{"bytes":0,"content_base64":""}'),
+        ]
+    )
+
+    first = await handle.read_text("nonempty.txt", limit=0)
+    second = await handle.read_text("still-active.txt", limit=0)
+
+    assert first["content"] == second["content"] == ""
+    assert all(call[0][-2:] == ("0", "0") for call in executor.calls)
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_retries_only_failed_stages_after_releasing_all_others(
+    tmp_path: Path,
+) -> None:
+    _, _, handle = await _launch_docker_handle(tmp_path)
+    descriptors: list[int] = []
+    stages: list[docker_module.StagedDockerDescriptorMount] = []
+    for index in range(3):
+        path = tmp_path / f"stage-{index}"
+        path.write_text(str(index), encoding="utf-8")
+        descriptor = os.open(path, os.O_RDONLY)
+        descriptors.append(descriptor)
+        metadata = os.fstat(descriptor)
+        stages.append(
+            docker_module.StagedDockerDescriptorMount(
+                source_path=f"/staged/{index}",
+                source_device=metadata.st_dev,
+                source_inode=metadata.st_ino,
+                source_mode=stat.S_IFMT(metadata.st_mode),
+                descriptor_device=metadata.st_dev,
+                descriptor_inode=metadata.st_ino,
+            )
+        )
+    failing_path = stages[-1].source_path
+
+    class Stager:
+        fail = True
+
+        def __init__(self) -> None:
+            self.releases: list[str] = []
+
+        async def release(self, staged: Any) -> None:
+            self.releases.append(staged.source_path)
+            if self.fail and staged.source_path == failing_path:
+                raise RuntimeError("permanent stage failure")
+
+    stager = Stager()
+
+    async def released_runtime() -> tuple[CleanupStepReceipt, ...]:
+        return (CleanupStepReceipt("runtime", CleanupState.RELEASED),)
+
+    handle._held_fds = list(descriptors)
+    handle._staged_mounts = list(stages)
+    handle._mount_stager = stager
+    handle._terminate_bound = released_runtime
+
+    first = await handle.terminate()
+    second = await handle.terminate()
+
+    assert first[-1].state is CleanupState.QUARANTINED
+    assert second[-1].state is CleanupState.QUARANTINED
+    assert handle._staged_mounts == [stages[-1]]
+    assert stager.releases == [
+        stages[2].source_path,
+        stages[1].source_path,
+        stages[0].source_path,
+        stages[2].source_path,
+    ]
+    assert all(os.fstat(descriptor) for descriptor in descriptors)
+
+    stager.fail = False
+    final = await handle.terminate()
+
+    assert final[-1].state is CleanupState.RELEASED
+    assert stager.releases[-1] == stages[2].source_path
+    assert handle._staged_mounts == []
+    for descriptor in descriptors:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_rejects_workspace_escape_before_docker_exec(
+    tmp_path: Path,
+) -> None:
+    _, executor, handle = await _launch_docker_handle(tmp_path)
+
+    with pytest.raises(DockerAdapterError, match="workspace path is invalid"):
+        await handle.read_text("../host-secret")
+
+    assert executor.calls == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_rejects_read_symlink_before_read_effect(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.append(
+        _result(returncode=125, stderr=b"bb-workspace-helper:authority\n")
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.read_text("link")
+
+    assert captured.value.code == "workspace_escape"
+    argv = executor.calls[0][0]
+    assert argv[1:6] == (
+        "exec",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert argv[6:] == (
+        "read",
+        "link",
+        "0",
+        str(plan.limits.observation_bytes),
+        "1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_reports_missing_image_workspace_helper_as_unavailable(
+    tmp_path: Path,
+) -> None:
+    _, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.append(
+        _result(returncode=127, stderr=b"exec: python3: not found\n")
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.read_text("src/main.py", limit=1)
+
+    assert captured.value.code == "runtime_unsupported"
+    assert handle._fenced is False
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_rejects_write_symlink_before_write_effect(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.append(
+        _result(returncode=125, stderr=b"bb-workspace-helper:authority\n")
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.write_text("link", "secret")
+
+    assert captured.value.code == "workspace_escape"
+    argv = executor.calls[0][0]
+    assert argv[1:7] == (
+        "exec",
+        "-i",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert argv[7:] == (
+        "write",
+        "link",
+        "6",
+        hashlib.sha256(b"secret").hexdigest(),
+    )
+    assert executor.inputs == [b"secret"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_rejects_write_missing_leaf_under_symlink_parent(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.append(
+        _result(returncode=125, stderr=b"bb-workspace-helper:authority\n")
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.write_text("link/new.txt", "secret")
+
+    assert captured.value.code == "workspace_escape"
+    argv = executor.calls[0][0]
+    assert argv[1:7] == (
+        "exec",
+        "-i",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert argv[7:] == (
+        "write",
+        "link/new.txt",
+        "6",
+        hashlib.sha256(b"secret").hexdigest(),
+    )
+    assert executor.inputs == [b"secret"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_rejects_list_entry_overflow_before_returning_evidence(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    handle.plan = replace(
+        plan,
+        security_policy=replace(plan.security_policy, snapshot_max_inodes=1),
+    )
+    executor.results.append(
+        _result(returncode=124, stderr=b"bb-workspace-helper:output-limit\n")
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.list_files("src", depth=1)
+
+    assert captured.value.code == "output_limit_exceeded"
+    argv = executor.calls[0][0]
+    assert argv[1:6] == (
+        "exec",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert argv[6:] == ("list", "src", "1", "1")
+    assert len(executor.calls) == 1
+
+
+def _run_workspace_helper(
+    root: Path,
+    *arguments: str,
+    input_bytes: bytes = b"",
+) -> subprocess.CompletedProcess[bytes]:
+    script = docker_module._WORKSPACE_PYTHON.replace(
+        'ROOT = "/testbed"',
+        f"ROOT = {str(root)!r}",
+        1,
+    )
+    return subprocess.run(
+        [sys.executable, "-c", script, *arguments],
+        input=input_bytes,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_workspace_helper_performs_descriptor_bound_read_write_and_list(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "testbed"
+    source = root / "src"
+    source.mkdir(parents=True)
+    target = source / "main.py"
+    target.write_text("old", encoding="utf-8")
+
+    payload = b"hello!"
+    write_result = _run_workspace_helper(
+        root,
+        "write",
+        "src/main.py",
+        str(len(payload)),
+        hashlib.sha256(payload).hexdigest(),
+        input_bytes=payload,
+    )
+    assert write_result.returncode == 0
+    assert target.read_text(encoding="utf-8") == "hello!"
+    assert not tuple(source.glob(".breadboard-*"))
+
+    nested_payload = b"nested"
+    nested_write = _run_workspace_helper(
+        root,
+        "write",
+        "new/deep/result.txt",
+        str(len(nested_payload)),
+        hashlib.sha256(nested_payload).hexdigest(),
+        input_bytes=nested_payload,
+    )
+    assert nested_write.returncode == 0
+    assert (root / "new/deep/result.txt").read_bytes() == nested_payload
+
+    read_result = _run_workspace_helper(
+        root, "read", "src/main.py", "1", "4", "0"
+    )
+    assert read_result.returncode == 0
+    assert json.loads(read_result.stdout) == {
+        "bytes": 4,
+        "content_base64": "ZWxsbw==",
+    }
+
+    list_result = _run_workspace_helper(root, "list", "src", "0", "4")
+    assert list_result.returncode == 0
+    assert json.loads(list_result.stdout) == ["src/main.py"]
+
+
+def test_workspace_helper_rejects_symlinks_hardlinks_and_inode_overflow(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "testbed"
+    source = root / "src"
+    source.mkdir(parents=True)
+    outside = root / "outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+    (source / "link").symlink_to(outside)
+    os.link(outside, source / "hardlink")
+
+    for arguments in (
+        ("read", "src/link", "0", "8", "0"),
+        ("list", "src", "0", "8"),
+    ):
+        result = _run_workspace_helper(root, *arguments)
+        assert result.returncode == 125
+        assert result.stderr == b"bb-workspace-helper:authority\n"
+    payload = b"secret"
+    for logical_path in ("src/link", "src/hardlink"):
+        result = _run_workspace_helper(
+            root,
+            "write",
+            logical_path,
+            str(len(payload)),
+            hashlib.sha256(payload).hexdigest(),
+            input_bytes=payload,
+        )
+        assert result.returncode == 125
+        assert result.stderr == b"bb-workspace-helper:authority\n"
+    assert outside.read_text(encoding="utf-8") == "outside"
+
+    (source / "link").unlink()
+    (source / "hardlink").unlink()
+    (source / "one").write_text("1", encoding="utf-8")
+    (source / "two").write_text("2", encoding="utf-8")
+    overflow = _run_workspace_helper(root, "list", "src", "0", "1")
+    assert overflow.returncode == 124
+    assert overflow.stderr == b"bb-workspace-helper:output-limit\n"
+
+
 async def _exercise_nonadmissible_prepare_publish_start(
     plan: Any,
     adapter: DockerRuntimeAdapter,
@@ -593,8 +1183,8 @@ def test_create_argv_exactly_projects_closed_policy_in_deterministic_order(
     second = tmp_path / "readonly-input"
     second.mkdir()
     unsorted_mounts = (
-        (mounts[0][0], "/workspace/z-output", False),
-        (second, "/workspace/a-input", True),
+        (mounts[0][0], "/testbed/z-output", False),
+        (second, "/testbed/a-input", True),
     )
 
     argv = build_create_argv(
@@ -655,15 +1245,15 @@ def test_create_argv_exactly_projects_closed_policy_in_deterministic_order(
         "--ulimit",
         "nofile=128:128",
         "--mount",
-        f"type=bind,src={skeleton},dst=/workspace,readonly",
+        f"type=bind,src={skeleton},dst=/testbed,readonly",
         "--mount",
-        f"type=bind,src={second},dst=/workspace/a-input,readonly",
+        f"type=bind,src={second},dst=/testbed/a-input,readonly",
         "--mount",
-        f"type=bind,src={mounts[0][0]},dst=/workspace/z-output",
+        f"type=bind,src={mounts[0][0]},dst=/testbed/z-output",
         "--tmpfs",
         "/tmp:rw,noexec,nosuid,size=1048576",
         "--workdir",
-        "/workspace",
+        "/testbed",
         "--env",
         "PATH=/usr/bin:/bin",
         "--pull",
@@ -763,25 +1353,25 @@ async def test_prepare_rejects_seccomp_fd_or_bounded_metadata_tamper(
 @pytest.mark.parametrize(
     ("case", "binds", "tmpfs_destinations", "expected_code", "expected_detail"),
     [
-        ("bind-exact", (("/workspace/data", True), ("/workspace/data", False)), (), "runtime_preflight_failed", "duplicate"),
-        ("bind-ancestor", (("/workspace/data", True), ("/workspace/data/out", True)), (), "runtime_preflight_failed", "nested"),
-        ("bind-reverse-ancestor", (("/workspace/data/out", True), ("/workspace/data", True)), (), "runtime_preflight_failed", "nested"),
-        ("bind-casefold-exact", (("/workspace/Data", True), ("/WORKSPACE/data", True)), (), "runtime_preflight_failed", "duplicate"),
-        ("bind-casefold-ancestor", (("/workspace/Data", True), ("/WORKSPACE/data/Out", True)), (), "runtime_preflight_failed", "nested"),
+        ("bind-exact", (("/testbed/data", True), ("/testbed/data", False)), (), "runtime_preflight_failed", "duplicate"),
+        ("bind-ancestor", (("/testbed/data", True), ("/testbed/data/out", True)), (), "runtime_preflight_failed", "nested"),
+        ("bind-reverse-ancestor", (("/testbed/data/out", True), ("/testbed/data", True)), (), "runtime_preflight_failed", "nested"),
+        ("bind-casefold-exact", (("/testbed/Data", True), ("/TESTBED/data", True)), (), "runtime_preflight_failed", "duplicate"),
+        ("bind-casefold-ancestor", (("/testbed/Data", True), ("/TESTBED/data/Out", True)), (), "runtime_preflight_failed", "nested"),
         ("tmpfs-exact", (), ("/scratch", "/scratch"), "runtime_preflight_failed", "duplicate"),
         ("tmpfs-ancestor", (), ("/scratch", "/scratch/cache"), "runtime_preflight_failed", "nested"),
         ("tmpfs-reverse-ancestor", (), ("/scratch/cache", "/scratch"), "runtime_preflight_failed", "nested"),
         ("tmpfs-casefold-ancestor", (), ("/Scratch", "/scratch/Cache"), "runtime_preflight_failed", "nested"),
-        ("bind-tmpfs-exact", (("/workspace/cache", True),), ("/workspace/cache",), "runtime_preflight_failed", "duplicate"),
-        ("bind-above-tmpfs", (("/workspace/snapshot", True),), ("/workspace/snapshot/cache",), "runtime_preflight_failed", "writable child"),
+        ("bind-tmpfs-exact", (("/testbed/cache", True),), ("/testbed/cache",), "runtime_preflight_failed", "duplicate"),
+        ("bind-above-tmpfs", (("/testbed/snapshot", True),), ("/testbed/snapshot/cache",), "runtime_preflight_failed", "writable child"),
         ("tmpfs-above-bind", (("/scratch/output", False),), ("/scratch",), "runtime_preflight_failed", "nested"),
-        ("cross-kind-casefold", (("/WORKSPACE/Snapshot", True),), ("/workspace/snapshot/cache",), "runtime_preflight_failed", "writable child"),
-        ("workspace-bind-alias", (("/WorkSpace", True),), (), "runtime_preflight_failed", "duplicate"),
-        ("workspace-tmpfs-alias", (), ("/WORKSPACE",), "runtime_preflight_failed", "duplicate"),
-        ("bind-lexical-interposition", (("/workspace/snapshot/../result", True),), (), "workspace_escape", "invalid Docker mount path"),
-        ("tmpfs-lexical-interposition", (), ("/workspace/./result",), "runtime_preflight_failed", "invalid tmpfs destination"),
-        ("verifier-snapshot-interposition", (("/workspace/snapshot", True), ("/workspace/result", False)), ("/workspace/snapshot/tmp",), "runtime_preflight_failed", "writable child"),
-        ("verifier-result-ancestor", (("/workspace/snapshot", True), ("/workspace/result", False)), ("/workspace/result/tmp",), "runtime_preflight_failed", "nested"),
+        ("cross-kind-casefold", (("/TESTBED/Snapshot", True),), ("/testbed/snapshot/cache",), "runtime_preflight_failed", "writable child"),
+        ("workspace-bind-alias", (("/TestBed", True),), (), "runtime_preflight_failed", "duplicate"),
+        ("workspace-tmpfs-alias", (), ("/TESTBED",), "runtime_preflight_failed", "duplicate"),
+        ("bind-lexical-interposition", (("/testbed/snapshot/../result", True),), (), "workspace_escape", "invalid Docker mount path"),
+        ("tmpfs-lexical-interposition", (), ("/testbed/./result",), "runtime_preflight_failed", "invalid tmpfs destination"),
+        ("verifier-snapshot-interposition", (("/testbed/snapshot", True), ("/testbed/result", False)), ("/testbed/snapshot/tmp",), "runtime_preflight_failed", "writable child"),
+        ("verifier-result-ancestor", (("/testbed/snapshot", True), ("/testbed/result", False)), ("/testbed/result/tmp",), "runtime_preflight_failed", "nested"),
     ],
     ids=lambda value: value if isinstance(value, str) else None,
 )
@@ -874,7 +1464,7 @@ def test_forbidden_runtime_authority_rejects_before_executor_spawn(
     elif mutation == "docker-socket":
         candidate_mounts = ((mounts[0][0], "/var/run/docker.sock", False),)
     elif mutation == "comma-mount":
-        candidate_mounts = ((mounts[0][0], "/workspace/bad,name", False),)
+        candidate_mounts = ((mounts[0][0], "/testbed/bad,name", False),)
 
     with pytest.raises(DockerAdapterError) as captured:
         build_create_argv(
@@ -1022,17 +1612,24 @@ async def test_reserved_lsm_disabling_values_reject_before_any_docker_command(
         security_profile_root=security_root,
     )
 
+    workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+    metadata = os.fstat(workspace_fd)
+    context = replace(
+        _launch_context(plan),
+        workspace_fd=workspace_fd,
+        workspace_identity=(metadata.st_dev, metadata.st_ino),
+    )
+
     with pytest.raises(DockerAdapterError) as captured:
-        await backend.launch(
-            plan,
-            workspace,
-            context=_launch_context(plan),
-        )
+        await backend.launch(plan, workspace, context=context)
 
     assert captured.value.code == "runtime_preflight_failed"
     assert str(captured.value) == expected_message
     assert executor.calls == []
     assert provider.calls == []
+    with pytest.raises(OSError):
+        os.fstat(workspace_fd)
+    backend.close()
 
 
 @pytest.mark.parametrize(("uid", "gid"), [(0, 65534), (65534, 0), (0, 0)])
@@ -1314,6 +1911,91 @@ async def test_linux_concrete_executor_observes_sealed_old_cli_bytes(
     assert result.stdout == b"old-cli-bytes"
     assert result.stderr == b""
     assert result.argv == (plan.runtime.executable_path,)
+
+
+async def test_subprocess_executor_streams_payload_above_exec_argument_budget() -> (
+    None
+):
+    executable = Path("/bin/cat")
+    descriptor = os.open(executable, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable),
+        executable_fd=descriptor,
+        executable_descriptor_path=str(executable),
+        digest=observe_binary_digest(executable),
+    )
+    payload = b"x" * (512 * 1024)
+    try:
+        result = await SubprocessDockerCliExecutor().execute(
+            invocation,
+            (),
+            timeout_ms=1_000,
+            output_limit=len(payload) + 1,
+            environment=(("PATH", "/usr/bin:/bin"),),
+            input_bytes=payload,
+        )
+    finally:
+        os.close(descriptor)
+
+    assert result.returncode == 0
+    assert result.stdout == payload
+    assert result.stderr == b""
+    assert result.output_limited is False
+
+
+async def test_subprocess_executor_bounds_descendant_held_output_pipes() -> None:
+    executable = Path("/bin/sh")
+    descriptor = os.open(executable, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable),
+        executable_fd=descriptor,
+        executable_descriptor_path=str(executable),
+        digest=observe_binary_digest(executable),
+    )
+    started = asyncio.get_running_loop().time()
+    try:
+        result = await SubprocessDockerCliExecutor().execute(
+            invocation,
+            ("-c", "(sleep 10) & exit 0"),
+            timeout_ms=200,
+            output_limit=128,
+            environment=(("PATH", "/usr/bin:/bin"),),
+        )
+    finally:
+        os.close(descriptor)
+    elapsed = asyncio.get_running_loop().time() - started
+
+    assert result.timed_out is True
+    assert result.output_limited is False
+    assert elapsed < 1.5
+
+
+async def test_subprocess_executor_stops_process_group_at_output_limit() -> None:
+    executable = Path("/bin/sh")
+    descriptor = os.open(executable, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable),
+        executable_fd=descriptor,
+        executable_descriptor_path=str(executable),
+        digest=observe_binary_digest(executable),
+    )
+    started = asyncio.get_running_loop().time()
+    try:
+        result = await SubprocessDockerCliExecutor().execute(
+            invocation,
+            ("-c", "while :; do printf 0123456789abcdef; done"),
+            timeout_ms=5_000,
+            output_limit=128,
+            environment=(("PATH", "/usr/bin:/bin"),),
+        )
+    finally:
+        os.close(descriptor)
+    elapsed = asyncio.get_running_loop().time() - started
+
+    assert result.output_limited is True
+    assert len(result.stdout) + len(result.stderr) == 128
+    assert result.timed_out is False
+    assert elapsed < 1.5
 
 
 async def test_oci_runtime_symlink_is_rejected_before_image_or_create(
@@ -2011,6 +2693,121 @@ async def test_non_linux_descriptor_mounts_fail_before_create_publish_or_measure
         os.fstat(workspace_fd)
 
 
+@pytest.mark.asyncio
+async def test_launch_preserves_prebinding_cleanup_failure_without_journal_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, skeleton, _, _ = _docker_plan(tmp_path)
+    workspace, _ = _primary_workspace(plan, tmp_path)
+    security_root = tmp_path / "security-prebinding-failure"
+    security_root.mkdir()
+
+    class Stager:
+        def __init__(self) -> None:
+            self.cleanup_calls = 0
+
+        def record_cleanup_receipt(self, *_args: Any, **_kwargs: Any) -> None:
+            self.cleanup_calls += 1
+            raise AssertionError("unbound lease cannot receive a cleanup receipt")
+
+    stager = Stager()
+    backend = DockerSandboxBackend(
+        adapter=_mechanics_adapter(
+            plan,
+            ScriptedDockerExecutor(_preflight_success(plan)),
+        ),
+        measurement_provider=RecordingMeasurementProvider({}),
+        mount_stager=stager,
+        skeleton_path=skeleton,
+        security_profile_root=security_root,
+    )
+    workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+    metadata = os.fstat(workspace_fd)
+    context = replace(
+        _launch_context(plan),
+        workspace_fd=workspace_fd,
+        workspace_identity=(metadata.st_dev, metadata.st_ino),
+    )
+
+    async def reconcile_residual() -> tuple[tuple[str, str], ...]:
+        return (("prior-runtime", "quarantined"),)
+
+    monkeypatch.setattr(backend, "_reconcile_quarantined", reconcile_residual)
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await backend.launch(plan, workspace, context=context)
+
+    assert captured.value.code == "runtime_cleanup_pending"
+    assert captured.value.details == {
+        "residuals": (("prior-runtime", "quarantined"),)
+    }
+    assert stager.cleanup_calls == 0
+    with pytest.raises(OSError):
+        os.fstat(workspace_fd)
+    backend.close()
+
+
+@pytest.mark.asyncio
+async def test_launch_preserves_bound_failure_when_cleanup_journal_write_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, skeleton, _, _ = _docker_plan(tmp_path)
+    workspace, _ = _primary_workspace(plan, tmp_path)
+    security_root = tmp_path / "security-bound-journal-failure"
+    security_root.mkdir()
+
+    class Stager:
+        bound = False
+
+        def record_lease_binding(self, **_kwargs: Any) -> None:
+            self.bound = True
+
+        def record_cleanup_receipt(self, *_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError("journal unavailable")
+
+    stager = Stager()
+    backend = DockerSandboxBackend(
+        adapter=_mechanics_adapter(
+            plan,
+            ScriptedDockerExecutor(_preflight_success(plan)),
+        ),
+        measurement_provider=RecordingMeasurementProvider({}),
+        mount_stager=stager,
+        skeleton_path=skeleton,
+        security_profile_root=security_root,
+    )
+    workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+    metadata = os.fstat(workspace_fd)
+    context = replace(
+        _launch_context(plan),
+        owner_token="owner-token",
+        workspace_fd=workspace_fd,
+        workspace_identity=(metadata.st_dev, metadata.st_ino),
+    )
+    monkeypatch.setattr(docker_module.sys, "platform", "linux")
+
+    def reject_workspace(*_args: Any, **_kwargs: Any) -> None:
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            "workspace identity rejected",
+        )
+
+    monkeypatch.setattr(docker_module, "_validate_mount_descriptor", reject_workspace)
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await backend.launch(plan, workspace, context=context)
+
+    assert stager.bound
+    assert captured.value.code == "runtime_preflight_failed"
+    assert captured.value.args == ("workspace identity rejected",)
+    assert captured.value.details["cleanup_journal"] == "RuntimeError"
+    with pytest.raises(OSError):
+        os.fstat(workspace_fd)
+    backend.close()
+
+
 async def test_linux_without_private_mount_stager_fails_before_daemon_effect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2042,6 +2839,101 @@ async def test_linux_without_private_mount_stager_fails_before_daemon_effect(
         "reason": "descriptor_mount_staging_unavailable"
     }
     assert executor.calls == []
+    with pytest.raises(OSError):
+        os.fstat(workspace_fd)
+
+
+async def test_launch_releases_every_staged_mount_and_reports_residual_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan, skeleton, _, _ = _docker_plan(tmp_path)
+    workspace, _ = _primary_workspace(plan, tmp_path)
+    security_root = tmp_path / "security-stage-release"
+    security_root.mkdir()
+    released: list[str] = []
+
+    class Adapter:
+        async def preflight(self, _: Any) -> None:
+            return None
+
+    class Stager:
+        def __init__(self) -> None:
+            self.validations = 0
+
+        async def stage(self, descriptor: int, **kwargs: Any) -> Any:
+            metadata = os.fstat(descriptor)
+            return docker_module.StagedDockerDescriptorMount(
+                source_path=f"/staged/{descriptor}",
+                source_device=metadata.st_dev,
+                source_inode=metadata.st_ino,
+                source_mode=stat.S_IFMT(metadata.st_mode),
+                descriptor_device=metadata.st_dev,
+                descriptor_inode=metadata.st_ino,
+            )
+
+        async def validate(self, staged: Any, descriptor: int) -> None:
+            self.validations += 1
+            if self.validations == 2:
+                raise DockerAdapterError(
+                    "runtime_preflight_failed", "staged validation failed"
+                )
+
+        async def release(self, staged: Any) -> None:
+            released.append(staged.source_path)
+            if len(released) == 1:
+                raise RuntimeError("first release failed")
+
+    def open_beneath(
+        directory_fd: int,
+        relative_path: str,
+        *,
+        readable_regular: bool = False,
+    ) -> int:
+        return os.open(relative_path, os.O_RDONLY, dir_fd=directory_fd)
+
+    monkeypatch.setattr(docker_module.sys, "platform", "linux")
+    monkeypatch.setattr(docker_module, "_openat2_beneath", open_beneath)
+    monkeypatch.setattr(
+        docker_module,
+        "_require_daemon_runtime_binding",
+        lambda observation, admitted_plan: None,
+    )
+    backend = DockerSandboxBackend(
+        adapter=Adapter(),
+        measurement_provider=RecordingMeasurementProvider({}),
+        skeleton_path=skeleton,
+        security_profile_root=security_root,
+        mount_stager=Stager(),
+    )
+    workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+    metadata = os.fstat(workspace_fd)
+    context = replace(
+        _launch_context(plan),
+        workspace_fd=workspace_fd,
+        workspace_identity=(metadata.st_dev, metadata.st_ino),
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await backend.launch(plan, workspace, context=context)
+
+    assert captured.value.code == "runtime_preflight_failed"
+    assert len(released) == 2
+    residual = backend._quarantined_stages[0]
+    assert captured.value.details["staged_mount_cleanup"] == (
+        (
+            residual.source_device,
+            residual.source_inode,
+            "RuntimeError",
+        ),
+    )
+    assert os.fstat(workspace_fd)
+    with pytest.raises(RuntimeError, match="quarantined"):
+        backend.close()
+
+    await backend.close_runtime()
+
+    assert len(released) == 3
+    assert backend._quarantined_stages == []
     with pytest.raises(OSError):
         os.fstat(workspace_fd)
 
@@ -2201,7 +3093,7 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
     assert adapter.skeleton == Path(f"/staged/{workspace_fd}")
     assert all(
         str(source).startswith("/staged/")
-        and destination.startswith("/workspace/")
+        and destination.startswith("/testbed/")
         for source, destination, _ in adapter.mounts
     )
     assert measurement.isolated is True
@@ -2776,15 +3668,17 @@ async def test_definite_exec_nonzero_does_not_fence_or_trigger_cleanup(
     )
     calls_before_fault = len(executor.calls)
 
-    with pytest.raises(DockerAdapterError) as captured:
-        await handle.run_argv(
-            ("false",),
-            timeout_ms=plan.limits.action_timeout_ms,
-            output_limit=plan.limits.observation_bytes,
-        )
+    failed = await handle.run_argv(
+        ("false",),
+        timeout_ms=plan.limits.action_timeout_ms,
+        output_limit=plan.limits.observation_bytes,
+    )
 
-    assert captured.value.code == "runtime_launch_failed"
-    assert captured.value.details == {"returncode": 7}
+    assert failed == {
+        "returncode": 7,
+        "stdout": "",
+        "stderr": "command rejected",
+    }
     assert [call[0][1] for call in executor.calls[calls_before_fault:]] == ["exec"]
     result = await handle.run_argv(
         ("printf", "still-active"),
@@ -2861,7 +3755,10 @@ async def test_exact_not_found_cleanup_is_already_released_without_destructive_c
         labels=_binding_labels(plan),
     )
 
-    assert cleanup == (("runtime_identity", "already_released", ""),)
+    assert cleanup == (
+        ("runtime_identity", "already_released", ""),
+        ("runtime_absence", "already_released", ""),
+    )
     assert [call[0][1] for call in executor.calls] == ["inspect"]
     assert executor.results == []
 
@@ -2894,7 +3791,10 @@ async def test_concurrent_removal_normalizes_cleanup_and_retries_idempotently(
         ("runtime_remove", "already_released", ""),
         ("runtime_absence", "released", ""),
     )
-    assert second == (("runtime_identity", "already_released", ""),)
+    assert second == (
+        ("runtime_identity", "already_released", ""),
+        ("runtime_absence", "already_released", ""),
+    )
     assert [call[0][1] for call in executor.calls] == [
         "inspect",
         "stop",
@@ -3128,6 +4028,117 @@ async def test_legacy_reconcile_never_consumes_a_scripted_matching_identity(
     assert len(executor.results) == 1
 
 
+async def test_manager_retries_backend_launch_quarantine_before_workspace_release(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(
+        runtime_class=c.RuntimeClass.HARDENED_DOCKER,
+        with_writable_mount=True,
+    )
+    source_digest = digest("workspace-source")
+    cache_root, workspace_root = make_store_roots(tmp_path)
+    store = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=MemorySourceReader(
+            {source_digest: {"seed.txt": b"seed"}}
+        ),
+        clock=FrozenClock(),
+        lease_ttl=timedelta(minutes=5),
+        storage_backend=QuotaStorageBackend(),
+        random_bytes=DeterministicRandom(60_000),
+    )
+    lease_root = tmp_path / "leases"
+    lease_root.mkdir(mode=0o700)
+    backend = PendingLaunchBackend()
+    manager = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=store,
+        lease_root=lease_root,
+        process_backend=None,
+        docker_backend=backend,
+        random_bytes=DeterministicRandom(60_500),
+    )
+
+    with pytest.raises(SandboxFault) as captured:
+        await manager.open(fixture.request)
+
+    receipt = captured.value.cleanup_receipt
+    assert receipt.state is CleanupState.QUARANTINED
+    assert len(manager._pending_launch_cleanups) == 1
+    retained = next(iter(manager._pending_launch_cleanups.values()))
+    assert retained.workspace.exists()
+    assert (lease_root / f"{receipt.lease_id}.json").exists()
+
+    first_close = await manager.close()
+    assert first_close[0].state is CleanupState.QUARANTINED
+    assert backend.close_attempts == 1
+    assert retained.workspace.exists()
+    assert (lease_root / f"{receipt.lease_id}.json").exists()
+
+    second_close = await manager.close()
+    assert second_close[0].state is CleanupState.RELEASED
+    assert backend.close_attempts == 2
+    assert not retained.workspace.exists()
+    assert not (lease_root / f"{receipt.lease_id}.json").exists()
+    assert manager._pending_launch_cleanups == {}
+
+
+async def test_manager_retains_returned_nonterminal_handle_after_admission_failure(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(
+        runtime_class=c.RuntimeClass.HARDENED_DOCKER,
+        with_writable_mount=True,
+    )
+    source_digest = digest("workspace-source")
+    cache_root, workspace_root = make_store_roots(tmp_path)
+    store = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=MemorySourceReader(
+            {source_digest: {"seed.txt": b"seed"}}
+        ),
+        clock=FrozenClock(),
+        lease_ttl=timedelta(minutes=5),
+        storage_backend=QuotaStorageBackend(),
+        random_bytes=DeterministicRandom(60_600),
+    )
+    lease_root = tmp_path / "leases"
+    lease_root.mkdir(mode=0o700)
+    backend = ReturnedPendingLaunchBackend()
+    manager = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=store,
+        lease_root=lease_root,
+        process_backend=None,
+        docker_backend=backend,
+        random_bytes=DeterministicRandom(60_700),
+    )
+
+    with pytest.raises(SandboxFault) as captured:
+        await manager.open(fixture.request)
+
+    receipt = captured.value.cleanup_receipt
+    retained = manager._pending_launch_cleanups[receipt.lease_id]
+    assert retained.runtime is backend.handle
+    assert retained.workspace.exists()
+    assert backend.handle is not None
+    assert backend.handle.terminate_calls == 1
+    assert (lease_root / f"{receipt.lease_id}.json").exists()
+
+    close_receipts = await manager.close()
+
+    assert close_receipts[0].state is CleanupState.RELEASED
+    assert backend.handle.terminate_calls == 2
+    assert backend.handle.workspace_fd == -1
+    assert not retained.workspace.exists()
+    assert not (lease_root / f"{receipt.lease_id}.json").exists()
+    assert manager._pending_launch_cleanups == {}
+
+
 @pytest.mark.parametrize("identity", ["matching", "mismatched"])
 async def test_manager_reconcile_uses_docker_runtime_aggregate_to_gate_durable_cleanup(
     tmp_path: Path,
@@ -3237,6 +4248,7 @@ async def test_manager_reconcile_uses_docker_runtime_aggregate_to_gate_durable_c
         random_bytes=DeterministicRandom(63_000),
     )
     clock.advance(minutes=5)
+    original._release_lease_owner_lock(lease.lease_id, unlink=False)
 
     receipts = await recovery.reconcile_stale()
 

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "breadboard-harness-cli"
 version = "0.0.0"
 description = "BreadBoard harness authoring front door"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = ["fastapi>=0.100", "httpx>=0.27", "jsonschema>=4.18", "python-dotenv>=1.0", "python-multipart>=0.0.9", "PyYAML>=6.0", "ray>=2.0", "requests>=2.28", "uvicorn>=0.20"]
 
 [project.scripts]
@@ -26,6 +26,7 @@ namespaces = true
 "agent_configs.templates" = ["*.yaml", "*.json"]
 "agent_configs.templates.prompts" = ["*.md"]
 "breadboard_engine" = ["engine-build-provenance.v1.json"]
+"breadboard.rl.harness" = ["SANDBOX_CAPABILITY_MATRIX.json"]
 "breadboard_sdk.generated" = ["*.json"]
 "config.e4_lanes" = ["*.yaml", "*.json"]
 "config.e4_targets" = ["**/*.json", "**/*.yaml", "**/*.md"]

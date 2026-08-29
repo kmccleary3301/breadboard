@@ -4,25 +4,25 @@ import asyncio
 import json
 import os
 import stat
+import threading
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
 import pytest
-from breadboard.rl.harness import sandbox as sandbox_module
-from breadboard.rl.harness import materialization as materialization_module
-from breadboard.rl.harness import contracts as c
 
+from breadboard.rl.harness import contracts as c
+from breadboard.rl.harness import materialization as materialization_module
+from breadboard.rl.harness import sandbox as sandbox_module
 from breadboard.rl.harness.materialization import (
     CleanupState,
     CleanupStepReceipt,
-    SandboxCleanupReceipt,
     IsolationDisposition,
+    SandboxCleanupReceipt,
     WorkspaceLeaseState,
 )
 from breadboard.rl.harness.sandbox import (
-    SandboxLaunchError,
     SandboxAttestationError,
     SandboxFault,
     SandboxRuntimeManager,
@@ -241,7 +241,7 @@ async def test_snapshot_digest_independently_binds_every_path_byte_and_mode(
     tmp_path: Path,
 ) -> None:
     harness, primary, snapshot = await _opened_snapshot(tmp_path)
-    object_root = harness.cache_root / "objects" / snapshot.root_digest.removeprefix(
+    object_root = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
         "sha256:"
     )
     entries = _snapshot_entries(object_root)
@@ -324,7 +324,7 @@ async def test_snapshot_requires_positive_runtime_quiescence_and_starts_no_verif
     assert captured.value.code == "snapshot_not_quiescent"
     assert primary.state is WorkspaceLeaseState.QUARANTINED
     assert len(harness.backend.launches) == 1
-    assert list((harness.cache_root / "objects").glob("*/work/candidate.txt")) == []
+    assert list((harness.cache_root / "snapshot-objects").glob("*/work/candidate.txt")) == []
     assert (await primary.close()).state is CleanupState.RELEASED
 
 
@@ -375,6 +375,11 @@ async def test_verifier_uses_distinct_runtime_workspace_and_read_only_snapshot(
     child_receipt = await verifier.close()
     assert child_receipt.state is CleanupState.RELEASED
     assert not verifier_workspace.exists()
+    assert not (
+        harness.cache_root
+        / "snapshot-objects"
+        / snapshot.root_digest.removeprefix("sha256:")
+    ).exists()
     assert await verifier.close() == child_receipt
     primary_receipt = await primary.close()
     assert primary_receipt.state is CleanupState.RELEASED
@@ -453,7 +458,7 @@ async def test_reward_eligible_primary_requires_equally_isolated_verifier_measur
         assert backend.handles[1].terminate_calls == 1
         assert primary._verifier_children == []
         assert len(list(harness.workspace_root.iterdir())) == 1
-        assert len(list(harness.lease_root.iterdir())) == 1
+        assert len(list(harness.lease_root.iterdir())) == 2
     else:
         verifier = await harness.manager.open_verifier(primary, snapshot)
         assert primary.measurement.isolation_disposition is IsolationDisposition.ISOLATED
@@ -575,6 +580,7 @@ async def test_malicious_verifier_results_are_typed_and_cleanup_is_authoritative
     assert verifier_receipt.steps == (
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
+        CleanupStepReceipt("snapshot", CleanupState.RELEASED),
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
     assert not verifier_workspace.exists()
@@ -640,11 +646,139 @@ async def test_forged_snapshot_identity_starts_no_verifier_and_preserves_primary
     assert list(harness.lease_root.iterdir()) == []
 
 
+async def test_snapshot_seal_cancellation_releases_completed_snapshot_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    primary = await harness.manager.open(fixture.request)
+    entered = threading.Event()
+    release = threading.Event()
+    original_seal = harness.store.seal_snapshot
+
+    def blocked_seal(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        if not release.wait(timeout=2):
+            raise AssertionError("snapshot worker was not released")
+        return original_seal(*args, **kwargs)
+
+    monkeypatch.setattr(harness.store, "seal_snapshot", blocked_seal)
+    sealing = asyncio.create_task(primary.seal_for_verifier())
+    assert await asyncio.to_thread(entered.wait, 1)
+
+    sealing.cancel()
+    await asyncio.sleep(0)
+    assert not sealing.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(sealing, 1)
+
+    assert harness.manager._snapshots == {}
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert await harness.manager.close() == ()
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+async def test_identical_snapshot_seal_holds_reference_during_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    first = await harness.manager.open(fixture.request)
+    await first.runner_workspace.write_text("work/candidate.txt", "candidate")
+    first_snapshot = await first.seal_for_verifier()
+    second = await harness.manager.open(fixture.request)
+    await second.runner_workspace.write_text("work/candidate.txt", "candidate")
+    entered = threading.Event()
+    continue_verify = threading.Event()
+    original_verify = harness.store.verify_snapshot
+
+    def blocked_verify(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        if not continue_verify.wait(timeout=2):
+            raise AssertionError("snapshot verification was not released")
+        return original_verify(*args, **kwargs)
+
+    monkeypatch.setattr(harness.store, "verify_snapshot", blocked_verify)
+    sealing = asyncio.create_task(second.seal_for_verifier())
+    assert await asyncio.to_thread(entered.wait, 1)
+    releasing = asyncio.create_task(
+        harness.manager._release_snapshot(first_snapshot.snapshot_id)
+    )
+    await asyncio.sleep(0)
+    assert not releasing.done()
+
+    continue_verify.set()
+    second_snapshot = await asyncio.wait_for(sealing, 1)
+    assert await asyncio.wait_for(releasing, 1) == CleanupStepReceipt(
+        "snapshot",
+        CleanupState.RELEASED,
+    )
+    object_path = (
+        harness.cache_root
+        / "snapshot-objects"
+        / second_snapshot.root_digest.removeprefix("sha256:")
+    )
+    assert object_path.is_dir()
+    assert await harness.manager._release_snapshot(
+        second_snapshot.snapshot_id
+    ) == CleanupStepReceipt("snapshot", CleanupState.RELEASED)
+    assert not object_path.exists()
+    assert (await first.close()).state is CleanupState.QUARANTINED
+    assert (await second.close()).state is CleanupState.RELEASED
+    await harness.manager.close()
+
+
+async def test_snapshot_copy_cancellation_waits_before_verifier_workspace_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness, primary, snapshot = await _opened_snapshot(tmp_path)
+    entered = threading.Event()
+    release = threading.Event()
+    original_copy = harness.store.copy_snapshot
+
+    def blocked_copy(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        if not release.wait(timeout=2):
+            raise AssertionError("snapshot copy worker was not released")
+        return original_copy(*args, **kwargs)
+
+    monkeypatch.setattr(harness.store, "copy_snapshot", blocked_copy)
+    opening = asyncio.create_task(
+        harness.manager.open_verifier(primary, snapshot)
+    )
+    assert await asyncio.to_thread(entered.wait, 1)
+
+    opening.cancel()
+    await asyncio.sleep(0)
+    assert not opening.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(opening, 1)
+
+    assert not any(
+        path.name.startswith("verifier-workspace-")
+        for path in harness.workspace_root.iterdir()
+    )
+    assert not any(
+        path.name.startswith("verifier-lease-")
+        for path in harness.lease_root.iterdir()
+    )
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert harness.manager._snapshots == {}
+    assert await harness.manager.close() == ()
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
 async def test_post_seal_snapshot_mutation_starts_no_verifier_and_cleans_primary(
     tmp_path: Path,
 ) -> None:
     harness, primary, snapshot = await _opened_snapshot(tmp_path)
-    object_root = harness.cache_root / "objects" / snapshot.root_digest.removeprefix(
+    object_root = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
         "sha256:"
     )
     candidate = object_root / "work" / "candidate.txt"
@@ -991,6 +1125,14 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
     recovery_backend = VerifierRestartBackend()
     recovery = _restart_manager(harness, recovery_backend)
     harness.clock.advance(minutes=5)
+    harness.manager._release_lease_owner_lock(
+        verifier_lease_id,
+        unlink=False,
+    )
+    harness.manager._release_lease_owner_lock(
+        primary.lease_id,
+        unlink=False,
+    )
     receipts = await asyncio.wait_for(recovery.reconcile_stale(), 1)
 
     if opening is not None:
@@ -1022,6 +1164,11 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
             "child_verifier",
             CleanupState.ALREADY_RELEASED,
         ),
+        CleanupStepReceipt(
+            "snapshot",
+            CleanupState.RELEASED,
+            snapshot.snapshot_id,
+        ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
         CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
@@ -1047,6 +1194,7 @@ async def test_same_manager_reconcile_skips_live_primary_and_verifier_leases(
 
     assert receipts == ()
     assert primary_record.exists()
+    assert verifier_record.exists()
     assert primary.state is WorkspaceLeaseState.QUIESCING
     assert verifier._closed is False
     assert harness.backend.handles[0].terminate_calls == 1
@@ -1131,7 +1279,7 @@ async def test_verifier_open_record_failure_obeys_detailed_runtime_cleanup_proof
         assert set(harness.lease_root.iterdir()) == primary_records
     else:
         assert len(set(harness.workspace_root.iterdir()) - primary_workspaces) == 1
-        assert len(set(harness.lease_root.iterdir()) - primary_records) == 1
+        assert len(set(harness.lease_root.iterdir()) - primary_records) == 2
 
 @pytest.mark.parametrize(
     "runtime_state",
@@ -1162,6 +1310,11 @@ async def test_verifier_close_retains_dependents_until_runtime_absence_is_proven
             "dependent runtime cleanup incomplete",
         ),
         CleanupStepReceipt(
+            "snapshot",
+            CleanupState.QUARANTINED,
+            "dependent runtime cleanup incomplete",
+        ),
+        CleanupStepReceipt(
             "lease_record",
             CleanupState.QUARANTINED,
             "dependent cleanup incomplete",
@@ -1174,10 +1327,17 @@ async def test_verifier_close_retains_dependents_until_runtime_absence_is_proven
     assert record_path.exists()
     assert handle.terminate_calls == 1
 
+    with pytest.raises(WorkspaceStateError) as captured:
+        await verifier.execute()
+
+    assert captured.value.code == "lease_not_active"
+    assert handle.terminate_calls == 1
+
     second = await verifier.close()
     assert second.steps == (
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
+        CleanupStepReceipt("snapshot", CleanupState.RELEASED),
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
     assert verifier._closed is True
@@ -1244,6 +1404,57 @@ async def test_verifier_cancellation_then_close_leaves_no_child_or_primary_resou
     assert child.state is CleanupState.RELEASED
     parent = await primary.close()
     assert parent.state is CleanupState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+
+
+async def test_verifier_close_preempts_active_execution_and_cleans_resources(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    backend = BlockingVerifierBackend()
+    harness = RuntimeHarness(tmp_path, fixture, backend=backend)
+    primary = await harness.manager.open(fixture.request)
+    snapshot = await primary.seal_for_verifier()
+    verifier = await harness.manager.open_verifier(primary, snapshot)
+    handle = backend.handles[1]
+
+    execution = asyncio.create_task(verifier.execute())
+    await asyncio.wait_for(handle.entered.wait(), 1)
+    child = await asyncio.wait_for(verifier.close(), 1)
+
+    with pytest.raises(asyncio.CancelledError):
+        await execution
+    assert handle.cancelled is True
+    assert child.state is CleanupState.RELEASED
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+
+
+async def test_verifier_cleanup_survives_close_caller_cancellation(
+    tmp_path: Path,
+) -> None:
+    harness, primary, snapshot = await _opened_snapshot(tmp_path)
+    verifier = await harness.manager.open_verifier(primary, snapshot)
+    handle = harness.backend.handles[1]
+    handle.terminate_entered = asyncio.Event()
+    handle.release_terminate = asyncio.Event()
+
+    first = asyncio.create_task(verifier.close())
+    await asyncio.wait_for(handle.terminate_entered.wait(), 1)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(first, 1)
+
+    follower = asyncio.create_task(verifier.close())
+    await asyncio.sleep(0)
+    assert follower.done() is False
+    handle.release_terminate.set()
+    receipt = await asyncio.wait_for(follower, 1)
+
+    assert receipt.state is CleanupState.RELEASED
+    assert handle.terminate_calls == 1
+    assert verifier._closed is True
+    assert (await primary.close()).state is CleanupState.RELEASED
     assert list(harness.workspace_root.iterdir()) == []
 
 

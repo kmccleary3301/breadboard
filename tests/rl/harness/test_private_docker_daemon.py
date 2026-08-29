@@ -4,18 +4,17 @@ import base64
 import hashlib
 import json
 import os
-import socket
 import signal
+import socket
 import stat
-from dataclasses import replace
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from breadboard.rl.harness import composition
-from breadboard.rl.harness import private_docker_daemon
+from breadboard.rl.harness import composition, private_docker_daemon
 from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.private_docker_daemon import (
     CommandResult,
@@ -27,6 +26,64 @@ from breadboard.rl.harness.private_docker_daemon import (
 )
 from breadboard.rl.harness.sandbox import InstalledRuntime
 from breadboard.rl.harness.sandbox_docker import PrivateDockerDaemonBinding
+
+
+@pytest.mark.asyncio
+async def test_owner_executor_forwards_nonempty_stdin_to_pinned_delegate(
+    tmp_path: Path,
+) -> None:
+    executable_path = tmp_path / "docker"
+    executable_path.write_bytes(b"docker")
+    descriptor = os.open(executable_path, os.O_RDONLY)
+    invocation = private_docker_daemon.ExecutableInvocation(
+        argv0=str(executable_path),
+        executable_fd=descriptor,
+        executable_descriptor_path=str(executable_path),
+        digest="sha256:" + hashlib.sha256(b"docker").hexdigest(),
+    )
+    payload = b"nonempty workspace write"
+    observed: dict[str, object] = {}
+
+    class Owner:
+        def __init__(self) -> None:
+            self.docker_invocation = invocation
+
+        def _assert_docker_cli(self) -> None:
+            observed["authority_checked"] = True
+
+    class Delegate:
+        async def execute(self, executable, argv_tail, **kwargs):
+            observed["executable"] = executable
+            observed["argv_tail"] = tuple(argv_tail)
+            observed["input_bytes"] = kwargs["input_bytes"]
+            return private_docker_daemon.DockerCommandResult(
+                (executable.argv0, *tuple(argv_tail)),
+                0,
+                b"",
+                b"",
+            )
+
+    executor = private_docker_daemon._OwnerDockerCliExecutor(Owner())
+    executor._delegate = Delegate()
+    try:
+        result = await executor.execute(
+            invocation,
+            ("exec", "-i", "container", "python3"),
+            timeout_ms=1_000,
+            output_limit=128,
+            environment=(),
+            input_bytes=payload,
+        )
+    finally:
+        os.close(descriptor)
+
+    assert observed == {
+        "authority_checked": True,
+        "executable": invocation,
+        "argv_tail": ("exec", "-i", "container", "python3"),
+        "input_bytes": payload,
+    }
+    assert result.returncode == 0
 
 
 def _digest(path: Path) -> str:
