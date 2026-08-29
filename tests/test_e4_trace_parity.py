@@ -194,15 +194,34 @@ def test_normalization_policy_fails_closed() -> None:
     )
     assert not unzoned_timestamp.matches
 
-    missing_normalized_field = compare_e4_traces(
-        {"timestamp": "2026-08-29T06:00:00Z"},
-        {},
-        rules=(NormalizationRule("/timestamp", "timestamp"),),
+    structural_normalization_cases = (
+        (
+            {"meta": {"timestamp": "2026-08-29T06:00:00Z"}},
+            {},
+            "/meta/timestamp",
+            "field is missing from clone",
+        ),
+        (
+            {"timestamps": [0, 1]},
+            {"timestamps": [0]},
+            "/timestamps/1",
+            "array lengths differ",
+        ),
+        (
+            {"meta": {"timestamp": "2026-08-29T06:00:00Z"}},
+            {"meta": []},
+            "/meta/timestamp",
+            "JSON types differ",
+        ),
     )
-    assert not missing_normalized_field.matches
-    assert (
-        missing_normalized_field.mismatches[0].reason == "field is missing from clone"
-    )
+    for reference_value, clone_value, pointer, reason in structural_normalization_cases:
+        structural_mismatch = compare_e4_traces(
+            reference_value,
+            clone_value,
+            rules=(NormalizationRule(pointer, "timestamp"),),
+        )
+        assert not structural_mismatch.matches
+        assert structural_mismatch.mismatches[0].reason == reason
 
     large_timestamp = 1 << 4000
     large_timestamp_comparison = compare_e4_traces(

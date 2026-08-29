@@ -290,6 +290,14 @@ def compare_e4_traces(
             return
         mismatches.append(mismatch)
 
+    def mark_inaccessible_rules(pointer: str) -> None:
+        prefix = f"{pointer}/" if pointer else "/"
+        used_rules.update(
+            rule_pointer
+            for rule_pointer in rules_by_pointer
+            if rule_pointer == pointer or rule_pointer.startswith(prefix)
+        )
+
     def compare(reference_value: Any, clone_value: Any, pointer: str) -> None:
         if truncated:
             return
@@ -297,6 +305,7 @@ def compare_e4_traces(
         if rule is not None:
             used_rules.add(pointer)
         if type(reference_value) is not type(clone_value):
+            mark_inaccessible_rules(pointer)
             record_mismatch(
                 TraceMismatch(
                     pointer,
@@ -353,8 +362,7 @@ def compare_e4_traces(
             clone_keys = set(clone_value)
             for key in sorted(reference_keys - clone_keys):
                 child_pointer = _child_pointer(pointer, key)
-                if child_pointer in rules_by_pointer:
-                    used_rules.add(child_pointer)
+                mark_inaccessible_rules(child_pointer)
                 record_mismatch(
                     TraceMismatch(
                         child_pointer,
@@ -365,8 +373,7 @@ def compare_e4_traces(
                 )
             for key in sorted(clone_keys - reference_keys):
                 child_pointer = _child_pointer(pointer, key)
-                if child_pointer in rules_by_pointer:
-                    used_rules.add(child_pointer)
+                mark_inaccessible_rules(child_pointer)
                 record_mismatch(
                     TraceMismatch(
                         child_pointer,
@@ -386,6 +393,7 @@ def compare_e4_traces(
             return
         if isinstance(reference_value, list):
             if len(reference_value) != len(clone_value):
+                mark_inaccessible_rules(pointer)
                 record_mismatch(
                     TraceMismatch(
                         pointer,
