@@ -287,6 +287,11 @@ def test_normalization_policy_fails_closed() -> None:
             r"\\server\share\clone",
         )
     assert type_mismatch.mismatches[0].reason == "JSON types differ"
+    with pytest.raises(E4ParityError, match="Windows root-relative"):
+        TemporaryPathRoots(
+            r"\temp\reference",
+            r"\\server\share\clone",
+        )
 
 
 def test_trace_values_must_be_closed_json() -> None:
@@ -549,6 +554,21 @@ def test_workspace_snapshot_translates_directory_fstat_failure(
         E4ParityError,
         match="could not inspect workspace directory child",
     ):
+        workspace_snapshot(workspace)
+
+
+def test_workspace_snapshot_translates_root_fstat_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    def fail_root(_fd: int):
+        raise OSError("simulated EIO")
+
+    monkeypatch.setattr(os, "fstat", fail_root)
+
+    with pytest.raises(E4ParityError, match="could not inspect workspace root"):
         workspace_snapshot(workspace)
 
 

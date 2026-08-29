@@ -880,6 +880,8 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
         visit(root_fd, Path(), 0)
         if fingerprint(root_stat) != fingerprint(os.fstat(root_fd)):
             raise E4ParityError("workspace root changed during snapshot")
+    except OSError as exc:
+        raise E4ParityError("could not inspect workspace root") from exc
     finally:
         os.close(root_fd)
     entries.sort(key=lambda entry: entry["path"])
@@ -1201,6 +1203,8 @@ def _normalize_temporary_path(value: Any, root: str) -> str:
 def _validate_absolute_path(value: str, field_name: str) -> None:
     _require_bounded_text(value, field_name, max_bytes=_MAX_WORKSPACE_PATH_BYTES)
     normalized = value.replace("\\", "/")
+    if value.startswith("\\") and not value.startswith("\\\\"):
+        raise E4ParityError(f"{field_name} cannot be Windows root-relative")
     if normalized.startswith(("//?/", "//./")):
         raise E4ParityError(f"{field_name} cannot use a device namespace")
     is_unc = normalized.startswith("//")
