@@ -79,7 +79,7 @@ class _PointerEvidence:
     @property
     def label(self) -> str:
         if self.display is not None:
-            return self.display or "/"
+            return self.display
         return f"<pointer sha256:{self.sha256}>"
 
     def as_dict(self) -> dict[str, Any]:
@@ -114,7 +114,7 @@ class _JsonPointer:
 
     @property
     def label(self) -> str:
-        return self.evidence().label
+        return self.evidence().label or "/"
 
     def evidence(self) -> _PointerEvidence:
         return _PointerEvidence(self.display, self._hasher.hexdigest(), self.depth)
@@ -128,9 +128,13 @@ def _pointer_evidence(pointer: str) -> dict[str, Any]:
 
 
 def _pointer_location(pointer: str) -> _PointerEvidence:
+    if type(pointer) is not str:
+        raise TypeError("pointer must be an exact string")
+    encoded = pointer.encode("utf-8")
+    display = pointer if len(encoded) <= _MAX_POINTER_DISPLAY_BYTES else None
     return _PointerEvidence(
-        pointer,
-        hashlib.sha256(pointer.encode("utf-8")).hexdigest(),
+        display,
+        hashlib.sha256(encoded).hexdigest(),
         pointer.count("/"),
     )
 
@@ -152,12 +156,29 @@ class NormalizationRule:
             )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class TraceMismatch:
     _location: _PointerEvidence
     reason: str
     reference: Any
     clone: Any
+
+    def __init__(
+        self,
+        pointer: str | _PointerEvidence,
+        reason: str,
+        reference: Any,
+        clone: Any,
+    ) -> None:
+        location = (
+            pointer
+            if isinstance(pointer, _PointerEvidence)
+            else _pointer_location(pointer)
+        )
+        object.__setattr__(self, "_location", location)
+        object.__setattr__(self, "reason", reason)
+        object.__setattr__(self, "reference", reference)
+        object.__setattr__(self, "clone", clone)
 
     @property
     def pointer(self) -> str:
@@ -172,13 +193,32 @@ class TraceMismatch:
         }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class NormalizedField:
     _location: _PointerEvidence
     kind: str
     reference: Any
     clone: Any
     normalized: str
+
+    def __init__(
+        self,
+        pointer: str | _PointerEvidence,
+        kind: str,
+        reference: Any,
+        clone: Any,
+        normalized: str,
+    ) -> None:
+        location = (
+            pointer
+            if isinstance(pointer, _PointerEvidence)
+            else _pointer_location(pointer)
+        )
+        object.__setattr__(self, "_location", location)
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(self, "reference", reference)
+        object.__setattr__(self, "clone", clone)
+        object.__setattr__(self, "normalized", normalized)
 
     @property
     def pointer(self) -> str:
@@ -581,6 +621,7 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
     )
     entries: list[dict[str, Any]] = []
     total_bytes = 0
+    pending_names = 0
 
     def fingerprint(value: os.stat_result) -> tuple[int, int, int, int, int, int]:
         return (
@@ -621,15 +662,17 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
         return names
 
     def visit(directory_fd: int, relative: Path, depth: int) -> None:
-        nonlocal total_bytes
+        nonlocal pending_names, total_bytes
         if depth > _MAX_WORKSPACE_DEPTH:
             raise E4ParityError(f"workspace depth exceeds {_MAX_WORKSPACE_DEPTH}")
         initial_names = bounded_directory_names(
             directory_fd,
             relative,
-            _MAX_WORKSPACE_ENTRIES - len(entries),
+            _MAX_WORKSPACE_ENTRIES - len(entries) - pending_names,
         )
+        pending_names += len(initial_names)
         for name in initial_names:
+            pending_names -= 1
             if (
                 not name
                 or name in {".", ".."}

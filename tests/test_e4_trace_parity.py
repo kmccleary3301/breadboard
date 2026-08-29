@@ -8,10 +8,12 @@ from types import SimpleNamespace
 
 import pytest
 
+import breadboard_engine.e4_trace_parity as parity
 from breadboard_engine.e4_trace_parity import (
     E4ParityError,
     NormalizationRule,
     TemporaryPathRoots,
+    TraceMismatch,
     build_e4_parity_report,
     canonical_json_bytes,
     compare_e4_traces,
@@ -301,6 +303,12 @@ def test_trace_comparison_bounds_mismatch_evidence() -> None:
     assert not comparison.matches
     assert len(comparison.mismatches) == 10_001
     assert comparison.mismatches[-1].reason == "mismatch count exceeds 10000"
+    root_mismatch = compare_e4_traces(True, False).mismatches[0]
+    assert root_mismatch.pointer == ""
+    assert (
+        TraceMismatch(pointer="/field", reason="test", reference=0, clone=1).pointer
+        == "/field"
+    )
 
     long_key = "x" * 2048
     amplified = compare_e4_traces(
@@ -391,6 +399,33 @@ def test_workspace_snapshot_bounds_directory_enumeration(
 
     with pytest.raises(E4ParityError, match="entry count exceeds 16000"):
         workspace_snapshot(tmp_path)
+
+
+def test_workspace_snapshot_reserves_pending_directory_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    (workspace / "a").mkdir(parents=True)
+    (workspace / "a" / "nested").write_text("nested", encoding="utf-8")
+    (workspace / "b").write_text("sibling", encoding="utf-8")
+    real_stat = os.stat
+    inspected: list[object] = []
+
+    def recording_stat(path, *args, **kwargs):
+        inspected.append(path)
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(parity, "_MAX_WORKSPACE_ENTRIES", 2)
+    monkeypatch.setattr(os, "stat", recording_stat)
+    monkeypatch.setattr(
+        os,
+        "supports_dir_fd",
+        (os.supports_dir_fd - {real_stat}) | {recording_stat},
+    )
+
+    with pytest.raises(E4ParityError, match="entry count exceeds 2"):
+        workspace_snapshot(workspace)
+    assert "nested" not in inspected
 
 
 def test_workspace_snapshot_rejects_oversized_name_before_stat(
