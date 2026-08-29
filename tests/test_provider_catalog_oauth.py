@@ -475,7 +475,7 @@ def test_codex_device_flow_uses_source_endpoints(tmp_path, monkeypatch):
                 {
                     "device_auth_id": "device-1",
                     "user_code": "ABCD-EFGH",
-                    "interval": 90,
+                    "interval": 150,
                     "expires_in": 1200,
                 }
             ).encode(),
@@ -508,6 +508,19 @@ def test_codex_device_flow_uses_source_endpoints(tmp_path, monkeypatch):
     broker = ProviderBroker(
         SQLiteCredentialStore(tmp_path / "device.sqlite3"), oauth_transport=transport
     )
+    renew_login_claim = broker.store.renew_login_claim
+    renewal_count = 0
+
+    def record_login_claim_renewal(*args, **kwargs):
+        nonlocal renewal_count
+        renewal_count += 1
+        return renew_login_claim(*args, **kwargs)
+
+    monkeypatch.setattr(
+        broker.store,
+        "renew_login_claim",
+        record_login_claim_renewal,
+    )
     started = broker.beginLogin({"provider_id": "codex", "flow": "device"})
     assert started["flow_kind"] == "device"
     assert started["user_code"] == "ABCD-EFGH"
@@ -518,6 +531,7 @@ def test_codex_device_flow_uses_source_endpoints(tmp_path, monkeypatch):
     assert "device-1" not in json.dumps(status_view)
     completed = broker.completeLogin({"login_session_id": started["login_session_id"]})
     assert completed["status"] == "completed"
+    assert renewal_count >= 14
     assert [call[0] for call in calls] == [
         "https://auth.openai.com/api/accounts/deviceauth/usercode",
         "https://auth.openai.com/api/accounts/deviceauth/token",

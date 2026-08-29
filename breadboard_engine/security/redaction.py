@@ -158,31 +158,11 @@ def scrub_exception_in_place(error: BaseException) -> BaseException:
                     setattr(error, _RATE_LIMITED_429_MARKER, True)
             except (TypeError, ValueError):
                 pass
-            control_fields = {
-                key: value
-                for key, value in details.items()
-                if (
-                    key == "classification"
-                    and value == "rate_limited"
-                    and not contains_registered_secret_identity(str(value))
-                    or key
-                    in {
-                        "status_code",
-                        "http_status",
-                        "retry_after",
-                        "retry_after_seconds",
-                    }
-                    and type(value) in {int, float}
-                    and not contains_registered_secret_identity(str(value))
-                )
-            }
             scrubbed_details, _ = scrub_structure(
                 _fail_closed_short_secret_strings(details),
                 path="$.exception.details",
                 identity_mapping_keys=True,
             )
-            if isinstance(scrubbed_details, dict):
-                scrubbed_details.update(control_fields)
             error.details = scrubbed_details
     except Exception:
         pass
@@ -295,6 +275,13 @@ SECRET_VALUE_PATTERNS: Tuple[re.Pattern[str], ...] = (
     ),  # JWTs
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-]{16,}"),  # Bearer credentials
 )
+
+
+def contains_secret_value_pattern(value: Any) -> bool:
+    """Return whether text contains a well-known credential shape."""
+    return isinstance(value, str) and any(
+        pattern.search(value) for pattern in SECRET_VALUE_PATTERNS
+    )
 
 MIN_REGISTERED_SECRET_LENGTH = 4
 _MIN_REGISTERED_SECRET_SUBSTRING_LENGTH = 3

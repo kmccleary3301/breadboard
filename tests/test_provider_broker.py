@@ -178,6 +178,18 @@ def test_broker_rejects_secret_bearing_account_id(tmp_path):
     assert secret not in redaction.iter_registered_secret_values()
 
 
+def test_public_identity_view_preserves_pattern_redaction() -> None:
+    with pytest.raises(
+        ValueError,
+        match="public identity fields cannot contain credential material",
+    ):
+        ProviderBroker._scrub_public_identity_view(
+            {"label": "sk-abcdef123456789"},
+            path="$.credential",
+            identity_fields=("label",),
+        )
+
+
 def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
     db = tmp_path / "credentials.sqlite3"
     broker = ProviderBroker(SQLiteCredentialStore(db))

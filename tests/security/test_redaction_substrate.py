@@ -298,6 +298,19 @@ class TestRegisteredValues:
         }
         assert redaction.exception_is_rate_limited_429(error) is True
 
+    def test_rate_limit_control_does_not_restore_embedded_three_byte_secret(self):
+        error = RuntimeError("provider call failed")
+        error.details = {
+            "classification": "rate_limited",
+            "status_code": 429,
+        }
+
+        with redaction.secret_value_scope("rat", allow_short=True):
+            redaction.scrub_exception_in_place(error)
+
+        assert "rat" not in repr(error.details)
+        assert redaction.exception_is_rate_limited_429(error) is True
+
     def test_scopes_are_isolated_between_operation_contexts(self):
         outer_secret = "outer-operation-secret"
         inner_secret = "inner-operation-secret"

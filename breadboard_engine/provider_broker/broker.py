@@ -233,7 +233,10 @@ class ProviderBroker:
             if name not in view:
                 continue
             value = view[name]
-            if redaction.contains_registered_secret_identity(str(value)):
+            if (
+                redaction.contains_registered_secret_identity(str(value))
+                or redaction.contains_secret_value_pattern(value)
+            ):
                 raise ValueError(
                     "public identity fields cannot contain credential material"
                 )

@@ -7,13 +7,11 @@ import hashlib
 import json
 import logging
 import os
-import platform
 import random
 import secrets
 import stat
 import subprocess
 import time
-import sys
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict
 from urllib.parse import urlsplit
@@ -353,23 +351,10 @@ def _decode_engine_build_provenance(
         target = payload["target"]
         if not isinstance(target, dict) or set(target) != {"platform", "architecture"}:
             return None
-        runtime_platform = (
-            "darwin"
-            if sys.platform == "darwin"
-            else "linux"
-            if sys.platform.startswith("linux")
-            else None
-        )
-        runtime_architecture = {
-            "arm64": "arm64",
-            "aarch64": "arm64",
-            "x86_64": "x64",
-            "amd64": "x64",
-        }.get(platform.machine().lower())
-        if target != {
-            "platform": runtime_platform,
-            "architecture": runtime_architecture,
-        }:
+        if (
+            target.get("platform") not in {"darwin", "linux"}
+            or target.get("architecture") not in {"arm64", "x64"}
+        ):
             return None
         computed_source = engine_source_artifact_sha256(package_root)
         if not secrets.compare_digest(payload["engineSourceSha256"], computed_source):

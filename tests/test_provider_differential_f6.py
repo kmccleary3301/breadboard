@@ -271,6 +271,45 @@ def test_wheel_provenance_normalizes_ssh_repository_remote(
     )
 
 
+
+def test_wheel_provenance_uses_embedded_sdist_source_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(setuptools, "setup", lambda **_kwargs: None)
+    namespace = runpy.run_path(str(ROOT / "setup.py"), run_name="bb_setup_test")
+    source_root = tmp_path / "sdist"
+    identity_path = source_root / "breadboard_engine" / "engine-source-identity.v1.json"
+    identity_path.parent.mkdir(parents=True)
+    identity_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "bb.engine_source_identity.v1",
+                "sourceRepository": "https://github.com/kmccleary3301/breadboard.git",
+                "sourceCommit": "a" * 40,
+                "sourceTree": "b" * 40,
+            }
+        ),
+        encoding="ascii",
+    )
+    identity_path.chmod(0o644)
+    namespace["_source_identity"].__globals__["_ROOT"] = source_root
+    namespace["_source_identity"].__globals__["_git"] = lambda *_args: (
+        _ for _ in ()
+    ).throw(OSError())
+    for name in (
+        "BREADBOARD_BUILD_SOURCE_REPOSITORY",
+        "BREADBOARD_BUILD_SOURCE_COMMIT",
+        "BREADBOARD_BUILD_SOURCE_TREE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    assert namespace["_source_identity"]() == (
+        "https://github.com/kmccleary3301/breadboard.git",
+        "a" * 40,
+        "b" * 40,
+    )
+
 def test_wheel_provenance_validates_before_populating_build_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

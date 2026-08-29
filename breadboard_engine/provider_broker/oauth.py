@@ -268,6 +268,17 @@ class OAuthFlowAdapter:
             raise OAuthFlowError("flow_unavailable", "Device token endpoint is not established")
         interval = max(1.0, float(flow.get("interval") or 5))
         deadline = time.time() + float(flow.get("expires_in") or 600)
+        def wait_for_next_poll(seconds: float) -> None:
+            wait_deadline = time.time() + seconds
+            while True:
+                remaining = wait_deadline - time.time()
+                if remaining <= 0:
+                    return
+                time.sleep(min(30.0, remaining))
+                if is_cancelled is not None and is_cancelled():
+                    raise OAuthFlowError(
+                        "oauth_login_cancelled", "OAuth login was cancelled"
+                    )
         while time.time() < deadline:
             if is_cancelled is not None and is_cancelled():
                 raise OAuthFlowError("oauth_login_cancelled", "OAuth login was cancelled")
@@ -280,7 +291,7 @@ class OAuthFlowAdapter:
             if is_cancelled is not None and is_cancelled():
                 raise OAuthFlowError("oauth_login_cancelled", "OAuth login was cancelled")
             if status in {403, 404}:
-                time.sleep(min(interval, max(0.0, deadline - time.time())))
+                wait_for_next_poll(min(interval, max(0.0, deadline - time.time())))
                 continue
             if status < 200 or status >= 300:
                 raise OAuthFlowError("oauth_device_poll_failed", "Device token polling failed", status=status)
