@@ -378,9 +378,8 @@ async def test_profile_client_cancellation_closes_active_transport(
     assert await asyncio.to_thread(started.wait, 1)
 
     await client.cancel("episode_cancelled")
-    with pytest.raises(RunnerDependencyError) as raised:
+    with pytest.raises(asyncio.CancelledError):
         await invocation
-    assert raised.value.code == "provider_invocation_failed"
     await client.close()
 
 

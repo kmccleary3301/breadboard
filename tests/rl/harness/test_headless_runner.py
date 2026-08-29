@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -39,9 +40,11 @@ from tests.rl.harness.production_composition_fixture import (
 class _Transport:
     def __init__(self) -> None:
         self.closed = False
+        self.closed_event = threading.Event()
 
     def close(self) -> None:
         self.closed = True
+        self.closed_event.set()
 
 
 def _target_projection(plan: c.EffectiveExecutionPlan) -> E4TargetPolicyProjection:
@@ -418,9 +421,11 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         update={
             "result_path": str(timeout_result_path),
             "event_log_path": str(tmp_path / "timeout-events.json"),
+            "expected_resources": request.expected_resources.model_copy(
+                update={"wall_time_ms": 10}
+            ),
         }
     )
-    original_episode_timeout = headless_module._episode_timeout
 
     def slow_invoke(_self: Any, **_kwargs: Any) -> ProviderResult:
         time.sleep(0.1)
@@ -430,11 +435,6 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         )
 
     monkeypatch.setattr(OpenAIChatRuntime, "invoke", slow_invoke)
-    monkeypatch.setattr(
-        headless_module,
-        "_episode_timeout",
-        lambda _wall_time_ms: asyncio.timeout(0.01),
-    )
     with pytest.raises(HeadlessRunFailed) as timed_out:
         await run_headless_request(
             timeout_request,
@@ -447,25 +447,20 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
     assert timed_out.value.result["terminal"]["status"] == "failed"
     assert "TimeoutError" in json.dumps(timed_out.value.result["terminal"])
     assert timed_out.value.result["cleanup_inventory"]["active_lease_ids"] == []
-    monkeypatch.setattr(headless_module, "_episode_timeout", original_episode_timeout)
+    assert timed_out.value.result["evidence"] is not None
+    assert timed_out.value.result["event_log"]["available"] is True
     monkeypatch.setattr(OpenAIChatRuntime, "invoke", invoke)
 
-    original_loader = headless_module.load_production_composition
+    started = threading.Event()
+    transport.closed_event.clear()
 
-    def cancelling_loader(*args: Any, **kwargs: Any):
-        composition = original_loader(*args, **kwargs)
+    def cancelling_invoke(_self: Any, **_kwargs: Any) -> ProviderResult:
+        started.set()
+        if not transport.closed_event.wait(timeout=2):
+            raise AssertionError("transport close did not interrupt provider work")
+        raise RuntimeError("transport closed")
 
-        async def cancel_create(_request: Any) -> None:
-            raise asyncio.CancelledError
-
-        composition.service.create = cancel_create  # type: ignore[method-assign]
-        return composition
-
-    monkeypatch.setattr(
-        headless_module,
-        "load_production_composition",
-        cancelling_loader,
-    )
+    monkeypatch.setattr(OpenAIChatRuntime, "invoke", cancelling_invoke)
     cancelled_result_path = tmp_path / "cancelled-result.json"
     cancelled_request = request.model_copy(
         update={
@@ -473,8 +468,8 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
             "event_log_path": str(tmp_path / "cancelled-events.json"),
         }
     )
-    with pytest.raises(asyncio.CancelledError):
-        await run_headless_request(
+    cancelled_run = asyncio.create_task(
+        run_headless_request(
             cancelled_request,
             composition_ref_path=str(fixture.composition_ref_path),
             secret_files=fixture.secret_files,
@@ -482,6 +477,14 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
             provider_routes={credential_handle: route},
             repository_base_commits={},
         )
+    )
+    assert await asyncio.to_thread(started.wait, 1)
+    cancelled_run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled_run
     cancelled_result = json.loads(cancelled_result_path.read_bytes())
     assert cancelled_result["terminal"]["status"] == "failed"
+    assert cancelled_result["evidence"] is not None
+    assert cancelled_result["event_log"]["available"] is True
+    assert cancelled_result["cleanup"]["disposition"] == "released"
     assert cancelled_result["cleanup_inventory"]["active_lease_ids"] == []

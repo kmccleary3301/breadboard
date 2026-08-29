@@ -2159,6 +2159,36 @@ async def test_shutdown_owner_failure_is_replayed_to_every_caller(
     assert calls == 1
 
 
+async def test_shutdown_retries_pending_sandbox_cleanup_receipts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, case, _ = await _service(monkeypatch)
+    calls = 0
+    pending = SandboxCleanupReceipt.from_steps(
+        "lease-pending",
+        (
+            CleanupStepReceipt(
+                "runtime",
+                CleanupState.QUARANTINED,
+                "cleanup pending",
+            ),
+        ),
+    )
+
+    async def retry_close() -> tuple[SandboxCleanupReceipt, ...]:
+        nonlocal calls
+        calls += 1
+        return (pending,) if calls == 1 else ()
+
+    case.sandbox.close = retry_close
+
+    with pytest.raises(BaseExceptionGroup):
+        await service.close()
+    await service.close()
+
+    assert calls == 2
+
+
 async def test_shutdown_fence_rejects_create_already_waiting_for_dictionary_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

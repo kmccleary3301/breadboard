@@ -1256,13 +1256,22 @@ class TrustedProcessHandle:
                 write_fd = -1
                 if os.read(read_fd, 1) != b"B":
                     raise RuntimeError("trusted process bootstrap failed")
-                deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
-                fields = self._proc_fields(process.pid)
-                if fields[0] not in {"T", "t"}:
-                    raise RuntimeError("trusted process did not stop before admission")
+                loop = asyncio.get_running_loop()
+                deadline = loop.time() + timeout_ms / 1000
+                stop_deadline = min(deadline, loop.time() + 0.25)
+                while True:
+                    fields = self._proc_fields(process.pid)
+                    if fields[0] in {"T", "t"}:
+                        break
+                    if loop.time() >= stop_deadline:
+                        raise RuntimeError(
+                            "trusted process did not stop before admission"
+                        )
+                    await asyncio.sleep(0.001)
                 process_group = os.getpgid(process.pid)
                 if process_group != process.pid:
                     raise RuntimeError("trusted process group identity mismatch")
+                self._groups.add(process_group)
                 identity = {
                     "process_pid": process.pid,
                     "process_group_id": process_group,
@@ -1491,78 +1500,35 @@ class TrustedProcessBackend:
             raise
         return handle, measurement
 
-    async def reconcile(self, record: Mapping[str, Any]) -> tuple[CleanupStepReceipt, ...]:
+    async def reconcile(
+        self,
+        record: Mapping[str, Any],
+    ) -> tuple[CleanupStepReceipt, ...]:
         raw_identities = record.get("process_identities")
         if raw_identities is None:
-            legacy = {
-                key: record.get(key)
-                for key in (
-                    "process_pid", "process_group_id", "process_start_identity",
-                    "process_cgroup_identity",
-                )
-            }
-            raw_identities = () if all(value is None for value in legacy.values()) else (
-                {"resource_id": f"process-group-{legacy['process_group_id']}", **legacy},
+            raw_identities = ()
+        if type(raw_identities) not in {list, tuple}:
+            return (
+                CleanupStepReceipt(
+                    "runtime",
+                    CleanupState.QUARANTINED,
+                    "stale_identity_uncertain",
+                ),
             )
-        if type(raw_identities) is not list and type(raw_identities) is not tuple:
-            return (CleanupStepReceipt("runtime", CleanupState.QUARANTINED,
-                                       "stale_identity_uncertain"),)
         if not raw_identities:
-            return (CleanupStepReceipt("runtime", CleanupState.ALREADY_RELEASED),)
-        uncertain = False
-        for identity in raw_identities:
-            if type(identity) is not dict:
-                uncertain = True
-                continue
-            pid = identity.get("process_pid")
-            process_group = identity.get("process_group_id")
-            start_identity = identity.get("process_start_identity")
-            cgroup_identity = identity.get("process_cgroup_identity")
-            if (
-                type(identity.get("resource_id")) is not str
-                or identity.get("resource_id") != f"process-group-{process_group}"
-                or type(pid) is not int
-                or type(process_group) is not int
-                or type(start_identity) is not str
-                or type(cgroup_identity) is not str
-                or pid <= 0
-                or process_group != pid
-            ):
-                uncertain = True
-                continue
-            try:
-                current_identity = TrustedProcessHandle._start_identity(pid)
-                current_cgroup_identity = TrustedProcessHandle._cgroup_identity(pid)
-            except ProcessLookupError:
-                continue
-            except (OSError, subprocess.SubprocessError, ValueError, IndexError):
-                uncertain = True
-                continue
-            if current_identity != start_identity or current_cgroup_identity != cgroup_identity:
-                uncertain = True
-                continue
-            try:
-                os.killpg(process_group, 15)
-            except ProcessLookupError:
-                continue
-            deadline = asyncio.get_running_loop().time() + 0.25
-            while TrustedProcessHandle._group_exists(process_group) and asyncio.get_running_loop().time() < deadline:
-                await asyncio.sleep(0.01)
-            if TrustedProcessHandle._group_exists(process_group):
-                try:
-                    os.killpg(process_group, 9)
-                except ProcessLookupError:
-                    continue
-                deadline = asyncio.get_running_loop().time() + 0.75
-                while TrustedProcessHandle._group_exists(process_group) and asyncio.get_running_loop().time() < deadline:
-                    await asyncio.sleep(0.01)
-                if TrustedProcessHandle._group_exists(process_group):
-                    uncertain = True
-        return (CleanupStepReceipt(
-            "runtime",
-            CleanupState.QUARANTINED if uncertain else CleanupState.RELEASED,
-            "stale_identity_uncertain" if uncertain else "",
-        ),)
+            return (
+                CleanupStepReceipt(
+                    "runtime",
+                    CleanupState.ALREADY_RELEASED,
+                ),
+            )
+        return (
+            CleanupStepReceipt(
+                "runtime",
+                CleanupState.QUARANTINED,
+                "stale_identity_uncertain",
+            ),
+        )
 
 
 class LeaseBackedRunnerWorkspace:

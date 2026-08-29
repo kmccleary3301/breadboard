@@ -463,7 +463,7 @@ class SubprocessDockerCliExecutor:
             except ProcessLookupError:
                 return False
             except PermissionError:
-                if process_wait.done():
+                if process.returncode is not None or process_wait.done():
                     return False
                 raise
             return True
@@ -474,7 +474,7 @@ class SubprocessDockerCliExecutor:
             except ProcessLookupError:
                 pass
             except PermissionError:
-                if not process_wait.done():
+                if process.returncode is None and not process_wait.done():
                     raise
             deadline = asyncio.get_running_loop().time() + 0.25
             while (
@@ -488,7 +488,7 @@ class SubprocessDockerCliExecutor:
                 except ProcessLookupError:
                     pass
                 except PermissionError:
-                    if not process_wait.done():
+                    if process.returncode is None and not process_wait.done():
                         raise
             deadline = asyncio.get_running_loop().time() + 0.75
             while (

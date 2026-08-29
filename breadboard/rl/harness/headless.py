@@ -421,6 +421,7 @@ async def run_headless_request(
     cleanup_failure: BaseException | None = None
     cancellation: asyncio.CancelledError | None = None
     created = False
+    run_started = False
     terminal_unsuccessful = False
     event_bytes: bytes | None = None
     try:
@@ -442,6 +443,7 @@ async def run_headless_request(
                 composition, create.effective_plan_ref
             )
             _validate_effective_plan(request, target, effective_plan)
+            run_started = True
             run_operation = await composition.service.run(
                 episode_id,
                 create_fingerprint=create.create_fingerprint,
@@ -449,43 +451,10 @@ async def run_headless_request(
                 context=request.context,
             )
             run = run_operation.response
-            result["terminal"] = {
-                "status": run.primary_disposition.value,
-                "reason": run.termination,
-                "turn_count": run.turn_count,
-                "response": None if run.response is None else dict(run.response),
-            }
-            result["evidence"] = {
-                "completed_envelope_ref": _optional_ref(run.completed_envelope_ref),
-                "closed_envelope_ref": _optional_ref(run.closed_envelope_ref),
-                "result_ref": _optional_ref(run.result_ref),
-                "evidence_manifest_ref": _optional_ref(run.evidence_manifest_ref),
-                "evidence_root": run.evidence_root,
-                "artifact_manifest_ref": _optional_ref(run.artifact_manifest_ref),
-                "primary_measurement_digest": run.primary_measurement_digest,
-                "verifier_measurement_digest": run.verifier_measurement_digest,
-                "verifier_result_digest": run.verifier_result_digest,
-                "reward": run.reward,
-                "reward_components": dict(run.reward_components),
-            }
-            if run.evidence_manifest_ref is not None:
-                evidence_projection, event_bytes = _load_evidence_projection(
-                    composition,
-                    run.evidence_manifest_ref,
-                )
-                result["workspace_evidence"] = evidence_projection
+            event_bytes = _project_headless_run(result, run, composition)
             close_operation = await composition.service.close_episode(episode_id)
             closed = await composition.service.get_closed_envelope(episode_id)
-            result["cleanup"] = {
-                "disposition": close_operation.response.cleanup_disposition.value,
-                "receipt_digest": closed.cleanup_receipt_digest,
-                "receipt": (
-                    None
-                    if closed.cleanup_receipt is None
-                    else thaw_json(closed.cleanup_receipt)
-                ),
-                "closed_envelope_digest": closed.digest,
-            }
+            _project_headless_cleanup(result, close_operation.response, closed)
             terminal_unsuccessful = run.primary_disposition.value != "succeeded"
     except asyncio.CancelledError as exc:
         cancellation = exc
@@ -495,7 +464,25 @@ async def run_headless_request(
     finally:
         if created:
             try:
-                await composition.service.close_episode(episode_id)
+                close_operation = await composition.service.close_episode(episode_id)
+                closed = await composition.service.get_closed_envelope(episode_id)
+                _project_headless_cleanup(result, close_operation.response, closed)
+                if run_started and primary_failure is not None:
+                    replay = await composition.service.run(
+                        episode_id,
+                        create_fingerprint=create.create_fingerprint,
+                        task_input={"prompt": request.prompt},
+                        context=request.context,
+                    )
+                    run = replay.response
+                    event_bytes = _project_headless_run(
+                        result,
+                        run,
+                        composition,
+                    )
+                    terminal_unsuccessful = (
+                        run.primary_disposition.value != "succeeded"
+                    )
             except BaseException as exc:
                 cleanup_failure = exc
         try:
@@ -998,6 +985,57 @@ def _base_result(
         "cleanup_inventory": None,
         "cleanup_inventory_digest": None,
         "event_log": None,
+    }
+
+
+def _project_headless_run(
+    result: dict[str, Any],
+    run: Any,
+    composition: ProductionComposition,
+) -> bytes | None:
+    result["terminal"] = {
+        "status": run.primary_disposition.value,
+        "reason": run.termination,
+        "turn_count": run.turn_count,
+        "response": None if run.response is None else dict(run.response),
+    }
+    result["evidence"] = {
+        "completed_envelope_ref": _optional_ref(run.completed_envelope_ref),
+        "closed_envelope_ref": _optional_ref(run.closed_envelope_ref),
+        "result_ref": _optional_ref(run.result_ref),
+        "evidence_manifest_ref": _optional_ref(run.evidence_manifest_ref),
+        "evidence_root": run.evidence_root,
+        "artifact_manifest_ref": _optional_ref(run.artifact_manifest_ref),
+        "primary_measurement_digest": run.primary_measurement_digest,
+        "verifier_measurement_digest": run.verifier_measurement_digest,
+        "verifier_result_digest": run.verifier_result_digest,
+        "reward": run.reward,
+        "reward_components": dict(run.reward_components),
+    }
+    if run.evidence_manifest_ref is None:
+        return None
+    evidence_projection, event_bytes = _load_evidence_projection(
+        composition,
+        run.evidence_manifest_ref,
+    )
+    result["workspace_evidence"] = evidence_projection
+    return event_bytes
+
+
+def _project_headless_cleanup(
+    result: dict[str, Any],
+    close_response: Any,
+    closed: Any,
+) -> None:
+    result["cleanup"] = {
+        "disposition": close_response.cleanup_disposition.value,
+        "receipt_digest": closed.cleanup_receipt_digest,
+        "receipt": (
+            None
+            if closed.cleanup_receipt is None
+            else thaw_json(closed.cleanup_receipt)
+        ),
+        "closed_envelope_digest": closed.digest,
     }
 
 

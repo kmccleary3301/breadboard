@@ -32,6 +32,7 @@ from breadboard.rl.harness.sandbox import (
     SandboxRuntimeManager,
     TrustedProcessBackend,
     TrustedProcessHandle,
+    VerifierExecutionError,
     WorkspaceStateError,
 )
 from tests.rl.harness.test_runner_terminal import (
@@ -43,7 +44,6 @@ from tests.rl.harness.test_runner_terminal import (
 from tests.rl.harness.test_sandbox_runtime import RuntimeHarness
 from tests.rl.harness.wp7_fixtures import (
     DeterministicRandom,
-    digest,
     make_runtime_fixture,
 )
 pytestmark = pytest.mark.local_process
@@ -833,7 +833,7 @@ async def test_trusted_process_handle_enforces_exact_500ms_deadline_and_cleans_d
 
 @requires_sealed_execution
 @pytest.mark.parametrize("identity_mutation", ["matching", "start", "pgid", "cgroup"])
-async def test_real_process_restart_reconciliation_binds_complete_action_identity(
+async def test_real_process_restart_never_signals_from_stale_lease_record(
     tmp_path: Path, identity_mutation: str
 ) -> None:
     fixture = make_runtime_fixture(
@@ -921,56 +921,39 @@ async def test_real_process_restart_reconciliation_binds_complete_action_identit
         receipt = receipts[0]
         assert receipt.lease_id == primary.lease_id
 
-        if identity_mutation == "matching":
-            result = await asyncio.wait_for(action, 1)
-            assert result["returncode"] == -signal.SIGKILL
-            assert receipt.steps == (
-                CleanupStepReceipt(
-                    "child_verifier",
-                    CleanupState.ALREADY_RELEASED,
-                ),
-                CleanupStepReceipt("runtime", CleanupState.RELEASED),
-                CleanupStepReceipt("workspace", CleanupState.RELEASED),
-                CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
-                CleanupStepReceipt("lease_record", CleanupState.RELEASED),
-            )
-            with pytest.raises(ProcessLookupError):
-                os.kill(process_pid, 0)
-            assert not record_path.exists()
-        else:
-            assert receipt.steps == (
-                CleanupStepReceipt(
-                    "child_verifier",
-                    CleanupState.ALREADY_RELEASED,
-                ),
-                CleanupStepReceipt(
-                    "runtime", CleanupState.QUARANTINED, "stale_identity_uncertain"
-                ),
-                CleanupStepReceipt(
-                    "workspace", CleanupState.QUARANTINED, "stale_identity_uncertain"
-                ),
-                CleanupStepReceipt(
-                    "cache_holder", CleanupState.QUARANTINED, "stale_identity_uncertain"
-                ),
-                CleanupStepReceipt(
-                    "lease_record", CleanupState.QUARANTINED, "stale_identity_uncertain"
-                ),
-            )
-            os.kill(process_pid, 0)
-            action.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await asyncio.wait_for(action, 1)
-            async with asyncio.timeout(1):
-                while True:
-                    try:
-                        os.kill(process_pid, 0)
-                    except ProcessLookupError:
-                        break
-                    await asyncio.sleep(0.01)
-            close_receipt = await primary.close()
-            assert close_receipt.state is CleanupState.RELEASED
-            assert not record_path.exists()
-            assert list(harness.workspace_root.iterdir()) == []
+        assert receipt.steps == (
+            CleanupStepReceipt(
+                "child_verifier",
+                CleanupState.ALREADY_RELEASED,
+            ),
+            CleanupStepReceipt(
+                "runtime", CleanupState.QUARANTINED, "stale_identity_uncertain"
+            ),
+            CleanupStepReceipt(
+                "workspace", CleanupState.QUARANTINED, "stale_identity_uncertain"
+            ),
+            CleanupStepReceipt(
+                "cache_holder", CleanupState.QUARANTINED, "stale_identity_uncertain"
+            ),
+            CleanupStepReceipt(
+                "lease_record", CleanupState.QUARANTINED, "stale_identity_uncertain"
+            ),
+        )
+        os.kill(process_pid, 0)
+        action.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(action, 1)
+        async with asyncio.timeout(1):
+            while True:
+                try:
+                    os.kill(process_pid, 0)
+                except ProcessLookupError:
+                    break
+                await asyncio.sleep(0.01)
+        close_receipt = await primary.close()
+        assert close_receipt.state is CleanupState.RELEASED
+        assert not record_path.exists()
+        assert list(harness.workspace_root.iterdir()) == []
     finally:
         os.close(ready_fd)
         if not action.done():

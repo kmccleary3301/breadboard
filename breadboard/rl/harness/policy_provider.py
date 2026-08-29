@@ -385,6 +385,8 @@ class EpisodeOpenAICompletionsPolicyClient:
                 self._cancelled.set()
                 raise
             except Exception:
+                if self._cancelled.is_set():
+                    raise asyncio.CancelledError
                 raise RunnerDependencyError(
                     "episode provider invocation failed",
                     code="provider_invocation_failed",

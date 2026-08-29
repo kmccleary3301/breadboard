@@ -2307,7 +2307,18 @@ class BreadBoardV2EpisodeService:
                 self._lifecycle_state = _ServiceLifecycleState.CLOSING
                 task = asyncio.create_task(self._shutdown_owner())
                 self._close_task = task
-        await _await_owned_close(task)
+        try:
+            await _await_owned_close(task)
+        finally:
+            if (
+                task.done()
+                and not task.cancelled()
+                and task.exception() is not None
+                and _retryable_shutdown_failure(task.exception())
+            ):
+                async with self._dictionary_lock:
+                    if self._close_task is task:
+                        self._close_task = None
 
     async def _shutdown_owner(self) -> None:
         errors: list[BaseException] = []
@@ -3565,6 +3576,14 @@ def _v2_failure(
     lease_id: str | None = None,
 ) -> SafeFailureFactV2:
     return SafeFailureFactV2(category, code, retry, boundary, lease_id=lease_id)
+
+
+def _retryable_shutdown_failure(exc: BaseException) -> bool:
+    if isinstance(exc, SandboxFault):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_retryable_shutdown_failure(item) for item in exc.exceptions)
+    return False
 
 
 def _failure_from_exception(
