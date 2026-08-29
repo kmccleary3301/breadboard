@@ -360,11 +360,17 @@ class SessionLifecycleOwner:
                         error_code=failure_code,
                     )
             if not one_shot and not durable_success:
-                await self.terminalize_admitted_turns(
-                    outcome="failed",
-                    reason=completion_reason,
-                    error_code=failure_code,
-                )
+                if host._stop_event.is_set():
+                    await self.terminalize_admitted_turns(
+                        outcome="cancelled",
+                        reason="stop_requested",
+                    )
+                else:
+                    await self.terminalize_admitted_turns(
+                        outcome="failed",
+                        reason=completion_reason,
+                        error_code=failure_code,
+                    )
             if durable_success and not turn_was_cancelled:
                 for (
                     event_type,

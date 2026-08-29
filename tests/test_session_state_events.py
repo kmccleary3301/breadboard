@@ -2689,6 +2689,85 @@ async def test_interactive_failure_terminalizes_remaining_admitted_turns(
 
 
 @pytest.mark.asyncio
+async def test_interactive_stop_cancels_remaining_admitted_turns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-stop-cancels-admitted",
+        status=SessionStatus.STARTING,
+    )
+    runner, product_session = _lifecycle_runner_with_product_session(
+        registry,
+        record,
+        monkeypatch,
+        [],
+    )
+    entered = threading.Event()
+    release = threading.Event()
+
+    def execute_task(
+        _task: str,
+        *,
+        input_id: str | None = None,
+        turn_id: str | None = None,
+    ) -> dict[str, Any]:
+        entered.set()
+        assert release.wait(2)
+        return {
+            "completion_summary": {
+                "completed": False,
+                "reason": "stopped_by_user",
+            },
+            "reward_metrics": None,
+            "logging_dir": None,
+            "_terminal_events": [],
+            "_turn_completion_payload": {},
+        }
+
+    monkeypatch.setattr(runner._task_execution, "execute_task", execute_task)
+    await registry.create(record)
+    await runner.prepare_start()
+    active = record.turns_by_id[record.active_turn_id or ""]
+    queued = TurnRecord(
+        input_id="input-queued",
+        turn_id="turn-queued",
+        client_message_id="message-queued",
+        content="queued",
+        attachments=(),
+        original_disposition="queued",
+        state="queued",
+    )
+    record.turns_by_id[queued.turn_id] = queued
+    record.queued_turn_ids.append(queued.turn_id)
+    record.turn_admission = record.turn_admission.__class__.ACTIVE
+    await registry.persist(record)
+    runner.schedule_start()
+    runner.authorize_start()
+    assert await asyncio.to_thread(entered.wait, 2)
+
+    stop_task = asyncio.create_task(runner.stop())
+    for _ in range(200):
+        if runner._stop_event.is_set():
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("runner stop did not signal execution")
+    release.set()
+    await stop_task
+
+    assert active.terminal_outcome == "cancelled"
+    assert queued.terminal_outcome == "cancelled"
+    assert active.terminal_resolution_committed is True
+    assert queued.terminal_resolution_committed is True
+    assert record.active_turn_id is None
+    assert list(record.queued_turn_ids) == []
+    assert product_session.read_model.status == "canceled"
+    assert record.status is SessionStatus.STOPPED
+
+
+@pytest.mark.asyncio
 async def test_session_runner_crash_terminalizes_active_and_queued_turns_once(
     tmp_path: Path,
 ) -> None:
