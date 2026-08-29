@@ -5421,10 +5421,19 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             return self._execute_todo_tool("todo.list", args)
         if name in {"create_file_from_block", "Write"}:
             path = self._normalize_workspace_path(
-                str(args.get("file_name") or args.get("filePath") or args.get("path") or "")
+                str(
+                    args.get("file_name")
+                    or args.get("filePath")
+                    or args.get("path")
+                    or ""
+                )
             )
             content = str(args.get("content", ""))
-            return self._ray_get(self.sandbox.write_text.remote(path, content))
+            return (
+                {"error": "private workspace storage is unavailable to model tools"}
+                if self._private_workspace_path(path)
+                else self._ray_get(self.sandbox.write_text.remote(path, content))
+            )
         if name == "mark_task_complete":
             return {"action": "complete"}
         if name.startswith("todo."):
