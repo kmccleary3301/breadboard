@@ -645,6 +645,11 @@ class SubprocessOfficialEvaluator:
                 "official evaluator work directory is not a directory"
             )
 
+    def identity_dict(self) -> dict[str, Any]:
+        return self.binding.identity_dict() | {
+            "executable_digest": self.executable_digest,
+        }
+
     def evaluate(self, command: TrustedEvaluatorCommand) -> SweBenchEvaluatorResult:
         if type(command) is not TrustedEvaluatorCommand:
             raise TypeError("command must be an exact TrustedEvaluatorCommand")
@@ -656,6 +661,13 @@ class SubprocessOfficialEvaluator:
             != self.executable_digest
         ):
             raise SweBenchRunnerError("official evaluator executable changed")
+        run_work_directory = os.path.join(self.work_directory, command.run_id)
+        try:
+            os.mkdir(run_work_directory, 0o700)
+        except OSError as exc:
+            raise SweBenchRunnerError(
+                "official evaluator run directory must be new"
+            ) from exc
         try:
             os.mkdir(command.report_directory, 0o700)
         except OSError as exc:
@@ -663,7 +675,7 @@ class SubprocessOfficialEvaluator:
                 "official evaluator report directory must be new"
             ) from exc
         environment = {
-            "HOME": self.work_directory,
+            "HOME": run_work_directory,
             "PATH": os.pathsep.join(
                 (
                     os.path.dirname(self.executable_path),
@@ -677,7 +689,7 @@ class SubprocessOfficialEvaluator:
         try:
             completed = subprocess.run(
                 (self.executable_path, *command.argv[1:]),
-                cwd=self.work_directory,
+                cwd=run_work_directory,
                 env=environment,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
@@ -694,7 +706,7 @@ class SubprocessOfficialEvaluator:
             f"{command.model_name}.{command.run_id}.json",
         )
         instance_path = os.path.join(
-            self.work_directory,
+            run_work_directory,
             "logs",
             "run_evaluation",
             command.run_id,
@@ -1159,7 +1171,7 @@ async def run_installed_swe_bench(
         run_id=request.run_id,
         episode_id=request.headless_request.resolve_request.episode_id,
         controller_identity=controller.binding.identity_dict(),
-        evaluator_identity=request.evaluator_binding.identity_dict(),
+        evaluator_identity=evaluator.identity_dict(),
         task_binding_digest=request.task_binding.identity_digest,
         dataset_artifact_digest="sha256:" + DATASET_SHA256,
         dataset_row_digest=request.task_binding.row_digest,

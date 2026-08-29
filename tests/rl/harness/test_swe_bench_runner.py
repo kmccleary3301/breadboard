@@ -218,6 +218,7 @@ def test_subprocess_evaluator_reads_pinned_official_report_locations(
 
     assert result.reward == 1.0
     assert result.command == command
+    assert adapter.identity_dict()["executable_digest"] == adapter.executable_digest
 
 
 def test_rejects_unpinned_image_and_evaluator_inputs(tmp_path: Path) -> None:
@@ -253,12 +254,6 @@ def test_installed_run_binds_prediction_evaluator_and_cleanup_digests(
     @dataclass
     class Controller:
         binding: E4ControllerBinding
-
-        def produce_patch(
-            self, task: Mapping[str, str], headless_result: Mapping[str, Any]
-        ) -> str:
-            assert task["instance_id"] == INSTANCE_ID
-            return "diff --git a/a.py b/a.py\n"
 
     class Headless:
         async def run(self, request: HeadlessRunRequest) -> Mapping[str, Any]:
@@ -381,6 +376,9 @@ def test_installed_run_binds_prediction_evaluator_and_cleanup_digests(
     public = receipt.to_public_dict()
     assert "model_patch" not in public
     assert "api_key" not in str(public)
+    assert (
+        public["evaluator_identity"]["executable_digest"] == evaluator.executable_digest
+    )
 
     canonical = __import__("asyncio").run(Headless().run(headless_request))
     leaked_mount = json.loads(json.dumps(canonical))
