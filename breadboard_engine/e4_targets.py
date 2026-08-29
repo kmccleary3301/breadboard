@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 import hashlib
-from importlib import resources
-from importlib.resources.abc import Traversable
 import json
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 
-_RESOURCE_PACKAGE = "config.e4_targets"
+_RESOURCE_DIRECTORY = Path("config/e4_targets")
 _INDEX_FILE = "index.json"
 _INDEX_SCHEMA = "bb.e4.target_index.v1"
 _TARGET_SCHEMA = "bb.e4.target.v1"
@@ -22,8 +22,8 @@ class E4TargetError(ValueError):
 @dataclass(frozen=True)
 class E4TargetPackage:
     target_id: str
-    descriptor: dict[str, Any]
-    _asset_root: Traversable
+    descriptor: Mapping[str, Any]
+    _asset_root: Path
     _asset_paths: frozenset[str]
 
     def read_asset_bytes(self, relative_path: str) -> bytes:
@@ -43,18 +43,19 @@ class E4TargetPackage:
 
 
 def list_e4_target_ids() -> tuple[str, ...]:
-    root = resources.files(_RESOURCE_PACKAGE)
-    index = _load_index(root)
+    index = _load_index(_resource_root())
     return tuple(sorted(index["targets"]))
 
 
 def load_e4_target(target_id: str) -> E4TargetPackage:
-    return _load_e4_target_from_root(resources.files(_RESOURCE_PACKAGE), target_id)
+    return _load_e4_target_from_root(_resource_root(), target_id)
 
 
-def _load_e4_target_from_root(
-    root: Traversable | Path, target_id: str
-) -> E4TargetPackage:
+def _resource_root() -> Path:
+    return Path(__file__).resolve().parents[1] / _RESOURCE_DIRECTORY
+
+
+def _load_e4_target_from_root(root: Path, target_id: str) -> E4TargetPackage:
     index = _load_index(root)
     targets = index["targets"]
     entry = targets.get(target_id)
@@ -107,7 +108,7 @@ def _load_e4_target_from_root(
         )
         _verify_sha256(asset_bytes, expected_digest, f"{descriptor_path}:{asset_path}")
         expected_bytes = asset.get("bytes")
-        if not isinstance(expected_bytes, int) or expected_bytes < 0:
+        if type(expected_bytes) is not int or expected_bytes < 0:
             raise E4TargetError(f"{context}.bytes must be a non-negative integer")
         if len(asset_bytes) != expected_bytes:
             raise E4TargetError(
@@ -128,13 +129,13 @@ def _load_e4_target_from_root(
 
     return E4TargetPackage(
         target_id=target_id,
-        descriptor=descriptor,
+        descriptor=_freeze_json(descriptor),
         _asset_root=descriptor_parent,
         _asset_paths=frozenset(declared_paths),
     )
 
 
-def _load_index(root: Traversable | Path) -> dict[str, Any]:
+def _load_index(root: Path) -> dict[str, Any]:
     index = _decode_json_object(
         _read_bytes(root.joinpath(_INDEX_FILE), _INDEX_FILE), _INDEX_FILE
     )
@@ -148,15 +149,22 @@ def _load_index(root: Traversable | Path) -> dict[str, Any]:
     return index
 
 
-def _join_safe(root: Traversable | Path, relative_path: str) -> Traversable | Path:
+def _freeze_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {key: _freeze_json(child) for key, child in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_freeze_json(child) for child in value)
+    return value
+
+
+def _join_safe(root: Path, relative_path: str) -> Path:
     return _join_parts(root, _validate_relative_path(relative_path))
 
 
-def _join_parts(root: Traversable | Path, parts: tuple[str, ...]) -> Traversable | Path:
-    resource = root
-    for part in parts:
-        resource = resource.joinpath(part)
-    return resource
+def _join_parts(root: Path, parts: tuple[str, ...]) -> Path:
+    return root.joinpath(*parts)
 
 
 def _validate_relative_path(relative_path: str) -> tuple[str, ...]:
@@ -170,7 +178,7 @@ def _validate_relative_path(relative_path: str) -> tuple[str, ...]:
     return parts
 
 
-def _read_bytes(resource: Traversable | Path, label: str) -> bytes:
+def _read_bytes(resource: Path, label: str) -> bytes:
     try:
         if not resource.is_file():
             raise E4TargetError(f"target resource {label!r} is missing or not a file")

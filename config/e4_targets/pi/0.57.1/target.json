@@ -30,7 +30,7 @@
   "upstream": {
     "repository": "https://github.com/badlogic/pi-mono.git",
     "source": {
-      "commit": "a9cedccdde77e9d765303463d8a6cd11c58f7a7f",
+      "identity_kind": "archive_snapshot_without_git_dir",
       "directory": "packages/coding-agent",
       "archive_sha256": "bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b",
       "archive_bytes": 4755355
@@ -38,6 +38,7 @@
     "package": {
       "name": "@mariozechner/pi-coding-agent",
       "version": "0.57.1",
+      "git_head": "a9cedccdde77e9d765303463d8a6cd11c58f7a7f",
       "tarball": "https://registry.npmjs.org/@mariozechner/pi-coding-agent/-/pi-coding-agent-0.57.1.tgz",
       "integrity": "sha512-u5MQEduj68rwVIsRsqrWkJYiJCyPph/a6bMoJAQKo1sb+Pc17Y/ojwa+wGssnUMjEB38AQKofWTVe8NFEpSWNw==",
       "shasum_sha1": "58433481f4a469e28f3faac7ea3d2b10cb1bfefb",

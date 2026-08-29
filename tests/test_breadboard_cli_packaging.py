@@ -292,7 +292,11 @@ from breadboard.product.harness.templates import (
 )
 from breadboard.product.operation_catalog import product_operation_catalog
 from breadboard_engine.compilation.primitive_records import get_spec
-from breadboard_engine.e4_targets import list_e4_target_ids, load_e4_target
+from breadboard_engine.e4_targets import (
+    _resource_root,
+    list_e4_target_ids,
+    load_e4_target,
+)
 
 source_root = Path({str(ROOT)!r}).resolve()
 distribution = importlib.metadata.distribution("breadboard-harness-cli")
@@ -303,6 +307,8 @@ origins = [
 ]
 assert all(path.is_relative_to(site_root) for path in origins)
 assert all(not path.is_relative_to(source_root) for path in origins)
+target_resource_root = _resource_root().resolve()
+assert target_resource_root == site_root / "config" / "e4_targets"
 catalog = product_operation_catalog()
 assert catalog["contract_id"] == "bb.public_operation_catalog.v2"
 assert len(catalog["operations"]) == 26

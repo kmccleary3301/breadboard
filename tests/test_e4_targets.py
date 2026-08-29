@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -10,6 +11,7 @@ import yaml
 from breadboard_engine.e4_targets import (
     E4TargetError,
     _load_e4_target_from_root,
+    _resource_root,
     list_e4_target_ids,
     load_e4_target,
 )
@@ -19,6 +21,10 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGET_ROOT = ROOT / "config" / "e4_targets"
 
 
+def test_target_resources_bind_to_loader_distribution_root() -> None:
+    assert _resource_root() == TARGET_ROOT
+
+
 def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> None:
     assert list_e4_target_ids() == ("oh-my-pi@16.2.13", "pi@0.57.1")
 
@@ -26,7 +32,7 @@ def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> N
     assert pi.descriptor["upstream"] == {
         "repository": "https://github.com/badlogic/pi-mono.git",
         "source": {
-            "commit": "a9cedccdde77e9d765303463d8a6cd11c58f7a7f",
+            "identity_kind": "archive_snapshot_without_git_dir",
             "directory": "packages/coding-agent",
             "archive_sha256": (
                 "bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b"
@@ -36,6 +42,7 @@ def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> N
         "package": {
             "name": "@mariozechner/pi-coding-agent",
             "version": "0.57.1",
+            "git_head": "a9cedccdde77e9d765303463d8a6cd11c58f7a7f",
             "tarball": (
                 "https://registry.npmjs.org/@mariozechner/pi-coding-agent/-/"
                 "pi-coding-agent-0.57.1.tgz"
@@ -53,7 +60,7 @@ def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> N
     }
     assert pi.descriptor["overlay"] == {
         "overlay_id": "r3-json-no-session.v1",
-        "argv": [
+        "argv": (
             "--mode",
             "json",
             "--no-session",
@@ -64,7 +71,7 @@ def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> N
             "--no-extensions",
             "--no-skills",
             "--no-prompt-templates",
-        ],
+        ),
         "settings": {"retry.enabled": False, "retry.maxRetries": 0},
     }
     pi_config = pi.read_asset_text(pi.descriptor["execution"]["config_asset"])
@@ -129,6 +136,15 @@ def test_target_loader_rejects_unknown_and_undeclared_assets() -> None:
         target.read_asset_text("../target.json")
 
 
+def test_loaded_target_descriptor_is_deeply_immutable() -> None:
+    target = load_e4_target("pi@0.57.1")
+
+    with pytest.raises(TypeError):
+        target.descriptor["overlay"]["argv"][0] = "--mutated"
+    with pytest.raises(TypeError):
+        target.descriptor["overlay"]["settings"]["retry.enabled"] = True
+
+
 def test_target_loader_rejects_corrupt_runtime_asset(tmp_path: Path) -> None:
     copied_root = tmp_path / "e4_targets"
     shutil.copytree(TARGET_ROOT, copied_root)
@@ -136,6 +152,25 @@ def test_target_loader_rejects_corrupt_runtime_asset(tmp_path: Path) -> None:
     harness.write_text(harness.read_text(encoding="utf-8") + "corrupt: true\n")
 
     with pytest.raises(E4TargetError, match="SHA-256 mismatch"):
+        _load_e4_target_from_root(copied_root, "pi@0.57.1")
+
+
+def test_target_loader_rejects_boolean_asset_size(tmp_path: Path) -> None:
+    copied_root = tmp_path / "e4_targets"
+    shutil.copytree(TARGET_ROOT, copied_root)
+    descriptor_path = copied_root / "pi" / "0.57.1" / "target.json"
+    descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+    descriptor["assets"][0]["bytes"] = True
+    descriptor_path.write_text(json.dumps(descriptor), encoding="utf-8")
+
+    index_path = copied_root / "index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["targets"]["pi@0.57.1"]["sha256"] = hashlib.sha256(
+        descriptor_path.read_bytes()
+    ).hexdigest()
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    with pytest.raises(E4TargetError, match="bytes must be a non-negative integer"):
         _load_e4_target_from_root(copied_root, "pi@0.57.1")
 
 
