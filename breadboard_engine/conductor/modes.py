@@ -17,6 +17,7 @@ from ..provider.ir import IRDeltaEvent
 from ..provider.routing import provider_router
 from ..provider import provider_adapter_manager, sanitize_openai_tool_name
 from ..provider.contracts import (
+    ProviderContractError,
     ProviderResult,
     ProviderRuntimeContext,
     sanitize_provider_result,
@@ -30,6 +31,7 @@ from .components import (
     log_routing_event,
 )
 from ..surface import record_tool_schema_snapshot
+from ..security import redaction
 
 
 def _record_raw_provider_response(
@@ -49,6 +51,95 @@ def _record_raw_provider_response(
             )
     except Exception:
         pass
+
+def _bind_episode_provider_profile(
+    episode: Any,
+    runtime: Any,
+    client: Any,
+    model: str,
+    stream: bool,
+) -> Tuple[Any, bool, Any]:
+    profile = getattr(episode, "_episode_provider_profile", None)
+    if profile is None:
+        return client, stream, None
+    if (
+        getattr(runtime.descriptor, "provider_id", None) != profile.provider_id
+        or getattr(runtime.descriptor, "runtime_id", None) != profile.runtime_id
+        or model != profile.model
+    ):
+        raise ProviderContractError(
+            "episode provider profile does not match the selected route"
+        )
+    profile_client = getattr(episode, "_episode_provider_client", None)
+    if profile_client is None:
+        profile_client = runtime.create_client_from_profile(profile)
+        episode._episode_provider_client = profile_client
+    return profile_client, True, profile
+
+
+def _provider_wire_evidence(
+    *,
+    profile: Any,
+    runtime: Any,
+    provider_id: str,
+    model: str,
+    messages: List[Dict[str, Any]],
+    tools: Optional[List[Dict[str, Any]]],
+    stream: bool,
+    client_config: Dict[str, Any],
+    context: ProviderRuntimeContext,
+) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[str], Optional[Dict[str, Any]]]:
+    if profile is not None:
+        profile_identity = profile.identity_dict()
+        request_headers = {"Authorization": redaction.REDACTED}
+        request_headers.update(
+            {name: redaction.REDACTED for name in profile.caller_headers}
+        )
+        secret_values = [
+            profile.scoped_credential,
+            *profile.caller_headers.values(),
+        ]
+        with redaction.secret_value_scope(*secret_values, allow_short=True):
+            request_body, _redaction_problems = redaction.scrub_structure(
+                runtime.profile_chat_request(
+                    profile,
+                    messages,
+                    tools,
+                    context=context,
+                ),
+                path="$.provider_request",
+            )
+        if not isinstance(request_body, dict):
+            raise ProviderContractError(
+                "profile request evidence must remain an object after redaction"
+            )
+        return (
+            request_body,
+            request_headers,
+            f"sha256:{profile_identity['base_url_sha256']}",
+            profile_identity,
+        )
+    try:
+        request_headers = dict(client_config.get("default_headers") or {})
+        if provider_id == "openrouter":
+            request_headers.setdefault("Accept", "application/json; charset=utf-8")
+            request_headers.setdefault("Accept-Encoding", "identity")
+        endpoint = client_config.get("base_url")
+    except Exception:
+        request_headers = {}
+        endpoint = None
+    return (
+        {
+            "model": model,
+            "messages": messages,
+            "tools": tools,
+            "stream": stream,
+        },
+        request_headers,
+        endpoint,
+        None,
+    )
+
 
 
 def get_model_response(
@@ -276,36 +367,15 @@ def get_model_response(
         turn_index,
         getattr(conductor, "_current_route_id", None),
     )
-    try:
-        session_state.set_provider_metadata("current_stream_requested", stream_responses)
-        session_state.set_provider_metadata("current_stream_effective", effective_stream_responses)
-    except Exception:
-        pass
-
-    try:
-        provider_messages = getattr(session_state, "provider_messages", []) or []
-        if provider_messages:
-            last_message = provider_messages[-1]
-            if isinstance(last_message, dict) and last_message.get("tool_calls"):
-                for _ in last_message.get("tool_calls", []):
-                    conductor.loop_detector.observe_tool_call()
-    except Exception:
-        pass
-
-    try:
-        if conductor.logger_v2.include_raw:
-            conductor.api_recorder.save_request(
-                turn_index,
-                {
-                    "model": model,
-                    "messages": send_messages,
-                    "tools": tools_schema,
-                    "stream": effective_stream_responses,
-                },
-            )
-    except Exception:
-        pass
-
+    client, effective_stream_responses, provider_profile = (
+        _bind_episode_provider_profile(
+            session_state,
+            runtime,
+            client,
+            model,
+            effective_stream_responses,
+        )
+    )
     runtime_extra = {
         "turn_index": turn_index,
         "model": model,
@@ -333,17 +403,50 @@ def get_model_response(
         or getattr(session_state, "session_id", None),
         input_id=session_state.get_provider_metadata("input_id"),
         turn_id=session_state.get_provider_metadata("turn_id"),
+        provider_profile=provider_profile,
     )
+    (
+        wire_request_body,
+        request_headers,
+        request_endpoint,
+        profile_identity,
+    ) = _provider_wire_evidence(
+        profile=provider_profile,
+        runtime=runtime,
+        provider_id=provider_id,
+        model=model,
+        messages=send_messages,
+        tools=tools_schema,
+        stream=effective_stream_responses,
+        client_config=client_config,
+        context=runtime_context,
+    )
+    try:
+        session_state.set_provider_metadata("current_stream_requested", stream_responses)
+        session_state.set_provider_metadata("current_stream_effective", effective_stream_responses)
+    except Exception:
+        pass
 
     try:
-        request_headers = dict(client_config.get("default_headers") or {})
-        if (
-            getattr(runtime, "descriptor", None) and getattr(runtime.descriptor, "provider_id", None) == "openrouter"
-        ):
-            request_headers.setdefault("Accept", "application/json; charset=utf-8")
-            request_headers.setdefault("Accept-Encoding", "identity")
+        provider_messages = getattr(session_state, "provider_messages", []) or []
+        if provider_messages:
+            last_message = provider_messages[-1]
+            if isinstance(last_message, dict) and last_message.get("tool_calls"):
+                for _ in last_message.get("tool_calls", []):
+                    conductor.loop_detector.observe_tool_call()
     except Exception:
-        request_headers = {}
+        pass
+
+    try:
+        if conductor.logger_v2.include_raw:
+            conductor.api_recorder.save_request(
+                turn_index,
+                wire_request_body,
+            )
+    except Exception:
+        pass
+
+
 
     try:
         if getattr(conductor.logger_v2, "include_structured_requests", True):
@@ -351,6 +454,8 @@ def get_model_response(
                 "message_count": len(send_messages or []),
                 "has_tools": bool(tools_schema),
             }
+            if profile_identity is not None:
+                extra_meta["provider_profile_identity"] = profile_identity
             if stream_policy:
                 extra_meta["stream_policy"] = {
                     "reason": stream_policy.get("reason"),
@@ -362,15 +467,10 @@ def get_model_response(
                 runtime_id=getattr(runtime.descriptor, "runtime_id", "unknown"),
                 model=model,
                 request_headers=request_headers,
-                request_body={
-                    "model": model,
-                    "messages": send_messages,
-                    "tools": tools_schema,
-                    "stream": effective_stream_responses,
-                },
+                request_body=wire_request_body,
                 stream=effective_stream_responses,
                 tool_count=len(tools_schema or []),
-                endpoint=client_config.get("base_url"),
+                endpoint=request_endpoint,
                 attempt=0,
                 extra=extra_meta,
             )

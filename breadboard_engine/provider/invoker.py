@@ -200,6 +200,16 @@ class ProviderInvoker:
                 failure = _contract_failure()
                 _terminalize_error(failure)
                 raise failure from None
+        profile_bound = runtime_context.provider_profile is not None
+        if profile_bound and not stream_responses:
+            profile_error = ProviderRuntimeError(
+                "profile-bound provider invocation requires streaming",
+                details={"code": "profile_requires_streaming"},
+                kind="configuration",
+            )
+            _terminalize_error(profile_error)
+            raise profile_error
+
 
         if self.route_health.is_circuit_open(model):
             notice = f"[circuit-open] Skipping direct call for route {model}; attempting fallback."
@@ -217,6 +227,9 @@ class ProviderInvoker:
                 details={"code": "route_circuit_open"},
                 kind="transport",
             )
+            if profile_bound:
+                _terminalize_error(circuit_error)
+                raise circuit_error
             recorder.rebind_request_stream(False)
             try:
                 fallback_result = self.retry_with_fallback(
@@ -275,7 +288,7 @@ class ProviderInvoker:
         def _call_runtime(target_model: str, use_stream: bool) -> ProviderResult:
             start_time = time.time()
             try:
-                if self.client_lease is None:
+                if self.client_lease is None or profile_bound:
                     call_result = sanitize_provider_result(
                         runtime.invoke(
                             client=client,
@@ -425,6 +438,8 @@ class ProviderInvoker:
             )
 
         def _can_retry_without_stream(exc: ProviderRuntimeError) -> bool:
+            if profile_bound:
+                return False
             if not _replay_safe(exc):
                 return False
             details = exc.details if isinstance(exc.details, Mapping) else {}
@@ -437,6 +452,8 @@ class ProviderInvoker:
             }
 
         def _can_model_fallback(exc: ProviderRuntimeError) -> bool:
+            if profile_bound:
+                return False
             if not _replay_safe(exc) or exc.kind == "protocol":
                 return False
             config = getattr(runtime_context, "agent_config", None)

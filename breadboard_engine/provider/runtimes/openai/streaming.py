@@ -1029,6 +1029,17 @@ class OpenAIBaseRuntime(OpenAIConversionMixin, ProviderRuntime):
         record: bool = True,
     ) -> None:
         """Capture provider events before projecting them to SessionState."""
+        payload, _redaction_problems = redaction.scrub_structure(
+            payload,
+            path="$.provider_event",
+        )
+        if not isinstance(payload, dict):
+            raise ProviderRuntimeError(
+                "Provider event payload is invalid",
+                kind="protocol",
+                output_emitted=True,
+                details={"code": "invalid_provider_event"},
+            )
         recorder = getattr(context, "exchange_recorder", None)
         if recorder is not None and record:
             mapping = {

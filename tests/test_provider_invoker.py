@@ -16,6 +16,7 @@ from breadboard_engine.provider_runtime import (
     ProviderToolCall,
 )
 from breadboard_engine.provider.contracts import ProviderContractError
+from breadboard_engine.provider.contracts import OpenAICompletionsProviderProfile
 from breadboard_engine.state.session_state import SessionState
 from breadboard_engine.messaging.markdown_logger import MarkdownLogger
 
@@ -119,6 +120,96 @@ def test_provider_invoker_stream_success():
     ]
     assert session_state.get_provider_metadata("last_provider_exchange") == exchange
 
+
+
+@pytest.mark.parametrize(
+    "runtime_error",
+    (
+        ProviderRuntimeError("provider_failed"),
+        ProviderRuntimeError("stream_failed", kind="protocol"),
+    ),
+)
+def test_profile_bound_invocation_never_leases_or_falls_back(runtime_error):
+    runtime = _mk_runtime()
+    runtime.invoke.side_effect = runtime_error
+    retry_with_fallback = Mock(return_value=_provider_result("must not run"))
+    def forbidden_lease(*_args, **_kwargs):
+        raise AssertionError("profile-bound invocation must use its bound client")
+
+    invoker = _make_invoker(
+        retry_with_fallback,
+        client_lease=forbidden_lease,
+    )
+    invoker.route_health.is_circuit_open.return_value = False
+    session_state = _session_state()
+    profile = OpenAICompletionsProviderProfile(
+        model="Qwen/Qwen3.5-35B-A3B",
+        scoped_credential="episode-secret",
+        base_url="http://127.0.0.1:8111/v1",
+        context_window=131_072,
+        max_output_tokens=32_000,
+    )
+
+    with pytest.raises(ProviderRuntimeError, match=str(runtime_error)):
+        invoker.invoke(
+            runtime=runtime,
+            client=object(),
+            model=profile.model,
+            send_messages=[],
+            tools_schema=None,
+            stream_responses=True,
+            runtime_context=ProviderRuntimeContext(
+                session_state=session_state,
+                agent_config={},
+                stream=True,
+                provider_profile=profile,
+            ),
+            session_state=session_state,
+            markdown_logger=_markdown_logger(),
+            turn_index=1,
+            route_id="openai/Qwen/Qwen3.5-35B-A3B",
+        )
+
+    runtime.invoke.assert_called_once()
+    retry_with_fallback.assert_not_called()
+
+
+def test_profile_bound_invocation_fails_closed_on_open_circuit():
+    runtime = _mk_runtime(_provider_result())
+    retry_with_fallback = Mock(return_value=_provider_result("must not run"))
+    invoker = _make_invoker(retry_with_fallback)
+    invoker.route_health.is_circuit_open.return_value = True
+    session_state = _session_state()
+    profile = OpenAICompletionsProviderProfile(
+        model="Qwen/Qwen3.5-35B-A3B",
+        scoped_credential="episode-secret",
+        base_url="http://127.0.0.1:8111/v1",
+        context_window=131_072,
+        max_output_tokens=32_000,
+    )
+
+    with pytest.raises(ProviderRuntimeError, match="route unavailable"):
+        invoker.invoke(
+            runtime=runtime,
+            client=object(),
+            model=profile.model,
+            send_messages=[],
+            tools_schema=None,
+            stream_responses=True,
+            runtime_context=ProviderRuntimeContext(
+                session_state=session_state,
+                agent_config={},
+                stream=True,
+                provider_profile=profile,
+            ),
+            session_state=session_state,
+            markdown_logger=_markdown_logger(),
+            turn_index=1,
+            route_id="openai/Qwen/Qwen3.5-35B-A3B",
+        )
+
+    runtime.invoke.assert_not_called()
+    retry_with_fallback.assert_not_called()
 
 def test_provider_invoker_counts_reasoning_only_result_as_output() -> None:
     runtime_result = ProviderResult(

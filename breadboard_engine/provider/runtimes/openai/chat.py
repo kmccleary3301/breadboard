@@ -3,19 +3,32 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...contracts import (
+    OpenAICompletionsProviderProfile,
     ProviderMessage,
     ProviderResult,
     ProviderRuntimeContext,
     ProviderRuntimeError,
+    sanitize_provider_result,
 )
 from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
 from ....security import redaction
 from .streaming import OpenAIBaseRuntime
 from .chat_stream_decoder import OpenAIChatStreamDecoder
+
+
+@dataclass(frozen=True, slots=True)
+class _ProfileClient:
+    transport: Any
+    profile: OpenAICompletionsProviderProfile
+    def close(self) -> None:
+        close = getattr(self.transport, "close", None)
+        if callable(close):
+            close()
 
 
 class OpenAIChatRuntime(OpenAIBaseRuntime):
@@ -43,6 +56,37 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             except ValueError:
                 pass
         return provider_sdk_bindings.openai(**kwargs)
+
+    def create_client_from_profile(
+        self, profile: OpenAICompletionsProviderProfile
+    ) -> Any:
+        """Create a zero-retry SDK client from one immutable episode profile."""
+        if not isinstance(profile, OpenAICompletionsProviderProfile):
+            raise ProviderRuntimeError(
+                "OpenAI Chat profile is invalid",
+                kind="configuration",
+                details={"code": "invalid_provider_profile"},
+            )
+        self._require_openai()
+        with redaction.secret_value_scope(
+            profile.scoped_credential,
+            *profile.caller_headers.values(),
+            allow_short=True,
+        ):
+            try:
+                transport = provider_sdk_bindings.openai(
+                    api_key=profile.scoped_credential,
+                    base_url=profile.base_url,
+                    default_headers=dict(profile.caller_headers),
+                    max_retries=0,
+                )
+            except Exception as exc:
+                raise ProviderRuntimeError(
+                    redaction.safe_exception_message(exc),
+                    kind="configuration",
+                    details={"code": "profile_client_creation_failed"},
+                ) from None
+        return _ProfileClient(transport, profile)
 
     def _stream_chat_completion(
         self,
@@ -75,26 +119,128 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
     ) -> ProviderResult:
-        context.raise_if_cancelled()
-        request_messages = self._convert_messages_to_chat(
-            messages, context=context
-        )
-        request_tools = self._convert_tools_to_openai(tools)
-        extra_body: Optional[Dict[str, Any]] = None
-        if (
-            self.descriptor.provider_id == "openrouter"
-            and isinstance(model, str)
-            and model.startswith("openai/gpt-5")
+        profile = context.provider_profile
+        if profile is None:
+            return self._invoke(
+                client=client,
+                model=model,
+                messages=messages,
+                tools=tools,
+                stream=stream,
+                context=context,
+            )
+        with redaction.secret_value_scope(
+            profile.scoped_credential,
+            *profile.caller_headers.values(),
+            allow_short=True,
         ):
-            # Force provider routing away from Azure for GPT-5 OpenAI models on OpenRouter,
-            # since some upstreams reject tool outputs.
-            extra_body = {"provider": {"order": ["openai"], "allow_fallbacks": False}}
-        role_request, role_extra_body = openai_chat_role_options(
-            context,
-            provider_id=self.descriptor.provider_id,
+            return sanitize_provider_result(
+                self._invoke(
+                    client=client,
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    stream=stream,
+                    context=context,
+                )
+            )
+
+    def profile_chat_request(
+        self,
+        profile: OpenAICompletionsProviderProfile,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        *,
+        context: ProviderRuntimeContext,
+    ) -> Dict[str, Any]:
+        """Project the exact request used by a profile-bound invocation."""
+        return profile.chat_request(
+            self._convert_messages_to_chat(messages, context=context),
+            self._convert_tools_to_openai(tools),
         )
-        if role_extra_body:
-            extra_body = {**(extra_body or {}), **role_extra_body}
+
+    def _invoke(
+        self,
+        *,
+        client: Any,
+        model: str,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        stream: bool,
+        context: ProviderRuntimeContext,
+    ) -> ProviderResult:
+        context.raise_if_cancelled()
+        profile = context.provider_profile
+        if profile is not None:
+            profile_request = self.profile_chat_request(
+                profile,
+                messages,
+                tools,
+                context=context,
+            )
+            request_messages = profile_request["messages"]
+            request_tools = profile_request.get("tools")
+        else:
+            request_messages = self._convert_messages_to_chat(
+                messages, context=context
+            )
+            request_tools = self._convert_tools_to_openai(tools)
+        if profile is not None:
+            if not isinstance(client, _ProfileClient) or client.profile is not profile:
+                raise ProviderRuntimeError(
+                    "OpenAI Completions profile client does not match the episode",
+                    kind="configuration",
+                    details={"code": "profile_client_mismatch"},
+                )
+            client = client.transport
+            if not stream:
+                raise ProviderRuntimeError(
+                    "OpenAI Completions profile requires streaming",
+                    kind="configuration",
+                    details={"code": "profile_requires_streaming"},
+                )
+            if model != profile.model:
+                raise ProviderRuntimeError(
+                    "OpenAI Completions profile model does not match invocation",
+                    kind="configuration",
+                    details={"code": "profile_model_mismatch"},
+                )
+            profile_request = profile.chat_request(request_messages, request_tools)
+            profile_request.pop("model")
+            profile_request.pop("messages")
+            profile_request.pop("stream")
+            request_tools = profile_request.pop("tools", None)
+            thinking_control = profile_request.pop("enable_thinking", None)
+            extra_body = (
+                {"enable_thinking": thinking_control}
+                if thinking_control is not None
+                else None
+            )
+            role_request = profile_request
+        elif isinstance(client, _ProfileClient):
+            raise ProviderRuntimeError(
+                "OpenAI Completions profile client requires its episode profile",
+                kind="configuration",
+                details={"code": "profile_context_missing"},
+            )
+        else:
+            extra_body: Optional[Dict[str, Any]] = None
+            if (
+                self.descriptor.provider_id == "openrouter"
+                and isinstance(model, str)
+                and model.startswith("openai/gpt-5")
+            ):
+                # Force provider routing away from Azure for GPT-5 OpenAI models on OpenRouter,
+                # since some upstreams reject tool outputs.
+                extra_body = {
+                    "provider": {"order": ["openai"], "allow_fallbacks": False}
+                }
+            role_request, role_extra_body = openai_chat_role_options(
+                context,
+                provider_id=self.descriptor.provider_id,
+            )
+            if role_extra_body:
+                extra_body = {**(extra_body or {}), **role_extra_body}
 
         response: Any = None
         streamed_reasoning: Dict[int, Dict[str, Any]] = {}
