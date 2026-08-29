@@ -443,6 +443,7 @@ class V2RunResult:
     primary_measurement_digest: str | None = None
     verifier_measurement_digest: str | None = None
     verifier_result_digest: str | None = None
+    workspace_diff: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -570,6 +571,7 @@ class _V2EpisodeCoordinator:
     verifier_lease_id: str | None = None
     verifier_snapshot: VerifierSnapshotReceipt | None = None
     verifier_result: Mapping[str, Any] | None = None
+    workspace_diff: Mapping[str, Any] | None = None
     runner_event_refs: list[ArtifactRef] = field(default_factory=list)
     fault_injection: V2FaultInjectionAdmission | None = None
     fault_injection_consumed: bool = False
@@ -1512,8 +1514,7 @@ class BreadBoardV2EpisodeService:
                 coordinator.primary_lease_id = lease.lease_id
                 if (
                     coordinator.cancel_event.is_set()
-                    or coordinator.state
-                    is not EpisodeLifecycleState.ALLOCATING
+                    or coordinator.state is not EpisodeLifecycleState.ALLOCATING
                 ):
                     post_open_cancelled = True
                 else:
@@ -1896,6 +1897,24 @@ class BreadBoardV2EpisodeService:
         verifier: VerifierWorkspaceLease | None = None
         verification_error: BaseException | None = None
         try:
+            raw_workspace_diff = (
+                await coordinator.lease.runner_workspace.workspace_diff()
+            )
+            if (
+                set(raw_workspace_diff) != {"returncode", "stdout", "stderr"}
+                or type(raw_workspace_diff["returncode"]) is not int
+                or type(raw_workspace_diff["stdout"]) is not str
+                or type(raw_workspace_diff["stderr"]) is not str
+                or raw_workspace_diff["returncode"] != 0
+            ):
+                raise RuntimeError("canonical workspace diff failed")
+            coordinator.workspace_diff = MappingProxyType(
+                {
+                    "returncode": raw_workspace_diff["returncode"],
+                    "stdout": raw_workspace_diff["stdout"],
+                    "stderr": raw_workspace_diff["stderr"],
+                }
+            )
             snapshot = await coordinator.lease.seal_for_verifier()
             coordinator.verifier_snapshot = snapshot
             probe.raise_if_cancelled("before_verifier_open")
@@ -1912,10 +1931,7 @@ class BreadBoardV2EpisodeService:
                 if coordinator.verifier_cleanup_task is None:
                     coordinator.verifier_cleanup_task = asyncio.create_task(
                         verifier.close(),
-                        name=(
-                            "bb-v2-verifier-close:"
-                            f"{coordinator.request.episode_id}"
-                        ),
+                        name=(f"bb-v2-verifier-close:{coordinator.request.episode_id}"),
                     )
                 (
                     receipt,
@@ -1928,10 +1944,7 @@ class BreadBoardV2EpisodeService:
                     coordinator.verifier_cleanup_failure = _failure_from_exception(
                         close_error, "verifier_cleanup"
                     )
-                if (
-                    cleanup_cancellation is not None
-                    and verification_error is None
-                ):
+                if cleanup_cancellation is not None and verification_error is None:
                     verification_error = cleanup_cancellation
         verifier_receipt = coordinator.verifier_cleanup_receipt
         verifier_cleanup_lease_mismatch = (
@@ -2075,6 +2088,7 @@ class BreadBoardV2EpisodeService:
             primary_measurement_digest=completed.primary_measurement_digest,
             verifier_measurement_digest=completed.verifier_measurement_digest,
             verifier_result_digest=completed.verifier_result_digest,
+            workspace_diff=coordinator.workspace_diff,
         )
         coordinator.run_result = result
         return result
@@ -2362,9 +2376,7 @@ class BreadBoardV2EpisodeService:
                 except BaseException as exc:
                     errors.append(exc)
             else:
-                errors.extend(
-                    await self._coordinator_operation_failures(coordinator)
-                )
+                errors.extend(await self._coordinator_operation_failures(coordinator))
         errors.extend(await self._drain_operation_tasks())
         try:
             sandbox_receipts = await self._dependencies.sandbox_runtime.close()
@@ -2375,9 +2387,8 @@ class BreadBoardV2EpisodeService:
                     (),
                 )
                 for receipt in sandbox_receipts
-                if receipt.state not in {
-                    CleanupState.RELEASED, CleanupState.ALREADY_RELEASED
-                }
+                if receipt.state
+                not in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
             )
         except BaseException as exc:
             errors.append(exc)
@@ -2628,8 +2639,7 @@ class BreadBoardV2EpisodeService:
                 task = asyncio.create_task(
                     session.close(),
                     name=(
-                        "bb-v2-runner-session-close:"
-                        f"{coordinator.request.episode_id}"
+                        f"bb-v2-runner-session-close:{coordinator.request.episode_id}"
                     ),
                 )
                 coordinator.session_close_task = task
@@ -2643,7 +2653,6 @@ class BreadBoardV2EpisodeService:
                         close_error, "session_close"
                     )
         return cancellation, close_error
-
 
     async def _close_unowned_binding(
         self, coordinator: _V2EpisodeCoordinator
@@ -3138,6 +3147,7 @@ class BreadBoardV2EpisodeService:
             "response": dict(result.response),
             "termination": result.termination.value,
             "turn_count": result.turn_count,
+            "workspace_diff": dict(coordinator.workspace_diff or {}),
             "reward": verifier_result.get("reward"),
             "reward_components": dict(verifier_result.get("reward_components", {})),
         }
@@ -3446,6 +3456,11 @@ class BreadBoardV2EpisodeService:
                 primary_measurement_digest=recovered.primary_measurement_digest,
                 verifier_measurement_digest=recovered.verifier_measurement_digest,
                 verifier_result_digest=recovered.verifier_result_digest,
+                workspace_diff=(
+                    MappingProxyType(dict(run_payload["workspace_diff"]))
+                    if run_payload.get("workspace_diff")
+                    else None
+                ),
             )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise V2EpisodeQuarantined(
@@ -3494,6 +3509,7 @@ class BreadBoardV2EpisodeService:
             run_fingerprint=tombstone.run_fingerprint,
             primary_lease_id=recovered.primary_lease_id,
             primary_disposition=run_result.primary_disposition,
+            workspace_diff=run_result.workspace_diff,
             cleanup_disposition=EpisodeCleanupDisposition.RELEASED
             if recovered.closed_tombstone is not None
             else EpisodeCleanupDisposition.PENDING,

@@ -103,41 +103,24 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
 
     class CAS:
         def __init__(self) -> None:
+            artifact_manifest = json.dumps(
+                {"objects": [{"role": "patch", "payload": "runner-result-json"}]},
+                sort_keys=True,
+            ).encode()
             self.payloads = {
                 "manifest": json.dumps(
                     {
                         "runner_ledger_ref": self.ref("events", events),
                         "artifact_manifest_ref": self.ref(
                             "artifacts",
-                            json.dumps(
-                                {
-                                    "objects": [
-                                        {
-                                            "role": "workspace_patch",
-                                            "artifact_ref": self.ref("patch", patch),
-                                        }
-                                    ]
-                                },
-                                sort_keys=True,
-                            ).encode(),
+                            artifact_manifest,
                         ),
                     },
                     sort_keys=True,
                 ).encode(),
                 "events": events,
-                "patch": patch,
+                "artifacts": artifact_manifest,
             }
-            self.payloads["artifacts"] = json.dumps(
-                {
-                    "objects": [
-                        {
-                            "role": "workspace_patch",
-                            "artifact_ref": self.ref("patch", patch),
-                        }
-                    ]
-                },
-                sort_keys=True,
-            ).encode()
 
         @staticmethod
         def ref(artifact_id: str, payload: bytes) -> dict[str, str]:
@@ -176,6 +159,11 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
         verifier_result_digest="sha256:" + "3" * 64,
         reward=0.0,
         reward_components={},
+        workspace_diff={
+            "returncode": 0,
+            "stdout": patch.decode(),
+            "stderr": "",
+        },
     )
     result: dict[str, Any] = {}
 
@@ -389,6 +377,7 @@ async def test_headless_runner_rejects_development_trusted_process(
         ),
         result_path=str(result_path),
         event_log_path=str(event_path),
+        patch_path=str(tmp_path / "workspace.patch"),
     )
     assert str(credential) not in request.model_dump_json()
     assert all(
@@ -446,6 +435,13 @@ async def test_headless_runner_rejects_development_trusted_process(
     assert rejected.value.result["terminal"]["failure"] == {
         "code": "ValueError",
         "category": "ValueError",
+    }
+    assert rejected.value.result["patch"] == {
+        "requested": True,
+        "destination": str(tmp_path / "workspace.patch"),
+        "digest": None,
+        "size_bytes": None,
+        "available": False,
     }
     assert json.loads(result_path.read_bytes()) == rejected.value.result
     assert not event_path.exists()
