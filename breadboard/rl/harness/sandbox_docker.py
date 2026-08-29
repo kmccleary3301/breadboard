@@ -1799,6 +1799,7 @@ class DockerRuntimeAdapter:
         labels = _identity_labels(
             plan, lease_id=lease_id, workspace_id=workspace_id, epoch=epoch, role=role
         )
+        identifier: str | None = None
         try:
             created = await self._execute(
                 argv,
@@ -1806,11 +1807,13 @@ class DockerRuntimeAdapter:
                 output_limit=plan.limits.observation_bytes,
                 code="runtime_launch_failed",
             )
-            identifier = created.stdout.strip().decode("ascii")
-            if _CONTAINER_ID.fullmatch(identifier) is None:
+            decoded_identifier = created.stdout.strip().decode("ascii")
+            if _CONTAINER_ID.fullmatch(decoded_identifier) is None:
                 raise DockerAdapterError(
-                    "runtime_launch_failed", "Docker create did not return an immutable container ID"
+                    "runtime_launch_failed",
+                    "Docker create did not return an immutable container ID",
                 )
+            identifier = decoded_identifier
             bound_id, detail = await self._bound_container(
                 plan,
                 name,
@@ -1830,7 +1833,7 @@ class DockerRuntimeAdapter:
                 cleanup = await self.cleanup(
                     plan,
                     name,
-                    expected_id=None,
+                    expected_id=identifier,
                     expected_name=name,
                     labels=labels,
                 )
@@ -1838,9 +1841,20 @@ class DockerRuntimeAdapter:
                 cleanup = (
                     ("runtime_identity", "quarantined", type(cleanup_error).__name__),
                 )
+            details: dict[str, Any] = {
+                "cleanup": cleanup,
+                "container_name": name,
+            }
+            if identifier is not None:
+                details["candidate_container_id"] = identifier
             if isinstance(primary, DockerAdapterError):
-                primary.details["cleanup"] = cleanup
-            raise
+                primary.details.update(details)
+                raise
+            raise DockerAdapterError(
+                "runtime_launch_failed",
+                "Docker prepare failed",
+                details=details,
+            ) from primary
 
     async def start(self, plan: Any, container_id: str) -> None:
         self._pin(plan)
@@ -1978,7 +1992,14 @@ class DockerRuntimeAdapter:
         )
         if bound_id is None:
             state = "already_released" if detail == "not_found" else "quarantined"
-            return (("runtime_identity", state, "" if detail == "not_found" else detail),)
+            identity = (
+                "runtime_identity",
+                state,
+                "" if detail == "not_found" else detail,
+            )
+            if state == "already_released":
+                return (identity, ("runtime_absence", "already_released", ""))
+            return (identity,)
         attempted: list[tuple[str, DockerCommandResult]] = []
         for resource, argv in (
             ("runtime_stop", (plan.runtime.executable_path, "stop", "--time", "5", bound_id)),
@@ -2086,19 +2107,20 @@ class DockerRuntimeHandle:
         *,
         adapter: DockerRuntimeAdapter,
         plan: Any,
-        container_id: str,
+        container_id: str | None,
         container_name: str,
         labels: Mapping[str, str],
         held_fds: Sequence[int] = (),
         mount_stager: DockerDescriptorMountStager | None = None,
         staged_mounts: Sequence[StagedDockerDescriptorMount] = (),
+        lease_id: str | None = None,
     ) -> None:
         self.adapter = adapter
         self.plan = plan
         self.container_id = container_id
         self.container_name = container_name
         self.labels = dict(labels)
-        self.runtime_id = container_id
+        self.runtime_id = container_id or container_name
         self._closed = False
         self._fenced = False
         self._cleanup_lock = asyncio.Lock()
@@ -2106,6 +2128,7 @@ class DockerRuntimeHandle:
         self._held_fds = list(held_fds)
         self._mount_stager = mount_stager
         self._staged_mounts = list(staged_mounts)
+        self._lease_id = lease_id
 
     def _record_terminal_cleanup(self, receipts: tuple[Any, ...]) -> None:
         from .materialization import CleanupState
@@ -2296,9 +2319,10 @@ class DockerRuntimeHandle:
     async def _terminate_bound(self) -> tuple[Any, ...]:
         from .materialization import CleanupState, CleanupStepReceipt
         try:
+            reference = self.container_id or self.container_name
             raw = await self.adapter.cleanup(
                 self.plan,
-                self.container_id,
+                reference,
                 expected_id=self.container_id,
                 expected_name=self.container_name,
                 labels=self.labels,
@@ -2377,6 +2401,38 @@ class DockerRuntimeHandle:
                         ),
                     ),
                 )
+            if self._mount_stager is not None and self._lease_id is not None:
+                released_states = {
+                    CleanupState.RELEASED,
+                    CleanupState.ALREADY_RELEASED,
+                }
+                runtime_absent = any(
+                    receipt.resource == "runtime_absence"
+                    and receipt.state in released_states
+                    for receipt in receipts
+                )
+                stages_absent = not self._staged_mounts
+                record_cleanup = getattr(
+                    self._mount_stager, "record_cleanup_receipt", None
+                )
+                if callable(record_cleanup):
+                    record_cleanup(
+                        self._lease_id,
+                        proof={
+                            "container_absence": runtime_absent,
+                            "stages_absence": stages_absent,
+                            "daemon_absence": False,
+                            "containerd_absence": False,
+                            "runtime_absence": False,
+                            "config_absence": False,
+                            "root_absence": False,
+                        },
+                        state=(
+                            "ACTIVE"
+                            if runtime_absent and stages_absent
+                            else "QUARANTINED"
+                        ),
+                    )
             self._record_terminal_cleanup(receipts)
             return receipts
 
@@ -2619,6 +2675,7 @@ class DockerSandboxBackend:
             if type(workspace_fd) is int and workspace_fd >= 0
             else []
         )
+        creation_attempted = False
         container_id: str | None = None
         container_name = ""
         labels: dict[str, str] = {}
@@ -2658,6 +2715,21 @@ class DockerSandboxBackend:
             container_name = _container_name(
                 role=context.role, workspace_id=context.workspace_id
             )
+            journal_binding = getattr(self.mount_stager, "record_lease_binding", None)
+            if callable(journal_binding):
+                if context.owner_token is None:
+                    raise DockerAdapterError(
+                        "runtime_preflight_failed",
+                        "durable supervisor journal owner token is required",
+                    )
+                journal_binding(
+                    lease_id=context.lease_id,
+                    workspace_id=context.workspace_id,
+                    epoch=context.epoch,
+                    role=context.role,
+                    plan_digest=plan.effective_plan_digest,
+                    owner_token=context.owner_token,
+                )
             labels = _identity_labels(
                 plan,
                 lease_id=context.lease_id,
@@ -2741,6 +2813,7 @@ class DockerSandboxBackend:
             ):
                 staged.validate_descriptor(descriptor)
                 await self.mount_stager.validate(staged, descriptor)
+            creation_attempted = True
             container_id, container_name, _ = await self.adapter.prepare(
                 plan, lease_id=context.lease_id, workspace_id=context.workspace_id,
                 epoch=context.epoch, role=context.role, skeleton_path=workspace_source,
@@ -2748,6 +2821,16 @@ class DockerSandboxBackend:
                 security_profile_descriptor=profile_fd,
                 security_profile_metadata=profile_metadata,
             )
+            journal_container = getattr(
+                self.mount_stager, "record_container_identity", None
+            )
+            if callable(journal_container):
+                journal_container(
+                    context.lease_id,
+                    container_id=container_id,
+                    name=container_name,
+                    labels=labels,
+                )
             identity_labels = tuple((key, labels[key]) for key in _IDENTITY_LABELS)
             await context.publish_prepared_identity(
                 RuntimePreparedIdentity(container_id, labels)
@@ -2810,6 +2893,7 @@ class DockerSandboxBackend:
                 adapter=self.adapter, plan=plan, container_id=container_id,
                 container_name=container_name, labels=labels, held_fds=held_fds,
                 mount_stager=self.mount_stager, staged_mounts=staged_mounts,
+                lease_id=context.lease_id,
             )
             held_fds = []
             return handle, SandboxMeasurement(
@@ -2825,6 +2909,24 @@ class DockerSandboxBackend:
                 isolated=True, reward_eligible=True,
             )
         except BaseException as primary:
+            if isinstance(primary, DockerAdapterError):
+                candidate = primary.details.get("candidate_container_id")
+                if (
+                    type(candidate) is str
+                    and _CONTAINER_ID.fullmatch(candidate) is not None
+                ):
+                    container_id = candidate
+                reported_cleanup = primary.details.get("cleanup")
+                if (
+                    type(reported_cleanup) in {list, tuple}
+                    and all(
+                        type(item) in {list, tuple}
+                        and len(item) == 3
+                        and all(type(value) is str for value in item)
+                        for item in reported_cleanup
+                    )
+                ):
+                    cleanup = tuple(tuple(item) for item in reported_cleanup)
             if container_id is not None:
                 try:
                     cleanup = await self.adapter.cleanup(
@@ -2838,10 +2940,13 @@ class DockerSandboxBackend:
                 if isinstance(primary, DockerAdapterError):
                     primary.details["cleanup"] = cleanup
             absence = any(
-                name == "runtime_absence" and state in {"released", "already_released"}
+                name == "runtime_absence"
+                and state in {"released", "already_released"}
                 for name, state, _ in cleanup
             )
-            if container_id is not None and not absence:
+            runtime_cleanup_pending = creation_attempted and not absence
+            stage_cleanup_pending = False
+            if runtime_cleanup_pending:
                 self._quarantined_handles.append(
                     DockerRuntimeHandle(
                         adapter=self.adapter,
@@ -2852,12 +2957,15 @@ class DockerSandboxBackend:
                         held_fds=held_fds,
                         mount_stager=self.mount_stager,
                         staged_mounts=staged_mounts,
+                        lease_id=context.lease_id,
                     )
                 )
                 held_fds = []
                 staged_mounts = []
                 if isinstance(primary, DockerAdapterError):
-                    primary.details["pending_runtime_cleanup"] = container_id
+                    primary.details["pending_runtime_cleanup"] = (
+                        container_id or container_name
+                    )
             else:
                 release_failures: list[tuple[int, int, str]] = []
                 failed_stages: list[StagedDockerDescriptorMount] = []
@@ -2875,6 +2983,7 @@ class DockerSandboxBackend:
                             )
                         )
                 if failed_stages:
+                    stage_cleanup_pending = True
                     self._quarantined_stages.extend(reversed(failed_stages))
                     self._quarantined_fds.extend(held_fds)
                     held_fds = []
@@ -2882,6 +2991,31 @@ class DockerSandboxBackend:
                         primary.details["staged_mount_cleanup"] = tuple(
                             release_failures
                         )
+            journal_cleanup = getattr(self.mount_stager, "record_cleanup_receipt", None)
+            if callable(journal_cleanup):
+                container_absent = not creation_attempted or absence
+                stages_absent = (
+                    not runtime_cleanup_pending
+                    and not stage_cleanup_pending
+                    and not staged_mounts
+                )
+                journal_cleanup(
+                    context.lease_id,
+                    proof={
+                        "container_absence": container_absent,
+                        "stages_absence": stages_absent,
+                        "daemon_absence": False,
+                        "containerd_absence": False,
+                        "runtime_absence": False,
+                        "config_absence": False,
+                        "root_absence": False,
+                    },
+                    state=(
+                        "ACTIVE"
+                        if container_absent and stages_absent
+                        else "QUARANTINED"
+                    ),
+                )
             raise
         finally:
             while held_fds:

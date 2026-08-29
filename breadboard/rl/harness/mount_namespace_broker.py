@@ -32,7 +32,7 @@ from .sandbox_docker import (
 
 _MAX_MESSAGE = 4 * 1024 * 1024
 _MAX_FDS = 4
-_MAX_OUTPUT = 2 * 1024 * 1024
+_MAX_OUTPUT = 16 * 1024 * 1024
 _CLONE_NEWNS = 0x00020000
 _MS_BIND = 4096
 _MS_REMOUNT = 32
@@ -532,16 +532,12 @@ def _read_sealed_payload_fd(
         )
     metadata = os.fstat(descriptor)
     required_seals = (
-        fcntl.F_SEAL_SEAL
-        | fcntl.F_SEAL_SHRINK
-        | fcntl.F_SEAL_GROW
-        | fcntl.F_SEAL_WRITE
+        fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
     )
     if (
         not stat.S_ISREG(metadata.st_mode)
         or metadata.st_size != expected_size
-        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & required_seals
-        != required_seals
+        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & required_seals != required_seals
         or _digest_fd_exact(descriptor) != expected_digest
     ):
         raise MountNamespaceBrokerError(
@@ -550,9 +546,7 @@ def _read_sealed_payload_fd(
     chunks: list[bytes] = []
     offset = 0
     while offset < expected_size:
-        chunk = _retry_pread(
-            descriptor, min(64 * 1024, expected_size - offset), offset
-        )
+        chunk = _retry_pread(descriptor, min(64 * 1024, expected_size - offset), offset)
         if not chunk:
             raise MountNamespaceBrokerError(
                 "runtime_unsupported", "broker payload descriptor was truncated"
@@ -872,6 +866,189 @@ def _stop_process_group(process: subprocess.Popen[bytes], process_group: int) ->
     raise OSError("broker command process group survived cleanup")
 
 
+def _new_output_descriptor() -> int:
+    if not hasattr(os, "memfd_create"):
+        raise MountNamespaceBrokerError(
+            "runtime_unsupported",
+            "sealed Docker output descriptor is unavailable",
+        )
+    return os.memfd_create(
+        "breadboard-docker-output",
+        os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING,
+    )
+
+
+def _seal_output_descriptor(descriptor: int, size: int) -> None:
+    required_seals = (
+        fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
+    )
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, required_seals)
+    metadata = os.fstat(descriptor)
+    if metadata.st_size != size:
+        raise OSError("Docker output descriptor size changed")
+
+
+def _execute_bounded_descriptors(
+    argv: Sequence[str],
+    *,
+    executable_fd: int,
+    timeout_ms: int,
+    output_limit: int,
+    input_fd: int | None = None,
+) -> tuple[
+    int,
+    tuple[int, int],
+    tuple[int, int],
+    tuple[str, str],
+    bool,
+    bool,
+]:
+    if type(output_limit) is not int or not 1 <= output_limit <= _MAX_OUTPUT:
+        raise ValueError("Docker output limit is outside the fixed global bound")
+    output_fds = (-1, -1)
+    try:
+        output_fds = (_new_output_descriptor(), _new_output_descriptor())
+        process = subprocess.Popen(
+            tuple(argv),
+            executable=f"/proc/self/fd/{executable_fd}",
+            pass_fds=(executable_fd,),
+            env={},
+            stdin=subprocess.DEVNULL if input_fd is None else input_fd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+            start_new_session=True,
+        )
+        process_group = os.getpgid(process.pid)
+        if process_group != process.pid:
+            _stop_process_group(process, process_group)
+            raise OSError("broker command process group identity is not exact")
+        assert process.stdout is not None and process.stderr is not None
+        streams = (process.stdout, process.stderr)
+        selector = selectors.DefaultSelector()
+        counts = [0, 0]
+        hashers = [hashlib.sha256(), hashlib.sha256()]
+        for index, stream in enumerate(streams):
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ, index)
+        deadline = time.monotonic() + timeout_ms / 1000
+        timed_out = False
+        output_limited = False
+        try:
+            while selector.get_map():
+                remaining_time = deadline - time.monotonic()
+                if remaining_time <= 0:
+                    timed_out = True
+                    _stop_process_group(process, process_group)
+                    break
+                events = selector.select(min(remaining_time, 0.05))
+                if not events and process.poll() is not None:
+                    events = selector.select(0)
+                    if not events:
+                        _stop_process_group(process, process_group)
+                        break
+                for key, _ in events:
+                    try:
+                        chunk = os.read(key.fileobj.fileno(), 64 * 1024)
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        key.fileobj.close()
+                        continue
+                    index = key.data
+                    remaining = output_limit - counts[0] - counts[1]
+                    if remaining <= 0:
+                        output_limited = True
+                    else:
+                        accepted = chunk[:remaining]
+                        offset = 0
+                        while offset < len(accepted):
+                            count = _retry_write(output_fds[index], accepted[offset:])
+                            if count <= 0:
+                                raise OSError(
+                                    "Docker output descriptor write made no progress"
+                                )
+                            offset += count
+                        hashers[index].update(accepted)
+                        counts[index] += len(accepted)
+                        if len(chunk) > len(accepted):
+                            output_limited = True
+                    if output_limited:
+                        _stop_process_group(process, process_group)
+                        break
+                if output_limited:
+                    break
+            if process.poll() is None:
+                remaining_time = max(0.0, deadline - time.monotonic())
+                try:
+                    process.wait(timeout=remaining_time)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    _stop_process_group(process, process_group)
+        except BaseException:
+            _stop_process_group(process, process_group)
+            raise
+        finally:
+            selector.close()
+            for stream in streams:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+        for descriptor, size in zip(output_fds, counts, strict=True):
+            _seal_output_descriptor(descriptor, size)
+        return (
+            process.returncode if process.returncode is not None else -signal.SIGKILL,
+            output_fds,
+            (counts[0], counts[1]),
+            (
+                "sha256:" + hashers[0].hexdigest(),
+                "sha256:" + hashers[1].hexdigest(),
+            ),
+            timed_out,
+            output_limited,
+        )
+    except BaseException:
+        for descriptor in output_fds:
+            if descriptor >= 0:
+                os.close(descriptor)
+        raise
+
+
+def _read_output_descriptor(descriptor: int, size: int) -> tuple[bytes, str]:
+    if type(size) is not int or not 0 <= size <= _MAX_OUTPUT:
+        raise MountNamespaceBrokerError(
+            "runtime_unsupported", "broker output descriptor size is invalid"
+        )
+    metadata = os.fstat(descriptor)
+    required_seals = (
+        fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
+    )
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_size != size
+        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & required_seals != required_seals
+    ):
+        raise MountNamespaceBrokerError(
+            "runtime_unsupported", "broker output descriptor changed"
+        )
+    chunks: list[bytes] = []
+    hasher = hashlib.sha256()
+    offset = 0
+    while offset < size:
+        chunk = _retry_pread(descriptor, min(64 * 1024, size - offset), offset)
+        if not chunk:
+            raise MountNamespaceBrokerError(
+                "runtime_unsupported", "broker output descriptor was truncated"
+            )
+        chunks.append(chunk)
+        hasher.update(chunk)
+        offset += len(chunk)
+    return b"".join(chunks), "sha256:" + hasher.hexdigest()
+
+
 def _execute_bounded(
     argv: Sequence[str],
     *,
@@ -880,86 +1057,22 @@ def _execute_bounded(
     output_limit: int,
     input_fd: int | None = None,
 ) -> tuple[int, bytes, bytes, bool, bool]:
-    process = subprocess.Popen(
-        tuple(argv),
-        executable=f"/proc/self/fd/{executable_fd}",
-        pass_fds=(executable_fd,),
-        env={},
-        stdin=subprocess.DEVNULL if input_fd is None else input_fd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        close_fds=True,
-        start_new_session=True,
+    returncode, output_fds, counts, _digests, timed_out, output_limited = (
+        _execute_bounded_descriptors(
+            argv,
+            executable_fd=executable_fd,
+            timeout_ms=timeout_ms,
+            output_limit=output_limit,
+            input_fd=input_fd,
+        )
     )
-    process_group = os.getpgid(process.pid)
-    if process_group != process.pid:
-        _stop_process_group(process, process_group)
-        raise OSError("broker command process group identity is not exact")
-    assert process.stdout is not None and process.stderr is not None
-    streams = (process.stdout, process.stderr)
-    selector = selectors.DefaultSelector()
-    captured = (bytearray(), bytearray())
-    for index, stream in enumerate(streams):
-        os.set_blocking(stream.fileno(), False)
-        selector.register(stream, selectors.EVENT_READ, index)
-    deadline = time.monotonic() + timeout_ms / 1000
-    timed_out = False
-    output_limited = False
     try:
-        while selector.get_map():
-            remaining_time = deadline - time.monotonic()
-            if remaining_time <= 0:
-                timed_out = True
-                _stop_process_group(process, process_group)
-                break
-            events = selector.select(min(remaining_time, 0.05))
-            if not events and process.poll() is not None:
-                events = selector.select(0)
-                if not events:
-                    _stop_process_group(process, process_group)
-                    break
-            for key, _ in events:
-                try:
-                    chunk = os.read(key.fileobj.fileno(), 64 * 1024)
-                except BlockingIOError:
-                    continue
-                if not chunk:
-                    selector.unregister(key.fileobj)
-                    key.fileobj.close()
-                    continue
-                remaining = output_limit - len(captured[0]) - len(captured[1])
-                if remaining > 0:
-                    captured[key.data].extend(chunk[:remaining])
-                if len(chunk) > max(remaining, 0):
-                    output_limited = True
-                    _stop_process_group(process, process_group)
-                    break
-            if output_limited:
-                break
-        if process.poll() is None:
-            remaining_time = max(0.0, deadline - time.monotonic())
-            try:
-                process.wait(timeout=remaining_time)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                _stop_process_group(process, process_group)
-    except BaseException:
-        _stop_process_group(process, process_group)
-        raise
+        stdout, _ = _read_output_descriptor(output_fds[0], counts[0])
+        stderr, _ = _read_output_descriptor(output_fds[1], counts[1])
+        return returncode, stdout, stderr, timed_out, output_limited
     finally:
-        selector.close()
-        for stream in streams:
-            try:
-                stream.close()
-            except OSError:
-                pass
-    return (
-        process.returncode if process.returncode is not None else -signal.SIGKILL,
-        bytes(captured[0]),
-        bytes(captured[1]),
-        timed_out,
-        output_limited,
-    )
+        for descriptor in output_fds:
+            os.close(descriptor)
 
 
 def _consume_log_fds(
@@ -1172,6 +1285,753 @@ class _ProgressJournal:
             offset += os.write(self._fd, payload[offset:])
         os.fsync(self._fd)
         self._size = current_size + len(payload)
+
+
+SUPERVISOR_JOURNAL_SCHEMA_VERSION = "bb.rl.mount-namespace-supervisor.v2"
+SUPERVISOR_RECEIPT_SCHEMA_VERSION = SUPERVISOR_JOURNAL_SCHEMA_VERSION
+_SUPERVISOR_JOURNAL_LIMIT = 1024 * 1024
+_JOURNAL_DIGEST_LENGTH = 71
+_SUPERVISOR_JOURNAL_TOTAL_ENTRY_LIMIT = 8_192
+_SUPERVISOR_JOURNAL_INVENTORY_LIMIT = 4_096
+_SUPERVISOR_FINAL_RETENTION = 1
+_JOURNAL_REQUIRED_KEYS = frozenset(
+    {
+        "schema_version",
+        "state",
+        "generation",
+        "generation_digest",
+        "owner_token_digest",
+        "lease_id",
+        "workspace_id",
+        "epoch",
+        "role",
+        "plan_digest",
+        "broker",
+        "daemon",
+        "containerd",
+        "runtime",
+        "config",
+        "daemon_root",
+        "stage_root",
+        "stages",
+        "container",
+        "proof",
+    }
+)
+_JOURNAL_PROCESS_KEYS = frozenset(
+    {
+        "pid",
+        "starttime",
+        "pgid",
+        "executable_device",
+        "executable_inode",
+        "executable_ctime_ns",
+        "executable_size",
+        "executable_digest",
+        "namespace_device",
+        "namespace_inode",
+    }
+)
+_JOURNAL_PATH_KEYS = frozenset(
+    {
+        "path",
+        "device",
+        "inode",
+        "mode",
+        "digest",
+        "parent_path",
+        "parent_device",
+        "parent_inode",
+    }
+)
+
+
+def _journal_digest(payload: bytes) -> str:
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def _journal_digest_value(value: object) -> bool:
+    return (
+        type(value) is str
+        and len(value) == _JOURNAL_DIGEST_LENGTH
+        and value.startswith("sha256:")
+        and all(char in "0123456789abcdef" for char in value[7:])
+    )
+
+
+def _journal_name(lease_id: str) -> str:
+    if (
+        type(lease_id) is not str
+        or not 1 <= len(lease_id) <= 256
+        or lease_id in {".", ".."}
+        or "/" in lease_id
+        or "\x00" in lease_id
+    ):
+        raise ValueError("journal lease id is not a safe basename")
+    return lease_id + ".supervisor.json"
+
+
+def _journal_process_valid(value: object, *, allow_none: bool = False) -> bool:
+    if allow_none and value is None:
+        return True
+    if type(value) is not dict or set(value) != _JOURNAL_PROCESS_KEYS:
+        return False
+    return (
+        type(value["pid"]) is int
+        and 0 < value["pid"] <= (1 << 53) - 1
+        and type(value["starttime"]) is str
+        and value["starttime"].isdigit()
+        and type(value["pgid"]) is int
+        and 0 < value["pgid"] <= (1 << 53) - 1
+        and all(
+            type(value[key]) is int and value[key] >= 0
+            for key in (
+                "executable_device",
+                "executable_inode",
+                "executable_ctime_ns",
+                "executable_size",
+                "namespace_device",
+                "namespace_inode",
+            )
+        )
+        and value["executable_size"] > 0
+        and _journal_digest_value(value["executable_digest"])
+    )
+
+
+def _journal_path_valid(value: object, *, allow_none: bool = False) -> bool:
+    if allow_none and value is None:
+        return True
+    if type(value) is not dict or set(value) != _JOURNAL_PATH_KEYS:
+        return False
+    return (
+        type(value["path"]) is str
+        and value["path"].startswith("/")
+        and os.path.normpath(value["path"]) == value["path"]
+        and type(value["parent_path"]) is str
+        and value["parent_path"].startswith("/")
+        and os.path.normpath(value["parent_path"]) == value["parent_path"]
+        and os.path.dirname(value["path"]) == value["parent_path"]
+        and all(
+            type(value[key]) is int and value[key] >= 0
+            for key in (
+                "device",
+                "inode",
+                "mode",
+                "parent_device",
+                "parent_inode",
+            )
+        )
+        and _journal_digest_value(value["digest"])
+    )
+
+
+def _validate_journal_payload(
+    payload: object,
+    *,
+    expected_lease_id: str | None = None,
+    expected_generation_digest: str | None = None,
+    expected_owner_token_digest: str | None = None,
+) -> bool:
+    if type(payload) is not dict or set(payload) != _JOURNAL_REQUIRED_KEYS:
+        return False
+    try:
+        safe_name = _journal_name(payload["lease_id"])
+    except (TypeError, ValueError):
+        return False
+    if (
+        payload["schema_version"] != SUPERVISOR_JOURNAL_SCHEMA_VERSION
+        or payload["state"] not in {"ACTIVE", "FINAL", "QUARANTINED"}
+        or type(payload["generation"]) is not str
+        or not _journal_digest_value(payload["generation_digest"])
+        or not _journal_digest_value(payload["owner_token_digest"])
+        or type(payload["lease_id"]) is not str
+        or safe_name != payload["lease_id"] + ".supervisor.json"
+        or type(payload["workspace_id"]) is not str
+        or not payload["workspace_id"]
+        or type(payload["epoch"]) is not int
+        or not 0 < payload["epoch"] <= (1 << 53) - 1
+        or payload["role"] not in {"primary", "verifier"}
+        or not _journal_digest_value(payload["plan_digest"])
+    ):
+        return False
+    generation = (
+        f"{payload['lease_id']}:{payload['workspace_id']}:{payload['epoch']}:"
+        f"{payload['role']}:{payload['plan_digest']}"
+    )
+    if payload["generation"] != generation or payload[
+        "generation_digest"
+    ] != _journal_digest(generation.encode("utf-8")):
+        return False
+    if (
+        (expected_lease_id is not None and payload["lease_id"] != expected_lease_id)
+        or (
+            expected_generation_digest is not None
+            and payload["generation_digest"] != expected_generation_digest
+        )
+        or (
+            expected_owner_token_digest is not None
+            and payload["owner_token_digest"] != expected_owner_token_digest
+        )
+    ):
+        return False
+    if not _journal_process_valid(payload["broker"]):
+        return False
+    if not _journal_process_valid(payload["daemon"], allow_none=True):
+        return False
+    if not _journal_process_valid(payload["containerd"], allow_none=True):
+        return False
+    for key in ("runtime", "config", "daemon_root"):
+        if not _journal_path_valid(payload[key], allow_none=True):
+            return False
+    if not _journal_path_valid(payload["stage_root"]):
+        return False
+    stages = payload["stages"]
+    if (
+        type(stages) is not list
+        or len(stages) > 256
+        or any(
+            type(stage) is not dict
+            or set(stage)
+            != {
+                "source_path",
+                "source_device",
+                "source_inode",
+                "source_mode",
+                "descriptor_device",
+                "descriptor_inode",
+                "mount_id",
+                "readonly",
+                "source_parent_path",
+                "source_parent_device",
+                "source_parent_inode",
+            }
+            or type(stage["source_path"]) is not str
+            or not stage["source_path"].startswith("/")
+            or os.path.normpath(stage["source_path"]) != stage["source_path"]
+            or type(stage["source_parent_path"]) is not str
+            or not stage["source_parent_path"].startswith("/")
+            or os.path.normpath(stage["source_parent_path"])
+            != stage["source_parent_path"]
+            or os.path.dirname(stage["source_path"]) != stage["source_parent_path"]
+            or any(
+                type(stage[key]) is not int or stage[key] < 0
+                for key in (
+                    "source_device",
+                    "source_inode",
+                    "source_mode",
+                    "descriptor_device",
+                    "descriptor_inode",
+                    "mount_id",
+                    "source_parent_device",
+                    "source_parent_inode",
+                )
+            )
+            or type(stage["readonly"]) is not bool
+            for stage in stages
+        )
+    ):
+        return False
+    container = payload["container"]
+    if (
+        type(container) is not dict
+        or set(container) != {"id", "name", "labels"}
+        or (
+            container["id"] is not None
+            and (
+                type(container["id"]) is not str
+                or len(container["id"]) != 64
+                or any(char not in "0123456789abcdef" for char in container["id"])
+            )
+        )
+        or type(container["name"]) is not str
+        or len(container["name"]) > 256
+        or type(container["labels"]) is not dict
+        or len(container["labels"]) > 64
+        or any(
+            type(key) is not str
+            or not key
+            or len(key) > 256
+            or type(value) is not str
+            or len(value) > 256
+            for key, value in container["labels"].items()
+        )
+    ):
+        return False
+    proof = payload["proof"]
+    if (
+        type(proof) is not dict
+        or set(proof)
+        != {
+            "container_absence",
+            "stages_absence",
+            "daemon_absence",
+            "containerd_absence",
+            "runtime_absence",
+            "config_absence",
+            "root_absence",
+        }
+        or any(type(value) is not bool for value in proof.values())
+    ):
+        return False
+    return payload["state"] != "FINAL" or all(proof.values())
+
+
+def validate_supervisor_receipt(
+    receipt: Mapping[str, Any],
+    *,
+    authenticator: Any,
+    expected_lease_id: str | None = None,
+    expected_generation_digest: str | None = None,
+    expected_owner_token_digest: str | None = None,
+) -> bool:
+    """Validate one bounded, authenticated supervisor receipt."""
+    try:
+        if (
+            type(receipt) is not dict
+            or set(receipt)
+            != {"payload", "checksum", "key_id", "algorithm", "signature_base64"}
+            or receipt["key_id"] != authenticator.key_id
+            or receipt["algorithm"] != authenticator.algorithm
+        ):
+            return False
+        payload = receipt["payload"]
+        checksum = receipt["checksum"]
+        unsigned = {
+            "payload": payload,
+            "checksum": checksum,
+            "key_id": receipt["key_id"],
+            "algorithm": receipt["algorithm"],
+        }
+        signature = base64.b64decode(receipt["signature_base64"], validate=True)
+        return (
+            type(checksum) is str
+            and checksum == _journal_digest(_canonical(payload))
+            and authenticator.verify(_canonical(unsigned), signature)
+            and _validate_journal_payload(
+                payload,
+                expected_lease_id=expected_lease_id,
+                expected_generation_digest=expected_generation_digest,
+                expected_owner_token_digest=expected_owner_token_digest,
+            )
+        )
+    except (AttributeError, TypeError, ValueError, OSError):
+        return False
+
+
+def _atomic_journal_write(
+    root_fd: int,
+    lease_id: str,
+    payload: Mapping[str, Any],
+    *,
+    authenticator: Any,
+) -> None:
+    name = _journal_name(lease_id)
+    checksum = _journal_digest(_canonical(payload))
+    unsigned = {
+        "payload": dict(payload),
+        "checksum": checksum,
+        "key_id": authenticator.key_id,
+        "algorithm": authenticator.algorithm,
+    }
+    envelope = {
+        **unsigned,
+        "signature_base64": base64.b64encode(
+            authenticator.sign(_canonical(unsigned))
+        ).decode("ascii"),
+    }
+    encoded = _canonical(envelope)
+    if len(encoded) > _SUPERVISOR_JOURNAL_LIMIT:
+        raise OSError(errno.EFBIG, "supervisor journal exceeds fixed bound")
+    directory_fd = os.dup(root_fd)
+    temporary = "." + name + ".tmp-" + secrets.token_hex(16)
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+            dir_fd=directory_fd,
+        )
+        offset = 0
+        while offset < len(encoded):
+            count = _retry_write(descriptor, encoded[offset:])
+            if count <= 0:
+                raise OSError("short supervisor journal write")
+            offset += count
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.replace(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+        os.fsync(directory_fd)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            os.unlink(temporary, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
+        os.close(directory_fd)
+
+
+def _read_journal(
+    root_fd: int,
+    lease_id: str,
+    *,
+    authenticator: Any,
+) -> dict[str, Any]:
+    name = _journal_name(lease_id)
+    descriptor = os.open(
+        name,
+        os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0),
+        dir_fd=root_fd,
+    )
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_nlink != 1
+            or metadata.st_size > _SUPERVISOR_JOURNAL_LIMIT
+        ):
+            raise OSError("supervisor journal inode is not bounded")
+        chunks: list[bytes] = []
+        offset = 0
+        while offset < metadata.st_size:
+            chunk = _retry_pread(
+                descriptor, min(64 * 1024, metadata.st_size - offset), offset
+            )
+            if not chunk:
+                raise OSError("supervisor journal short read")
+            chunks.append(chunk)
+            offset += len(chunk)
+        envelope = _decode(b"".join(chunks))
+        if not validate_supervisor_receipt(
+            envelope,
+            authenticator=authenticator,
+            expected_lease_id=lease_id,
+        ):
+            raise OSError("supervisor journal authentication failed")
+        return envelope
+    finally:
+        os.close(descriptor)
+
+
+def _bounded_journal_names(root_fd: int) -> tuple[str, ...]:
+    names: list[str] = []
+    total = 0
+    with os.scandir(root_fd) as entries:
+        for entry in entries:
+            total += 1
+            if total > _SUPERVISOR_JOURNAL_TOTAL_ENTRY_LIMIT:
+                raise MountNamespaceBrokerError(
+                    "runtime_cleanup_pending",
+                    "supervisor journal directory exceeds its fixed entry bound",
+                )
+            name = entry.name
+            if (
+                name.endswith(".supervisor.json")
+                and "/" not in name
+                and name not in {".", ".."}
+            ):
+                names.append(name)
+                if len(names) > _SUPERVISOR_JOURNAL_INVENTORY_LIMIT:
+                    raise MountNamespaceBrokerError(
+                        "runtime_cleanup_pending",
+                        "supervisor journal inventory exceeds its fixed bound",
+                    )
+    return tuple(sorted(names))
+
+
+def _prune_final_journals(
+    root_fd: int,
+    *,
+    authenticator: Any,
+    keep: int = _SUPERVISOR_FINAL_RETENTION,
+) -> None:
+    finals: list[tuple[int, str]] = []
+    for name in _bounded_journal_names(root_fd):
+        lease_id = name.removesuffix(".supervisor.json")
+        try:
+            envelope = _read_journal(
+                root_fd,
+                lease_id,
+                authenticator=authenticator,
+            )
+            metadata = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
+        except OSError:
+            continue
+        payload = envelope["payload"]
+        if payload["state"] == "FINAL" and all(payload["proof"].values()):
+            finals.append((metadata.st_mtime_ns, name))
+    remove_count = len(finals) - keep
+    if remove_count <= 0:
+        return
+    removed = False
+    for _, name in sorted(finals)[:remove_count]:
+        try:
+            os.unlink(name, dir_fd=root_fd)
+        except FileNotFoundError:
+            continue
+        removed = True
+    if removed:
+        os.fsync(root_fd)
+
+
+def _read_lease_journal_authority(
+    lease_root_fd: int, payload: Mapping[str, Any]
+) -> bool:
+    lease_id = payload["lease_id"]
+    try:
+        descriptor = os.open(
+            lease_id + ".json",
+            os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0),
+            dir_fd=lease_root_fd,
+        )
+    except FileNotFoundError:
+        proof = payload["proof"]
+        return proof["container_absence"] is True and proof["stages_absence"] is True
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_nlink != 1
+            or metadata.st_size > 65_536
+        ):
+            return False
+        encoded = _retry_pread(descriptor, metadata.st_size, 0)
+        if len(encoded) != metadata.st_size:
+            return False
+        envelope = _decode(encoded)
+        if (
+            type(envelope) is not dict
+            or set(envelope) != {"payload", "checksum"}
+            or type(envelope["payload"]) is not dict
+            or envelope["checksum"] != _journal_digest(_canonical(envelope["payload"]))
+        ):
+            return False
+        lease = envelope["payload"]
+        owner_token = lease.get("owner_token")
+        return (
+            type(owner_token) is str
+            and _journal_digest(owner_token.encode("utf-8"))
+            == payload["owner_token_digest"]
+            and lease.get("lease_id") == lease_id
+            and lease.get("workspace_id") == payload["workspace_id"]
+            and lease.get("epoch") == payload["epoch"]
+            and lease.get("role") == payload["role"]
+            and lease.get("effective_plan_digest") == payload["plan_digest"]
+        )
+    except (OSError, TypeError, ValueError):
+        return False
+    finally:
+        os.close(descriptor)
+
+
+def _journal_process_absent(process: Mapping[str, Any] | None) -> bool:
+    if process is None:
+        return True
+    pid = process["pid"]
+    try:
+        raw = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+    except FileNotFoundError:
+        return True
+    except OSError:
+        raise
+    try:
+        fields = raw[raw.rindex(")") + 2 :].split()
+    except ValueError as exc:
+        raise OSError("process identity observation is malformed") from exc
+    if len(fields) < 20:
+        raise OSError("process identity observation is incomplete")
+    if fields[19] != process["starttime"]:
+        return True
+    try:
+        executable = os.stat(f"/proc/{pid}/exe", follow_symlinks=True)
+        namespace = os.stat(f"/proc/{pid}/ns/mnt", follow_symlinks=False)
+        pgid = os.getpgid(pid)
+    except (FileNotFoundError, ProcessLookupError):
+        return True
+    if (
+        pgid != process["pgid"]
+        or executable.st_dev != process["executable_device"]
+        or executable.st_ino != process["executable_inode"]
+        or executable.st_ctime_ns != process["executable_ctime_ns"]
+        or executable.st_size != process["executable_size"]
+        or namespace.st_dev != process["namespace_device"]
+        or namespace.st_ino != process["namespace_inode"]
+    ):
+        raise OSError("live process identity changed")
+    descriptor = os.open(
+        f"/proc/{pid}/exe",
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0),
+    )
+    try:
+        if _digest_fd_exact(descriptor) != process["executable_digest"]:
+            raise OSError("live process executable digest changed")
+    finally:
+        os.close(descriptor)
+    return False
+
+
+def _journal_path_name_absent(path: str) -> bool:
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return True
+    return False
+
+
+def _journal_path_absent(path: Mapping[str, Any] | None) -> bool:
+    if path is None:
+        return True
+    parent_fd = os.open(
+        path["parent_path"],
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        parent = os.fstat(parent_fd)
+        if (parent.st_dev, parent.st_ino) != (
+            path["parent_device"],
+            path["parent_inode"],
+        ):
+            raise OSError("journal path parent authority changed")
+        try:
+            target = os.stat(
+                os.path.basename(path["path"]),
+                dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            return True
+        if (
+            target.st_dev,
+            target.st_ino,
+            stat.S_IMODE(target.st_mode),
+        ) != (
+            path["device"],
+            path["inode"],
+            path["mode"],
+        ):
+            raise OSError("journal path authority changed")
+        return False
+    finally:
+        os.close(parent_fd)
+
+
+def _journal_stage_absent(stage: Mapping[str, Any]) -> bool:
+    return _journal_path_absent(
+        {
+            "path": stage["source_path"],
+            "device": stage["source_device"],
+            "inode": stage["source_inode"],
+            "mode": stage["source_mode"],
+            "parent_path": stage["source_parent_path"],
+            "parent_device": stage["source_parent_device"],
+            "parent_inode": stage["source_parent_inode"],
+        }
+    )
+
+
+def recover_supervisor_journals(
+    journal_root_fd: int,
+    lease_root_fd: int,
+    *,
+    authenticator: Any,
+) -> tuple[Mapping[str, Any], ...]:
+    """Authenticate prior lease journals and finalize only observed absence."""
+    names = _bounded_journal_names(journal_root_fd)
+    recovered: list[Mapping[str, Any]] = []
+    residuals: list[str] = []
+    for name in names:
+        lease_id = name.removesuffix(".supervisor.json")
+        envelope = _read_journal(
+            journal_root_fd,
+            lease_id,
+            authenticator=authenticator,
+        )
+        payload = envelope["payload"]
+        if payload["state"] == "FINAL" and not all(payload["proof"].values()):
+            residuals.append(lease_id + ":invalid_final")
+            continue
+        if not _read_lease_journal_authority(lease_root_fd, payload):
+            residuals.append(lease_id + ":authority")
+            continue
+        try:
+            process_absence = {
+                "broker_absence": _journal_process_absent(payload["broker"]),
+                "daemon_absence": _journal_process_absent(payload["daemon"]),
+                "containerd_absence": _journal_process_absent(payload["containerd"]),
+            }
+            root_absence = _journal_path_absent(payload["daemon_root"])
+            stage_root_absence = root_absence or _journal_path_absent(
+                payload["stage_root"]
+            )
+            path_absence = {
+                "runtime_absence": root_absence
+                or _journal_path_absent(payload["runtime"]),
+                "config_absence": root_absence
+                or _journal_path_absent(payload["config"]),
+                "stages_absence": stage_root_absence
+                or all(_journal_stage_absent(stage) for stage in payload["stages"]),
+            }
+        except OSError:
+            payload["state"] = "QUARANTINED"
+            payload["proof"] = {key: False for key in payload["proof"]}
+            _atomic_journal_write(
+                journal_root_fd,
+                lease_id,
+                payload,
+                authenticator=authenticator,
+            )
+            residuals.append(lease_id + ":observation")
+            continue
+        proof = {
+            "container_absence": (
+                payload["proof"]["container_absence"]
+                or (
+                    process_absence["daemon_absence"]
+                    and process_absence["containerd_absence"]
+                    and root_absence
+                )
+            ),
+            "stages_absence": path_absence["stages_absence"],
+            "daemon_absence": process_absence["daemon_absence"],
+            "containerd_absence": process_absence["containerd_absence"],
+            "runtime_absence": path_absence["runtime_absence"],
+            "config_absence": path_absence["config_absence"],
+            "root_absence": root_absence,
+        }
+        final = process_absence["broker_absence"] and all(proof.values())
+        payload["state"] = "FINAL" if final else "QUARANTINED"
+        payload["proof"] = proof
+        _atomic_journal_write(
+            journal_root_fd,
+            lease_id,
+            payload,
+            authenticator=authenticator,
+        )
+        recovered_envelope = _read_journal(
+            journal_root_fd,
+            lease_id,
+            authenticator=authenticator,
+        )
+        recovered.append(MappingProxyType(recovered_envelope))
+        if not final:
+            residuals.append(lease_id + ":residual")
+    _prune_final_journals(
+        journal_root_fd,
+        authenticator=authenticator,
+    )
+    if residuals:
+        raise MountNamespaceBrokerError(
+            "runtime_cleanup_pending",
+            "prior supervisor cleanup is not proven",
+            details={"residuals": tuple(residuals)},
+        )
+    return tuple(recovered)
 
 
 def _child_loop(
@@ -1582,8 +2442,7 @@ def _child_loop(
                         if (
                             not stat.S_ISREG(input_metadata.st_mode)
                             or input_metadata.st_size != input_size
-                            or fcntl.fcntl(input_fd, fcntl.F_GET_SEALS)
-                            & required_seals
+                            or fcntl.fcntl(input_fd, fcntl.F_GET_SEALS) & required_seals
                             != required_seals
                             or _digest_fd_exact(input_fd) != input_digest
                         ):
@@ -1600,7 +2459,7 @@ def _child_loop(
                         or type(timeout_ms) is not int
                         or not 1 <= timeout_ms <= 600_000
                         or type(output_limit) is not int
-                        or not 1 <= output_limit <= (1 << 53) - 1
+                        or not 1 <= output_limit <= _MAX_OUTPUT
                     ):
                         raise ValueError("execute request is out of bounds")
                     if (
@@ -1610,11 +2469,12 @@ def _child_loop(
                         raise ValueError("Docker argv0 is not approved")
                     (
                         returncode,
-                        stdout,
-                        stderr,
+                        response_fds,
+                        output_sizes,
+                        output_digests,
                         timed_out,
                         output_limited,
-                    ) = _execute_bounded(
+                    ) = _execute_bounded_descriptors(
                         argv,
                         executable_fd=executable_fd,
                         timeout_ms=timeout_ms,
@@ -1633,19 +2493,12 @@ def _child_loop(
                             expected_mount_id=runtime_mount_id,
                             expected_tmpfs_size=runtime_tmpfs_size,
                         )
-                    stdout_fd = _sealed_payload_fd(stdout)
-                    try:
-                        stderr_fd = _sealed_payload_fd(stderr)
-                    except BaseException:
-                        os.close(stdout_fd)
-                        raise
-                    response_fds = (stdout_fd, stderr_fd)
                     result = {
                         "returncode": returncode,
-                        "stdout_size": len(stdout),
-                        "stdout_digest": "sha256:" + hashlib.sha256(stdout).hexdigest(),
-                        "stderr_size": len(stderr),
-                        "stderr_digest": "sha256:" + hashlib.sha256(stderr).hexdigest(),
+                        "stdout_size": output_sizes[0],
+                        "stdout_digest": output_digests[0],
+                        "stderr_size": output_sizes[1],
+                        "stderr_digest": output_digests[1],
                         "timed_out": timed_out,
                         "output_limited": output_limited,
                     }
@@ -1777,9 +2630,7 @@ def _child_loop(
     except BaseException as exc:
         serialized = _error_detail_value(getattr(exc, "details", None))
         details = serialized if isinstance(serialized, dict) else {}
-        details["exception_leaves"] = _exception_leaves(
-            exc, operation="startup"
-        )
+        details["exception_leaves"] = _exception_leaves(exc, operation="startup")
         details["startup_step"] = startup_step
         if isinstance(exc, OSError) and exc.errno is not None:
             details["errno"] = exc.errno
@@ -2071,6 +2922,9 @@ class MountNamespaceBroker:
         *,
         daemon_authority: Any | None = None,
         progress_fd: int | None = None,
+        journal_root_fd: int | None = None,
+        journal_root_path: str | Path | None = None,
+        journal_authenticator: Any | None = None,
     ) -> None:
         if os.name != "posix" or not Path("/proc/self/mountinfo").exists():
             raise MountNamespaceBrokerError(
@@ -2095,6 +2949,49 @@ class MountNamespaceBroker:
                 "runtime_unsupported", "broker stage parent is not sealed"
             )
         self._daemon_root_fd = -1
+        self._journal_root_fd = -1
+        self._journal_root_path: str | None = None
+        self._journal_authenticator = journal_authenticator
+        if (journal_root_fd is None) != (journal_root_path is None):
+            raise MountNamespaceBrokerError(
+                "runtime_unsupported",
+                "journal root requires its pinned descriptor and path",
+            )
+        if journal_root_fd is not None and journal_root_path is not None:
+            journal_path = os.path.abspath(os.fspath(journal_root_path))
+            try:
+                supplied_journal = os.stat(journal_path, follow_symlinks=False)
+                opened_journal = os.fstat(journal_root_fd)
+            except OSError as exc:
+                raise MountNamespaceBrokerError(
+                    "runtime_unsupported",
+                    "journal root authority is unavailable",
+                ) from exc
+            if (
+                not stat.S_ISDIR(supplied_journal.st_mode)
+                or not stat.S_ISDIR(opened_journal.st_mode)
+                or (supplied_journal.st_dev, supplied_journal.st_ino)
+                != (opened_journal.st_dev, opened_journal.st_ino)
+                or supplied_journal.st_uid != os.geteuid()
+                or stat.S_IMODE(supplied_journal.st_mode) & 0o077
+                or stat.S_IMODE(opened_journal.st_mode)
+                != stat.S_IMODE(supplied_journal.st_mode)
+            ):
+                raise MountNamespaceBrokerError(
+                    "runtime_unsupported", "journal root authority is not sealed"
+                )
+            if (
+                journal_authenticator is None
+                or not callable(getattr(journal_authenticator, "sign", None))
+                or not callable(getattr(journal_authenticator, "verify", None))
+                or type(getattr(journal_authenticator, "key_id", None)) is not str
+                or getattr(journal_authenticator, "algorithm", None) != "hmac-sha256-v1"
+            ):
+                raise MountNamespaceBrokerError(
+                    "runtime_unsupported",
+                    "journal authentication authority is unavailable",
+                )
+            self._journal_root_path = journal_path
         if daemon_authority is not None:
             if (
                 self._stage_root != daemon_authority.mount_stage_root
@@ -2169,6 +3066,9 @@ class MountNamespaceBroker:
         self._cleanup_verified = False
         self._reaped = False
         self._wait_status: int | None = None
+        self._journal_bindings: dict[str, dict[str, Any]] = {}
+        self._global_journal_lease_id: str | None = None
+        self._stage_leases: dict[str, str] = {}
         response: Mapping[str, Any] = {}
         try:
             response, fds = _receive(self._socket)
@@ -2291,6 +3191,8 @@ class MountNamespaceBroker:
                     parent_pid=os.getpid(),
                 )
                 self.containerd_observation = daemon["containerd"]
+            if journal_root_fd is not None:
+                self._journal_root_fd = os.dup(journal_root_fd)
         except BaseException as primary:
             cleanup_errors: list[BaseException] = []
             try:
@@ -2319,12 +3221,336 @@ class MountNamespaceBroker:
             if self._daemon_root_fd >= 0:
                 os.close(self._daemon_root_fd)
                 self._daemon_root_fd = -1
+            if self._journal_root_fd >= 0:
+                os.close(self._journal_root_fd)
+                self._journal_root_fd = -1
             if cleanup_errors:
                 raise BaseExceptionGroup(
                     "broker startup and cleanup failed",
                     [primary, *cleanup_errors],
                 ) from None
             raise
+
+    @staticmethod
+    def _journal_process(
+        pid: int,
+        starttime: str,
+        *,
+        executable_device: int,
+        executable_inode: int,
+        executable_ctime_ns: int,
+        executable_size: int,
+        executable_digest: str,
+    ) -> dict[str, Any]:
+        namespace = os.stat(f"/proc/{pid}/ns/mnt", follow_symlinks=False)
+        return {
+            "pid": pid,
+            "starttime": starttime,
+            "pgid": os.getpgid(pid),
+            "executable_device": executable_device,
+            "executable_inode": executable_inode,
+            "executable_ctime_ns": executable_ctime_ns,
+            "executable_size": executable_size,
+            "executable_digest": executable_digest,
+            "namespace_device": namespace.st_dev,
+            "namespace_inode": namespace.st_ino,
+        }
+
+    @staticmethod
+    def _journal_path(
+        path: str,
+        *,
+        device: int,
+        inode: int,
+        mode: int,
+        digest: str,
+    ) -> dict[str, Any]:
+        parent_path = os.path.dirname(path)
+        parent = os.stat(parent_path, follow_symlinks=False)
+        return {
+            "path": path,
+            "device": device,
+            "inode": inode,
+            "mode": mode,
+            "digest": digest,
+            "parent_path": parent_path,
+            "parent_device": parent.st_dev,
+            "parent_inode": parent.st_ino,
+        }
+
+    def _journal_base(
+        self,
+        *,
+        lease_id: str,
+        workspace_id: str,
+        epoch: int,
+        role: str,
+        plan_digest: str,
+        owner_token: str,
+    ) -> dict[str, Any]:
+        if self._journal_root_fd < 0:
+            raise MountNamespaceBrokerError(
+                "runtime_unsupported", "secure supervisor journal is unavailable"
+            )
+        observation = self.observation
+        broker_exe = self._journal_process(
+            observation.pid,
+            observation.starttime,
+            executable_device=observation.executable_device,
+            executable_inode=observation.executable_inode,
+            executable_ctime_ns=observation.executable_ctime_ns,
+            executable_size=observation.executable_size,
+            executable_digest=observation.executable_digest,
+        )
+        daemon = containerd = runtime = config = daemon_root = None
+        if self.daemon_binding is not None:
+            binding = self.daemon_binding
+            daemon = self._journal_process(
+                binding.daemon_pid,
+                binding.daemon_starttime,
+                executable_device=binding.daemon_executable_device,
+                executable_inode=binding.daemon_executable_inode,
+                executable_ctime_ns=binding.daemon_executable_ctime_ns,
+                executable_size=binding.daemon_executable_size,
+                executable_digest=binding.daemon_executable_digest,
+            )
+            config_metadata = os.fstat(binding.config_fd)
+            config_path = self._daemon_authority.config_path
+            config_path_metadata = os.stat(config_path, follow_symlinks=False)
+            if (
+                config_path_metadata.st_dev,
+                config_path_metadata.st_ino,
+            ) != (
+                config_metadata.st_dev,
+                config_metadata.st_ino,
+            ):
+                raise MountNamespaceBrokerError(
+                    "runtime_unsupported",
+                    "daemon config path authority changed",
+                )
+            daemon_root_path = self._daemon_authority.daemon_root
+            daemon_root_metadata = os.stat(
+                daemon_root_path,
+                follow_symlinks=False,
+            )
+            daemon_root_digest = _journal_digest(
+                _canonical(
+                    {
+                        "device": daemon_root_metadata.st_dev,
+                        "inode": daemon_root_metadata.st_ino,
+                        "mode": stat.S_IMODE(daemon_root_metadata.st_mode),
+                    }
+                )
+            )
+            daemon_root = self._journal_path(
+                daemon_root_path,
+                device=daemon_root_metadata.st_dev,
+                inode=daemon_root_metadata.st_ino,
+                mode=stat.S_IMODE(daemon_root_metadata.st_mode),
+                digest=daemon_root_digest,
+            )
+            config = self._journal_path(
+                config_path,
+                device=config_metadata.st_dev,
+                inode=config_metadata.st_ino,
+                mode=stat.S_IMODE(config_metadata.st_mode),
+                digest=binding.daemon_config_digest,
+            )
+            runtime_metadata = os.fstat(binding.runtime_fd)
+            runtime = self._journal_path(
+                binding.runtime_registered_path,
+                device=runtime_metadata.st_dev,
+                inode=runtime_metadata.st_ino,
+                mode=stat.S_IMODE(runtime_metadata.st_mode),
+                digest=binding.runtime_digest,
+            )
+            if self.containerd_observation is not None:
+                child = self.containerd_observation
+                containerd = self._journal_process(
+                    child.pid,
+                    child.starttime,
+                    executable_device=child.executable_device,
+                    executable_inode=child.executable_inode,
+                    executable_ctime_ns=child.executable_ctime_ns,
+                    executable_size=child.executable_size,
+                    executable_digest=child.executable_digest,
+                )
+        stage_root = os.stat(observation.stage_root, follow_symlinks=False)
+        stage_digest = _journal_digest(
+            _canonical(
+                {
+                    "device": stage_root.st_dev,
+                    "inode": stage_root.st_ino,
+                    "mode": stat.S_IMODE(stage_root.st_mode),
+                }
+            )
+        )
+        generation = f"{lease_id}:{workspace_id}:{epoch}:{role}:{plan_digest}"
+        generation_digest = _journal_digest(generation.encode("utf-8"))
+        return {
+            "schema_version": SUPERVISOR_JOURNAL_SCHEMA_VERSION,
+            "state": "ACTIVE",
+            "generation": generation,
+            "generation_digest": generation_digest,
+            "owner_token_digest": _journal_digest(owner_token.encode("utf-8")),
+            "lease_id": lease_id,
+            "workspace_id": workspace_id,
+            "epoch": epoch,
+            "role": role,
+            "plan_digest": plan_digest,
+            "broker": broker_exe,
+            "daemon": daemon,
+            "containerd": containerd,
+            "runtime": runtime,
+            "config": config,
+            "daemon_root": daemon_root,
+            "stage_root": self._journal_path(
+                observation.stage_root,
+                device=stage_root.st_dev,
+                inode=stage_root.st_ino,
+                mode=stat.S_IMODE(stage_root.st_mode),
+                digest=stage_digest,
+            ),
+            "stages": [],
+            "container": {"id": None, "name": "", "labels": {}},
+            "proof": {
+                "container_absence": False,
+                "stages_absence": False,
+                "daemon_absence": False,
+                "containerd_absence": False,
+                "runtime_absence": False,
+                "config_absence": False,
+                "root_absence": False,
+            },
+        }
+
+    def _journal_update(self, lease_id: str, **changes: Any) -> None:
+        if self._journal_root_fd < 0:
+            return
+        payload = self._journal_bindings.get(lease_id)
+        if payload is None:
+            raise MountNamespaceBrokerError(
+                "runtime_unsupported", "lease journal binding is absent"
+            )
+        payload.update(changes)
+        if not _validate_journal_payload(payload):
+            raise MountNamespaceBrokerError(
+                "runtime_unsupported", "lease journal update is not exact"
+            )
+        _atomic_journal_write(
+            self._journal_root_fd,
+            lease_id,
+            payload,
+            authenticator=self._journal_authenticator,
+        )
+
+    def record_lease_binding(
+        self,
+        *,
+        lease_id: str,
+        workspace_id: str,
+        epoch: int,
+        role: str,
+        plan_digest: str,
+        owner_token: str,
+    ) -> None:
+        payload = self._journal_base(
+            lease_id=lease_id,
+            workspace_id=workspace_id,
+            epoch=epoch,
+            role=role,
+            plan_digest=plan_digest,
+            owner_token=owner_token,
+        )
+        if not _validate_journal_payload(payload):
+            raise MountNamespaceBrokerError(
+                "runtime_unsupported", "lease journal binding is not exact"
+            )
+        _atomic_journal_write(
+            self._journal_root_fd,
+            lease_id,
+            payload,
+            authenticator=self._journal_authenticator,
+        )
+        self._journal_bindings[lease_id] = payload
+
+    def record_container_identity(
+        self,
+        lease_id: str,
+        *,
+        container_id: str,
+        name: str,
+        labels: Mapping[str, str],
+    ) -> None:
+        if (
+            type(container_id) is not str
+            or len(container_id) != 64
+            or any(char not in "0123456789abcdef" for char in container_id)
+        ):
+            raise MountNamespaceBrokerError(
+                "runtime_unsupported", "container identity is not exact"
+            )
+        self._journal_update(
+            lease_id,
+            container={
+                "id": container_id,
+                "name": name,
+                "labels": dict(labels),
+            },
+        )
+
+    def record_cleanup_receipt(
+        self,
+        lease_id: str,
+        *,
+        proof: Mapping[str, bool],
+        state: str = "FINAL",
+    ) -> None:
+        if set(proof) != {
+            "container_absence",
+            "stages_absence",
+            "daemon_absence",
+            "containerd_absence",
+            "runtime_absence",
+            "config_absence",
+            "root_absence",
+        } or any(type(value) is not bool for value in proof.values()):
+            raise MountNamespaceBrokerError(
+                "runtime_unsupported", "cleanup proof is not exact"
+            )
+        if state not in {"ACTIVE", "FINAL", "QUARANTINED"}:
+            raise ValueError("cleanup receipt state is invalid")
+        self._journal_update(lease_id, state=state, proof=dict(proof))
+        if state == "ACTIVE" and proof["container_absence"] and proof["stages_absence"]:
+            if self._global_journal_lease_id is None:
+                self._global_journal_lease_id = lease_id
+            elif self._global_journal_lease_id != lease_id:
+                self.unlink_supervisor_receipt(lease_id)
+                self._journal_bindings.pop(lease_id, None)
+
+    def read_supervisor_receipt(self, lease_id: str) -> Mapping[str, Any]:
+        if self._journal_root_fd < 0:
+            raise MountNamespaceBrokerError(
+                "runtime_unsupported", "secure supervisor journal is unavailable"
+            )
+        return MappingProxyType(
+            _read_journal(
+                self._journal_root_fd,
+                lease_id,
+                authenticator=self._journal_authenticator,
+            )
+        )
+
+    def unlink_supervisor_receipt(self, lease_id: str) -> None:
+        if self._journal_root_fd < 0:
+            raise MountNamespaceBrokerError(
+                "runtime_unsupported", "secure supervisor journal is unavailable"
+            )
+        try:
+            os.unlink(_journal_name(lease_id), dir_fd=self._journal_root_fd)
+        except FileNotFoundError:
+            return
+        os.fsync(self._journal_root_fd)
 
     @property
     def docker_invocation(self) -> ExecutableInvocation:
@@ -2363,22 +3589,53 @@ class MountNamespaceBroker:
         executable = self.docker_invocation
         host_prefix = ("--host", "unix://" + binding.socket_path)
         argv = (executable.argv0, *host_prefix, *tuple(argv_tail))
-        result = self._call(
-            "execute",
-            {
-                "argv": list(argv),
-                "digest": executable.digest,
-                "environment": [],
-                "timeout_ms": timeout_ms,
-                "output_limit": output_limit,
-            },
-            (executable.executable_fd,),
-        )
+        returned_fds: tuple[int, ...] = ()
+        try:
+            result, returned_fds = self._call(
+                "execute",
+                {
+                    "argv": list(argv),
+                    "digest": executable.digest,
+                    "environment": [],
+                    "timeout_ms": timeout_ms,
+                    "output_limit": output_limit,
+                },
+                (executable.executable_fd,),
+                expected_return_fds=2,
+            )
+            stdout_size = result.get("stdout_size")
+            stderr_size = result.get("stderr_size")
+            if (
+                type(stdout_size) is not int
+                or type(stderr_size) is not int
+                or stdout_size < 0
+                or stderr_size < 0
+                or stdout_size + stderr_size > output_limit
+            ):
+                raise MountNamespaceBrokerError(
+                    "runtime_unsupported",
+                    "broker output descriptor bounds are invalid",
+                )
+            stdout = _read_sealed_payload_fd(
+                returned_fds[0],
+                expected_size=stdout_size,
+                expected_digest=result.get("stdout_digest"),
+                limit=output_limit,
+            )
+            stderr = _read_sealed_payload_fd(
+                returned_fds[1],
+                expected_size=stderr_size,
+                expected_digest=result.get("stderr_digest"),
+                limit=output_limit - stdout_size,
+            )
+        finally:
+            for returned_fd in returned_fds:
+                os.close(returned_fd)
         return DockerCommandResult(
             argv,
             result["returncode"],
-            base64.b64decode(result["stdout"], validate=True),
-            base64.b64decode(result["stderr"], validate=True),
+            stdout,
+            stderr,
             timed_out=result["timed_out"],
             output_limited=result["output_limited"],
         )
@@ -2425,10 +3682,7 @@ class MountNamespaceBroker:
             )
 
     def _remove_daemon_root(self) -> None:
-        if (
-            self._daemon_authority is None
-            or getattr(self, "_daemon_root_fd", -1) < 0
-        ):
+        if self._daemon_authority is None or getattr(self, "_daemon_root_fd", -1) < 0:
             return
         root = self._daemon_authority.daemon_root
         try:
@@ -2436,9 +3690,9 @@ class MountNamespaceBroker:
         except FileNotFoundError:
             return
         held = os.fstat(self._daemon_root_fd)
-        if (
-            not stat.S_ISDIR(current.st_mode)
-            or (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino)
+        if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (
+            held.st_dev,
+            held.st_ino,
         ):
             raise MountNamespaceBrokerError(
                 "runtime_unsupported",
@@ -2596,6 +3850,7 @@ class MountNamespaceBroker:
                 )
             }
         )
+        self._stage_leases[staged.source_path] = lease_id
         self.record_stage_receipt(staged, result)
         return staged
 
@@ -2650,6 +3905,17 @@ class MountNamespaceBroker:
                 "runtime_unsupported", "broker did not prove stage absence"
             )
         self._receipts.pop(staged.source_path)
+        lease_id = self._stage_leases.pop(staged.source_path, None)
+        if lease_id is not None and lease_id in self._journal_bindings:
+            payload = self._journal_bindings[lease_id]
+            self._journal_update(
+                lease_id,
+                stages=[
+                    item
+                    for item in payload["stages"]
+                    if item.get("source_path") != staged.source_path
+                ],
+            )
 
     def record_stage_receipt(
         self, staged: StagedDockerDescriptorMount, result: Mapping[str, Any]
@@ -2657,6 +3923,21 @@ class MountNamespaceBroker:
         if not hasattr(self, "_receipts"):
             self._receipts: dict[str, dict[str, Any]] = {}
         self._receipts[staged.source_path] = dict(result)
+        lease_id = self._stage_leases.get(staged.source_path)
+        if lease_id is not None and lease_id in self._journal_bindings:
+            payload = self._journal_bindings[lease_id]
+            parent_path = os.path.dirname(staged.source_path)
+            parent = os.stat(parent_path, follow_symlinks=False)
+            journal_result = {
+                **dict(result),
+                "source_parent_path": parent_path,
+                "source_parent_device": parent.st_dev,
+                "source_parent_inode": parent.st_ino,
+            }
+            self._journal_update(
+                lease_id,
+                stages=[*payload["stages"], journal_result],
+            )
 
     def record_progress(
         self, event: str, phase: str, details: Mapping[str, Any] | None = None
@@ -2671,9 +3952,11 @@ class MountNamespaceBroker:
             )
 
     def close(self) -> None:
-        if self._cleanup_verified:
+        if getattr(self, "_cleanup_verified", False) or (
+            getattr(self, "_resources_closed", False)
+            and not getattr(self, "_journal_bindings", None)
+        ):
             return
-
         errors: list[BaseException] = []
         status = self._wait_status
         graceful = False
@@ -2813,8 +4096,8 @@ class MountNamespaceBroker:
             if getattr(self, "_daemon_root_fd", -1) >= 0:
                 residual_paths.append(authority.daemon_root)
         try:
-            absent = not any(os.path.lexists(path) for path in residual_paths)
-        except BaseException as exc:
+            absent = all(_journal_path_name_absent(path) for path in residual_paths)
+        except OSError as exc:
             errors.append(exc)
             absent = False
 
@@ -2827,10 +4110,13 @@ class MountNamespaceBroker:
                 errors.append(exc)
         self._authority_fds = failed_authority_fds
         if getattr(self, "_daemon_root_fd", -1) >= 0:
-            root_absent = (
-                self._daemon_authority is None
-                or not os.path.lexists(self._daemon_authority.daemon_root)
-            )
+            try:
+                root_absent = self._daemon_authority is None or (
+                    _journal_path_name_absent(self._daemon_authority.daemon_root)
+                )
+            except OSError as exc:
+                errors.append(exc)
+                root_absent = False
             if root_absent:
                 try:
                     os.close(self._daemon_root_fd)
@@ -2839,8 +4125,7 @@ class MountNamespaceBroker:
                 else:
                     self._daemon_root_fd = -1
         self._resources_closed = (
-            not self._authority_fds
-            and getattr(self, "_daemon_root_fd", -1) < 0
+            not self._authority_fds and getattr(self, "_daemon_root_fd", -1) < 0
         )
 
         status = self._wait_status
@@ -2851,8 +4136,34 @@ class MountNamespaceBroker:
                     "broker final absence proof failed",
                 )
             )
+        if not errors and self._resources_closed and self._journal_root_fd >= 0:
+            try:
+                final_proof = {
+                    "container_absence": True,
+                    "stages_absence": True,
+                    "daemon_absence": True,
+                    "containerd_absence": True,
+                    "runtime_absence": True,
+                    "config_absence": True,
+                    "root_absence": True,
+                }
+                for lease_id in tuple(getattr(self, "_journal_bindings", ())):
+                    self.record_cleanup_receipt(
+                        lease_id,
+                        proof=final_proof,
+                        state="FINAL",
+                    )
+                _prune_final_journals(
+                    self._journal_root_fd,
+                    authenticator=self._journal_authenticator,
+                )
+            except BaseException as exc:
+                errors.append(exc)
         if errors:
             raise BaseExceptionGroup("broker cleanup failed", errors)
+        if getattr(self, "_journal_root_fd", -1) >= 0:
+            os.close(self._journal_root_fd)
+            self._journal_root_fd = -1
         self._cleanup_verified = True
 
 

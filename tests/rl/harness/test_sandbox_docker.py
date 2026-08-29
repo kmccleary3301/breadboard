@@ -3545,7 +3545,10 @@ async def test_exact_not_found_cleanup_is_already_released_without_destructive_c
         labels=_binding_labels(plan),
     )
 
-    assert cleanup == (("runtime_identity", "already_released", ""),)
+    assert cleanup == (
+        ("runtime_identity", "already_released", ""),
+        ("runtime_absence", "already_released", ""),
+    )
     assert [call[0][1] for call in executor.calls] == ["inspect"]
     assert executor.results == []
 
@@ -3578,7 +3581,10 @@ async def test_concurrent_removal_normalizes_cleanup_and_retries_idempotently(
         ("runtime_remove", "already_released", ""),
         ("runtime_absence", "released", ""),
     )
-    assert second == (("runtime_identity", "already_released", ""),)
+    assert second == (
+        ("runtime_identity", "already_released", ""),
+        ("runtime_absence", "already_released", ""),
+    )
     assert [call[0][1] for call in executor.calls] == [
         "inspect",
         "stop",

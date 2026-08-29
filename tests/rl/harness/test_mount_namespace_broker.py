@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import hmac
 import os
 import signal
 import socket
@@ -102,9 +103,7 @@ async def test_broker_executor_transports_stdin_by_sealed_descriptor(
     assert observed["operation"] == "execute"
     assert observed["payload"] == payload
     assert request["input_size"] == len(payload)
-    assert request["input_digest"] == (
-        "sha256:" + hashlib.sha256(payload).hexdigest()
-    )
+    assert request["input_digest"] == ("sha256:" + hashlib.sha256(payload).hexdigest())
     required = (
         broker_module.fcntl.F_SEAL_SEAL
         | broker_module.fcntl.F_SEAL_SHRINK
@@ -116,6 +115,70 @@ async def test_broker_executor_transports_stdin_by_sealed_descriptor(
     assert result.returncode == 0
     assert result.stdout == output_payload
     assert result.stderr == b""
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "memfd_create"),
+    reason="sealed memfd transport requires Linux",
+)
+def test_direct_docker_execution_reads_sealed_output_descriptors(
+    tmp_path: Path,
+) -> None:
+    executable_path = tmp_path / "docker"
+    executable_path.write_bytes(b"docker")
+    executable_fd = os.open(executable_path, os.O_RDONLY)
+    broker = object.__new__(MountNamespaceBroker)
+    broker.daemon_binding = SimpleNamespace(socket_path=str(tmp_path / "docker.sock"))
+    broker._daemon_authority = SimpleNamespace(
+        docker=SimpleNamespace(
+            path=str(executable_path),
+            digest="sha256:" + hashlib.sha256(b"docker").hexdigest(),
+        )
+    )
+    broker._authority_fds = {"docker": executable_fd}
+    output_payload = b"descriptor-output"
+    returned: list[int] = []
+
+    def call(
+        operation: str,
+        request: dict[str, object],
+        descriptors: tuple[int, ...],
+        *,
+        expected_return_fds: int,
+    ) -> tuple[dict[str, object], tuple[int, int]]:
+        assert operation == "execute"
+        assert request["output_limit"] == 1024
+        assert descriptors == (executable_fd,)
+        assert expected_return_fds == 2
+        stdout_fd = broker_module._sealed_payload_fd(output_payload)
+        stderr_fd = broker_module._sealed_payload_fd(b"")
+        returned.extend((stdout_fd, stderr_fd))
+        return (
+            {
+                "returncode": 0,
+                "stdout_size": len(output_payload),
+                "stdout_digest": (
+                    "sha256:" + hashlib.sha256(output_payload).hexdigest()
+                ),
+                "stderr_size": 0,
+                "stderr_digest": "sha256:" + hashlib.sha256(b"").hexdigest(),
+                "timed_out": False,
+                "output_limited": False,
+            },
+            (stdout_fd, stderr_fd),
+        )
+
+    broker._call = call
+    try:
+        result = broker.execute_docker(("version",), output_limit=1024)
+    finally:
+        os.close(executable_fd)
+
+    assert result.stdout == output_payload
+    assert result.stderr == b""
+    for descriptor in returned:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
 
 
 @pytest.mark.skipif(
@@ -146,7 +209,9 @@ def test_broker_bounded_executor_reads_sealed_stdin_descriptor() -> None:
     assert output_limited is False
 
 
-def test_exception_projection_retains_all_daemon_cleanup_leaves_without_secrets() -> None:
+def test_exception_projection_retains_all_daemon_cleanup_leaves_without_secrets() -> (
+    None
+):
     failures = [
         DockerAdapterError(
             f"daemon_cleanup_{index}",
@@ -176,18 +241,13 @@ def test_exception_projection_retains_all_daemon_cleanup_leaves_without_secrets(
     assert [leaf["details"]["group_path"] for leaf in leaves] == [
         [index] for index in range(4)
     ]
-    assert all(
-        leaf["details"]["secret_value"] == "[redacted]" for leaf in leaves
-    )
-    assert b"PRIVATE-DAEMON-TOKEN" not in broker_module._canonical(
-        {"leaves": leaves}
-    )
+    assert all(leaf["details"]["secret_value"] == "[redacted]" for leaf in leaves)
+    assert b"PRIVATE-DAEMON-TOKEN" not in broker_module._canonical({"leaves": leaves})
 
 
 def test_exception_projection_is_depth_count_and_byte_bounded() -> None:
     failures = [
-        RuntimeError(f"cleanup leaf {index}: " + "x" * 2048)
-        for index in range(64)
+        RuntimeError(f"cleanup leaf {index}: " + "x" * 2048) for index in range(64)
     ]
 
     leaves = broker_module._exception_leaves(
@@ -1540,3 +1600,231 @@ def test_probe_failure_after_scratch_creation_removes_exact_root(
         asyncio.run(probe.lifecycle(args))
     assert len(os.listdir("/dev/fd")) == before
     assert not tuple(tmp_path.glob("f2-private-broker-*"))
+
+
+def test_recovery_authenticates_lease_and_finalizes_observed_absence(
+    tmp_path: Path,
+) -> None:
+    journal_root = tmp_path / "journals"
+    lease_root = tmp_path / "leases"
+    journal_root.mkdir(mode=0o700)
+    lease_root.mkdir(mode=0o700)
+    lease_id = "lease-recovery"
+    owner_token = "owner-token"
+    digest = "sha256:" + "1" * 64
+    process = {
+        "pid": 9_999_999,
+        "starttime": "1",
+        "pgid": 9_999_999,
+        "executable_device": 1,
+        "executable_inode": 1,
+        "executable_ctime_ns": 1,
+        "executable_size": 1,
+        "executable_digest": digest,
+        "namespace_device": 1,
+        "namespace_inode": 1,
+    }
+    parent = tmp_path.stat()
+    daemon_root_path = tmp_path / "absent-daemon"
+    daemon_root = {
+        "path": str(daemon_root_path),
+        "device": 1,
+        "inode": 1,
+        "mode": 0o700,
+        "digest": digest,
+        "parent_path": str(tmp_path),
+        "parent_device": parent.st_dev,
+        "parent_inode": parent.st_ino,
+    }
+    path = {
+        "path": str(daemon_root_path / "config.json"),
+        "device": 1,
+        "inode": 1,
+        "mode": 0o600,
+        "digest": digest,
+        "parent_path": str(daemon_root_path),
+        "parent_device": 1,
+        "parent_inode": 1,
+    }
+    payload = {
+        "schema_version": broker_module.SUPERVISOR_JOURNAL_SCHEMA_VERSION,
+        "state": "ACTIVE",
+        "generation": (f"{lease_id}:workspace-recovery:1:primary:{digest}"),
+        "generation_digest": broker_module._journal_digest(
+            f"{lease_id}:workspace-recovery:1:primary:{digest}".encode("utf-8")
+        ),
+        "owner_token_digest": broker_module._journal_digest(
+            owner_token.encode("utf-8")
+        ),
+        "lease_id": lease_id,
+        "workspace_id": "workspace-recovery",
+        "epoch": 1,
+        "role": "primary",
+        "plan_digest": digest,
+        "broker": process,
+        "daemon": None,
+        "containerd": None,
+        "runtime": None,
+        "config": path,
+        "daemon_root": daemon_root,
+        "stage_root": {
+            **daemon_root,
+            "path": str(tmp_path / "absent-stages"),
+            "mode": 0o700,
+        },
+        "stages": [],
+        "container": {"id": None, "name": "", "labels": {}},
+        "proof": {
+            "container_absence": False,
+            "stages_absence": False,
+            "daemon_absence": False,
+            "containerd_absence": False,
+            "runtime_absence": False,
+            "config_absence": False,
+            "root_absence": False,
+        },
+    }
+    lease_payload = {
+        "lease_id": lease_id,
+        "workspace_id": "workspace-recovery",
+        "epoch": 1,
+        "role": "primary",
+        "effective_plan_digest": digest,
+        "owner_token": owner_token,
+    }
+    lease_envelope = {
+        "payload": lease_payload,
+        "checksum": broker_module._journal_digest(_canonical(lease_payload)),
+    }
+    (lease_root / f"{lease_id}.json").write_bytes(_canonical(lease_envelope))
+    secret = b"journal-test-key"
+
+    def sign(value: bytes) -> bytes:
+        return hmac.digest(secret, value, "sha256")
+
+    authenticator = SimpleNamespace(
+        key_id="journal-test",
+        algorithm="hmac-sha256-v1",
+        sign=sign,
+        verify=lambda value, signature: hmac.compare_digest(sign(value), signature),
+    )
+    journal_fd = os.open(journal_root, os.O_RDONLY | os.O_DIRECTORY)
+    lease_fd = os.open(lease_root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        broker_module._atomic_journal_write(
+            journal_fd,
+            lease_id,
+            payload,
+            authenticator=authenticator,
+        )
+        receipts = broker_module.recover_supervisor_journals(
+            journal_fd,
+            lease_fd,
+            authenticator=authenticator,
+        )
+    finally:
+        os.close(lease_fd)
+        os.close(journal_fd)
+
+    assert len(receipts) == 1
+    receipt_payload = receipts[0]["payload"]
+    assert receipt_payload["state"] == "FINAL"
+    assert all(receipt_payload["proof"].values())
+    assert broker_module.validate_supervisor_receipt(
+        dict(receipts[0]),
+        authenticator=authenticator,
+        expected_lease_id=lease_id,
+        expected_generation_digest=payload["generation_digest"],
+        expected_owner_token_digest=payload["owner_token_digest"],
+    )
+    tampered = {
+        **dict(receipts[0]),
+        "payload": {**receipt_payload, "state": "ACTIVE"},
+    }
+    assert not broker_module.validate_supervisor_receipt(
+        tampered,
+        authenticator=authenticator,
+        expected_lease_id=lease_id,
+    )
+
+
+def test_process_observation_error_is_not_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def deny_read(
+        self: Path,
+        *,
+        encoding: str | None = None,
+        errors: str | None = None,
+    ) -> str:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "read_text", deny_read)
+    with pytest.raises(PermissionError, match="denied"):
+        broker_module._journal_process_absent({"pid": 123})
+
+
+def test_path_observation_error_is_not_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def deny_lstat(path: str) -> os.stat_result:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(os, "lstat", deny_lstat)
+    with pytest.raises(PermissionError, match="denied"):
+        broker_module._journal_path_name_absent("/unobservable")
+
+
+def test_path_absence_requires_unchanged_parent_authority(
+    tmp_path: Path,
+) -> None:
+    trusted = tmp_path / "trusted"
+    trusted.mkdir()
+    parent = trusted.stat()
+    observation = {
+        "path": str(trusted / "absent"),
+        "device": 1,
+        "inode": 1,
+        "mode": 0o600,
+        "parent_path": str(trusted),
+        "parent_device": parent.st_dev,
+        "parent_inode": parent.st_ino,
+    }
+    assert broker_module._journal_path_absent(observation)
+
+    trusted.rename(tmp_path / "moved")
+    trusted.mkdir()
+    with pytest.raises(OSError, match="parent authority changed"):
+        broker_module._journal_path_absent(observation)
+
+
+def test_completed_lease_journals_compact_to_one_global_sentinel() -> None:
+    broker = object.__new__(MountNamespaceBroker)
+    broker._global_journal_lease_id = None
+    broker._journal_bindings = {"lease-a": {}, "lease-b": {}}
+    updates: list[str] = []
+    unlinked: list[str] = []
+
+    def update(lease_id: str, **changes: object) -> None:
+        del changes
+        updates.append(lease_id)
+
+    broker._journal_update = update
+    broker.unlink_supervisor_receipt = unlinked.append
+    proof = {
+        "container_absence": True,
+        "stages_absence": True,
+        "daemon_absence": False,
+        "containerd_absence": False,
+        "runtime_absence": False,
+        "config_absence": False,
+        "root_absence": False,
+    }
+
+    broker.record_cleanup_receipt("lease-a", proof=proof, state="ACTIVE")
+    broker.record_cleanup_receipt("lease-b", proof=proof, state="ACTIVE")
+
+    assert updates == ["lease-a", "lease-b"]
+    assert broker._global_journal_lease_id == "lease-a"
+    assert unlinked == ["lease-b"]
+    assert set(broker._journal_bindings) == {"lease-a"}

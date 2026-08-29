@@ -834,6 +834,7 @@ class RuntimeLaunchContext:
     publish_prepared_identity: Callable[[RuntimePreparedIdentity], Awaitable[None]]
     workspace_fd: int | None = None
     workspace_identity: tuple[int, int] | None = None
+    owner_token: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -853,6 +854,14 @@ class RuntimeLaunchContext:
                     or type(self.workspace_identity) is not tuple
                     or len(self.workspace_identity) != 2
                     or any(type(value) is not int or value < 0 for value in self.workspace_identity)
+                )
+            )
+            or (
+                self.owner_token is not None
+                and (
+                    type(self.owner_token) is not str
+                    or not self.owner_token
+                    or len(self.owner_token) > 512
                 )
             )
         ):
@@ -2130,10 +2139,10 @@ class SandboxRuntimeManager:
 
     @staticmethod
     def _make_workspace_releasable(workspace: Path) -> None:
-        for root, dirs, files in os.walk(workspace, topdown=True, followlinks=False):
+        for root, dirs, filenames in os.walk(workspace, topdown=True, followlinks=False):
             root_path = Path(root)
             os.chmod(root_path, 0o700, follow_symlinks=False)
-            for name in dirs + files:
+            for name in dirs + filenames:
                 candidate = root_path / name
                 if candidate.is_symlink():
                     continue
@@ -2155,6 +2164,7 @@ class SandboxRuntimeManager:
         quota_bytes: int,
         workspace_fd: int,
         workspace_identity: tuple[int, int],
+        owner_token: str,
     ) -> RuntimeLaunchContext:
         measured = dict(self.materialization_store.storage_backend.measure(workspace))
         authority = measured.get("authority_id")
@@ -2205,6 +2215,7 @@ class SandboxRuntimeManager:
                 self._publish_runtime_identity(lease_id, identity),
             workspace_fd=workspace_fd,
             workspace_identity=workspace_identity,
+            owner_token=owner_token,
         )
 
     def _lease_record_path(self, lease_id: str) -> Path:
@@ -2409,6 +2420,7 @@ class SandboxRuntimeManager:
                     quota_bytes=plan.resources.storage_bytes,
                     workspace_fd=materialized.duplicate_workspace_fd(),
                     workspace_identity=materialized.workspace_identity,
+                    owner_token=owner_token,
                 )
                 runtime, measurement = await backend.launch(
                     plan, materialized.workspace_path, context=context
@@ -2741,6 +2753,7 @@ class SandboxRuntimeManager:
                     quota_bytes=quota_bytes,
                     workspace_fd=workspace_fd,
                     workspace_identity=(workspace_metadata.st_dev, workspace_metadata.st_ino),
+                    owner_token=owner_token,
                 )
                 workspace_fd = -1
                 launched, measurement = await backend.launch(
