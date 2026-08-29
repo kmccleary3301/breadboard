@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -18,6 +20,7 @@ from breadboard.rl.harness.headless import (
     HeadlessRunRequest,
     HeadlessWorkspaceInput,
     _atomic_write,
+    _project_headless_run,
     _validate_repository_base_commit_binding,
     run_headless_request,
 )
@@ -94,6 +97,97 @@ def test_atomic_result_publication_refuses_existing_destination(
     assert list(tmp_path.iterdir()) == [destination]
 
 
+def test_headless_projection_exports_the_exact_workspace_patch() -> None:
+    patch = b"diff --git a/a.py b/a.py\n"
+    events = b'{"event":"done"}\n'
+
+    class CAS:
+        def __init__(self) -> None:
+            self.payloads = {
+                "manifest": json.dumps(
+                    {
+                        "runner_ledger_ref": self.ref("events", events),
+                        "artifact_manifest_ref": self.ref(
+                            "artifacts",
+                            json.dumps(
+                                {
+                                    "objects": [
+                                        {
+                                            "role": "workspace_patch",
+                                            "artifact_ref": self.ref("patch", patch),
+                                        }
+                                    ]
+                                },
+                                sort_keys=True,
+                            ).encode(),
+                        ),
+                    },
+                    sort_keys=True,
+                ).encode(),
+                "events": events,
+                "patch": patch,
+            }
+            self.payloads["artifacts"] = json.dumps(
+                {
+                    "objects": [
+                        {
+                            "role": "workspace_patch",
+                            "artifact_ref": self.ref("patch", patch),
+                        }
+                    ]
+                },
+                sort_keys=True,
+            ).encode()
+
+        @staticmethod
+        def ref(artifact_id: str, payload: bytes) -> dict[str, str]:
+            return {
+                "artifact_id": artifact_id,
+                "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+            }
+
+        def get_ref(self, artifact_id: str) -> SimpleNamespace:
+            payload = self.payloads[artifact_id]
+            projection = self.ref(artifact_id, payload)
+            return SimpleNamespace(**projection, to_dict=lambda: projection)
+
+        def get_bytes(self, ref: SimpleNamespace, *, max_bytes: int) -> bytes:
+            payload = self.payloads[ref.artifact_id]
+            assert len(payload) <= max_bytes
+            return payload
+
+    cas = CAS()
+    composition = SimpleNamespace(
+        authority_graph=SimpleNamespace(cas=cas),
+    )
+    run = SimpleNamespace(
+        primary_disposition=SimpleNamespace(value="succeeded"),
+        termination="completed",
+        turn_count=1,
+        response={"answer": "done"},
+        completed_envelope_ref=None,
+        closed_envelope_ref=None,
+        result_ref=None,
+        evidence_manifest_ref=cas.get_ref("manifest"),
+        evidence_root="sha256:" + "0" * 64,
+        artifact_manifest_ref=None,
+        primary_measurement_digest="sha256:" + "1" * 64,
+        verifier_measurement_digest="sha256:" + "2" * 64,
+        verifier_result_digest="sha256:" + "3" * 64,
+        reward=0.0,
+        reward_components={},
+    )
+    result: dict[str, Any] = {}
+
+    event_bytes, patch_bytes = _project_headless_run(result, run, composition)
+
+    assert event_bytes == events
+    assert patch_bytes == patch
+    assert result["workspace_evidence"]["patch_digest"] == (
+        "sha256:" + hashlib.sha256(patch).hexdigest()
+    )
+
+
 @pytest.mark.parametrize(
     "base_url",
     (
@@ -110,6 +204,7 @@ def test_provider_requires_usable_literal_loopback_authority(base_url: str) -> N
             base_url=base_url,
             policy_observation_digest="sha256:" + "0" * 64,
         )
+
 
 @pytest.mark.asyncio
 async def test_target_semantics_reject_changed_tool_parameter_schema(
@@ -152,7 +247,6 @@ async def test_target_semantics_reject_changed_tool_parameter_schema(
             )
     finally:
         await composition.close()
-
 
 
 @pytest.mark.skipif(
@@ -269,9 +363,7 @@ async def test_headless_runner_rejects_development_trusted_process(
         workspace=HeadlessWorkspaceInput(
             repository_snapshot_digest=plan.task.repository_snapshot_digest,
             base_commit=(
-                None
-                if plan.task.repository_snapshot_digest is None
-                else "0" * 40
+                None if plan.task.repository_snapshot_digest is None else "0" * 40
             ),
             task_image_digest=plan.sandbox.image_digest,
         ),
