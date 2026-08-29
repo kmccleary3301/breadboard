@@ -11,6 +11,7 @@ import pytest
 
 from breadboard_engine.api.cli_bridge.events import EventType
 from breadboard_engine.api.cli_bridge.session_control import SessionControlController
+from breadboard_engine.api.cli_bridge.session_lifecycle import SessionLifecycleOwner
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.api.cli_bridge.task_execution import TaskExecutionOwner
 
@@ -27,6 +28,39 @@ async def test_session_runner_run_delegates_to_lifecycle_owner() -> None:
     runner._lifecycle_owner = Lifecycle()
     await runner._run()
     assert calls == ["run"]
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_terminalizes_when_running_transition_fails(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+
+    class Registry:
+        async def update_status(self, *_args, **_kwargs) -> None:
+            raise RuntimeError("registry unavailable")
+
+    async def enqueue_termination() -> None:
+        calls.append("terminate")
+
+    host = SimpleNamespace(
+        session=SimpleNamespace(session_id="session-1"),
+        registry=Registry(),
+        _closed=False,
+        _enqueue_termination=enqueue_termination,
+    )
+    owner = SessionLifecycleOwner(host, SimpleNamespace())
+
+    async def fail(_state, exc) -> None:
+        assert str(exc) == "registry unavailable"
+        calls.append("fail")
+
+    monkeypatch.setattr(owner, "_fail", fail)
+
+    await owner.run()
+
+    assert host._closed is True
+    assert calls == ["fail", "terminate"]
 
 
 @pytest.mark.asyncio

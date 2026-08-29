@@ -2136,7 +2136,13 @@ class SQLiteCredentialStore:
         problem: Mapping[str, Any] | None = None,
     ) -> bool:
         normalized_status = str(status)
+        timestamp = now_ms()
         with self._transaction() as connection:
+            self._expire_stale_login(
+                connection,
+                str(login_session_id),
+                timestamp,
+            )
             result = connection.execute(
                 """UPDATE login_sessions
                    SET status = ?, updated_at_ms = ?, problem_json = ?,
@@ -2146,7 +2152,7 @@ class SQLiteCredentialStore:
                    WHERE login_session_id = ? AND status = 'completing'""",
                 (
                     normalized_status,
-                    now_ms(),
+                    timestamp,
                     self._json(problem),
                     normalized_status,
                     str(login_session_id),

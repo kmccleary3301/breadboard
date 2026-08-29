@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
 import copy
 from types import SimpleNamespace
 from typing import Any
@@ -9,6 +10,7 @@ import pytest
 from breadboard.product.runtime import Session as ProductSession
 from breadboard.product.runtime.events import rebuild
 
+from breadboard_engine import agent_llm_openai as agent_llm_openai_module
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.api.cli_bridge.models import (
     SessionCommandRequest,
@@ -583,6 +585,37 @@ def test_unbound_vision_never_resolves_to_text_default() -> None:
     assert error.value.problem.code == "known_role_unbound"
 
 
+
+def test_provider_lease_preserves_provider_specific_credential_material(
+    monkeypatch,
+) -> None:
+    conductor = _conductor({})
+    conductor._active_session_state = SimpleNamespace(
+        get_provider_metadata=lambda _key, default=None: default
+    )
+
+    @contextmanager
+    def execution_client_config(_model_id, **_kwargs):
+        yield {
+            "api_key": "codex-oauth-token",
+            "access_token": "codex-oauth-token",
+            "base_url": None,
+            "default_headers": {},
+        }
+
+    monkeypatch.setattr(
+        agent_llm_openai_module.provider_router,
+        "execution_client_config",
+        execution_client_config,
+    )
+
+    class Runtime:
+        def create_client_from_config(self, config):
+            return dict(config)
+
+    with conductor._provider_client_lease("codex/gpt-5.5", Runtime()) as client:
+        assert client["access_token"] == "codex-oauth-token"
+
 def test_provider_lease_enforces_exact_locked_route_and_credential_origin() -> None:
     lock = compile_model_roles(_document()).as_dict()
     conductor = _conductor({"model_role_lock": lock, "active_model_role": "default"})
@@ -599,6 +632,13 @@ def test_provider_lease_enforces_exact_locked_route_and_credential_origin() -> N
                 "base_url": base_url,
                 "headers": default_headers,
             }
+
+        def create_client_from_config(self, config):
+            return self.create_client(
+                config.get("api_key"),
+                base_url=config.get("base_url"),
+                default_headers=config.get("default_headers"),
+            )
 
     with conductor._provider_client_lease("mock/primary", Runtime()) as client:
         assert client["api_key"] == "mock"

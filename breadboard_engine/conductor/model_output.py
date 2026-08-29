@@ -1733,12 +1733,8 @@ def retry_with_fallback(
                     fallback_model,
                     endpoint_id=f"fallback:{fallback_model}",
                 ) as fallback_config:
-                    fallback_client = fallback_runtime.create_client(
-                        fallback_config.get("api_key"),
-                        base_url=fallback_config.get("base_url"),
-                        default_headers=fallback_config.get(
-                            "default_headers"
-                        ),
+                    fallback_client = fallback_runtime.create_client_from_config(
+                        fallback_config
                     )
                     result = sanitize_provider_result(
                         fallback_runtime.invoke(
