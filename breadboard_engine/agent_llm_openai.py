@@ -5736,8 +5736,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 self._reward_metrics_sqlite = None
                 self._todo_metrics_sqlite = None
 
-        if provider_profile is None:
-            self._ensure_capability_probes(session_state, markdown_logger)
         self.provider_metrics.reset()
         user_prompt, max_steps = self._prepare_replay_session(session_state, user_prompt, max_steps)
         
@@ -6326,6 +6324,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         run_loop_error: Optional[Dict[str, Any]] = None
         self._active_session_state = session_state
         try:
+            if provider_profile is None:
+                self._ensure_capability_probes(session_state, markdown_logger)
             if is_longrun_enabled(getattr(self, "config", None)):
                 work_queue = build_work_queue(
                     getattr(self, "config", None),
