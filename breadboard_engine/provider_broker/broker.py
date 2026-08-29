@@ -6,6 +6,7 @@ routing; credential listings and audit records contain metadata only.
 """
 
 import json
+import math
 import os
 import threading
 import time
@@ -508,11 +509,17 @@ class ProviderBroker:
                 )
             return login
         stored_flow = dict(started.internal)
+        expires_in_ms = None
+        if stored_flow.get("flow_kind") == "device":
+            expires_in_ms = int(
+                math.ceil(float(stored_flow["expires_in"]) * 1000)
+            )
         with self.store.atomic():
             login = self.store.create_login(
                 provider_id,
                 "pending",
                 flow=stored_flow,
+                expires_in_ms=expires_in_ms,
             )
             self._emit(
                 "provider_login_started",

@@ -1921,13 +1921,24 @@ class SQLiteCredentialStore:
         status: str,
         problem: Mapping[str, Any] | None = None,
         flow: Mapping[str, Any] | None = None,
+        expires_in_ms: int | None = None,
     ) -> dict[str, Any]:
         timestamp = now_ms()
         login_session_id = _id("bblogin")
         normalized_status = str(status)
-        expires_at_ms = (
-            timestamp + _LOGIN_EXPIRY_MS if normalized_status == "pending" else None
-        )
+        expires_at_ms = None
+        if normalized_status == "pending":
+            duration_ms = (
+                _LOGIN_EXPIRY_MS if expires_in_ms is None else expires_in_ms
+            )
+            if (
+                isinstance(duration_ms, bool)
+                or not isinstance(duration_ms, int)
+                or duration_ms <= 0
+                or duration_ms > (2**63 - 1 - timestamp)
+            ):
+                raise ValueError("login expiry duration is invalid")
+            expires_at_ms = timestamp + duration_ms
         with self._transaction() as connection:
             connection.execute(
                 """INSERT INTO login_sessions
