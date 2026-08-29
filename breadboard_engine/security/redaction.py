@@ -138,8 +138,17 @@ def _fail_closed_short_secret_strings(value: Any) -> Any:
     return visit(value, set())
 
 
-def scrub_exception_in_place(error: BaseException) -> BaseException:
-    """Scrub exception fields before an operation releases its secret scope."""
+def scrub_exception_in_place(
+    error: BaseException,
+    *,
+    _seen: set[int] | None = None,
+) -> BaseException:
+    """Scrub an exception chain before an operation releases its secret scope."""
+    seen = set() if _seen is None else _seen
+    identity = id(error)
+    if identity in seen:
+        return error
+    seen.add(identity)
     try:
         scrubbed_args, _ = scrub_structure(
             _fail_closed_short_secret_strings(error.args),
@@ -175,6 +184,14 @@ def scrub_exception_in_place(error: BaseException) -> BaseException:
             ]
     except Exception:
         pass
+    for linked in (error.__cause__, error.__context__):
+        if isinstance(linked, BaseException):
+            scrub_exception_in_place(linked, _seen=seen)
+    members = getattr(error, "exceptions", ())
+    if isinstance(members, tuple):
+        for member in members:
+            if isinstance(member, BaseException):
+                scrub_exception_in_place(member, _seen=seen)
     return error
 
 

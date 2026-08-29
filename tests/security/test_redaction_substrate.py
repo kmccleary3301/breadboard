@@ -311,6 +311,19 @@ class TestRegisteredValues:
         assert "rat" not in repr(error.details)
         assert redaction.exception_is_rate_limited_429(error) is True
 
+    def test_exception_scrubbing_traverses_cause_and_context(self):
+        secret = "provider-chain-secret-canary"
+        cause = RuntimeError(f"cause echoed {secret}")
+        context = RuntimeError(f"context echoed {secret}")
+        outer = RuntimeError("provider request failed")
+        outer.__cause__ = cause
+        outer.__context__ = context
+        with redaction.secret_value_scope(secret):
+            redaction.scrub_exception_in_place(outer)
+
+        assert secret not in str(cause)
+        assert secret not in str(context)
+
     def test_scopes_are_isolated_between_operation_contexts(self):
         outer_secret = "outer-operation-secret"
         inner_secret = "inner-operation-secret"
