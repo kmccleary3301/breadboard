@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import asyncio
 import base64
 import hashlib
@@ -3062,6 +3063,41 @@ class _ProductionSandboxRuntime:
         self._manager.abort_bootstrap()
 
 
+def _non_repeating_close_callback(
+    callback: Callable[[], Any],
+    *,
+    retry_cleanup: Callable[[], Any] | None = None,
+) -> Callable[[], Awaitable[None]]:
+    owner: asyncio.Task[None] | None = None
+    completed = False
+    failed = False
+
+    async def invoke(value: Callable[[], Any]) -> None:
+        result = value()
+        if hasattr(result, "__await__"):
+            await result
+
+    async def close_once() -> None:
+        nonlocal completed, failed, owner
+        if completed:
+            if failed and retry_cleanup is not None:
+                await invoke(retry_cleanup)
+            return
+        if owner is None:
+            owner = asyncio.create_task(invoke(callback))
+        try:
+            await asyncio.shield(owner)
+        except asyncio.CancelledError:
+            raise
+        except BaseException:
+            completed = True
+            failed = True
+            raise
+        completed = True
+
+    return close_once
+
+
 class ProductionComposition:
     def __init__(
         self,
@@ -4122,6 +4158,15 @@ def _build_runtime_graph(
     except BaseException as exc:
         rollback.attempt(lambda error=exc: (_ for _ in ()).throw(error))
         raise AssertionError("unreachable")
+    async def retry_service_cleanup() -> None:
+        receipts = await sandbox_manager.close()
+        if any(
+            receipt.state.value not in {"released", "already_released"}
+            for receipt in receipts
+        ):
+            raise RuntimeError("sandbox runtime cleanup pending")
+
+
     rollback.transfer()
     return (
         app,
@@ -4138,7 +4183,10 @@ def _build_runtime_graph(
                 if docker_backend is None
                 else (docker_backend.close_runtime,)
             ),
-            service.close,
+            _non_repeating_close_callback(
+                service.close,
+                retry_cleanup=retry_service_cleanup,
+            ),
         ),
         bridge_lifecycle,
         cleanup_probe,

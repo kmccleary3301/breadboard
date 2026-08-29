@@ -18,6 +18,7 @@ from breadboard.rl.harness.composition import (
     _measure_installed_runtime,
     _ProductionCleanupProbe,
     _PinnedDirectoryStorageBackend,
+    _non_repeating_close_callback,
 )
 from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.sandbox import InstalledRuntime
@@ -95,6 +96,88 @@ async def test_composition_retries_failed_runtime_cleanup_before_authorities() -
     assert calls == ["backend:1", "backend:2", "adapter", "owner", "authority"]
     assert composition._runtime_closed
     assert composition._closed
+
+@pytest.mark.asyncio
+async def test_composition_advances_after_cached_service_close_failure() -> None:
+    calls: list[str] = []
+
+    async def close_service() -> None:
+        calls.append("service")
+        raise RuntimeError("cached service cleanup failure")
+    cleanup_attempts = 0
+
+    async def retry_cleanup() -> None:
+        nonlocal cleanup_attempts
+        cleanup_attempts += 1
+        calls.append(f"cleanup:{cleanup_attempts}")
+        if cleanup_attempts == 1:
+            raise RuntimeError("sandbox cleanup still pending")
+
+    composition = ProductionComposition(
+        app=None,
+        server=None,
+        manifest=None,
+        manifest_ref=None,
+        authority_graph=None,
+        bridge_lifecycle=None,
+        cleanup_probe=None,
+        runtime_close_callbacks=(
+            lambda: calls.append("owner"),
+            _non_repeating_close_callback(
+                close_service,
+                retry_cleanup=retry_cleanup,
+            ),
+        ),
+        authority_close_callbacks=(lambda: calls.append("authority"),),
+    )
+
+    with pytest.raises(BaseExceptionGroup, match="production composition close failed"):
+        await composition.close()
+    assert calls == ["service"]
+
+    with pytest.raises(BaseExceptionGroup, match="production composition close failed"):
+        await composition.close()
+    assert calls == ["service", "cleanup:1"]
+    assert not composition._runtime_closed
+
+    await composition.close()
+
+    assert calls == [
+        "service",
+        "cleanup:1",
+        "cleanup:2",
+        "owner",
+        "authority",
+    ]
+    assert composition._runtime_closed
+    assert composition._closed
+
+@pytest.mark.asyncio
+async def test_non_repeating_close_owns_callback_across_waiter_cancellation() -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def close_service() -> None:
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await release.wait()
+        raise RuntimeError("terminal service cleanup failure")
+
+    close_once = _non_repeating_close_callback(close_service)
+    first = asyncio.create_task(close_once())
+    await asyncio.wait_for(entered.wait(), 1)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    release.set()
+
+    with pytest.raises(RuntimeError, match="terminal service cleanup failure"):
+        await close_once()
+    await close_once()
+
+    assert calls == 1
 
 
 @pytest.mark.asyncio

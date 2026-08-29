@@ -177,6 +177,7 @@ jobs:
   tmux-phase4-replay:
     name: tmux phase4 replay (warn)
     runs-on: ubuntu-latest
+    continue-on-error: true
     env:
       # Keep pane + engine logs under the workspace so they can be uploaded as artifacts.
       BREADBOARD_PHASE4_REPLAY_LOG_ROOT: ${{ github.workspace }}/docs_tmp/tmux_captures/targets_logs

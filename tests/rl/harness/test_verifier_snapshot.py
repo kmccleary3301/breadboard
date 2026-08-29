@@ -241,7 +241,7 @@ async def test_snapshot_digest_independently_binds_every_path_byte_and_mode(
     tmp_path: Path,
 ) -> None:
     harness, primary, snapshot = await _opened_snapshot(tmp_path)
-    object_root = harness.cache_root / "objects" / snapshot.root_digest.removeprefix(
+    object_root = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
         "sha256:"
     )
     entries = _snapshot_entries(object_root)
@@ -324,7 +324,7 @@ async def test_snapshot_requires_positive_runtime_quiescence_and_starts_no_verif
     assert captured.value.code == "snapshot_not_quiescent"
     assert primary.state is WorkspaceLeaseState.QUARANTINED
     assert len(harness.backend.launches) == 1
-    assert list((harness.cache_root / "objects").glob("*/work/candidate.txt")) == []
+    assert list((harness.cache_root / "snapshot-objects").glob("*/work/candidate.txt")) == []
     assert (await primary.close()).state is CleanupState.RELEASED
 
 
@@ -377,7 +377,7 @@ async def test_verifier_uses_distinct_runtime_workspace_and_read_only_snapshot(
     assert not verifier_workspace.exists()
     assert not (
         harness.cache_root
-        / "objects"
+        / "snapshot-objects"
         / snapshot.root_digest.removeprefix("sha256:")
     ).exists()
     assert await verifier.close() == child_receipt
@@ -458,7 +458,7 @@ async def test_reward_eligible_primary_requires_equally_isolated_verifier_measur
         assert backend.handles[1].terminate_calls == 1
         assert primary._verifier_children == []
         assert len(list(harness.workspace_root.iterdir())) == 1
-        assert len(list(harness.lease_root.iterdir())) == 1
+        assert len(list(harness.lease_root.iterdir())) == 2
     else:
         verifier = await harness.manager.open_verifier(primary, snapshot)
         assert primary.measurement.isolation_disposition is IsolationDisposition.ISOLATED
@@ -718,7 +718,7 @@ async def test_identical_snapshot_seal_holds_reference_during_release(
     )
     object_path = (
         harness.cache_root
-        / "objects"
+        / "snapshot-objects"
         / second_snapshot.root_digest.removeprefix("sha256:")
     )
     assert object_path.is_dir()
@@ -778,7 +778,7 @@ async def test_post_seal_snapshot_mutation_starts_no_verifier_and_cleans_primary
     tmp_path: Path,
 ) -> None:
     harness, primary, snapshot = await _opened_snapshot(tmp_path)
-    object_root = harness.cache_root / "objects" / snapshot.root_digest.removeprefix(
+    object_root = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
         "sha256:"
     )
     candidate = object_root / "work" / "candidate.txt"
@@ -1125,6 +1125,14 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
     recovery_backend = VerifierRestartBackend()
     recovery = _restart_manager(harness, recovery_backend)
     harness.clock.advance(minutes=5)
+    harness.manager._release_lease_owner_lock(
+        verifier_lease_id,
+        unlink=False,
+    )
+    harness.manager._release_lease_owner_lock(
+        primary.lease_id,
+        unlink=False,
+    )
     receipts = await asyncio.wait_for(recovery.reconcile_stale(), 1)
 
     if opening is not None:
@@ -1156,6 +1164,11 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
             "child_verifier",
             CleanupState.ALREADY_RELEASED,
         ),
+        CleanupStepReceipt(
+            "snapshot",
+            CleanupState.RELEASED,
+            snapshot.snapshot_id,
+        ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
         CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
@@ -1181,6 +1194,7 @@ async def test_same_manager_reconcile_skips_live_primary_and_verifier_leases(
 
     assert receipts == ()
     assert primary_record.exists()
+    assert verifier_record.exists()
     assert primary.state is WorkspaceLeaseState.QUIESCING
     assert verifier._closed is False
     assert harness.backend.handles[0].terminate_calls == 1
@@ -1265,7 +1279,7 @@ async def test_verifier_open_record_failure_obeys_detailed_runtime_cleanup_proof
         assert set(harness.lease_root.iterdir()) == primary_records
     else:
         assert len(set(harness.workspace_root.iterdir()) - primary_workspaces) == 1
-        assert len(set(harness.lease_root.iterdir()) - primary_records) == 1
+        assert len(set(harness.lease_root.iterdir()) - primary_records) == 2
 
 @pytest.mark.parametrize(
     "runtime_state",

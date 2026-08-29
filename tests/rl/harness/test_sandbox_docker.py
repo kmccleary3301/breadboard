@@ -4248,6 +4248,7 @@ async def test_manager_reconcile_uses_docker_runtime_aggregate_to_gate_durable_c
         random_bytes=DeterministicRandom(63_000),
     )
     clock.advance(minutes=5)
+    original._release_lease_owner_lock(lease.lease_id, unlink=False)
 
     receipts = await recovery.reconcile_stale()
 

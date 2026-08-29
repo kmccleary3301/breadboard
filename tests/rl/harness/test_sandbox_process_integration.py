@@ -618,7 +618,7 @@ async def test_real_process_plan_runs_through_wp5_port_seals_snapshot_and_cleans
     assert primary.measurement.isolated is False
     assert primary.measurement.reward_eligible is False
     snapshot = await primary.seal_for_verifier()
-    immutable = harness.cache_root / "objects" / snapshot.root_digest.removeprefix(
+    immutable = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
         "sha256:"
     )
     assert (immutable / "work" / "candidate.txt").read_bytes() == b"candidate"

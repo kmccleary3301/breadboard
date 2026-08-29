@@ -2292,13 +2292,20 @@ class SandboxRuntimeManager:
         self._random_bytes = random_bytes; self._leases: dict[str, SandboxWorkspaceLease] = {}
         self._snapshots: dict[str, tuple[VerifierSnapshotReceipt, Path]] = {}
         self._pending_launch_cleanups: dict[str, _PendingLaunchCleanup] = {}
+        self._lease_owner_locks: dict[str, int] = {}
         self._lock = asyncio.Lock(); self._closed = False
+        self._reconcile_lock = asyncio.Lock()
         self._close_task: asyncio.Future[list[SandboxCleanupReceipt]] | None = None
         self._last_close_receipts: tuple[SandboxCleanupReceipt, ...] | None = None
 
     def abort_bootstrap(self) -> None:
         """Release constructor-owned descriptors before any lease can be admitted."""
-        if self._leases or self._snapshots or self._close_task is not None:
+        if (
+            self._leases
+            or self._snapshots
+            or self._lease_owner_locks
+            or self._close_task is not None
+        ):
             raise RuntimeError("cannot abort sandbox manager after runtime admission")
         self._closed = True
         if self._lease_root_fd is not None:
@@ -2391,6 +2398,64 @@ class SandboxRuntimeManager:
             owner_token=owner_token,
         )
 
+    def _claim_lease_owner_lock(self, lease_id: str) -> bool:
+        if lease_id in self._lease_owner_locks:
+            return True
+        if self._lease_root_fd is None:
+            raise RuntimeError("sandbox manager is closed")
+        lock_name = lease_id + ".owner.lock"
+        descriptor = os.open(
+            lock_name,
+            os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
+            0o600,
+            dir_fd=self._lease_root_fd,
+        )
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_nlink != 1
+                or metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+            ):
+                raise WorkspaceStateError(
+                    "lease owner lock identity is invalid",
+                    code="stale_identity_uncertain",
+                    lease_id=lease_id,
+                )
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return False
+            self._lease_owner_locks[lease_id] = descriptor
+            return True
+        finally:
+            if self._lease_owner_locks.get(lease_id) != descriptor:
+                os.close(descriptor)
+
+    def _release_lease_owner_lock(
+        self,
+        lease_id: str,
+        *,
+        unlink: bool,
+    ) -> None:
+        descriptor = self._lease_owner_locks.pop(lease_id, None)
+        if descriptor is None:
+            return
+        try:
+            if unlink and self._lease_root_fd is not None:
+                try:
+                    os.unlink(
+                        lease_id + ".owner.lock",
+                        dir_fd=self._lease_root_fd,
+                    )
+                except FileNotFoundError:
+                    pass
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
     def _lease_record_path(self, lease_id: str) -> Path:
         return self.lease_root / (lease_id + ".json")
     def _lease_record_exists(self, lease_id: str) -> bool:
@@ -2413,10 +2478,17 @@ class SandboxRuntimeManager:
             os.unlink(lease_id + ".json", dir_fd=self._lease_root_fd)
         except FileNotFoundError:
             pass
+        self._release_lease_owner_lock(lease_id, unlink=True)
         os.fsync(self._lease_root_fd)
 
 
     def _write_lease_record(self, lease_id: str, payload: Mapping[str, Any]) -> None:
+        if payload.get("lease_id") != lease_id:
+            raise WorkspaceStateError(
+                "workspace lease record identity mismatch",
+                code="stale_identity_uncertain",
+                lease_id=lease_id,
+            )
         record = canonical_json_bytes({"payload": dict(payload), "checksum": _wp7_digest(dict(payload))})
         path = self._lease_record_path(lease_id)
         temporary = path.name + ".tmp-" + self._nonce()
@@ -2467,7 +2539,11 @@ class SandboxRuntimeManager:
                 raise ValueError
             envelope = __import__("json").loads(raw)
             payload = envelope["payload"]
-            if envelope["checksum"] != _wp7_digest(payload) or payload["schema_version"] != "bb.rl.workspace-lease.v1":
+            if (
+                envelope["checksum"] != _wp7_digest(payload)
+                or payload["schema_version"] != "bb.rl.workspace-lease.v1"
+                or payload.get("lease_id") != path.stem
+            ):
                 raise ValueError
             return MappingProxyType(payload)
         except Exception as exc:
@@ -2581,6 +2657,37 @@ class SandboxRuntimeManager:
             CleanupState.RELEASED if absent else CleanupState.FAILED,
         )
 
+    async def _release_durable_snapshots_for_lease(
+        self,
+        lease_id: str,
+    ) -> CleanupStepReceipt | None:
+        release_task = asyncio.create_task(
+            asyncio.to_thread(
+                self.materialization_store.release_snapshots_for_lease,
+                lease_id,
+            )
+        )
+        try:
+            released = await asyncio.shield(release_task)
+        except asyncio.CancelledError:
+            try:
+                await release_task
+            finally:
+                raise
+        except BaseException as exc:
+            return CleanupStepReceipt(
+                "snapshot",
+                CleanupState.FAILED,
+                type(exc).__name__,
+            )
+        if not released:
+            return None
+        return CleanupStepReceipt(
+            "snapshot",
+            CleanupState.RELEASED,
+            ",".join(released),
+        )
+
 
     async def open(self, request: WorkspaceOpenRequest) -> SandboxWorkspaceLease:
         plan = build_sandbox_execution_plan(request, self.registries, self.installed_authorities)
@@ -2592,6 +2699,12 @@ class SandboxRuntimeManager:
             runtime: RuntimeHandle | None = None
             backend: RuntimeBackend | None = None
             record_written = False
+            if not self._claim_lease_owner_lock(lease_id):
+                raise WorkspaceStateError(
+                    "lease owner identity is already active",
+                    code="stale_identity_uncertain",
+                    lease_id=lease_id,
+                )
             try:
                 materialize_task = asyncio.create_task(
                     asyncio.to_thread(
@@ -2752,6 +2865,7 @@ class SandboxRuntimeManager:
                             "dependent cleanup incomplete"
                         ))
                     else:
+                        self._release_lease_owner_lock(lease_id, unlink=True)
                         cleanup_steps.append(CleanupStepReceipt("lease_record", CleanupState.ALREADY_RELEASED))
                 except BaseException as cleanup_exc:
                     cleanup_errors.append(f"lease_record:{type(cleanup_exc).__name__}")
@@ -2851,23 +2965,38 @@ class SandboxRuntimeManager:
             issued = self.materialization_store.clock.current()
             quota_bytes = min(primary.plan.resources.storage_bytes, primary.plan.limits.artifact_bytes_total)
             workspace = self.materialization_store.workspace_root / workspace_id
-            self._write_lease_record(lease_id, {
-                "schema_version": "bb.rl.workspace-lease.v1",
-                "lease_id": lease_id,
-                "parent_lease_id": primary.lease_id,
-                "workspace_id": workspace_id,
-                "workspace_path": str(workspace),
-                "cache_lease_id": None,
-                "effective_plan_digest": verifier_plan.effective_plan_digest,
-                "owner_token": owner_token,
-                "epoch": 1,
-                "expires_at": (issued + self.materialization_store.lease_ttl).isoformat(),
-                "role": "verifier",
-                "snapshot_id": snapshot.snapshot_id,
-                "snapshot_root_digest": snapshot.root_digest,
-                "runtime_authority_id": runtime.runtime_id,
-                "state": "allocating",
-            })
+            try:
+                if not self._claim_lease_owner_lock(lease_id):
+                    raise WorkspaceStateError(
+                        "verifier lease owner identity is already active",
+                        code="stale_identity_uncertain",
+                        lease_id=lease_id,
+                    )
+                self._write_lease_record(
+                    lease_id,
+                    {
+                        "schema_version": "bb.rl.workspace-lease.v1",
+                        "lease_id": lease_id,
+                        "parent_lease_id": primary.lease_id,
+                        "workspace_id": workspace_id,
+                        "workspace_path": str(workspace),
+                        "cache_lease_id": None,
+                        "effective_plan_digest": verifier_plan.effective_plan_digest,
+                        "owner_token": owner_token,
+                        "epoch": 1,
+                        "expires_at": (
+                            issued + self.materialization_store.lease_ttl
+                        ).isoformat(),
+                        "role": "verifier",
+                        "snapshot_id": snapshot.snapshot_id,
+                        "snapshot_root_digest": snapshot.root_digest,
+                        "runtime_authority_id": runtime.runtime_id,
+                        "state": "allocating",
+                    },
+                )
+            except BaseException:
+                self._release_lease_owner_lock(lease_id, unlink=True)
+                raise
             launched: RuntimeHandle | None = None
             backend: RuntimeBackend | None = None
             try:
@@ -3339,6 +3468,15 @@ class SandboxRuntimeManager:
 
 
     async def reconcile_stale(self) -> tuple[SandboxCleanupReceipt, ...]:
+        async with self._reconcile_lock:
+            if self._lease_root_fd is None:
+                return ()
+            return await self._reconcile_stale_owner()
+
+
+    async def _reconcile_stale_owner(
+        self,
+    ) -> tuple[SandboxCleanupReceipt, ...]:
         receipts: list[SandboxCleanupReceipt] = []
         receipts.extend(await self._reconcile_pending_launch_cleanups())
         now = self.materialization_store.clock.current()
@@ -3346,8 +3484,70 @@ class SandboxRuntimeManager:
             return ()
         names = tuple(
             name for name in os.listdir(self._lease_root_fd)
-            if name.endswith(".json") and "/" not in name and name not in {".", ".."}
+            if "/" not in name and name not in {".", ".."}
         )
+        record_names = frozenset(
+            name for name in names if name.endswith(".json")
+        )
+        for lock_name in sorted(
+            name for name in names if name.endswith(".owner.lock")
+        ):
+            lease_id = lock_name.removesuffix(".owner.lock")
+            if (
+                lease_id + ".json" in record_names
+                or lease_id in self._lease_owner_locks
+            ):
+                continue
+            try:
+                owner_claimed = self._claim_lease_owner_lock(lease_id)
+            except Exception:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        lease_id,
+                        (
+                            CleanupStepReceipt(
+                                "owner_lock",
+                                CleanupState.QUARANTINED,
+                                "owner_lock_invalid",
+                            ),
+                        ),
+                    )
+                )
+                continue
+            if not owner_claimed:
+                continue
+            if self._lease_record_exists(lease_id):
+                self._release_lease_owner_lock(lease_id, unlink=False)
+                continue
+            try:
+                self._release_lease_owner_lock(lease_id, unlink=True)
+                os.fsync(self._lease_root_fd)
+            except Exception:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        lease_id,
+                        (
+                            CleanupStepReceipt(
+                                "owner_lock",
+                                CleanupState.QUARANTINED,
+                                "owner_lock_cleanup_failed",
+                            ),
+                        ),
+                    )
+                )
+            else:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        lease_id,
+                        (
+                            CleanupStepReceipt(
+                                "owner_lock",
+                                CleanupState.RELEASED,
+                            ),
+                        ),
+                    )
+                )
+        names = tuple(sorted(record_names))
         paths = [
             self.lease_root / name
             for name in sorted(
@@ -3389,15 +3589,68 @@ class SandboxRuntimeManager:
                 receipts.append(SandboxCleanupReceipt.from_steps(path.stem, (
                     CleanupStepReceipt("lease_record", CleanupState.QUARANTINED, exc.code),)))
                 continue
-            expires = datetime.fromisoformat(str(record["expires_at"]))
+            try:
+                expires_at = record["expires_at"]
+                if type(expires_at) is not str:
+                    raise ValueError
+                expires = datetime.fromisoformat(expires_at)
+                if expires.tzinfo is None:
+                    raise ValueError
+            except (KeyError, ValueError, TypeError):
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        path.stem,
+                        (
+                            CleanupStepReceipt(
+                                "lease_record",
+                                CleanupState.QUARANTINED,
+                                "stale_identity_uncertain",
+                            ),
+                        ),
+                    )
+                )
+                continue
             if now < expires:
+                continue
+            try:
+                owner_claimed = self._claim_lease_owner_lock(path.stem)
+            except Exception:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        path.stem,
+                        (
+                            CleanupStepReceipt(
+                                "lease_record",
+                                CleanupState.QUARANTINED,
+                                "owner_lock_invalid",
+                            ),
+                        ),
+                    )
+                )
+                continue
+            if not owner_claimed:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        path.stem,
+                        (
+                            CleanupStepReceipt(
+                                "lease_record",
+                                CleanupState.QUARANTINED,
+                                "live_owner",
+                            ),
+                        ),
+                    )
+                )
                 continue
             role = record.get("role")
             child_step: CleanupStepReceipt | None = None
             if role == "primary":
                 remaining_children: list[str] = []
                 for child_name in os.listdir(self._lease_root_fd):
-                    if not child_name.startswith("verifier-lease-"):
+                    if not (
+                        child_name.startswith("verifier-lease-")
+                        and child_name.endswith(".json")
+                    ):
                         continue
                     child_path = self.lease_root / child_name
                     try:
@@ -3414,6 +3667,28 @@ class SandboxRuntimeManager:
                     else CleanupState.ALREADY_RELEASED,
                     ",".join(sorted(remaining_children)),
                 )
+            snapshot_step: CleanupStepReceipt | None = None
+            if role == "primary":
+                if child_step is not None and child_step.state in {
+                    CleanupState.RELEASED,
+                    CleanupState.ALREADY_RELEASED,
+                }:
+                    snapshot_step = (
+                        await self._release_durable_snapshots_for_lease(
+                            path.stem
+                        )
+                    )
+                else:
+                    snapshot_step = CleanupStepReceipt(
+                        "snapshot",
+                        CleanupState.QUARANTINED,
+                        "dependent verifier cleanup incomplete",
+                    )
+            reconciliation_prefix = tuple(
+                step
+                for step in (child_step, snapshot_step)
+                if step is not None
+            )
             runtime_authority_id = str(
                 record.get("runtime_authority_id", record.get("runtime_id", ""))
             )
@@ -3449,24 +3724,17 @@ class SandboxRuntimeManager:
                 receipts.append(
                     SandboxCleanupReceipt.from_steps(
                         str(record["lease_id"]),
-                        (
-                            (child_step,)
-                            if child_step is not None
-                            else ()
-                        )
-                        + unavailable_steps,
+                        reconciliation_prefix + unavailable_steps,
                     )
                 )
                 continue
-            raw_steps = (
-                ((child_step,) if child_step is not None else ())
-                + tuple(await reconcile(record))
-            )
+            raw_steps = reconciliation_prefix + tuple(await reconcile(record))
             if (
                 {step.resource for step in raw_steps}
                 == (
                     {
                         "child_verifier",
+                        *(("snapshot",) if snapshot_step is not None else ()),
                         "runtime",
                         "workspace",
                         "cache_holder",
@@ -3485,7 +3753,7 @@ class SandboxRuntimeManager:
                     for step in raw_steps
                 )
             ):
-                os.unlink(path.name, dir_fd=self._lease_root_fd)
+                self._unlink_lease_record(path.stem)
                 receipts.append(SandboxCleanupReceipt.from_steps(
                     str(record["lease_id"]), raw_steps
                 ))
@@ -3512,12 +3780,28 @@ class SandboxRuntimeManager:
             ):
                 workspace_id = record.get("workspace_id")
                 workspace_path = record.get("workspace_path")
+                workspace_prefix = (
+                    "verifier-workspace-"
+                    if role == "verifier"
+                    else "workspace-"
+                )
+                valid_workspace_id = (
+                    type(workspace_id) is str
+                    and workspace_id.startswith(workspace_prefix)
+                    and len(workspace_id) == len(workspace_prefix) + 32
+                    and all(
+                        character in "0123456789abcdef"
+                        for character in workspace_id[len(workspace_prefix):]
+                    )
+                )
                 expected_workspace = (
-                    self.materialization_store.workspace_root / str(workspace_id)
+                    self.materialization_store.workspace_root / workspace_id
+                    if valid_workspace_id
+                    else None
                 )
                 if (
-                    type(workspace_id) is str
-                    and type(workspace_path) is str
+                    type(workspace_path) is str
+                    and expected_workspace is not None
                     and Path(workspace_path) == expected_workspace
                 ):
                     await asyncio.to_thread(
@@ -3605,6 +3889,13 @@ class SandboxRuntimeManager:
             )
         return receipts
 
+    async def _close_all_serialized(
+        self,
+        leases: Sequence[SandboxWorkspaceLease],
+    ) -> list[SandboxCleanupReceipt]:
+        async with self._reconcile_lock:
+            return await self._close_all(leases)
+
     async def close(self) -> tuple[SandboxCleanupReceipt, ...]:
         async with self._lock:
             if self._close_task is not None:
@@ -3615,11 +3906,14 @@ class SandboxRuntimeManager:
                     and not self._leases
                     and not self._pending_launch_cleanups
                     and not self._snapshots
+                    and not self._lease_owner_locks
                 ):
                     return self._last_close_receipts or ()
                 self._closed = True
                 leases = tuple(self._leases.values())
-                close_task = asyncio.create_task(self._close_all(leases))
+                close_task = asyncio.create_task(
+                    self._close_all_serialized(leases)
+                )
                 self._close_task = close_task
         try:
             result = tuple(await asyncio.shield(close_task))
@@ -3636,14 +3930,17 @@ class SandboxRuntimeManager:
         )
         if not pending:
             self._last_close_receipts = result
-        if (
-            not self._leases
-            and not self._pending_launch_cleanups
-            and not self._snapshots
-            and self._lease_root_fd is not None
-        ):
-            os.close(self._lease_root_fd)
-            self._lease_root_fd = None
+        async with self._reconcile_lock:
+            if (
+                not self._leases
+                and not self._pending_launch_cleanups
+                and not self._snapshots
+            ):
+                for lease_id in tuple(self._lease_owner_locks):
+                    self._release_lease_owner_lock(lease_id, unlink=False)
+                if self._lease_root_fd is not None:
+                    os.close(self._lease_root_fd)
+                    self._lease_root_fd = None
         return result
 
 
