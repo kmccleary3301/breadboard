@@ -1,5 +1,6 @@
 from __future__ import annotations
 import base64
+from bisect import bisect_left
 import binascii
 
 from dataclasses import dataclass
@@ -275,6 +276,7 @@ def compare_e4_traces(
         if rule.pointer in rules_by_pointer:
             raise E4ParityError(f"duplicate normalization pointer {rule.pointer!r}")
         rules_by_pointer[rule.pointer] = rule
+    sorted_rule_pointers = sorted(rules_by_pointer)
     if any(rule.kind == "temporary_path" for rule in rules) and temporary_roots is None:
         raise E4ParityError("temporary_path normalization requires both trace roots")
 
@@ -291,12 +293,35 @@ def compare_e4_traces(
         mismatches.append(mismatch)
 
     def mark_inaccessible_rules(pointer: str) -> None:
+        if pointer in rules_by_pointer:
+            used_rules.add(pointer)
         prefix = f"{pointer}/" if pointer else "/"
-        used_rules.update(
-            rule_pointer
-            for rule_pointer in rules_by_pointer
-            if rule_pointer == pointer or rule_pointer.startswith(prefix)
-        )
+        index = bisect_left(sorted_rule_pointers, prefix)
+        while index < len(sorted_rule_pointers) and sorted_rule_pointers[
+            index
+        ].startswith(prefix):
+            used_rules.add(sorted_rule_pointers[index])
+            index += 1
+
+    def mark_omitted_array_rules(pointer: str, start: int, stop: int) -> None:
+        prefix = f"{pointer}/" if pointer else "/"
+        index = bisect_left(sorted_rule_pointers, prefix)
+        max_index_digits = len(str(stop - 1))
+        while index < len(sorted_rule_pointers) and sorted_rule_pointers[
+            index
+        ].startswith(prefix):
+            rule_pointer = sorted_rule_pointers[index]
+            token = rule_pointer[len(prefix) :].split("/", 1)[0]
+            canonical_index = (
+                token.isascii()
+                and token.isdecimal()
+                and (token == "0" or not token.startswith("0"))
+            )
+            if canonical_index and len(token) <= max_index_digits:
+                child_index = int(token)
+                if start <= child_index < stop:
+                    used_rules.add(rule_pointer)
+            index += 1
 
     def compare(reference_value: Any, clone_value: Any, pointer: str) -> None:
         if truncated:
@@ -371,6 +396,10 @@ def compare_e4_traces(
                         None,
                     )
                 )
+                if truncated:
+                    break
+            if truncated:
+                return
             for key in sorted(clone_keys - reference_keys):
                 child_pointer = _child_pointer(pointer, key)
                 mark_inaccessible_rules(child_pointer)
@@ -382,6 +411,10 @@ def compare_e4_traces(
                         clone_value[key],
                     )
                 )
+                if truncated:
+                    break
+            if truncated:
+                return
             for key in sorted(reference_keys & clone_keys):
                 if not isinstance(key, str):
                     raise E4ParityError("trace objects must use string keys")
@@ -393,11 +426,11 @@ def compare_e4_traces(
             return
         if isinstance(reference_value, list):
             if len(reference_value) != len(clone_value):
-                for index in range(
+                mark_omitted_array_rules(
+                    pointer,
                     min(len(reference_value), len(clone_value)),
                     max(len(reference_value), len(clone_value)),
-                ):
-                    mark_inaccessible_rules(_child_pointer(pointer, str(index)))
+                )
                 record_mismatch(
                     TraceMismatch(
                         pointer,
