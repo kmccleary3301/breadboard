@@ -2132,6 +2132,7 @@ class DockerRuntimeHandle:
         mount_stager: DockerDescriptorMountStager | None = None,
         staged_mounts: Sequence[StagedDockerDescriptorMount] = (),
         lease_id: str | None = None,
+        launch_complete: bool = True,
     ) -> None:
         self.adapter = adapter
         self.plan = plan
@@ -2147,8 +2148,17 @@ class DockerRuntimeHandle:
         self._mount_stager = mount_stager
         self._staged_mounts = list(staged_mounts)
         self._lease_id = lease_id
+        self._launching = not launch_complete
         self.repository_base_commit: str | None = None
         self.repository_relative_path: str | None = None
+    def complete_launch(self) -> None:
+        if self._closed or not self._launching:
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "Docker runtime launch ownership is not exact",
+            )
+        self._launching = False
+
 
     def _record_terminal_cleanup(self, receipts: tuple[Any, ...]) -> None:
         from .materialization import CleanupState
@@ -2183,7 +2193,7 @@ class DockerRuntimeHandle:
                 exc.code == "output_limit_exceeded"
                 or (exc.code == "runtime_launch_failed" and "returncode" not in exc.details)
             )
-            if indeterminate:
+            if indeterminate and not self._launching:
                 self._fenced = True
                 cleanup = await asyncio.shield(self._retry_cleanup())
                 if isinstance(exc, DockerAdapterError):
@@ -3008,6 +3018,7 @@ class DockerSandboxBackend:
                 container_name=container_name, labels=labels, held_fds=held_fds,
                 mount_stager=self.mount_stager, staged_mounts=staged_mounts,
                 lease_id=context.lease_id,
+                launch_complete=False,
             )
             repository_base_commit = await handle.measure_repository_base_commit()
             if repository_base_commit is not None:
@@ -3024,7 +3035,9 @@ class DockerSandboxBackend:
                     "effective Docker controls contradict requested controls",
                     details={"mismatch": mismatch},
                 )
+            handle.complete_launch()
             held_fds = []
+            staged_mounts = []
             return handle, SandboxMeasurement(
                 effective_plan_digest=plan.effective_plan_digest,
                 lease_id=context.lease_id, workspace_id=context.workspace_id,
