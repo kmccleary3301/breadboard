@@ -2198,11 +2198,45 @@ class DockerRuntimeHandle:
     async def read_text(
         self, path: str, *, offset: int = 0, limit: int | None = None
     ) -> Mapping[str, Any]:
+        return await self._read_text_bounded(
+            path,
+            offset=offset,
+            limit=limit,
+            ceiling=self.plan.limits.observation_bytes,
+        )
+
+    async def read_artifact_text(self, path: str) -> Mapping[str, Any]:
+        if not path.startswith("result/"):
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "verifier artifact read must target the result directory",
+            )
+        return await self._read_text_bounded(
+            path,
+            offset=0,
+            limit=None,
+            ceiling=min(
+                self.plan.limits.artifact_bytes_each,
+                self.plan.limits.artifact_bytes_total,
+            ),
+        )
+
+    async def _read_text_bounded(
+        self,
+        path: str,
+        *,
+        offset: int,
+        limit: int | None,
+        ceiling: int,
+    ) -> Mapping[str, Any]:
         if type(offset) is not int or offset < 0:
             raise DockerAdapterError("runtime_preflight_failed", "read offset is invalid")
-        ceiling = self.plan.limits.observation_bytes
-        if limit is not None and (type(limit) is not int or limit < 0 or limit > ceiling):
-            raise DockerAdapterError("output_limit_exceeded", "read limit exceeds admitted ceiling")
+        if limit is not None and (
+            type(limit) is not int or limit < 0 or limit > ceiling
+        ):
+            raise DockerAdapterError(
+                "output_limit_exceeded", "read limit exceeds admitted ceiling"
+            )
         selected_limit = ceiling if limit is None else limit
         probe_extra = limit is None
         helper_read_limit = selected_limit
@@ -2245,7 +2279,9 @@ class DockerRuntimeHandle:
                 "runtime_protocol_error", "read returned malformed output"
             ) from exc
         if len(decoded_content) > selected_limit:
-            raise DockerAdapterError("output_limit_exceeded", "read exceeds admitted ceiling")
+            raise DockerAdapterError(
+                "output_limit_exceeded", "read exceeds admitted ceiling"
+            )
         return {
             "path": path,
             "content": content,
