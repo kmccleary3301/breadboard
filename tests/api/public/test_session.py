@@ -111,6 +111,51 @@ def test_session_start_rejects_nonportable_ids_before_storage(
     assert all(not (session_root / session_id).exists() for session_id in invalid_ids)
 
 
+def test_concurrent_case_variant_public_starts_have_one_owner(
+    client: TestClient,
+) -> None:
+    lock_id = _locked_harness(client)
+    barrier = Barrier(2)
+    result_guard = Lock()
+    responses = []
+
+    def start(session_id: str) -> None:
+        barrier.wait(timeout=5)
+        response = client.post(
+            "/v1/sessions",
+            json={
+                "lock_id": lock_id,
+                "task": "case-variant admission",
+                "session_id": session_id,
+            },
+            headers={"Idempotency-Key": f"start-{session_id}"},
+        )
+        with result_guard:
+            responses.append(response)
+
+    workers = [
+        Thread(target=start, args=(session_id,))
+        for session_id in ("Case-Collision", "case-collision")
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=5)
+
+    assert all(not worker.is_alive() for worker in workers)
+    assert sorted(response.status_code for response in responses) == [202, 422]
+    accepted = next(response for response in responses if response.status_code == 202)
+    rejected = next(response for response in responses if response.status_code == 422)
+    assert rejected.json()["error"]["error_code"] == "invalid_state"
+    session_id = accepted.json()["data"]["session"]["session_id"]
+    cancelled = client.post(
+        f"/v1/sessions/{session_id}/cancel",
+        json={},
+        headers={"Idempotency-Key": "cancel-case-collision"},
+    )
+    assert cancelled.status_code == 202
+
+
 def test_session_lifecycle_and_resumable_event_stream(
     client: TestClient, monkeypatch, tmp_path: Path
 ) -> None:

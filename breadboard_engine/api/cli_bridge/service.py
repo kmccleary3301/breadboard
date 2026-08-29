@@ -412,7 +412,7 @@ class SessionService:
         _cleanup_incomplete_starts(state_paths=self._managed_state_paths)
 
     def _session_lock(self, session_id: str) -> asyncio.Lock:
-        return self._session_locks.setdefault(session_id, asyncio.Lock())
+        return self._session_locks.setdefault(session_id.casefold(), asyncio.Lock())
 
     @staticmethod
     def _runtime_lock(
@@ -696,6 +696,36 @@ class SessionService:
         )
 
     async def create_session(
+        self,
+        request: SessionCreateRequest,
+        *,
+        session_id: str | None = None,
+        event_root: Path | None = None,
+        runtime_root: Path | None = None,
+        effective_lock: EffectiveHarnessLock | None = None,
+    ) -> SessionCreateResponse:
+        selected_session_id = session_id or str(uuid.uuid4())
+        async with self._session_lock(selected_session_id):
+            collision = next(
+                (
+                    existing
+                    for existing in self.registry._records
+                    if existing.casefold() == selected_session_id.casefold()
+                ),
+                None,
+            )
+            if collision is not None:
+                raise ValueError(f"session already exists: {selected_session_id}")
+            return await self._create_session(
+                request,
+                session_id=selected_session_id,
+                event_root=event_root,
+                runtime_root=runtime_root,
+                effective_lock=effective_lock,
+            )
+
+
+    async def _create_session(
         self,
         request: SessionCreateRequest,
         *,
