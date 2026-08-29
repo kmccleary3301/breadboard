@@ -3489,7 +3489,27 @@ class SandboxRuntimeManager:
                 receipts.append(SandboxCleanupReceipt.from_steps(path.stem, (
                     CleanupStepReceipt("lease_record", CleanupState.QUARANTINED, exc.code),)))
                 continue
-            expires = datetime.fromisoformat(str(record["expires_at"]))
+            try:
+                expires_at = record["expires_at"]
+                if type(expires_at) is not str:
+                    raise ValueError
+                expires = datetime.fromisoformat(expires_at)
+                if expires.tzinfo is None:
+                    raise ValueError
+            except (KeyError, ValueError, TypeError):
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        path.stem,
+                        (
+                            CleanupStepReceipt(
+                                "lease_record",
+                                CleanupState.QUARANTINED,
+                                "stale_identity_uncertain",
+                            ),
+                        ),
+                    )
+                )
+                continue
             if now < expires:
                 continue
             try:
@@ -3766,6 +3786,13 @@ class SandboxRuntimeManager:
             )
         return receipts
 
+    async def _close_all_serialized(
+        self,
+        leases: Sequence[SandboxWorkspaceLease],
+    ) -> list[SandboxCleanupReceipt]:
+        async with self._reconcile_lock:
+            return await self._close_all(leases)
+
     async def close(self) -> tuple[SandboxCleanupReceipt, ...]:
         async with self._lock:
             if self._close_task is not None:
@@ -3781,7 +3808,9 @@ class SandboxRuntimeManager:
                     return self._last_close_receipts or ()
                 self._closed = True
                 leases = tuple(self._leases.values())
-                close_task = asyncio.create_task(self._close_all(leases))
+                close_task = asyncio.create_task(
+                    self._close_all_serialized(leases)
+                )
                 self._close_task = close_task
         try:
             result = tuple(await asyncio.shield(close_task))
