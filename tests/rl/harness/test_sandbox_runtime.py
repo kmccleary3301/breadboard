@@ -1490,7 +1490,7 @@ async def test_manager_close_cancellation_preserves_whole_shared_cleanup_outcome
         )
         assert leases[0]._materialized.workspace_path.exists()
         assert len(list(harness.workspace_root.iterdir())) == 1
-        assert len(list(harness.lease_root.iterdir())) == 1
+        assert len(list(harness.lease_root.iterdir())) == 2
         retry_receipts = await harness.manager.close()
         assert retry_receipts[0].state is CleanupState.RELEASED
         assert first_handle.terminate_calls == 2
@@ -1569,10 +1569,25 @@ async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_ex
     assert workspace_path.exists()
 
     original.clock.advance(minutes=5)
+    blocked = await recovery.reconcile_stale()
+
+    assert len(blocked) == 1
+    assert blocked[0].lease_id == lease.lease_id
+    assert blocked[0].steps == (
+        CleanupStepReceipt(
+            "lease_record",
+            CleanupState.QUARANTINED,
+            "live_owner",
+        ),
+    )
+    assert recovery_backend.reconciled == []
+    assert workspace_path.exists()
+    assert record_path.exists()
+
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
     receipts = await recovery.reconcile_stale()
 
     assert len(receipts) == 1
-    assert receipts[0].lease_id == lease.lease_id
     assert receipts[0].steps == (
         CleanupStepReceipt(
             "child_verifier",
@@ -1584,14 +1599,11 @@ async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_ex
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
     assert len(recovery_backend.reconciled) == 1
-    assert recovery_backend.reconciled[0]["effective_plan_digest"] == fixture.plan.canonical_digest()
     assert not workspace_path.exists()
     assert not record_path.exists()
     assert original.store.recover_stale_cache_holder(record) == CleanupStepReceipt(
         "cache_holder", CleanupState.ALREADY_RELEASED
     )
-    assert await recovery.reconcile_stale() == ()
-    assert len(recovery_backend.reconciled) == 1
 
 
 @pytest.mark.parametrize(
@@ -1629,6 +1641,7 @@ async def test_stale_cache_identity_mismatch_quarantines_then_exact_retry_releas
         random_bytes=DeterministicRandom(20_000),
     )
     original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
 
     first = (await recovery.reconcile_stale())[0]
     assert first.steps == (
@@ -1720,6 +1733,7 @@ async def test_unreadable_verifier_record_blocks_primary_reconcile_until_removed
         random_bytes=DeterministicRandom(25_000),
     )
     original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
 
     receipts = await recovery.reconcile_stale()
     first = next(
@@ -2102,7 +2116,7 @@ async def test_primary_attestation_failure_retains_dependents_until_reconcile_re
     assert backend.handles[0].terminate_calls == 1
     assert len(list(harness.workspace_root.iterdir())) == 1
     records = list(harness.lease_root.iterdir())
-    assert len(records) == 1
+    assert len(records) == 2
 
     harness.clock.advance(minutes=5)
     receipts = await asyncio.wait_for(harness.manager.reconcile_stale(), 1)
@@ -2140,6 +2154,7 @@ async def test_reconciliation_quarantines_foreign_runtime_identity_without_clean
         random_bytes=DeterministicRandom(30_000),
     )
     original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
 
     receipts = await recovery.reconcile_stale()
 

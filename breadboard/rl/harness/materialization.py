@@ -2565,7 +2565,7 @@ class FilesystemMaterializationStore:
             try:
                 marker_fd = self._cache.open_file(reference_relative, os.O_RDONLY)
             except FileNotFoundError:
-                return True
+                return not self._cache.exists(relative)
             try:
                 metadata = os.fstat(marker_fd)
                 observed = os.read(marker_fd, len(marker_payload) + 1)
@@ -2579,16 +2579,25 @@ class FilesystemMaterializationStore:
                 os.close(marker_fd)
             reference_fd = self._cache.open_dir(reference_directory)
             try:
+                other_references = tuple(
+                    name
+                    for name in os.listdir(reference_fd)
+                    if name != receipt.snapshot_id
+                )
+                if other_references:
+                    os.unlink(receipt.snapshot_id, dir_fd=reference_fd)
+                    os.fsync(reference_fd)
+                    return True
+                self._cache.remove_tree(relative, missing_ok=True)
+                if self._cache.exists(relative):
+                    return False
                 os.unlink(receipt.snapshot_id, dir_fd=reference_fd)
                 os.fsync(reference_fd)
-                references_remain = bool(os.listdir(reference_fd))
             finally:
                 os.close(reference_fd)
-            if references_remain:
-                return True
             self._cache.remove_tree(reference_directory)
-            self._cache.remove_tree(relative, missing_ok=True)
-            return not self._cache.exists(relative)
+            self._cache.fsync_dir("snapshot-references")
+            return True
 
     def copy_snapshot(
         self,
@@ -2750,46 +2759,71 @@ class FilesystemMaterializationStore:
             reference_directory = "snapshot-references/" + suffix
             reference_relative = reference_directory + "/" + snapshot_id
             with self._lock, self._snapshot_lock(suffix):
-                if self._cache.exists(immutable_relative):
-                    self.verify_snapshot(
-                        receipt,
-                        immutable,
-                        max_depth=max_depth,
-                        max_files=max_files,
-                        max_inodes=max_inodes,
-                        max_bytes=max_bytes,
-                    )
-                    self._cache.remove_tree(staging)
-                else:
-                    self._cache.replace(staging, immutable_relative)
-                    self.verify_snapshot(
-                        receipt,
-                        immutable,
-                        max_depth=max_depth,
-                        max_files=max_files,
-                        max_inodes=max_inodes,
-                        max_bytes=max_bytes,
-                    )
+                reference_created = False
+                marker_created = False
+                object_created = False
                 try:
-                    self._cache.mkdir(reference_directory)
-                except FileExistsError:
-                    reference_fd = self._cache.open_dir(reference_directory)
-                    os.close(reference_fd)
-                marker_fd = self._cache.open_file(
-                    reference_relative,
-                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                    0o600,
-                )
-                try:
-                    _write_all(
-                        marker_fd,
-                        marker_payload,
-                        failure="snapshot_tampered",
+                    try:
+                        self._cache.mkdir(reference_directory)
+                        reference_created = True
+                        self._cache.fsync_dir("snapshot-references")
+                    except FileExistsError:
+                        reference_fd = self._cache.open_dir(reference_directory)
+                        os.close(reference_fd)
+                    marker_fd = self._cache.open_file(
+                        reference_relative,
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                        0o600,
                     )
-                    os.fsync(marker_fd)
-                finally:
-                    os.close(marker_fd)
-                self._cache.fsync_dir(reference_directory)
+                    marker_created = True
+                    try:
+                        _write_all(
+                            marker_fd,
+                            marker_payload,
+                            failure="snapshot_tampered",
+                        )
+                        os.fsync(marker_fd)
+                    finally:
+                        os.close(marker_fd)
+                    self._cache.fsync_dir(reference_directory)
+                    if self._cache.exists(immutable_relative):
+                        self.verify_snapshot(
+                            receipt,
+                            immutable,
+                            max_depth=max_depth,
+                            max_files=max_files,
+                            max_inodes=max_inodes,
+                            max_bytes=max_bytes,
+                        )
+                        self._cache.remove_tree(staging)
+                    else:
+                        self._cache.replace(staging, immutable_relative)
+                        object_created = True
+                        self.verify_snapshot(
+                            receipt,
+                            immutable,
+                            max_depth=max_depth,
+                            max_files=max_files,
+                            max_inodes=max_inodes,
+                            max_bytes=max_bytes,
+                        )
+                except BaseException:
+                    if object_created:
+                        self._cache.remove_tree(
+                            immutable_relative,
+                            missing_ok=True,
+                        )
+                    if marker_created:
+                        reference_fd = self._cache.open_dir(reference_directory)
+                        try:
+                            os.unlink(snapshot_id, dir_fd=reference_fd)
+                            os.fsync(reference_fd)
+                        finally:
+                            os.close(reference_fd)
+                    if reference_created:
+                        self._cache.remove_tree(reference_directory)
+                        self._cache.fsync_dir("snapshot-references")
+                    raise
             return receipt, immutable
         except BaseException:
             self._cache.remove_tree(staging, missing_ok=True)

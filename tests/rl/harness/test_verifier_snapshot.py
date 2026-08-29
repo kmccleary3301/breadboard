@@ -458,7 +458,7 @@ async def test_reward_eligible_primary_requires_equally_isolated_verifier_measur
         assert backend.handles[1].terminate_calls == 1
         assert primary._verifier_children == []
         assert len(list(harness.workspace_root.iterdir())) == 1
-        assert len(list(harness.lease_root.iterdir())) == 1
+        assert len(list(harness.lease_root.iterdir())) == 2
     else:
         verifier = await harness.manager.open_verifier(primary, snapshot)
         assert primary.measurement.isolation_disposition is IsolationDisposition.ISOLATED
@@ -1125,6 +1125,14 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
     recovery_backend = VerifierRestartBackend()
     recovery = _restart_manager(harness, recovery_backend)
     harness.clock.advance(minutes=5)
+    harness.manager._release_lease_owner_lock(
+        verifier_lease_id,
+        unlink=False,
+    )
+    harness.manager._release_lease_owner_lock(
+        primary.lease_id,
+        unlink=False,
+    )
     receipts = await asyncio.wait_for(recovery.reconcile_stale(), 1)
 
     if opening is not None:
@@ -1181,6 +1189,7 @@ async def test_same_manager_reconcile_skips_live_primary_and_verifier_leases(
 
     assert receipts == ()
     assert primary_record.exists()
+    assert verifier_record.exists()
     assert primary.state is WorkspaceLeaseState.QUIESCING
     assert verifier._closed is False
     assert harness.backend.handles[0].terminate_calls == 1
@@ -1265,7 +1274,7 @@ async def test_verifier_open_record_failure_obeys_detailed_runtime_cleanup_proof
         assert set(harness.lease_root.iterdir()) == primary_records
     else:
         assert len(set(harness.workspace_root.iterdir()) - primary_workspaces) == 1
-        assert len(set(harness.lease_root.iterdir()) - primary_records) == 1
+        assert len(set(harness.lease_root.iterdir()) - primary_records) == 2
 
 @pytest.mark.parametrize(
     "runtime_state",

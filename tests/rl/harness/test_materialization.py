@@ -1347,6 +1347,88 @@ def test_snapshot_references_coordinate_across_store_instances(
     second_store.close()
     store.close()
 
+def test_snapshot_release_retains_last_reference_until_object_removal_succeeds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, workspace, cache_root, _ = _empty_materialized_workspace(tmp_path)
+    (workspace.workspace_path / "answer.txt").write_bytes(b"retry")
+    receipt, object_path = _seal_snapshot(
+        store,
+        workspace,
+        max_depth=0,
+        max_files=1,
+        max_inodes=1,
+        max_bytes=5,
+    )
+    suffix = receipt.root_digest.removeprefix("sha256:")
+    marker = cache_root / "snapshot-references" / suffix / receipt.snapshot_id
+    cache_type = type(store._cache)
+    original_remove_tree = cache_type.remove_tree
+
+    def fail_object_removal(
+        cache: Any,
+        relative: str,
+        *,
+        missing_ok: bool = False,
+    ) -> None:
+        if cache is store._cache and relative == "objects/" + suffix:
+            raise OSError("injected snapshot object removal failure")
+        original_remove_tree(cache, relative, missing_ok=missing_ok)
+
+    monkeypatch.setattr(cache_type, "remove_tree", fail_object_removal)
+    with pytest.raises(OSError, match="injected snapshot object removal failure"):
+        store.release_snapshot(receipt, object_path)
+
+    assert marker.is_file()
+    assert object_path.is_dir()
+    monkeypatch.setattr(cache_type, "remove_tree", original_remove_tree)
+    assert store.release_snapshot(receipt, object_path)
+    assert not marker.exists()
+    assert not object_path.exists()
+    workspace.close()
+    store.close()
+
+
+def test_snapshot_seal_durably_creates_reference_before_publishing_object(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, workspace, cache_root, _ = _empty_materialized_workspace(tmp_path)
+    (workspace.workspace_path / "answer.txt").write_bytes(b"marker")
+    fsynced: list[str] = []
+    objects_before = set((cache_root / "objects").iterdir())
+    cache_type = type(store._cache)
+    original_fsync_dir = cache_type.fsync_dir
+    original_open_file = cache_type.open_file
+
+    def record_fsync(cache: Any, relative: str) -> None:
+        if cache is store._cache:
+            fsynced.append(relative)
+        original_fsync_dir(cache, relative)
+
+    def fail_marker_create(cache: Any, relative: str, *args: Any) -> int:
+        if cache is store._cache and relative.startswith("snapshot-references/"):
+            raise OSError("injected snapshot marker creation failure")
+        return original_open_file(cache, relative, *args)
+    monkeypatch.setattr(cache_type, "fsync_dir", record_fsync)
+    monkeypatch.setattr(cache_type, "open_file", fail_marker_create)
+    with pytest.raises(OSError, match="injected snapshot marker creation failure"):
+        _seal_snapshot(
+            store,
+            workspace,
+            max_depth=0,
+            max_files=1,
+            max_inodes=1,
+            max_bytes=6,
+        )
+
+    assert "snapshot-references" in fsynced
+    assert list((cache_root / "snapshot-references").iterdir()) == []
+    assert set((cache_root / "objects").iterdir()) == objects_before
+    workspace.close()
+    store.close()
+
 
 @pytest.mark.parametrize(
     ("limit_name", "limits"),
