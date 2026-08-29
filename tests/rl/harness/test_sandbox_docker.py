@@ -368,7 +368,7 @@ def _docker_inspect_payload(
             {
                 "Type": "bind",
                 "Source": str(skeleton),
-                "Destination": "/workspace",
+                "Destination": "/testbed",
                 "RW": False,
             },
             *[
@@ -428,7 +428,7 @@ def _docker_plan(tmp_path: Path, *, gvisor: bool = False) -> tuple[Any, Path, Pa
     mounted.mkdir(mode=0o700)
     profile = tmp_path / "seccomp.json"
     profile.write_bytes(plan.security_policy.seccomp_bytes)
-    mounts = ((mounted, "/workspace/work", False),)
+    mounts = ((mounted, "/testbed/work", False),)
     return plan, skeleton, profile, mounts
 
 
@@ -478,7 +478,7 @@ def _primary_workspace(
         mounts.append(
             (
                 source,
-                "/workspace/" + entry.target_logical_path,
+                "/testbed/" + entry.target_logical_path,
                 entry.access.value == "ro",
             )
         )
@@ -540,6 +540,84 @@ async def _launch_docker_handle(
     return plan, executor, handle
 
 
+@pytest.mark.asyncio
+async def test_runtime_handle_exposes_persistent_testbed_file_and_diff_operations(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.extend(
+        [
+            _result(stdout=b"hello"),
+            _result(),
+            _result(stdout=b"/testbed/src/main.py\n/testbed/src/lib\n"),
+            _result(stdout=b"diff --git a/src/main.py b/src/main.py\n"),
+        ]
+    )
+
+    read_result = await handle.read_text("src/main.py", limit=5)
+    write_result = await handle.write_text("src/main.py", "hello")
+    list_result = await handle.list_files("src", depth=1)
+    diff_result = await handle.workspace_diff()
+
+    assert read_result == {
+        "path": "src/main.py",
+        "content": "hello",
+        "offset": 0,
+        "bytes": 5,
+    }
+    assert write_result == {"path": "src/main.py", "bytes": 5}
+    assert list_result == {
+        "path": "src",
+        "files": ["src/lib", "src/main.py"],
+    }
+    assert diff_result["stdout"].startswith("diff --git")
+    assert [call[0][1:] for call in executor.calls] == [
+        (
+            "exec",
+            CONTAINER_ID,
+            "sh",
+            "-lc",
+            "tail -c +1 /testbed/src/main.py | head -c 6",
+        ),
+        (
+            "exec",
+            CONTAINER_ID,
+            "sh",
+            "-lc",
+            "printf %s aGVsbG8= | base64 -d > /testbed/src/main.py",
+        ),
+        (
+            "exec",
+            CONTAINER_ID,
+            "sh",
+            "-lc",
+            "find /testbed/src -mindepth 1 -maxdepth 2 -print",
+        ),
+        (
+            "exec",
+            CONTAINER_ID,
+            "git",
+            "-C",
+            "/testbed",
+            "diff",
+            "--no-ext-diff",
+            "--binary",
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_rejects_workspace_escape_before_docker_exec(
+    tmp_path: Path,
+) -> None:
+    _, executor, handle = await _launch_docker_handle(tmp_path)
+
+    with pytest.raises(DockerAdapterError, match="workspace path is invalid"):
+        await handle.read_text("../host-secret")
+
+    assert executor.calls == []
+
+
 async def _exercise_nonadmissible_prepare_publish_start(
     plan: Any,
     adapter: DockerRuntimeAdapter,
@@ -593,8 +671,8 @@ def test_create_argv_exactly_projects_closed_policy_in_deterministic_order(
     second = tmp_path / "readonly-input"
     second.mkdir()
     unsorted_mounts = (
-        (mounts[0][0], "/workspace/z-output", False),
-        (second, "/workspace/a-input", True),
+        (mounts[0][0], "/testbed/z-output", False),
+        (second, "/testbed/a-input", True),
     )
 
     argv = build_create_argv(
@@ -655,15 +733,15 @@ def test_create_argv_exactly_projects_closed_policy_in_deterministic_order(
         "--ulimit",
         "nofile=128:128",
         "--mount",
-        f"type=bind,src={skeleton},dst=/workspace,readonly",
+        f"type=bind,src={skeleton},dst=/testbed,readonly",
         "--mount",
-        f"type=bind,src={second},dst=/workspace/a-input,readonly",
+        f"type=bind,src={second},dst=/testbed/a-input,readonly",
         "--mount",
-        f"type=bind,src={mounts[0][0]},dst=/workspace/z-output",
+        f"type=bind,src={mounts[0][0]},dst=/testbed/z-output",
         "--tmpfs",
         "/tmp:rw,noexec,nosuid,size=1048576",
         "--workdir",
-        "/workspace",
+        "/testbed",
         "--env",
         "PATH=/usr/bin:/bin",
         "--pull",
@@ -763,25 +841,25 @@ async def test_prepare_rejects_seccomp_fd_or_bounded_metadata_tamper(
 @pytest.mark.parametrize(
     ("case", "binds", "tmpfs_destinations", "expected_code", "expected_detail"),
     [
-        ("bind-exact", (("/workspace/data", True), ("/workspace/data", False)), (), "runtime_preflight_failed", "duplicate"),
-        ("bind-ancestor", (("/workspace/data", True), ("/workspace/data/out", True)), (), "runtime_preflight_failed", "nested"),
-        ("bind-reverse-ancestor", (("/workspace/data/out", True), ("/workspace/data", True)), (), "runtime_preflight_failed", "nested"),
-        ("bind-casefold-exact", (("/workspace/Data", True), ("/WORKSPACE/data", True)), (), "runtime_preflight_failed", "duplicate"),
-        ("bind-casefold-ancestor", (("/workspace/Data", True), ("/WORKSPACE/data/Out", True)), (), "runtime_preflight_failed", "nested"),
+        ("bind-exact", (("/testbed/data", True), ("/testbed/data", False)), (), "runtime_preflight_failed", "duplicate"),
+        ("bind-ancestor", (("/testbed/data", True), ("/testbed/data/out", True)), (), "runtime_preflight_failed", "nested"),
+        ("bind-reverse-ancestor", (("/testbed/data/out", True), ("/testbed/data", True)), (), "runtime_preflight_failed", "nested"),
+        ("bind-casefold-exact", (("/testbed/Data", True), ("/TESTBED/data", True)), (), "runtime_preflight_failed", "duplicate"),
+        ("bind-casefold-ancestor", (("/testbed/Data", True), ("/TESTBED/data/Out", True)), (), "runtime_preflight_failed", "nested"),
         ("tmpfs-exact", (), ("/scratch", "/scratch"), "runtime_preflight_failed", "duplicate"),
         ("tmpfs-ancestor", (), ("/scratch", "/scratch/cache"), "runtime_preflight_failed", "nested"),
         ("tmpfs-reverse-ancestor", (), ("/scratch/cache", "/scratch"), "runtime_preflight_failed", "nested"),
         ("tmpfs-casefold-ancestor", (), ("/Scratch", "/scratch/Cache"), "runtime_preflight_failed", "nested"),
-        ("bind-tmpfs-exact", (("/workspace/cache", True),), ("/workspace/cache",), "runtime_preflight_failed", "duplicate"),
-        ("bind-above-tmpfs", (("/workspace/snapshot", True),), ("/workspace/snapshot/cache",), "runtime_preflight_failed", "writable child"),
+        ("bind-tmpfs-exact", (("/testbed/cache", True),), ("/testbed/cache",), "runtime_preflight_failed", "duplicate"),
+        ("bind-above-tmpfs", (("/testbed/snapshot", True),), ("/testbed/snapshot/cache",), "runtime_preflight_failed", "writable child"),
         ("tmpfs-above-bind", (("/scratch/output", False),), ("/scratch",), "runtime_preflight_failed", "nested"),
-        ("cross-kind-casefold", (("/WORKSPACE/Snapshot", True),), ("/workspace/snapshot/cache",), "runtime_preflight_failed", "writable child"),
-        ("workspace-bind-alias", (("/WorkSpace", True),), (), "runtime_preflight_failed", "duplicate"),
-        ("workspace-tmpfs-alias", (), ("/WORKSPACE",), "runtime_preflight_failed", "duplicate"),
-        ("bind-lexical-interposition", (("/workspace/snapshot/../result", True),), (), "workspace_escape", "invalid Docker mount path"),
-        ("tmpfs-lexical-interposition", (), ("/workspace/./result",), "runtime_preflight_failed", "invalid tmpfs destination"),
-        ("verifier-snapshot-interposition", (("/workspace/snapshot", True), ("/workspace/result", False)), ("/workspace/snapshot/tmp",), "runtime_preflight_failed", "writable child"),
-        ("verifier-result-ancestor", (("/workspace/snapshot", True), ("/workspace/result", False)), ("/workspace/result/tmp",), "runtime_preflight_failed", "nested"),
+        ("cross-kind-casefold", (("/TESTBED/Snapshot", True),), ("/testbed/snapshot/cache",), "runtime_preflight_failed", "writable child"),
+        ("workspace-bind-alias", (("/TestBed", True),), (), "runtime_preflight_failed", "duplicate"),
+        ("workspace-tmpfs-alias", (), ("/TESTBED",), "runtime_preflight_failed", "duplicate"),
+        ("bind-lexical-interposition", (("/testbed/snapshot/../result", True),), (), "workspace_escape", "invalid Docker mount path"),
+        ("tmpfs-lexical-interposition", (), ("/testbed/./result",), "runtime_preflight_failed", "invalid tmpfs destination"),
+        ("verifier-snapshot-interposition", (("/testbed/snapshot", True), ("/testbed/result", False)), ("/testbed/snapshot/tmp",), "runtime_preflight_failed", "writable child"),
+        ("verifier-result-ancestor", (("/testbed/snapshot", True), ("/testbed/result", False)), ("/testbed/result/tmp",), "runtime_preflight_failed", "nested"),
     ],
     ids=lambda value: value if isinstance(value, str) else None,
 )
@@ -874,7 +952,7 @@ def test_forbidden_runtime_authority_rejects_before_executor_spawn(
     elif mutation == "docker-socket":
         candidate_mounts = ((mounts[0][0], "/var/run/docker.sock", False),)
     elif mutation == "comma-mount":
-        candidate_mounts = ((mounts[0][0], "/workspace/bad,name", False),)
+        candidate_mounts = ((mounts[0][0], "/testbed/bad,name", False),)
 
     with pytest.raises(DockerAdapterError) as captured:
         build_create_argv(
@@ -2201,7 +2279,7 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
     assert adapter.skeleton == Path(f"/staged/{workspace_fd}")
     assert all(
         str(source).startswith("/staged/")
-        and destination.startswith("/workspace/")
+        and destination.startswith("/testbed/")
         for source, destination, _ in adapter.mounts
     )
     assert measurement.isolated is True

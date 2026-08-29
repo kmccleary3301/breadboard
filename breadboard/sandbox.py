@@ -735,21 +735,7 @@ def new_dev_sandbox_v2(
             )
         ),
     )
-    try:
-        return create_sandbox(spec)
-    except NotImplementedError:
-        # Docker driver is optional; fall back to process sandbox until implemented.
-        fallback = SandboxLaunchSpec(
-            driver="process",
-            image=str(image),
-            workspace=str(workspace),
-            session_id=spec.session_id,
-            name=name,
-            lsp_actor=lsp_actor,
-            driver_options=spec.driver_options,
-            protected_paths=spec.protected_paths,
-        )
-        return create_sandbox(fallback)
+    return create_sandbox(spec)
 
 
 # Canonical aliases for the stabilized module path. We keep the V2 names

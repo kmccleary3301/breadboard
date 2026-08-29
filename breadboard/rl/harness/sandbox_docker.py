@@ -1,17 +1,31 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import ctypes
 import errno
 import hashlib
 import json
 import os
 import re
+import shlex
 import stat
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Protocol, Sequence
+
+
+CONTAINER_WORKSPACE_ROOT = "/testbed"
+
+
+def _container_workspace_path(logical_path: str) -> str:
+    if type(logical_path) is not str or not logical_path or "\x00" in logical_path:
+        raise DockerAdapterError("workspace_escape", "workspace path is invalid")
+    path = PurePosixPath(logical_path)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+        raise DockerAdapterError("workspace_escape", "workspace path is invalid")
+    return f"{CONTAINER_WORKSPACE_ROOT}/{path.as_posix()}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +74,7 @@ class SubprocessDockerCliExecutor:
             executable=executable.executable_descriptor_path,
             pass_fds=(executable.executable_fd,),
             env=dict(environment),
+            start_new_session=True,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -85,11 +100,31 @@ class SubprocessDockerCliExecutor:
                 await process.wait()
         except TimeoutError:
             timed_out = True
-            process.kill()
-            await process.wait()
+            try:
+                os.killpg(process.pid, 15)
+            except ProcessLookupError:
+                pass
+            try:
+                await asyncio.wait_for(process.wait(), 0.25)
+            except asyncio.TimeoutError:
+                try:
+                    os.killpg(process.pid, 9)
+                except ProcessLookupError:
+                    pass
+                await asyncio.wait_for(process.wait(), 0.75)
         except BaseException:
-            process.kill()
-            await asyncio.shield(process.wait())
+            try:
+                os.killpg(process.pid, 15)
+            except ProcessLookupError:
+                pass
+            try:
+                await asyncio.wait_for(process.wait(), 0.25)
+            except asyncio.TimeoutError:
+                try:
+                    os.killpg(process.pid, 9)
+                except ProcessLookupError:
+                    pass
+                await asyncio.shield(process.wait())
             raise
         finally:
             await asyncio.gather(*readers)
@@ -340,7 +375,9 @@ def _validate_mount_authority(
     mounts: Sequence[tuple[Path, str, bool]],
     tmpfs_mounts: Sequence[tuple[str, str]],
 ) -> None:
-    entries: list[tuple[str, bool, str]] = [("/workspace", True, "workspace root")]
+    entries: list[tuple[str, bool, str]] = [
+        (CONTAINER_WORKSPACE_ROOT, True, "workspace root")
+    ]
     for _, destination, readonly in mounts:
         _mount_argument("authority-check", destination, readonly=readonly)
         entries.append((destination, readonly, "bind"))
@@ -489,9 +526,9 @@ def build_create_argv(plan: Any, *, lease_id: str, workspace_id: str, epoch: int
         "--cpu-period", "100000",
         "--cpu-quota", str(resources.cpu_millis * 100),
         "--ulimit", f"nofile={resources.open_files}:{resources.open_files}",
-        "--mount", _mount_argument(str(skeleton_path), "/workspace", readonly=True),
+        "--mount", _mount_argument(str(skeleton_path), CONTAINER_WORKSPACE_ROOT, readonly=True),
     ]
-    destinations: set[str] = {"/workspace"}
+    destinations: set[str] = {CONTAINER_WORKSPACE_ROOT}
     for source, destination, readonly in sorted(mounts, key=lambda item: item[1]):
         if destination in destinations:
             raise DockerAdapterError("runtime_preflight_failed", "duplicate Docker mount destination")
@@ -502,7 +539,7 @@ def build_create_argv(plan: Any, *, lease_id: str, workspace_id: str, epoch: int
             raise DockerAdapterError("runtime_preflight_failed", "duplicate Docker mount destination")
         destinations.add(destination)
         argv += ["--tmpfs", _tmpfs_argument(destination, options)]
-    argv += ["--workdir", "/workspace"]
+    argv += ["--workdir", CONTAINER_WORKSPACE_ROOT]
     for key, value in runtime.fixed_environment:
         argv += ["--env", f"{key}={value}"]
     argv += ["--pull", "never", plan.image.image_digest, *runtime.idle_argv]
@@ -702,7 +739,7 @@ def decode_docker_inspect(
             "runtime_measurement_mismatch", "Docker inspect security options contradict the plan"
         )
     expected_mounts = [
-        (str(skeleton_path), "/workspace", False),
+        (str(skeleton_path), CONTAINER_WORKSPACE_ROOT, False),
         *[(str(source), destination, not readonly) for source, destination, readonly in mounts],
     ]
     observed_mounts: list[tuple[str, str, bool]] = []
@@ -1663,6 +1700,59 @@ class DockerRuntimeHandle:
 
     async def run_argv(self, argv: Sequence[str], *, timeout_ms: int, output_limit: int) -> Mapping[str, Any]:
         return await self._run(tuple(argv), timeout_ms=timeout_ms)
+    async def read_text(
+        self, path: str, *, offset: int = 0, limit: int | None = None
+    ) -> Mapping[str, Any]:
+        if type(offset) is not int or offset < 0:
+            raise DockerAdapterError("runtime_preflight_failed", "read offset is invalid")
+        ceiling = self.plan.limits.observation_bytes
+        if limit is not None and (type(limit) is not int or limit < 0 or limit > ceiling):
+            raise DockerAdapterError("output_limit_exceeded", "read limit exceeds admitted ceiling")
+        selected_limit = ceiling if limit is None else limit
+        target = _container_workspace_path(path)
+        command = (
+            f"tail -c +{offset + 1} {shlex.quote(target)} | "
+            f"head -c {selected_limit + 1}"
+        )
+        result = await self._run(("sh", "-lc", command), timeout_ms=self.plan.limits.action_timeout_ms)
+        content = str(result.get("stdout", ""))
+        encoded = content.encode("utf-8")
+        if len(encoded) > selected_limit:
+            raise DockerAdapterError("output_limit_exceeded", "read exceeds admitted ceiling")
+        return {"path": path, "content": content, "offset": offset, "bytes": len(encoded)}
+
+    async def write_text(self, path: str, content: str) -> Mapping[str, Any]:
+        if type(content) is not str:
+            raise DockerAdapterError("runtime_preflight_failed", "write content is invalid")
+        if len(content.encode("utf-8")) > self.plan.limits.artifact_bytes_each:
+            raise DockerAdapterError("output_limit_exceeded", "write exceeds admitted ceiling")
+        target = _container_workspace_path(path)
+        encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
+        command = f"printf %s {shlex.quote(encoded)} | base64 -d > {shlex.quote(target)}"
+        await self._run(("sh", "-lc", command), timeout_ms=self.plan.limits.action_timeout_ms)
+        return {"path": path, "bytes": len(content.encode("utf-8"))}
+
+    async def list_files(self, path: str, *, depth: int) -> Mapping[str, Any]:
+        if type(depth) is not int or depth < 0 or depth > self.plan.security_policy.snapshot_max_depth:
+            raise DockerAdapterError("output_limit_exceeded", "list depth exceeds admitted ceiling")
+        target = _container_workspace_path(path)
+        result = await self._run(
+            ("sh", "-lc", f"find {shlex.quote(target)} -mindepth 1 -maxdepth {depth + 1} -print"),
+            timeout_ms=self.plan.limits.action_timeout_ms,
+        )
+        root = f"{CONTAINER_WORKSPACE_ROOT}/"
+        values = sorted(
+            line[len(root):]
+            for line in str(result.get("stdout", "")).splitlines()
+            if line.startswith(root) and line[len(root):]
+        )
+        return {"path": path, "files": values}
+
+    async def workspace_diff(self) -> Mapping[str, Any]:
+        return await self._run(
+            ("git", "-C", CONTAINER_WORKSPACE_ROOT, "diff", "--no-ext-diff", "--binary"),
+            timeout_ms=self.plan.limits.action_timeout_ms,
+        )
 
     async def _terminate_bound(self) -> tuple[Any, ...]:
         from .materialization import CleanupState, CleanupStepReceipt
@@ -1879,13 +1969,13 @@ class DockerSandboxBackend:
     def _mount_specs(plan: Any, context: Any) -> tuple[tuple[str, str, bool], ...]:
         if context.role == "verifier":
             return (
-                (context.snapshot_relative_path, "/workspace/snapshot", True),
-                (context.result_relative_path, "/workspace/result", False),
+                (context.snapshot_relative_path, f"{CONTAINER_WORKSPACE_ROOT}/snapshot", True),
+                (context.result_relative_path, f"{CONTAINER_WORKSPACE_ROOT}/result", False),
             )
         return tuple(
             (
                 entry.target_logical_path,
-                "/workspace/" + entry.target_logical_path,
+                f"{CONTAINER_WORKSPACE_ROOT}/{entry.target_logical_path}",
                 entry.access.value == "ro",
             )
             for entry in plan.materialization_plan.entries
@@ -1948,7 +2038,7 @@ class DockerSandboxBackend:
                 expected_inode=workspace_metadata.st_ino,
                 directory=True,
                 lease_id=context.lease_id,
-                destination="/workspace",
+                destination=CONTAINER_WORKSPACE_ROOT,
             )
             workspace_stage.validate_descriptor(workspace_fd)
             await self.mount_stager.validate(workspace_stage, workspace_fd)

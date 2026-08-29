@@ -26,6 +26,7 @@ namespaces = true
 "agent_configs.templates" = ["*.yaml", "*.json"]
 "agent_configs.templates.prompts" = ["*.md"]
 "breadboard_engine" = ["engine-build-provenance.v1.json"]
+"breadboard.rl.harness" = ["SANDBOX_CAPABILITY_MATRIX.json"]
 "breadboard_sdk.generated" = ["*.json"]
 "config.e4_lanes" = ["*.yaml", "*.json"]
 "config.e4_targets" = ["**/*.json", "**/*.yaml", "**/*.md"]

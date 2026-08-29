@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import fcntl
+import json
 import os
 import shutil
 import stat
 import subprocess
 import sys
 import uuid
+from importlib.resources import files
 from pathlib import Path
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
@@ -46,6 +48,100 @@ from .runners.base import (
 )
 VERIFIER_REQUEST_RELATIVE_PATH = "input/verifier-request.json"
 VERIFIER_REQUEST_SCHEMA_VERSION = "bb.rl.verifier-request.v1"
+SANDBOX_CAPABILITY_MATRIX_RESOURCE = "SANDBOX_CAPABILITY_MATRIX.json"
+SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION = "bb.rl.sandbox-capability-matrix.v1"
+_SANDBOX_ADAPTER_STATUSES = {
+    "docker": "ready",
+    "firecracker": "unsupported",
+    "gvisor": "experimental",
+    "process": "development_only",
+}
+_SANDBOX_CAPABILITY_KEYS = {
+    "create",
+    "execute",
+    "file_access",
+    "workspace_diff",
+    "cancel",
+    "destroy",
+    "identity",
+    "cleanup_receipt",
+    "persistent_workspace",
+    "isolated",
+}
+
+
+def load_sandbox_capability_matrix() -> Mapping[str, Any]:
+    """Load and validate the installed canonical sandbox capability matrix."""
+    try:
+        payload = json.loads(
+            files(__package__)
+            .joinpath(SANDBOX_CAPABILITY_MATRIX_RESOURCE)
+            .read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise SandboxRuntimeError(
+            "sandbox capability matrix is unavailable",
+            code="capability_matrix_invalid",
+        ) from exc
+    if (
+        type(payload) is not dict
+        or set(payload) != {"schema_version", "workspace_root", "adapters"}
+        or payload.get("schema_version") != SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION
+        or payload.get("workspace_root") != "/testbed"
+        or type(payload.get("adapters")) is not list
+    ):
+        raise SandboxRuntimeError(
+            "sandbox capability matrix is invalid",
+            code="capability_matrix_invalid",
+        )
+    adapters = payload["adapters"]
+    if [item.get("adapter_id") for item in adapters if type(item) is dict] != list(
+        _SANDBOX_ADAPTER_STATUSES
+    ):
+        raise SandboxRuntimeError(
+            "sandbox capability matrix adapters are invalid",
+            code="capability_matrix_invalid",
+        )
+    for adapter in adapters:
+        if (
+            type(adapter) is not dict
+            or set(adapter)
+            != {
+                "adapter_id",
+                "status",
+                "capabilities",
+                "required_host_capabilities",
+                "unavailable_code",
+                "evidence_contracts",
+            }
+            or adapter["status"]
+            != _SANDBOX_ADAPTER_STATUSES.get(adapter["adapter_id"])
+            or type(adapter["capabilities"]) is not dict
+            or set(adapter["capabilities"]) != _SANDBOX_CAPABILITY_KEYS
+            or any(type(value) is not bool for value in adapter["capabilities"].values())
+            or type(adapter["required_host_capabilities"]) is not list
+            or any(
+                type(value) is not str or not value
+                for value in adapter["required_host_capabilities"]
+            )
+            or type(adapter["evidence_contracts"]) is not list
+            or any(
+                type(value) is not str or not value
+                for value in adapter["evidence_contracts"]
+            )
+            or adapter["unavailable_code"] != "runtime_unsupported"
+        ):
+            raise SandboxRuntimeError(
+                "sandbox capability matrix adapter is invalid",
+                code="capability_matrix_invalid",
+            )
+    return freeze_json_object(
+        payload,
+        field_name="sandbox capability matrix",
+        max_depth=8,
+        max_nodes=256,
+        max_encoded_bytes=64 * 1024,
+    )
 
 
 def _wp7_digest(value: Any) -> str:
@@ -1399,6 +1495,12 @@ class LeaseBackedRunnerWorkspace:
     async def read_text(self, path: str, *, offset: int = 0, limit: int | None = None) -> Mapping[str, Any]:
         lease = self.__lease
         await lease._begin_operation()
+        remote_read = getattr(lease._runtime, "read_text", None)
+        if callable(remote_read):
+            try:
+                return await remote_read(path, offset=offset, limit=limit)
+            finally:
+                await lease._end_operation()
         try:
             async with lease._io_lock:
                 lease._resolve(path)
@@ -1428,6 +1530,12 @@ class LeaseBackedRunnerWorkspace:
         lease = self.__lease
         payload = content.encode("utf-8")
         await lease._begin_operation()
+        remote_write = getattr(lease._runtime, "write_text", None)
+        if callable(remote_write):
+            try:
+                return await remote_write(path, content)
+            finally:
+                await lease._end_operation()
         try:
             async with lease._io_lock:
                 lease._resolve(path, writable=True)
@@ -1446,6 +1554,12 @@ class LeaseBackedRunnerWorkspace:
     async def list_files(self, path: str, *, depth: int) -> Mapping[str, Any]:
         lease = self.__lease
         await lease._begin_operation()
+        remote_list = getattr(lease._runtime, "list_files", None)
+        if callable(remote_list):
+            try:
+                return await remote_list(path, depth=depth)
+            finally:
+                await lease._end_operation()
         try:
             async with lease._io_lock:
                 if depth < 0 or depth > lease.plan.security_policy.snapshot_max_depth:
@@ -1491,6 +1605,65 @@ class SandboxWorkspaceLease:
         self._cleanup = None
         self.runner_workspace = LeaseBackedRunnerWorkspace(self, plan.effective_plan_digest, plan.tool_bindings)
         self._verifier_children: list[VerifierWorkspaceLease] = []
+    @property
+    def identity(self) -> SandboxMeasurement:
+        return self.measurement
+
+    @property
+    def capabilities(self) -> Any:
+        return self.plan
+
+    @property
+    def cleanup_receipt(self) -> SandboxCleanupReceipt | None:
+        return self._cleanup
+
+    async def execute(
+        self, argv: Sequence[str], *, timeout_ms: int | None = None
+    ) -> Mapping[str, Any]:
+        self._assert_active()
+        effective_timeout = self.plan.limits.action_timeout_ms if timeout_ms is None else timeout_ms
+        if type(effective_timeout) is not int or effective_timeout <= 0 or effective_timeout > self.plan.limits.action_timeout_ms:
+            raise WorkspaceStateError("timeout exceeds admitted ceiling", code="runtime_preflight_failed", lease_id=self.lease_id)
+        await self._begin_operation()
+        try:
+            return await self._runtime.run_argv(
+                tuple(argv), timeout_ms=effective_timeout,
+                output_limit=self.plan.limits.observation_bytes,
+            )
+        finally:
+            await self._end_operation()
+
+    async def read_file(
+        self, path: str, *, offset: int = 0, limit: int | None = None
+    ) -> Mapping[str, Any]:
+        return await self.runner_workspace.read_text(path, offset=offset, limit=limit)
+
+    async def write_file(self, path: str, content: str) -> Mapping[str, Any]:
+        return await self.runner_workspace.write_text(path, content)
+
+    async def list_workspace_files(self, path: str, *, depth: int) -> Mapping[str, Any]:
+        return await self.runner_workspace.list_files(path, depth=depth)
+
+    async def workspace_diff(self) -> Mapping[str, Any]:
+        self._assert_active()
+        await self._begin_operation()
+        try:
+            remote_diff = getattr(self._runtime, "workspace_diff", None)
+            if callable(remote_diff):
+                return await remote_diff()
+            return await self._runtime.run_shell(
+                "git diff --no-ext-diff --binary",
+                timeout_ms=self.plan.limits.action_timeout_ms,
+                output_limit=self.plan.limits.observation_bytes,
+            )
+        finally:
+            await self._end_operation()
+
+    async def cancel(self) -> SandboxCleanupReceipt:
+        return await self.close()
+
+    async def destroy(self) -> SandboxCleanupReceipt:
+        return await self.close()
 
     @property
     def state(self) -> WorkspaceLeaseState: return self._state
@@ -1588,13 +1761,22 @@ class VerifierWorkspaceLease:
         result_root = self.workspace / "result"
         ceiling = min(self.plan.limits.artifact_bytes_each, self.plan.limits.artifact_bytes_total)
         try:
-            raw = await asyncio.to_thread(
-                _bounded_regular_read,
-                result_root,
-                self.plan.verifier.result_relative_path,
-                offset=0,
-                limit=ceiling + 1,
-            )
+            remote_read = getattr(self._runtime, "read_text", None)
+            if callable(remote_read):
+                remote = await remote_read(
+                    "result/" + self.plan.verifier.result_relative_path,
+                    offset=0,
+                    limit=ceiling,
+                )
+                raw = str(remote["content"]).encode("utf-8")
+            else:
+                raw = await asyncio.to_thread(
+                    _bounded_regular_read,
+                    result_root,
+                    self.plan.verifier.result_relative_path,
+                    offset=0,
+                    limit=ceiling + 1,
+                )
             if len(raw) > ceiling:
                 raise ValueError("result too large")
             payload = __import__("json").loads(raw)
@@ -2776,7 +2958,9 @@ __all__ = [
     "SandboxMeasurement", "SandboxNetworkPolicy",
     "SandboxPlanError", "SandboxRuntimeError", "SandboxRuntimeManager", "SandboxSecurityPolicy",
     "SandboxWorkspaceLease", "TrustedProcessBackend", "TrustedProcessHandle",
+    "SANDBOX_CAPABILITY_MATRIX_RESOURCE", "SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION",
     "VERIFIER_REQUEST_RELATIVE_PATH", "VERIFIER_REQUEST_SCHEMA_VERSION",
     "VerifierExecutionError", "VerifierSnapshotError", "VerifierWorkspaceLease",
     "WorkspaceStateError", "WorkspaceStorageIdentity", "build_sandbox_execution_plan",
+    "load_sandbox_capability_matrix",
 ]

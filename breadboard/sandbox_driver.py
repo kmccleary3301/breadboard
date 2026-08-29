@@ -12,7 +12,7 @@ from .sandbox import DevSandboxV2
 
 @dataclass(frozen=True)
 class SandboxLaunchSpec:
-    """Input for creating a sandbox actor."""
+    """Input for creating a development-only historical sandbox actor."""
 
     driver: str
     image: str
@@ -24,8 +24,17 @@ class SandboxLaunchSpec:
     protected_paths: tuple[str, ...] = ()
 
 
+class SandboxDriverError(RuntimeError):
+    """Typed failure for the development-only historical selector."""
+
+    def __init__(self, message: str, *, code: str, driver: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.driver = driver
+
+
 def resolve_driver_from_env(default: str = "light") -> str:
-    """Resolve sandbox driver name from environment (best-effort)."""
+    """Resolve a driver for explicitly development-only callers."""
     explicit = os.environ.get("BREADBOARD_SANDBOX_DRIVER") or os.environ.get(
         "SANDBOX_DRIVER"
     )
@@ -42,13 +51,14 @@ def resolve_driver_from_env(default: str = "light") -> str:
 
 
 def create_sandbox(spec: SandboxLaunchSpec) -> ray.actor.ActorHandle:
-    """Create a sandbox actor handle for the requested driver.
-
-    This function intentionally returns a Ray actor handle (not a local proxy).
-    Local-mode wrapping is handled by the caller (see breadboard_engine.utils.local_ray).
-    """
-
-    driver = (spec.driver or "process").strip().lower()
+    """Create a historical actor only for explicit development selection."""
+    driver = spec.driver.strip().lower() if type(spec.driver) is str else ""
+    if not driver:
+        raise SandboxDriverError(
+            "sandbox driver must be selected explicitly",
+            code="driver_unavailable",
+            driver=driver,
+        )
     actor_name = spec.name or f"sb-{spec.session_id}"
 
     if driver in {"process", "light", "dev"}:
@@ -68,8 +78,11 @@ def create_sandbox(spec: SandboxLaunchSpec) -> ray.actor.ActorHandle:
             opts.get("network") or os.environ.get("BREADBOARD_DOCKER_NETWORK") or "none"
         )
         if network.strip().lower() != "none":
-            raise ValueError("Docker model sandbox network must be disabled")
-        network = "none"
+            raise SandboxDriverError(
+                "historical Docker sandbox only supports network none",
+                code="driver_unsupported",
+                driver=driver,
+            )
         runtime = opts.get("runtime") or os.environ.get("RAY_DOCKER_RUNTIME")
         docker_bin = (
             opts.get("docker_bin")
@@ -82,26 +95,21 @@ def create_sandbox(spec: SandboxLaunchSpec) -> ray.actor.ActorHandle:
             workspace=str(spec.workspace),
             lsp_actor=spec.lsp_actor,
             protected_paths=spec.protected_paths,
-            network=network,
+            network="none",
             runtime=runtime,
             docker_bin=docker_bin,
         )
 
-    if driver == "none":
-        # Legacy alias: treat as light sandbox for now.
-        return DevSandboxV2.options(name=actor_name).remote(
-            image=spec.image,
-            session_id=spec.session_id,
-            workspace=str(spec.workspace),
-            lsp_actor=spec.lsp_actor,
-            protected_paths=spec.protected_paths,
-        )
-
-    # Default fallback: process sandbox.
-    return DevSandboxV2.options(name=actor_name).remote(
-        image=spec.image,
-        session_id=spec.session_id,
-        workspace=str(spec.workspace),
-        lsp_actor=spec.lsp_actor,
-        protected_paths=spec.protected_paths,
+    raise SandboxDriverError(
+        "sandbox driver is unknown or unavailable",
+        code="driver_unknown",
+        driver=driver,
     )
+
+
+__all__ = [
+    "SandboxDriverError",
+    "SandboxLaunchSpec",
+    "create_sandbox",
+    "resolve_driver_from_env",
+]
