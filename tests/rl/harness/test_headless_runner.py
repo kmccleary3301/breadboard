@@ -360,9 +360,7 @@ async def test_headless_runner_rejects_development_trusted_process(
         context={"campaign": "e4"},
         workspace=HeadlessWorkspaceInput(
             repository_snapshot_digest=plan.task.repository_snapshot_digest,
-            base_commit=(
-                None if plan.task.repository_snapshot_digest is None else "0" * 40
-            ),
+            base_commit="0" * 40,
             task_image_digest=plan.sandbox.image_digest,
         ),
         expected_resources=plan.effective_capabilities.resources,
@@ -412,6 +410,14 @@ async def test_headless_runner_rejects_development_trusted_process(
         alternate_route.identity_dict()["caller_headers_sha256"]
         != route.identity_dict()["caller_headers_sha256"]
     )
+
+    if request.workspace.repository_snapshot_digest is None:
+        with pytest.raises(ValueError, match="not bound"):
+            _validate_repository_base_commit_binding(request, {})
+        _validate_repository_base_commit_binding(
+            request,
+            {request.workspace.task_image_digest: request.workspace.base_commit},
+        )
 
     bound_digest = "sha256:" + "1" * 64
     bound_commit = "2" * 40
