@@ -725,12 +725,17 @@ class SessionService:
         default_profile_overridden = any(
             key != "workspace.root" for key in (request.overrides or {})
         )
+        bundled_role_bindings_overridden = any(
+            key in {"model", "model_roles", "providers"}
+            or key.startswith(("model_roles.", "providers."))
+            for key in (request.overrides or {})
+        )
         request_metadata = dict(request.metadata or {})
         role_document = request_metadata.pop(MODEL_ROLES_METADATA_KEY, None)
         if (
             role_document is None
             and default_profile is not None
-            and not default_profile_overridden
+            and not bundled_role_bindings_overridden
         ):
             role_document = load_daily_driver_model_roles()
         for reserved_key in (
