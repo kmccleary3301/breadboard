@@ -30,15 +30,15 @@ class E4TargetError(ValueError):
 class E4TargetPackage:
     target_id: str
     descriptor: Mapping[str, Any]
-    _asset_root: Traversable
-    _asset_paths: frozenset[str]
+    _assets: Mapping[str, bytes]
 
     def read_asset_bytes(self, relative_path: str) -> bytes:
-        if relative_path not in self._asset_paths:
+        try:
+            return self._assets[relative_path]
+        except KeyError:
             raise E4TargetError(
                 f"target {self.target_id!r} does not declare asset {relative_path!r}"
-            )
-        return _read_bytes(_join_safe(self._asset_root, relative_path), relative_path)
+            ) from None
 
     def read_asset_text(self, relative_path: str) -> str:
         try:
@@ -152,6 +152,7 @@ def _load_e4_target_from_root(
         raise E4TargetError(f"{descriptor_path} assets must be a non-empty array")
 
     declared_paths: set[str] = set()
+    verified_assets: dict[str, bytes] = {}
     for position, asset in enumerate(assets):
         context = f"{descriptor_path} assets[{position}]"
         if not isinstance(asset, dict):
@@ -177,6 +178,7 @@ def _load_e4_target_from_root(
                 f"{descriptor_path}:{asset_path} size mismatch: "
                 f"expected {expected_bytes}, got {len(asset_bytes)}"
             )
+        verified_assets[asset_path] = asset_bytes
 
     execution = descriptor.get("execution")
     if not isinstance(execution, dict) or not execution:
@@ -192,8 +194,7 @@ def _load_e4_target_from_root(
     return E4TargetPackage(
         target_id=target_id,
         descriptor=_freeze_json(descriptor),
-        _asset_root=descriptor_parent,
-        _asset_paths=frozenset(declared_paths),
+        _assets=MappingProxyType(verified_assets),
     )
 
 
@@ -235,7 +236,11 @@ def _join_parts(root: Traversable | Path, parts: tuple[str, ...]) -> Traversable
 def _validate_relative_path(relative_path: str) -> tuple[str, ...]:
     if not isinstance(relative_path, str) or not relative_path:
         raise E4TargetError("target resource path must be a non-empty string")
-    if relative_path.startswith("/") or "\\" in relative_path:
+    if (
+        relative_path.startswith("/")
+        or "\\" in relative_path
+        or ":" in relative_path
+    ):
         raise E4TargetError(f"unsafe target resource path {relative_path!r}")
     parts = tuple(relative_path.split("/"))
     if any(part in {"", ".", ".."} for part in parts):

@@ -275,6 +275,18 @@ def test_target_loader_rejects_corrupt_runtime_asset(tmp_path: Path) -> None:
         _load_e4_target_from_root(copied_root, "pi@0.57.1")
 
 
+def test_loaded_target_serves_only_verified_asset_bytes(tmp_path: Path) -> None:
+    copied_root = tmp_path / "e4_targets"
+    shutil.copytree(TARGET_ROOT, copied_root)
+    target = _load_e4_target_from_root(copied_root, "pi@0.57.1")
+    expected = target.read_asset_bytes("harness.yaml")
+    harness = copied_root / "pi" / "0.57.1" / "harness.yaml"
+
+    harness.write_text("changed after verification\n", encoding="utf-8")
+
+    assert target.read_asset_bytes("harness.yaml") == expected
+
+
 def test_target_loader_rejects_boolean_asset_size(tmp_path: Path) -> None:
     copied_root = tmp_path / "e4_targets"
     shutil.copytree(TARGET_ROOT, copied_root)
@@ -294,12 +306,19 @@ def test_target_loader_rejects_boolean_asset_size(tmp_path: Path) -> None:
         _load_e4_target_from_root(copied_root, "pi@0.57.1")
 
 
-def test_target_loader_rejects_unsafe_descriptor_path(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "unsafe_path",
+    ("../target.json", "D:/outside/target.json"),
+)
+def test_target_loader_rejects_unsafe_descriptor_path(
+    tmp_path: Path,
+    unsafe_path: str,
+) -> None:
     copied_root = tmp_path / "e4_targets"
     shutil.copytree(TARGET_ROOT, copied_root)
     index_path = copied_root / "index.json"
     index = json.loads(index_path.read_text(encoding="utf-8"))
-    index["targets"]["pi@0.57.1"]["descriptor"] = "../target.json"
+    index["targets"]["pi@0.57.1"]["descriptor"] = unsafe_path
     index_path.write_text(json.dumps(index), encoding="utf-8")
 
     with pytest.raises(E4TargetError, match="unsafe target resource path"):
