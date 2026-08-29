@@ -6,7 +6,10 @@ import types
 import pytest
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
-from breadboard_engine.conductor.modes import _bind_episode_provider_profile
+from breadboard_engine.conductor.modes import (
+    _bind_episode_provider_profile,
+    _provider_wire_evidence,
+)
 from breadboard_engine.provider import sdk_bindings
 from breadboard_engine.provider.contracts import (
     OpenAICompletionsCapabilities,
@@ -330,10 +333,25 @@ def test_profile_is_pickle_safe_for_ray_actor_admission():
 def test_profile_response_is_sanitized_inside_secret_scope(monkeypatch):
     profile = _profile(caller_headers={"X-Request-ID": "caller-secret"})
     runtime = _runtime()
-    monkeypatch.setattr(
-        runtime,
-        "_invoke",
-        lambda **_kwargs: ProviderResult(
+    emitted = []
+    recorded = []
+    session_state = types.SimpleNamespace(
+        _emit_event=lambda event_type, payload, turn: emitted.append(
+            (event_type, payload, turn)
+        )
+    )
+    exchange_recorder = types.SimpleNamespace(
+        record=lambda kind, payload: recorded.append((kind, payload))
+    )
+
+    def leaking_invoke(**kwargs):
+        runtime._stream_emit_event(
+            kwargs["context"],
+            "assistant.message.delta",
+            {"text": "episode-secret caller-secret"},
+            turn_index=0,
+        )
+        return ProviderResult(
             messages=[
                 ProviderMessage(
                     role="assistant",
@@ -341,8 +359,9 @@ def test_profile_response_is_sanitized_inside_secret_scope(monkeypatch):
                 )
             ],
             raw_response={"echo": "episode-secret caller-secret"},
-        ),
-    )
+        )
+
+    monkeypatch.setattr(runtime, "_invoke", leaking_invoke)
 
     result = runtime.invoke(
         client=object(),
@@ -351,9 +370,10 @@ def test_profile_response_is_sanitized_inside_secret_scope(monkeypatch):
         tools=None,
         stream=True,
         context=ProviderRuntimeContext(
-            None,
+            session_state,
             {},
             stream=True,
+            exchange_recorder=exchange_recorder,
             provider_profile=profile,
         ),
     )
@@ -361,6 +381,63 @@ def test_profile_response_is_sanitized_inside_secret_scope(monkeypatch):
     rendered = repr(result)
     assert "episode-secret" not in rendered
     assert "caller-secret" not in rendered
+    assert "episode-secret" not in repr(emitted)
+    assert "caller-secret" not in repr(emitted)
+    assert "episode-secret" not in repr(recorded)
+    assert "caller-secret" not in repr(recorded)
+
+
+def test_profile_wire_evidence_records_exact_authoritative_request():
+    profile = _profile(
+        sampling={
+            "temperature": 0.6,
+            "top_p": 0.95,
+            "seed": 7,
+        }
+    )
+    messages = [{"role": "user", "content": "fixture"}]
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read",
+                "description": "Read a file",
+                "parameters": {"type": "object"},
+                "strict": True,
+            },
+        }
+    ]
+
+    body, headers, endpoint, identity = _provider_wire_evidence(
+        profile=profile,
+        provider_id="openai",
+        model=MODEL,
+        messages=messages,
+        tools=tools,
+        stream=False,
+        client_config={
+            "base_url": "https://wrong.example/v1",
+            "default_headers": {"X-Wrong": "wrong"},
+        },
+    )
+
+    assert body == profile.chat_request(messages, tools)
+    assert body["stream"] is True
+    assert body["stream_options"] == {"include_usage": True}
+    assert body["max_tokens"] == 32_000
+    assert body["n"] == 1
+    assert body["temperature"] == 0.6
+    assert body["top_p"] == 0.95
+    assert body["seed"] == 7
+    assert body["enable_thinking"] is False
+    assert body["tools"][0]["function"]["strict"] is False
+    assert endpoint == profile.base_url
+    assert identity == profile.identity_dict()
+    assert headers == {
+        "Authorization": "***REDACTED***",
+        "X-Request-ID": "***REDACTED***",
+    }
+    assert "episode-secret" not in repr((body, headers, endpoint, identity))
 
 
 def test_rejected_episode_does_not_retain_provider_profile():
