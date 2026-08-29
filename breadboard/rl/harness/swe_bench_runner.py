@@ -549,7 +549,7 @@ def _measure_file(path: str, *, max_bytes: int) -> str:
             not stat.S_ISREG(identity.st_mode)
             or identity.st_uid != 0
             or identity.st_nlink != 1
-            or identity.st_mode & 0o222
+            or identity.st_mode & 0o022
             or identity.st_size > max_bytes
         ):
             raise SweBenchRunnerError(
@@ -594,7 +594,7 @@ def _require_root_owned_immutable_directory(path: str) -> None:
         if (
             not stat.S_ISDIR(identity.st_mode)
             or identity.st_uid != 0
-            or identity.st_mode & 0o222
+            or identity.st_mode & 0o022
         ):
             raise SweBenchRunnerError(
                 "evaluator authority directory is not root-owned and immutable: "
@@ -619,7 +619,7 @@ def _measure_immutable_tree(
         if (
             not stat.S_ISDIR(directory_identity.st_mode)
             or directory_identity.st_uid != 0
-            or directory_identity.st_mode & 0o222
+            or directory_identity.st_mode & 0o022
         ):
             raise SweBenchRunnerError(
                 "evaluator environment contains a mutable directory"
@@ -635,7 +635,7 @@ def _measure_immutable_tree(
             if (
                 not stat.S_ISDIR(identity.st_mode)
                 or identity.st_uid != 0
-                or identity.st_mode & 0o222
+                or identity.st_mode & 0o022
             ):
                 raise SweBenchRunnerError(
                     "evaluator environment contains a mutable directory"
@@ -651,7 +651,7 @@ def _measure_immutable_tree(
                 not stat.S_ISREG(identity.st_mode)
                 or identity.st_uid != 0
                 or identity.st_nlink != 1
-                or identity.st_mode & 0o222
+                or identity.st_mode & 0o022
                 or identity.st_size > _MAX_EVALUATOR_BYTES
             ):
                 raise SweBenchRunnerError(
