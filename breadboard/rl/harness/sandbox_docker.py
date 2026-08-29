@@ -320,6 +320,7 @@ except OSError as exc:
         errno.ENOENT,
         errno.ENOTDIR,
         errno.EPERM,
+        errno.EROFS,
         errno.EXDEV,
     }
     if exc.errno in authority_errors:
