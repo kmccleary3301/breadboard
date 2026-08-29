@@ -8,6 +8,7 @@ import math
 import os
 import re
 import stat
+from bisect import bisect_left
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -621,7 +622,7 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
     )
     entries: list[dict[str, Any]] = []
     total_bytes = 0
-    pending_names = 0
+    live_names = 0
 
     def fingerprint(value: os.stat_result) -> tuple[int, int, int, int, int, int]:
         return (
@@ -661,18 +662,45 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
         names.sort()
         return names
 
+    def directory_names_match(
+        directory_fd: int, relative: Path, expected: list[str]
+    ) -> bool:
+        seen = bytearray(len(expected))
+        count = 0
+        try:
+            with os.scandir(directory_fd) as iterator:
+                for item in iterator:
+                    if count >= len(expected):
+                        return False
+                    index = bisect_left(expected, item.name)
+                    if (
+                        index >= len(expected)
+                        or expected[index] != item.name
+                        or seen[index]
+                    ):
+                        return False
+                    seen[index] = 1
+                    count += 1
+        except OSError as exc:
+            raise E4ParityError(
+                f"could not read workspace directory {relative.as_posix() or '.'}"
+            ) from exc
+        return count == len(expected)
+
     def visit(directory_fd: int, relative: Path, depth: int) -> None:
-        nonlocal pending_names, total_bytes
+        nonlocal live_names, total_bytes
         if depth > _MAX_WORKSPACE_DEPTH:
             raise E4ParityError(f"workspace depth exceeds {_MAX_WORKSPACE_DEPTH}")
         initial_names = bounded_directory_names(
             directory_fd,
             relative,
-            _MAX_WORKSPACE_ENTRIES - len(entries) - pending_names,
+            min(
+                _MAX_WORKSPACE_ENTRIES - len(entries),
+                _MAX_WORKSPACE_ENTRIES - live_names,
+            ),
         )
-        pending_names += len(initial_names)
+        live_names += len(initial_names)
         for name in initial_names:
-            pending_names -= 1
             if (
                 not name
                 or name in {".", ".."}
@@ -826,16 +854,12 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
                     os.close(file_fd)
                 continue
             raise E4ParityError(f"workspace contains unsupported entry {relative_text}")
-        final_names = bounded_directory_names(
-            directory_fd,
-            relative,
-            len(initial_names),
-        )
-        if initial_names != final_names:
+        if not directory_names_match(directory_fd, relative, initial_names):
             raise E4ParityError(
                 f"workspace directory changed during snapshot: "
                 f"{relative.as_posix() or '.'}"
             )
+        live_names -= len(initial_names)
 
     try:
         root_fd = os.open(root, directory_flags)
