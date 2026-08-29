@@ -680,6 +680,56 @@ async def test_snapshot_seal_cancellation_releases_completed_snapshot_worker(
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
 
+async def test_identical_snapshot_seal_holds_reference_during_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    first = await harness.manager.open(fixture.request)
+    await first.runner_workspace.write_text("work/candidate.txt", "candidate")
+    first_snapshot = await first.seal_for_verifier()
+    second = await harness.manager.open(fixture.request)
+    await second.runner_workspace.write_text("work/candidate.txt", "candidate")
+    entered = threading.Event()
+    continue_verify = threading.Event()
+    original_verify = harness.store.verify_snapshot
+
+    def blocked_verify(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        if not continue_verify.wait(timeout=2):
+            raise AssertionError("snapshot verification was not released")
+        return original_verify(*args, **kwargs)
+
+    monkeypatch.setattr(harness.store, "verify_snapshot", blocked_verify)
+    sealing = asyncio.create_task(second.seal_for_verifier())
+    assert await asyncio.to_thread(entered.wait, 1)
+    releasing = asyncio.create_task(
+        harness.manager._release_snapshot(first_snapshot.snapshot_id)
+    )
+    await asyncio.sleep(0)
+    assert not releasing.done()
+
+    continue_verify.set()
+    second_snapshot = await asyncio.wait_for(sealing, 1)
+    assert await asyncio.wait_for(releasing, 1) == CleanupStepReceipt(
+        "snapshot",
+        CleanupState.RELEASED,
+    )
+    object_path = (
+        harness.cache_root
+        / "objects"
+        / second_snapshot.root_digest.removeprefix("sha256:")
+    )
+    assert object_path.is_dir()
+    assert await harness.manager._release_snapshot(
+        second_snapshot.snapshot_id
+    ) == CleanupStepReceipt("snapshot", CleanupState.RELEASED)
+    assert not object_path.exists()
+    assert (await first.close()).state is CleanupState.QUARANTINED
+    assert (await second.close()).state is CleanupState.RELEASED
+    await harness.manager.close()
+
 
 async def test_snapshot_copy_cancellation_waits_before_verifier_workspace_release(
     tmp_path: Path,

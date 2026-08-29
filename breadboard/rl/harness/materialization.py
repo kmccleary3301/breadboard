@@ -2564,54 +2564,57 @@ class FilesystemMaterializationStore:
         if len(PurePosixPath(destination_name).parts) < 2:
             raise RuntimeError("snapshot_destination_invalid")
         destination_owner = self._workspace
-        destination_owner.mkdir(destination_name)
-        try:
-            entries, file_count, inode_count, byte_count = self._snapshot_tree(
-                "objects/" + expected_suffix,
-                source_owner=self._cache,
-                destination=destination_name,
-                destination_owner=destination_owner,
-                max_depth=max_depth,
-                max_files=max_files,
-                max_inodes=max_inodes,
-                max_bytes=max_bytes,
-            )
-            projections = [item.projection() for item in entries]
-            manifest_digest = _digest(projections)
-            root_digest = _digest(
-                {
-                    "schema_version": "bb.rl.verifier-snapshot.v1",
-                    "entries": projections,
-                }
-            )
-            if (
-                manifest_digest != receipt.manifest_digest
-                or root_digest != receipt.root_digest
-                or file_count != receipt.file_count
-                or inode_count != receipt.inode_count
-                or byte_count != receipt.byte_count
-            ):
-                raise RuntimeError("snapshot_tampered")
-            destination_fd = destination_owner.open_dir(destination_name)
+        with self._lock:
+            destination_owner.mkdir(destination_name)
             try:
-                for item in sorted(
-                    entries,
-                    key=lambda entry: len(PurePosixPath(entry.logical_path).parts),
-                    reverse=True,
+                entries, file_count, inode_count, byte_count = self._snapshot_tree(
+                    "objects/" + expected_suffix,
+                    source_owner=self._cache,
+                    destination=destination_name,
+                    destination_owner=destination_owner,
+                    max_depth=max_depth,
+                    max_files=max_files,
+                    max_inodes=max_inodes,
+                    max_bytes=max_bytes,
+                )
+                projections = [item.projection() for item in entries]
+                manifest_digest = _digest(projections)
+                root_digest = _digest(
+                    {
+                        "schema_version": "bb.rl.verifier-snapshot.v1",
+                        "entries": projections,
+                    }
+                )
+                if (
+                    manifest_digest != receipt.manifest_digest
+                    or root_digest != receipt.root_digest
+                    or file_count != receipt.file_count
+                    or inode_count != receipt.inode_count
+                    or byte_count != receipt.byte_count
                 ):
-                    if item.kind == "directory":
-                        os.chmod(
-                            item.logical_path,
-                            item.mode,
-                            dir_fd=destination_fd,
-                            follow_symlinks=False,
-                        )
-                os.fsync(destination_fd)
-            finally:
-                os.close(destination_fd)
-        except BaseException:
-            destination_owner.remove_tree(destination_name, missing_ok=True)
-            raise
+                    raise RuntimeError("snapshot_tampered")
+                destination_fd = destination_owner.open_dir(destination_name)
+                try:
+                    for item in sorted(
+                        entries,
+                        key=lambda entry: len(
+                            PurePosixPath(entry.logical_path).parts
+                        ),
+                        reverse=True,
+                    ):
+                        if item.kind == "directory":
+                            os.chmod(
+                                item.logical_path,
+                                item.mode,
+                                dir_fd=destination_fd,
+                                follow_symlinks=False,
+                            )
+                    os.fsync(destination_fd)
+                finally:
+                    os.close(destination_fd)
+            except BaseException:
+                destination_owner.remove_tree(destination_name, missing_ok=True)
+                raise
 
     def seal_snapshot(
         self,
@@ -2682,27 +2685,27 @@ class FilesystemMaterializationStore:
                 byte_count,
                 "snapshot-object-" + suffix,
             )
-            if self._cache.exists(immutable_relative):
-                self.verify_snapshot(
-                    receipt,
-                    immutable,
-                    max_depth=max_depth,
-                    max_files=max_files,
-                    max_inodes=max_inodes,
-                    max_bytes=max_bytes,
-                )
-                self._cache.remove_tree(staging)
-            else:
-                self._cache.replace(staging, immutable_relative)
-                self.verify_snapshot(
-                    receipt,
-                    immutable,
-                    max_depth=max_depth,
-                    max_files=max_files,
-                    max_inodes=max_inodes,
-                    max_bytes=max_bytes,
-                )
             with self._lock:
+                if self._cache.exists(immutable_relative):
+                    self.verify_snapshot(
+                        receipt,
+                        immutable,
+                        max_depth=max_depth,
+                        max_files=max_files,
+                        max_inodes=max_inodes,
+                        max_bytes=max_bytes,
+                    )
+                    self._cache.remove_tree(staging)
+                else:
+                    self._cache.replace(staging, immutable_relative)
+                    self.verify_snapshot(
+                        receipt,
+                        immutable,
+                        max_depth=max_depth,
+                        max_files=max_files,
+                        max_inodes=max_inodes,
+                        max_bytes=max_bytes,
+                    )
                 self._snapshot_reference_counts[immutable_relative] = (
                     self._snapshot_reference_counts.get(immutable_relative, 0) + 1
                 )
