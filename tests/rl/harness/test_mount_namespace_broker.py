@@ -274,7 +274,10 @@ def test_direct_docker_execution_reads_sealed_output_descriptors(
     ) -> tuple[dict[str, object], tuple[int, int]]:
         assert operation == "execute"
         assert request["output_limit"] == 1024
-        assert descriptors == (executable_fd,)
+        assert request["cancellation_descriptor"] is True
+        assert descriptors[0] == executable_fd
+        assert len(descriptors) == 2
+        assert stat.S_ISFIFO(os.fstat(descriptors[1]).st_mode)
         assert expected_return_fds == 2
         stdout_fd = broker_module._sealed_payload_fd(output_payload)
         stderr_fd = broker_module._sealed_payload_fd(b"")

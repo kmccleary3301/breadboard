@@ -3611,7 +3611,13 @@ class MountNamespaceBroker:
         host_prefix = ("--host", "unix://" + binding.socket_path)
         argv = (executable.argv0, *host_prefix, *tuple(argv_tail))
         returned_fds: tuple[int, ...] = ()
+        cancellation_read_fd = cancellation_write_fd = -1
         try:
+            cancellation_read_fd, cancellation_write_fd = os.pipe()
+            os.set_inheritable(cancellation_read_fd, False)
+            os.set_inheritable(cancellation_write_fd, False)
+            os.set_blocking(cancellation_read_fd, False)
+            os.set_blocking(cancellation_write_fd, False)
             result, returned_fds = self._call(
                 "execute",
                 {
@@ -3620,8 +3626,9 @@ class MountNamespaceBroker:
                     "environment": [],
                     "timeout_ms": timeout_ms,
                     "output_limit": output_limit,
+                    "cancellation_descriptor": True,
                 },
-                (executable.executable_fd,),
+                (executable.executable_fd, cancellation_read_fd),
                 expected_return_fds=2,
             )
             stdout_size = result.get("stdout_size")
@@ -3650,6 +3657,10 @@ class MountNamespaceBroker:
                 limit=output_limit - stdout_size,
             )
         finally:
+            if cancellation_read_fd >= 0:
+                os.close(cancellation_read_fd)
+            if cancellation_write_fd >= 0:
+                os.close(cancellation_write_fd)
             for returned_fd in returned_fds:
                 os.close(returned_fd)
         return DockerCommandResult(
@@ -4268,7 +4279,7 @@ class BrokerDockerCliExecutor:
 
                 try:
                     os.write(cancellation_write_fd, b"\x01")
-                except BlockingIOError:
+                except OSError:
                     pass
                 try:
                     _result, abandoned_fds = await asyncio.shield(call_task)
