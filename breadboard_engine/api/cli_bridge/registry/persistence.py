@@ -420,6 +420,12 @@ class PersistenceMixin:
                 "replay_head_sequence": durable_head_sequence,
                 "event_head_id": durable_head_event_id,
                 "model": _retained_model_id(metadata.get("model")),
+                "mode": (
+                    str(metadata["mode"]).strip()
+                    if isinstance(metadata.get("mode"), str)
+                    and str(metadata["mode"]).strip()
+                    else None
+                ),
                 "config_path": str(metadata.get("config_path") or ""),
                 "workspace": str(metadata.get("workspace") or ""),
                 "model_role_lock": role_lock,
@@ -565,6 +571,11 @@ class PersistenceMixin:
         metadata: Dict[str, Any] = {}
         if model is not None:
             metadata["model"] = model
+        mode = session.get("mode")
+        if mode is not None:
+            if not isinstance(mode, str) or not mode.strip():
+                raise ValueError("retained session mode is invalid")
+            metadata["mode"] = mode.strip()
         if session.get("config_path"):
             metadata["config_path"] = str(session["config_path"])
         if session.get("workspace"):

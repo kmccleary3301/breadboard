@@ -102,6 +102,21 @@ def test_configured_permission_mode_preserves_profile_rules() -> None:
         "shell": {"default": "ask"},
     }
     assert runner.session.metadata["permission_mode"] == "configured"
+    agent_config = json.loads(json.dumps(prepared))
+    runner._agent = type(
+        "ConfiguredAgent",
+        (),
+        {
+            "_local_mode": True,
+            "config": agent_config,
+            "run_task": lambda *_args, **_kwargs: {
+                "completion_summary": {"completed": True}
+            },
+        },
+    )()
+    _execute_task(runner)
+    assert runner._agent.config["permissions"] == prepared["permissions"]
+    assert runner._permission_queue is None
 
 
 @pytest.mark.asyncio

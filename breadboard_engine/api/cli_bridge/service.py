@@ -1275,16 +1275,24 @@ class SessionService:
         }:
             record.loaded_from_retained_state = False
             return
-        profile = resolve_default_profile()
-        default_identity = profile.public_identity()
         metadata = dict(record.metadata or {})
         recorded_config_path = str(metadata.get("config_path") or "").strip()
-        config_path = (
-            str(profile.source_path)
-            if not recorded_config_path
-            or recorded_config_path == default_identity["definition_ref"]
-            else recorded_config_path
+        retained_config_path = (
+            Path(recorded_config_path).expanduser()
+            if recorded_config_path
+            else None
         )
+        if retained_config_path is not None and retained_config_path.is_absolute():
+            config_path = str(retained_config_path)
+        else:
+            profile = resolve_default_profile()
+            default_identity = profile.public_identity()
+            config_path = (
+                str(profile.source_path)
+                if not recorded_config_path
+                or recorded_config_path == default_identity["definition_ref"]
+                else recorded_config_path
+            )
         recorded_workspace = metadata.get("workspace")
         workspace = (
             str(recorded_workspace).strip()
@@ -1388,6 +1396,12 @@ class SessionService:
                 events = list(record.event_log)
                 if from_id:
                     start_index = self._resolve_start_index(events, from_id)
+                    if start_index is not None and not self._retained_replay_suffix_is_contiguous(
+                        record,
+                        events,
+                        start_index,
+                    ):
+                        start_index = None
                     if start_index is None and self._is_retained_head_cursor(record, from_id):
                         events = [
                             event for event in events
@@ -1505,6 +1519,13 @@ class SessionService:
                                 # Drop on overflow; subscribers are best-effort observers.
                                 continue
             finally:
+                record.event_queue.task_done()
+        while True:
+            try:
+                record.event_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            else:
                 record.event_queue.task_done()
         async with record.dispatch_lock:
             setattr(record, "_dispatcher_complete", True)
@@ -1659,6 +1680,12 @@ class SessionService:
             self._ensure_event_sequence(record)
             events = list(record.event_log)
             start_index = self._resolve_start_index(events, from_id)
+            if start_index is not None and not self._retained_replay_suffix_is_contiguous(
+                record,
+                events,
+                start_index,
+            ):
+                start_index = None
             if start_index is None and not self._is_retained_head_cursor(record, from_id):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -1692,6 +1719,27 @@ class SessionService:
                 str(record.replay_head_sequence),
             }
         )
+
+    @staticmethod
+    def _retained_replay_suffix_is_contiguous(
+        record: SessionRecord,
+        events: list[SessionEvent],
+        start_index: int,
+    ) -> bool:
+        if not record.replay_history_partial:
+            return True
+        if start_index <= 0:
+            return False
+        cursor_sequence = events[start_index - 1].seq
+        replay_head = record.replay_head_sequence
+        if cursor_sequence is None or cursor_sequence > replay_head:
+            return False
+        expected_sequence = cursor_sequence + 1
+        for event in events[start_index:]:
+            if event.seq != expected_sequence or expected_sequence > replay_head:
+                return False
+            expected_sequence += 1
+        return expected_sequence == replay_head + 1
 
     def _resolve_start_index(
         self, events: list[SessionEvent], from_id: str

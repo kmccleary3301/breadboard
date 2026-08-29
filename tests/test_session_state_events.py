@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
+from fastapi import HTTPException
 
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import (
@@ -1339,6 +1340,16 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     assert [event.seq for event in restored.event_log] == [terminal_envelope["seq"]]
     replay_queue: asyncio.Queue[SessionEvent | None] = asyncio.Queue()
     restarted_service = SessionService(registry=restarted)
+    gap_queue: asyncio.Queue[SessionEvent | None] = asyncio.Queue()
+    with pytest.raises(HTTPException) as gap_error:
+        await restarted_service._register_subscriber(
+            restored,
+            gap_queue,
+            replay=True,
+            from_id=terminal_envelope["id"],
+        )
+    assert gap_error.value.status_code == 409
+    assert gap_error.value.detail["code"] == "resume_window_exceeded"
     await restarted_service._register_subscriber(
         restored,
         replay_queue,
@@ -1363,6 +1374,47 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
         restored,
         numeric_replay_queue,
     )
+
+@pytest.mark.asyncio
+async def test_dispatcher_failure_drains_queue_and_rejects_future_events(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-dispatcher-persist-failure",
+        status=SessionStatus.RUNNING,
+    )
+    await registry.create(record)
+    service = SessionService(registry=registry)
+    await service._ensure_dispatcher(record)
+
+    async def fail_persist(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("injected dispatcher persistence failure")
+
+    monkeypatch.setattr(registry, "persist", fail_persist)
+    record.event_queue.put_nowait(
+        SessionEvent(EventType.TASK_EVENT, record.session_id, {"index": 1})
+    )
+    record.event_queue.put_nowait(
+        SessionEvent(EventType.TASK_EVENT, record.session_id, {"index": 2})
+    )
+    assert record.dispatcher_task is not None
+    await record.dispatcher_task
+    await asyncio.wait_for(record.event_queue.join(), timeout=1)
+
+    assert record.event_queue.empty()
+    assert getattr(record, "_dispatcher_complete", False) is True
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task=""),
+    )
+    with pytest.raises(RuntimeError, match="dispatcher is unavailable"):
+        await runner._enqueue_event_async(
+            SessionEvent(EventType.TASK_EVENT, record.session_id, {"index": 3})
+        )
+
 
 @pytest.mark.asyncio
 async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner(
@@ -1453,25 +1505,21 @@ async def test_retained_restart_preserves_explicit_config_and_workspace(
             "config_path": str(explicit_config),
             "workspace": str(explicit_workspace),
             "permission_mode": "configured",
+            "mode": "review",
         },
     )
     await registry.create(record)
 
-    default_profile = tmp_path / "default-session.yaml"
-    default_profile.write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr(
         "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
-        lambda: SimpleNamespace(
-            source_path=default_profile,
-            public_identity=lambda: {
-                "definition_ref": "agent_configs/templates/daily_driver.v1.yaml"
-            },
-        ),
+        lambda: pytest.fail("explicit retained config resolved the default profile"),
     )
     prepared_requests: list[SessionCreateRequest] = []
+    prepared_modes: list[str | None] = []
 
     def capture_runtime_request(runner: SessionRunner) -> dict[str, Any]:
         prepared_requests.append(runner.request)
+        prepared_modes.append(runner._mode)
         return {}
 
     monkeypatch.setattr(SessionRunner, "prepare_runtime_config", capture_runtime_request)
@@ -1482,8 +1530,10 @@ async def test_retained_restart_preserves_explicit_config_and_workspace(
         assert prepared_requests
         assert prepared_requests[0].config_path == str(explicit_config)
         assert prepared_requests[0].workspace == str(explicit_workspace)
+        assert prepared_modes == ["review"]
         assert restored.metadata["config_path"] == str(explicit_config)
         assert restored.metadata["workspace"] == str(explicit_workspace)
+        assert restored.metadata["mode"] == "review"
     finally:
         if restored.runner is not None:
             await restored.runner.stop()

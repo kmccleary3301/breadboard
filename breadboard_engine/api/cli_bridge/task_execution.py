@@ -559,7 +559,6 @@ class TaskExecutionOwner:
             "prompt",
             "ask",
             "interactive",
-            "configured",
         }
         logger.info(
             "session(%s) task=%s stream=%s local=%s remote_toggle=%s",

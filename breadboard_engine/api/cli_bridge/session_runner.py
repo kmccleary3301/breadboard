@@ -1126,6 +1126,8 @@ class SessionRunner:
             future.result()
             return
         try:
+            if getattr(self.session, "_dispatcher_complete", False):
+                raise RuntimeError("session event dispatcher is unavailable")
             self.session.event_queue.put_nowait(event)
             self._published_events += 1
         except asyncio.QueueFull:  # pragma: no cover - defensive
@@ -1135,8 +1137,11 @@ class SessionRunner:
             )
 
     async def _enqueue_event_async(self, event: SessionEvent) -> None:
-        await self.session.event_queue.put(event)
-        self._published_events += 1
+        async with self.session.dispatch_lock:
+            if getattr(self.session, "_dispatcher_complete", False):
+                raise RuntimeError("session event dispatcher is unavailable")
+            await self.session.event_queue.put(event)
+            self._published_events += 1
 
     def _touch_last_activity(self) -> None:
         try:
