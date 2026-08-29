@@ -70,6 +70,7 @@ async def test_composition_retries_failed_runtime_cleanup_before_authorities() -
 
     composition = ProductionComposition(
         app=None,
+        service=None,
         server=None,
         manifest=None,
         manifest_ref=None,
@@ -114,6 +115,7 @@ async def test_composition_advances_after_cached_service_close_failure() -> None
 
     composition = ProductionComposition(
         app=None,
+        service=None,
         server=None,
         manifest=None,
         manifest_ref=None,
@@ -179,6 +181,47 @@ async def test_non_repeating_close_owns_callback_across_waiter_cancellation() ->
     assert calls == 1
 
 
+@pytest.mark.asyncio
+async def test_composition_close_defers_repeated_waiter_cancellation() -> None:
+    calls: list[str] = []
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def close_runtime() -> None:
+        calls.append("runtime")
+        started.set()
+        await release.wait()
+
+    composition = ProductionComposition(
+        app=None,
+        service=None,
+        server=None,
+        manifest=None,
+        manifest_ref=None,
+        authority_graph=None,
+        bridge_lifecycle=None,
+        cleanup_probe=None,
+        runtime_close_callbacks=(
+            lambda: calls.append("adapter"),
+            close_runtime,
+        ),
+        authority_close_callbacks=(lambda: calls.append("authority"),),
+    )
+    waiter = asyncio.create_task(composition.close())
+    await started.wait()
+
+    waiter.cancel()
+    await asyncio.sleep(0)
+    waiter.cancel()
+    release.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    assert calls == ["runtime", "adapter", "authority"]
+    assert composition._runtime_closed
+    assert composition._closed
+
+
 def test_cas_materialization_reader_uses_only_digest_bound_shared_cas(tmp_path) -> None:
     cas = FilesystemCAS(tmp_path / "cas")
     member = b"installed source bytes\n"
@@ -208,7 +251,9 @@ def test_cas_materialization_reader_uses_only_digest_bound_shared_cas(tmp_path) 
     manifest = reader.load_manifest(source_digest, max_bytes=len(canonical))
 
     assert manifest.source_digest == source_digest
-    assert reader.read_member(source_digest, "input.txt", max_bytes=len(member)) == member
+    assert (
+        reader.read_member(source_digest, "input.txt", max_bytes=len(member)) == member
+    )
     with pytest.raises(ValueError, match="not admitted"):
         reader.read_member(source_digest, "unknown.txt", max_bytes=len(member))
     cas.close()
@@ -271,6 +316,7 @@ async def test_lifecycle_server_starts_service_shutdown_once_and_forces_second_e
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = 0
+
     def forbidden_super_handle_exit(self, sig, frame) -> None:
         del self, sig, frame
         raise AssertionError("base signal handler records and replays the signal")
@@ -343,6 +389,8 @@ async def test_lifecycle_server_watcher_closes_before_serve_returns_without_task
         if task is not asyncio.current_task()
         and task.get_coro().__qualname__.endswith("_watch_for_exit")
     ]
+
+
 @pytest.mark.asyncio
 async def test_lifecycle_server_immediate_serve_return_still_closes_once(
     monkeypatch: pytest.MonkeyPatch,
@@ -371,8 +419,6 @@ async def test_lifecycle_server_immediate_serve_return_still_closes_once(
     assert calls == 1
     assert server._service_shutdown_task is not None
     assert server._service_shutdown_task.done() is True
-
-
 
 
 @pytest.mark.asyncio
@@ -415,6 +461,64 @@ async def test_lifecycle_server_cancellation_waits_for_owned_shutdown(
     assert server._service_shutdown_task.done() is True
 
 
+def test_cli_run_emits_only_secret_free_result_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def run(
+        _path: str,
+        *,
+        composition_ref_path: str,
+        secret_files: dict[str, str],
+        provider_credentials: dict[str, str],
+        provider_route_files: dict[str, str],
+        repository_base_commits: dict[str, str],
+    ) -> dict[str, object]:
+        assert composition_ref_path == "/composition/ref"
+        assert secret_files == {"composition": "/secrets/composition"}
+        assert provider_credentials == {"provider": "/secrets/provider"}
+        assert provider_route_files == {"provider": "/routes/provider.json"}
+        assert repository_base_commits == {
+            "sha256:" + "1" * 64: "2" * 40,
+        }
+        return {
+            "schema_version": "bb.rl.headless-result.v1",
+            "episode_id": "episode-one",
+            "config_digest": "sha256:" + "a" * 64,
+            "terminal": {"status": "succeeded"},
+        }
+
+    monkeypatch.setattr(harness_main, "run_headless_request_file", run)
+
+    result = harness_main.main(
+        [
+            "run",
+            "--request",
+            "/request.json",
+            "--composition-ref",
+            "/composition/ref",
+            "--secret-file",
+            "composition=/secrets/composition",
+            "--provider-credential-file",
+            "provider=/secrets/provider",
+            "--provider-route-file",
+            "provider=/routes/provider.json",
+            "--repository-base-commit",
+            f"sha256:{'1' * 64}={'2' * 40}",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert json.loads(captured.out) == {
+        "schema_version": "bb.rl.headless-result.v1",
+        "episode_id": "episode-one",
+        "config_digest": "sha256:" + "a" * 64,
+        "status": "succeeded",
+    }
+    assert captured.err == ""
+
+
 def test_cli_sanitizes_runtime_failure_without_exposing_exception(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -428,9 +532,7 @@ def test_cli_sanitizes_runtime_failure_without_exposing_exception(
 
     monkeypatch.setattr(harness_main, "load_production_composition", fail_load)
 
-    result = harness_main.main(
-        ["inspect", "--composition-ref", "/composition/ref"]
-    )
+    result = harness_main.main(["inspect", "--composition-ref", "/composition/ref"])
 
     captured = capsys.readouterr()
     assert result == 2
@@ -474,13 +576,9 @@ async def test_lifecycle_server_preserves_cancellation_and_shutdown_failure(
         await serve_task
 
     assert any(
-        isinstance(exc, asyncio.CancelledError)
-        for exc in caught.value.exceptions
+        isinstance(exc, asyncio.CancelledError) for exc in caught.value.exceptions
     )
-    assert any(
-        isinstance(exc, RuntimeError)
-        for exc in caught.value.exceptions
-    )
+    assert any(isinstance(exc, RuntimeError) for exc in caught.value.exceptions)
 
 
 def test_cli_does_not_swallow_standalone_system_exit(

@@ -196,6 +196,7 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "[console_scripts]\n"
         "bbh = scripts.breadboard_cli:main\n"
         "breadboard = breadboard.product.cli:main\n"
+        "breadboard-rl = breadboard.rl.harness.__main__:main\n"
     )
 
     forbidden_prefixes = (

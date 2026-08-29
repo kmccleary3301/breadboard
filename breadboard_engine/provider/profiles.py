@@ -397,9 +397,10 @@ class OpenAICompletionsProviderProfile:
 
     def identity_dict(self) -> dict[str, Any]:
         """Return deterministic, secret-free profile identity data."""
-        header_names = sorted(
-            (name.casefold() for name in self.caller_headers),
+        header_items = sorted(
+            (name.casefold(), value) for name, value in self.caller_headers.items()
         )
+        header_names = [name for name, _value in header_items]
         return {
             "base_url_sha256": hashlib.sha256(
                 self.base_url.encode("utf-8")
@@ -407,6 +408,9 @@ class OpenAICompletionsProviderProfile:
             "caller_header_count": len(header_names),
             "caller_header_names_sha256": hashlib.sha256(
                 canonical_json(header_names).encode("utf-8")
+            ).hexdigest(),
+            "caller_headers_sha256": hashlib.sha256(
+                canonical_json(header_items).encode("utf-8")
             ).hexdigest(),
             "capabilities": self.capabilities.as_dict(),
             "compatibility": self.compatibility.as_dict(),

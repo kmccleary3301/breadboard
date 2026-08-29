@@ -462,6 +462,10 @@ class SubprocessDockerCliExecutor:
                 os.killpg(process.pid, 0)
             except ProcessLookupError:
                 return False
+            except PermissionError:
+                if process.returncode is not None or process_wait.done():
+                    return False
+                raise
             return True
 
         async def terminate_process_group() -> None:
@@ -469,6 +473,9 @@ class SubprocessDockerCliExecutor:
                 os.killpg(process.pid, 15)
             except ProcessLookupError:
                 pass
+            except PermissionError:
+                if process.returncode is None and not process_wait.done():
+                    raise
             deadline = asyncio.get_running_loop().time() + 0.25
             while (
                 process_group_exists()
@@ -480,6 +487,9 @@ class SubprocessDockerCliExecutor:
                     os.killpg(process.pid, 9)
                 except ProcessLookupError:
                     pass
+                except PermissionError:
+                    if process.returncode is None and not process_wait.done():
+                        raise
             deadline = asyncio.get_running_loop().time() + 0.75
             while (
                 process_group_exists()

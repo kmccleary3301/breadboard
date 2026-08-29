@@ -639,6 +639,54 @@ async def test_real_process_plan_runs_through_wp5_port_seals_snapshot_and_cleans
     assert list(harness.lease_root.iterdir()) == []
 
 
+
+@requires_sealed_execution
+async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    descendant_command = (
+        "for descriptor in /proc/self/fd/*; do "
+        "descriptor=${descriptor##*/}; "
+        "case \"$descriptor\" in 0|1|2) ;; "
+        "*) eval \"exec ${descriptor}>&-\" ;; esac; "
+        "done; "
+        "printf '%s' \"$$\" > work/.descendant.tmp && "
+        "mv work/.descendant.tmp work/descendant.pid; "
+        "exec 1>&- 2>&-; "
+        "sleep 10"
+    )
+    command = (
+        f"/bin/sh -c {shlex.quote(descendant_command)} & "
+        "while [ ! -f work/descendant.pid ]; do :; done"
+    )
+    descendant_pid: int | None = None
+    try:
+        await primary.runner_workspace.run_shell(command, timeout=2)
+        descendant = await primary.runner_workspace.read_text(
+            "work/descendant.pid"
+        )
+        descendant_pid = int(descendant["content"])
+        async with asyncio.timeout(1):
+            while True:
+                try:
+                    os.kill(descendant_pid, 0)
+                except ProcessLookupError:
+                    break
+                await asyncio.sleep(0.01)
+        receipt = await primary.close()
+        assert receipt.state is CleanupState.RELEASED
+        assert await harness.manager.close() == ()
+    finally:
+        if descendant_pid is not None:
+            try:
+                os.kill(descendant_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
 @requires_sealed_execution
 @pytest.mark.parametrize("mode", ["timeout", "cancel"])
 async def test_real_process_closed_stream_timeout_or_cancellation_kills_descendant(
@@ -832,8 +880,11 @@ async def test_trusted_process_handle_enforces_exact_500ms_deadline_and_cleans_d
 
 
 @requires_sealed_execution
-@pytest.mark.parametrize("identity_mutation", ["matching", "start", "pgid", "cgroup"])
-async def test_real_process_restart_reconciliation_binds_complete_action_identity(
+@pytest.mark.parametrize(
+    "identity_mutation",
+    ["matching", "start", "pgid", "session", "cgroup"],
+)
+async def test_real_process_restart_never_signals_from_stale_lease_record(
     tmp_path: Path, identity_mutation: str
 ) -> None:
     fixture = make_runtime_fixture(
@@ -880,6 +931,7 @@ async def test_real_process_restart_reconciliation_binds_complete_action_identit
         process_group = identity["process_group_id"]
         assert identity["resource_id"] == f"process-group-{process_group}"
         assert process_pid == process_group == os.getpgid(process_pid)
+        assert identity["process_session_id"] == process_group
         assert identity["process_start_identity"].startswith("linux-proc-start:")
         assert identity["process_cgroup_identity"].startswith("sha256:")
         assert record["runtime_resource_id"] == f"process-group-{primary.lease_id}"
@@ -888,6 +940,8 @@ async def test_real_process_restart_reconciliation_binds_complete_action_identit
             identity["process_start_identity"] = "linux-proc-start:forged"
         elif identity_mutation == "pgid":
             identity["process_group_id"] = process_group + 1
+        elif identity_mutation == "session":
+            identity["process_session_id"] = process_group + 1
         elif identity_mutation == "cgroup":
             identity["process_cgroup_identity"] = "sha256:" + "0" * 64
         record["process_identities"] = [identity]
@@ -921,56 +975,39 @@ async def test_real_process_restart_reconciliation_binds_complete_action_identit
         receipt = receipts[0]
         assert receipt.lease_id == primary.lease_id
 
-        if identity_mutation == "matching":
-            result = await asyncio.wait_for(action, 1)
-            assert result["returncode"] == -signal.SIGKILL
-            assert receipt.steps == (
-                CleanupStepReceipt(
-                    "child_verifier",
-                    CleanupState.ALREADY_RELEASED,
-                ),
-                CleanupStepReceipt("runtime", CleanupState.RELEASED),
-                CleanupStepReceipt("workspace", CleanupState.RELEASED),
-                CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
-                CleanupStepReceipt("lease_record", CleanupState.RELEASED),
-            )
-            with pytest.raises(ProcessLookupError):
-                os.kill(process_pid, 0)
-            assert not record_path.exists()
-        else:
-            assert receipt.steps == (
-                CleanupStepReceipt(
-                    "child_verifier",
-                    CleanupState.ALREADY_RELEASED,
-                ),
-                CleanupStepReceipt(
-                    "runtime", CleanupState.QUARANTINED, "stale_identity_uncertain"
-                ),
-                CleanupStepReceipt(
-                    "workspace", CleanupState.QUARANTINED, "stale_identity_uncertain"
-                ),
-                CleanupStepReceipt(
-                    "cache_holder", CleanupState.QUARANTINED, "stale_identity_uncertain"
-                ),
-                CleanupStepReceipt(
-                    "lease_record", CleanupState.QUARANTINED, "stale_identity_uncertain"
-                ),
-            )
-            os.kill(process_pid, 0)
-            action.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await asyncio.wait_for(action, 1)
-            async with asyncio.timeout(1):
-                while True:
-                    try:
-                        os.kill(process_pid, 0)
-                    except ProcessLookupError:
-                        break
-                    await asyncio.sleep(0.01)
-            close_receipt = await primary.close()
-            assert close_receipt.state is CleanupState.RELEASED
-            assert not record_path.exists()
-            assert list(harness.workspace_root.iterdir()) == []
+        assert receipt.steps == (
+            CleanupStepReceipt(
+                "child_verifier",
+                CleanupState.ALREADY_RELEASED,
+            ),
+            CleanupStepReceipt(
+                "runtime", CleanupState.QUARANTINED, "stale_identity_uncertain"
+            ),
+            CleanupStepReceipt(
+                "workspace", CleanupState.QUARANTINED, "stale_identity_uncertain"
+            ),
+            CleanupStepReceipt(
+                "cache_holder", CleanupState.QUARANTINED, "stale_identity_uncertain"
+            ),
+            CleanupStepReceipt(
+                "lease_record", CleanupState.QUARANTINED, "stale_identity_uncertain"
+            ),
+        )
+        os.kill(process_pid, 0)
+        action.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(action, 1)
+        async with asyncio.timeout(1):
+            while True:
+                try:
+                    os.kill(process_pid, 0)
+                except ProcessLookupError:
+                    break
+                await asyncio.sleep(0.01)
+        close_receipt = await primary.close()
+        assert close_receipt.state is CleanupState.RELEASED
+        assert not record_path.exists()
+        assert list(harness.workspace_root.iterdir()) == []
     finally:
         os.close(ready_fd)
         if not action.done():

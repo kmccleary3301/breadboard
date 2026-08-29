@@ -121,6 +121,14 @@ from breadboard.rl.harness.contracts import (
     WeightedSelectorRef,
 )
 from breadboard.rl.harness.config_runtime import ConfigRuntime
+from breadboard.rl.harness.semantic_interface_map import (
+    EXTERNAL_UAL_OWNERSHIP,
+    SEMANTIC_INTERFACE_MAP,
+    SEMANTIC_INTERFACE_MAP_SCHEMA_VERSION,
+    SemanticInterfaceBinding,
+    SemanticInterfaceMap,
+    SemanticInterfaceOwner,
+)
 from breadboard.rl.harness.service import BreadBoardV2EpisodeService
 from breadboard.rl.harness.composition import (
     ProductionComposition,
@@ -131,6 +139,12 @@ __all__ = [
     "BreadBoardV2EpisodeService",
     "ProductionComposition",
     "load_production_composition",
+    "EXTERNAL_UAL_OWNERSHIP",
+    "SEMANTIC_INTERFACE_MAP",
+    "SEMANTIC_INTERFACE_MAP_SCHEMA_VERSION",
+    "SemanticInterfaceBinding",
+    "SemanticInterfaceMap",
+    "SemanticInterfaceOwner",
     "AdmissionPolicySnapshot",
     "AdmissionReceipt",
     "AdmissionReceiptRef",

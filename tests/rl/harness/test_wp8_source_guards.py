@@ -376,6 +376,7 @@ def test_v2_service_uses_only_the_documented_injected_lifecycle_seams() -> None:
         "policy_client_resolver",
         "evidence_repository",
         "evidence_authority",
+        "fault_injection_authority",
         "clock",
     }
 
