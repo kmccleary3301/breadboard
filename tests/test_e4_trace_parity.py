@@ -117,21 +117,26 @@ def test_only_named_timestamp_pid_and_temp_paths_can_be_normalized() -> None:
             "pointer_sha256": hashlib.sha256(b"/event/timestamp").hexdigest(),
             "pointer_depth": 2,
             "kind": "timestamp",
-            "normalized": "<timestamp>",
+            "normalized_sha256": hashlib.sha256(b"<timestamp>").hexdigest(),
         },
         {
             "pointer_sha256": hashlib.sha256(b"/process/output").hexdigest(),
             "pointer_depth": 2,
             "kind": "temporary_path",
-            "normalized": "<tmp>/session/result.json",
+            "normalized_sha256": hashlib.sha256(
+                b"<tmp>/session/result.json"
+            ).hexdigest(),
         },
         {
             "pointer_sha256": hashlib.sha256(b"/process/pid").hexdigest(),
             "pointer_depth": 2,
             "kind": "pid",
-            "normalized": "<pid>",
+            "normalized_sha256": hashlib.sha256(b"<pid>").hexdigest(),
         },
     ]
+    assert b"session/result.json" not in canonical_json_bytes(
+        [field.as_dict() for field in comparison.normalized_fields]
+    )
 
 
 def test_normalization_policy_fails_closed() -> None:
@@ -188,6 +193,24 @@ def test_normalization_policy_fails_closed() -> None:
         rules=(NormalizationRule("/timestamp", "timestamp"),),
     )
     assert not unzoned_timestamp.matches
+
+    missing_normalized_field = compare_e4_traces(
+        {"timestamp": "2026-08-29T06:00:00Z"},
+        {},
+        rules=(NormalizationRule("/timestamp", "timestamp"),),
+    )
+    assert not missing_normalized_field.matches
+    assert (
+        missing_normalized_field.mismatches[0].reason == "field is missing from clone"
+    )
+
+    large_timestamp = 1 << 4000
+    large_timestamp_comparison = compare_e4_traces(
+        {"timestamp": large_timestamp},
+        {"timestamp": large_timestamp + 1},
+        rules=(NormalizationRule("/timestamp", "timestamp"),),
+    )
+    assert large_timestamp_comparison.matches
     assert "timezone-aware ISO-8601" in unzoned_timestamp.mismatches[0].reason
 
     with pytest.raises(E4ParityError, match="filesystem root"):
@@ -221,6 +244,9 @@ def test_trace_values_must_be_closed_json() -> None:
     with pytest.raises(E4ParityError, match=r"JSON .*byte size exceeds"):
         canonical_json_bytes({"escaped": "\x00" * (11 * 1024 * 1024)})
 
+    with pytest.raises(E4ParityError, match="integer exceeds 4096 bits"):
+        canonical_json_bytes({"integer": 1 << 4097})
+
 
 def test_trace_comparison_bounds_mismatch_evidence() -> None:
     reference = {f"field_{index}": 0 for index in range(10_001)}
@@ -231,6 +257,31 @@ def test_trace_comparison_bounds_mismatch_evidence() -> None:
     assert not comparison.matches
     assert len(comparison.mismatches) == 10_001
     assert comparison.mismatches[-1].reason == "mismatch count exceeds 10000"
+
+
+def test_workspace_snapshot_requires_directory_ancestors() -> None:
+    file_entry = {
+        "kind": "file",
+        "mode": 0o644,
+        "bytes": 0,
+        "sha256": hashlib.sha256(b"").hexdigest(),
+    }
+    malformed_entries = (
+        [{"path": "dir/file", **file_entry}],
+        [
+            {"path": "dir", **file_entry},
+            {"path": "dir/file", **file_entry},
+        ],
+    )
+
+    for entries in malformed_entries:
+        with pytest.raises(E4ParityError, match="must exist as a directory"):
+            validate_workspace_snapshot(
+                {
+                    "schema_version": "bb.e4.workspace_snapshot.v1",
+                    "entries": entries,
+                }
+            )
 
 
 def test_workspace_entry_limit_is_reachable_before_json_node_limit() -> None:

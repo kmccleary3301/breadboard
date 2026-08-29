@@ -35,6 +35,7 @@ _MAX_JSON_DEPTH = 128
 _MAX_JSON_NODES = 100_000
 _MAX_JSON_BYTES = 64 * 1024 * 1024
 _MAX_JSON_STRING_BYTES = 8 * 1024 * 1024
+_MAX_JSON_INTEGER_BITS = 4096
 _MAX_MISMATCHES = 10_000
 _MAX_NORMALIZATION_RULES = 1024
 _MAX_METADATA_TEXT_BYTES = 1024
@@ -120,7 +121,9 @@ class NormalizedField:
         return {
             **_pointer_evidence(self.pointer),
             "kind": self.kind,
-            "normalized": self.normalized,
+            "normalized_sha256": hashlib.sha256(
+                self.normalized.encode("utf-8")
+            ).hexdigest(),
         }
 
 
@@ -173,8 +176,21 @@ def _validate_closed_json(
     state[1] += 8
     if state[0] > _MAX_JSON_NODES:
         raise E4ParityError(f"JSON node count exceeds {_MAX_JSON_NODES}")
-    if value is None or type(value) in {bool, int}:
-        state[1] += len(str(value))
+    if value is None:
+        state[1] += 4
+    elif type(value) is bool:
+        state[1] += 4 if value else 5
+    elif type(value) is int:
+        if value.bit_length() > _MAX_JSON_INTEGER_BITS:
+            raise E4ParityError(
+                f"integer exceeds {_MAX_JSON_INTEGER_BITS} bits at {pointer or '/'}"
+            )
+        try:
+            state[1] += len(str(value))
+        except (ValueError, MemoryError) as exc:
+            raise E4ParityError(
+                f"integer cannot be serialized at {pointer or '/'}"
+            ) from exc
     elif type(value) is str:
         state[1] += _json_string_bytes(value, pointer)
     elif type(value) is float:
@@ -337,6 +353,8 @@ def compare_e4_traces(
             clone_keys = set(clone_value)
             for key in sorted(reference_keys - clone_keys):
                 child_pointer = _child_pointer(pointer, key)
+                if child_pointer in rules_by_pointer:
+                    used_rules.add(child_pointer)
                 record_mismatch(
                     TraceMismatch(
                         child_pointer,
@@ -347,6 +365,8 @@ def compare_e4_traces(
                 )
             for key in sorted(clone_keys - reference_keys):
                 child_pointer = _child_pointer(pointer, key)
+                if child_pointer in rules_by_pointer:
+                    used_rules.add(child_pointer)
                 record_mismatch(
                     TraceMismatch(
                         child_pointer,
@@ -724,6 +744,15 @@ def validate_workspace_snapshot(snapshot: dict[str, Any]) -> None:
         paths.append(path)
     if paths != sorted(paths) or len(paths) != len(set(paths)):
         raise E4ParityError("workspace entries must be sorted with unique paths")
+    entry_kinds = {entry["path"]: entry["kind"] for entry in entries}
+    for path in paths:
+        parts = path.split("/")
+        for depth in range(1, len(parts)):
+            parent = "/".join(parts[:depth])
+            if entry_kinds.get(parent) != "directory":
+                raise E4ParityError(
+                    f"workspace parent {parent!r} must exist as a directory"
+                )
 
 
 def validate_e4_trace(trace: dict[str, Any]) -> None:
@@ -880,9 +909,11 @@ def _child_pointer(pointer: str, token: str) -> str:
 
 def _normalize_value(value: Any, kind: str, temporary_root: str | None) -> str:
     if kind == "timestamp":
-        if isinstance(value, bool):
+        if type(value) is bool:
             raise E4ParityError("timestamp cannot be boolean")
-        if isinstance(value, (int, float)):
+        if type(value) is int:
+            return "<timestamp>"
+        if type(value) is float:
             if not math.isfinite(value):
                 raise E4ParityError("timestamp must be finite")
             return "<timestamp>"
