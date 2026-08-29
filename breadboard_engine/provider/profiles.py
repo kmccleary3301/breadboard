@@ -7,6 +7,8 @@ credential material (or caller auth headers).
 
 from __future__ import annotations
 
+import hashlib
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -15,6 +17,37 @@ from urllib.parse import urlsplit
 
 from ..security import redaction
 from .contract_wire import ProviderContractError, canonical_json
+
+_EXACT_MODEL = "Qwen/Qwen3.5-35B-A3B"
+_EXACT_CONTEXT_WINDOW = 131_072
+_EXACT_MAX_OUTPUT_TOKENS = 32_000
+_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+_RESERVED_CALLER_HEADERS = frozenset(
+    {
+        "accept",
+        "authorization",
+        "connection",
+        "content-length",
+        "content-type",
+        "cookie",
+        "host",
+        "keep-alive",
+        "proxy-authorization",
+        "set-cookie",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    }
+)
+_REQUIRED_CAPABILITIES = (
+    "supports_tools",
+    "supports_strict_tools",
+    "supports_stream_options",
+    "supports_thinking_control",
+    "supports_n",
+    "supports_max_tokens",
+)
 
 
 def _text(value: Any, field_name: str, *, max_length: int) -> str:
@@ -260,8 +293,9 @@ class OpenAICompletionsProviderProfile:
     runtime_id: str = "openai_chat"
 
     def __post_init__(self) -> None:
-        _text(self.model, "profile.model", max_length=256)
-
+        model = _text(self.model, "profile.model", max_length=256)
+        if model != _EXACT_MODEL:
+            raise ProviderContractError(f"profile.model must be {_EXACT_MODEL}")
         base_url = _text(self.base_url, "profile.base_url", max_length=2048)
         parsed = urlsplit(base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -277,21 +311,13 @@ class OpenAICompletionsProviderProfile:
             "profile.scoped_credential",
             max_length=8192,
         )
-        _bounded_int(
-            self.context_window,
-            "profile.context_window",
-            minimum=1,
-            maximum=2**31 - 1,
-        )
-        _bounded_int(
-            self.max_output_tokens,
-            "profile.max_output_tokens",
-            minimum=1,
-            maximum=2**31 - 1,
-        )
-        if self.max_output_tokens > self.context_window:
+        if self.context_window != _EXACT_CONTEXT_WINDOW:
             raise ProviderContractError(
-                "profile.max_output_tokens cannot exceed context_window"
+                f"profile.context_window must be {_EXACT_CONTEXT_WINDOW}"
+            )
+        if self.max_output_tokens != _EXACT_MAX_OUTPUT_TOKENS:
+            raise ProviderContractError(
+                f"profile.max_output_tokens must be {_EXACT_MAX_OUTPUT_TOKENS}"
             )
         object.__setattr__(
             self, "sampling", OpenAICompletionsSampling.from_value(self.sampling)
@@ -301,6 +327,11 @@ class OpenAICompletionsProviderProfile:
             "capabilities",
             OpenAICompletionsCapabilities.from_value(self.capabilities),
         )
+        for field_name in _REQUIRED_CAPABILITIES:
+            if not getattr(self.capabilities, field_name):
+                raise ProviderContractError(f"capabilities.{field_name} must be true")
+        if self.capabilities.supports_store:
+            raise ProviderContractError("capabilities.supports_store must be false")
         object.__setattr__(
             self,
             "compatibility",
@@ -315,12 +346,21 @@ class OpenAICompletionsProviderProfile:
         headers: dict[str, str] = {}
         for key, value in self.caller_headers.items():
             header_name = _text(key, "profile.caller_headers key", max_length=256)
+            normalized_name = header_name.casefold()
+            if (
+                _HEADER_NAME_RE.fullmatch(header_name) is None
+                or normalized_name in _RESERVED_CALLER_HEADERS
+                or redaction.is_secret_key(normalized_name)
+            ):
+                raise ProviderContractError(
+                    f"profile.caller_headers contains reserved header {header_name!r}"
+                )
             header_value = _text(
                 value,
                 f"profile.caller_headers[{header_name!r}]",
                 max_length=8192,
             )
-            if header_name.lower() in {existing.lower() for existing in headers}:
+            if normalized_name in {existing.casefold() for existing in headers}:
                 raise ProviderContractError(
                     "profile.caller_headers contains duplicate names"
                 )
@@ -339,13 +379,17 @@ class OpenAICompletionsProviderProfile:
 
     def identity_dict(self) -> dict[str, Any]:
         """Return deterministic, secret-free profile identity data."""
-        safe_headers = {
-            name: redaction.REDACTED
-            for name in sorted(self.caller_headers, key=str.casefold)
-        }
+        header_names = sorted(
+            (name.casefold() for name in self.caller_headers),
+        )
         return {
-            "base_url": self.base_url,
-            "caller_headers": safe_headers,
+            "base_url_sha256": hashlib.sha256(
+                self.base_url.encode("utf-8")
+            ).hexdigest(),
+            "caller_header_count": len(header_names),
+            "caller_header_names_sha256": hashlib.sha256(
+                canonical_json(header_names).encode("utf-8")
+            ).hexdigest(),
             "capabilities": self.capabilities.as_dict(),
             "compatibility": self.compatibility.as_dict(),
             "context_window": self.context_window,
@@ -366,35 +410,36 @@ class OpenAICompletionsProviderProfile:
         tools: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
         """Build the exact streamed Chat Completions payload for this profile."""
-        if not isinstance(messages, list):
-            raise ProviderContractError("profile messages must be an array")
+        if type(messages) is not list or any(
+            type(message) is not dict for message in messages
+        ):
+            raise ProviderContractError(
+                "profile messages must be an exact array of objects"
+            )
         copied_messages = [dict(message) for message in messages]
         request: dict[str, Any] = {
             "model": self.model,
             "messages": copied_messages,
         }
+        if tools is not None and type(tools) is not list:
+            raise ProviderContractError("profile tools must be an exact array")
         if tools:
-            if not self.capabilities.supports_tools:
-                raise ProviderContractError("profile does not support tools")
             copied_tools: list[dict[str, Any]] = []
             for tool in tools:
+                if type(tool) is not dict or type(tool.get("function")) is not dict:
+                    raise ProviderContractError(
+                        "profile tools must contain exact function objects"
+                    )
                 copied = dict(tool)
-                function = copied.get("function")
-                if self.capabilities.supports_strict_tools and isinstance(
-                    function, Mapping
-                ):
-                    function_copy = dict(function)
-                    function_copy["strict"] = False
-                    copied["function"] = function_copy
+                function_copy = dict(tool["function"])
+                function_copy["strict"] = False
+                copied["function"] = function_copy
                 copied_tools.append(copied)
             request["tools"] = copied_tools
         request["stream"] = True
-        if self.capabilities.supports_stream_options:
-            request["stream_options"] = {"include_usage": True}
-        if self.capabilities.supports_max_tokens:
-            request["max_tokens"] = self.max_output_tokens
-        if self.capabilities.supports_n:
-            request["n"] = self.sampling.n
+        request["stream_options"] = {"include_usage": True}
+        request["max_tokens"] = self.max_output_tokens
+        request["n"] = self.sampling.n
         for field_name in (
             "temperature",
             "top_p",
@@ -405,12 +450,7 @@ class OpenAICompletionsProviderProfile:
             value = getattr(self.sampling, field_name)
             if value is not None:
                 request[field_name] = value
-        # Qwen's OpenAI-compatible endpoint recognizes this explicit control;
-        # unsupported endpoints omit it rather than sending an invalid field.
-        if self.capabilities.supports_thinking_control:
-            request["enable_thinking"] = False
-        if self.capabilities.supports_store:
-            request["store"] = False
+        request["enable_thinking"] = False
         return request
 
 

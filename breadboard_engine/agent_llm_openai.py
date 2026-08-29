@@ -50,6 +50,7 @@ from .provider.runtime import (
     ProviderRuntimeError,
 )
 from .provider.contracts import (
+    OpenAICompletionsProviderProfile,
     ProviderContractError,
     normalize_content,
     strip_provider_exchange_completion_sentinels,
@@ -364,6 +365,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         local_mode: bool = False,
         prompt_base_dirs: Optional[List[Path]] = None,
         protected_paths: Optional[Sequence[str]] = None,
+        provider_profile: Optional[OpenAICompletionsProviderProfile] = None,
     ) -> None:
         """Initialize conductor with workspace, image, and configuration."""
         captured_protected_paths = tuple(
@@ -389,6 +391,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             zero_tool_abort_message=ZERO_TOOL_ABORT_MESSAGE,
             completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
         )
+        if provider_profile is not None and not isinstance(
+            provider_profile, OpenAICompletionsProviderProfile
+        ):
+            raise ProviderContractError("provider_profile is invalid")
+        self._provider_profile = provider_profile
         self._model_role_lock = (
             dict(self.config.get("model_role_lock"))
             if isinstance(self.config, dict) and isinstance(self.config.get("model_role_lock"), dict)

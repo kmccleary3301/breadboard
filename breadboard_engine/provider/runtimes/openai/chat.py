@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...contracts import (
@@ -17,6 +18,12 @@ from ...sdk_bindings import provider_sdk_bindings
 from ....security import redaction
 from .streaming import OpenAIBaseRuntime
 from .chat_stream_decoder import OpenAIChatStreamDecoder
+
+
+@dataclass(frozen=True, slots=True)
+class _ProfileClient:
+    transport: Any
+    profile: OpenAICompletionsProviderProfile
 
 
 class OpenAIChatRuntime(OpenAIBaseRuntime):
@@ -56,12 +63,25 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 details={"code": "invalid_provider_profile"},
             )
         self._require_openai()
-        return provider_sdk_bindings.openai(
-            api_key=profile.scoped_credential,
-            base_url=profile.base_url,
-            default_headers=dict(profile.caller_headers),
-            max_retries=0,
-        )
+        with redaction.secret_value_scope(
+            profile.scoped_credential,
+            *profile.caller_headers.values(),
+            allow_short=True,
+        ):
+            try:
+                transport = provider_sdk_bindings.openai(
+                    api_key=profile.scoped_credential,
+                    base_url=profile.base_url,
+                    default_headers=dict(profile.caller_headers),
+                    max_retries=0,
+                )
+            except Exception as exc:
+                raise ProviderRuntimeError(
+                    redaction.safe_exception_message(exc),
+                    kind="configuration",
+                    details={"code": "profile_client_creation_failed"},
+                ) from None
+        return _ProfileClient(transport, profile)
 
     def _stream_chat_completion(
         self,
@@ -94,6 +114,40 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
     ) -> ProviderResult:
+        profile = context.provider_profile
+        if profile is None:
+            return self._invoke(
+                client=client,
+                model=model,
+                messages=messages,
+                tools=tools,
+                stream=stream,
+                context=context,
+            )
+        with redaction.secret_value_scope(
+            profile.scoped_credential,
+            *profile.caller_headers.values(),
+            allow_short=True,
+        ):
+            return self._invoke(
+                client=client,
+                model=model,
+                messages=messages,
+                tools=tools,
+                stream=stream,
+                context=context,
+            )
+
+    def _invoke(
+        self,
+        *,
+        client: Any,
+        model: str,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        stream: bool,
+        context: ProviderRuntimeContext,
+    ) -> ProviderResult:
         context.raise_if_cancelled()
         profile = context.provider_profile
         request_messages = self._convert_messages_to_chat(
@@ -101,6 +155,13 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         )
         request_tools = self._convert_tools_to_openai(tools)
         if profile is not None:
+            if not isinstance(client, _ProfileClient) or client.profile is not profile:
+                raise ProviderRuntimeError(
+                    "OpenAI Completions profile client does not match the episode",
+                    kind="configuration",
+                    details={"code": "profile_client_mismatch"},
+                )
+            client = client.transport
             if not stream:
                 raise ProviderRuntimeError(
                     "OpenAI Completions profile requires streaming",
@@ -125,6 +186,12 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 else None
             )
             role_request = profile_request
+        elif isinstance(client, _ProfileClient):
+            raise ProviderRuntimeError(
+                "OpenAI Completions profile client requires its episode profile",
+                kind="configuration",
+                details={"code": "profile_context_missing"},
+            )
         else:
             extra_body: Optional[Dict[str, Any]] = None
             if (

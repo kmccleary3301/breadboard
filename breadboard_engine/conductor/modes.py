@@ -17,6 +17,7 @@ from ..provider.ir import IRDeltaEvent
 from ..provider.routing import provider_router
 from ..provider import provider_adapter_manager, sanitize_openai_tool_name
 from ..provider.contracts import (
+    ProviderContractError,
     ProviderResult,
     ProviderRuntimeContext,
     sanitize_provider_result,
@@ -49,6 +50,27 @@ def _record_raw_provider_response(
             )
     except Exception:
         pass
+
+def _bind_episode_provider_profile(
+    conductor: Any,
+    runtime: Any,
+    client: Any,
+    model: str,
+    stream: bool,
+) -> Tuple[Any, bool, Any]:
+    profile = getattr(conductor, "_provider_profile", None)
+    if profile is None:
+        return client, stream, None
+    if (
+        getattr(runtime.descriptor, "provider_id", None) != profile.provider_id
+        or getattr(runtime.descriptor, "runtime_id", None) != profile.runtime_id
+        or model != profile.model
+    ):
+        raise ProviderContractError(
+            "episode provider profile does not match the selected route"
+        )
+    return runtime.create_client_from_profile(profile), True, profile
+
 
 
 def get_model_response(
@@ -276,6 +298,15 @@ def get_model_response(
         turn_index,
         getattr(conductor, "_current_route_id", None),
     )
+    client, effective_stream_responses, provider_profile = (
+        _bind_episode_provider_profile(
+            conductor,
+            runtime,
+            client,
+            model,
+            effective_stream_responses,
+        )
+    )
     try:
         session_state.set_provider_metadata("current_stream_requested", stream_responses)
         session_state.set_provider_metadata("current_stream_effective", effective_stream_responses)
@@ -333,6 +364,7 @@ def get_model_response(
         or getattr(session_state, "session_id", None),
         input_id=session_state.get_provider_metadata("input_id"),
         turn_id=session_state.get_provider_metadata("turn_id"),
+        provider_profile=provider_profile,
     )
 
     try:
