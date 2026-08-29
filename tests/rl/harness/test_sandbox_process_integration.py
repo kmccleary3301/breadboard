@@ -7,6 +7,8 @@ import json
 import os
 import shlex
 import signal
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,7 +35,9 @@ from breadboard.rl.harness.sandbox import (
     TrustedProcessBackend,
     TrustedProcessHandle,
     VerifierExecutionError,
+    VerifierSnapshotError,
     WorkspaceStateError,
+    _sealed_repository_diff,
 )
 from tests.rl.harness.test_runner_terminal import (
     RecordingEventSink,
@@ -74,6 +78,102 @@ requires_sealed_execution = pytest.mark.skipif(
     not _sealed_execution_supported(),
     reason="requires Linux sealed-memfd descriptor execution",
 )
+
+
+def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = tmp_path / "source"
+    git_path = shutil.which("git")
+    assert git_path is not None
+
+    class PinnedGit:
+        def __init__(self) -> None:
+            self.fd = os.open(git_path, os.O_RDONLY)
+            self.proc_fd_path = git_path
+            self.digest = "sha256:" + "0" * 64
+
+        def close(self) -> None:
+            os.close(self.fd)
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
+        lambda path, expected_digest: PinnedGit(),
+    )
+    repository.mkdir()
+
+    def git(*arguments: str, cwd: Path = repository) -> str:
+        completed = subprocess.run(
+            ("git", *arguments), cwd=cwd, check=True, capture_output=True, text=True
+        )
+        return completed.stdout.strip()
+
+    git("init", "--quiet")
+    (repository / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
+    (repository / ".gitattributes").write_text(
+        "*.txt diff=hide filter=forge\n", encoding="utf-8"
+    )
+    (repository / "tracked.txt").write_text("before\n", encoding="utf-8")
+    git("add", ".")
+    git(
+        "-c", "user.name=BreadBoard",
+        "-c", "user.email=breadboard@example.invalid",
+        "commit", "--quiet", "-m", "base",
+    )
+    base_commit = git("rev-parse", "HEAD")
+    git("config", "diff.hide.command", "/usr/bin/true")
+    git("config", "filter.forge.clean", "sed s/after/forged/")
+    git("config", "filter.forge.smudge", "cat")
+    (repository / "tracked.txt").write_text("after\n", encoding="utf-8")
+    (repository / "ignored.txt").write_text("included\n", encoding="utf-8")
+    binary = b"\x00\x01\xffbinary\n"
+    (repository / "new.bin").write_bytes(binary)
+    raw_binary = b"\xffnon-UTF-8-without-NUL\n"
+    (repository / "raw.bin").write_bytes(raw_binary)
+    plan = type(
+        "SealedDiffPlan", (),
+        {
+            "runtime": type(
+                "Runtime", (), {"fixed_environment": (("PATH", os.environ["PATH"]),)}
+            )(),
+            "limits": type(
+                "Limits", (),
+                {"action_timeout_ms": 10_000, "artifact_bytes_each": 1024 * 1024},
+            )(),
+        },
+    )()
+    result = _sealed_repository_diff(
+        repository=repository, base_commit=base_commit, plan=plan
+    )
+    reconstruction = tmp_path / "reconstruction"
+    subprocess.run(
+        ("git", "clone", "--quiet", str(repository), str(reconstruction)), check=True
+    )
+    subprocess.run(
+        ("git", "apply", "--binary", "-"), cwd=reconstruction,
+        input=result["stdout"].encode(), check=True,
+    )
+    assert (reconstruction / "tracked.txt").read_text(encoding="utf-8") == "after\n"
+    assert (reconstruction / "ignored.txt").read_text(encoding="utf-8") == "included\n"
+    assert (reconstruction / "new.bin").read_bytes() == binary
+    assert (reconstruction / "raw.bin").read_bytes() == raw_binary
+    (repository / "nested" / ".git" / "objects").mkdir(parents=True)
+    with pytest.raises(
+        VerifierSnapshotError, match="embedded Git repository"
+    ):
+        _sealed_repository_diff(
+            repository=repository, base_commit=base_commit, plan=plan
+        )
+    shutil.rmtree(repository / "nested")
+    alternates = repository / ".git" / "objects" / "info" / "alternates"
+    alternates.parent.mkdir(exist_ok=True)
+    alternates.write_text("/tmp/attacker-objects\n", encoding="utf-8")
+    with pytest.raises(
+        VerifierSnapshotError, match="external Git object authority"
+    ):
+        _sealed_repository_diff(
+            repository=repository, base_commit=base_commit, plan=plan
+        )
 
 
 async def test_run_shell_delegates_pinned_descriptor_as_workload_argv() -> None:

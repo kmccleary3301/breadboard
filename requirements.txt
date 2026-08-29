@@ -1,5 +1,6 @@
 # Core dependencies
 openai>=1.0.0
+httpx>=0.27.0
 anthropic>=0.31.0
 pyarrow>=15.0.0  # Required for RL VeRL Parquet probe export/smoke tests
 ray>=2.0.0

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -18,6 +20,7 @@ from breadboard.rl.harness.headless import (
     HeadlessRunRequest,
     HeadlessWorkspaceInput,
     _atomic_write,
+    _project_headless_run,
     _validate_repository_base_commit_binding,
     run_headless_request,
 )
@@ -92,6 +95,95 @@ def test_atomic_result_publication_refuses_existing_destination(
 
     assert destination.read_bytes() == b"existing"
     assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_headless_projection_exports_the_exact_workspace_patch() -> None:
+    patch = b"diff --git a/a.py b/a.py\n"
+    events = b'{"event":"done"}\n'
+
+    class CAS:
+        def __init__(self) -> None:
+            artifact_manifest = json.dumps(
+                {"objects": [{"role": "patch", "payload": "runner-result-json"}]},
+                sort_keys=True,
+            ).encode()
+            self.payloads = {
+                "manifest": json.dumps(
+                    {
+                        "runner_ledger_ref": self.ref("events", events),
+                        "artifact_manifest_ref": self.ref(
+                            "artifacts",
+                            artifact_manifest,
+                        ),
+                    },
+                    sort_keys=True,
+                ).encode(),
+                "events": events,
+                "artifacts": artifact_manifest,
+            }
+
+        @staticmethod
+        def ref(artifact_id: str, payload: bytes) -> dict[str, str]:
+            return {
+                "artifact_id": artifact_id,
+                "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+            }
+
+        def get_ref(self, artifact_id: str) -> SimpleNamespace:
+            payload = self.payloads[artifact_id]
+            projection = self.ref(artifact_id, payload)
+            return SimpleNamespace(**projection, to_dict=lambda: projection)
+
+        def get_bytes(self, ref: SimpleNamespace, *, max_bytes: int) -> bytes:
+            payload = self.payloads[ref.artifact_id]
+            assert len(payload) <= max_bytes
+            return payload
+
+    cas = CAS()
+    composition = SimpleNamespace(
+        authority_graph=SimpleNamespace(cas=cas),
+    )
+    run = SimpleNamespace(
+        primary_disposition=SimpleNamespace(value="succeeded"),
+        termination="completed",
+        turn_count=1,
+        response={"answer": "done"},
+        completed_envelope_ref=None,
+        closed_envelope_ref=None,
+        result_ref=None,
+        evidence_manifest_ref=cas.get_ref("manifest"),
+        evidence_root="sha256:" + "0" * 64,
+        artifact_manifest_ref=None,
+        primary_measurement_digest="sha256:" + "1" * 64,
+        verifier_measurement_digest="sha256:" + "2" * 64,
+        verifier_result_digest="sha256:" + "3" * 64,
+        reward=0.0,
+        reward_components={},
+        workspace_diff={
+            "returncode": 0,
+            "stdout": patch.decode(),
+            "stderr": "",
+            "base_commit": "0" * 40,
+            "git_executable_digest": "sha256:" + "4" * 64,
+            "patch_digest": "sha256:" + hashlib.sha256(patch).hexdigest(),
+            "snapshot_root_digest": "sha256:" + "5" * 64,
+        },
+    )
+    result: dict[str, Any] = {}
+
+    with pytest.raises(ValueError, match="base commit mismatch"):
+        _project_headless_run(
+            {}, run, composition, expected_base_commit="1" * 40
+        )
+    event_bytes, patch_bytes = _project_headless_run(
+        result, run, composition, expected_base_commit="0" * 40
+    )
+
+    assert event_bytes == events
+    assert patch_bytes == patch
+    assert result["workspace_evidence"]["patch_digest"] == (
+        "sha256:" + hashlib.sha256(patch).hexdigest()
+    )
 
 
 @pytest.mark.parametrize(
@@ -295,6 +387,7 @@ async def test_headless_runner_rejects_development_trusted_process(
         ),
         result_path=str(result_path),
         event_log_path=str(event_path),
+        patch_path=str(tmp_path / "workspace.patch"),
     )
     assert str(credential) not in request.model_dump_json()
     assert all(
@@ -352,6 +445,13 @@ async def test_headless_runner_rejects_development_trusted_process(
     assert rejected.value.result["terminal"]["failure"] == {
         "code": "ValueError",
         "category": "ValueError",
+    }
+    assert rejected.value.result["patch"] == {
+        "requested": True,
+        "destination": str(tmp_path / "workspace.patch"),
+        "digest": None,
+        "size_bytes": None,
+        "available": False,
     }
     assert json.loads(result_path.read_bytes()) == rejected.value.result
     assert not event_path.exists()

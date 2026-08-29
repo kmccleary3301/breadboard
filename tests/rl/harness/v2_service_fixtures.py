@@ -60,7 +60,13 @@ def released_receipt(lease_id: str = "lease-deterministic") -> SandboxCleanupRec
         lease_id,
         tuple(
             CleanupStepReceipt(resource, CleanupState.RELEASED)
-            for resource in ("child_verifier", "runtime", "workspace", "cache_holder", "lease_record")
+            for resource in (
+                "child_verifier",
+                "runtime",
+                "workspace",
+                "cache_holder",
+                "lease_record",
+            )
         ),
     )
 
@@ -70,7 +76,9 @@ def failed_receipt(lease_id: str = "lease-deterministic") -> SandboxCleanupRecei
         lease_id,
         (
             CleanupStepReceipt("runtime", CleanupState.RELEASED),
-            CleanupStepReceipt("workspace", CleanupState.FAILED, "deterministic failure"),
+            CleanupStepReceipt(
+                "workspace", CleanupState.FAILED, "deterministic failure"
+            ),
             CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
             CleanupStepReceipt("lease_record", CleanupState.RELEASED),
         ),
@@ -134,12 +142,8 @@ def deterministic_sandbox_plan() -> Any:
             measured_binary_digest=ref("runtime-binary").sha256,
         ),
         image=SimpleNamespace(image_digest=ref("runtime-image").sha256),
-        security_policy=SimpleNamespace(
-            policy_digest=ref("security-policy").sha256
-        ),
-        network_policy=SimpleNamespace(
-            policy_digest=ref("network-policy").sha256
-        ),
+        security_policy=SimpleNamespace(policy_digest=ref("security-policy").sha256),
+        network_policy=SimpleNamespace(policy_digest=ref("network-policy").sha256),
         verifier=SimpleNamespace(
             grant=SimpleNamespace(
                 implementation_digest=ref("verifier-implementation").sha256
@@ -159,6 +163,7 @@ def exact_wp4_case() -> tuple[Any, Any, Any]:
     resolved = fixture.runtime.resolve_episode(fixture.request)
     return fixture, fixture.request, resolved
 
+
 def conductor_compatible_case() -> tuple[Any, Any, Any, Any]:
     fixture, request, _ = exact_wp4_case()
     observation = _observation("v2")
@@ -168,11 +173,16 @@ def conductor_compatible_case() -> tuple[Any, Any, Any, Any]:
         implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
     )
     binding = c.SelectionBinding(
-        owner_key="sha256:" + hashlib.sha256(canonical_json_bytes({
-            "schema_version": "bb.rl.selection-owner.v1",
-            "subject_digest": plan.subject_digest,
-            "episode_id": request.episode_id,
-        })).hexdigest(),
+        owner_key="sha256:"
+        + hashlib.sha256(
+            canonical_json_bytes(
+                {
+                    "schema_version": "bb.rl.selection-owner.v1",
+                    "subject_digest": plan.subject_digest,
+                    "episode_id": request.episode_id,
+                }
+            )
+        ).hexdigest(),
         request_digest=ref("selection-request").sha256,
         selection_record_digest=plan.selection_record_digest,
     )
@@ -273,7 +283,9 @@ class DeterministicPolicyResolver:
         self.entered: asyncio.Event | None = None
         self.release: asyncio.Event | None = None
 
-    async def resolve(self, policy_binding: Any, *, episode_id: str, effective_plan_digest: str) -> Any:
+    async def resolve(
+        self, policy_binding: Any, *, episode_id: str, effective_plan_digest: str
+    ) -> Any:
         self.calls.append("policy.resolve")
         if self.entered is not None:
             self.entered.set()
@@ -315,12 +327,23 @@ class DeterministicSession:
         result = RunnerResult(
             episode_id=self.request.episode_id,
             effective_plan_digest=self.request.effective_plan_digest,
-            original_request={"task_input": dict(request.task_input), "context": dict(request.context)},
+            original_request={
+                "task_input": dict(request.task_input),
+                "context": dict(request.context),
+            },
             response={"answer": "deterministic"},
             termination=termination,
             turn_count=1,
             turns=(RunnerTurn(1, ({"type": "submit", "value": "deterministic"},)),),
-            events=(RunnerTerminationEvent(0, self.request.episode_id, self.request.effective_plan_digest, 1, termination),),
+            events=(
+                RunnerTerminationEvent(
+                    0,
+                    self.request.episode_id,
+                    self.request.effective_plan_digest,
+                    1,
+                    termination,
+                ),
+            ),
         )
         if self.events is not None and self.emit_result_events:
             for event in result.events:
@@ -355,7 +378,15 @@ class DeterministicRunner:
         self.session_events: tuple[Any, ...] = ()
         self.emit_result_events = False
 
-    async def open(self, request: Any, *, policy: Any, workspace: Any, cancellation: Any, events: Any) -> Any:
+    async def open(
+        self,
+        request: Any,
+        *,
+        policy: Any,
+        workspace: Any,
+        cancellation: Any,
+        events: Any,
+    ) -> Any:
         self.calls.append("runner.open")
         self.open_arguments.append((request, policy, workspace, cancellation, events))
         if self.open_error is not None:
@@ -427,10 +458,12 @@ class DeterministicLease:
         self.close_error: BaseException | None = None
         self.close_entered = asyncio.Event()
         self.close_release: asyncio.Event | None = None
+        self._sealed_workspace_diff: dict[str, Any] | None = None
+
 
     async def seal_for_verifier(self) -> VerifierSnapshotReceipt:
         self.calls.append("lease.seal")
-        return VerifierSnapshotReceipt(
+        receipt = VerifierSnapshotReceipt(
             snapshot_id="snapshot-deterministic",
             source_workspace_id="workspace-deterministic",
             source_lease_id=self.lease_id,
@@ -444,6 +477,21 @@ class DeterministicLease:
             byte_count=0,
             immutable_storage_object_id="cas/snapshot-deterministic",
         )
+        patch = "diff --git a/a.py b/a.py\n"
+        self._sealed_workspace_diff = {
+            "returncode": 0,
+            "stdout": patch,
+            "stderr": "",
+            "base_commit": "0" * 40,
+            "git_executable_digest": ref("workspace-diff-git").sha256,
+            "patch_digest": "sha256:" + hashlib.sha256(patch.encode()).hexdigest(),
+            "snapshot_root_digest": receipt.root_digest,
+        }
+        return receipt
+
+    def sealed_workspace_diff(self) -> dict[str, Any] | None:
+        self.calls.append("workspace.diff")
+        return self._sealed_workspace_diff
 
     async def close(self) -> SandboxCleanupReceipt:
         self.calls.append("lease.close")
@@ -460,7 +508,9 @@ class DeterministicEvidenceAuthority(V2EvidenceAuthority):
         super().__init__(())
         self.calls = calls
 
-    def validate_plan(self, effective_plan: Any, evidence_policy: Any, retention_policy: Any) -> Any:
+    def validate_plan(
+        self, effective_plan: Any, evidence_policy: Any, retention_policy: Any
+    ) -> Any:
         self.calls.append("evidence.validate_plan")
         return super().validate_plan(effective_plan, evidence_policy, retention_policy)
 
@@ -622,9 +672,7 @@ class DeterministicEvidenceRepository:
             raise ValueError("deterministic runner event sequence is not contiguous")
         events.append(event)
         event_digest = canonical_digest(event)
-        event_ref = ref(
-            f"runner-event-{episode_id}-{event.sequence}-{event_digest}"
-        )
+        event_ref = ref(f"runner-event-{episode_id}-{event.sequence}-{event_digest}")
         self.runner_event_refs.setdefault(episode_id, []).append(event_ref)
         return SimpleNamespace(
             event_ref=event_ref,
@@ -664,8 +712,7 @@ class DeterministicEvidenceRepository:
         self.calls.append("repo.publish_completed")
         if (
             inputs.verifier_cleanup_receipt is not None
-            and inputs.verifier_cleanup_receipt.lease_id
-            != inputs.verifier_lease_id
+            and inputs.verifier_cleanup_receipt.lease_id != inputs.verifier_lease_id
         ):
             raise EvidenceValidationError("cleanup receipt lease mismatch")
         self.completed_inputs.append(inputs)
@@ -715,9 +762,7 @@ class DeterministicEvidenceRepository:
                     "absent cleanup receipt cannot claim cleanup resources"
                 )
         else:
-            resources = tuple(
-                step.resource for step in inputs.cleanup_receipt.steps
-            )
+            resources = tuple(step.resource for step in inputs.cleanup_receipt.steps)
             released = {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
             if (
                 tuple(inputs.cleanup_required_resources) != required_resources
@@ -725,8 +770,7 @@ class DeterministicEvidenceRepository:
                 or set(resources) != set(required_resources)
                 or inputs.cleanup_receipt.state not in released
                 or any(
-                    step.state not in released
-                    for step in inputs.cleanup_receipt.steps
+                    step.state not in released for step in inputs.cleanup_receipt.steps
                 )
             ):
                 raise EvidenceValidationError(
@@ -798,6 +842,7 @@ def service_case() -> DeterministicServiceCase:
         evidence_authority=evidence_authority,
     )
 
+
 def canonical_create_response_bytes(response: Any) -> bytes:
     return canonical_json_bytes(
         {
@@ -805,7 +850,9 @@ def canonical_create_response_bytes(response: Any) -> bytes:
             "create_fingerprint": response.create_fingerprint,
             "state": response.state.value,
             "effective_plan_digest": response.effective_plan_digest,
-            "selection_record_ref": response.selection_record_ref.model_dump(mode="json"),
+            "selection_record_ref": response.selection_record_ref.model_dump(
+                mode="json"
+            ),
             "effective_plan_ref": response.effective_plan_ref.model_dump(mode="json"),
             "policy_binding_digest": response.policy_binding_digest,
             "selection_commit": response.selection_commit.model_dump(mode="json"),

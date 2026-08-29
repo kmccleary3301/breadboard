@@ -38,8 +38,6 @@ _POLICY_PROVIDER_PATH = Path(__file__).with_name("policy_provider.py")
 _POLICY_PROVIDER_IDENTITY = measure_module_artifact(str(_POLICY_PROVIDER_PATH))
 
 
-
-
 class HeadlessWorkspaceInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -175,9 +173,7 @@ class HeadlessProviderRouteAuthority(BaseModel):
             "authority_model_id": self.authority_model_id,
             "base_url_sha256": _digest_bytes(self.base_url.encode("utf-8")),
             "caller_header_count": len(header_names),
-            "caller_header_names_sha256": _digest_bytes(
-                _canonical_bytes(header_names)
-            ),
+            "caller_header_names_sha256": _digest_bytes(_canonical_bytes(header_names)),
             "caller_headers_sha256": _digest_bytes(_canonical_bytes(header_items)),
             "policy_observation_digest": self.policy_observation_digest,
         }
@@ -203,21 +199,31 @@ class HeadlessRunRequest(BaseModel):
     provider: HeadlessProviderInput
     result_path: str
     event_log_path: str
+    patch_path: str | None = None
 
-    @field_validator(
-        "result_path",
-        "event_log_path",
-    )
+    @field_validator("result_path", "event_log_path")
     @classmethod
     def _path_is_absolute(cls, value: str) -> str:
         if not os.path.isabs(value) or os.path.normpath(value) != value:
             raise ValueError("headless paths must be normalized absolute paths")
         return value
 
+    @field_validator("patch_path")
+    @classmethod
+    def _optional_path_is_absolute(cls, value: str | None) -> str | None:
+        if value is not None and (
+            not os.path.isabs(value) or os.path.normpath(value) != value
+        ):
+            raise ValueError("headless paths must be normalized absolute paths")
+        return value
+
     @model_validator(mode="after")
     def _request_is_closed(self) -> HeadlessRunRequest:
-        if self.result_path == self.event_log_path:
-            raise ValueError("result_path and event_log_path must differ")
+        destinations = [self.result_path, self.event_log_path]
+        if self.patch_path is not None:
+            destinations.append(self.patch_path)
+        if len(destinations) != len(set(destinations)):
+            raise ValueError("headless output paths must differ")
         if not self.target_id or not self.target_overlay_id:
             raise ValueError("target and overlay identities are required")
         if any(
@@ -279,6 +285,7 @@ def load_headless_request(path: str) -> HeadlessRunRequest:
     payload = _read_regular_file(path, max_bytes=_MAX_REQUEST_BYTES)
     return HeadlessRunRequest.model_validate_json(payload, strict=True)
 
+
 def load_headless_provider_route_authority(
     path: str,
 ) -> HeadlessProviderRouteAuthority:
@@ -307,9 +314,7 @@ async def run_headless_request(
     composition: ProductionComposition | None = None
     try:
         if request.expected_sandbox.runtime_class is c.RuntimeClass.TRUSTED_PROCESS:
-            raise ValueError(
-                "headless execution requires an isolated sandbox runtime"
-            )
+            raise ValueError("headless execution requires an isolated sandbox runtime")
         composition_secrets = _secret_file_bindings(
             secret_files,
             field_name="composition secret files",
@@ -326,12 +331,9 @@ async def run_headless_request(
             raise ValueError(
                 "provider credential handles do not match the headless request"
             )
-        if (
-            set(provider_routes) != {request.provider.credential_handle}
-            or any(
-                type(value) is not HeadlessProviderRouteAuthority
-                for value in provider_routes.values()
-            )
+        if set(provider_routes) != {request.provider.credential_handle} or any(
+            type(value) is not HeadlessProviderRouteAuthority
+            for value in provider_routes.values()
         ):
             raise ValueError(
                 "provider route authorities do not match the headless request"
@@ -368,13 +370,9 @@ async def run_headless_request(
             return EpisodeOpenAICompletionsPolicyResolver(
                 authority,
                 profiles={episode_id: profile},
-                credential_handle_ids={
-                    episode_id: request.provider.credential_handle
-                },
+                credential_handle_ids={episode_id: request.provider.credential_handle},
                 target_projections={episode_id: target},
-                authority_model_ids={
-                    episode_id: request.provider.authority_model_id
-                },
+                authority_model_ids={episode_id: request.provider.authority_model_id},
                 authority_wire_models={episode_id: route.model},
                 expected_observation_digests={
                     episode_id: route.policy_observation_digest
@@ -430,9 +428,7 @@ async def run_headless_request(
             raise preflight_cancellation
         raise HeadlessRunFailed(result) from None
     loop = asyncio.get_running_loop()
-    episode_deadline = (
-        loop.time() + request.expected_resources.wall_time_ms / 1_000
-    )
+    episode_deadline = loop.time() + request.expected_resources.wall_time_ms / 1_000
     primary_failure: BaseException | None = None
     cleanup_failure: BaseException | None = None
     cancellation: asyncio.CancelledError | None = None
@@ -440,6 +436,7 @@ async def run_headless_request(
     run_started = False
     terminal_unsuccessful = False
     event_bytes: bytes | None = None
+    patch_bytes: bytes | None = None
     try:
         async with asyncio.timeout_at(episode_deadline):
             create_operation = await composition.service.create(request.resolve_request)
@@ -467,7 +464,12 @@ async def run_headless_request(
                 context=request.context,
             )
             run = run_operation.response
-            event_bytes = _project_headless_run(result, run, composition)
+            event_bytes, patch_bytes = _project_headless_run(
+                result,
+                run,
+                composition,
+                expected_base_commit=request.workspace.base_commit,
+            )
             close_operation = await composition.service.close_episode(episode_id)
             closed = await composition.service.get_closed_envelope(episode_id)
             _project_headless_cleanup(result, close_operation.response, closed)
@@ -491,14 +493,13 @@ async def run_headless_request(
                         context=request.context,
                     )
                     run = replay.response
-                    event_bytes = _project_headless_run(
+                    event_bytes, patch_bytes = _project_headless_run(
                         result,
                         run,
                         composition,
+                        expected_base_commit=request.workspace.base_commit,
                     )
-                    terminal_unsuccessful = (
-                        run.primary_disposition.value != "succeeded"
-                    )
+                    terminal_unsuccessful = run.primary_disposition.value != "succeeded"
             except BaseException as exc:
                 cleanup_failure = exc
         try:
@@ -529,6 +530,7 @@ async def run_headless_request(
         primary_failure = TimeoutError("aggregate episode wall-time limit exceeded")
 
     result["event_log"] = _event_log_projection(event_bytes, request.event_log_path)
+    result["patch"] = _patch_projection(patch_bytes, request.patch_path)
     publication_failure: BaseException | None = None
     if event_bytes is not None:
         try:
@@ -537,6 +539,17 @@ async def run_headless_request(
             publication_failure = exc
             result["event_log"] = {
                 **result["event_log"],
+                "publication_failure": _safe_failure_projection(exc),
+            }
+    if request.patch_path is not None:
+        try:
+            if patch_bytes is None:
+                raise ValueError("headless run did not produce a workspace patch")
+            _atomic_write(request.patch_path, patch_bytes)
+        except Exception as exc:
+            publication_failure = publication_failure or exc
+            result["patch"] = {
+                **result["patch"],
                 "publication_failure": _safe_failure_projection(exc),
             }
     deadline_exceeded = loop.time() >= episode_deadline
@@ -635,7 +648,10 @@ def _validate_repository_base_commit_binding(
                 "repository base-commit bindings require a repository snapshot"
             )
         return
-    if set(bindings) != {expected_digest} or bindings[expected_digest] != expected_commit:
+    if (
+        set(bindings) != {expected_digest}
+        or bindings[expected_digest] != expected_commit
+    ):
         raise ValueError(
             "repository base commit is not bound to the admitted repository snapshot"
         )
@@ -704,10 +720,7 @@ def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any
         "required": required,
     }
     openai_routing = routing.get("openai")
-    if (
-        isinstance(openai_routing, Mapping)
-        and "additionalProperties" in openai_routing
-    ):
+    if isinstance(openai_routing, Mapping) and "additionalProperties" in openai_routing:
         additional_properties = openai_routing["additionalProperties"]
         if type(additional_properties) is not bool:
             raise ValueError("effective target tool routing is malformed")
@@ -819,23 +832,10 @@ def _load_evidence_projection(
         max_bytes=_MAX_EVIDENCE_BYTES,
     )
     artifact_manifest_ref = manifest["artifact_manifest_ref"]
-    artifact_manifest = json.loads(
-        _cas_bytes(
-            composition,
-            artifact_manifest_ref,
-            max_bytes=_MAX_EVIDENCE_BYTES,
-        )
-    )
-    patch_digest = None
-    for item in artifact_manifest.get("objects", []):
-        if item.get("role") in {"patch", "git_patch", "workspace_patch"}:
-            patch_digest = item["artifact_ref"]["sha256"]
-            break
     return (
         {
             "materialization_digest": manifest.get("materialization_digest"),
             "final_workspace_snapshot_digest": manifest.get("verifier_snapshot_digest"),
-            "patch_digest": patch_digest,
             "runner_event_ledger_ref": runner_ref,
             "runner_event_ledger_digest": _digest_bytes(event_bytes),
             "artifact_manifest_ref": artifact_manifest_ref,
@@ -903,9 +903,7 @@ def _preflight_failure_result(
         "expected_limits": request.expected_limits.model_dump(mode="json"),
         "expected_sandbox": request.expected_sandbox.model_dump(mode="json"),
         "provider": request.provider.identity_dict(),
-        "provider_profile": (
-            None if profile is None else profile.identity_dict()
-        ),
+        "provider_profile": (None if profile is None else profile.identity_dict()),
         "provider_route": None if route is None else route.identity_dict(),
     }
     try:
@@ -930,9 +928,7 @@ def _preflight_failure_result(
             else profile.identity_dict()
         ),
         "provider_input_identity": request.provider.identity_dict(),
-        "provider_route_identity": (
-            None if route is None else route.identity_dict()
-        ),
+        "provider_route_identity": (None if route is None else route.identity_dict()),
         "target_identity": config_identity["target"],
         "workspace_input": request.workspace.model_dump(mode="json"),
         "terminal": {
@@ -952,6 +948,7 @@ def _preflight_failure_result(
         "cleanup_inventory": None,
         "cleanup_inventory_digest": None,
         "event_log": _event_log_projection(None, request.event_log_path),
+        "patch": _patch_projection(None, request.patch_path),
     }
 
 
@@ -1000,6 +997,7 @@ def _base_result(
         "cleanup_inventory": None,
         "cleanup_inventory_digest": None,
         "event_log": None,
+        "patch": None,
     }
 
 
@@ -1007,7 +1005,9 @@ def _project_headless_run(
     result: dict[str, Any],
     run: Any,
     composition: ProductionComposition,
-) -> bytes | None:
+    *,
+    expected_base_commit: str | None,
+) -> tuple[bytes | None, bytes | None]:
     result["terminal"] = {
         "status": run.primary_disposition.value,
         "reason": run.termination,
@@ -1028,13 +1028,46 @@ def _project_headless_run(
         "reward_components": dict(run.reward_components),
     }
     if run.evidence_manifest_ref is None:
-        return None
+        return None, None
     evidence_projection, event_bytes = _load_evidence_projection(
         composition,
         run.evidence_manifest_ref,
     )
-    result["workspace_evidence"] = evidence_projection
-    return event_bytes
+    workspace_diff = run.workspace_diff
+    if workspace_diff is None:
+        if expected_base_commit is not None:
+            raise ValueError("canonical workspace diff is unavailable")
+        result["workspace_evidence"] = evidence_projection
+        return event_bytes, None
+    expected_keys = {
+        "returncode", "stdout", "stderr", "base_commit",
+        "git_executable_digest", "patch_digest", "snapshot_root_digest",
+    }
+    if (
+        not isinstance(workspace_diff, Mapping)
+        or set(workspace_diff) != expected_keys
+        or workspace_diff.get("returncode") != 0
+        or type(workspace_diff.get("stdout")) is not str
+        or workspace_diff.get("stderr") != ""
+        or type(workspace_diff.get("base_commit")) is not str
+        or type(workspace_diff.get("git_executable_digest")) is not str
+        or type(workspace_diff.get("patch_digest")) is not str
+        or type(workspace_diff.get("snapshot_root_digest")) is not str
+    ):
+        raise ValueError("canonical workspace diff is unavailable")
+    if workspace_diff["base_commit"] != expected_base_commit:
+        raise ValueError("canonical workspace patch base commit mismatch")
+    patch_bytes = workspace_diff["stdout"].encode("utf-8")
+    if workspace_diff["patch_digest"] != _digest_bytes(patch_bytes):
+        raise ValueError("canonical workspace patch digest mismatch")
+    result["workspace_evidence"] = {
+        **evidence_projection,
+        "patch_digest": workspace_diff["patch_digest"],
+        "patch_base_commit": workspace_diff["base_commit"],
+        "patch_git_executable_digest": workspace_diff["git_executable_digest"],
+        "patch_snapshot_root_digest": workspace_diff["snapshot_root_digest"],
+    }
+    return event_bytes, patch_bytes
 
 
 def _project_headless_cleanup(
@@ -1059,6 +1092,19 @@ def _event_log_projection(
     destination: str,
 ) -> dict[str, Any]:
     return {
+        "destination": destination,
+        "digest": None if payload is None else _digest_bytes(payload),
+        "size_bytes": None if payload is None else len(payload),
+        "available": payload is not None,
+    }
+
+
+def _patch_projection(
+    payload: bytes | None,
+    destination: str | None,
+) -> dict[str, Any]:
+    return {
+        "requested": destination is not None,
         "destination": destination,
         "digest": None if payload is None else _digest_bytes(payload),
         "size_bytes": None if payload is None else len(payload),
