@@ -393,7 +393,11 @@ def compare_e4_traces(
             return
         if isinstance(reference_value, list):
             if len(reference_value) != len(clone_value):
-                mark_inaccessible_rules(pointer)
+                for index in range(
+                    min(len(reference_value), len(clone_value)),
+                    max(len(reference_value), len(clone_value)),
+                ):
+                    mark_inaccessible_rules(_child_pointer(pointer, str(index)))
                 record_mismatch(
                     TraceMismatch(
                         pointer,

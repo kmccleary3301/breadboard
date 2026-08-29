@@ -223,6 +223,13 @@ def test_normalization_policy_fails_closed() -> None:
         assert not structural_mismatch.matches
         assert structural_mismatch.mismatches[0].reason == reason
 
+    with pytest.raises(E4ParityError, match="did not match trace fields"):
+        compare_e4_traces(
+            {"timestamps": [0, 1]},
+            {"timestamps": [0]},
+            rules=(NormalizationRule("/timestamps/99", "timestamp"),),
+        )
+
     large_timestamp = 1 << 4000
     large_timestamp_comparison = compare_e4_traces(
         {"timestamp": large_timestamp},
