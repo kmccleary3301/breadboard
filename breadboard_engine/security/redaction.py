@@ -147,16 +147,19 @@ def scrub_exception_in_place(error: BaseException) -> BaseException:
             control_fields = {
                 key: value
                 for key, value in details.items()
-                if key
-                in {
-                    "classification",
-                    "status_code",
-                    "http_status",
-                    "retry_after",
-                    "retry_after_seconds",
-                }
-                and isinstance(value, (str, int, float))
-                and not contains_registered_secret_identity(str(value))
+                if (
+                    key == "classification"
+                    and value == "rate_limited"
+                    or key
+                    in {
+                        "status_code",
+                        "http_status",
+                        "retry_after",
+                        "retry_after_seconds",
+                    }
+                    and type(value) in {int, float}
+                    and not contains_registered_secret_identity(str(value))
+                )
             }
             scrubbed_details, _ = scrub_structure(
                 _fail_closed_short_secret_strings(details),
