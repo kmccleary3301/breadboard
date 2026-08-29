@@ -22,6 +22,7 @@ def test_installed_sandbox_capability_matrix_is_closed_and_truthful() -> None:
 
     assert matrix["schema_version"] == SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION
     assert matrix["workspace_root"] == "/testbed"
+    assert matrix["verifier_result_max_bytes"] == 1024 * 1024
     adapters = {item["adapter_id"]: item for item in matrix["adapters"]}
     assert list(adapters) == ["docker", "firecracker", "gvisor", "process"]
     assert adapters["docker"]["status"] == "experimental"

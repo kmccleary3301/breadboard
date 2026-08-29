@@ -743,6 +743,17 @@ async def test_verifier_artifact_read_uses_artifact_ceiling_not_observation_ceil
     tmp_path: Path,
 ) -> None:
     plan, executor, handle = await _launch_docker_handle(tmp_path)
+    plan = replace(
+        plan,
+        limits=c.ExecutionLimits(
+            **{
+                **plan.limits.model_dump(),
+                "artifact_bytes_each": 1024 * 1024 * 1024,
+                "artifact_bytes_total": 1024 * 1024 * 1024,
+            }
+        ),
+    )
+    handle.plan = plan
     content = b'{"resolved":true}'
     executor.results.append(
         _result(
@@ -756,10 +767,8 @@ async def test_verifier_artifact_read_uses_artifact_ceiling_not_observation_ceil
             ).encode("ascii")
         )
     )
-    ceiling = min(
-        plan.limits.artifact_bytes_each,
-        plan.limits.artifact_bytes_total,
-    )
+    ceiling = docker_module.VERIFIER_RESULT_MAX_BYTES
+    assert plan.limits.artifact_bytes_each > ceiling
     assert ceiling > plan.limits.observation_bytes
 
     result = await handle.read_artifact_text("result/verifier-result.json")

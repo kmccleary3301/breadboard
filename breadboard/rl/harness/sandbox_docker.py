@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Protocol, Sequence
 
 CONTAINER_WORKSPACE_ROOT = "/testbed"
+VERIFIER_RESULT_MAX_BYTES = 1024 * 1024
 _WORKSPACE_OUTPUT_LIMIT_FAILURE = 124
 _WORKSPACE_AUTHORITY_FAILURE = 125
 
@@ -2218,6 +2219,7 @@ class DockerRuntimeHandle:
             ceiling=min(
                 self.plan.limits.artifact_bytes_each,
                 self.plan.limits.artifact_bytes_total,
+                VERIFIER_RESULT_MAX_BYTES,
             ),
         )
 
