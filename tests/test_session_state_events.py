@@ -21,6 +21,8 @@ from breadboard_engine.api.cli_bridge.registry import (
     SessionRecord,
     SessionRegistry,
     TurnRecord,
+    identity_digest,
+    submission_body_digest,
 )
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.runtime_event_projector import (
@@ -840,6 +842,108 @@ async def test_session_input_is_durable_before_deferred_execution(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_retained_submission_digest_deduplicates_after_restart(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-retained-dedupe",
+        status=SessionStatus.RUNNING,
+    )
+    client_message_id = "client-retained"
+    turn = TurnRecord(
+        input_id="input-retained",
+        turn_id="turn-retained",
+        client_message_id=client_message_id,
+        content="continue",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+        body_digest=submission_body_digest("continue", ()),
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.submissions_by_key[client_message_id] = turn
+    record.submissions_by_key_digest[identity_digest(client_message_id)] = turn
+    record.active_turn_id = turn.turn_id
+    record.turn_admission = record.turn_admission.__class__.ACTIVE
+    await registry.create(record)
+
+    restarted = SessionRegistry(state_root=tmp_path)
+    restored = await restarted.get(record.session_id)
+    assert restored is not None
+    assert restored.submissions_by_key == {}
+    restored.loaded_from_retained_state = False
+
+    class Runner:
+        async def enqueue_input(self, *_args: Any, **_kwargs: Any) -> str:
+            raise AssertionError("deduplicated input must not execute")
+
+    restored.runner = Runner()
+    receipt = await SessionService(registry=restarted).send_input(
+        restored.session_id,
+        SessionInputRequest(
+            content="continue",
+            client_message_id=client_message_id,
+        ),
+    )
+
+    assert receipt.disposition == "deduplicated"
+    assert receipt.turn_id == turn.turn_id
+    assert receipt.input_id == turn.input_id
+
+
+@pytest.mark.asyncio
+async def test_admission_persistence_failure_rolls_back_unscheduled_turn(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-admission-persist-failure",
+        status=SessionStatus.RUNNING,
+    )
+
+    class Runner:
+        async def enqueue_input(
+            self,
+            content: str,
+            attachments: list[str],
+            *,
+            defer_execution: Any,
+            **_kwargs: Any,
+        ) -> str:
+            async def execute() -> None:
+                raise AssertionError("failed admission must not execute")
+
+            defer_execution(execute)
+            return content
+
+    record.runner = Runner()
+    await registry.create(record)
+
+    async def fail_persist(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("injected admission persistence failure")
+
+    monkeypatch.setattr(registry, "persist", fail_persist)
+    deferred: list[Any] = []
+    with pytest.raises(OSError, match="injected admission persistence failure"):
+        await SessionService(registry=registry).send_input(
+            record.session_id,
+            SessionInputRequest(
+                content="continue",
+                client_message_id="client-persist-failure",
+            ),
+            defer_execution=deferred.append,
+        )
+
+    assert deferred == []
+    assert record.turns_by_id == {}
+    assert record.submissions_by_key == {}
+    assert record.submissions_by_key_digest == {}
+    assert record.active_turn_id is None
+    assert record.turn_admission.value == "idle"
+
+@pytest.mark.asyncio
 async def test_cancel_turn_requests_only_the_active_turn_and_is_idempotent(
     tmp_path: Path,
 ) -> None:
@@ -1081,7 +1185,12 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
     replacement_profile.write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr(
         "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
-        lambda: SimpleNamespace(source_path=replacement_profile),
+        lambda: SimpleNamespace(
+            source_path=replacement_profile,
+            public_identity=lambda: {
+                "definition_ref": "agent_configs/templates/daily_driver.v1.yaml"
+            },
+        ),
     )
     monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
 
@@ -1112,6 +1221,58 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
         assert retained["session"]["permission_mode"] == "configured"
         assert retained["turns"][0]["terminal_resolution_committed"] is True
         assert len(retained["terminal_event_envelopes"]) == 1
+    finally:
+        if restored.runner is not None:
+            await restored.runner.stop()
+
+@pytest.mark.asyncio
+async def test_retained_restart_preserves_explicit_config_and_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    explicit_config = tmp_path / "explicit-session.yaml"
+    explicit_config.write_text("{}\n", encoding="utf-8")
+    explicit_workspace = tmp_path / "workspace"
+    explicit_workspace.mkdir()
+    registry = SessionRegistry(state_root=tmp_path / "state")
+    record = SessionRecord(
+        session_id="session-restart-explicit-context",
+        status=SessionStatus.RUNNING,
+        metadata={
+            "config_path": str(explicit_config),
+            "workspace": str(explicit_workspace),
+            "permission_mode": "configured",
+        },
+    )
+    await registry.create(record)
+
+    default_profile = tmp_path / "default-session.yaml"
+    default_profile.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
+        lambda: SimpleNamespace(
+            source_path=default_profile,
+            public_identity=lambda: {
+                "definition_ref": "agent_configs/templates/daily_driver.v1.yaml"
+            },
+        ),
+    )
+    prepared_requests: list[SessionCreateRequest] = []
+
+    def capture_runtime_request(runner: SessionRunner) -> dict[str, Any]:
+        prepared_requests.append(runner.request)
+        return {}
+
+    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", capture_runtime_request)
+
+    restarted = SessionRegistry(state_root=tmp_path / "state")
+    restored = await SessionService(registry=restarted).ensure_session(record.session_id)
+    try:
+        assert prepared_requests
+        assert prepared_requests[0].config_path == str(explicit_config)
+        assert prepared_requests[0].workspace == str(explicit_workspace)
+        assert restored.metadata["config_path"] == str(explicit_config)
+        assert restored.metadata["workspace"] == str(explicit_workspace)
     finally:
         if restored.runner is not None:
             await restored.runner.stop()

@@ -421,6 +421,7 @@ class PersistenceMixin:
                 "event_head_id": durable_head_event_id,
                 "model": _retained_model_id(metadata.get("model")),
                 "config_path": str(metadata.get("config_path") or ""),
+                "workspace": str(metadata.get("workspace") or ""),
                 "model_role_lock": role_lock,
                 "active_model_role": str(active_role) if active_role else None,
                 "permission_mode": (
@@ -566,6 +567,8 @@ class PersistenceMixin:
             metadata["model"] = model
         if session.get("config_path"):
             metadata["config_path"] = str(session["config_path"])
+        if session.get("workspace"):
+            metadata["workspace"] = str(session["workspace"])
         permission_mode = str(session.get("permission_mode") or "").strip().lower()
         if permission_mode in {"prompt", "ask", "interactive", "configured"}:
             metadata["permission_mode"] = permission_mode

@@ -801,9 +801,8 @@ class SessionRunner:
                 if isinstance(workspace, dict)
                 else None
             )
-        candidate = (
-            candidate
-            or f"tmp/agent_ws_{os.path.basename(self.request.config_path).split('.')[0]}"
+        candidate = candidate or (
+            "tmp/agent_ws_" + identity_digest(self.session.session_id)[:16]
         )
         try:
             path = Path(str(candidate)).expanduser()
