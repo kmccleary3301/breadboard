@@ -39,6 +39,7 @@ _MAX_JSON_INTEGER_BITS = 4096
 _MAX_MISMATCHES = 10_000
 _MAX_NORMALIZATION_RULES = 1024
 _MAX_METADATA_TEXT_BYTES = 1024
+_MAX_POINTER_DISPLAY_BYTES = 1024
 _MAX_WORKSPACE_DEPTH = 128
 _MAX_WORKSPACE_ENTRIES = 16_000
 _MAX_WORKSPACE_BYTES = 4 * 1024 * 1024 * 1024
@@ -69,11 +70,69 @@ def _require_bounded_text(
     return value
 
 
+@dataclass(frozen=True, slots=True)
+class _PointerEvidence:
+    display: str | None
+    sha256: str
+    depth: int
+
+    @property
+    def label(self) -> str:
+        if self.display is not None:
+            return self.display or "/"
+        return f"<pointer sha256:{self.sha256}>"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "pointer_sha256": self.sha256,
+            "pointer_depth": self.depth,
+        }
+
+
+@dataclass(slots=True)
+class _JsonPointer:
+    display: str | None
+    depth: int
+    _hasher: Any
+
+    @classmethod
+    def root(cls) -> _JsonPointer:
+        return cls("", 0, hashlib.sha256())
+
+    def child(self, token: str) -> _JsonPointer:
+        escaped = token.replace("~", "~0").replace("/", "~1")
+        encoded = escaped.encode("utf-8")
+        hasher = self._hasher.copy()
+        hasher.update(b"/")
+        hasher.update(encoded)
+        display = None
+        if self.display is not None:
+            candidate = f"{self.display}/{escaped}"
+            if len(candidate.encode("utf-8")) <= _MAX_POINTER_DISPLAY_BYTES:
+                display = candidate
+        return _JsonPointer(display, self.depth + 1, hasher)
+
+    @property
+    def label(self) -> str:
+        return self.evidence().label
+
+    def evidence(self) -> _PointerEvidence:
+        return _PointerEvidence(self.display, self._hasher.hexdigest(), self.depth)
+
+
 def _pointer_evidence(pointer: str) -> dict[str, Any]:
     return {
         "pointer_sha256": hashlib.sha256(pointer.encode("utf-8")).hexdigest(),
         "pointer_depth": pointer.count("/"),
     }
+
+
+def _pointer_location(pointer: str) -> _PointerEvidence:
+    return _PointerEvidence(
+        pointer,
+        hashlib.sha256(pointer.encode("utf-8")).hexdigest(),
+        pointer.count("/"),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,14 +154,18 @@ class NormalizationRule:
 
 @dataclass(frozen=True, slots=True)
 class TraceMismatch:
-    pointer: str
+    _location: _PointerEvidence
     reason: str
     reference: Any
     clone: Any
 
+    @property
+    def pointer(self) -> str:
+        return self._location.label
+
     def as_dict(self) -> dict[str, Any]:
         return {
-            **_pointer_evidence(self.pointer),
+            **self._location.as_dict(),
             "reason": self.reason,
             "reference_type": type(self.reference).__name__,
             "clone_type": type(self.clone).__name__,
@@ -111,15 +174,19 @@ class TraceMismatch:
 
 @dataclass(frozen=True, slots=True)
 class NormalizedField:
-    pointer: str
+    _location: _PointerEvidence
     kind: str
     reference: Any
     clone: Any
     normalized: str
 
+    @property
+    def pointer(self) -> str:
+        return self._location.label
+
     def as_dict(self) -> dict[str, Any]:
         return {
-            **_pointer_evidence(self.pointer),
+            **self._location.as_dict(),
             "kind": self.kind,
             "normalized_sha256": hashlib.sha256(
                 self.normalized.encode("utf-8")
@@ -147,37 +214,38 @@ class TemporaryPathRoots:
         _validate_absolute_path(self.clone, "clone temporary root")
 
 
-def _json_string_bytes(value: str, pointer: str) -> int:
+def _json_string_bytes(value: str, pointer: _JsonPointer) -> int:
     try:
         raw_bytes = len(value.encode("utf-8"))
     except UnicodeEncodeError as exc:
-        raise E4ParityError(f"invalid Unicode string at {pointer or '/'}") from exc
+        raise E4ParityError(f"invalid Unicode string at {pointer.label}") from exc
     if raw_bytes > _MAX_JSON_STRING_BYTES:
         raise E4ParityError(
-            f"JSON string byte size exceeds {_MAX_JSON_STRING_BYTES} "
-            f"at {pointer or '/'}"
+            f"JSON string byte size exceeds {_MAX_JSON_STRING_BYTES} at {pointer.label}"
         )
     return (raw_bytes * 6) + 2
 
 
-def _account_json_bytes(state: list[int], amount: int, pointer: str) -> None:
+def _account_json_bytes(state: list[int], amount: int, pointer: _JsonPointer) -> None:
     state[1] += amount
     if state[1] > _MAX_JSON_BYTES:
         raise E4ParityError(
-            f"JSON byte size exceeds {_MAX_JSON_BYTES} at {pointer or '/'}"
+            f"JSON byte size exceeds {_MAX_JSON_BYTES} at {pointer.label}"
         )
 
 
 def _validate_closed_json(
     value: Any,
     *,
-    pointer: str = "",
+    pointer: _JsonPointer | None = None,
     ancestors: frozenset[int] = frozenset(),
     depth: int = 0,
     state: list[int] | None = None,
 ) -> None:
+    if pointer is None:
+        pointer = _JsonPointer.root()
     if depth > _MAX_JSON_DEPTH:
-        raise E4ParityError(f"JSON depth exceeds {_MAX_JSON_DEPTH} at {pointer or '/'}")
+        raise E4ParityError(f"JSON depth exceeds {_MAX_JSON_DEPTH} at {pointer.label}")
     if state is None:
         state = [0, 0]
     state[0] += 1
@@ -191,25 +259,25 @@ def _validate_closed_json(
     elif type(value) is int:
         if value.bit_length() > _MAX_JSON_INTEGER_BITS:
             raise E4ParityError(
-                f"integer exceeds {_MAX_JSON_INTEGER_BITS} bits at {pointer or '/'}"
+                f"integer exceeds {_MAX_JSON_INTEGER_BITS} bits at {pointer.label}"
             )
         try:
             integer_bytes = len(str(value))
         except (ValueError, MemoryError) as exc:
             raise E4ParityError(
-                f"integer cannot be serialized at {pointer or '/'}"
+                f"integer cannot be serialized at {pointer.label}"
             ) from exc
         _account_json_bytes(state, integer_bytes, pointer)
     elif type(value) is str:
         _account_json_bytes(state, _json_string_bytes(value, pointer), pointer)
     elif type(value) is float:
         if not math.isfinite(value):
-            raise E4ParityError(f"non-finite number at {pointer or '/'}")
+            raise E4ParityError(f"non-finite number at {pointer.label}")
         _account_json_bytes(state, len(repr(value)), pointer)
     elif type(value) is list:
         identity = id(value)
         if identity in ancestors:
-            raise E4ParityError(f"cyclic array at {pointer or '/'}")
+            raise E4ParityError(f"cyclic array at {pointer.label}")
         descendants = ancestors | {identity}
         for index, child in enumerate(value):
             _validate_closed_json(
@@ -222,11 +290,11 @@ def _validate_closed_json(
     elif type(value) is dict:
         identity = id(value)
         if identity in ancestors:
-            raise E4ParityError(f"cyclic object at {pointer or '/'}")
+            raise E4ParityError(f"cyclic object at {pointer.label}")
         descendants = ancestors | {identity}
         for key, child in value.items():
             if type(key) is not str:
-                raise E4ParityError(f"non-string object key at {pointer or '/'}")
+                raise E4ParityError(f"non-string object key at {pointer.label}")
             _account_json_bytes(
                 state,
                 _json_string_bytes(key, pointer) + 1,
@@ -240,9 +308,7 @@ def _validate_closed_json(
                 state=state,
             )
     else:
-        raise E4ParityError(
-            f"non-JSON {type(value).__name__} value at {pointer or '/'}"
-        )
+        raise E4ParityError(f"non-JSON {type(value).__name__} value at {pointer.label}")
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -301,6 +367,8 @@ def compare_e4_traces(
 ) -> TraceComparison:
     _validate_closed_json(reference)
     _validate_closed_json(clone)
+    if type(rules) not in {list, tuple}:
+        raise TypeError("rules must be an exact list or tuple")
     if len(rules) > _MAX_NORMALIZATION_RULES:
         raise E4ParityError(
             f"normalization rule count exceeds {_MAX_NORMALIZATION_RULES}"
@@ -335,6 +403,7 @@ def compare_e4_traces(
 
     for pointer in sorted_rule_pointers:
         rule = rules_by_pointer[pointer]
+        location = _pointer_location(pointer)
         reference_exists, reference_value = _resolve_json_pointer(reference, pointer)
         clone_exists, clone_value = _resolve_json_pointer(clone, pointer)
         if not reference_exists and not clone_exists:
@@ -361,7 +430,7 @@ def compare_e4_traces(
         except E4ParityError as exc:
             record_mismatch(
                 TraceMismatch(
-                    pointer,
+                    location,
                     f"invalid {rule.kind} normalization input: {exc}",
                     reference_value,
                     clone_value,
@@ -370,7 +439,7 @@ def compare_e4_traces(
             continue
         normalized_fields.append(
             NormalizedField(
-                pointer,
+                location,
                 rule.kind,
                 reference_value,
                 clone_value,
@@ -380,27 +449,27 @@ def compare_e4_traces(
         if reference_normalized != clone_normalized:
             record_mismatch(
                 TraceMismatch(
-                    pointer,
+                    location,
                     f"normalized {rule.kind} values differ",
                     reference_value,
                     clone_value,
                 )
             )
 
-    def compare(reference_value: Any, clone_value: Any, pointer: str) -> None:
+    def compare(reference_value: Any, clone_value: Any, pointer: _JsonPointer) -> None:
         if truncated:
             return
         if type(reference_value) is not type(clone_value):
             record_mismatch(
                 TraceMismatch(
-                    pointer,
+                    pointer.evidence(),
                     "JSON types differ",
                     reference_value,
                     clone_value,
                 )
             )
             return
-        if pointer in rules_by_pointer:
+        if pointer.display is not None and pointer.display in rules_by_pointer:
             return
 
         if isinstance(reference_value, dict):
@@ -410,7 +479,7 @@ def compare_e4_traces(
                 child_pointer = _child_pointer(pointer, key)
                 record_mismatch(
                     TraceMismatch(
-                        child_pointer,
+                        child_pointer.evidence(),
                         "field is missing from clone",
                         reference_value[key],
                         None,
@@ -424,7 +493,7 @@ def compare_e4_traces(
                 child_pointer = _child_pointer(pointer, key)
                 record_mismatch(
                     TraceMismatch(
-                        child_pointer,
+                        child_pointer.evidence(),
                         "unexpected clone field",
                         None,
                         clone_value[key],
@@ -447,7 +516,7 @@ def compare_e4_traces(
             if len(reference_value) != len(clone_value):
                 record_mismatch(
                     TraceMismatch(
-                        pointer,
+                        pointer.evidence(),
                         "array lengths differ",
                         len(reference_value),
                         len(clone_value),
@@ -469,18 +538,18 @@ def compare_e4_traces(
         if values_differ:
             record_mismatch(
                 TraceMismatch(
-                    pointer,
+                    pointer.evidence(),
                     "values differ",
                     reference_value,
                     clone_value,
                 )
             )
 
-    compare(reference, clone, "")
+    compare(reference, clone, _JsonPointer.root())
     if truncated:
         mismatches.append(
             TraceMismatch(
-                "",
+                _JsonPointer.root().evidence(),
                 f"mismatch count exceeds {_MAX_MISMATCHES}",
                 None,
                 None,
@@ -496,7 +565,7 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
         not getattr(os, "O_DIRECTORY", 0)
         or not getattr(os, "O_NOFOLLOW", 0)
         or any(function not in os.supports_dir_fd for function in required_dir_fd)
-        or os.listdir not in os.supports_fd
+        or os.scandir not in os.supports_fd
     ):
         raise E4ParityError(
             "secure descriptor-relative workspace traversal is unavailable"
@@ -530,21 +599,59 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
             )
         entries.append(entry)
 
-    def visit(directory_fd: int, relative: Path, depth: int) -> None:
-        nonlocal total_bytes
-        if depth > _MAX_WORKSPACE_DEPTH:
-            raise E4ParityError(f"workspace depth exceeds {_MAX_WORKSPACE_DEPTH}")
+    def bounded_directory_names(
+        directory_fd: int, relative: Path, limit: int
+    ) -> list[str]:
+        names: list[str] = []
         try:
-            initial_names = sorted(os.listdir(directory_fd))
+            with os.scandir(directory_fd) as iterator:
+                for item in iterator:
+                    if len(names) >= limit:
+                        raise E4ParityError(
+                            f"workspace entry count exceeds {_MAX_WORKSPACE_ENTRIES}"
+                        )
+                    names.append(item.name)
+        except E4ParityError:
+            raise
         except OSError as exc:
             raise E4ParityError(
                 f"could not read workspace directory {relative.as_posix() or '.'}"
             ) from exc
+        names.sort()
+        return names
+
+    def visit(directory_fd: int, relative: Path, depth: int) -> None:
+        nonlocal total_bytes
+        if depth > _MAX_WORKSPACE_DEPTH:
+            raise E4ParityError(f"workspace depth exceeds {_MAX_WORKSPACE_DEPTH}")
+        initial_names = bounded_directory_names(
+            directory_fd,
+            relative,
+            _MAX_WORKSPACE_ENTRIES - len(entries),
+        )
         for name in initial_names:
-            if not name or name in {".", ".."} or "/" in name or "\\" in name:
+            if (
+                not name
+                or name in {".", ".."}
+                or "/" in name
+                or "\\" in name
+                or ":" in name
+                or not name.isprintable()
+            ):
                 raise E4ParityError("workspace contains an unsafe entry name")
+            try:
+                component_bytes = len(name.encode("utf-8"))
+            except UnicodeEncodeError as exc:
+                raise E4ParityError("workspace contains an unsafe entry name") from exc
             child_relative = relative / name
             relative_text = child_relative.as_posix()
+            if (
+                component_bytes > _MAX_WORKSPACE_COMPONENT_BYTES
+                or len(relative_text.encode("utf-8")) > _MAX_WORKSPACE_PATH_BYTES
+            ):
+                raise E4ParityError(
+                    f"workspace path exceeds admitted bounds: {relative_text}"
+                )
             if len(child_relative.parts) > _MAX_WORKSPACE_DEPTH:
                 raise E4ParityError(
                     f"workspace depth exceeds {_MAX_WORKSPACE_DEPTH}: {relative_text}"
@@ -676,12 +783,11 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
                     os.close(file_fd)
                 continue
             raise E4ParityError(f"workspace contains unsupported entry {relative_text}")
-        try:
-            final_names = sorted(os.listdir(directory_fd))
-        except OSError as exc:
-            raise E4ParityError(
-                f"could not recheck workspace directory {relative.as_posix() or '.'}"
-            ) from exc
+        final_names = bounded_directory_names(
+            directory_fd,
+            relative,
+            len(initial_names),
+        )
         if initial_names != final_names:
             raise E4ParityError(
                 f"workspace directory changed during snapshot: "
@@ -903,6 +1009,12 @@ def build_e4_parity_report(
         raise TypeError("upstream_identity must be an exact dict")
     if type(reference_trace) is not dict or type(clone_trace) is not dict:
         raise TypeError("traces must be exact dicts")
+    if type(normalization_rules) not in {list, tuple}:
+        raise TypeError("normalization_rules must be an exact list or tuple")
+    if len(normalization_rules) > _MAX_NORMALIZATION_RULES:
+        raise E4ParityError(
+            f"normalization rule count exceeds {_MAX_NORMALIZATION_RULES}"
+        )
     identity_bytes = canonical_json_bytes(upstream_identity)
     reference_bytes = canonical_json_bytes(reference_trace)
     clone_bytes = canonical_json_bytes(clone_trace)
@@ -954,9 +1066,8 @@ def build_e4_parity_report(
     }
 
 
-def _child_pointer(pointer: str, token: str) -> str:
-    escaped = token.replace("~", "~0").replace("/", "~1")
-    return f"{pointer}/{escaped}"
+def _child_pointer(pointer: _JsonPointer, token: str) -> _JsonPointer:
+    return pointer.child(token)
 
 
 def _normalize_value(value: Any, kind: str, temporary_root: str | None) -> str:

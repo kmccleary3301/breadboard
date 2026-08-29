@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -300,6 +302,18 @@ def test_trace_comparison_bounds_mismatch_evidence() -> None:
     assert len(comparison.mismatches) == 10_001
     assert comparison.mismatches[-1].reason == "mismatch count exceeds 10000"
 
+    long_key = "x" * 2048
+    amplified = compare_e4_traces(
+        {long_key: {f"field_{index}": 0 for index in range(10_001)}},
+        {long_key: {f"field_{index}": 1 for index in range(10_001)}},
+    )
+    assert len(amplified.mismatches) == 10_001
+    assert sum(len(item.pointer) for item in amplified.mismatches) < 1_000_000
+    expected_pointer = f"/{long_key}/field_0"
+    assert (
+        amplified.mismatches[0].as_dict()["pointer_sha256"]
+        == hashlib.sha256(expected_pointer.encode("utf-8")).hexdigest()
+    )
     reference["timestamp"] = "2026-08-29T06:00:00Z"
     clone["timestamp"] = "2026-08-29T06:00:01Z"
     normalized = compare_e4_traces(
@@ -354,6 +368,61 @@ def test_workspace_entry_limit_is_reachable_before_json_node_limit() -> None:
 
     with pytest.raises(E4ParityError, match="entry count exceeds 16000"):
         validate_workspace_snapshot(snapshot)
+
+
+def test_workspace_snapshot_bounds_directory_enumeration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeScandir:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def __iter__(self):
+            return (SimpleNamespace(name=f"entry-{index}") for index in range(16_001))
+
+    def fake_scandir(_directory_fd: int):
+        return FakeScandir()
+
+    monkeypatch.setattr(os, "scandir", fake_scandir)
+    monkeypatch.setattr(os, "supports_fd", os.supports_fd | {fake_scandir})
+
+    with pytest.raises(E4ParityError, match="entry count exceeds 16000"):
+        workspace_snapshot(tmp_path)
+
+
+def test_workspace_snapshot_rejects_oversized_name_before_stat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeScandir:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def __iter__(self):
+            return iter((SimpleNamespace(name="x" * 256),))
+
+    def fake_scandir(_directory_fd: int):
+        return FakeScandir()
+
+    def forbidden_stat(*_args, **_kwargs):
+        raise AssertionError("oversized workspace names must fail before stat")
+
+    monkeypatch.setattr(os, "scandir", fake_scandir)
+    monkeypatch.setattr(os, "stat", forbidden_stat)
+    monkeypatch.setattr(os, "supports_fd", os.supports_fd | {fake_scandir})
+    monkeypatch.setattr(
+        os,
+        "supports_dir_fd",
+        (os.supports_dir_fd - {os.stat}) | {forbidden_stat},
+    )
+
+    with pytest.raises(E4ParityError, match="path exceeds admitted bounds"):
+        workspace_snapshot(tmp_path)
 
 
 def test_workspace_snapshot_captures_bytes_modes_and_links(tmp_path: Path) -> None:
@@ -530,6 +599,22 @@ def test_parity_report_binds_every_required_identity() -> None:
         "normalized_fields": [],
         "mismatches": [],
     }
+    with pytest.raises(
+        TypeError, match="normalization_rules must be an exact list or tuple"
+    ):
+        build_e4_parity_report(
+            target_id="pi@0.57.1",
+            target_descriptor_sha256=SHA256,
+            target_config_sha256=SHA256,
+            upstream_identity=upstream_identity,
+            fixture_id="surface.catalog.v1",
+            fixture_sha256=SHA256,
+            engine_commit=GIT_COMMIT,
+            built_package_sha256=SHA256,
+            reference_trace=reference,
+            clone_trace=clone,
+            normalization_rules=iter(()),
+        )
     reference["events"][0]["kind"] = "mutated"
     assert report["reference_trace_sha256"] == reference_sha256
     identity_sha256 = report["upstream_identity_sha256"]
