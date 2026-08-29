@@ -554,6 +554,7 @@ async def test_profile_resolver_preserves_authoritative_observation_and_one_shot
         {"episode-one": _profile()},
         {"episode-one": "credential-one"},
         {"episode-one": MODEL_ID},
+        {"episode-one": _observation().canonical_digest()},
     )
     binding = c.PolicyBindingRef(
         registry_revision_digest=_digest("registry"),
@@ -607,6 +608,7 @@ async def test_profile_resolver_rejects_observation_outside_owned_provider_profi
         {"episode-one": _profile()},
         {"episode-one": "credential-one"},
         {"episode-one": MODEL_ID},
+        {"episode-one": _observation().canonical_digest()},
     )
     binding = c.PolicyBindingRef(
         registry_revision_digest=_digest("registry"),
@@ -616,7 +618,7 @@ async def test_profile_resolver_rejects_observation_outside_owned_provider_profi
 
     with pytest.raises(
         RunnerPolicyBindingError,
-        match="does not match the admitted observation",
+        match="does not match launcher authority",
     ) as error:
         await resolver.resolve(
             binding,
@@ -624,5 +626,5 @@ async def test_profile_resolver_rejects_observation_outside_owned_provider_profi
             effective_plan_digest=DIGEST,
         )
 
-    assert error.value.code == "provider_profile_mismatch"
+    assert error.value.code == "provider_route_authority_mismatch"
     await resolver.close()

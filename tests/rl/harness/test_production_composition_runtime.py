@@ -346,11 +346,13 @@ def test_cli_run_emits_only_secret_free_result_identity(
         composition_ref_path: str,
         secret_files: dict[str, str],
         provider_credentials: dict[str, str],
+        provider_route_files: dict[str, str],
         repository_base_commits: dict[str, str],
     ) -> dict[str, object]:
         assert composition_ref_path == "/composition/ref"
         assert secret_files == {"composition": "/secrets/composition"}
         assert provider_credentials == {"provider": "/secrets/provider"}
+        assert provider_route_files == {"provider": "/routes/provider.json"}
         assert repository_base_commits == {
             "sha256:" + "1" * 64: "2" * 40,
         }
@@ -374,6 +376,8 @@ def test_cli_run_emits_only_secret_free_result_identity(
             "composition=/secrets/composition",
             "--provider-credential-file",
             "provider=/secrets/provider",
+            "--provider-route-file",
+            "provider=/routes/provider.json",
             "--repository-base-commit",
             f"sha256:{'1' * 64}={'2' * 40}",
         ]

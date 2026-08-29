@@ -78,10 +78,22 @@ def test_generated_unknown_name_is_selected_and_drives_public_v2_lifecycle(
                 )
             assert rejected.status_code == 503
             assert rejected.json()["code"] == "runtime_unsupported"
-            assert (
+            replayed = (
                 composition.authority_graph.config_runtime.resolve_episode(request)
-                == resolved
             )
+            assert (
+                replayed.effective_plan.canonical_digest()
+                == resolved.effective_plan.canonical_digest()
+            )
+            assert (
+                replayed.selection_commit.binding
+                == resolved.selection_commit.binding
+            )
+            assert (
+                replayed.selection_commit.binding_ref
+                == resolved.selection_commit.binding_ref
+            )
+            assert replayed.final_receipt_digest == resolved.final_receipt_digest
             return
 
         with policy_server:

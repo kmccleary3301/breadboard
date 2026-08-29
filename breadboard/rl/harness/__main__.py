@@ -97,6 +97,13 @@ def _parser() -> argparse.ArgumentParser:
         metavar="HANDLE=/absolute/path",
     )
     run.add_argument(
+        "--provider-route-file",
+        action="append",
+        type=_secret_file,
+        default=[],
+        metavar="HANDLE=/absolute/path",
+    )
+    run.add_argument(
         "--repository-base-commit",
         action="append",
         type=_repository_base_commit,
@@ -241,6 +248,7 @@ async def _run_headless(
     composition_ref_path: str,
     secret_files: dict[str, str],
     provider_credentials: dict[str, str],
+    provider_route_files: dict[str, str],
     repository_base_commits: dict[str, str],
 ) -> int:
     try:
@@ -249,6 +257,7 @@ async def _run_headless(
             composition_ref_path=composition_ref_path,
             secret_files=secret_files,
             provider_credentials=provider_credentials,
+            provider_route_files=provider_route_files,
             repository_base_commits=repository_base_commits,
         )
     except HeadlessRunFailed as exc:
@@ -292,6 +301,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.composition_ref,
                     _bindings(args.secret_file),
                     _bindings(args.provider_credential_file),
+                    _bindings(args.provider_route_file),
                     _repository_base_commits(args.repository_base_commit),
                 )
             )

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -1227,33 +1228,55 @@ class TrustedProcessHandle:
                         code="workspace_authority_mismatch",
                         lease_id=self.lease_id,
                     )
+                read_fd, write_fd = os.pipe()
+                os.set_inheritable(write_fd, True)
+                bootstrap = (
+                    f"printf B >&{write_fd}; "
+                    'kill -STOP $$; exec "$@"'
+                )
                 process = await asyncio.create_subprocess_exec(
+                    self._executable.proc_fd_path,
+                    "-c",
+                    bootstrap,
+                    "breadboard-bootstrap",
                     *argv,
                     executable=self._executable.proc_fd_path,
-                    pass_fds=(self._executable.fd, self._workspace_fd),
+                    pass_fds=(
+                        self._executable.fd,
+                        self._workspace_fd,
+                        write_fd,
+                    ),
                     preexec_fn=lambda: os.fchdir(self._workspace_fd),
                     env=dict(self.plan.runtime.fixed_environment),
                     start_new_session=True,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                self._groups.add(process.pid)
-            deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
-            fields = self._proc_fields(process.pid)
-            process_group = os.getpgid(process.pid)
-            if process_group != process.pid:
-                raise RuntimeError("trusted process group identity mismatch")
-            identity = {
-                "process_pid": process.pid,
-                "process_group_id": process_group,
-                "process_start_identity": "linux-proc-start:" + fields[19],
-                "process_cgroup_identity": self._cgroup_identity(process.pid),
-            }
-            recorder = getattr(self, "_identity_recorder", None)
-            if recorder is None:
-                raise RuntimeError("trusted process identity recorder is unavailable")
-            recorder(f"process-group-{process_group}", identity)
-            identity_published = True
+                os.close(write_fd)
+                write_fd = -1
+                if os.read(read_fd, 1) != b"B":
+                    raise RuntimeError("trusted process bootstrap failed")
+                deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
+                fields = self._proc_fields(process.pid)
+                if fields[0] not in {"T", "t"}:
+                    raise RuntimeError("trusted process did not stop before admission")
+                process_group = os.getpgid(process.pid)
+                if process_group != process.pid:
+                    raise RuntimeError("trusted process group identity mismatch")
+                identity = {
+                    "process_pid": process.pid,
+                    "process_group_id": process_group,
+                    "process_start_identity": "linux-proc-start:" + fields[19],
+                    "process_cgroup_identity": self._cgroup_identity(process.pid),
+                }
+                recorder = getattr(self, "_identity_recorder", None)
+                if recorder is None:
+                    raise RuntimeError(
+                        "trusted process identity recorder is unavailable"
+                    )
+                recorder(f"process-group-{process_group}", identity)
+                identity_published = True
+                os.kill(process.pid, signal.SIGCONT)
         except BaseException:
             if process is not None:
                 await self._cleanup_process_shielded(

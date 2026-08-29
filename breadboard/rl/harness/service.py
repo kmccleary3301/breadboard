@@ -2307,13 +2307,7 @@ class BreadBoardV2EpisodeService:
                 self._lifecycle_state = _ServiceLifecycleState.CLOSING
                 task = asyncio.create_task(self._shutdown_owner())
                 self._close_task = task
-        try:
-            await _await_owned_close(task)
-        finally:
-            if task.done() and not task.cancelled() and task.exception() is not None:
-                async with self._dictionary_lock:
-                    if self._close_task is task:
-                        self._close_task = None
+        await _await_owned_close(task)
 
     async def _shutdown_owner(self) -> None:
         errors: list[BaseException] = []

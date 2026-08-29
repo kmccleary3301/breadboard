@@ -15,6 +15,7 @@ from breadboard.rl.harness.composition import load_production_composition
 from breadboard.rl.harness.headless import (
     HeadlessRunFailed,
     HeadlessProviderInput,
+    HeadlessProviderRouteAuthority,
     HeadlessRunRequest,
     HeadlessWorkspaceInput,
     _atomic_write,
@@ -87,7 +88,6 @@ def _target_projection(plan: c.EffectiveExecutionPlan) -> E4TargetPolicyProjecti
                                 }
                             },
                             "required": ["command"],
-                            "additionalProperties": False,
                         },
                     },
                 },
@@ -120,14 +120,9 @@ def test_atomic_result_publication_refuses_existing_destination(
 )
 def test_provider_requires_usable_literal_loopback_authority(base_url: str) -> None:
     with pytest.raises(ValueError, match="explicit loopback port"):
-        HeadlessProviderInput(
-            model="provider-model",
-            authority_model_id="provider-model",
+        HeadlessProviderRouteAuthority(
             base_url=base_url,
-            credential_handle="provider",
-            context_window=4_096,
-            max_output_tokens=1_024,
-            timeout_seconds=30,
+            policy_observation_digest="sha256:" + "0" * 64,
         )
 
 @pytest.mark.asyncio
@@ -217,6 +212,13 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
     )
 
     credential_handle = str(fixture.policy_observation["credential_handle_id"])
+    route = HeadlessProviderRouteAuthority(
+        base_url="http://127.0.0.1:8000/v1",
+        caller_headers={"X-Episode-ID": resolution.episode_id},
+        policy_observation_digest=c.PolicyCapabilityObservation.model_validate(
+            fixture.policy_observation
+        ).canonical_digest(),
+    )
     monkeypatch.setattr(
         E4TargetPolicyProjection,
         "load",
@@ -291,12 +293,10 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         provider=HeadlessProviderInput(
             model="Qwen/Qwen3.5-35B-A3B",
             authority_model_id="qwen3.5-35b-a3b",
-            base_url="http://127.0.0.1:8000/v1",
             credential_handle=credential_handle,
             context_window=131_072,
             max_output_tokens=32_000,
             timeout_seconds=30,
-            caller_headers={"X-Episode-ID": resolution.episode_id},
             capabilities={
                 "supports_tools": True,
                 "supports_thinking_control": True,
@@ -315,19 +315,23 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         path not in request.model_dump_json() for path in fixture.secret_files.values()
     )
     assert str(fixture.composition_ref_path) not in request.model_dump_json()
-    alternate_provider = HeadlessProviderInput(
-        **{
-            **request.provider.model_dump(),
-            "caller_headers": {"X-Episode-ID": "different-episode"},
-        }
+    with pytest.raises(ValueError):
+        HeadlessProviderInput.model_validate(
+            {
+                **request.provider.model_dump(),
+                "base_url": "http://127.0.0.1:8001/v1",
+            }
+        )
+    alternate_route = route.model_copy(
+        update={"caller_headers": {"X-Episode-ID": "different-episode"}}
     )
     assert (
-        alternate_provider.identity_dict()["caller_header_names_sha256"]
-        == request.provider.identity_dict()["caller_header_names_sha256"]
+        alternate_route.identity_dict()["caller_header_names_sha256"]
+        == route.identity_dict()["caller_header_names_sha256"]
     )
     assert (
-        alternate_provider.identity_dict()["caller_headers_sha256"]
-        != request.provider.identity_dict()["caller_headers_sha256"]
+        alternate_route.identity_dict()["caller_headers_sha256"]
+        != route.identity_dict()["caller_headers_sha256"]
     )
 
     bound_digest = "sha256:" + "1" * 64
@@ -353,6 +357,7 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         composition_ref_path=str(fixture.composition_ref_path),
         secret_files=fixture.secret_files,
         provider_credentials={credential_handle: str(credential)},
+        provider_routes={credential_handle: route},
         repository_base_commits={},
     )
 
@@ -400,6 +405,7 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
             composition_ref_path=str(fixture.composition_ref_path),
             secret_files=fixture.secret_files,
             provider_credentials={credential_handle: str(credential)},
+            provider_routes={credential_handle: route},
             repository_base_commits={},
         )
     published_failure = json.loads(publication_result_path.read_bytes())
@@ -435,6 +441,7 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
             composition_ref_path=str(fixture.composition_ref_path),
             secret_files=fixture.secret_files,
             provider_credentials={credential_handle: str(credential)},
+            provider_routes={credential_handle: route},
             repository_base_commits={},
         )
     assert timed_out.value.result["terminal"]["status"] == "failed"
@@ -472,6 +479,7 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
             composition_ref_path=str(fixture.composition_ref_path),
             secret_files=fixture.secret_files,
             provider_credentials={credential_handle: str(credential)},
+            provider_routes={credential_handle: route},
             repository_base_commits={},
         )
     cancelled_result = json.loads(cancelled_result_path.read_bytes())

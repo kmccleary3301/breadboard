@@ -1476,5 +1476,5 @@ def test_effective_semantics_empty_value_boundary_retains_text_and_number_guards
             _plan(observation=observation, semantics=semantics)
     semantics = copy.deepcopy(_empty_semantics(observation=observation))
     semantics["limits"] = {"unsafe": 2**53 + 1}
-    with pytest.raises(ValueError, match="JCS.safe"):
+    with pytest.raises(ValueError, match="finite binary64"):
         _plan(observation=observation, semantics=semantics)

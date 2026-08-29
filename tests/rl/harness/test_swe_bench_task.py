@@ -143,6 +143,7 @@ def test_reward_requires_consistent_official_reports(
     }
     instance = {
         "patch_is_None": False,
+        "instance_id": INSTANCE_ID,
         "patch_exists": True,
         "patch_successfully_applied": True,
         "resolved": resolved,
@@ -163,6 +164,14 @@ def test_reward_requires_consistent_official_reports(
             instance_report=instance,
         )
     aggregate["resolved_instances"] = int(resolved)
+
+    instance["instance_id"] = "sympy__sympy-00000"
+    with pytest.raises(SweBenchTaskError, match="does not match the pinned task"):
+        score_official_reports(
+            aggregate_report=aggregate,
+            instance_report=instance,
+        )
+    instance["instance_id"] = INSTANCE_ID
 
     instance["infra_failure"] = True
     with pytest.raises(SweBenchTaskError, match="infrastructure failure"):

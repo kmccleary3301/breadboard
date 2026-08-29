@@ -271,6 +271,10 @@ def score_official_reports(
         raise SweBenchTaskError(
             "official SWE-bench evaluator reported a non-evaluation outcome"
         )
+    if instance_report.get("instance_id") != INSTANCE_ID:
+        raise SweBenchTaskError(
+            "official SWE-bench instance report does not match the pinned task"
+        )
     if instance_report.get("infra_failure") is not False:
         raise SweBenchTaskError(
             "official SWE-bench instance report is an infrastructure failure"

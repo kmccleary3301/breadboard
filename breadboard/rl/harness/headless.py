@@ -38,8 +38,6 @@ _POLICY_PROVIDER_PATH = Path(__file__).with_name("policy_provider.py")
 _POLICY_PROVIDER_IDENTITY = measure_module_artifact(str(_POLICY_PROVIDER_PATH))
 
 
-def _episode_timeout(wall_time_ms: int) -> asyncio.Timeout:
-    return asyncio.timeout(wall_time_ms / 1_000)
 
 
 class HeadlessWorkspaceInput(BaseModel):
@@ -65,15 +63,59 @@ class HeadlessProviderInput(BaseModel):
 
     model: str
     authority_model_id: str = Field(min_length=1, max_length=256)
-    base_url: str
     credential_handle: str = Field(min_length=1, max_length=256)
     context_window: int
     max_output_tokens: int
     timeout_seconds: float = Field(gt=0, le=3_600)
     sampling: Mapping[str, Any] = Field(default_factory=dict)
-    caller_headers: Mapping[str, str] = Field(default_factory=dict)
     capabilities: Mapping[str, Any] = Field(default_factory=dict)
     compatibility: Mapping[str, Any] = Field(default_factory=dict)
+
+    def load_profile(
+        self,
+        *,
+        credential: str,
+        route: HeadlessProviderRouteAuthority,
+    ) -> OpenAICompletionsProviderProfile:
+        return OpenAICompletionsProviderProfile(
+            model=self.model,
+            scoped_credential=credential,
+            base_url=route.base_url,
+            context_window=self.context_window,
+            max_output_tokens=self.max_output_tokens,
+            sampling=self.sampling,
+            caller_headers=route.caller_headers,
+            capabilities=self.capabilities,
+            compatibility=self.compatibility,
+        )
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "model": self.model,
+            "authority_model_id": self.authority_model_id,
+            "credential_handle": self.credential_handle,
+            "context_window": self.context_window,
+            "sampling_digest": _digest_bytes(_canonical_bytes(dict(self.sampling))),
+            "max_output_tokens": self.max_output_tokens,
+            "capabilities_digest": _digest_bytes(
+                _canonical_bytes(dict(self.capabilities))
+            ),
+            "compatibility_digest": _digest_bytes(
+                _canonical_bytes(dict(self.compatibility))
+            ),
+            "timeout_seconds": self.timeout_seconds,
+        }
+
+
+class HeadlessProviderRouteAuthority(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["bb.rl.headless-provider-route-authority.v1"] = (
+        "bb.rl.headless-provider-route-authority.v1"
+    )
+    base_url: str
+    caller_headers: Mapping[str, str] = Field(default_factory=dict)
+    policy_observation_digest: str = Field(pattern=_DIGEST_PATTERN)
 
     @field_validator("base_url")
     @classmethod
@@ -102,7 +144,7 @@ class HeadlessProviderInput(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _caller_headers_are_exact(self) -> HeadlessProviderInput:
+    def _caller_headers_are_exact(self) -> HeadlessProviderRouteAuthority:
         normalized_names = []
         for name, value in self.caller_headers.items():
             if (
@@ -120,47 +162,20 @@ class HeadlessProviderInput(BaseModel):
             raise ValueError("caller header names must be unique case-insensitively")
         return self
 
-    def load_profile(self, credential: str) -> OpenAICompletionsProviderProfile:
-        return OpenAICompletionsProviderProfile(
-            model=self.model,
-            scoped_credential=credential,
-            base_url=self.base_url,
-            context_window=self.context_window,
-            max_output_tokens=self.max_output_tokens,
-            sampling=self.sampling,
-            caller_headers=self.caller_headers,
-            capabilities=self.capabilities,
-            compatibility=self.compatibility,
-        )
-
     def identity_dict(self) -> dict[str, Any]:
         header_items = sorted(
             (name.casefold(), value) for name, value in self.caller_headers.items()
         )
         header_names = [name for name, _value in header_items]
         return {
-            "model": self.model,
-            "authority_model_id": self.authority_model_id,
-            "base_url_sha256": hashlib.sha256(
-                self.base_url.encode("utf-8")
-            ).hexdigest(),
-            "context_window": self.context_window,
-            "sampling_digest": _digest_bytes(_canonical_bytes(dict(self.sampling))),
-            "max_output_tokens": self.max_output_tokens,
-            "capabilities_digest": _digest_bytes(
-                _canonical_bytes(dict(self.capabilities))
-            ),
-            "compatibility_digest": _digest_bytes(
-                _canonical_bytes(dict(self.compatibility))
-            ),
-            "timeout_seconds": self.timeout_seconds,
+            "schema_version": self.schema_version,
+            "base_url_sha256": _digest_bytes(self.base_url.encode("utf-8")),
             "caller_header_count": len(header_names),
-            "caller_header_names_sha256": hashlib.sha256(
+            "caller_header_names_sha256": _digest_bytes(
                 _canonical_bytes(header_names)
-            ).hexdigest(),
-            "caller_headers_sha256": hashlib.sha256(
-                _canonical_bytes(header_items)
-            ).hexdigest(),
+            ),
+            "caller_headers_sha256": _digest_bytes(_canonical_bytes(header_items)),
+            "policy_observation_digest": self.policy_observation_digest,
         }
 
 
@@ -225,6 +240,7 @@ class HeadlessRunRequest(BaseModel):
         composition_manifest_ref: str,
         target: E4TargetPolicyProjection,
         provider_profile: OpenAICompletionsProviderProfile,
+        provider_route: HeadlessProviderRouteAuthority,
     ) -> dict[str, Any]:
         return {
             "schema_version": "bb.rl.headless-run-identity.v1",
@@ -243,6 +259,8 @@ class HeadlessRunRequest(BaseModel):
             "tool_allowlist": list(self.tool_allowlist),
             "expected_sandbox": self.expected_sandbox.model_dump(mode="json"),
             "provider_profile": provider_profile.identity_dict(),
+            "provider": self.provider.identity_dict(),
+            "provider_route": provider_route.identity_dict(),
             "provider_timeout_seconds": self.provider.timeout_seconds,
         }
 
@@ -257,6 +275,16 @@ def load_headless_request(path: str) -> HeadlessRunRequest:
     payload = _read_regular_file(path, max_bytes=_MAX_REQUEST_BYTES)
     return HeadlessRunRequest.model_validate_json(payload, strict=True)
 
+def load_headless_provider_route_authority(
+    path: str,
+) -> HeadlessProviderRouteAuthority:
+    payload = _read_regular_file(
+        path,
+        max_bytes=_MAX_REQUEST_BYTES,
+        require_private_mode=True,
+    )
+    return HeadlessProviderRouteAuthority.model_validate_json(payload, strict=True)
+
 
 async def run_headless_request(
     request: HeadlessRunRequest,
@@ -264,12 +292,14 @@ async def run_headless_request(
     composition_ref_path: str,
     secret_files: Mapping[str, str],
     provider_credentials: Mapping[str, str],
+    provider_routes: Mapping[str, HeadlessProviderRouteAuthority],
     repository_base_commits: Mapping[str, str],
 ) -> dict[str, Any]:
     if type(request) is not HeadlessRunRequest:
         raise TypeError("request must be an exact HeadlessRunRequest")
     target: E4TargetPolicyProjection | None = None
     profile: OpenAICompletionsProviderProfile | None = None
+    route: HeadlessProviderRouteAuthority | None = None
     composition: ProductionComposition | None = None
     try:
         composition_secrets = _secret_file_bindings(
@@ -288,6 +318,17 @@ async def run_headless_request(
             raise ValueError(
                 "provider credential handles do not match the headless request"
             )
+        if (
+            set(provider_routes) != {request.provider.credential_handle}
+            or any(
+                type(value) is not HeadlessProviderRouteAuthority
+                for value in provider_routes.values()
+            )
+        ):
+            raise ValueError(
+                "provider route authorities do not match the headless request"
+            )
+        route = provider_routes[request.provider.credential_handle]
         target = E4TargetPolicyProjection.load(
             request.target_id,
             request.target_dynamic_fields,
@@ -301,7 +342,10 @@ async def run_headless_request(
                 "requested tool allowlist does not match the selected target"
             )
         profile = request.provider.load_profile(
-            _read_secret_text(provider_secrets[request.provider.credential_handle])
+            credential=_read_secret_text(
+                provider_secrets[request.provider.credential_handle]
+            ),
+            route=route,
         )
         episode_id = request.resolve_request.episode_id
 
@@ -316,6 +360,9 @@ async def run_headless_request(
                 authority_model_ids={
                     episode_id: request.provider.authority_model_id
                 },
+                expected_observation_digests={
+                    episode_id: route.policy_observation_digest
+                },
                 timeout_seconds={episode_id: request.provider.timeout_seconds},
             )
 
@@ -329,6 +376,7 @@ async def run_headless_request(
             composition_manifest_ref=composition.manifest_ref,
             target=target,
             provider_profile=profile,
+            provider_route=route,
         )
         config_digest = _canonical_digest(config_identity)
         result = _base_result(
@@ -337,6 +385,7 @@ async def run_headless_request(
             config_identity=config_identity,
             target=target,
             profile=profile,
+            route=route,
             composition=composition,
         )
     except BaseException as exc:
@@ -357,12 +406,17 @@ async def run_headless_request(
             composition_ref_path=composition_ref_path,
             target=target,
             profile=profile,
+            route=route,
             failure=failure,
         )
         _atomic_write(request.result_path, _canonical_bytes(result))
         if preflight_cancellation is not None:
             raise preflight_cancellation
         raise HeadlessRunFailed(result) from None
+    loop = asyncio.get_running_loop()
+    episode_deadline = (
+        loop.time() + request.expected_resources.wall_time_ms / 1_000
+    )
     primary_failure: BaseException | None = None
     cleanup_failure: BaseException | None = None
     cancellation: asyncio.CancelledError | None = None
@@ -370,7 +424,7 @@ async def run_headless_request(
     terminal_unsuccessful = False
     event_bytes: bytes | None = None
     try:
-        async with _episode_timeout(request.expected_resources.wall_time_ms):
+        async with asyncio.timeout_at(episode_deadline):
             create_operation = await composition.service.create(request.resolve_request)
             create = create_operation.response
             created = True
@@ -468,6 +522,8 @@ async def run_headless_request(
                 )
         except BaseException as exc:
             cleanup_failure = cleanup_failure or exc
+    if loop.time() >= episode_deadline and primary_failure is None:
+        primary_failure = TimeoutError("aggregate episode wall-time limit exceeded")
 
     result["event_log"] = _event_log_projection(event_bytes, request.event_log_path)
     publication_failure: BaseException | None = None
@@ -480,6 +536,13 @@ async def run_headless_request(
                 **result["event_log"],
                 "publication_failure": _safe_failure_projection(exc),
             }
+    deadline_exceeded = loop.time() >= episode_deadline
+    if deadline_exceeded and primary_failure is None:
+        primary_failure = TimeoutError("aggregate episode wall-time limit exceeded")
+    result["episode_timing"] = {
+        "wall_time_ms": request.expected_resources.wall_time_ms,
+        "deadline_exceeded": deadline_exceeded,
+    }
     if (
         primary_failure is not None
         or cleanup_failure is not None
@@ -530,6 +593,7 @@ async def run_headless_request_file(
     composition_ref_path: str,
     secret_files: Mapping[str, str],
     provider_credentials: Mapping[str, str],
+    provider_route_files: Mapping[str, str],
     repository_base_commits: Mapping[str, str],
 ) -> dict[str, Any]:
     return await run_headless_request(
@@ -537,6 +601,13 @@ async def run_headless_request_file(
         composition_ref_path=composition_ref_path,
         secret_files=secret_files,
         provider_credentials=provider_credentials,
+        provider_routes={
+            handle: load_headless_provider_route_authority(route_path)
+            for handle, route_path in _secret_file_bindings(
+                provider_route_files,
+                field_name="provider route files",
+            ).items()
+        },
         repository_base_commits=repository_base_commits,
     )
 
@@ -624,22 +695,27 @@ def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any
         properties[parameter["name"]] = schema
         if parameter.get("required") is True:
             required.append(parameter["name"])
-    additional_properties = any(
-        isinstance(policy, Mapping)
-        and policy.get("additionalProperties") is True
-        for policy in routing.values()
-    )
+    parameter_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+    }
+    openai_routing = routing.get("openai")
+    if (
+        isinstance(openai_routing, Mapping)
+        and "additionalProperties" in openai_routing
+    ):
+        additional_properties = openai_routing["additionalProperties"]
+        if type(additional_properties) is not bool:
+            raise ValueError("effective target tool routing is malformed")
+        if additional_properties:
+            parameter_schema["additionalProperties"] = True
     return {
         "type": "function",
         "function": {
             "name": model_name,
             "description": description,
-            "parameters": {
-                "type": "object",
-                "properties": properties,
-                "required": required,
-                "additionalProperties": additional_properties,
-            },
+            "parameters": parameter_schema,
         },
     }
 
@@ -790,6 +866,7 @@ def _preflight_failure_result(
     composition_ref_path: str,
     target: E4TargetPolicyProjection | None,
     profile: OpenAICompletionsProviderProfile | None,
+    route: HeadlessProviderRouteAuthority | None,
     failure: BaseException,
 ) -> dict[str, Any]:
     dynamic_field_digests = {
@@ -823,11 +900,11 @@ def _preflight_failure_result(
         "expected_resources": request.expected_resources.model_dump(mode="json"),
         "expected_limits": request.expected_limits.model_dump(mode="json"),
         "expected_sandbox": request.expected_sandbox.model_dump(mode="json"),
-        "provider": (
-            request.provider.identity_dict()
-            if profile is None
-            else profile.identity_dict()
+        "provider": request.provider.identity_dict(),
+        "provider_profile": (
+            None if profile is None else profile.identity_dict()
         ),
+        "provider_route": None if route is None else route.identity_dict(),
     }
     try:
         distribution_version = version("breadboard-harness-cli")
@@ -849,6 +926,10 @@ def _preflight_failure_result(
             request.provider.identity_dict()
             if profile is None
             else profile.identity_dict()
+        ),
+        "provider_input_identity": request.provider.identity_dict(),
+        "provider_route_identity": (
+            None if route is None else route.identity_dict()
         ),
         "target_identity": config_identity["target"],
         "workspace_input": request.workspace.model_dump(mode="json"),
@@ -879,6 +960,7 @@ def _base_result(
     config_identity: Mapping[str, Any],
     target: E4TargetPolicyProjection,
     profile: OpenAICompletionsProviderProfile,
+    route: HeadlessProviderRouteAuthority,
     composition: ProductionComposition,
 ) -> dict[str, Any]:
     try:
@@ -898,6 +980,8 @@ def _base_result(
             "composition_manifest_ref": composition.manifest_ref,
         },
         "provider_profile_identity": profile.identity_dict(),
+        "provider_input_identity": request.provider.identity_dict(),
+        "provider_route_identity": route.identity_dict(),
         "target_identity": target.identity_dict(),
         "workspace_input": request.workspace.model_dump(mode="json"),
         "terminal": {
@@ -1141,10 +1225,12 @@ def _digest_bytes(payload: bytes) -> str:
 
 __all__ = [
     "HeadlessProviderInput",
+    "HeadlessProviderRouteAuthority",
     "HeadlessRunFailed",
     "HeadlessRunRequest",
     "HeadlessWorkspaceInput",
     "load_headless_request",
+    "load_headless_provider_route_authority",
     "run_headless_request",
     "run_headless_request_file",
 ]
