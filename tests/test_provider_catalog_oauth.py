@@ -154,6 +154,35 @@ def test_codex_browser_login_and_exchange_use_exact_source_endpoints_without_lea
     assert material == {}
 
 
+def test_oauth_completion_terminalizes_claim_after_unexpected_transport_error(
+    tmp_path,
+) -> None:
+    def failing_transport(*_args, **_kwargs):
+        raise RuntimeError("transport unavailable")
+
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / "unexpected.sqlite3"),
+        oauth_transport=failing_transport,
+    )
+    started = broker.beginLogin({"provider_id": "codex"})
+    flow = broker.store.get_login(
+        started["login_session_id"],
+        include_flow=True,
+    )["flow"]
+
+    completed = broker.completeLogin(
+        {
+            "login_session_id": started["login_session_id"],
+            "authorization_code": "auth-code",
+            "state": flow["state"],
+        }
+    )
+
+    assert completed["status"] == "failed"
+    assert completed["problem"]["code"] == "oauth_completion_failed"
+    assert broker.getLogin(started["login_session_id"])["status"] == "failed"
+
+
 def test_oauth_completion_scrubs_token_aliases_from_public_metadata(tmp_path):
     access = "oauth-access-alias-canary"
     refresh = "oauth-refresh-alias-canary"

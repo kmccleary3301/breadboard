@@ -844,6 +844,36 @@ class ProviderBroker:
                 "status": "failed",
                 "problem": problem,
             }
+        except Exception:
+            problem = self._problem(
+                "oauth_completion_failed",
+                "OAuth completion failed",
+                provider_id=login["provider_id"],
+            )
+            with self.store.atomic():
+                changed = self.store.finish_claimed_login(
+                    str(login_id),
+                    "failed",
+                    problem,
+                )
+            if changed:
+                try:
+                    self._emit(
+                        "provider_login_failed",
+                        provider_id=login["provider_id"],
+                        login_session_id=str(login_id),
+                        code="oauth_completion_failed",
+                    )
+                except Exception:
+                    pass
+            current = self.store.get_login(str(login_id)) or login
+            if not changed:
+                return self._public_login(current)
+            return {
+                **self._public_login(current),
+                "status": "failed",
+                "problem": problem,
+            }
 
     def cancelLogin(
         self, loginSessionId: str | None = None, **kwargs: Any
