@@ -31,12 +31,15 @@ from breadboard.rl.harness.runners.terminal import (
 )
 from breadboard.rl.harness.sandbox import (
     SandboxLaunchError,
+    RuntimeLaunchContext,
     SandboxRuntimeManager,
     TrustedProcessBackend,
     TrustedProcessHandle,
     VerifierExecutionError,
     VerifierSnapshotError,
     WorkspaceStateError,
+    WorkspaceStorageIdentity,
+    build_sandbox_execution_plan,
     _sealed_repository_diff,
 )
 from tests.rl.harness.test_runner_terminal import (
@@ -174,6 +177,78 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
         _sealed_repository_diff(
             repository=repository, base_commit=base_commit, plan=plan
         )
+
+async def test_process_backend_binds_identity_recorder_before_base_measurement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    plan = build_sandbox_execution_plan(
+        fixture.request, fixture.registries, fixture.authorities
+    )
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+    workspace_identity = os.fstat(workspace_fd)
+    pinned_fd = os.open(os.devnull, os.O_RDONLY)
+
+    class PinnedExecutable:
+        source_path = plan.runtime.executable_path
+        proc_fd_path = plan.runtime.executable_path
+        digest = plan.runtime.measured_binary_digest
+        size = 0
+        fd = pinned_fd
+
+        def close(self) -> None:
+            os.close(self.fd)
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
+        lambda path, expected_digest: PinnedExecutable(),
+    )
+    recorder_calls: list[tuple[str, object]] = []
+
+    def recorder(resource_id: str, identity: object) -> None:
+        recorder_calls.append((resource_id, identity))
+
+    async def measure(handle: TrustedProcessHandle) -> None:
+        assert handle._identity_recorder is recorder
+        return None
+
+    monkeypatch.setattr(
+        TrustedProcessHandle, "measure_repository_base_commit", measure
+    )
+
+    async def publish(_: object) -> None:
+        return None
+
+    context = RuntimeLaunchContext(
+        role="primary",
+        lease_id="lease-recorder-order",
+        workspace_id="workspace-recorder-order",
+        epoch=1,
+        storage=WorkspaceStorageIdentity(
+            authority_id="test-storage",
+            quota_enforced=False,
+            quota_bytes=plan.resources.storage_bytes,
+            owner_uid=os.getuid(),
+            owner_gid=os.getgid(),
+        ),
+        snapshot_relative_path=None,
+        result_relative_path=None,
+        publish_prepared_identity=publish,
+        workspace_fd=workspace_fd,
+        workspace_identity=(workspace_identity.st_dev, workspace_identity.st_ino),
+        owner_token="owner-token",
+        record_process_identity=recorder,
+    )
+    handle, _ = await TrustedProcessBackend().launch(
+        plan, workspace, context=context
+    )
+
+    assert handle._identity_recorder is recorder
+    assert recorder_calls == []
+    await handle.terminate()
+
 
 
 async def test_run_shell_delegates_pinned_descriptor_as_workload_argv() -> None:

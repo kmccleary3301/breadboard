@@ -1017,7 +1017,7 @@ def _project_headless_run(
         "reward_components": dict(run.reward_components),
     }
     if run.evidence_manifest_ref is None:
-        return None, None
+        raise ValueError("headless evidence manifest is unavailable")
     evidence_projection, event_bytes = _load_evidence_projection(
         composition,
         run.evidence_manifest_ref,
