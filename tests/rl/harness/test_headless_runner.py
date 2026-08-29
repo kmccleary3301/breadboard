@@ -100,6 +100,26 @@ def test_atomic_result_publication_refuses_existing_destination(
     assert list(tmp_path.iterdir()) == [destination]
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    (
+        "http://127.0.0.1:0/v1",
+        "http://localhost:8000/v1",
+        "https://192.0.2.1:443/v1",
+    ),
+)
+def test_provider_requires_usable_literal_loopback_authority(base_url: str) -> None:
+    with pytest.raises(ValueError, match="explicit loopback port"):
+        HeadlessProviderInput(
+            model="provider-model",
+            base_url=base_url,
+            credential_handle="provider",
+            context_window=4_096,
+            max_output_tokens=1_024,
+            timeout_seconds=30,
+        )
+
+
 @pytest.mark.skipif(
     sys.platform != "linux",
     reason="production trusted-process sandbox requires Linux",

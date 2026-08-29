@@ -234,7 +234,10 @@ def score_official_reports(
     aggregate_report: Mapping[str, Any],
     instance_report: Mapping[str, Any],
 ) -> float:
-    if aggregate_report.get("schema_version") != 2:
+    if (
+        type(aggregate_report.get("schema_version")) is not int
+        or aggregate_report["schema_version"] != 2
+    ):
         raise SweBenchTaskError("official SWE-bench aggregate report schema mismatch")
     for name in ("total_instances", "submitted_instances", "completed_instances"):
         if type(aggregate_report.get(name)) is not int or aggregate_report[name] != 1:
@@ -243,14 +246,31 @@ def score_official_reports(
         "completed_ids"
     ) != [INSTANCE_ID]:
         raise SweBenchTaskError("official SWE-bench report instance identity mismatch")
-    if aggregate_report.get("infra_failure_instances") not in (0, None):
+    for name in (
+        "infra_failure_instances",
+        "ambiguous_failure_instances",
+        "empty_patch_instances",
+        "error_instances",
+    ):
+        if type(aggregate_report.get(name)) is not int or aggregate_report[name] != 0:
+            raise SweBenchTaskError(
+                "official SWE-bench evaluator reported a non-evaluation outcome"
+            )
+    for name in (
+        "incomplete_ids",
+        "infra_failure_ids",
+        "ambiguous_failure_ids",
+        "empty_patch_ids",
+        "error_ids",
+    ):
+        if aggregate_report.get(name) != []:
+            raise SweBenchTaskError(
+                "official SWE-bench evaluator reported a non-evaluation outcome"
+            )
+    if aggregate_report.get("failure_reasons") != {}:
         raise SweBenchTaskError(
-            "official SWE-bench evaluator reported infrastructure failure"
+            "official SWE-bench evaluator reported a non-evaluation outcome"
         )
-    if aggregate_report.get("error_instances") not in (0, None) or aggregate_report.get(
-        "error_ids"
-    ) not in ([], None):
-        raise SweBenchTaskError("official SWE-bench evaluator reported an error")
     if instance_report.get("infra_failure") is not False:
         raise SweBenchTaskError(
             "official SWE-bench instance report is an infrastructure failure"

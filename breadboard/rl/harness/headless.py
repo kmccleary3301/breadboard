@@ -79,6 +79,7 @@ class HeadlessProviderInput(BaseModel):
             or parsed.query
             or parsed.fragment
             or port is None
+            or port < 1
             or address is None
             or not literal.is_loopback
         ):
