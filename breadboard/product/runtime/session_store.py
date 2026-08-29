@@ -132,7 +132,7 @@ def _local_session_guard(
 ) -> Iterator[Path]:
     root = _workspace_root(workspace)
     validate_session_id(session_id)
-    key = (os.path.normcase(str(root)), _session_identity_key(session_id))
+    key = (_workspace_identity_key(root), _session_identity_key(session_id))
     with _LOCAL_SESSION_LOCKS_GUARD:
         local_lock = _LOCAL_SESSION_LOCKS.setdefault(key, threading.RLock())
     with local_lock:
@@ -232,9 +232,19 @@ def _validate_projection_sizes(event_size: object, metadata_size: object) -> Non
         raise ValueError("session transaction projection is oversized")
 
 
+def _workspace_identity_key(workspace: Path) -> str:
+    resolved = workspace.resolve()
+    metadata = os.stat(resolved, follow_symlinks=False)
+    device = int(getattr(metadata, "st_dev", 0))
+    inode = int(getattr(metadata, "st_ino", 0))
+    if inode:
+        return f"file:{device}:{inode}"
+    return "path:" + str(resolved).casefold()
+
+
 def _workspace_identity(workspace: Path) -> str:
-    canonical = os.path.normcase(str(workspace.resolve())).encode("utf-8")
-    return "sha256:" + hashlib.sha256(canonical).hexdigest()
+    physical = _workspace_identity_key(workspace).encode("utf-8")
+    return "sha256:" + hashlib.sha256(physical).hexdigest()
 
 
 def _authority_root(workspace: Path, *, create: bool) -> Path:

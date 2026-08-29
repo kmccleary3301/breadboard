@@ -67,6 +67,27 @@ def _stream_records(response) -> list[dict]:
     ]
 
 
+def test_workspace_identity_uses_physical_directory_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "Workspace"
+    second = tmp_path / "workspace"
+    first.mkdir()
+    if not second.exists():
+        second.mkdir()
+    physical_metadata = SimpleNamespace(st_dev=41, st_ino=73)
+    monkeypatch.setattr(
+        session_store.os,
+        "stat",
+        lambda _path, *, follow_symlinks: physical_metadata,
+    )
+
+    assert session_store._workspace_identity(first) == (
+        session_store._workspace_identity(second)
+    )
+
+
 def test_session_start_rejects_nonportable_ids_before_storage(
     client: TestClient,
     tmp_path: Path,
@@ -179,6 +200,49 @@ def test_session_lifecycle_and_resumable_event_stream(
         == "canceled"
     )
     assert client.get("/v1/sessions/session-fixture/artifacts").json()["ok"] is True
+
+
+def test_managed_state_terminal_public_session_survives_restart(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    managed_root = tmp_path / "managed-state"
+    workspace.mkdir()
+    managed_root.mkdir(mode=0o700)
+    monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
+    monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(workspace))
+    monkeypatch.setenv("BREADBOARD_ENGINE_STATE_ROOT", str(managed_root))
+    monkeypatch.setenv("BREADBOARD_ENGINE_LAUNCH_ID", "managed-public-session-test")
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
+    monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+
+    with TestClient(create_app(include_atp_routes=False)) as first:
+        lock_id = _locked_harness(first)
+        started = first.post(
+            "/v1/sessions",
+            json={
+                "lock_id": lock_id,
+                "task": "persist managed public session",
+                "session_id": "managed-session",
+            },
+            headers={"Idempotency-Key": "start-managed-session"},
+        )
+        assert started.status_code == 202, started.text
+        cancelled = first.post(
+            "/v1/sessions/managed-session/cancel",
+            json={"reason": "restart persistence test"},
+            headers={"Idempotency-Key": "cancel-managed-session"},
+        )
+        assert cancelled.status_code == 202, cancelled.text
+
+    durable, _metadata = session_store.load_session(workspace, "managed-session")
+    assert durable.read_model.status == "canceled"
+    with TestClient(create_app(include_atp_routes=False)) as restarted:
+        restored = restarted.get("/v1/sessions/managed-session")
+        assert restored.status_code == 200, restored.text
+        assert restored.json()["data"]["session"]["status"] == "canceled"
 
 
 def test_c4_daily_driver_completes_with_stable_observations_and_restart(
