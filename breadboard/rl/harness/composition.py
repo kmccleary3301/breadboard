@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from secrets import token_bytes
 from types import MappingProxyType
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, Protocol, Sequence
 
 from agentic_coder_prototype.compilation.bundle import build_dependency_closure
 from agentic_coder_prototype.compilation.contracts import (
@@ -83,9 +83,22 @@ from .sandbox_docker import (
 )
 from .service import (
     BreadBoardV2EpisodeService,
+    PolicyRuntimeClientResolver,
     V2FaultInjectionAuthority,
     V2LifecycleDependencies,
 )
+
+class ManagedPolicyRuntimeClientResolver(PolicyRuntimeClientResolver, Protocol):
+    def abort_bootstrap(self) -> None: ...
+
+    async def close(self) -> None: ...
+
+
+PolicyClientResolverFactory = Callable[
+    [ManagedPolicyRuntimeClientResolver],
+    ManagedPolicyRuntimeClientResolver,
+]
+
 
 COMPOSITION_REF_MEDIA_TYPE = (
     "application/vnd.breadboard.harness-composition+json;version=1"
@@ -3090,6 +3103,7 @@ class ProductionComposition:
         self,
         *,
         app: Any,
+        service: BreadBoardV2EpisodeService,
         server: ServerV1,
         manifest: ComposedHarnessManifestV1,
         manifest_ref: str,
@@ -3100,6 +3114,7 @@ class ProductionComposition:
         authority_close_callbacks: Sequence[Any],
     ) -> None:
         self.app = app
+        self.service = service
         self.server = server
         self.manifest = manifest
         self.manifest_ref = manifest_ref
@@ -3113,6 +3128,7 @@ class ProductionComposition:
         self._authority_close_lock = asyncio.Lock()
         self._runtime_closed = False
         self._closed = False
+        self._close_task: asyncio.Task[None] | None = None
 
     @property
     def outer_bridge_lease(self) -> OuterBridgeLeaseV1 | None:
@@ -3174,6 +3190,20 @@ class ProductionComposition:
 
 
     async def close(self) -> None:
+        async with self._lock:
+            task = self._close_task
+            if task is None:
+                task = asyncio.create_task(self._close_owner())
+                self._close_task = task
+        try:
+            await _await_composition_close(task)
+        finally:
+            if task.done() and not task.cancelled() and task.exception() is not None:
+                async with self._lock:
+                    if self._close_task is task:
+                        self._close_task = None
+
+    async def _close_owner(self) -> None:
         try:
             await self.close_runtime()
         except BaseException as exc:
@@ -3203,6 +3233,32 @@ class ProductionComposition:
                         and self._authority_callbacks[-1] is callback
                     ):
                         self._authority_callbacks.pop()
+
+
+async def _await_composition_close(task: asyncio.Task[None]) -> None:
+    cancellation: asyncio.CancelledError | None = None
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError as exc:
+            cancellation = cancellation or exc
+            current = asyncio.current_task()
+            if current is not None:
+                current.uncancel()
+    failure: BaseException | None = None
+    try:
+        task.result()
+    except BaseException as exc:
+        failure = exc
+    if cancellation is not None:
+        if failure is not None:
+            raise BaseExceptionGroup(
+                "production composition close cancelled and failed",
+                [cancellation, failure],
+            )
+        raise cancellation
+    if failure is not None:
+        raise failure
 
 
 def _secure_read(
@@ -3751,12 +3807,14 @@ def _build_runtime_graph(
     composition_digest: str,
     prebound_service_socket_fds: Mapping[str, int],
     fault_injection_authority: V2FaultInjectionAuthority | None,
-    ) -> tuple[
-        Any,
-        Sequence[Any],
-        OuterBridgeLifecycle | None,
-        _ProductionCleanupProbe,
-    ]:
+    policy_client_resolver_factory: PolicyClientResolverFactory | None,
+) -> tuple[
+    Any,
+    BreadBoardV2EpisodeService,
+    Sequence[Any],
+    OuterBridgeLifecycle | None,
+    _ProductionCleanupProbe,
+]:
     _validate_installed_registry_graph(
         manifest.installed,
         authority.registries,
@@ -4026,7 +4084,7 @@ def _build_runtime_graph(
         for spec in manifest.secret_handles.records
         if spec.purpose == "policy_callback"
     }
-    policy_resolver = rollback.attempt(
+    authority_policy_resolver = rollback.attempt(
         lambda: RouteBoundPolicyHttpResolver(
             registry_revision_digest=graph.policy_http.registry_revision_digest,
             routes=routes,
@@ -4042,6 +4100,25 @@ def _build_runtime_graph(
             timeout_seconds=manifest.server.request_timeout_seconds,
         )
     )
+    if policy_client_resolver_factory is None:
+        policy_resolver: ManagedPolicyRuntimeClientResolver = (
+            authority_policy_resolver
+        )
+    else:
+        try:
+            policy_resolver = policy_client_resolver_factory(
+                authority_policy_resolver
+            )
+            if not all(
+                callable(getattr(policy_resolver, name, None))
+                for name in ("resolve", "close", "abort_bootstrap")
+            ):
+                raise TypeError(
+                    "policy client resolver factory returned an unmanaged resolver"
+                )
+        except BaseException:
+            authority_policy_resolver.abort_bootstrap()
+            raise
     rollback.own(policy_resolver.abort_bootstrap)
     locator = rollback.attempt(
         lambda: FilesystemEpisodeLocatorStore(
@@ -4093,6 +4170,7 @@ def _build_runtime_graph(
     rollback.transfer()
     return (
         app,
+        service,
         (
             materialization.close,
             locator.close,
@@ -4121,6 +4199,7 @@ def load_production_composition(
     *,
     prebound_service_socket_fds: Mapping[str, int] | None = None,
     fault_injection_authority: V2FaultInjectionAuthority | None = None,
+    policy_client_resolver_factory: PolicyClientResolverFactory | None = None,
 ) -> ProductionComposition:
     ref_data, ref_fd = _secure_read(_absolute(composition_ref_path))
     os.close(ref_fd)
@@ -4585,7 +4664,13 @@ def load_production_composition(
         published = cas.put_bytes(composed_bytes, media_type=COMPOSED_MEDIA_TYPE)
         if cas.get_bytes(published, max_bytes=len(composed_bytes)) != composed_bytes:
             raise ValueError("composed manifest CAS readback mismatch")
-        app, runtime_callbacks, bridge_lifecycle, cleanup_probe = _build_runtime_graph(
+        (
+            app,
+            service,
+            runtime_callbacks,
+            bridge_lifecycle,
+            cleanup_probe,
+        ) = _build_runtime_graph(
             manifest=manifest,
             authority=authority,
             graph=graph,
@@ -4598,9 +4683,11 @@ def load_production_composition(
             composition_digest=ref.manifest_sha256,
             prebound_service_socket_fds=socket_fds,
             fault_injection_authority=fault_injection_authority,
+            policy_client_resolver_factory=policy_client_resolver_factory,
         )
         return ProductionComposition(
             app=app,
+            service=service,
             server=manifest.server,
             manifest=composed,
             manifest_ref=published.sha256,
@@ -4668,6 +4755,8 @@ __all__ = [
     "PolicyHttpSchemaAuthorityV1",
     "PolicySecretRouteBindingV1",
     "PolicyTlsTrustAuthorityV1",
+    "ManagedPolicyRuntimeClientResolver",
+    "PolicyClientResolverFactory",
     "ProductionComposition",
     "SecretHandleSpecV1",
     "ServerV1",

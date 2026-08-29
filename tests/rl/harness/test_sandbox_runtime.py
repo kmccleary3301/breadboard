@@ -2345,6 +2345,25 @@ async def test_primary_attestation_failure_retains_dependents_until_reconcile_re
     assert list(harness.lease_root.iterdir()) == []
 
 
+async def test_trusted_process_reconcile_quarantines_legacy_identity_record() -> None:
+    receipts = await TrustedProcessBackend().reconcile(
+        {
+            "process_pid": 41,
+            "process_group_id": 41,
+            "process_start_identity": "linux-proc-start:1",
+            "process_cgroup_identity": "sha256:" + ("a" * 64),
+        }
+    )
+
+    assert receipts == (
+        CleanupStepReceipt(
+            "runtime",
+            CleanupState.QUARANTINED,
+            "stale_identity_uncertain",
+        ),
+    )
+
+
 async def test_reconciliation_quarantines_foreign_runtime_identity_without_cleanup_effects(
     tmp_path: Path,
 ) -> None:

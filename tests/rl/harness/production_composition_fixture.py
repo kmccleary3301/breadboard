@@ -228,6 +228,10 @@ def materialize_production_composition_fixture(
     policy_server_port: int | None = None,
     server_port: int | None = None,
     long_running: bool = False,
+    policy_provider_id: str = "openai_responses",
+    policy_model_id: str = "test-model",
+    policy_context_window: int = 32_768,
+    policy_max_output_tokens: int = 4_096,
 ) -> MaterializedProductionCompositionFixture:
     """Build the complete production loader corpus from canonical model authorities."""
 
@@ -453,10 +457,13 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
     capability_payload["sandbox"] = sandbox_grant.model_dump(mode="json")
     capability_payload["verifier"] = verifier_grant.model_dump(mode="json")
     selection_capabilities = _policy_capabilities(
-        parallel_tool_calls=False, token_logprobs=False
+        parallel_tool_calls=False,
+        token_logprobs=False,
+        max_context_tokens=policy_context_window,
+        max_output_tokens=policy_max_output_tokens,
     )
     slot = capability_payload["policy_slots"][0]
-    slot["slot_id"] = "model:test-model"
+    slot["slot_id"] = f"model:{policy_model_id}"
     capability_payload["routes"][0]["route_id"] = "policy-route"
     capability_digest = independent_digest(
         _capability_projection(
@@ -725,10 +732,10 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
         },
         "workspace": {"root": "workspace"},
         "providers": {
-            "default_model": "test-model",
+            "default_model": policy_model_id,
             "models": [
                 {
-                    "id": "test-model",
+                    "id": policy_model_id,
                     "adapter": "openai_responses",
                     "route_handle_id": "policy-route",
                     "credential_handle_id": "policy-callback",
@@ -839,7 +846,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
     registry_payload["models"] = [
         c.ModelRegistryRecord(
             identity=c.ModelIdentity(
-                model_id="test-model",
+                model_id=policy_model_id,
                 model_digest=slot["model_digest"],
                 tokenizer_digest=slot["tokenizer_digest"],
                 checkpoint_digest=slot["checkpoint_digest"],
@@ -912,7 +919,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
     ]
     policy_payload["ceiling"]["model_bindings"] = [
         c.ModelIdentity(
-            model_id="test-model",
+            model_id=policy_model_id,
             model_digest=slot["model_digest"],
             tokenizer_digest=slot["tokenizer_digest"],
             checkpoint_digest=slot["checkpoint_digest"],
@@ -1112,11 +1119,11 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
             registry_revision_digest=registries.digests.route_registry_digest,
             route_id=capability.routes[0].route_id,
             route_revision_digest=capability.routes[0].route_revision_digest,
-            provider_id="openai_responses",
+            provider_id=policy_provider_id,
             protocol_abi=POLICY_HTTP_PROTOCOL_ABI,
             bridge_instance_id="bridge-production",
             bridge_build_digest="sha256:" + "a" * 64,
-            model_id="test-model",
+            model_id=policy_model_id,
             model_digest=slot["model_digest"],
             tokenizer_digest=slot["tokenizer_digest"],
             checkpoint_digest=slot["checkpoint_digest"],

@@ -359,8 +359,8 @@ def test_public_workspace_and_verifier_io_cannot_bypass_descriptor_helpers() -> 
             _method(tree, "LeaseBackedRunnerWorkspace", "write_text"),
             "_atomic_regular_write",
         ),
-        "VerifierWorkspaceLease.execute": (
-            _method(tree, "VerifierWorkspaceLease", "execute"),
+        "VerifierWorkspaceLease._execute_active": (
+            _method(tree, "VerifierWorkspaceLease", "_execute_active"),
             "_bounded_regular_read",
         ),
         "LeaseBackedRunnerWorkspace.list_files": (
@@ -443,7 +443,7 @@ def unsafe_lister(root, logical_path):
 
 def test_trusted_process_launch_uses_pinned_fd_and_cannot_resume_before_recording() -> None:
     tree = _tree("sandbox")
-    run = _method(tree, "TrustedProcessHandle", "run_argv")
+    run = _method(tree, "TrustedProcessHandle", "_run_pinned_argv")
     creators = [
         node
         for node in ast.walk(run)
@@ -458,7 +458,7 @@ def test_trusted_process_launch_uses_pinned_fd_and_cannot_resume_before_recordin
     assert isinstance(keywords["pass_fds"], ast.Tuple)
     assert {
         _qualified_name(item) for item in keywords["pass_fds"].elts
-    } == {"self._executable.fd", "write_fd"}
+    } == {"self._executable.fd", "self._workspace_fd", "write_fd"}
     assert _qualified_name(keywords["executable"]) != "self.plan.runtime.executable_path"
 
     calls = [
@@ -509,10 +509,10 @@ def test_all_trusted_process_effect_paths_delegate_to_identity_gated_run_argv() 
         if isinstance(node, ast.Call)
         and _qualified_name(node.func) == "asyncio.create_subprocess_exec"
     ]
-    assert [owner for owner, _ in process_creators] == ["run_argv"]
+    assert [owner for owner, _ in process_creators] == ["_run_pinned_argv"]
 
     run_shell = _method(tree, "TrustedProcessHandle", "run_shell")
-    shell_delegates = _calls(run_shell, "self.run_argv")
+    shell_delegates = _calls(run_shell, "self._run_pinned_argv")
     assert len(shell_delegates) == 1
     shell_delegate = shell_delegates[0]
     assert len(shell_delegate.args) == 1
