@@ -44,16 +44,8 @@ class HeadlessWorkspaceInput(BaseModel):
     repository_snapshot_digest: str | None = Field(
         default=None, pattern=_DIGEST_PATTERN
     )
-    base_commit: str | None = Field(default=None, pattern=_GIT_COMMIT_PATTERN)
+    base_commit: str = Field(pattern=_GIT_COMMIT_PATTERN)
     task_image_digest: str = Field(pattern=_DIGEST_PATTERN)
-
-    @model_validator(mode="after")
-    def _repository_identity_is_complete(self) -> HeadlessWorkspaceInput:
-        if (self.repository_snapshot_digest is None) != (self.base_commit is None):
-            raise ValueError(
-                "repository snapshot digest and base commit must be provided together"
-            )
-        return self
 
 
 class HeadlessProviderInput(BaseModel):
@@ -640,20 +632,17 @@ def _validate_repository_base_commit_binding(
         for digest, commit in bindings.items()
     ):
         raise ValueError("repository base-commit bindings are invalid")
-    expected_digest = request.workspace.repository_snapshot_digest
+    expected_digest = (
+        request.workspace.repository_snapshot_digest
+        or request.workspace.task_image_digest
+    )
     expected_commit = request.workspace.base_commit
-    if expected_digest is None:
-        if bindings:
-            raise ValueError(
-                "repository base-commit bindings require a repository snapshot"
-            )
-        return
     if (
         set(bindings) != {expected_digest}
         or bindings[expected_digest] != expected_commit
     ):
         raise ValueError(
-            "repository base commit is not bound to the admitted repository snapshot"
+            "repository base commit is not bound to the admitted workspace authority"
         )
 
 
@@ -1006,7 +995,7 @@ def _project_headless_run(
     run: Any,
     composition: ProductionComposition,
     *,
-    expected_base_commit: str | None,
+    expected_base_commit: str,
 ) -> tuple[bytes | None, bytes | None]:
     result["terminal"] = {
         "status": run.primary_disposition.value,
@@ -1035,10 +1024,7 @@ def _project_headless_run(
     )
     workspace_diff = run.workspace_diff
     if workspace_diff is None:
-        if expected_base_commit is not None:
-            raise ValueError("canonical workspace diff is unavailable")
-        result["workspace_evidence"] = evidence_projection
-        return event_bytes, None
+        raise ValueError("canonical workspace diff is unavailable")
     expected_keys = {
         "returncode", "stdout", "stderr", "base_commit",
         "git_executable_digest", "patch_digest", "snapshot_root_digest",
