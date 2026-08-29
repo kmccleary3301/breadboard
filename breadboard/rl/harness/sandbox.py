@@ -56,7 +56,7 @@ VERIFIER_REQUEST_SCHEMA_VERSION = "bb.rl.verifier-request.v1"
 SANDBOX_CAPABILITY_MATRIX_RESOURCE = "SANDBOX_CAPABILITY_MATRIX.json"
 SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION = "bb.rl.sandbox-capability-matrix.v1"
 SANDBOX_CAPABILITY_MATRIX_SHA256 = (
-    "996389caba529c555c1d6755aeda0727ade5d29ae7fd83b0e1da51643dee7538"
+    "c24e24766e0e34527af921ba3794b06da4bec468df0e059e90e5deb0a20147df"
 )
 _MAX_SANDBOX_CAPABILITY_MATRIX_BYTES = 64 * 1024
 _SANDBOX_ADAPTER_STATUSES = {
@@ -1076,6 +1076,7 @@ class RuntimeHandle(Protocol):
 def _sealed_repository_diff(
     *,
     repository: Path,
+    scratch_directory: Path,
     base_commit: str,
     plan: SandboxExecutionPlan,
 ) -> Mapping[str, Any]:
@@ -1228,8 +1229,15 @@ def _sealed_repository_diff(
                     "sealed workspace contains an embedded Git repository",
                     code="snapshot_tampered",
                 )
+        scratch_identity = scratch_directory.stat(follow_symlinks=False)
+        if not stat.S_ISDIR(scratch_identity.st_mode):
+            raise VerifierSnapshotError(
+                "sealed workspace scratch authority is invalid",
+                code="snapshot_tampered",
+            )
         with tempfile.TemporaryDirectory(
-            prefix="breadboard-sealed-diff-"
+            prefix=".breadboard-sealed-diff-",
+            dir=scratch_directory,
         ) as temporary_text:
             temporary = Path(temporary_text)
             private_git_directory = temporary / "git"
@@ -2472,6 +2480,7 @@ class SandboxWorkspaceLease:
                         asyncio.to_thread(
                             _sealed_repository_diff,
                             repository=snapshot_repository,
+                            scratch_directory=self._materialized.workspace_path,
                             base_commit=base_commit,
                             plan=self.plan,
                         )

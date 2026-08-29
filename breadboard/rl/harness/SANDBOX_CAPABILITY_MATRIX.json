@@ -20,6 +20,7 @@
       },
       "required_host_capabilities": [
         "linux",
+        "git",
         "docker-engine",
         "runc-registration",
         "seccomp",
@@ -81,6 +82,7 @@
       },
       "required_host_capabilities": [
         "linux",
+        "git",
         "docker-engine",
         "runsc-registration",
         "pinned-runsc-binary",
