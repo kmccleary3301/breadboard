@@ -7,6 +7,7 @@ import hashlib
 from importlib.metadata import PackageNotFoundError, version
 import json
 import os
+import re
 from pathlib import Path
 import stat
 from typing import Any, Literal, Mapping
@@ -42,8 +43,16 @@ class HeadlessWorkspaceInput(BaseModel):
     repository_snapshot_digest: str | None = Field(
         default=None, pattern=_DIGEST_PATTERN
     )
-    base_commit: str = Field(pattern=_GIT_COMMIT_PATTERN)
+    base_commit: str | None = Field(default=None, pattern=_GIT_COMMIT_PATTERN)
     task_image_digest: str = Field(pattern=_DIGEST_PATTERN)
+
+    @model_validator(mode="after")
+    def _repository_identity_is_complete(self) -> HeadlessWorkspaceInput:
+        if (self.repository_snapshot_digest is None) != (self.base_commit is None):
+            raise ValueError(
+                "repository snapshot digest and base commit must be provided together"
+            )
+        return self
 
 
 class HeadlessProviderInput(BaseModel):
@@ -223,6 +232,7 @@ async def run_headless_request(
     composition_ref_path: str,
     secret_files: Mapping[str, str],
     provider_credentials: Mapping[str, str],
+    repository_base_commits: Mapping[str, str],
 ) -> dict[str, Any]:
     if type(request) is not HeadlessRunRequest:
         raise TypeError("request must be an exact HeadlessRunRequest")
@@ -237,6 +247,10 @@ async def run_headless_request(
         provider_secrets = _secret_file_bindings(
             provider_credentials,
             field_name="provider credentials",
+        )
+        _validate_repository_base_commit_binding(
+            request,
+            repository_base_commits,
         )
         if set(provider_secrets) != {request.provider.credential_handle}:
             raise ValueError(
@@ -441,13 +455,41 @@ async def run_headless_request_file(
     composition_ref_path: str,
     secret_files: Mapping[str, str],
     provider_credentials: Mapping[str, str],
+    repository_base_commits: Mapping[str, str],
 ) -> dict[str, Any]:
     return await run_headless_request(
         load_headless_request(path),
         composition_ref_path=composition_ref_path,
         secret_files=secret_files,
         provider_credentials=provider_credentials,
+        repository_base_commits=repository_base_commits,
     )
+
+
+def _validate_repository_base_commit_binding(
+    request: HeadlessRunRequest,
+    bindings: Mapping[str, str],
+) -> None:
+    if any(
+        type(digest) is not str
+        or re.fullmatch(_DIGEST_PATTERN, digest) is None
+        or type(commit) is not str
+        or re.fullmatch(_GIT_COMMIT_PATTERN, commit) is None
+        for digest, commit in bindings.items()
+    ):
+        raise ValueError("repository base-commit bindings are invalid")
+    expected_digest = request.workspace.repository_snapshot_digest
+    expected_commit = request.workspace.base_commit
+    if expected_digest is None:
+        if bindings:
+            raise ValueError(
+                "repository base-commit bindings require a repository snapshot"
+            )
+        return
+    if set(bindings) != {expected_digest} or bindings[expected_digest] != expected_commit:
+        raise ValueError(
+            "repository base commit is not bound to the admitted repository snapshot"
+        )
 
 
 def _validate_effective_plan(

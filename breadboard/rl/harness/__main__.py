@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import socket
 import sys
 from builtins import BaseExceptionGroup
@@ -25,6 +26,22 @@ def _secret_file(value: str) -> tuple[str, str]:
             "secret file must use a non-empty handle and absolute path"
         )
     return handle, path
+
+
+def _repository_base_commit(value: str) -> tuple[str, str]:
+    if value.count("=") != 1:
+        raise argparse.ArgumentTypeError(
+            "repository base commit must be SHA256_DIGEST=GIT_COMMIT"
+        )
+    digest, commit = value.split("=", 1)
+    if (
+        re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None
+        or re.fullmatch(r"[0-9a-f]{40}", commit) is None
+    ):
+        raise argparse.ArgumentTypeError(
+            "repository base commit must be SHA256_DIGEST=GIT_COMMIT"
+        )
+    return digest, commit
 
 
 def _service_fd(value: str) -> tuple[str, int]:
@@ -79,6 +96,13 @@ def _parser() -> argparse.ArgumentParser:
         default=[],
         metavar="HANDLE=/absolute/path",
     )
+    run.add_argument(
+        "--repository-base-commit",
+        action="append",
+        type=_repository_base_commit,
+        default=[],
+        metavar="SHA256_DIGEST=GIT_COMMIT",
+    )
     return parser
 
 
@@ -88,6 +112,17 @@ def _bindings(values: Sequence[tuple[str, str]]) -> dict[str, str]:
         if handle in result:
             raise ValueError("duplicate secret handle")
         result[handle] = path
+    return result
+
+
+def _repository_base_commits(
+    values: Sequence[tuple[str, str]],
+) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for digest, commit in values:
+        if digest in result:
+            raise ValueError("duplicate repository snapshot digest")
+        result[digest] = commit
     return result
 
 
@@ -206,6 +241,7 @@ async def _run_headless(
     composition_ref_path: str,
     secret_files: dict[str, str],
     provider_credentials: dict[str, str],
+    repository_base_commits: dict[str, str],
 ) -> int:
     try:
         result = await run_headless_request_file(
@@ -213,6 +249,7 @@ async def _run_headless(
             composition_ref_path=composition_ref_path,
             secret_files=secret_files,
             provider_credentials=provider_credentials,
+            repository_base_commits=repository_base_commits,
         )
     except HeadlessRunFailed as exc:
         terminal = exc.result.get("terminal", {})
@@ -255,6 +292,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.composition_ref,
                     _bindings(args.secret_file),
                     _bindings(args.provider_credential_file),
+                    _repository_base_commits(args.repository_base_commit),
                 )
             )
         bindings = _bindings(args.secret_file)

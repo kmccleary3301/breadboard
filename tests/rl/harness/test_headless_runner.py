@@ -14,6 +14,7 @@ from breadboard.rl.harness.headless import (
     HeadlessRunRequest,
     HeadlessWorkspaceInput,
     _atomic_write,
+    _validate_repository_base_commit_binding,
     run_headless_request,
 )
 from breadboard.rl.harness.policy_provider import E4TargetPolicyProjection
@@ -210,7 +211,11 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         context={"campaign": "e4"},
         workspace=HeadlessWorkspaceInput(
             repository_snapshot_digest=plan.task.repository_snapshot_digest,
-            base_commit="0" * 40,
+            base_commit=(
+                None
+                if plan.task.repository_snapshot_digest is None
+                else "0" * 40
+            ),
             task_image_digest=plan.sandbox.image_digest,
         ),
         expected_resources=plan.effective_capabilities.resources,
@@ -243,11 +248,30 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
     )
     assert str(fixture.composition_ref_path) not in request.model_dump_json()
 
+    bound_digest = "sha256:" + "1" * 64
+    bound_commit = "2" * 40
+    bound_request = request.model_copy(
+        update={
+            "workspace": HeadlessWorkspaceInput(
+                repository_snapshot_digest=bound_digest,
+                base_commit=bound_commit,
+                task_image_digest=plan.sandbox.image_digest,
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="not bound"):
+        _validate_repository_base_commit_binding(bound_request, {})
+    _validate_repository_base_commit_binding(
+        bound_request,
+        {bound_digest: bound_commit},
+    )
+
     result = await run_headless_request(
         request,
         composition_ref_path=str(fixture.composition_ref_path),
         secret_files=fixture.secret_files,
         provider_credentials={"episode-provider": str(credential)},
+        repository_base_commits={},
     )
 
     assert result["terminal"]["status"] == "succeeded"
