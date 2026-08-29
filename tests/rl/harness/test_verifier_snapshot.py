@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import stat
+import threading
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
@@ -574,6 +575,7 @@ async def test_malicious_verifier_results_are_typed_and_cleanup_is_authoritative
     assert verifier_receipt.steps == (
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
+        CleanupStepReceipt("snapshot", CleanupState.RELEASED),
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
     assert not verifier_workspace.exists()
@@ -634,6 +636,84 @@ async def test_forged_snapshot_identity_starts_no_verifier_and_preserves_primary
         "child_verifier",
         CleanupState.ALREADY_RELEASED,
     )
+    assert await harness.manager.close() == ()
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
+async def test_snapshot_seal_cancellation_releases_completed_snapshot_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    primary = await harness.manager.open(fixture.request)
+    entered = threading.Event()
+    release = threading.Event()
+    original_seal = harness.store.seal_snapshot
+
+    def blocked_seal(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        if not release.wait(timeout=2):
+            raise AssertionError("snapshot worker was not released")
+        return original_seal(*args, **kwargs)
+
+    monkeypatch.setattr(harness.store, "seal_snapshot", blocked_seal)
+    sealing = asyncio.create_task(primary.seal_for_verifier())
+    assert await asyncio.to_thread(entered.wait, 1)
+
+    sealing.cancel()
+    await asyncio.sleep(0)
+    assert not sealing.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(sealing, 1)
+
+    assert harness.manager._snapshots == {}
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert await harness.manager.close() == ()
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
+async def test_snapshot_copy_cancellation_waits_before_verifier_workspace_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness, primary, snapshot = await _opened_snapshot(tmp_path)
+    entered = threading.Event()
+    release = threading.Event()
+    original_copy = harness.store.copy_snapshot
+
+    def blocked_copy(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        if not release.wait(timeout=2):
+            raise AssertionError("snapshot copy worker was not released")
+        return original_copy(*args, **kwargs)
+
+    monkeypatch.setattr(harness.store, "copy_snapshot", blocked_copy)
+    opening = asyncio.create_task(
+        harness.manager.open_verifier(primary, snapshot)
+    )
+    assert await asyncio.to_thread(entered.wait, 1)
+
+    opening.cancel()
+    await asyncio.sleep(0)
+    assert not opening.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(opening, 1)
+
+    assert not any(
+        path.name.startswith("verifier-workspace-")
+        for path in harness.workspace_root.iterdir()
+    )
+    assert not any(
+        path.name.startswith("verifier-lease-")
+        for path in harness.lease_root.iterdir()
+    )
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert harness.manager._snapshots == {}
     assert await harness.manager.close() == ()
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
@@ -1161,6 +1241,11 @@ async def test_verifier_close_retains_dependents_until_runtime_absence_is_proven
             "dependent runtime cleanup incomplete",
         ),
         CleanupStepReceipt(
+            "snapshot",
+            CleanupState.QUARANTINED,
+            "dependent runtime cleanup incomplete",
+        ),
+        CleanupStepReceipt(
             "lease_record",
             CleanupState.QUARANTINED,
             "dependent cleanup incomplete",
@@ -1183,6 +1268,7 @@ async def test_verifier_close_retains_dependents_until_runtime_absence_is_proven
     assert second.steps == (
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
+        CleanupStepReceipt("snapshot", CleanupState.RELEASED),
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
     assert verifier._closed is True

@@ -3070,23 +3070,29 @@ class DockerSandboxBackend:
                     and not stage_cleanup_pending
                     and not staged_mounts
                 )
-                journal_cleanup(
-                    context.lease_id,
-                    proof={
-                        "container_absence": container_absent,
-                        "stages_absence": stages_absent,
-                        "daemon_absence": False,
-                        "containerd_absence": False,
-                        "runtime_absence": False,
-                        "config_absence": False,
-                        "root_absence": False,
-                    },
-                    state=(
-                        "ACTIVE"
-                        if container_absent and stages_absent
-                        else "QUARANTINED"
-                    ),
-                )
+                try:
+                    journal_cleanup(
+                        context.lease_id,
+                        proof={
+                            "container_absence": container_absent,
+                            "stages_absence": stages_absent,
+                            "daemon_absence": False,
+                            "containerd_absence": False,
+                            "runtime_absence": False,
+                            "config_absence": False,
+                            "root_absence": False,
+                        },
+                        state=(
+                            "ACTIVE"
+                            if container_absent and stages_absent
+                            else "QUARANTINED"
+                        ),
+                    )
+                except BaseException as journal_error:
+                    if isinstance(primary, DockerAdapterError):
+                        primary.details["cleanup_journal"] = type(
+                            journal_error
+                        ).__name__
             raise
         finally:
             while held_fds:

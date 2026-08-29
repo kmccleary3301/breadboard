@@ -2747,18 +2747,8 @@ class _ProductionCleanupProbe:
     async def _release_snapshot(
         self, snapshot_id: str, close: Any
     ) -> Any:
-        receipt = await close()
-        snapshot = getattr(self._sandbox_runtime, "_snapshots", {}).get(snapshot_id)
-        state = getattr(getattr(receipt, "state", None), "value", None)
-        if snapshot is not None and state in {"released", "already_released"}:
-            _snapshot_receipt, path = snapshot
-            try:
-                self._materialization.storage_backend.release(path)
-            except FileNotFoundError:
-                pass
-            if not Path(path).exists():
-                self._sandbox_runtime._snapshots.pop(snapshot_id, None)
-        return receipt
+        del snapshot_id
+        return await close()
 
 
     @staticmethod
