@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import asyncio
 import base64
 import hashlib
@@ -3049,6 +3050,23 @@ class _ProductionSandboxRuntime:
         self._manager.abort_bootstrap()
 
 
+def _non_repeating_close_callback(
+    callback: Callable[[], Any],
+) -> Callable[[], Awaitable[None]]:
+    attempted = False
+
+    async def close_once() -> None:
+        nonlocal attempted
+        if attempted:
+            return
+        attempted = True
+        result = callback()
+        if hasattr(result, "__await__"):
+            await result
+
+    return close_once
+
+
 class ProductionComposition:
     def __init__(
         self,
@@ -4060,7 +4078,7 @@ def _build_runtime_graph(
                 if docker_backend is None
                 else (docker_backend.close_runtime,)
             ),
-            service.close,
+            _non_repeating_close_callback(service.close),
         ),
         bridge_lifecycle,
         cleanup_probe,

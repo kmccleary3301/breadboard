@@ -18,6 +18,7 @@ from breadboard.rl.harness.composition import (
     _measure_installed_runtime,
     _ProductionCleanupProbe,
     _PinnedDirectoryStorageBackend,
+    _non_repeating_close_callback,
 )
 from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.sandbox import InstalledRuntime
@@ -92,6 +93,39 @@ async def test_composition_retries_failed_runtime_cleanup_before_authorities() -
     await composition.close()
 
     assert calls == ["backend:1", "backend:2", "adapter", "owner", "authority"]
+    assert composition._runtime_closed
+    assert composition._closed
+
+@pytest.mark.asyncio
+async def test_composition_advances_after_cached_service_close_failure() -> None:
+    calls: list[str] = []
+
+    async def close_service() -> None:
+        calls.append("service")
+        raise RuntimeError("cached service cleanup failure")
+
+    composition = ProductionComposition(
+        app=None,
+        server=None,
+        manifest=None,
+        manifest_ref=None,
+        authority_graph=None,
+        bridge_lifecycle=None,
+        cleanup_probe=None,
+        runtime_close_callbacks=(
+            lambda: calls.append("owner"),
+            _non_repeating_close_callback(close_service),
+        ),
+        authority_close_callbacks=(lambda: calls.append("authority"),),
+    )
+
+    with pytest.raises(BaseExceptionGroup, match="production composition close failed"):
+        await composition.close()
+    assert calls == ["service"]
+
+    await composition.close()
+
+    assert calls == ["service", "owner", "authority"]
     assert composition._runtime_closed
     assert composition._closed
 
