@@ -144,10 +144,27 @@ def scrub_exception_in_place(error: BaseException) -> BaseException:
     try:
         details = getattr(error, "details", None)
         if isinstance(details, Mapping):
+            control_fields = {
+                key: value
+                for key, value in details.items()
+                if key
+                in {
+                    "classification",
+                    "status_code",
+                    "http_status",
+                    "retry_after",
+                    "retry_after_seconds",
+                }
+                and isinstance(value, (str, int, float))
+                and not contains_registered_secret_identity(str(value))
+            }
             scrubbed_details, _ = scrub_structure(
                 _fail_closed_short_secret_strings(details),
                 path="$.exception.details",
+                identity_mapping_keys=True,
             )
+            if isinstance(scrubbed_details, dict):
+                scrubbed_details.update(control_fields)
             error.details = scrubbed_details
     except Exception:
         pass
@@ -682,7 +699,7 @@ def _scrub_node(
                 )
             )
         return cleaned
-    if isinstance(value, (bool, int, float)) and contains_registered_secret_text(
+    if isinstance(value, (bool, int, float)) and contains_registered_secret_identity(
         str(value)
     ):
         problems.append(

@@ -105,13 +105,19 @@ def test_stored_alternate_credentials_are_scoped_through_provider_errors(
                 decoded_url_secret,
                 numeric_secret,
             } <= set(redaction.iter_registered_secret_values())
-            raise RuntimeError(
+            failure = RuntimeError(
                 (
                     f"provider call failed {short_header_secret} "
                     f"{header_secret} {encoded_url_secret} "
                     f"{decoded_url_secret} {numeric_secret}"
                 )
             )
+            failure.details = {
+                "classification": "rate_limited",
+                "status_code": 429,
+                "retry_after": 300,
+            }
+            raise failure
 
     for secret in (
         header_secret,
@@ -121,6 +127,11 @@ def test_stored_alternate_credentials_are_scoped_through_provider_errors(
         numeric_secret,
     ):
         assert secret not in str(error.value)
+    assert error.value.details == {
+        "classification": "rate_limited",
+        "status_code": 429,
+        "retry_after": 300,
+    }
     assert redaction.iter_registered_secret_values() == ()
 
 
