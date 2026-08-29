@@ -1,19 +1,27 @@
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import os
 import re
+import shutil
+import signal
 import stat
 import subprocess
-from collections.abc import Awaitable, Mapping
+import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, cast, runtime_checkable
+from types import MappingProxyType
+from typing import Any, Literal, cast
 
 from .contracts import RuntimeClass
-from .headless import HeadlessRunRequest
+from .headless import (
+    HeadlessProviderRouteAuthority,
+    HeadlessRunRequest,
+    run_headless_request,
+)
 from .runners.base import FrozenJsonObject, freeze_json_object, thaw_json
+from .policy_provider import E4TargetPolicyProjection
 from .swe_bench_task import (
     DATASET_REPOSITORY,
     DATASET_REVISION,
@@ -162,67 +170,21 @@ class E4ProfileIdentity:
         return _canonical_digest(self.identity_dict())
 
 
-@dataclass(frozen=True, slots=True)
-class E4ControllerBinding:
-    profile: E4ProfileIdentity
-    target_id: str
-    adapter_id: str
-    implementation_digest: str
-
-    def __post_init__(self) -> None:
-        if type(self.profile) is not E4ProfileIdentity:
-            raise TypeError("controller profile must be an exact E4ProfileIdentity")
-        if (
-            type(self.target_id) is not str
-            or not self.target_id
-            or len(self.target_id) > 256
-        ):
-            raise SweBenchRunnerError("controller target_id is not a safe identity")
-        _adapter_id(self.adapter_id)
-        _digest(self.implementation_digest, field_name="controller implementation")
-
-    def identity_dict(self) -> dict[str, Any]:
-        return {
-            "schema_version": "bb.rl.e4-controller-binding.v1",
-            "profile": self.profile.identity_dict(),
-            "target_id": self.target_id,
-            "adapter_id": self.adapter_id,
-            "implementation_digest": self.implementation_digest,
-        }
-
-    @property
-    def identity_digest(self) -> str:
-        return _canonical_digest(self.identity_dict())
-
-
-@runtime_checkable
-class E4ControllerPort(Protocol):
-    @property
-    def binding(self) -> E4ControllerBinding: ...
-
-
-def select_e4_controller(
+def _controller_identity(
     profile: E4ProfileIdentity,
-    controllers: Mapping[str, E4ControllerPort],
-) -> E4ControllerPort:
-    """Resolve a controller by its declared profile without profile-specific branches."""
+    target: E4TargetPolicyProjection,
+) -> dict[str, Any]:
+    target_identity = target.identity_dict()
+    return {
+        "schema_version": "bb.rl.e4-controller-identity.v1",
+        "profile": profile.identity_dict(),
+        "target": target_identity,
+        "implementation_digest": _canonical_digest(target_identity),
+    }
 
-    if type(profile) is not E4ProfileIdentity:
-        raise TypeError("profile must be an exact E4ProfileIdentity")
-    if not isinstance(controllers, Mapping):
-        raise TypeError("controllers must be a mapping of profile identities")
-    controller = controllers.get(profile.profile_id)
-    if controller is None:
-        raise SweBenchRunnerError("selected E4 controller profile is not installed")
-    try:
-        binding = controller.binding
-    except Exception as exc:
-        raise SweBenchRunnerError(
-            "installed E4 controller binding is unavailable"
-        ) from exc
-    if type(binding) is not E4ControllerBinding or binding.profile != profile:
-        raise SweBenchRunnerError("installed E4 controller profile identity mismatch")
-    return controller
+
+def _controller_model_name(controller_identity: Mapping[str, Any]) -> str:
+    return "breadboard-e4-" + _canonical_digest(controller_identity)[7:31]
 
 
 @dataclass(frozen=True, slots=True)
@@ -602,132 +564,617 @@ def _measure_file(path: str, *, max_bytes: int) -> str:
             os.close(descriptor)
 
 
+OFFICIAL_EVALUATOR_ENVIRONMENT_DIGEST = "sha256:" + "0" * 64
+OFFICIAL_EVALUATOR_PYTHON_DIGEST = "sha256:" + "0" * 64
+OFFICIAL_EVALUATOR_DOCKER_DIGEST = "sha256:" + "0" * 64
+_MAX_ENVIRONMENT_FILES = 50_000
+_MAX_ENVIRONMENT_BYTES = 4 * 1024 * 1024 * 1024
+
+
+def measure_official_evaluator_environment(root: str) -> dict[str, Any]:
+    """Measure the complete locked evaluator package tree and host executables."""
+
+    _absolute_path(root, field_name="evaluator environment root")
+    try:
+        root_identity = os.stat(root, follow_symlinks=False)
+    except OSError as exc:
+        raise SweBenchRunnerError("evaluator environment root is unavailable") from exc
+    if (
+        not stat.S_ISDIR(root_identity.st_mode)
+        or root_identity.st_mode & 0o022
+    ):
+        raise SweBenchRunnerError("evaluator environment root is not immutable")
+    library_root = os.path.join(root, "lib")
+    try:
+        python_directories = sorted(
+            name
+            for name in os.listdir(library_root)
+            if re.fullmatch(r"python3\\.11", name)
+            and os.path.isdir(os.path.join(library_root, name))
+        )
+    except OSError as exc:
+        raise SweBenchRunnerError("evaluator environment library is unavailable") from exc
+    if python_directories != ["python3.11"]:
+        raise SweBenchRunnerError("evaluator environment Python ABI is not pinned")
+    site_packages = os.path.join(
+        library_root,
+        python_directories[0],
+        "site-packages",
+    )
+    entries: list[dict[str, Any]] = []
+    total_bytes = 0
+    distribution_direct_url: Mapping[str, Any] | None = None
+    distribution_metadata: bytes | None = None
+    for directory, names, files in os.walk(site_packages, followlinks=False):
+        names[:] = sorted(name for name in names if name != "__pycache__")
+        for name in names:
+            path = os.path.join(directory, name)
+            identity = os.stat(path, follow_symlinks=False)
+            if not stat.S_ISDIR(identity.st_mode) or identity.st_mode & 0o022:
+                raise SweBenchRunnerError(
+                    "evaluator environment contains a mutable directory"
+                )
+        for name in sorted(files):
+            if name.endswith((".pyc", ".pyo")):
+                continue
+            path = os.path.join(directory, name)
+            identity = os.stat(path, follow_symlinks=False)
+            if (
+                not stat.S_ISREG(identity.st_mode)
+                or identity.st_nlink != 1
+                or identity.st_mode & 0o022
+                or identity.st_size > _MAX_EVALUATOR_BYTES
+            ):
+                raise SweBenchRunnerError(
+                    "evaluator environment contains an invalid file"
+                )
+            total_bytes += identity.st_size
+            if (
+                len(entries) >= _MAX_ENVIRONMENT_FILES
+                or total_bytes > _MAX_ENVIRONMENT_BYTES
+            ):
+                raise SweBenchRunnerError("evaluator environment exceeds its bounds")
+            relative = os.path.relpath(path, root)
+            digest = _measure_file(path, max_bytes=_MAX_EVALUATOR_BYTES)
+            entries.append(
+                {
+                    "path": relative,
+                    "size_bytes": identity.st_size,
+                    "executable": bool(identity.st_mode & 0o111),
+                    "digest": digest,
+                }
+            )
+            if re.fullmatch(r"swebench-5\\.0\\.1\\.dist-info/direct_url\\.json", os.path.relpath(path, site_packages)):
+                distribution_direct_url = _read_json_file(path)
+            if re.fullmatch(r"swebench-5\\.0\\.1\\.dist-info/METADATA", os.path.relpath(path, site_packages)):
+                with open(path, "rb") as source:
+                    distribution_metadata = source.read(_MAX_REPORT_BYTES + 1)
+    if len(entries) == 0:
+        raise SweBenchRunnerError("evaluator environment is empty")
+    expected_direct_url = {
+        "url": "https://github.com/SWE-bench/SWE-bench.git",
+        "vcs_info": {
+            "vcs": "git",
+            "commit_id": EVALUATOR_COMMIT,
+            "requested_revision": EVALUATOR_COMMIT,
+        },
+    }
+    if distribution_direct_url != expected_direct_url:
+        raise SweBenchRunnerError("evaluator source commit is not pinned")
+    if (
+        distribution_metadata is None
+        or len(distribution_metadata) > _MAX_REPORT_BYTES
+        or b"Name: swebench\n" not in distribution_metadata
+        or f"Version: {EVALUATOR_VERSION}\n".encode() not in distribution_metadata
+    ):
+        raise SweBenchRunnerError("evaluator distribution metadata is not pinned")
+    python_path = os.path.realpath(os.path.join(root, "bin", "python"))
+    docker_path = os.path.realpath("/usr/bin/docker")
+    python_digest = _measure_file(
+        python_path,
+        max_bytes=_MAX_EVALUATOR_BYTES,
+    )
+    docker_digest = _measure_file(
+        docker_path,
+        max_bytes=_MAX_EVALUATOR_BYTES,
+    )
+    environment_projection = {
+        "schema_version": "bb.rl.swe-bench-evaluator-environment.v1",
+        "platform": "linux/amd64",
+        "python_abi": "cp311",
+        "evaluator_commit": EVALUATOR_COMMIT,
+        "evaluator_tree": EVALUATOR_TREE,
+        "files": sorted(entries, key=lambda item: item["path"]),
+    }
+    return {
+        "environment_digest": _canonical_digest(environment_projection),
+        "python_path": python_path,
+        "python_digest": python_digest,
+        "docker_path": docker_path,
+        "docker_digest": docker_digest,
+        "file_count": len(entries),
+        "total_bytes": total_bytes,
+    }
+
+
+def _process_group_exists(process_group: int) -> bool:
+    try:
+        os.killpg(process_group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError as exc:
+        raise SweBenchRunnerError(
+            "evaluator process-group authority is unavailable"
+        ) from exc
+    return True
+
+
+def _terminate_process_group(process_group: int) -> None:
+    if not _process_group_exists(process_group):
+        return
+    try:
+        os.killpg(process_group, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if not _process_group_exists(process_group):
+            return
+        time.sleep(0.02)
+    try:
+        os.killpg(process_group, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if not _process_group_exists(process_group):
+            return
+        time.sleep(0.02)
+    raise SweBenchRunnerError("evaluator process group survived termination")
+
+
+def _run_evaluator_process(
+    argv: tuple[str, ...],
+    *,
+    cwd: str,
+    environment: Mapping[str, str],
+    timeout_seconds: int,
+) -> None:
+    try:
+        process = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            env=dict(environment),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        raise SweBenchRunnerError("official evaluator process did not start") from exc
+    timed_out = False
+    try:
+        process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+    finally:
+        if _process_group_exists(process.pid):
+            _terminate_process_group(process.pid)
+        if process.poll() is None:
+            process.wait(timeout=5)
+    if timed_out:
+        raise SweBenchRunnerError("official evaluator process timed out")
+    if process.returncode != 0:
+        raise SweBenchRunnerError("official evaluator process returned nonzero")
+
+
+def _copy_verified_dataset(
+    source_path: str,
+    destination_path: str,
+) -> None:
+    source = -1
+    destination = -1
+    hasher = hashlib.sha256()
+    size = 0
+    try:
+        source = os.open(
+            source_path,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        source_identity = os.fstat(source)
+        if (
+            not stat.S_ISREG(source_identity.st_mode)
+            or source_identity.st_nlink != 1
+            or source_identity.st_size != DATASET_SIZE_BYTES
+        ):
+            raise SweBenchRunnerError("pinned dataset identity is invalid")
+        destination = os.open(
+            destination_path,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o400,
+        )
+        while size < DATASET_SIZE_BYTES:
+            chunk = os.read(source, min(64 * 1024, DATASET_SIZE_BYTES - size))
+            if not chunk:
+                break
+            hasher.update(chunk)
+            view = memoryview(chunk)
+            while view:
+                written = os.write(destination, view)
+                if written <= 0:
+                    raise SweBenchRunnerError("pinned dataset copy made no progress")
+                view = view[written:]
+            size += len(chunk)
+        if os.read(source, 1):
+            raise SweBenchRunnerError("pinned dataset exceeds its byte limit")
+        os.fsync(destination)
+    except OSError as exc:
+        raise SweBenchRunnerError("pinned dataset could not be staged") from exc
+    finally:
+        if destination >= 0:
+            os.close(destination)
+        if source >= 0:
+            os.close(source)
+    if size != DATASET_SIZE_BYTES or hasher.hexdigest() != DATASET_SHA256:
+        try:
+            os.unlink(destination_path)
+        except OSError:
+            pass
+        raise SweBenchRunnerError("pinned dataset digest mismatch")
+
+
+@dataclass(frozen=True, slots=True)
+class OfficialEvaluatorOutcome:
+    evaluation: SweBenchEvaluatorResult
+    cleanup_digest: str
+
+
 @dataclass(frozen=True, slots=True)
 class SubprocessOfficialEvaluator:
-    executable_path: str
-    executable_digest: str
-    installed_version: str
-    source_commit: str
+    environment_root: str
     work_directory: str
     binding: SweBenchEvaluatorBinding = field(
         default_factory=lambda: OFFICIAL_SWE_BENCH_EVALUATOR
     )
+    environment_digest: str = field(init=False)
+    python_path: str = field(init=False, repr=False)
+    python_digest: str = field(init=False)
+    docker_digest: str = field(init=False)
 
     def __post_init__(self) -> None:
-        _absolute_path(self.executable_path, field_name="evaluator executable")
+        _absolute_path(self.environment_root, field_name="evaluator environment")
         _absolute_path(self.work_directory, field_name="evaluator work directory")
-        _digest(self.executable_digest, field_name="evaluator executable")
-        verify_evaluator_installation(
-            installed_version=self.installed_version,
-            source_commit=self.source_commit,
-        )
         if (
             type(self.binding) is not SweBenchEvaluatorBinding
             or self.binding != OFFICIAL_SWE_BENCH_EVALUATOR
         ):
             raise SweBenchRunnerError("evaluator adapter is not the official binding")
+        measurement = measure_official_evaluator_environment(self.environment_root)
+        if measurement["environment_digest"] != OFFICIAL_EVALUATOR_ENVIRONMENT_DIGEST:
+            raise SweBenchRunnerError("official evaluator environment digest mismatch")
+        if measurement["python_digest"] != OFFICIAL_EVALUATOR_PYTHON_DIGEST:
+            raise SweBenchRunnerError("official evaluator Python digest mismatch")
+        if measurement["docker_digest"] != OFFICIAL_EVALUATOR_DOCKER_DIGEST:
+            raise SweBenchRunnerError("official evaluator Docker client digest mismatch")
+        work = os.stat(self.work_directory, follow_symlinks=False)
         if (
-            _measure_file(
-                self.executable_path,
-                max_bytes=_MAX_EVALUATOR_BYTES,
-            )
-            != self.executable_digest
+            not stat.S_ISDIR(work.st_mode)
+            or stat.S_IMODE(work.st_mode) != 0o700
+            or work.st_uid != os.geteuid()
         ):
-            raise SweBenchRunnerError("official evaluator executable digest mismatch")
-        try:
-            work = os.stat(self.work_directory, follow_symlinks=False)
-        except OSError as exc:
             raise SweBenchRunnerError(
-                "official evaluator work directory is unavailable"
-            ) from exc
-        if not stat.S_ISDIR(work.st_mode):
-            raise SweBenchRunnerError(
-                "official evaluator work directory is not a directory"
+                "official evaluator work directory is not private"
             )
+        object.__setattr__(
+            self,
+            "environment_digest",
+            str(measurement["environment_digest"]),
+        )
+        object.__setattr__(self, "python_path", str(measurement["python_path"]))
+        object.__setattr__(self, "python_digest", str(measurement["python_digest"]))
+        object.__setattr__(self, "docker_digest", str(measurement["docker_digest"]))
 
     def identity_dict(self) -> dict[str, Any]:
         return self.binding.identity_dict() | {
-            "executable_digest": self.executable_digest,
+            "environment_digest": self.environment_digest,
+            "python_digest": self.python_digest,
+            "docker_digest": self.docker_digest,
         }
 
-    def evaluate(self, command: TrustedEvaluatorCommand) -> SweBenchEvaluatorResult:
-        if type(command) is not TrustedEvaluatorCommand:
-            raise TypeError("command must be an exact TrustedEvaluatorCommand")
-        if (
-            _measure_file(
-                self.executable_path,
-                max_bytes=_MAX_EVALUATOR_BYTES,
-            )
-            != self.executable_digest
-        ):
-            raise SweBenchRunnerError("official evaluator executable changed")
-        run_work_directory = os.path.join(self.work_directory, command.run_id)
-        try:
-            os.mkdir(run_work_directory, 0o700)
-        except OSError as exc:
-            raise SweBenchRunnerError(
-                "official evaluator run directory must be new"
-            ) from exc
-        try:
-            os.mkdir(command.report_directory, 0o700)
-        except OSError as exc:
-            raise SweBenchRunnerError(
-                "official evaluator report directory must be new"
-            ) from exc
-        environment = {
-            "HOME": run_work_directory,
+    def _environment(self, run_root: str) -> dict[str, str]:
+        return {
+            "HOME": run_root,
             "PATH": os.pathsep.join(
                 (
-                    os.path.dirname(self.executable_path),
-                    "/usr/local/bin",
+                    os.path.join(self.environment_root, "bin"),
                     "/usr/bin",
                     "/bin",
                 )
             ),
             "PYTHONUNBUFFERED": "1",
         }
-        try:
-            completed = subprocess.run(
-                (self.executable_path, *command.argv[1:]),
-                cwd=run_work_directory,
-                env=environment,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=command.timeout_seconds + 60,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise SweBenchRunnerError("official SWE-bench evaluator failed") from exc
-        if completed.returncode != 0:
-            raise SweBenchRunnerError("official SWE-bench evaluator returned nonzero")
-        aggregate_path = os.path.join(
-            command.report_directory,
-            f"{command.model_name}.{command.run_id}.json",
-        )
-        instance_path = os.path.join(
-            run_work_directory,
-            "logs",
-            "run_evaluation",
-            command.run_id,
-            command.model_name,
-            INSTANCE_ID,
-            "report.json",
-        )
-        return SweBenchEvaluatorResult.from_reports(
-            command,
-            aggregate_report=_read_json_file(aggregate_path),
-            instance_report=_read_json_file(instance_path),
-        )
 
-
-@runtime_checkable
-class InstalledHeadlessRunner(Protocol):
-    def run(
+    def _cleanup_containers(
         self,
-        request: HeadlessRunRequest,
-    ) -> Mapping[str, Any] | Awaitable[Mapping[str, Any]]: ...
+        *,
+        run_id: str,
+        run_root: str,
+        environment: Mapping[str, str],
+    ) -> dict[str, Any]:
+        cleanup_script = (
+            "import sys;"
+            "from swebench.harness.remove_containers import main;"
+            "main(run_id=sys.argv[1])"
+        )
+        _run_evaluator_process(
+            (
+                self.python_path,
+                "-I",
+                "-c",
+                cleanup_script,
+                run_id,
+            ),
+            cwd=run_root,
+            environment=environment,
+            timeout_seconds=120,
+        )
+        inventory_path = os.path.join(run_root, "container-inventory.json")
+        inventory_script = (
+            "import json,sys;"
+            "from swebench.harness.run_evaluation import _docker_client;"
+            "prefix=f'sweb.eval.{sys.argv[1].lower()}.{sys.argv[2]}';"
+            "names=sorted(c.name for c in _docker_client().containers.list(all=True) "
+            "if c.name==prefix or c.name.startswith(prefix+'.'));"
+            "open(sys.argv[3],'x',encoding='utf-8').write("
+            "json.dumps({'containers':names},sort_keys=True,separators=(',',':')))"
+        )
+        _run_evaluator_process(
+            (
+                self.python_path,
+                "-I",
+                "-c",
+                inventory_script,
+                INSTANCE_ID,
+                run_id,
+                inventory_path,
+            ),
+            cwd=run_root,
+            environment=environment,
+            timeout_seconds=60,
+        )
+        inventory = _read_json_file(inventory_path)
+        if inventory != {"containers": []}:
+            raise SweBenchRunnerError("official evaluator containers survived cleanup")
+        return {
+            "schema_version": "bb.rl.swe-bench-evaluator-cleanup.v1",
+            "run_id": run_id,
+            "containers": [],
+            "process_group_absent": True,
+        }
 
+    def evaluate(
+        self,
+        *,
+        task_binding: SweBenchTaskBinding,
+        dataset_path: str,
+        prediction: bytes,
+        run_id: str,
+        model_name: str,
+        patch_digest: str,
+    ) -> OfficialEvaluatorOutcome:
+        if type(task_binding) is not SweBenchTaskBinding:
+            raise TypeError("task_binding must be an exact SweBenchTaskBinding")
+        _safe_id(run_id, field_name="run_id")
+        _safe_id(model_name, field_name="model_name")
+        _digest(patch_digest, field_name="patch")
+        run_root = os.path.join(self.work_directory, run_id)
+        try:
+            os.mkdir(run_root, 0o700)
+        except OSError as exc:
+            raise SweBenchRunnerError(
+                "official evaluator run directory must be new"
+            ) from exc
+        dataset_copy = os.path.join(run_root, "dataset.parquet")
+        predictions_path = os.path.join(run_root, "predictions.jsonl")
+        report_directory = os.path.join(run_root, "reports")
+        environment = self._environment(run_root)
+        evaluation: SweBenchEvaluatorResult | None = None
+        cleanup_projection: dict[str, Any] | None = None
+        failure: Exception | None = None
+        try:
+            _copy_verified_dataset(dataset_path, dataset_copy)
+            task_binding.load_verified_row(dataset_copy)
+            _write_prediction(predictions_path, prediction)
+            os.mkdir(report_directory, 0o700)
+            command = TrustedEvaluatorCommand.create(
+                dataset_path=dataset_copy,
+                predictions_path=predictions_path,
+                report_directory=report_directory,
+                run_id=run_id,
+                model_name=model_name,
+                patch_digest=patch_digest,
+            )
+            evaluator_script = (
+                "import sys;"
+                "from swebench.cli.cli import main;"
+                "sys.exit(main())"
+            )
+            _run_evaluator_process(
+                (
+                    self.python_path,
+                    "-I",
+                    "-c",
+                    evaluator_script,
+                    *command.argv[1:],
+                ),
+                cwd=run_root,
+                environment=environment,
+                timeout_seconds=command.timeout_seconds + 60,
+            )
+            aggregate_path = os.path.join(
+                command.report_directory,
+                f"{command.model_name}.{command.run_id}.json",
+            )
+            instance_path = os.path.join(
+                run_root,
+                "logs",
+                "run_evaluation",
+                command.run_id,
+                command.model_name,
+                INSTANCE_ID,
+                "report.json",
+            )
+            evaluation = SweBenchEvaluatorResult.from_reports(
+                command,
+                aggregate_report=_read_json_file(aggregate_path),
+                instance_report=_read_json_file(instance_path),
+            )
+        except Exception as exc:
+            failure = exc
+        try:
+            cleanup_projection = self._cleanup_containers(
+                run_id=run_id,
+                run_root=run_root,
+                environment=environment,
+            )
+        except Exception as exc:
+            failure = (
+                exc
+                if failure is None
+                else ExceptionGroup(
+                    "official evaluator execution and cleanup failed",
+                    [failure, exc],
+                )
+            )
+        try:
+            shutil.rmtree(run_root)
+            if os.path.lexists(run_root):
+                raise SweBenchRunnerError(
+                    "official evaluator run directory survived cleanup"
+                )
+        except Exception as exc:
+            failure = (
+                exc
+                if failure is None
+                else ExceptionGroup(
+                    "official evaluator and workspace cleanup failed",
+                    [failure, exc],
+                )
+            )
+        if failure is not None:
+            raise SweBenchRunnerError("official SWE-bench evaluator failed") from failure
+        if evaluation is None or cleanup_projection is None:
+            raise SweBenchRunnerError("official evaluator outcome is incomplete")
+        cleanup_projection["run_root_absent"] = True
+        return OfficialEvaluatorOutcome(
+            evaluation=evaluation,
+            cleanup_digest=_canonical_digest(cleanup_projection),
+        )
+
+
+def _freeze_path_bindings(
+    value: Mapping[str, str],
+    *,
+    field_name: str,
+) -> Mapping[str, str]:
+    if not isinstance(value, Mapping) or not value:
+        raise SweBenchRunnerError(f"{field_name} must contain launcher bindings")
+    copied: dict[str, str] = {}
+    for name, path in value.items():
+        _safe_id(name, field_name=f"{field_name} handle")
+        copied[name] = _absolute_path(path, field_name=f"{field_name} path")
+    return MappingProxyType(copied)
+
+
+@dataclass(frozen=True, slots=True)
+class InstalledHeadlessInvocation:
+    composition_ref_path: str
+    secret_files: Mapping[str, str]
+    provider_credentials: Mapping[str, str]
+    provider_routes: Mapping[str, HeadlessProviderRouteAuthority]
+    repository_base_commits: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        _absolute_path(self.composition_ref_path, field_name="composition_ref_path")
+        object.__setattr__(
+            self,
+            "secret_files",
+            _freeze_path_bindings(
+                self.secret_files,
+                field_name="composition secret files",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "provider_credentials",
+            _freeze_path_bindings(
+                self.provider_credentials,
+                field_name="provider credentials",
+            ),
+        )
+        if not isinstance(self.provider_routes, Mapping) or not self.provider_routes:
+            raise SweBenchRunnerError("provider routes must contain launcher bindings")
+        routes: dict[str, HeadlessProviderRouteAuthority] = {}
+        for handle, route in self.provider_routes.items():
+            _safe_id(handle, field_name="provider route handle")
+            if type(route) is not HeadlessProviderRouteAuthority:
+                raise TypeError(
+                    "provider route must be an exact HeadlessProviderRouteAuthority"
+                )
+            routes[handle] = route
+        object.__setattr__(self, "provider_routes", MappingProxyType(routes))
+        if (
+            not isinstance(self.repository_base_commits, Mapping)
+            or not self.repository_base_commits
+        ):
+            raise SweBenchRunnerError(
+                "repository base commits must contain launcher bindings"
+            )
+        commits: dict[str, str] = {}
+        for digest, commit in self.repository_base_commits.items():
+            _digest(digest, field_name="repository snapshot")
+            if re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+                raise SweBenchRunnerError("repository base commit is invalid")
+            commits[digest] = commit
+        object.__setattr__(
+            self,
+            "repository_base_commits",
+            MappingProxyType(commits),
+        )
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "bb.rl.installed-headless-invocation.v1",
+            "composition_ref_path_digest": _digest_bytes(
+                self.composition_ref_path.encode()
+            ),
+            "secret_handle_ids": sorted(self.secret_files),
+            "provider_credential_handle_ids": sorted(self.provider_credentials),
+            "provider_routes": {
+                handle: route.identity_dict()
+                for handle, route in sorted(self.provider_routes.items())
+            },
+            "repository_base_commits": dict(
+                sorted(self.repository_base_commits.items())
+            ),
+        }
+
+    async def run(self, request: HeadlessRunRequest) -> Mapping[str, Any]:
+        return await run_headless_request(
+            request,
+            composition_ref_path=self.composition_ref_path,
+            secret_files=self.secret_files,
+            provider_credentials=self.provider_credentials,
+            provider_routes=self.provider_routes,
+            repository_base_commits=self.repository_base_commits,
+        )
 
 @dataclass(frozen=True, slots=True)
 class InstalledSweBenchRequest:
@@ -735,9 +1182,8 @@ class InstalledSweBenchRequest:
 
     profile: E4ProfileIdentity
     headless_request: HeadlessRunRequest
+    headless_invocation: InstalledHeadlessInvocation
     dataset_path: str
-    predictions_path: str
-    report_directory: str
     run_id: str
     task_binding: SweBenchTaskBinding = field(
         default_factory=lambda: PINNED_SWE_BENCH_TASK
@@ -751,6 +1197,10 @@ class InstalledSweBenchRequest:
             raise TypeError("profile must be an exact E4ProfileIdentity")
         if type(self.headless_request) is not HeadlessRunRequest:
             raise TypeError("headless_request must be an exact HeadlessRunRequest")
+        if type(self.headless_invocation) is not InstalledHeadlessInvocation:
+            raise TypeError(
+                "headless_invocation must be an exact InstalledHeadlessInvocation"
+            )
         if type(self.task_binding) is not SweBenchTaskBinding:
             raise TypeError("task_binding must be an exact SweBenchTaskBinding")
         if type(self.evaluator_binding) is not SweBenchEvaluatorBinding:
@@ -761,26 +1211,20 @@ class InstalledSweBenchRequest:
             raise SweBenchRunnerError(
                 "request evaluator is not the pinned official evaluator"
             )
-        for value, name in (
-            (self.dataset_path, "dataset_path"),
-            (self.predictions_path, "predictions_path"),
-            (self.report_directory, "report_directory"),
-        ):
-            _absolute_path(value, field_name=name)
+        _absolute_path(self.dataset_path, field_name="dataset_path")
         _safe_id(self.run_id, field_name="run_id")
-        if len({self.dataset_path, self.predictions_path}) != 2:
-            raise SweBenchRunnerError("dataset and prediction paths must differ")
         workspace = self.headless_request.workspace
         if workspace.task_image_digest != self.task_binding.image_digest:
             raise SweBenchRunnerError(
                 "headless workspace image is not the pinned SWE-bench image"
             )
-        if (
-            workspace.repository_snapshot_digest is not None
-            or workspace.base_commit is not None
-        ):
+        if workspace.repository_snapshot_digest is not None:
             raise SweBenchRunnerError(
                 "installed SWE-bench journey must not use a source checkout"
+            )
+        if workspace.base_commit != self.task_binding.task.base_commit:
+            raise SweBenchRunnerError(
+                "headless workspace base is not the pinned SWE-bench commit"
             )
         if self.headless_request.resolve_request.episode_id != self.run_id:
             raise SweBenchRunnerError(
@@ -798,9 +1242,10 @@ class InstalledSweBenchRequest:
             "episode_id": self.headless_request.resolve_request.episode_id,
             "target_id": self.headless_request.target_id,
             "target_overlay_id": self.headless_request.target_overlay_id,
-            "dataset_path": self.dataset_path,
-            "predictions_path": self.predictions_path,
-            "report_directory": self.report_directory,
+            "headless_invocation_digest": _canonical_digest(
+                self.headless_invocation.identity_dict()
+            ),
+            "dataset_artifact_digest": "sha256:" + DATASET_SHA256,
             "run_id": self.run_id,
             "task_binding_digest": self.task_binding.identity_digest,
             "evaluator_binding_digest": self.evaluator_binding.identity_digest,
@@ -832,6 +1277,8 @@ class InstalledSweBenchRewardReceipt:
     report_digest: str
     reward: float
     reward_digest: str
+    headless_cleanup_digest: str
+    evaluator_cleanup_digest: str
     cleanup_digest: str
     cleanup_inventory_digest: str
     headless_result_digest: str
@@ -874,7 +1321,9 @@ class InstalledSweBenchRewardReceipt:
             (self.instance_report_digest, "instance report"),
             (self.report_digest, "report"),
             (self.reward_digest, "reward"),
-            (self.cleanup_digest, "cleanup"),
+            (self.headless_cleanup_digest, "headless cleanup"),
+            (self.evaluator_cleanup_digest, "evaluator cleanup"),
+            (self.cleanup_digest, "combined cleanup"),
             (self.cleanup_inventory_digest, "cleanup inventory"),
             (self.headless_result_digest, "headless result"),
         ):
@@ -916,6 +1365,8 @@ class InstalledSweBenchRewardReceipt:
             "report_digest": self.report_digest,
             "reward": self.reward,
             "reward_digest": self.reward_digest,
+            "headless_cleanup_digest": self.headless_cleanup_digest,
+            "evaluator_cleanup_digest": self.evaluator_cleanup_digest,
             "cleanup_digest": self.cleanup_digest,
             "cleanup_inventory_digest": self.cleanup_inventory_digest,
             "headless_result_digest": self.headless_result_digest,
@@ -941,6 +1392,35 @@ def _validate_headless_result(
         raise SweBenchRunnerError("headless result schema is not canonical")
     if payload.get("episode_id") != request.headless_request.resolve_request.episode_id:
         raise SweBenchRunnerError("headless result episode identity mismatch")
+    config_identity = payload.get("config_identity")
+    config_digest = payload.get("config_digest")
+    if (
+        not isinstance(config_identity, Mapping)
+        or type(config_digest) is not str
+        or _canonical_digest(config_identity) != config_digest
+    ):
+        raise SweBenchRunnerError("headless config identity is not canonical")
+    target = E4TargetPolicyProjection.load(
+        request.headless_request.target_id,
+        request.headless_request.target_dynamic_fields,
+    )
+    if payload.get("target_identity") != target.identity_dict():
+        raise SweBenchRunnerError("headless target identity mismatch")
+    if (
+        payload.get("provider_input_identity")
+        != request.headless_request.provider.identity_dict()
+        or payload.get("workspace_input")
+        != request.headless_request.workspace.model_dump(mode="json")
+    ):
+        raise SweBenchRunnerError("headless launcher input identity mismatch")
+    engine = payload.get("engine_identity")
+    if (
+        not isinstance(engine, Mapping)
+        or engine.get("distribution") != "breadboard-harness-cli"
+        or _DIGEST_RE.fullmatch(str(engine.get("headless_module_digest"))) is None
+        or _DIGEST_RE.fullmatch(str(engine.get("policy_provider_module_digest"))) is None
+    ):
+        raise SweBenchRunnerError("headless engine identity is incomplete")
     terminal = payload.get("terminal")
     if not isinstance(terminal, Mapping) or terminal.get("status") != "succeeded":
         raise SweBenchRunnerError(
@@ -966,8 +1446,12 @@ def _validate_headless_result(
     cleanup_digest = cleanup.get("receipt_digest")
     if type(cleanup_digest) is not str or _DIGEST_RE.fullmatch(cleanup_digest) is None:
         raise SweBenchRunnerError("headless cleanup receipt digest is missing")
-    if not isinstance(cleanup.get("receipt"), Mapping):
-        raise SweBenchRunnerError("headless cleanup receipt is missing")
+    cleanup_receipt = cleanup.get("receipt")
+    if (
+        not isinstance(cleanup_receipt, Mapping)
+        or _canonical_digest(cleanup_receipt) != cleanup_digest
+    ):
+        raise SweBenchRunnerError("headless cleanup receipt digest mismatch")
     inventory = payload.get("cleanup_inventory")
     inventory_digest = payload.get("cleanup_inventory_digest")
     if not isinstance(inventory, Mapping) or type(inventory_digest) is not str:
@@ -1001,6 +1485,15 @@ def _validate_headless_result(
     if type(patch_digest) is not str:
         raise SweBenchRunnerError("headless workspace patch digest is missing")
     _digest(patch_digest, field_name="workspace patch")
+    if (
+        evidence.get("patch_base_commit") != request.task_binding.task.base_commit
+        or evidence.get("patch_digest") != patch_digest
+        or _DIGEST_RE.fullmatch(str(evidence.get("patch_git_executable_digest")))
+        is None
+        or _DIGEST_RE.fullmatch(str(evidence.get("patch_snapshot_root_digest")))
+        is None
+    ):
+        raise SweBenchRunnerError("headless workspace evidence is incomplete")
     return (
         frozen,
         _canonical_digest(payload),
@@ -1092,15 +1585,12 @@ def _read_patch(path: str, expected_digest: str) -> str:
 async def run_installed_swe_bench(
     request: InstalledSweBenchRequest,
     *,
-    controllers: Mapping[str, E4ControllerPort],
-    headless: InstalledHeadlessRunner,
     evaluator: SubprocessOfficialEvaluator,
 ) -> InstalledSweBenchRewardReceipt:
-    """Run one row through canonical headless execution and the pinned evaluator only."""
+    """Run one row through canonical installed headless and official evaluator code."""
 
     if type(request) is not InstalledSweBenchRequest:
         raise TypeError("request must be an exact InstalledSweBenchRequest")
-    controller = select_e4_controller(request.profile, controllers)
     if type(evaluator) is not SubprocessOfficialEvaluator:
         raise TypeError("evaluator must be an exact SubprocessOfficialEvaluator")
     if (
@@ -1110,31 +1600,27 @@ async def run_installed_swe_bench(
         raise SweBenchRunnerError(
             "evaluator adapter is not the pinned official evaluator"
         )
-    if not isinstance(headless, InstalledHeadlessRunner):
-        raise TypeError("headless must implement InstalledHeadlessRunner")
-
+    target = E4TargetPolicyProjection.load(
+        request.headless_request.target_id,
+        request.headless_request.target_dynamic_fields,
+    )
+    controller_identity = _controller_identity(request.profile, target)
+    model_name = _controller_model_name(controller_identity)
     try:
-        raw_headless = headless.run(request.headless_request)
-        headless_result = (
-            await raw_headless if inspect.isawaitable(raw_headless) else raw_headless
+        headless_result = await request.headless_invocation.run(
+            request.headless_request
         )
     except Exception as exc:
         raise SweBenchRunnerError("canonical headless execution failed") from exc
     if not isinstance(headless_result, Mapping):
         raise SweBenchRunnerError("canonical headless result must be a mapping")
     (
-        frozen_headless,
+        _frozen_headless,
         headless_digest,
-        cleanup_digest,
+        headless_cleanup_digest,
         cleanup_inventory_digest,
         patch_digest,
     ) = _validate_headless_result(headless_result, request)
-    if controller.binding.target_id != request.headless_request.target_id:
-        raise SweBenchRunnerError(
-            "selected E4 controller target does not match the headless request"
-        )
-
-    request.task_binding.load_verified_row(request.dataset_path)
     patch_path = request.headless_request.patch_path
     if patch_path is None:
         raise SweBenchRunnerError("canonical workspace patch path is missing")
@@ -1142,35 +1628,41 @@ async def run_installed_swe_bench(
     try:
         prediction = prediction_jsonl(
             patch,
-            model_name=controller.binding.adapter_id,
+            model_name=model_name,
         )
     except (SweBenchTaskError, TypeError) as exc:
         raise SweBenchRunnerError(str(exc)) from exc
     prediction_digest = _digest_bytes(prediction)
-    _write_prediction(request.predictions_path, prediction)
-
-    command = TrustedEvaluatorCommand.create(
+    outcome = evaluator.evaluate(
+        task_binding=request.task_binding,
         dataset_path=request.dataset_path,
-        predictions_path=request.predictions_path,
-        report_directory=request.report_directory,
+        prediction=prediction,
         run_id=request.run_id,
-        model_name=controller.binding.adapter_id,
+        model_name=model_name,
         patch_digest=patch_digest,
     )
-    try:
-        evaluation = evaluator.evaluate(command)
-        evaluation = await evaluation if inspect.isawaitable(evaluation) else evaluation
-    except Exception as exc:
-        raise SweBenchRunnerError("pinned official SWE-bench evaluator failed") from exc
-    if type(evaluation) is not SweBenchEvaluatorResult:
-        raise SweBenchRunnerError("evaluator adapter returned an unbound result")
-    if evaluation.command != command or evaluation.command.patch_digest != patch_digest:
+    if type(outcome) is not OfficialEvaluatorOutcome:
+        raise SweBenchRunnerError("evaluator adapter returned an unbound outcome")
+    evaluation = outcome.evaluation
+    if (
+        type(evaluation) is not SweBenchEvaluatorResult
+        or evaluation.command.patch_digest != patch_digest
+        or evaluation.command.run_id != request.run_id
+        or evaluation.command.model_name != model_name
+    ):
         raise SweBenchRunnerError("evaluator command/result binding mismatch")
-
+    combined_cleanup_digest = _canonical_digest(
+        {
+            "schema_version": "bb.rl.swe-bench-combined-cleanup.v1",
+            "headless_cleanup_digest": headless_cleanup_digest,
+            "evaluator_cleanup_digest": outcome.cleanup_digest,
+            "headless_cleanup_inventory_digest": cleanup_inventory_digest,
+        }
+    )
     return InstalledSweBenchRewardReceipt(
         run_id=request.run_id,
         episode_id=request.headless_request.resolve_request.episode_id,
-        controller_identity=controller.binding.identity_dict(),
+        controller_identity=controller_identity,
         evaluator_identity=evaluator.identity_dict(),
         task_binding_digest=request.task_binding.identity_digest,
         dataset_artifact_digest="sha256:" + DATASET_SHA256,
@@ -1179,13 +1671,15 @@ async def run_installed_swe_bench(
         patch_digest=patch_digest,
         image_index_digest=IMAGE_INDEX_DIGEST,
         image_leaf_digest=IMAGE_LEAF_DIGEST,
-        command_digest=command.command_digest,
+        command_digest=evaluation.command.command_digest,
         aggregate_report_digest=evaluation.aggregate_report_digest,
         instance_report_digest=evaluation.instance_report_digest,
         report_digest=evaluation.report_digest,
         reward=evaluation.reward,
         reward_digest=evaluation.reward_digest,
-        cleanup_digest=cleanup_digest,
+        headless_cleanup_digest=headless_cleanup_digest,
+        evaluator_cleanup_digest=outcome.cleanup_digest,
+        cleanup_digest=combined_cleanup_digest,
         cleanup_inventory_digest=cleanup_inventory_digest,
         headless_result_digest=headless_digest,
     )
@@ -1193,26 +1687,28 @@ async def run_installed_swe_bench(
 
 __all__ = [
     "COMMAND_SCHEMA_VERSION",
-    "E4ControllerBinding",
-    "E4ControllerPort",
     "E4ProfileIdentity",
     "E4_PROFILE_IDS",
     "EVALUATION_RESULT_SCHEMA_VERSION",
     "EVALUATOR_BINDING_SCHEMA_VERSION",
     "HEADLESS_RESULT_SCHEMA_VERSION",
-    "InstalledHeadlessRunner",
+    "InstalledHeadlessInvocation",
     "InstalledSweBenchRequest",
     "InstalledSweBenchRewardReceipt",
+    "OFFICIAL_EVALUATOR_DOCKER_DIGEST",
+    "OFFICIAL_EVALUATOR_ENVIRONMENT_DIGEST",
+    "OFFICIAL_EVALUATOR_PYTHON_DIGEST",
     "OFFICIAL_SWE_BENCH_EVALUATOR",
+    "OfficialEvaluatorOutcome",
     "PINNED_SWE_BENCH_TASK",
     "REWARD_RECEIPT_SCHEMA_VERSION",
     "RUN_REQUEST_SCHEMA_VERSION",
+    "SubprocessOfficialEvaluator",
     "SweBenchEvaluatorBinding",
     "SweBenchEvaluatorResult",
     "SweBenchRunnerError",
     "SweBenchTaskBinding",
-    "SubprocessOfficialEvaluator",
     "TrustedEvaluatorCommand",
-    "select_e4_controller",
+    "measure_official_evaluator_environment",
     "run_installed_swe_bench",
 ]

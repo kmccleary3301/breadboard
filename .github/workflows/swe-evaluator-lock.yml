@@ -1,0 +1,45 @@
+name: SWE evaluator environment lock
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/swe-evaluator-lock.yml"
+      - "breadboard/rl/harness/swe_bench_runner.py"
+      - "breadboard/rl/harness/swe_bench_task.py"
+      - "scripts/rl_phase5/swe_bench_evaluator_requirements.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  locked-environment:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+      - name: Install exact evaluator environment
+        run: |
+          sudo mkdir -p /opt/breadboard
+          sudo chown "$USER:$USER" /opt/breadboard
+          uv venv --python "$(command -v python)" --relocatable /opt/breadboard/swebench-evaluator
+          uv pip sync \
+            --python /opt/breadboard/swebench-evaluator/bin/python \
+            --link-mode copy \
+            scripts/rl_phase5/swe_bench_evaluator_requirements.lock
+          sudo chown -R root:root /opt/breadboard/swebench-evaluator
+          sudo chmod -R a-w /opt/breadboard/swebench-evaluator
+      - name: Measure evaluator environment
+        run: |
+          uv run python -c "import json; from breadboard.rl.harness.swe_bench_runner import measure_official_evaluator_environment; value=measure_official_evaluator_environment('/opt/breadboard/swebench-evaluator'); open('/tmp/evaluator-measurement.json','x',encoding='utf-8').write(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n'); print(json.dumps(value,sort_keys=True))"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swe-evaluator-environment-measurement
+          path: /tmp/evaluator-measurement.json
+          if-no-files-found: error
+      - name: Enforce committed trust anchors
+        run: |
+          uv run python -c "import json; from breadboard.rl.harness import swe_bench_runner as r; value=json.load(open('/tmp/evaluator-measurement.json',encoding='utf-8')); assert value['environment_digest']==r.OFFICIAL_EVALUATOR_ENVIRONMENT_DIGEST; assert value['python_digest']==r.OFFICIAL_EVALUATOR_PYTHON_DIGEST; assert value['docker_digest']==r.OFFICIAL_EVALUATOR_DOCKER_DIGEST"
