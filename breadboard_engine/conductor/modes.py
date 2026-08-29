@@ -97,7 +97,7 @@ def _provider_wire_evidence(
             profile.scoped_credential,
             *profile.caller_headers.values(),
         ]
-        with redaction.secret_value_scope(*secret_values):
+        with redaction.secret_value_scope(*secret_values, allow_short=True):
             request_body, _redaction_problems = redaction.scrub_structure(
                 profile.chat_request(messages, tools),
                 path="$.provider_request",

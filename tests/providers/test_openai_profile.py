@@ -469,23 +469,34 @@ def test_profile_wire_evidence_records_exact_authoritative_request():
     assert "episode-secret" not in repr((body, headers, endpoint, identity))
 
 
-def test_profile_wire_evidence_redacts_echoes_and_raw_endpoint():
+@pytest.mark.parametrize(
+    ("credential", "header_value"),
+    [
+        ("episode-secret", "caller-secret"),
+        ("xy", "z"),
+    ],
+)
+def test_profile_wire_evidence_redacts_echoes_and_raw_endpoint(
+    credential,
+    header_value,
+):
     profile = _profile(
+        scoped_credential=credential,
         base_url="http://127.0.0.1:8111/caller-secret/v1",
-        caller_headers={"X-Request-ID": "caller-secret"},
+        caller_headers={"X-Request-ID": header_value},
     )
 
     evidence = _provider_wire_evidence(
         profile=profile,
         provider_id="openai",
         model=MODEL,
-        messages=[{"role": "user", "content": "episode-secret caller-secret"}],
+        messages=[{"role": "user", "content": f"{credential} {header_value}"}],
         tools=[
             {
                 "type": "function",
                 "function": {
                     "name": "read",
-                    "description": "episode-secret caller-secret",
+                    "description": f"{credential} {header_value}",
                     "parameters": {"type": "object"},
                 },
             }
@@ -494,8 +505,8 @@ def test_profile_wire_evidence_redacts_echoes_and_raw_endpoint():
         client_config={},
     )
 
-    assert "episode-secret" not in repr(evidence)
-    assert "caller-secret" not in repr(evidence)
+    assert credential not in repr(evidence[0])
+    assert header_value not in repr(evidence[0])
     assert profile.base_url not in repr(evidence)
     assert evidence[2] == f"sha256:{profile.identity_dict()['base_url_sha256']}"
 
