@@ -2015,7 +2015,7 @@ async def test_primary_attestation_failure_retains_dependents_until_reconcile_re
     class FailedCleanupMeasurementBackend(RecordingBackend):
         async def launch(self, *args: Any, **kwargs: Any) -> tuple[Any, Any]:
             handle, measurement = await super().launch(*args, **kwargs)
-            handle.termination_states = [runtime_state]
+            handle.termination_states = [runtime_state, CleanupState.RELEASED]
             return handle, measurement
 
     fixture = make_runtime_fixture(with_writable_mount=True)
@@ -2052,23 +2052,17 @@ async def test_primary_attestation_failure_retains_dependents_until_reconcile_re
     records = list(harness.lease_root.iterdir())
     assert len(records) == 1
 
-    recovery_backend = ReconcileBackend()
-    harness.manager.process_backend = recovery_backend
     harness.clock.advance(minutes=5)
     receipts = await asyncio.wait_for(harness.manager.reconcile_stale(), 1)
 
     assert len(receipts) == 1
     assert receipts[0].steps == (
-        CleanupStepReceipt(
-            "child_verifier",
-            CleanupState.ALREADY_RELEASED,
-        ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
         CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
-    assert len(recovery_backend.reconciled) == 1
+    assert backend.handles[0].terminate_calls == 2
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
 

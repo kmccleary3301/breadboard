@@ -2166,6 +2166,7 @@ class MountNamespaceBroker:
         self._lock = threading.Lock()
         self._closed = False
         self._resources_closed = False
+        self._cleanup_verified = False
         self._reaped = False
         self._wait_status: int | None = None
         response: Mapping[str, Any] = {}
@@ -2670,7 +2671,7 @@ class MountNamespaceBroker:
             )
 
     def close(self) -> None:
-        if self._resources_closed:
+        if self._cleanup_verified:
             return
 
         errors: list[BaseException] = []
@@ -2772,6 +2773,8 @@ class MountNamespaceBroker:
                     self._wait_status = status
                 except BaseException as cleanup_exc:
                     errors.append(cleanup_exc)
+        if self._reaped:
+            self._closed = True
 
         try:
             self._cleanup_dead_placeholders()
@@ -2815,19 +2818,30 @@ class MountNamespaceBroker:
             errors.append(exc)
             absent = False
 
-        for fd in self._authority_fds.values():
+        failed_authority_fds: dict[str, int] = {}
+        for name, fd in self._authority_fds.items():
             try:
                 os.close(fd)
             except OSError as exc:
+                failed_authority_fds[name] = fd
                 errors.append(exc)
-        self._authority_fds.clear()
+        self._authority_fds = failed_authority_fds
         if getattr(self, "_daemon_root_fd", -1) >= 0:
-            try:
-                os.close(self._daemon_root_fd)
-            except OSError as exc:
-                errors.append(exc)
-            self._daemon_root_fd = -1
-        self._resources_closed = True
+            root_absent = (
+                self._daemon_authority is None
+                or not os.path.lexists(self._daemon_authority.daemon_root)
+            )
+            if root_absent:
+                try:
+                    os.close(self._daemon_root_fd)
+                except OSError as exc:
+                    errors.append(exc)
+                else:
+                    self._daemon_root_fd = -1
+        self._resources_closed = (
+            not self._authority_fds
+            and getattr(self, "_daemon_root_fd", -1) < 0
+        )
 
         status = self._wait_status
         if not self._reaped or status != 0 or not absent:
@@ -2839,6 +2853,7 @@ class MountNamespaceBroker:
             )
         if errors:
             raise BaseExceptionGroup("broker cleanup failed", errors)
+        self._cleanup_verified = True
 
 
 class BrokerDockerCliExecutor:

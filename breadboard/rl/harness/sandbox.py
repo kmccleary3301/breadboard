@@ -2073,6 +2073,8 @@ class VerifierWorkspaceLease:
 class _PendingLaunchCleanup:
     workspace: Path
     materialized: MaterializedWorkspace | None
+    runtime: RuntimeHandle | None
+    backend_cleanup_pending: bool
 
 
 class SandboxRuntimeManager:
@@ -2467,16 +2469,25 @@ class SandboxRuntimeManager:
                     and backend is self.docker_backend
                     and bool(getattr(backend, "cleanup_pending", False))
                 )
+                runtime_cleanup_pending = (
+                    runtime is not None
+                    and not _runtime_cleanup_released(cleanup_steps)
+                )
                 if backend_cleanup_pending:
                     cleanup_steps.append(CleanupStepReceipt(
                         "runtime", CleanupState.QUARANTINED,
                         "backend retained launch cleanup authority",
                     ))
-                    if materialized is not None:
-                        self._pending_launch_cleanups[lease_id] = _PendingLaunchCleanup(
-                            workspace=materialized.workspace_path,
-                            materialized=materialized,
-                        )
+                if (
+                    materialized is not None
+                    and (backend_cleanup_pending or runtime_cleanup_pending)
+                ):
+                    self._pending_launch_cleanups[lease_id] = _PendingLaunchCleanup(
+                        workspace=materialized.workspace_path,
+                        materialized=materialized,
+                        runtime=runtime if runtime_cleanup_pending else None,
+                        backend_cleanup_pending=backend_cleanup_pending,
+                    )
                 runtime_released = (
                     runtime is None and not backend_cleanup_pending
                 ) or _runtime_cleanup_released(cleanup_steps)
@@ -2800,14 +2811,21 @@ class SandboxRuntimeManager:
                     and backend is self.docker_backend
                     and bool(getattr(backend, "cleanup_pending", False))
                 )
+                runtime_cleanup_pending = (
+                    launched is not None
+                    and not _runtime_cleanup_released(cleanup_steps)
+                )
                 if backend_cleanup_pending:
                     cleanup_steps.append(CleanupStepReceipt(
                         "runtime", CleanupState.QUARANTINED,
                         "backend retained launch cleanup authority",
                     ))
+                if backend_cleanup_pending or runtime_cleanup_pending:
                     self._pending_launch_cleanups[lease_id] = _PendingLaunchCleanup(
                         workspace=workspace,
                         materialized=None,
+                        runtime=launched if runtime_cleanup_pending else None,
+                        backend_cleanup_pending=backend_cleanup_pending,
                     )
                 runtime_released = (
                     launched is None and not backend_cleanup_pending
@@ -2949,54 +2967,64 @@ class SandboxRuntimeManager:
         pending = tuple(self._pending_launch_cleanups.items())
         if not pending:
             return ()
-        close_runtime = getattr(self.docker_backend, "close_runtime", None)
-        if not callable(close_runtime):
-            return tuple(
-                SandboxCleanupReceipt.from_steps(
-                    lease_id,
-                    (
-                        CleanupStepReceipt(
-                            "runtime", CleanupState.QUARANTINED,
-                            "backend cleanup authority unavailable",
-                        ),
-                        CleanupStepReceipt(
-                            "workspace", CleanupState.QUARANTINED,
-                            "dependent runtime cleanup incomplete",
-                        ),
-                        CleanupStepReceipt(
-                            "lease_record", CleanupState.QUARANTINED,
-                            "dependent runtime cleanup incomplete",
-                        ),
-                    ),
+        backend_failure: BaseException | None = None
+        if any(retained.backend_cleanup_pending for _, retained in pending):
+            reconcile = getattr(self.docker_backend, "reconcile_quarantined", None)
+            if not callable(reconcile):
+                backend_failure = RuntimeError(
+                    "backend cleanup authority unavailable"
                 )
-                for lease_id, _ in pending
-            )
-        try:
-            await close_runtime()
-        except BaseException as exc:
-            return tuple(
-                SandboxCleanupReceipt.from_steps(
-                    lease_id,
-                    (
-                        CleanupStepReceipt(
-                            "runtime", CleanupState.QUARANTINED,
-                            type(exc).__name__,
-                        ),
-                        CleanupStepReceipt(
-                            "workspace", CleanupState.QUARANTINED,
-                            "dependent runtime cleanup incomplete",
-                        ),
-                        CleanupStepReceipt(
-                            "lease_record", CleanupState.QUARANTINED,
-                            "dependent runtime cleanup incomplete",
-                        ),
-                    ),
-                )
-                for lease_id, _ in pending
-            )
+            else:
+                try:
+                    await reconcile()
+                except BaseException as exc:
+                    backend_failure = exc
         receipts: list[SandboxCleanupReceipt] = []
         for lease_id, retained in pending:
-            steps = [CleanupStepReceipt("runtime", CleanupState.RELEASED)]
+            steps: list[CleanupStepReceipt] = []
+            if retained.runtime is not None:
+                try:
+                    steps.extend(await retained.runtime.terminate())
+                except BaseException as exc:
+                    steps.append(CleanupStepReceipt(
+                        "runtime", CleanupState.FAILED, type(exc).__name__
+                    ))
+                runtime_released = _runtime_cleanup_released(steps)
+            elif retained.backend_cleanup_pending and backend_failure is not None:
+                steps.append(CleanupStepReceipt(
+                    "runtime", CleanupState.QUARANTINED,
+                    type(backend_failure).__name__,
+                ))
+                runtime_released = False
+            elif retained.backend_cleanup_pending:
+                steps.append(CleanupStepReceipt(
+                    "runtime", CleanupState.RELEASED
+                ))
+                runtime_released = True
+            else:
+                steps.append(CleanupStepReceipt(
+                    "runtime", CleanupState.FAILED,
+                    "retained cleanup authority is incomplete",
+                ))
+                runtime_released = False
+            if not runtime_released:
+                steps.append(CleanupStepReceipt(
+                    "workspace", CleanupState.QUARANTINED,
+                    "dependent runtime cleanup incomplete",
+                ))
+                if retained.materialized is not None:
+                    steps.append(CleanupStepReceipt(
+                        "cache_holder", CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    ))
+                steps.append(CleanupStepReceipt(
+                    "lease_record", CleanupState.QUARANTINED,
+                    "dependent cleanup incomplete",
+                ))
+                receipts.append(SandboxCleanupReceipt.from_steps(
+                    lease_id, tuple(steps)
+                ))
+                continue
             try:
                 if retained.materialized is not None:
                     await asyncio.to_thread(retained.materialized.close)
