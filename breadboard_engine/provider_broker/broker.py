@@ -710,8 +710,8 @@ class ProviderBroker:
                 current = self.store.get_login(str(login_id)) or login
                 return self._public_login(current)
 
-        def login_is_terminal() -> bool:
-            return not self.store.login_claim_is_active(
+        def login_claim_is_lost() -> bool:
+            return not self.store.renew_login_claim(
                 str(login_id),
                 claim_id=claim_id,
             )
@@ -723,7 +723,7 @@ class ProviderBroker:
                     payload, "code", "authorizationCode", "authorization_code"
                 ),
                 state=self._value(payload, "state"),
-                is_cancelled=login_is_terminal,
+                is_cancelled=login_claim_is_lost,
             )
             oauth_secret_values = redaction.credential_secret_values(material)
             try:
