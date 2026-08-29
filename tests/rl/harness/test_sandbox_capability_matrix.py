@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from importlib.resources import files
+from pathlib import Path
 
 import pytest
 
@@ -76,6 +78,40 @@ def test_sandbox_capability_matrix_rejects_symlink_resource(
     except OSError:
         pytest.skip("symlink creation is unavailable")
     monkeypatch.setattr(sandbox_module, "files", lambda _package: tmp_path)
+
+    with pytest.raises(sandbox_module.SandboxRuntimeError) as captured:
+        load_sandbox_capability_matrix()
+
+    assert captured.value.code == "capability_matrix_invalid"
+
+
+
+def test_sandbox_capability_matrix_rejects_fifo_replacement_without_blocking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("FIFO creation is unavailable")
+    resource = tmp_path / SANDBOX_CAPABILITY_MATRIX_RESOURCE
+    resource.write_bytes(
+        files("breadboard.rl.harness")
+        .joinpath(SANDBOX_CAPABILITY_MATRIX_RESOURCE)
+        .read_bytes()
+    )
+    displaced = tmp_path / "matrix-displaced.json"
+    real_stat = sandbox_module.os.stat
+    replaced = False
+
+    def replace_after_stat(path, *args, **kwargs):
+        nonlocal replaced
+        observed = real_stat(path, *args, **kwargs)
+        if Path(path) == resource and not replaced:
+            replaced = True
+            resource.rename(displaced)
+            os.mkfifo(resource)
+        return observed
+
+    monkeypatch.setattr(sandbox_module, "files", lambda _package: tmp_path)
+    monkeypatch.setattr(sandbox_module.os, "stat", replace_after_stat)
 
     with pytest.raises(sandbox_module.SandboxRuntimeError) as captured:
         load_sandbox_capability_matrix()

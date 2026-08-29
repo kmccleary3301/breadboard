@@ -84,7 +84,10 @@ def _read_sandbox_capability_matrix_resource() -> bytes:
             raise OSError("sandbox capability matrix resource is not regular and bounded")
         descriptor = os.open(
             resource,
-            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
         )
         try:
             opened = os.fstat(descriptor)
