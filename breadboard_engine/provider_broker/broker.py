@@ -6,6 +6,7 @@ routing; credential listings and audit records contain metadata only.
 """
 
 import json
+import math
 import os
 import threading
 import time
@@ -613,11 +614,17 @@ class ProviderBroker:
                 )
             return login
         stored_flow = dict(started.internal)
+        expires_in_ms = None
+        if stored_flow.get("flow_kind") == "device":
+            expires_in_ms = int(
+                math.ceil(float(stored_flow["expires_in"]) * 1000)
+            )
         with self.store.atomic():
             login = self.store.create_login(
                 provider_id,
                 "pending",
                 flow=stored_flow,
+                expires_in_ms=expires_in_ms,
             )
             self._emit(
                 "provider_login_started",
@@ -829,6 +836,36 @@ class ProviderBroker:
                         login_session_id=str(login_id),
                         code=exc.code,
                     )
+            current = self.store.get_login(str(login_id)) or login
+            if not changed:
+                return self._public_login(current)
+            return {
+                **self._public_login(current),
+                "status": "failed",
+                "problem": problem,
+            }
+        except Exception:
+            problem = self._problem(
+                "oauth_completion_failed",
+                "OAuth completion failed",
+                provider_id=login["provider_id"],
+            )
+            with self.store.atomic():
+                changed = self.store.finish_claimed_login(
+                    str(login_id),
+                    "failed",
+                    problem,
+                )
+            if changed:
+                try:
+                    self._emit(
+                        "provider_login_failed",
+                        provider_id=login["provider_id"],
+                        login_session_id=str(login_id),
+                        code="oauth_completion_failed",
+                    )
+                except Exception:
+                    pass
             current = self.store.get_login(str(login_id)) or login
             if not changed:
                 return self._public_login(current)

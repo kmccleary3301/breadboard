@@ -70,7 +70,25 @@ def test_session_lifecycle_and_resumable_event_stream(
     assert started.status_code == 202, started.text
     assert started.json()["data"]["session"]["status"] == "running"
     lock = json.loads((tmp_path / lock_id).read_text(encoding="utf-8"))
-    assert started.json()["hashes"]["lock"] == lock["graph_hash"]
+    record = client.portal.call(
+        client.app.state.session_service.ensure_session,
+        "session-fixture",
+    )
+    assert (
+        started.json()["hashes"]["lock"]
+        == record.product_session.read_model.effective_lock_hash
+    )
+    assert started.json()["hashes"]["lock"] != lock["graph_hash"]
+    assert record.metadata["active_model_role"] == "default"
+    assert set(record.metadata["model_role_lock"]["roles"]) == {
+        "default",
+        "smol",
+        "slow",
+        "vision",
+        "plan",
+        "designer",
+        "task",
+    }
     monkeypatch.setenv("SESSION_TOKEN", "abc")
 
     def finish() -> None:
@@ -301,8 +319,7 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
         profile = described["data"]["default_profile"]
         assert profile["profile_id"] == "daily_driver.v1"
         assert (
-            restored.json()["data"]["session"]["effective_lock_hash"]
-            == profile["effective_lock_hash"]
+            profile["effective_lock_hash"]
             == described["hashes"]["profile"]
         )
         assert restored_listing.status_code == 200
@@ -314,6 +331,10 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
             }
         ]
         assert event_path.read_bytes() == events_before_reads
+        assert (
+            restored.json()["data"]["session"]["effective_lock_hash"]
+            != profile["effective_lock_hash"]
+        )
 
         lock_path = tmp_path / lock_id
         corrupt_lock = json.loads(lock_path.read_text(encoding="utf-8"))

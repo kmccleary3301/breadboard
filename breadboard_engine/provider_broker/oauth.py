@@ -171,8 +171,24 @@ class OAuthFlowAdapter:
                 raise OAuthFlowError("oauth_device_start_failed", "Device authorization initiation failed", status=status)
             data = _json_body(status, raw)
             device_id, user_code = data.get("device_auth_id"), data.get("user_code")
-            if not isinstance(device_id, str) or not isinstance(user_code, str):
-                raise OAuthFlowError("oauth_invalid_response", "Device response missing device_auth_id or user_code", status=status)
+            expires = data.get("expires_in", 600)
+            try:
+                expires_seconds = float(expires)
+            except (TypeError, ValueError):
+                expires_seconds = 0.0
+            if (
+                not isinstance(device_id, str)
+                or not isinstance(user_code, str)
+                or isinstance(expires, bool)
+                or not math.isfinite(expires_seconds)
+                or expires_seconds <= 0
+                or expires_seconds > 31_536_000
+            ):
+                raise OAuthFlowError(
+                    "oauth_invalid_response",
+                    "Device response has invalid identity or expiry fields",
+                    status=status,
+                )
             internal = {
                 "flow_id": self.spec.flow_id,
                 "flow_kind": "device",
@@ -180,7 +196,7 @@ class OAuthFlowAdapter:
                 "device_auth_id": device_id,
                 "user_code": user_code,
                 "interval": data.get("interval", 5),
-                "expires_in": data.get("expires_in", 600),
+                "expires_in": expires_seconds,
             }
             return OAuthLoginStart(
                 public={"flow_id": self.spec.flow_id, "flow_kind": "device", "authorization_url": self.spec.device_auth_url, "user_code": user_code, "instructions": f"Enter code: {user_code}"},

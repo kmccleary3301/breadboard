@@ -126,16 +126,16 @@ def _prompt_resources(
     return resources
 
 
-def _daily_driver_role_resources(
+def _daily_driver_role_path(
     path: Path,
     workspace: Path,
     contained: bool,
-) -> dict[str, bytes]:
+) -> Path | None:
     temporary_prefix = f".{DAILY_DRIVER_TEMPLATE_NAME}."
     if path.name != DAILY_DRIVER_TEMPLATE_NAME and not path.name.startswith(
         temporary_prefix
     ):
-        return {}
+        return None
     unresolved = path.parent / DAILY_DRIVER_MODEL_ROLES_NAME
     target = (
         resolve_contained_target(
@@ -151,6 +151,32 @@ def _daily_driver_role_resources(
         raise IsADirectoryError(
             f"harness resource is not a file: {DAILY_DRIVER_MODEL_ROLES_NAME}"
         )
+    return target
+
+
+def daily_driver_model_roles_for_harness(
+    path: str | Path,
+    workspace: str | Path,
+    contained: bool = False,
+) -> dict[str, Any] | None:
+    """Load the model-role document paired with a daily-driver harness."""
+
+    target = _daily_driver_role_path(
+        Path(path),
+        Path(workspace).resolve(),
+        contained,
+    )
+    return None if target is None else load_daily_driver_model_roles(target)
+
+
+def _daily_driver_role_resources(
+    path: Path,
+    workspace: Path,
+    contained: bool,
+) -> dict[str, bytes]:
+    target = _daily_driver_role_path(path, workspace, contained)
+    if target is None:
+        return {}
     load_daily_driver_model_roles(target)
     source_ref = portable_ref(path, workspace)
     return {f"{source_ref}::{DAILY_DRIVER_MODEL_ROLES_NAME}": target.read_bytes()}

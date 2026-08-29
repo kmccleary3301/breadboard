@@ -24,6 +24,9 @@ from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest as BridgeSessionCreateRequest,
     SessionInputRequest as BridgeSessionInputRequest,
 )
+from breadboard.product.harness.resolution import (
+    daily_driver_model_roles_for_harness,
+)
 from breadboard.product.operations import session as session_operations
 from breadboard.product.runtime import session_store
 
@@ -173,16 +176,25 @@ class _LiveSessionMutationAdapter:
         effective_lock,
         source_path: Path,
     ) -> session_operations.StartSessionOutcome:
+        metadata = {
+            "non_interactive_cli_session": True,
+            "cli_session_kind": "oneshot",
+        }
+        role_document = daily_driver_model_roles_for_harness(
+            source_path,
+            context.workspace,
+            contained=True,
+        )
+        if role_document is not None:
+            metadata["bb.model_roles.v1"] = role_document
+
         try:
             created = await self._service.create_session(
                 BridgeSessionCreateRequest(
                     config_path=str(source_path),
                     task=request.task,
                     workspace=str(context.workspace),
-                    metadata={
-                        "non_interactive_cli_session": True,
-                        "cli_session_kind": "oneshot",
-                    },
+                    metadata=metadata,
                 ),
                 session_id=request.session_id,
                 event_root=workspace_path(

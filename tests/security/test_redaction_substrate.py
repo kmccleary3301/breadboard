@@ -112,15 +112,16 @@ class TestRegisteredValues:
         ]
         assert redaction.iter_registered_secret_values() == ()
 
-    def test_short_numeric_secret_only_scrubs_exact_scalars(self):
+    def test_short_numeric_secret_is_exact_for_scalars_and_fail_closed_for_text(self):
         with redaction.secret_value_scope("42", allow_short=True):
             scrubbed, _ = redaction.scrub_structure({"credential": 42, "status": 429})
             assert scrubbed == {
                 "credential": redaction.REDACTED,
                 "status": 429,
             }
-            assert redaction.scrub_text("request failed with status 429") == (
-                "request failed with status 429"
+            assert (
+                redaction.scrub_text("request failed with status 429")
+                == redaction.REDACTED
             )
 
     def test_credential_material_extracts_nested_and_encoded_secrets(self):
@@ -230,14 +231,15 @@ class TestRegisteredValues:
             assert redaction.scrub_text("echo abc") == (f"echo {redaction.REDACTED}")
         assert redaction.iter_registered_secret_values() == ()
 
-    def test_short_secret_scrubs_only_exact_scalar_values(self):
+    def test_short_secret_redacts_text_and_preserves_identity_substrings(self):
         with redaction.secret_value_scope("a", allow_short=True):
             assert (
                 redaction.contains_registered_secret_text("provider call failed a")
-                is False
+                is True
             )
-            assert redaction.scrub_text("provider call failed a") == (
-                "provider call failed a"
+            assert (
+                redaction.scrub_text("provider call failed a")
+                == redaction.REDACTED
             )
             scrubbed, _ = redaction.scrub_structure(
                 {"label": "a", "message": "provider call failed a"},
@@ -245,7 +247,7 @@ class TestRegisteredValues:
             )
             assert scrubbed == {
                 "label": redaction.REDACTED,
-                "message": "provider call failed a",
+                "message": redaction.REDACTED,
             }
 
         with redaction.secret_value_scope("ant", allow_short=True):

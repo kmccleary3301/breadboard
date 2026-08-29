@@ -52,6 +52,7 @@ def _operation_context(a):
     )
 
 
+
 def init(a):
     return create_harness(
         CreateHarnessRequest(getattr(a, "out", None) or "."),
