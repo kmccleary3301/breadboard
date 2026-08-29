@@ -726,9 +726,16 @@ class SessionService:
             request = request.model_copy(
                 update={"config_path": str(default_profile.source_path)}
             )
+        default_profile_overridden = any(
+            key != "workspace.root" for key in (request.overrides or {})
+        )
         request_metadata = dict(request.metadata or {})
         role_document = request_metadata.pop(MODEL_ROLES_METADATA_KEY, None)
-        if role_document is None and default_profile is not None:
+        if (
+            role_document is None
+            and default_profile is not None
+            and not default_profile_overridden
+        ):
             role_document = load_daily_driver_model_roles()
         for reserved_key in (
             "config_path",
@@ -803,9 +810,6 @@ class SessionService:
             metadata["model_role_lock"] = role_lock.as_dict()
             metadata["active_model_role"] = role_lock["defaults"]["role"]
             metadata["model_role_default"] = role_lock["defaults"]["role"]
-        default_profile_overridden = any(
-            key != "workspace.root" for key in (request.overrides or {})
-        )
         if (
             default_profile is not None
             and not default_profile_overridden
