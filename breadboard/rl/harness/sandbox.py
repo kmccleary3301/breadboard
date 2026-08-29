@@ -50,7 +50,7 @@ VERIFIER_REQUEST_SCHEMA_VERSION = "bb.rl.verifier-request.v1"
 SANDBOX_CAPABILITY_MATRIX_RESOURCE = "SANDBOX_CAPABILITY_MATRIX.json"
 SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION = "bb.rl.sandbox-capability-matrix.v1"
 SANDBOX_CAPABILITY_MATRIX_SHA256 = (
-    "122065677cab2cf952b46a767ebb860d0f398a6b535946c857d059fac5b5baea"
+    "37ad36cc3d4fe9f6435c6e4e800b452eb7a16430a75ad2fb92341b637501da76"
 )
 _MAX_SANDBOX_CAPABILITY_MATRIX_BYTES = 64 * 1024
 _SANDBOX_ADAPTER_STATUSES = {
@@ -170,6 +170,7 @@ def load_sandbox_capability_matrix() -> Mapping[str, Any]:
                 "status",
                 "capabilities",
                 "required_host_capabilities",
+                "required_image_capabilities",
                 "unavailable_code",
                 "evidence_contracts",
             }
@@ -182,6 +183,11 @@ def load_sandbox_capability_matrix() -> Mapping[str, Any]:
             or any(
                 type(value) is not str or not value
                 for value in adapter["required_host_capabilities"]
+            )
+            or type(adapter["required_image_capabilities"]) is not list
+            or any(
+                type(value) is not str or not value
+                for value in adapter["required_image_capabilities"]
             )
             or type(adapter["evidence_contracts"]) is not list
             or any(
@@ -1675,6 +1681,7 @@ class SandboxWorkspaceLease:
         self._active_operation_tasks: dict[asyncio.Task[Any], int] = {}
         self._io_lock = asyncio.Lock()
         self._cleanup = None
+        self._latest_cleanup = None
         self._close_task_lock = asyncio.Lock()
         self._close_task: asyncio.Task[SandboxCleanupReceipt] | None = None
         self.runner_workspace = LeaseBackedRunnerWorkspace(self, plan.effective_plan_digest, plan.tool_bindings)
@@ -1689,12 +1696,19 @@ class SandboxWorkspaceLease:
 
     @property
     def cleanup_receipt(self) -> SandboxCleanupReceipt | None:
-        return self._cleanup
-
+        return self._latest_cleanup
     async def execute(
         self, argv: Sequence[str], *, timeout_ms: int | None = None
     ) -> Mapping[str, Any]:
         self._assert_active()
+        if not argv or any(
+            type(item) is not str or not item or "\x00" in item for item in argv
+        ):
+            raise WorkspaceStateError(
+                "execution argv is invalid",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
         effective_timeout = self.plan.limits.action_timeout_ms if timeout_ms is None else timeout_ms
         if type(effective_timeout) is not int or effective_timeout <= 0 or effective_timeout > self.plan.limits.action_timeout_ms:
             raise WorkspaceStateError("timeout exceeds admitted ceiling", code="runtime_preflight_failed", lease_id=self.lease_id)
@@ -2962,6 +2976,7 @@ class SandboxRuntimeManager:
             except Exception as exc:
                 steps.append(CleanupStepReceipt("lease_record", CleanupState.FAILED, type(exc).__name__))
             receipt = SandboxCleanupReceipt.from_steps(lease.lease_id, tuple(steps))
+            lease._latest_cleanup = receipt
             lease._state = (
                 WorkspaceLeaseState.RELEASED
                 if receipt.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}

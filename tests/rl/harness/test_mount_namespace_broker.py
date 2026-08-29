@@ -117,6 +117,13 @@ async def test_broker_executor_transports_stdin_by_sealed_descriptor(
     assert result.stderr == b""
 
 
+def test_broker_wire_budget_covers_encoded_maximum_observation() -> None:
+    expected = 4 * ((broker_module._MAX_ADMITTED_OUTPUT + 1 + 2) // 3) + 128
+
+    assert broker_module._MAX_OUTPUT == expected
+    assert broker_module._MAX_OUTPUT > broker_module._MAX_ADMITTED_OUTPUT
+
+
 @pytest.mark.skipif(
     not hasattr(os, "memfd_create"),
     reason="sealed memfd transport requires Linux",
