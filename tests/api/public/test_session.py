@@ -1278,6 +1278,102 @@ def test_session_intent_oversized_projection_is_rejected_before_staged_reads(
         session_store.load_session(tmp_path, session_id)
 
 
+def test_explicit_local_bootstrap_preserves_pre_authority_terminal_session(
+    tmp_path: Path,
+) -> None:
+    session_id = "pre-authority-terminal"
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64})
+    legacy = Session.start(lock, "legacy task", session_id=session_id)
+    legacy.complete("legacy result")
+    event_path = session_store.session_event_path(tmp_path, session_id)
+    metadata_path = session_store.session_metadata_path(tmp_path, session_id)
+    event_path.parent.mkdir(parents=True)
+    event_path.write_bytes(session_store._event_bytes(legacy))
+    metadata_path.write_bytes(session_store._metadata_bytes(legacy))
+
+    with pytest.raises(ValueError, match="projection authority is missing"):
+        session_store.load_session(tmp_path, session_id)
+
+    restored, restored_path = session_store.bootstrap_local_session_authority(
+        tmp_path,
+        session_id,
+    )
+    assert restored.read_model.status == "completed"
+    assert restored_path == event_path
+    loaded, _ = session_store.load_session(tmp_path, session_id)
+    assert loaded.read_model == restored.read_model
+
+
+def test_create_retry_cleans_single_orphaned_stage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session_id = "partial-orphan"
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "b" * 64})
+    durable = Session.start(lock, "partial stage", session_id=session_id)
+    original_write = session_store.AnchoredStorage.write_at
+    failed = False
+
+    def fail_metadata_stage(parent: int, name: str, content: bytes) -> None:
+        nonlocal failed
+        if name == ".session.json.stage" and not failed:
+            failed = True
+            raise OSError("injected metadata stage failure")
+        original_write(parent, name, content)
+
+    monkeypatch.setattr(
+        session_store.AnchoredStorage,
+        "write_at",
+        staticmethod(fail_metadata_stage),
+    )
+    with pytest.raises(OSError, match="injected metadata stage failure"):
+        session_store.create_session(tmp_path, durable)
+    monkeypatch.setattr(
+        session_store.AnchoredStorage,
+        "write_at",
+        staticmethod(original_write),
+    )
+
+    created, _ = session_store.create_session(tmp_path, durable)
+    assert created.read_model.session_id == session_id
+    assert not list(tmp_path.rglob("*.stage"))
+
+
+def test_load_recovers_complete_orphaned_stages_without_intent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session_id = "complete-orphan"
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "c" * 64})
+    durable = Session.start(lock, "complete stage", session_id=session_id)
+    original_write = session_store.AnchoredStorage.write_at
+    failed = False
+
+    def fail_intent(parent: int, name: str, content: bytes) -> None:
+        nonlocal failed
+        if name == ".session.intent.json" and not failed:
+            failed = True
+            raise OSError("injected intent failure")
+        original_write(parent, name, content)
+
+    monkeypatch.setattr(
+        session_store.AnchoredStorage,
+        "write_at",
+        staticmethod(fail_intent),
+    )
+    with pytest.raises(OSError, match="injected intent failure"):
+        session_store.create_session(tmp_path, durable)
+    monkeypatch.setattr(
+        session_store.AnchoredStorage,
+        "write_at",
+        staticmethod(original_write),
+    )
+
+    restored, _ = session_store.load_session(tmp_path, session_id)
+    assert restored.read_model == durable.read_model
+    assert not list(tmp_path.rglob("*.stage"))
+
+
 def test_session_artifact_manifest_requires_private_authority(tmp_path: Path) -> None:
     session_id = "artifact-authority"
     _new_durable_session(tmp_path, session_id)

@@ -8,6 +8,7 @@ from breadboard.product.operations import session as session_operations
 from breadboard.product.operations.model import (
     OperationContext,
     OperationResult,
+    from_exception,
     portable_ref,
 )
 from breadboard.product.harness.lock import EffectiveHarnessLock
@@ -59,6 +60,27 @@ def get(arguments: object, command_name: str = "get") -> OperationResult:
             _context(arguments),
         )
     )
+
+def bootstrap_local(arguments: object) -> OperationResult:
+    """Create private authority for one explicitly selected local legacy session."""
+    context = _context(arguments)
+    command = ["session", "bootstrap-local"]
+    try:
+        durable, event_path = session_store.bootstrap_local_session_authority(
+            context.workspace,
+            arguments.SESSION_ID,
+        )
+        return OperationResult.success(
+            command,
+            {
+                "session": durable.read_model.as_dict(),
+                "projection_authority": "committed",
+            },
+            (portable_ref(event_path, context.workspace),),
+            stage="session.bootstrap-local",
+        )
+    except Exception as error:
+        return from_exception(command, error, "session.bootstrap-local")
 
 
 class _DurableSessionMutationAdapter:

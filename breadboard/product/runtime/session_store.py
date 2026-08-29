@@ -875,6 +875,134 @@ def _recover_intent_posix(
         os.unlink(name, dir_fd=parent)
     os.fsync(parent)
 
+def _recover_orphaned_stages_posix(
+    parent: int,
+    workspace: Path,
+    session_id: str,
+    *,
+    legacy: bool,
+) -> None:
+    authority = _read_projection_authority(workspace, session_id)
+    if authority is None or authority["state"] != "preparing":
+        return
+    event_name = f"{session_id}.events.jsonl" if legacy else "session_events.jsonl"
+    metadata_name = f"{session_id}.json" if legacy else "session.json"
+    event_stage_name, metadata_stage_name = _stage_names(event_name, metadata_name)
+    target = authority["target"]
+    try:
+        event_payload = _read_posix_staged_file(
+            parent, event_stage_name, target["event_size"]
+        )
+    except FileNotFoundError:
+        try:
+            _read_posix_staged_file(
+                parent, metadata_stage_name, target["metadata_size"]
+            )
+        except FileNotFoundError:
+            return
+        os.unlink(metadata_stage_name, dir_fd=parent)
+        os.fsync(parent)
+        return
+    try:
+        metadata_payload = _read_posix_staged_file(
+            parent, metadata_stage_name, target["metadata_size"]
+        )
+    except FileNotFoundError:
+        os.unlink(event_stage_name, dir_fd=parent)
+        os.fsync(parent)
+        return
+    _verify_staged_payload(
+        event_payload, target["event_size"], target["event_sha256"]
+    )
+    _verify_staged_payload(
+        metadata_payload, target["metadata_size"], target["metadata_sha256"]
+    )
+    _session_from_payloads(
+        event_payload,
+        metadata_payload,
+        session_id=session_id,
+    )
+    for name in (
+        event_stage_name,
+        metadata_stage_name,
+        event_name,
+        metadata_name,
+    ):
+        _assert_posix_target(parent, name)
+    AnchoredStorage.write_at(parent, event_name, event_payload)
+    AnchoredStorage.write_at(parent, metadata_name, metadata_payload)
+    _write_projection_authority(
+        workspace,
+        session_id,
+        _committed_authority(authority),
+    )
+    for name in (event_stage_name, metadata_stage_name):
+        os.unlink(name, dir_fd=parent)
+    os.fsync(parent)
+
+
+def _recover_orphaned_stages_windows(
+    parent: Path,
+    workspace: Path,
+    session_id: str,
+    *,
+    legacy: bool,
+) -> None:
+    authority = _read_projection_authority(workspace, session_id)
+    if authority is None or authority["state"] != "preparing":
+        return
+    event_name = f"{session_id}.events.jsonl" if legacy else "session_events.jsonl"
+    metadata_name = f"{session_id}.json" if legacy else "session.json"
+    event_stage_name, metadata_stage_name = _stage_names(event_name, metadata_name)
+    target = authority["target"]
+    event_stage_path = parent / event_stage_name
+    metadata_stage_path = parent / metadata_stage_name
+    try:
+        event_payload = _read_windows_staged_file(
+            event_stage_path, target["event_size"]
+        )
+    except FileNotFoundError:
+        try:
+            _read_windows_staged_file(metadata_stage_path, target["metadata_size"])
+        except FileNotFoundError:
+            return
+        metadata_stage_path.unlink()
+        return
+    try:
+        metadata_payload = _read_windows_staged_file(
+            metadata_stage_path, target["metadata_size"]
+        )
+    except FileNotFoundError:
+        event_stage_path.unlink()
+        return
+    _verify_staged_payload(
+        event_payload, target["event_size"], target["event_sha256"]
+    )
+    _verify_staged_payload(
+        metadata_payload, target["metadata_size"], target["metadata_sha256"]
+    )
+    _session_from_payloads(
+        event_payload,
+        metadata_payload,
+        session_id=session_id,
+    )
+    for name in (
+        event_stage_name,
+        metadata_stage_name,
+        event_name,
+        metadata_name,
+    ):
+        _assert_windows_target(parent / name)
+    _write_windows_atomic(parent / event_name, event_payload)
+    _write_windows_atomic(parent / metadata_name, metadata_payload)
+    _write_projection_authority(
+        workspace,
+        session_id,
+        _committed_authority(authority),
+    )
+    event_stage_path.unlink()
+    metadata_stage_path.unlink()
+
 
 def _read_windows_file(path: Path, max_bytes: int) -> bytes:
     if max_bytes < 0:
@@ -1009,7 +1137,19 @@ def _recover_pending_intents(workspace: Path, session_id: str) -> None:
                     session_id,
                     legacy=False,
                 )
+                _recover_orphaned_stages_windows(
+                    nested,
+                    workspace,
+                    session_id,
+                    legacy=False,
+                )
             _recover_intent_windows(
+                sessions,
+                workspace,
+                session_id,
+                legacy=True,
+            )
+            _recover_orphaned_stages_windows(
                 sessions,
                 workspace,
                 session_id,
@@ -1054,7 +1194,19 @@ def _recover_pending_intents(workspace: Path, session_id: str) -> None:
                 session_id,
                 legacy=False,
             )
+            _recover_orphaned_stages_posix(
+                nested_descriptor,
+                workspace,
+                session_id,
+                legacy=False,
+            )
         _recover_intent_posix(
+            sessions,
+            workspace,
+            session_id,
+            legacy=True,
+        )
+        _recover_orphaned_stages_posix(
             sessions,
             workspace,
             session_id,
@@ -1234,6 +1386,8 @@ def _persist_session_locked(
 def _load_anchored(
     workspace: Path,
     session_id: str,
+    *,
+    bootstrap_authority: bool = False,
 ) -> tuple[Session, Path]:
     validate_session_id(session_id)
     if os.name == "nt":
@@ -1338,13 +1492,40 @@ def _load_anchored(
                 os.close(descriptor)
 
     target = _projection_identity(event_payload, metadata_payload)
-    _reconcile_projection_authority(workspace, session_id, target)
-    session = _session_from_payloads(
-        event_payload,
-        metadata_payload,
-        session_id=session_id,
-    )
+    if bootstrap_authority:
+        session = _session_from_payloads(
+            event_payload,
+            metadata_payload,
+            session_id=session_id,
+        )
+        authority = _read_projection_authority(workspace, session_id)
+        if authority is None:
+            authority = _prepare_projection_authority(workspace, session_id, target)
+            _write_projection_authority(
+                workspace,
+                session_id,
+                _committed_authority(authority),
+            )
+        else:
+            _reconcile_projection_authority(workspace, session_id, target)
+    else:
+        _reconcile_projection_authority(workspace, session_id, target)
+        session = _session_from_payloads(
+            event_payload,
+            metadata_payload,
+            session_id=session_id,
+        )
     return session, event_path
+
+
+def bootstrap_local_session_authority(
+    workspace: str | Path,
+    session_id: str,
+) -> tuple[Session, Path]:
+    """Explicitly trust one validated pre-authority projection from local storage."""
+    with _session_guard(workspace, session_id, create=False) as root:
+        _recover_pending_intents(root, session_id)
+        return _load_anchored(root, session_id, bootstrap_authority=True)
 
 
 def mutate_session(

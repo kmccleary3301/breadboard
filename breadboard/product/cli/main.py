@@ -33,6 +33,7 @@ def _harness_lock(ns):
 def _session(ns):
     p=ns.add_parser("session",help="operate Sessions");_common(p);s=p.add_subparsers(dest="command",required=True);s.add_parser("list").set_defaults(handler=session.list_sessions)
     x=s.add_parser("get");x.add_argument("SESSION_ID");x.set_defaults(handler=lambda a:session.get(a,"get"))
+    x=s.add_parser("bootstrap-local",help="trust one validated local pre-authority session");x.add_argument("SESSION_ID");x.set_defaults(handler=session.bootstrap_local)
     if _enabled("BREADBOARD_LEGACY_ROUTES"):
         x=s.add_parser("show");x.add_argument("SESSION_ID");x.set_defaults(handler=lambda a:session.get(a,"show"))
     for n in ("events","artifacts"):
