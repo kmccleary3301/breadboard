@@ -70,8 +70,8 @@ class SessionLifecycleOwner:
         """Run the session through running, setup, execution, and terminal phases."""
         host = self._host
         state = _LifecycleRunState(session_started_at=time.monotonic())
-        await self._mark_running()
         try:
+            await self._mark_running()
             await self._initialize()
             await self._process_inputs(state)
             await self._finalize()

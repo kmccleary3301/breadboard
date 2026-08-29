@@ -184,6 +184,13 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
         def create_client(self, api_key, *, base_url=None, default_headers=None):
             return object()
 
+        def create_client_from_config(self, config):
+            return self.create_client(
+                config.get("api_key"),
+                base_url=config.get("base_url"),
+                default_headers=config.get("default_headers"),
+            )
+
         def invoke(self, *, client, model, messages, tools, stream, context):
             assert context.session_id == "session-1"
             assert context.input_id == "input-1"

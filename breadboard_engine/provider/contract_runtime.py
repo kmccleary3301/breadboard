@@ -322,6 +322,15 @@ class ProviderRuntime:
     ) -> Any:
         raise NotImplementedError
 
+    def create_client_from_config(self, config: Mapping[str, Any]) -> Any:
+        """Create a runtime client without collapsing provider-specific credentials."""
+
+        return self.create_client(
+            config.get("api_key"),
+            base_url=config.get("base_url"),
+            default_headers=config.get("default_headers"),
+        )
+
     def invoke(
         self,
         *,
