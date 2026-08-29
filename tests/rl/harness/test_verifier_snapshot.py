@@ -375,6 +375,11 @@ async def test_verifier_uses_distinct_runtime_workspace_and_read_only_snapshot(
     child_receipt = await verifier.close()
     assert child_receipt.state is CleanupState.RELEASED
     assert not verifier_workspace.exists()
+    assert not (
+        harness.cache_root
+        / "objects"
+        / snapshot.root_digest.removeprefix("sha256:")
+    ).exists()
     assert await verifier.close() == child_receipt
     primary_receipt = await primary.close()
     assert primary_receipt.state is CleanupState.RELEASED
