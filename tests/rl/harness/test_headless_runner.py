@@ -33,7 +33,7 @@ from breadboard_engine.provider.contracts import (
 )
 from breadboard_engine.provider.runtimes.openai.chat import OpenAIChatRuntime
 
-from tests.rl.harness.production_composition_fixture import (
+from breadboard.rl.harness.qualification import (
     materialize_production_composition_fixture,
 )
 

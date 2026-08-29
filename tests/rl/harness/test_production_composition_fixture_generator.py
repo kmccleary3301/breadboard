@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import stat
 import subprocess
 from pathlib import Path
@@ -14,10 +15,69 @@ from breadboard.rl.harness.composition import load_production_composition
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.runners.base import RunnerOpenRequest
 from breadboard.rl.harness.runners.conductor import _project_ir, _validate_arguments
-from tests.rl.harness.production_composition_fixture import (
+from breadboard.rl.harness.qualification import (
+    _read_resource,
     materialize_production_composition_fixture,
-    production_source_occurrences,
 )
+
+PRODUCTION_SOURCE_ROOT_NAMES = (
+    "agent_configs",
+    "agentic_coder_prototype",
+    "breadboard",
+    "breadboard_ext",
+    "breadboard_sdk",
+    "config",
+    "conformance",
+    "container_templates",
+    "contracts",
+    "examples",
+    "implementations",
+    "scripts",
+    "sdk",
+    "tool_calling",
+    "tools",
+)
+
+
+def test_qualification_resource_requires_pinned_digest(tmp_path: Path) -> None:
+    resource = tmp_path / "resource.json"
+    resource.write_bytes(b'{"value":1}')
+    digest = hashlib.sha256(resource.read_bytes()).hexdigest()
+    assert _read_resource(resource, expected_sha256=digest) == b'{"value":1}'
+    hardlink = tmp_path / "installed-hardlink.json"
+    os.link(resource, hardlink)
+    assert _read_resource(resource, expected_sha256=digest) == b'{"value":1}'
+    resource.write_bytes(b'{"value":2}')
+    with pytest.raises(RuntimeError, match="digest mismatch"):
+        _read_resource(resource, expected_sha256=digest)
+
+PRODUCTION_SOURCE_EXTENSIONS = {
+    ".cfg",
+    ".ini",
+    ".json",
+    ".py",
+    ".sh",
+    ".toml",
+    ".yaml",
+    ".yml",
+}
+
+
+def production_source_occurrences(value: str) -> tuple[Path, ...]:
+    project_root = Path(__file__).resolve().parents[3]
+    needle = value.encode("utf-8")
+    return tuple(
+        path
+        for name in PRODUCTION_SOURCE_ROOT_NAMES
+        if (root := project_root / name).is_dir()
+        for path in root.rglob("*")
+        if path.is_file()
+        and (
+            path.suffix in PRODUCTION_SOURCE_EXTENSIONS
+            or path.name.endswith("Dockerfile")
+        )
+        and needle in path.read_bytes()
+    )
 
 
 @pytest.mark.parametrize("working_directory", ("first", "unrelated/nested"))
@@ -34,18 +94,26 @@ def test_materialized_production_composition_loads_from_unrelated_cwd(
     )
     try:
         assert composition.manifest.composition_id == "production-fixture-composition"
-        assert composition.authority_graph.cas.get_ref(composition.manifest_ref).sha256 == composition.manifest_ref
+        assert (
+            composition.authority_graph.cas.get_ref(composition.manifest_ref).sha256
+            == composition.manifest_ref
+        )
         assert fixture.server_port != fixture.policy_server_port
         assert composition.server.port == fixture.server_port
         assert production_source_occurrences(fixture.generated_candidate_name) == ()
         manifest_bytes = fixture.composition_manifest_path.read_bytes()
         assert b"PRIVATE KEY" not in manifest_bytes
-        assert all(secret not in manifest_bytes for secret in fixture.secret_seed_bytes.values())
+        assert all(
+            secret not in manifest_bytes
+            for secret in fixture.secret_seed_bytes.values()
+        )
     finally:
         asyncio.run(composition.close())
 
 
-def test_materialized_production_composition_resolves_typed_request(tmp_path: Path) -> None:
+def test_materialized_production_composition_resolves_typed_request(
+    tmp_path: Path,
+) -> None:
     fixture = materialize_production_composition_fixture(
         tmp_path / "fixture", long_running=True
     )
@@ -120,11 +188,11 @@ def test_measured_verifier_scores_only_exact_snapshot_output(tmp_path: Path) -> 
         "snapshot_digest": "sha256:" + "3" * 64,
         "verifier_digest": "sha256:" + "4" * 64,
     }
-    request_bytes = json.dumps(
-        request, sort_keys=True, separators=(",", ":")
-    ).encode()
+    request_bytes = json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
 
-    def run_verifier(name: str, task_output: bytes | None) -> subprocess.CompletedProcess[bytes]:
+    def run_verifier(
+        name: str, task_output: bytes | None
+    ) -> subprocess.CompletedProcess[bytes]:
         workspace = tmp_path / name
         (workspace / "input").mkdir(parents=True)
         (workspace / "snapshot").mkdir()
@@ -141,9 +209,7 @@ def test_measured_verifier_scores_only_exact_snapshot_output(tmp_path: Path) -> 
             check=False,
         )
 
-    valid = run_verifier(
-        "valid", b'{"answer":"breadboard-production-fixture"}'
-    )
+    valid = run_verifier("valid", b'{"answer":"breadboard-production-fixture"}')
     assert valid.returncode == 0, valid.stderr.decode(errors="replace")
     result = json.loads((tmp_path / "valid/result/result.json").read_bytes())
     assert result == {
@@ -155,9 +221,7 @@ def test_measured_verifier_scores_only_exact_snapshot_output(tmp_path: Path) -> 
         "verifier_digest": request["verifier_digest"],
     }
 
-    tampered = run_verifier(
-        "tampered", b'{"answer":"attacker-controlled"}'
-    )
+    tampered = run_verifier("tampered", b'{"answer":"attacker-controlled"}')
     assert tampered.returncode != 0
     assert not (tmp_path / "tampered/result/result.json").exists()
 

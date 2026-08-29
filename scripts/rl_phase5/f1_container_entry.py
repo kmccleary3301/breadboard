@@ -77,6 +77,24 @@ def derive_secrets(seed: bytes) -> dict[str, bytes]:
     }
 
 
+def deterministic_token_hex_values(
+    seed: bytes,
+    derived: dict[str, bytes],
+) -> tuple[str, str, str, str]:
+    candidate = hmac.new(
+        seed,
+        b"bb.rl.f1/generated-candidate",
+        hashlib.sha256,
+    ).hexdigest()[:24]
+    return (
+        *(
+            derived[handle].split(b"-", 2)[-1].decode()
+            for handle in ("api-auth", "policy-callback", "receipt-signing")
+        ),
+        candidate,
+    )
+
+
 def write_file(path: Path, raw: bytes) -> None:
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0), 0o600)
     try:
@@ -253,9 +271,11 @@ def main() -> int:
     from nemo_gym.config_types import BaseServerConfig
     from nemo_gym.server_utils import ServerClient
     from responses_api_agents.breadboard_agent.app import BreadBoardAgentConfig, BreadBoardAgent, BreadBoardContractError, BreadBoardLifecycleError, BreadBoardRunRequest, BreadBoardTransportError
-    from tests.rl.harness.production_composition_fixture import materialize_production_composition_fixture
+    from breadboard.rl.harness.qualification import (
+        materialize_production_composition_fixture,
+        qualification_policy_server,
+    )
     from recipe.nemo_async.envs.catalog import resolve_env
-    from tests.rl.harness.test_production_composition_public_lifecycle import _policy_https_server
 
     private = Path(tempfile.mkdtemp(prefix="f1-private-"))
     fixture_root = private / "fixture"
@@ -269,10 +289,7 @@ def main() -> int:
             raise ValueError("exactly 32 private seed bytes required")
         derived = derive_secrets(seed)
         original_token_hex = secrets.token_hex
-        seeded_hex = iter(
-            derived[handle].split(b"-", 2)[-1].decode()
-            for handle in ("api-auth", "policy-callback", "receipt-signing")
-        )
+        seeded_hex = iter(deterministic_token_hex_values(seed, derived))
         secrets.token_hex = lambda _size: next(seeded_hex)
         try:
             fixture = materialize_production_composition_fixture(
@@ -339,7 +356,7 @@ def main() -> int:
         write_file(artifacts / ARTIFACTS["composition_inspect_stderr"], inspect.stderr)
 
         callback_requests: list[dict[str, object]] = []
-        with _policy_https_server(fixture) as (_, _, callback_requests):
+        with qualification_policy_server(fixture) as (_, _, callback_requests):
             harness = subprocess.Popen(
                 [sys.executable, "-c", CLI_BRIDGE, "serve", str(fixture.composition_ref_path)],
                 env=cli_environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
