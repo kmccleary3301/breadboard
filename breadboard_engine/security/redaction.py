@@ -29,6 +29,13 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Tuple
 
 REDACTED = "***REDACTED***"
+_RATE_LIMITED_429_MARKER = "_breadboard_rate_limited_429"
+
+
+def exception_is_rate_limited_429(error: BaseException) -> bool:
+    """Return the non-secret control marker retained during exception scrubbing."""
+    return getattr(error, _RATE_LIMITED_429_MARKER, None) is True
+
 
 _AUTH_SECRET_KEYS = frozenset(
     {
@@ -144,6 +151,13 @@ def scrub_exception_in_place(error: BaseException) -> BaseException:
     try:
         details = getattr(error, "details", None)
         if isinstance(details, Mapping):
+            try:
+                classification = details.get("classification")
+                status = details.get("status_code", details.get("http_status"))
+                if classification == "rate_limited" and int(status) == 429:
+                    setattr(error, _RATE_LIMITED_429_MARKER, True)
+            except (TypeError, ValueError):
+                pass
             control_fields = {
                 key: value
                 for key, value in details.items()

@@ -1105,6 +1105,7 @@ def test_rate_limit_rotates_default_binding_but_not_user_binding(tmp_path) -> No
         replacement_account_id,
     }
 
+
     user = ProviderBroker(SQLiteCredentialStore(tmp_path / "user.sqlite3"))
     selected = user.putApiKey(
         {
@@ -1150,6 +1151,49 @@ def test_rate_limit_rotates_default_binding_but_not_user_binding(tmp_path) -> No
     assert rebound["account_id"] == replacement["account_id"]
     with user.execution_material("openai", session_id="e5-rate-user") as material:
         assert material["api_key"] == "e5-rate-user-replacement-canary"
+
+
+def test_rate_limit_accounting_survives_exact_secret_redaction(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+    from breadboard_engine.provider.contracts import ProviderRuntimeError
+    from breadboard_engine.provider.routing import ProviderRouter
+    from breadboard_engine.security import redaction
+
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    account = broker.putApiKey(
+        {
+            "provider_id": "openai",
+            "account_label": "classification-collision",
+            "api_key": "rate_limited",
+        }
+    )
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    router = ProviderRouter()
+
+    with pytest.raises(ProviderRuntimeError) as captured:
+        with router.execution_client_config(
+            "openai/gpt-5.4-mini",
+            session_id="classification-collision",
+        ):
+            raise ProviderRuntimeError(
+                "rate limited",
+                details={
+                    "classification": "rate_limited",
+                    "status_code": 429,
+                    "retry_after": 300,
+                },
+            )
+
+    assert captured.value.details["classification"] == redaction.REDACTED
+    binding = broker.get_session_account_binding(
+        "classification-collision",
+        "openai",
+    )
+    assert binding["account_id"] == account["account_id"]
+    assert binding["availability"] == "rate_limited"
 
 
 @pytest.mark.parametrize(
