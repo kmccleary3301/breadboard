@@ -102,20 +102,6 @@ class SessionLifecycleOwner:
             else host.prepare_runtime_config()
         )
         try:
-            todo_cfg = GuardrailCoordinator(base_cfg).todo_config()
-        except Exception:
-            todo_cfg = {"enabled": False}
-        host._todo_enabled = bool(todo_cfg.get("enabled"))
-        await execution.maybe_publish_todo_snapshot(
-            host._workspace_path, call_id="todo:snapshot:init"
-        )
-        try:
-            if host._workspace_path and host._checkpoint_manager is None:
-                host._checkpoint_manager = CheckpointManager(host._workspace_path)
-                host._checkpoint_manager.create_checkpoint("Session start")
-        except Exception:
-            host._checkpoint_manager = None
-        try:
             catalog_payload = host.get_skill_catalog()
             await host.publish_event_async(EventType.SKILLS_CATALOG, catalog_payload)
             selection = (
@@ -129,6 +115,20 @@ class SessionLifecycleOwner:
                 )
         except Exception:
             pass
+        try:
+            todo_cfg = GuardrailCoordinator(base_cfg).todo_config()
+        except Exception:
+            todo_cfg = {"enabled": False}
+        host._todo_enabled = bool(todo_cfg.get("enabled"))
+        await execution.maybe_publish_todo_snapshot(
+            host._workspace_path, call_id="todo:snapshot:init"
+        )
+        try:
+            if host._workspace_path and host._checkpoint_manager is None:
+                host._checkpoint_manager = CheckpointManager(host._workspace_path)
+                host._checkpoint_manager.create_checkpoint("Session start")
+        except Exception:
+            host._checkpoint_manager = None
         if initial_task:
             host._accepted_task_texts.append(initial_task)
             initial_turn = host.session.turns_by_id.get(
