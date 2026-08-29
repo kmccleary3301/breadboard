@@ -140,6 +140,46 @@ async def test_default_profile_overrides_define_product_runtime_lock(
     await service.stop_session(response.session_id)
     await _stop(record)
 
+@pytest.mark.asyncio
+async def test_default_profile_non_provider_override_preserves_model_roles(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    service = SessionService()
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            workspace=str(workspace),
+            overrides={"completion.natural_finish.idle_turn_limit": 3},
+        ),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+
+    assert (
+        record.runner.current_runtime_config()["completion"]["natural_finish"][
+            "idle_turn_limit"
+        ]
+        == 3
+    )
+    assert record.metadata["active_model_role"] == "default"
+    assert set(record.metadata["model_role_lock"]["roles"]) == {
+        "default",
+        "smol",
+        "slow",
+        "vision",
+        "plan",
+        "designer",
+        "task",
+    }
+    await service.stop_session(response.session_id)
+    await _stop(record)
+
 
 def test_prewarm_sync_invokes_codex_runtime_module(monkeypatch, tmp_path) -> None:
     calls = []
