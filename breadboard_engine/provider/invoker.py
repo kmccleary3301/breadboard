@@ -689,6 +689,7 @@ class ProviderInvoker:
             "max_output_tokens": "length",
             "truncated": "length",
             "model_context_window_exceeded": "length",
+            "toolUse": "toolUse",
             "tool_call": "toolUse",
             "tool_calls": "toolUse",
             "tool_use": "toolUse",
