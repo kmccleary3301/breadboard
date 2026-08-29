@@ -71,7 +71,11 @@ def _require_bounded_text(
     *,
     max_bytes: int = _MAX_METADATA_TEXT_BYTES,
 ) -> str:
-    if type(value) is not str or not value or not value.isprintable():
+    if type(value) is not str or not value:
+        raise E4ParityError(f"{field_name} must be nonempty printable text")
+    if len(value) > max_bytes:
+        raise E4ParityError(f"{field_name} exceeds {max_bytes} UTF-8 bytes")
+    if not value.isprintable():
         raise E4ParityError(f"{field_name} must be nonempty printable text")
     try:
         encoded_bytes = len(value.encode("utf-8"))
@@ -267,6 +271,10 @@ class TemporaryPathRoots:
 
 
 def _json_string_bytes(value: str, pointer: _JsonPointer) -> int:
+    if len(value) > _MAX_JSON_STRING_BYTES:
+        raise E4ParityError(
+            f"JSON string byte size exceeds {_MAX_JSON_STRING_BYTES} at {pointer.label}"
+        )
     try:
         raw_bytes = len(value.encode("utf-8"))
     except UnicodeEncodeError as exc:

@@ -354,6 +354,22 @@ def test_normalization_policy_fails_closed(monkeypatch: pytest.MonkeyPatch) -> N
             )
 
 
+def test_text_limits_precede_printability_and_encoding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    oversized_invalid_unicode = "\ud800" * 5
+    with pytest.raises(E4ParityError, match="exceeds 4 UTF-8 bytes"):
+        parity._require_bounded_text(
+            oversized_invalid_unicode,
+            "hostile field",
+            max_bytes=4,
+        )
+
+    monkeypatch.setattr(parity, "_MAX_JSON_STRING_BYTES", 4)
+    with pytest.raises(E4ParityError, match="JSON string byte size exceeds 4"):
+        canonical_json_bytes({"value": oversized_invalid_unicode})
+
+
 def test_trace_values_must_be_closed_json() -> None:
     with pytest.raises(E4ParityError, match="non-JSON tuple"):
         canonical_json_bytes({"events": ()})
