@@ -589,7 +589,7 @@ def measure_official_evaluator_environment(root: str) -> dict[str, Any]:
         python_directories = sorted(
             name
             for name in os.listdir(library_root)
-            if re.fullmatch(r"python3\\.11", name)
+            if name == "python3.11"
             and os.path.isdir(os.path.join(library_root, name))
         )
     except OSError as exc:
@@ -644,9 +644,10 @@ def measure_official_evaluator_environment(root: str) -> dict[str, Any]:
                     "digest": digest,
                 }
             )
-            if re.fullmatch(r"swebench-5\\.0\\.1\\.dist-info/direct_url\\.json", os.path.relpath(path, site_packages)):
+            distribution_relative = os.path.relpath(path, site_packages)
+            if distribution_relative == "swebench-5.0.1.dist-info/direct_url.json":
                 distribution_direct_url = _read_json_file(path)
-            if re.fullmatch(r"swebench-5\\.0\\.1\\.dist-info/METADATA", os.path.relpath(path, site_packages)):
+            if distribution_relative == "swebench-5.0.1.dist-info/METADATA":
                 with open(path, "rb") as source:
                     distribution_metadata = source.read(_MAX_REPORT_BYTES + 1)
     if len(entries) == 0:
