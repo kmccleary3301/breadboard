@@ -2693,6 +2693,61 @@ async def test_non_linux_descriptor_mounts_fail_before_create_publish_or_measure
         os.fstat(workspace_fd)
 
 
+@pytest.mark.asyncio
+async def test_launch_preserves_prebinding_cleanup_failure_without_journal_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, skeleton, _, _ = _docker_plan(tmp_path)
+    workspace, _ = _primary_workspace(plan, tmp_path)
+    security_root = tmp_path / "security-prebinding-failure"
+    security_root.mkdir()
+
+    class Stager:
+        def __init__(self) -> None:
+            self.cleanup_calls = 0
+
+        def record_cleanup_receipt(self, *_args: Any, **_kwargs: Any) -> None:
+            self.cleanup_calls += 1
+            raise AssertionError("unbound lease cannot receive a cleanup receipt")
+
+    stager = Stager()
+    backend = DockerSandboxBackend(
+        adapter=_mechanics_adapter(
+            plan,
+            ScriptedDockerExecutor(_preflight_success(plan)),
+        ),
+        measurement_provider=RecordingMeasurementProvider({}),
+        mount_stager=stager,
+        skeleton_path=skeleton,
+        security_profile_root=security_root,
+    )
+    workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+    metadata = os.fstat(workspace_fd)
+    context = replace(
+        _launch_context(plan),
+        workspace_fd=workspace_fd,
+        workspace_identity=(metadata.st_dev, metadata.st_ino),
+    )
+
+    async def reconcile_residual() -> tuple[tuple[str, str], ...]:
+        return (("prior-runtime", "quarantined"),)
+
+    monkeypatch.setattr(backend, "_reconcile_quarantined", reconcile_residual)
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await backend.launch(plan, workspace, context=context)
+
+    assert captured.value.code == "runtime_cleanup_pending"
+    assert captured.value.details == {
+        "residuals": (("prior-runtime", "quarantined"),)
+    }
+    assert stager.cleanup_calls == 0
+    with pytest.raises(OSError):
+        os.fstat(workspace_fd)
+    backend.close()
+
+
 async def test_linux_without_private_mount_stager_fails_before_daemon_effect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

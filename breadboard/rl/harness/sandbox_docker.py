@@ -2750,6 +2750,7 @@ class DockerSandboxBackend:
         labels: dict[str, str] = {}
         cleanup: tuple[tuple[str, str, str], ...] = ()
         staged_mounts: list[StagedDockerDescriptorMount] = []
+        journal_bound = False
         try:
             residuals = await self._reconcile_quarantined()
             if residuals:
@@ -2799,6 +2800,7 @@ class DockerSandboxBackend:
                     plan_digest=plan.effective_plan_digest,
                     owner_token=context.owner_token,
                 )
+                journal_bound = True
             labels = _identity_labels(
                 plan,
                 lease_id=context.lease_id,
@@ -3061,7 +3063,7 @@ class DockerSandboxBackend:
                             release_failures
                         )
             journal_cleanup = getattr(self.mount_stager, "record_cleanup_receipt", None)
-            if callable(journal_cleanup):
+            if journal_bound and callable(journal_cleanup):
                 container_absent = not creation_attempted or absence
                 stages_absent = (
                     not runtime_cleanup_pending
