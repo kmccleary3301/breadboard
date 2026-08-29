@@ -251,7 +251,11 @@ def _target() -> dict[str, str]:
 class SdistWithSourceIdentity(_sdist):
     def make_release_tree(self, base_dir: str, files: list[str]) -> None:
         repository, commit, tree = _source_identity()
-        super().make_release_tree(base_dir, files)
+        release_files = list(files)
+        for dependency_lock in ("requirements.txt", "requirements_web.txt"):
+            if dependency_lock not in release_files:
+                release_files.append(dependency_lock)
+        super().make_release_tree(base_dir, release_files)
         path = Path(base_dir) / "breadboard_engine" / _SOURCE_IDENTITY_FILENAME
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
