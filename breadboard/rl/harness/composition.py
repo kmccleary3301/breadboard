@@ -47,7 +47,10 @@ from .materialization import (
     SealedSourceManifest,
     SourceManifestEntry,
 )
-from .mount_namespace_broker import MountNamespaceBroker
+from .mount_namespace_broker import (
+    MountNamespaceBroker,
+    recover_supervisor_journals,
+)
 from .policy_http import (
     PolicySecretAuthority,
     PolicyTlsTrustAuthority,
@@ -3806,12 +3809,52 @@ def _build_runtime_graph(
         if daemon_authority is None:
             raise ValueError("private Docker daemon authority is missing")
         private_authority = _private_daemon_authority(daemon_authority)
-        private_daemon_owner = rollback.attempt(
-            lambda: MountNamespaceBroker(
-                private_authority.mount_stage_root,
-                daemon_authority=private_authority,
+        journal_name = "supervisor-journal"
+        try:
+            os.mkdir(
+                journal_name,
+                mode=0o700,
+                dir_fd=directory_fds["lease"],
             )
+            os.fsync(directory_fds["lease"])
+        except FileExistsError:
+            pass
+        journal_fd = os.open(
+            journal_name,
+            os.O_RDONLY
+            | os.O_DIRECTORY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=directory_fds["lease"],
         )
+        try:
+            journal_metadata = os.fstat(journal_fd)
+            if (
+                not stat.S_ISDIR(journal_metadata.st_mode)
+                or journal_metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(journal_metadata.st_mode) != 0o700
+            ):
+                raise ValueError("supervisor journal authority is not sealed")
+            rollback.attempt(
+                lambda: recover_supervisor_journals(
+                    journal_fd,
+                    directory_fds["lease"],
+                    authenticator=graph.authenticator,
+                )
+            )
+            private_daemon_owner = rollback.attempt(
+                lambda: MountNamespaceBroker(
+                    private_authority.mount_stage_root,
+                    daemon_authority=private_authority,
+                    journal_root_fd=journal_fd,
+                    journal_root_path=str(
+                        Path(manifest.stores.lease.path) / journal_name
+                    ),
+                    journal_authenticator=graph.authenticator,
+                )
+            )
+        finally:
+            os.close(journal_fd)
         rollback.own(private_daemon_owner.close)
         daemon_binding = private_daemon_owner.daemon_binding
         if daemon_binding is None:

@@ -196,7 +196,7 @@ class PendingLaunchBackend:
             "launch cleanup retained by backend",
         )
 
-    async def close_runtime(self) -> None:
+    async def reconcile_quarantined(self) -> None:
         self.close_attempts += 1
         if self.close_attempts == 1:
             raise DockerAdapterError(
@@ -207,6 +207,46 @@ class PendingLaunchBackend:
         self.workspace_fd = -1
         self.cleanup_pending = False
 
+
+class RetainedLaunchHandle:
+    runtime_id = "d" * 64
+
+    def __init__(self, workspace_fd: int) -> None:
+        self.workspace_fd = workspace_fd
+        self.terminate_calls = 0
+
+    async def terminate(self) -> tuple[CleanupStepReceipt, ...]:
+        self.terminate_calls += 1
+        if self.terminate_calls == 1:
+            return (CleanupStepReceipt("runtime", CleanupState.QUARANTINED),)
+        os.close(self.workspace_fd)
+        self.workspace_fd = -1
+        return (CleanupStepReceipt("runtime", CleanupState.RELEASED),)
+
+
+class ReturnedPendingLaunchBackend:
+    cleanup_pending = False
+
+    def __init__(self) -> None:
+        self.handle: RetainedLaunchHandle | None = None
+
+    async def launch(
+        self,
+        plan: Any,
+        workspace: Path,
+        *,
+        context: RuntimeLaunchContext,
+    ) -> tuple[RetainedLaunchHandle, SandboxMeasurement]:
+        _, measurement = await LeaseOnlyBackend().launch(
+            plan, workspace, context=context
+        )
+        self.handle = RetainedLaunchHandle(context.workspace_fd)
+        return self.handle, replace(
+            measurement,
+            runtime_resource_id=self.handle.runtime_id,
+            measured={"runtime_resource_id": self.handle.runtime_id},
+            mismatch=("forced post-launch admission failure",),
+        )
 
 class QuotaStorageBackend(DirectoryStorageBackend):
     def __init__(self) -> None:
@@ -1808,6 +1848,33 @@ async def test_subprocess_executor_streams_payload_above_exec_argument_budget() 
     assert result.stdout == payload
     assert result.stderr == b""
     assert result.output_limited is False
+
+
+async def test_subprocess_executor_bounds_descendant_held_output_pipes() -> None:
+    executable = Path("/bin/sh")
+    descriptor = os.open(executable, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable),
+        executable_fd=descriptor,
+        executable_descriptor_path=str(executable),
+        digest=observe_binary_digest(executable),
+    )
+    started = asyncio.get_running_loop().time()
+    try:
+        result = await SubprocessDockerCliExecutor().execute(
+            invocation,
+            ("-c", "(sleep 10) & exit 0"),
+            timeout_ms=200,
+            output_limit=128,
+            environment=(("PATH", "/usr/bin:/bin"),),
+        )
+    finally:
+        os.close(descriptor)
+    elapsed = asyncio.get_running_loop().time() - started
+
+    assert result.timed_out is True
+    assert result.output_limited is False
+    assert elapsed < 1.5
 
 
 async def test_subprocess_executor_stops_process_group_at_output_limit() -> None:
@@ -3478,7 +3545,10 @@ async def test_exact_not_found_cleanup_is_already_released_without_destructive_c
         labels=_binding_labels(plan),
     )
 
-    assert cleanup == (("runtime_identity", "already_released", ""),)
+    assert cleanup == (
+        ("runtime_identity", "already_released", ""),
+        ("runtime_absence", "already_released", ""),
+    )
     assert [call[0][1] for call in executor.calls] == ["inspect"]
     assert executor.results == []
 
@@ -3511,7 +3581,10 @@ async def test_concurrent_removal_normalizes_cleanup_and_retries_idempotently(
         ("runtime_remove", "already_released", ""),
         ("runtime_absence", "released", ""),
     )
-    assert second == (("runtime_identity", "already_released", ""),)
+    assert second == (
+        ("runtime_identity", "already_released", ""),
+        ("runtime_absence", "already_released", ""),
+    )
     assert [call[0][1] for call in executor.calls] == [
         "inspect",
         "stop",
@@ -3797,6 +3870,60 @@ async def test_manager_retries_backend_launch_quarantine_before_workspace_releas
     second_close = await manager.close()
     assert second_close[0].state is CleanupState.RELEASED
     assert backend.close_attempts == 2
+    assert not retained.workspace.exists()
+    assert not (lease_root / f"{receipt.lease_id}.json").exists()
+    assert manager._pending_launch_cleanups == {}
+
+
+async def test_manager_retains_returned_nonterminal_handle_after_admission_failure(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(
+        runtime_class=c.RuntimeClass.HARDENED_DOCKER,
+        with_writable_mount=True,
+    )
+    source_digest = digest("workspace-source")
+    cache_root, workspace_root = make_store_roots(tmp_path)
+    store = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=MemorySourceReader(
+            {source_digest: {"seed.txt": b"seed"}}
+        ),
+        clock=FrozenClock(),
+        lease_ttl=timedelta(minutes=5),
+        storage_backend=QuotaStorageBackend(),
+        random_bytes=DeterministicRandom(60_600),
+    )
+    lease_root = tmp_path / "leases"
+    lease_root.mkdir(mode=0o700)
+    backend = ReturnedPendingLaunchBackend()
+    manager = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=store,
+        lease_root=lease_root,
+        process_backend=None,
+        docker_backend=backend,
+        random_bytes=DeterministicRandom(60_700),
+    )
+
+    with pytest.raises(SandboxFault) as captured:
+        await manager.open(fixture.request)
+
+    receipt = captured.value.cleanup_receipt
+    retained = manager._pending_launch_cleanups[receipt.lease_id]
+    assert retained.runtime is backend.handle
+    assert retained.workspace.exists()
+    assert backend.handle is not None
+    assert backend.handle.terminate_calls == 1
+    assert (lease_root / f"{receipt.lease_id}.json").exists()
+
+    close_receipts = await manager.close()
+
+    assert close_receipts[0].state is CleanupState.RELEASED
+    assert backend.handle.terminate_calls == 2
+    assert backend.handle.workspace_fd == -1
     assert not retained.workspace.exists()
     assert not (lease_root / f"{receipt.lease_id}.json").exists()
     assert manager._pending_launch_cleanups == {}
