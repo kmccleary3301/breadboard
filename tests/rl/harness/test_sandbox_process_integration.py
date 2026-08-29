@@ -146,7 +146,10 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
         },
     )()
     result = _sealed_repository_diff(
-        repository=repository, base_commit=base_commit, plan=plan
+        repository=repository,
+        scratch_directory=tmp_path,
+        base_commit=base_commit,
+        plan=plan,
     )
     reconstruction = tmp_path / "reconstruction"
     subprocess.run(
@@ -165,7 +168,10 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
         VerifierSnapshotError, match="embedded Git repository"
     ):
         _sealed_repository_diff(
-            repository=repository, base_commit=base_commit, plan=plan
+            repository=repository,
+            scratch_directory=tmp_path,
+            base_commit=base_commit,
+            plan=plan,
         )
     shutil.rmtree(repository / "nested")
     alternates = repository / ".git" / "objects" / "info" / "alternates"
@@ -175,7 +181,10 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
         VerifierSnapshotError, match="external Git object authority"
     ):
         _sealed_repository_diff(
-            repository=repository, base_commit=base_commit, plan=plan
+            repository=repository,
+            scratch_directory=tmp_path,
+            base_commit=base_commit,
+            plan=plan,
         )
 
 async def test_process_backend_binds_identity_recorder_before_base_measurement(
