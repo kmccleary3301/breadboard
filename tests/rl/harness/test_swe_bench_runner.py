@@ -345,6 +345,12 @@ def test_evaluator_requires_root_owned_work_custody(
     )
     with pytest.raises(SweBenchRunnerError, match="root-owned"):
         _require_root_private_work_directory(str(work))
+    monkeypatch.setattr(
+        "breadboard.rl.harness.swe_bench_runner.os.geteuid",
+        lambda: 0,
+    )
+    with pytest.raises(SweBenchRunnerError, match="authority directory"):
+        _require_root_private_work_directory(str(work))
 
 
 

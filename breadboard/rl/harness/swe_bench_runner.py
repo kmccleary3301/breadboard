@@ -634,6 +634,7 @@ def _require_root_private_work_directory(path: str) -> None:
         raise SweBenchRunnerError(
             "official evaluator requires the root-owned host custody boundary"
         )
+    _require_root_owned_immutable_directory(os.path.dirname(path))
     try:
         identity = os.stat(path, follow_symlinks=False)
     except OSError as exc:
@@ -1163,6 +1164,7 @@ class SubprocessOfficialEvaluator:
             (
                 self.python_path,
                 "-I",
+                "-B",
                 "-c",
                 observation_script,
                 self.environment_root,
@@ -1233,6 +1235,7 @@ class SubprocessOfficialEvaluator:
             (
                 self.python_path,
                 "-I",
+                "-B",
                 "-c",
                 cleanup_script,
                 self.environment_root,
@@ -1266,6 +1269,7 @@ class SubprocessOfficialEvaluator:
             (
                 self.python_path,
                 "-I",
+                "-B",
                 "-c",
                 inventory_script,
                 self.environment_root,
@@ -1354,6 +1358,7 @@ class SubprocessOfficialEvaluator:
                 (
                     self.python_path,
                     "-I",
+                    "-B",
                     "-c",
                     evaluator_script,
                     self.environment_root,

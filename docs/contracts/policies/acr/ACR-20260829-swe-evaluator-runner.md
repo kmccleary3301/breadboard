@@ -40,7 +40,7 @@ The E4 RL harness needs a production path from a completed headless workspace pa
 - Hash the complete locked evaluator package tree, exact official commit, self-contained Python runtime, virtual-environment launcher and configuration, and Docker client; require root-owned authority paths with no group/world writes or executable bytecode caches and remeasure immediately before evaluation.
 - Reset and clean the sealed Git repository to the measured pinned base before any model action, then require an empty status and bind that state into sandbox measurement.
 - Transform only the verified private dataset copy from the pinned mutable image tag to the pinned platform digest, then bind the transformed artifact and live Docker image observation in the receipt.
-- Admit evaluation only inside a root-owned private work directory; run every evaluator helper through the measured venv launcher and require its prefix and imported `swebench` package to remain inside the measured root.
+- Admit evaluation only inside a root-owned `0700` work directory whose complete parent chain is root-owned and non-writable by group or other users; run every evaluator helper through the measured venv launcher and require its prefix and imported `swebench` package to remain inside the measured root.
 - Use a minimal subprocess environment, exact run-scoped container cleanup, process-group termination, and exact return-code/report checks.
 - Bind canonical prediction, evaluator input, image observation, report, reward, and cleanup digests in the final receipt.
 - Run the focused SWE runner, installed headless, V2 service, and verifier-snapshot suite.

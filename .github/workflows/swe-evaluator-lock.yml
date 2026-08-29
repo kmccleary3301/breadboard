@@ -70,8 +70,7 @@ jobs:
           sudo chmod 755 /opt
       - name: Verify evaluator virtual-environment custody
         run: |
-          sudo env PYTHONDONTWRITEBYTECODE=1 \
-            /opt/breadboard/swebench-evaluator/bin/python -I -c \
+          sudo /opt/breadboard/swebench-evaluator/bin/python -I -B -c \
             "import os,sys,swebench; root='/opt/breadboard/swebench-evaluator'; assert os.path.realpath(sys.prefix)==root; assert os.path.commonpath((os.path.realpath(swebench.__file__),root))==root"
       - name: Measure evaluator environment
         run: |
