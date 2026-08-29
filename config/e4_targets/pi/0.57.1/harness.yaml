@@ -1,0 +1,32 @@
+schema_version: bb.e4.target_config.v1
+target_id: pi@0.57.1
+prompt:
+  renderer: pi-0.57.1
+  asset: prompts/system-prompt.md
+  dynamic_fields:
+    - readme_path
+    - docs_path
+    - examples_path
+    - current_date_time
+    - cwd
+tools:
+  ordered:
+    - read
+    - bash
+    - edit
+    - write
+    - grep
+    - find
+    - ls
+  surface_asset: tool-surface.json
+session:
+  persistence: disabled
+  extensions: disabled
+  skills: disabled
+  prompt_templates: disabled
+thinking: off
+retry:
+  enabled: false
+  max_retries: 0
+transport:
+  mode: json

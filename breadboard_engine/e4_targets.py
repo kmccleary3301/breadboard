@@ -1,0 +1,215 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+from importlib import resources
+from importlib.resources.abc import Traversable
+import json
+from pathlib import Path
+from typing import Any
+
+
+_RESOURCE_PACKAGE = "config.e4_targets"
+_INDEX_FILE = "index.json"
+_INDEX_SCHEMA = "bb.e4.target_index.v1"
+_TARGET_SCHEMA = "bb.e4.target.v1"
+
+
+class E4TargetError(ValueError):
+    """Raised when an E4 target package is missing, unsafe, or corrupt."""
+
+
+@dataclass(frozen=True)
+class E4TargetPackage:
+    target_id: str
+    descriptor: dict[str, Any]
+    _asset_root: Traversable
+    _asset_paths: frozenset[str]
+
+    def read_asset_bytes(self, relative_path: str) -> bytes:
+        if relative_path not in self._asset_paths:
+            raise E4TargetError(
+                f"target {self.target_id!r} does not declare asset {relative_path!r}"
+            )
+        return _read_bytes(_join_safe(self._asset_root, relative_path), relative_path)
+
+    def read_asset_text(self, relative_path: str) -> str:
+        try:
+            return self.read_asset_bytes(relative_path).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise E4TargetError(
+                f"target {self.target_id!r} asset {relative_path!r} is not UTF-8"
+            ) from exc
+
+
+def list_e4_target_ids() -> tuple[str, ...]:
+    root = resources.files(_RESOURCE_PACKAGE)
+    index = _load_index(root)
+    return tuple(sorted(index["targets"]))
+
+
+def load_e4_target(target_id: str) -> E4TargetPackage:
+    return _load_e4_target_from_root(resources.files(_RESOURCE_PACKAGE), target_id)
+
+
+def _load_e4_target_from_root(
+    root: Traversable | Path, target_id: str
+) -> E4TargetPackage:
+    index = _load_index(root)
+    targets = index["targets"]
+    entry = targets.get(target_id)
+    if entry is None:
+        available = ", ".join(sorted(targets))
+        raise E4TargetError(f"unknown E4 target {target_id!r}; available: {available}")
+    if not isinstance(entry, dict):
+        raise E4TargetError(f"index entry for {target_id!r} must be an object")
+
+    descriptor_path = _required_string(
+        entry, "descriptor", f"index entry {target_id!r}"
+    )
+    descriptor_sha256 = _required_sha256(entry, "sha256", f"index entry {target_id!r}")
+    descriptor_parts = _validate_relative_path(descriptor_path)
+    descriptor_resource = _join_parts(root, descriptor_parts)
+    descriptor_bytes = _read_bytes(descriptor_resource, descriptor_path)
+    _verify_sha256(descriptor_bytes, descriptor_sha256, descriptor_path)
+    descriptor = _decode_json_object(descriptor_bytes, descriptor_path)
+
+    if descriptor.get("schema_version") != _TARGET_SCHEMA:
+        raise E4TargetError(
+            f"{descriptor_path} schema_version must be {_TARGET_SCHEMA!r}"
+        )
+    if descriptor.get("target_id") != target_id:
+        raise E4TargetError(
+            f"{descriptor_path} target_id does not match index key {target_id!r}"
+        )
+
+    descriptor_parent = _join_parts(root, descriptor_parts[:-1])
+    assets = descriptor.get("assets")
+    if not isinstance(assets, list) or not assets:
+        raise E4TargetError(f"{descriptor_path} assets must be a non-empty array")
+
+    declared_paths: set[str] = set()
+    for position, asset in enumerate(assets):
+        context = f"{descriptor_path} assets[{position}]"
+        if not isinstance(asset, dict):
+            raise E4TargetError(f"{context} must be an object")
+        asset_path = _required_string(asset, "path", context)
+        _validate_relative_path(asset_path)
+        if asset_path in declared_paths:
+            raise E4TargetError(
+                f"{descriptor_path} declares duplicate asset {asset_path!r}"
+            )
+        declared_paths.add(asset_path)
+        expected_digest = _required_sha256(asset, "sha256", context)
+        asset_bytes = _read_bytes(
+            _join_safe(descriptor_parent, asset_path),
+            f"{descriptor_path}:{asset_path}",
+        )
+        _verify_sha256(asset_bytes, expected_digest, f"{descriptor_path}:{asset_path}")
+        expected_bytes = asset.get("bytes")
+        if not isinstance(expected_bytes, int) or expected_bytes < 0:
+            raise E4TargetError(f"{context}.bytes must be a non-negative integer")
+        if len(asset_bytes) != expected_bytes:
+            raise E4TargetError(
+                f"{descriptor_path}:{asset_path} size mismatch: "
+                f"expected {expected_bytes}, got {len(asset_bytes)}"
+            )
+
+    execution = descriptor.get("execution")
+    if not isinstance(execution, dict) or not execution:
+        raise E4TargetError(f"{descriptor_path} execution must be a non-empty object")
+    for key, value in execution.items():
+        if not key.endswith("_asset"):
+            continue
+        if not isinstance(value, str) or value not in declared_paths:
+            raise E4TargetError(
+                f"{descriptor_path} execution.{key} must name a declared asset"
+            )
+
+    return E4TargetPackage(
+        target_id=target_id,
+        descriptor=descriptor,
+        _asset_root=descriptor_parent,
+        _asset_paths=frozenset(declared_paths),
+    )
+
+
+def _load_index(root: Traversable | Path) -> dict[str, Any]:
+    index = _decode_json_object(
+        _read_bytes(root.joinpath(_INDEX_FILE), _INDEX_FILE), _INDEX_FILE
+    )
+    if index.get("schema_version") != _INDEX_SCHEMA:
+        raise E4TargetError(f"{_INDEX_FILE} schema_version must be {_INDEX_SCHEMA!r}")
+    targets = index.get("targets")
+    if not isinstance(targets, dict) or not targets:
+        raise E4TargetError(f"{_INDEX_FILE} targets must be a non-empty object")
+    if any(not isinstance(target_id, str) or not target_id for target_id in targets):
+        raise E4TargetError(f"{_INDEX_FILE} target IDs must be non-empty strings")
+    return index
+
+
+def _join_safe(root: Traversable | Path, relative_path: str) -> Traversable | Path:
+    return _join_parts(root, _validate_relative_path(relative_path))
+
+
+def _join_parts(root: Traversable | Path, parts: tuple[str, ...]) -> Traversable | Path:
+    resource = root
+    for part in parts:
+        resource = resource.joinpath(part)
+    return resource
+
+
+def _validate_relative_path(relative_path: str) -> tuple[str, ...]:
+    if not isinstance(relative_path, str) or not relative_path:
+        raise E4TargetError("target resource path must be a non-empty string")
+    if relative_path.startswith("/") or "\\" in relative_path:
+        raise E4TargetError(f"unsafe target resource path {relative_path!r}")
+    parts = tuple(relative_path.split("/"))
+    if any(part in {"", ".", ".."} for part in parts):
+        raise E4TargetError(f"unsafe target resource path {relative_path!r}")
+    return parts
+
+
+def _read_bytes(resource: Traversable | Path, label: str) -> bytes:
+    try:
+        if not resource.is_file():
+            raise E4TargetError(f"target resource {label!r} is missing or not a file")
+        return resource.read_bytes()
+    except E4TargetError:
+        raise
+    except OSError as exc:
+        raise E4TargetError(f"could not read target resource {label!r}: {exc}") from exc
+
+
+def _decode_json_object(content: bytes, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise E4TargetError(f"target resource {label!r} is not valid JSON") from exc
+    if not isinstance(value, dict):
+        raise E4TargetError(f"target resource {label!r} must contain a JSON object")
+    return value
+
+
+def _required_string(value: dict[str, Any], key: str, context: str) -> str:
+    field = value.get(key)
+    if not isinstance(field, str) or not field:
+        raise E4TargetError(f"{context}.{key} must be a non-empty string")
+    return field
+
+
+def _required_sha256(value: dict[str, Any], key: str, context: str) -> str:
+    digest = _required_string(value, key, context)
+    if len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        raise E4TargetError(f"{context}.{key} must be a lowercase SHA-256 digest")
+    return digest
+
+
+def _verify_sha256(content: bytes, expected: str, label: str) -> None:
+    actual = hashlib.sha256(content).hexdigest()
+    if actual != expected:
+        raise E4TargetError(
+            f"target resource {label!r} SHA-256 mismatch: expected {expected}, got {actual}"
+        )

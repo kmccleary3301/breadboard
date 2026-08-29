@@ -161,10 +161,20 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "breadboard/product/cli/main.py",
         "breadboard/product/operations/generated_bindings.py",
         "breadboard_engine/compilation/bundle.py",
+        "breadboard_engine/e4_targets.py",
         "breadboard_sdk/__init__.py",
         "breadboard_sdk/generated/__init__.py",
         "breadboard_sdk/generated/public_bindings.py",
         "breadboard_sdk/generated/public_surface_manifest.v1.json",
+        "config/e4_targets/index.json",
+        "config/e4_targets/oh_my_pi/16.2.13/harness.yaml",
+        "config/e4_targets/oh_my_pi/16.2.13/prompts/system-prompt.md",
+        "config/e4_targets/oh_my_pi/16.2.13/target.json",
+        "config/e4_targets/oh_my_pi/16.2.13/tool-surface.json",
+        "config/e4_targets/pi/0.57.1/harness.yaml",
+        "config/e4_targets/pi/0.57.1/prompts/system-prompt.md",
+        "config/e4_targets/pi/0.57.1/target.json",
+        "config/e4_targets/pi/0.57.1/tool-surface.json",
         "config/product/tui-release.json",
         "conformance/comparators/registry.json",
         "contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json",
@@ -282,6 +292,7 @@ from breadboard.product.harness.templates import (
 )
 from breadboard.product.operation_catalog import product_operation_catalog
 from breadboard_engine.compilation.primitive_records import get_spec
+from breadboard_engine.e4_targets import list_e4_target_ids, load_e4_target
 
 source_root = Path({str(ROOT)!r}).resolve()
 distribution = importlib.metadata.distribution("breadboard-harness-cli")
@@ -333,6 +344,15 @@ assert len(generated["operations"]) == 26
 assert len(SDK_OPERATION_BINDINGS) == len(PRODUCT_OPERATION_BINDINGS) == 26
 assert sdk_public_bindings.PUBLIC_OPERATION_BINDINGS is SDK_OPERATION_BINDINGS
 assert files("breadboard_sdk.generated").joinpath("public_bindings.py").is_file()
+target_ids = list_e4_target_ids()
+assert target_ids == ("oh-my-pi@16.2.13", "pi@0.57.1")
+pi_target = load_e4_target("pi@0.57.1")
+omp_target = load_e4_target("oh-my-pi@16.2.13")
+assert pi_target.descriptor["upstream"]["package"]["integrity"].startswith("sha512-")
+assert omp_target.descriptor["upstream"]["source"]["commit"] == (
+    "5356713eae60e67ee64d9b02e3b5e377d248ee7f"
+)
+assert "target_id: pi@0.57.1" in pi_target.read_asset_text("harness.yaml")
 assert distribution.version == "0.0.0"
 print(json.dumps({{
     "distribution": distribution.metadata["Name"],
@@ -343,6 +363,7 @@ print(json.dumps({{
     "profile_id": default_profile["profile_id"],
     "profile_hash": default_profile["effective_lock_hash"],
     "e4_import_count": len(e4_imports),
+    "e4_target_ids": target_ids,
 }}))
 """
     probe_result = subprocess.run(
@@ -364,6 +385,7 @@ print(json.dumps({{
             "sha256:6ea299b2d3ee382a8d8397cd5ed32080e99f8ae8b6a48006fce1ecad6859c10f"
         ),
         "e4_import_count": 0,
+        "e4_target_ids": ["oh-my-pi@16.2.13", "pi@0.57.1"],
     }
 
     help_result = subprocess.run(

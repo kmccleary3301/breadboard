@@ -1,0 +1,52 @@
+{
+  "schema_version": "bb.e4.target.v1",
+  "target_id": "oh-my-pi@16.2.13",
+  "family": "oh-my-pi",
+  "version": "16.2.13",
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/system-prompt.md",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "upstream": {
+    "repository": "https://github.com/can1357/oh-my-pi.git",
+    "source": {
+      "commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+      "directory": "packages/coding-agent",
+      "archive_sha256": "03fd855b01bb7457f85e929ff747d8560d7cf7ed420fd0676bf32b917fb264a3",
+      "archive_bytes": 42065260
+    },
+    "package": {
+      "name": "@oh-my-pi/pi-coding-agent",
+      "version": "16.2.13",
+      "tarball": "https://registry.npmjs.org/@oh-my-pi/pi-coding-agent/-/pi-coding-agent-16.2.13.tgz",
+      "integrity": "sha512-ZKi9xul+Ef6wmq4VoETCmEFrAOOqx0Wq24MxHM6vL7al2NW/q7RCJc3StlLmHs8zN06C2tI/XQTMJbm5UDX0fA==",
+      "shasum_sha1": "6c837a0d741ceaa6daa243474b67e11425739fb2",
+      "tarball_sha256": "293056afc7d0d59c9aa8726efdbefc8d3a05a3dfca4261b4af5431d79a6593ff",
+      "tarball_bytes": 8833029
+    }
+  },
+  "freeze_manifest_entries": [
+    "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
+    "oh_my_pi_p6_0_l2_tool_execution_v1",
+    "oh_my_pi_p6_0_l3_command_network_hook_v1",
+    "oh_my_pi_p6_6_task_job_subagent_v1"
+  ],
+  "assets": [
+    {
+      "path": "harness.yaml",
+      "sha256": "50cf75d2eb6451c3d7136badbad0851a87c22654a8726244a610fb659c5d1e1b",
+      "bytes": 410
+    },
+    {
+      "path": "prompts/system-prompt.md",
+      "sha256": "0d96613a7492b5c30a5c83eedde8c5747c6a9d35d7d0c9b8dd0a5c44f7a77123",
+      "bytes": 14487
+    },
+    {
+      "path": "tool-surface.json",
+      "sha256": "d890d2856ac43dd05a3ce7ac72fefa6bf78ca21b8ff3ac3d29797ca91fdfb6ff",
+      "bytes": 673
+    }
+  ]
+}

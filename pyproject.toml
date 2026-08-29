@@ -28,6 +28,7 @@ namespaces = true
 "breadboard_engine" = ["engine-build-provenance.v1.json"]
 "breadboard_sdk.generated" = ["*.json"]
 "config.e4_lanes" = ["*.yaml", "*.json"]
+"config.e4_targets" = ["**/*.json", "**/*.yaml", "**/*.md"]
 "config.product" = ["*.json"]
 "conformance.comparators" = ["registry.json"]
 "conformance.provider_differential" = ["matrix.v1.json", "scenario.v1.json", "oracle/*.json", "schemas/*.json"]

@@ -1,0 +1,13 @@
+{
+  "schema_version": "bb.e4.target_index.v1",
+  "targets": {
+    "oh-my-pi@16.2.13": {
+      "descriptor": "oh_my_pi/16.2.13/target.json",
+      "sha256": "e6ae4b5f3a504acde0c447b843b091ff9d0f7f8b6fc209f089427ed6132390f2"
+    },
+    "pi@0.57.1": {
+      "descriptor": "pi/0.57.1/target.json",
+      "sha256": "5a9e25160b0bd4256a07eb967f935f332b9c7875a6f4fc5b88d9f06e8f452863"
+    }
+  }
+}
