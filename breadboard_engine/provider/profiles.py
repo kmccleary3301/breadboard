@@ -11,7 +11,6 @@ import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -48,6 +47,23 @@ _REQUIRED_CAPABILITIES = (
     "supports_n",
     "supports_max_tokens",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _FrozenHeaders(Mapping[str, str]):
+    _items: tuple[tuple[str, str], ...]
+
+    def __getitem__(self, key: str) -> str:
+        for name, value in self._items:
+            if name == key:
+                return value
+        raise KeyError(key)
+
+    def __iter__(self):
+        return (name for name, _value in self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
 
 
 def _text(value: Any, field_name: str, *, max_length: int) -> str:
@@ -365,7 +381,9 @@ class OpenAICompletionsProviderProfile:
                     "profile.caller_headers contains duplicate names"
                 )
             headers[header_name] = header_value
-        object.__setattr__(self, "caller_headers", MappingProxyType(headers))
+        object.__setattr__(
+            self, "caller_headers", _FrozenHeaders(tuple(headers.items()))
+        )
         _text(self.provider_id, "profile.provider_id", max_length=128)
         _text(self.runtime_id, "profile.runtime_id", max_length=128)
         if self.provider_id != "openai":

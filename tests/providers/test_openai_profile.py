@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pickle
 import types
 
 import pytest
@@ -280,3 +281,13 @@ def test_context_profile_is_episode_scoped():
         first_context.provider_profile.scoped_credential
         != second_context.provider_profile.scoped_credential
     )
+
+
+def test_profile_is_pickle_safe_for_ray_actor_admission():
+    profile = _profile()
+
+    restored = pickle.loads(pickle.dumps(profile))
+
+    assert restored == profile
+    assert dict(restored.caller_headers) == {"X-Request-ID": "episode-one"}
+    assert restored.scoped_credential == "episode-secret"
