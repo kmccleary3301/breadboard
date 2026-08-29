@@ -21,6 +21,7 @@ from breadboard.product.runtime.session_store import (
     load_session,
     session_artifact_rows,
     session_names,
+    validate_session_id,
 )
 
 
@@ -28,15 +29,6 @@ TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "canceled"})
 _RUNTIME_UNAVAILABLE_MESSAGE = (
     "session runtime state is unavailable after service restart"
 )
-
-
-def _validate_session_id(session_id: str) -> None:
-    if (
-        not session_id
-        or session_id in {".", ".."}
-        or session_id != Path(session_id).name
-    ):
-        raise ValueError("session_id must be a portable identifier")
 
 
 class SessionMutationError(RuntimeError):
@@ -534,7 +526,7 @@ async def start(
     stage = "session.start"
     try:
         if request.session_id is not None:
-            _validate_session_id(request.session_id)
+            validate_session_id(request.session_id)
         effective_lock, source_path, checked = await asyncio.to_thread(
             _resolve_start_lock,
             request,
@@ -573,7 +565,7 @@ async def send_input(
     command = ["session", "send-input"]
     stage = "session.send-input"
     try:
-        _validate_session_id(request.session_id)
+        validate_session_id(request.session_id)
         return _mutation_result(
             command,
             stage,
@@ -593,7 +585,7 @@ async def approve(
     command = ["session", "approve"]
     stage = "session.approve"
     try:
-        _validate_session_id(request.session_id)
+        validate_session_id(request.session_id)
         return _mutation_result(
             command,
             stage,
@@ -613,7 +605,7 @@ async def resume(
     command = ["session", "resume"]
     stage = "session.resume"
     try:
-        _validate_session_id(request.session_id)
+        validate_session_id(request.session_id)
         return _mutation_result(
             command,
             stage,
@@ -633,7 +625,7 @@ async def cancel(
     command = ["session", "cancel"]
     stage = "session.cancel"
     try:
-        _validate_session_id(request.session_id)
+        validate_session_id(request.session_id)
         return _mutation_result(
             command,
             stage,

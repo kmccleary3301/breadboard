@@ -67,6 +67,29 @@ def _stream_records(response) -> list[dict]:
     ]
 
 
+def test_session_start_rejects_nonportable_ids_before_storage(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    lock_id = _locked_harness(client)
+    invalid_ids = ("CON", "a:b", "name.", "name ", "a/b", "a\\b")
+
+    for index, session_id in enumerate(invalid_ids):
+        response = client.post(
+            "/v1/sessions",
+            json={
+                "lock_id": lock_id,
+                "task": "must reject invalid session identifier",
+                "session_id": session_id,
+            },
+            headers={"Idempotency-Key": f"invalid-session-{index}"},
+        )
+        assert response.status_code == 422, response.text
+
+    session_root = session_store.session_directory(tmp_path)
+    assert all(not (session_root / session_id).exists() for session_id in invalid_ids)
+
+
 def test_session_lifecycle_and_resumable_event_stream(
     client: TestClient, monkeypatch, tmp_path: Path
 ) -> None:

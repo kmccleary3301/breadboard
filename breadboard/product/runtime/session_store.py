@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, TypeVar
 
-from breadboard.product.runtime.artifacts import AnchoredStorage
+from breadboard.product.runtime.artifacts import AnchoredStorage, is_portable_basename
 from breadboard.product.runtime.events import KernelEvent, ProcessLock, Session
 
 
@@ -91,12 +91,8 @@ _LOCAL_SESSION_LOCKS: weakref.WeakValueDictionary[tuple[str, str], threading.RLo
 _LOCAL_SESSION_LOCKS_GUARD = threading.Lock()
 
 
-def _validate_session_id(session_id: str) -> None:
-    if (
-        not session_id
-        or session_id in {".", ".."}
-        or Path(session_id).name != session_id
-    ):
+def validate_session_id(session_id: str) -> None:
+    if not is_portable_basename(session_id):
         raise ValueError("session_id must be a portable identifier")
 
 
@@ -129,7 +125,7 @@ def _local_session_guard(
     create: bool,
 ) -> Iterator[Path]:
     root = _workspace_root(workspace)
-    _validate_session_id(session_id)
+    validate_session_id(session_id)
     key = (os.path.normcase(str(root)), session_id)
     with _LOCAL_SESSION_LOCKS_GUARD:
         local_lock = _LOCAL_SESSION_LOCKS.setdefault(key, threading.RLock())
@@ -998,7 +994,7 @@ def _persist_session_locked(
     event_path: Path | None = None,
 ) -> Path:
     session_id = session.read_model.session_id
-    _validate_session_id(session_id)
+    validate_session_id(session_id)
     nested_path = session_event_path(workspace, session_id)
     legacy_path = legacy_session_event_path(workspace, session_id)
     if event_path is None:
@@ -1133,7 +1129,7 @@ def _load_anchored(
     workspace: Path,
     session_id: str,
 ) -> tuple[Session, Path]:
-    _validate_session_id(session_id)
+    validate_session_id(session_id)
     if os.name == "nt":
         handles = []
         try:
@@ -1266,7 +1262,7 @@ def create_session(
 ) -> tuple[Session, Path]:
     """Atomically claim a new session id and publish its first projection."""
     session_id = session.read_model.session_id
-    _validate_session_id(session_id)
+    validate_session_id(session_id)
     with _session_guard(workspace, session_id, create=True) as root:
         _recover_pending_intents(root, session_id)
         try:
@@ -1420,7 +1416,7 @@ def session_names(workspace: Path) -> list[str]:
 
     def add(candidate: str) -> None:
         try:
-            _validate_session_id(candidate)
+            validate_session_id(candidate)
         except ValueError:
             return
         names.append(candidate)
@@ -1578,7 +1574,7 @@ def authorize_session_artifact_manifest(
     manifest_name: str,
 ) -> None:
     root = _workspace_root(workspace)
-    _validate_session_id(session_id)
+    validate_session_id(session_id)
     expected_digest = _manifest_digest_from_name(session_id, manifest_name)
     with _session_guard(root, session_id, create=False):
         _recover_pending_intents(root, session_id)
@@ -1611,7 +1607,7 @@ def session_artifact_rows(
     session_id: str,
 ) -> list[dict[str, Any]]:
     root = _workspace_root(workspace)
-    _validate_session_id(session_id)
+    validate_session_id(session_id)
     rows: dict[str, dict[str, Any]] = {}
     with _session_guard(root, session_id, create=False):
         _recover_pending_intents(root, session_id)

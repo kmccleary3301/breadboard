@@ -5,6 +5,7 @@ from jsonschema import Draft202012Validator
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
 from breadboard.product.runtime.events import JsonlEventSink, KernelEvent, Session, SessionView, rebuild
+from breadboard.product.runtime.session_store import validate_session_id
 HASH, OTHER_HASH, PORTS, ARTIFACTS = "sha256:" + "a" * 64, "sha256:" + "b" * 64, "breadboard.product.runtime.events.os.", "breadboard.product.runtime.artifacts.os."
 def _lock(digest: str = HASH) -> EffectiveHarnessLock: return EffectiveHarnessLock._from_record({"graph_hash": digest})
 _PAYLOADS = {
@@ -214,6 +215,14 @@ def test_manifest_runtime_and_schema_share_portable_name_policy(tmp_path: Path, 
     for invalid in ({**valid, "manifest_id": valid["manifest_id"] + "\n"}, {**valid, "artifacts": [{**valid["artifacts"][0], "digest": HASH + "\n"}]}): assert list(validator.iter_errors(invalid))
     with pytest.raises(ValueError, match="portable basename"): store.manifest("s-1", {name: ref})
     invalid = json.loads(json.dumps(valid)); invalid["artifacts"][0]["name"] = name; assert list(validator.iter_errors(invalid))
+@pytest.mark.parametrize("session_id", [".", "..", "CON", "con.txt", "a:b", "trail.", "trail ", " lead", "a/b", "a\\b", "nul\x00", "café", "summary.json\n", "a" * 256])
+def test_session_ids_use_portable_artifact_basename_policy(session_id: str) -> None:
+    with pytest.raises(ValueError, match="portable identifier"):
+        validate_session_id(session_id)
+
+@pytest.mark.parametrize("session_id", ["s-1", "session_2", "daily.driver"])
+def test_portable_session_ids_remain_valid(session_id: str) -> None:
+    validate_session_id(session_id)
 def test_public_session_schema_matches_projection_invariants() -> None:
     validator = Draft202012Validator(json.loads((Path(__file__).resolve().parents[3] / "contracts/public/schemas/bb.session.v1.schema.json").read_text())); valid = _session("running").read_model.as_dict(); validator.validate(valid)
     for patch in ({"effective_lock_hash": HASH + "\n"}, {"task_hash": valid["task_hash"] + "\n"}, {"pending_approval": "r"}, {"status": "awaiting_approval"}, {"status": "completed", "event_count": 1, "terminal_outcome": {"outcome": "completed", "summary": ""}}, {"status": "completed", "event_count": 2}, {"status": "completed", "event_count": 2, "terminal_outcome": {"outcome": "failed", "error": "x", "detail": "y"}}): assert list(validator.iter_errors({**valid, **patch})), patch

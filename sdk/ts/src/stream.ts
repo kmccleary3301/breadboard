@@ -206,6 +206,13 @@ export const streamSessionEvents = async function* (
   }
 }
 
+const resumeCursor = (event: SessionEvent): string | undefined => {
+  if (event.seq !== undefined && Number.isSafeInteger(event.seq) && event.seq >= 0) {
+    return String(event.seq)
+  }
+  return /^\d+$/.test(event.id) ? event.id : undefined
+}
+
 export const openEventStream = (
   sessionId: string,
   handlers: EventStreamHandlers,
@@ -240,7 +247,7 @@ export const openEventStream = (
         },
       })) {
         if (closed) return
-        lastEventId = event.id
+        lastEventId = resumeCursor(event) ?? lastEventId
         handlers.onEvent(event)
       }
     } catch (error) {
