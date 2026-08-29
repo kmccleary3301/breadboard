@@ -1,0 +1,70 @@
+{
+  "schema_version": "bb.e4.target.v1",
+  "target_id": "pi@0.57.1",
+  "family": "pi",
+  "version": "0.57.1",
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/system-prompt.md",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "overlay": {
+    "overlay_id": "r3-json-no-session.v1",
+    "argv": [
+      "--mode",
+      "json",
+      "--no-session",
+      "--thinking",
+      "off",
+      "--tools",
+      "read,bash,edit,write,grep,find,ls",
+      "--no-extensions",
+      "--no-skills",
+      "--no-prompt-templates"
+    ],
+    "settings": {
+      "retry.enabled": false,
+      "retry.maxRetries": 0
+    }
+  },
+  "upstream": {
+    "repository": "https://github.com/badlogic/pi-mono.git",
+    "source": {
+      "identity_kind": "archive_snapshot_without_git_dir",
+      "directory": "packages/coding-agent",
+      "archive_sha256": "bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b",
+      "archive_bytes": 4755355
+    },
+    "package": {
+      "name": "@mariozechner/pi-coding-agent",
+      "version": "0.57.1",
+      "git_head": "a9cedccdde77e9d765303463d8a6cd11c58f7a7f",
+      "tarball": "https://registry.npmjs.org/@mariozechner/pi-coding-agent/-/pi-coding-agent-0.57.1.tgz",
+      "integrity": "sha512-u5MQEduj68rwVIsRsqrWkJYiJCyPph/a6bMoJAQKo1sb+Pc17Y/ojwa+wGssnUMjEB38AQKofWTVe8NFEpSWNw==",
+      "shasum_sha1": "58433481f4a469e28f3faac7ea3d2b10cb1bfefb",
+      "tarball_sha256": "8648e71d5553388ed710f1ef4165d9f090e1783e446629410c545875ac564b6f",
+      "tarball_bytes": 3761279
+    }
+  },
+  "freeze_manifest_entries": [
+    "pi_p5_l1_cli_config_context_tool_surface_v1",
+    "pi_p5_l2_extension_session_residual_v1"
+  ],
+  "assets": [
+    {
+      "path": "harness.yaml",
+      "sha256": "390475822fe07f1674af87771874d25248c5e53f1767eb0bf535916c96e0cf31",
+      "bytes": 542
+    },
+    {
+      "path": "prompts/system-prompt.md",
+      "sha256": "223ae5bd2b036f97abc63b55ecbecf698b1b284176e62a012cbc982042263005",
+      "bytes": 2030
+    },
+    {
+      "path": "tool-surface.json",
+      "sha256": "ab1571ae9ecc28342476589c4d82ba81f1f1a28f6c3450beb10803bed7924810",
+      "bytes": 6184
+    }
+  ]
+}

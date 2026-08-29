@@ -1,0 +1,34 @@
+schema_version: bb.e4.target_config.v1
+target_id: oh-my-pi@16.2.13
+prompt:
+  renderer: oh-my-pi-handlebars-16.2.13
+  asset: prompts/system-prompt.md
+  dynamic_fields:
+    - alwaysApplyRules
+    - eagerTasks
+    - eagerTasksAlways
+    - hasMCPDiscoveryServers
+    - hasMemoryRoot
+    - hasObsidian
+    - intentField
+    - intentTracing
+    - mcpDiscoveryMode
+    - mcpDiscoveryServerSummaries
+    - personality
+    - renderMermaid
+    - rules
+    - secretsEnabled
+    - skills
+    - taskBatch
+    - toolInfo
+    - toolInventory
+    - toolListMode
+    - toolRefs
+    - tools
+tools:
+  surface_asset: tool-surface.json
+  normalization:
+    search: grep
+    find: glob
+runtime:
+  bun: '>=1.3.14'

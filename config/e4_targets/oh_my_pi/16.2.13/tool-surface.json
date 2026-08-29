@@ -1,0 +1,41 @@
+{
+  "schema_version": "bb.e4.tool_surface.v1",
+  "target_id": "oh-my-pi@16.2.13",
+  "ordered_tools": [
+    "read",
+    "bash",
+    "edit",
+    "ast_grep",
+    "ast_edit",
+    "ask",
+    "debug",
+    "eval",
+    "ssh",
+    "github",
+    "glob",
+    "grep",
+    "lsp",
+    "inspect_image",
+    "browser",
+    "checkpoint",
+    "rewind",
+    "task",
+    "job",
+    "irc",
+    "todo",
+    "web_search",
+    "search_tool_bm25",
+    "write",
+    "memory_edit",
+    "retain",
+    "recall",
+    "reflect",
+    "learn",
+    "manage_skill"
+  ],
+  "legacy_aliases": {
+    "search": "grep",
+    "find": "glob"
+  },
+  "source_path": "packages/coding-agent/src/tools/builtin-names.ts"
+}
