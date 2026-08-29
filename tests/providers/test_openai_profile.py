@@ -387,6 +387,9 @@ def test_setup_failure_does_not_retain_provider_profile(tmp_path):
         config={},
         local_mode=True,
     )
+    conductor._ensure_capability_probes = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("profile-bound episodes must not perform capability probes")
+    )
 
     with pytest.raises(AttributeError):
         conductor.run_agentic_loop(
