@@ -816,7 +816,7 @@ def _load_effective_plan(
 def _load_evidence_projection(
     composition: ProductionComposition,
     evidence_manifest_ref: Any,
-) -> tuple[dict[str, Any], bytes, bytes | None]:
+) -> tuple[dict[str, Any], bytes]:
     manifest_bytes = _cas_bytes(
         composition,
         evidence_manifest_ref,
@@ -830,38 +830,15 @@ def _load_evidence_projection(
         max_bytes=_MAX_EVIDENCE_BYTES,
     )
     artifact_manifest_ref = manifest["artifact_manifest_ref"]
-    artifact_manifest = json.loads(
-        _cas_bytes(
-            composition,
-            artifact_manifest_ref,
-            max_bytes=_MAX_EVIDENCE_BYTES,
-        )
-    )
-    patch_bytes = None
-    patch_digest = None
-    for item in artifact_manifest.get("objects", []):
-        if item.get("role") in {"patch", "git_patch", "workspace_patch"}:
-            patch_ref = item["artifact_ref"]
-            patch_digest = patch_ref["sha256"]
-            patch_bytes = _cas_bytes(
-                composition,
-                patch_ref,
-                max_bytes=_MAX_EVIDENCE_BYTES,
-            )
-            if _digest_bytes(patch_bytes) != patch_digest:
-                raise ValueError("workspace patch artifact digest mismatch")
-            break
     return (
         {
             "materialization_digest": manifest.get("materialization_digest"),
             "final_workspace_snapshot_digest": manifest.get("verifier_snapshot_digest"),
-            "patch_digest": patch_digest,
             "runner_event_ledger_ref": runner_ref,
             "runner_event_ledger_digest": _digest_bytes(event_bytes),
             "artifact_manifest_ref": artifact_manifest_ref,
         },
         event_bytes,
-        patch_bytes,
     )
 
 
@@ -969,6 +946,7 @@ def _preflight_failure_result(
         "cleanup_inventory": None,
         "cleanup_inventory_digest": None,
         "event_log": _event_log_projection(None, request.event_log_path),
+        "patch": _patch_projection(None, request.patch_path),
     }
 
 
@@ -1047,11 +1025,24 @@ def _project_headless_run(
     }
     if run.evidence_manifest_ref is None:
         return None, None
-    evidence_projection, event_bytes, patch_bytes = _load_evidence_projection(
+    evidence_projection, event_bytes = _load_evidence_projection(
         composition,
         run.evidence_manifest_ref,
     )
-    result["workspace_evidence"] = evidence_projection
+    workspace_diff = run.workspace_diff
+    if (
+        not isinstance(workspace_diff, Mapping)
+        or set(workspace_diff) != {"returncode", "stdout", "stderr"}
+        or workspace_diff.get("returncode") != 0
+        or type(workspace_diff.get("stdout")) is not str
+        or workspace_diff.get("stderr") != ""
+    ):
+        raise ValueError("canonical workspace diff is unavailable")
+    patch_bytes = workspace_diff["stdout"].encode("utf-8")
+    result["workspace_evidence"] = {
+        **evidence_projection,
+        "patch_digest": _digest_bytes(patch_bytes),
+    }
     return event_bytes, patch_bytes
 
 
