@@ -2006,6 +2006,38 @@ def test_installed_authority_catalog_rejects_duplicate_resolution(
         )
 
 
+async def test_materialization_cancellation_waits_for_owned_worker_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    entered = threading.Event()
+    release = threading.Event()
+    original_materialize = harness.store.materialize
+
+    def blocked_materialize(plan: Any) -> Any:
+        entered.set()
+        if not release.wait(timeout=2):
+            raise AssertionError("materialization worker was not released")
+        return original_materialize(plan)
+
+    monkeypatch.setattr(harness.store, "materialize", blocked_materialize)
+    opening = asyncio.create_task(harness.manager.open(fixture.request))
+    assert await asyncio.to_thread(entered.wait, 1)
+
+    opening.cancel()
+    await asyncio.sleep(0)
+    assert not opening.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(opening, 1)
+
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+    assert await harness.manager.close() == ()
+
+
 async def test_launch_cancellation_releases_materialization_and_durable_record(
     tmp_path: Path,
 ) -> None:

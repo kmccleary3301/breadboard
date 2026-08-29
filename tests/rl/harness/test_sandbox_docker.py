@@ -2748,6 +2748,66 @@ async def test_launch_preserves_prebinding_cleanup_failure_without_journal_write
     backend.close()
 
 
+@pytest.mark.asyncio
+async def test_launch_preserves_bound_failure_when_cleanup_journal_write_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, skeleton, _, _ = _docker_plan(tmp_path)
+    workspace, _ = _primary_workspace(plan, tmp_path)
+    security_root = tmp_path / "security-bound-journal-failure"
+    security_root.mkdir()
+
+    class Stager:
+        bound = False
+
+        def record_lease_binding(self, **_kwargs: Any) -> None:
+            self.bound = True
+
+        def record_cleanup_receipt(self, *_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError("journal unavailable")
+
+    stager = Stager()
+    backend = DockerSandboxBackend(
+        adapter=_mechanics_adapter(
+            plan,
+            ScriptedDockerExecutor(_preflight_success(plan)),
+        ),
+        measurement_provider=RecordingMeasurementProvider({}),
+        mount_stager=stager,
+        skeleton_path=skeleton,
+        security_profile_root=security_root,
+    )
+    workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+    metadata = os.fstat(workspace_fd)
+    context = replace(
+        _launch_context(plan),
+        owner_token="owner-token",
+        workspace_fd=workspace_fd,
+        workspace_identity=(metadata.st_dev, metadata.st_ino),
+    )
+    monkeypatch.setattr(docker_module.sys, "platform", "linux")
+
+    def reject_workspace(*_args: Any, **_kwargs: Any) -> None:
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            "workspace identity rejected",
+        )
+
+    monkeypatch.setattr(docker_module, "_validate_mount_descriptor", reject_workspace)
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await backend.launch(plan, workspace, context=context)
+
+    assert stager.bound
+    assert captured.value.code == "runtime_preflight_failed"
+    assert captured.value.args == ("workspace identity rejected",)
+    assert captured.value.details["cleanup_journal"] == "RuntimeError"
+    with pytest.raises(OSError):
+        os.fstat(workspace_fd)
+    backend.close()
+
+
 async def test_linux_without_private_mount_stager_fails_before_daemon_effect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

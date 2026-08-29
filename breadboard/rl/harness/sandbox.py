@@ -1957,15 +1957,40 @@ class SandboxWorkspaceLease:
                 self._state = WorkspaceLeaseState.QUARANTINED
                 raise VerifierSnapshotError("runtime did not quiesce", code="snapshot_not_quiescent", lease_id=self.lease_id)
             try:
-                receipt, path = await asyncio.to_thread(self._manager.materialization_store.seal_snapshot,
-                    self._materialized, source_lease_id=self.lease_id,
-                    effective_plan_digest=self.plan.effective_plan_digest,
-                    task_digest=_wp7_digest(dict(self.plan.materialization_plan.task_projection)),
-                    verifier_digest=self.plan.verifier.grant.implementation_digest,
-                    max_depth=self.plan.security_policy.snapshot_max_depth,
-                    max_files=self.plan.security_policy.snapshot_max_files,
-                    max_inodes=self.plan.security_policy.snapshot_max_inodes,
-                    max_bytes=self.plan.limits.artifact_bytes_total)
+                seal_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        self._manager.materialization_store.seal_snapshot,
+                        self._materialized,
+                        source_lease_id=self.lease_id,
+                        effective_plan_digest=self.plan.effective_plan_digest,
+                        task_digest=_wp7_digest(
+                            dict(self.plan.materialization_plan.task_projection)
+                        ),
+                        verifier_digest=self.plan.verifier.grant.implementation_digest,
+                        max_depth=self.plan.security_policy.snapshot_max_depth,
+                        max_files=self.plan.security_policy.snapshot_max_files,
+                        max_inodes=self.plan.security_policy.snapshot_max_inodes,
+                        max_bytes=self.plan.limits.artifact_bytes_total,
+                    )
+                )
+                try:
+                    receipt, path = await asyncio.shield(seal_task)
+                except asyncio.CancelledError as cancellation:
+                    try:
+                        receipt, path = await seal_task
+                    except BaseException:
+                        self._state = WorkspaceLeaseState.QUARANTINED
+                        raise cancellation from None
+                    self._manager._snapshots[receipt.snapshot_id] = (receipt, path)
+                    snapshot_cleanup = await self._manager._release_snapshot(
+                        receipt.snapshot_id
+                    )
+                    if snapshot_cleanup.state not in {
+                        CleanupState.RELEASED,
+                        CleanupState.ALREADY_RELEASED,
+                    }:
+                        self._state = WorkspaceLeaseState.QUARANTINED
+                    raise
                 self._manager._snapshots[receipt.snapshot_id] = (receipt, path)
                 return receipt
             except Exception as exc:
@@ -2146,6 +2171,25 @@ class VerifierWorkspaceLease:
                 steps.append(CleanupStepReceipt(
                     "workspace", CleanupState.QUARANTINED, "dependent runtime cleanup incomplete"
                 ))
+            dependencies_released = all(
+                step.state in {
+                    CleanupState.RELEASED,
+                    CleanupState.ALREADY_RELEASED,
+                }
+                for step in steps
+            )
+            if dependencies_released:
+                steps.append(
+                    await self._manager._release_snapshot(self.snapshot.snapshot_id)
+                )
+            else:
+                steps.append(
+                    CleanupStepReceipt(
+                        "snapshot",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    )
+                )
             prior_ok = all(
                 step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                 for step in steps
@@ -2467,6 +2511,48 @@ class SandboxRuntimeManager:
             record.pop(key, None)
         self._write_lease_record(lease_id, record)
 
+    async def _release_snapshot(self, snapshot_id: str) -> CleanupStepReceipt:
+        canonical = self._snapshots.get(snapshot_id)
+        if canonical is None:
+            return CleanupStepReceipt("snapshot", CleanupState.ALREADY_RELEASED)
+        _receipt, path = canonical
+        release_task = asyncio.create_task(
+            asyncio.to_thread(
+                self.materialization_store.storage_backend.release,
+                path,
+            )
+        )
+        try:
+            await asyncio.shield(release_task)
+        except asyncio.CancelledError:
+            try:
+                await release_task
+            finally:
+                raise
+        except FileNotFoundError:
+            pass
+        except BaseException as exc:
+            return CleanupStepReceipt(
+                "snapshot",
+                CleanupState.FAILED,
+                type(exc).__name__,
+            )
+        try:
+            absent = self.materialization_store.storage_backend.verify_absent(path)
+        except BaseException as exc:
+            return CleanupStepReceipt(
+                "snapshot",
+                CleanupState.FAILED,
+                type(exc).__name__,
+            )
+        if absent:
+            self._snapshots.pop(snapshot_id, None)
+        return CleanupStepReceipt(
+            "snapshot",
+            CleanupState.RELEASED if absent else CleanupState.FAILED,
+        )
+
+
     async def open(self, request: WorkspaceOpenRequest) -> SandboxWorkspaceLease:
         plan = build_sandbox_execution_plan(request, self.registries, self.installed_authorities)
         async with self._lock:
@@ -2478,7 +2564,20 @@ class SandboxRuntimeManager:
             backend: RuntimeBackend | None = None
             record_written = False
             try:
-                materialized = await asyncio.to_thread(self.materialization_store.materialize, plan.materialization_plan)
+                materialize_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        self.materialization_store.materialize,
+                        plan.materialization_plan,
+                    )
+                )
+                try:
+                    materialized = await asyncio.shield(materialize_task)
+                except asyncio.CancelledError as cancellation:
+                    try:
+                        materialized = await materialize_task
+                    except BaseException:
+                        raise cancellation from None
+                    raise
                 issued = self.materialization_store.clock.current()
                 cache_identity = {
                     "cache_lease_id": materialized.cache_token.lease_id,
@@ -2752,16 +2851,26 @@ class SandboxRuntimeManager:
                 if not callable(copy_snapshot):
                     raise VerifierSnapshotError("snapshot copier unavailable", code="snapshot_tampered")
                 try:
-                    await asyncio.to_thread(
-                        copy_snapshot,
-                        canonical_receipt,
-                        snapshot_path,
-                        workspace / "snapshot",
-                        max_depth=primary.plan.security_policy.snapshot_max_depth,
-                        max_files=primary.plan.security_policy.snapshot_max_files,
-                        max_inodes=primary.plan.security_policy.snapshot_max_inodes,
-                        max_bytes=primary.plan.limits.artifact_bytes_total,
+                    copy_task = asyncio.create_task(
+                        asyncio.to_thread(
+                            copy_snapshot,
+                            canonical_receipt,
+                            snapshot_path,
+                            workspace / "snapshot",
+                            max_depth=primary.plan.security_policy.snapshot_max_depth,
+                            max_files=primary.plan.security_policy.snapshot_max_files,
+                            max_inodes=primary.plan.security_policy.snapshot_max_inodes,
+                            max_bytes=primary.plan.limits.artifact_bytes_total,
+                        )
                     )
+                    try:
+                        await asyncio.shield(copy_task)
+                    except asyncio.CancelledError as cancellation:
+                        try:
+                            await copy_task
+                        except BaseException:
+                            raise cancellation from None
+                        raise
                 except Exception as exc:
                     raise VerifierSnapshotError(
                         "sealed snapshot authentication failed", code="snapshot_tampered"
@@ -3015,6 +3124,14 @@ class SandboxRuntimeManager:
                 for child in lease._verifier_children
                 if not child._closed
             ]
+            if not incomplete_child_ids:
+                snapshot_ids = tuple(
+                    snapshot_id
+                    for snapshot_id, (snapshot, _path) in self._snapshots.items()
+                    if snapshot.source_lease_id == lease.lease_id
+                )
+                for snapshot_id in snapshot_ids:
+                    steps.append(await self._release_snapshot(snapshot_id))
             steps.extend(await lease._runtime.terminate())
             dependencies_released = all(
                 step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
@@ -3452,6 +3569,11 @@ class SandboxRuntimeManager:
     ) -> list[SandboxCleanupReceipt]:
         receipts = list(await asyncio.gather(*(lease.close() for lease in leases)))
         receipts.extend(await self._reconcile_pending_launch_cleanups())
+        for snapshot_id in tuple(self._snapshots):
+            step = await self._release_snapshot(snapshot_id)
+            receipts.append(
+                SandboxCleanupReceipt.from_steps(snapshot_id, (step,))
+            )
         return receipts
 
     async def close(self) -> tuple[SandboxCleanupReceipt, ...]:
@@ -3463,6 +3585,7 @@ class SandboxRuntimeManager:
                     self._closed
                     and not self._leases
                     and not self._pending_launch_cleanups
+                    and not self._snapshots
                 ):
                     return self._last_close_receipts or ()
                 self._closed = True
@@ -3487,6 +3610,7 @@ class SandboxRuntimeManager:
         if (
             not self._leases
             and not self._pending_launch_cleanups
+            and not self._snapshots
             and self._lease_root_fd is not None
         ):
             os.close(self._lease_root_fd)
