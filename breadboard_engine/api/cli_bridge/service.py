@@ -20,6 +20,10 @@ from breadboard.product.runtime import (
     Session as ProductSession,
 )
 from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
+from breadboard.product.runtime.session_store import (
+    authorize_session_artifact_manifest,
+    session_event_path,
+)
 from fastapi import HTTPException, UploadFile, status
 from breadboard.product.harness.default_profile import (
     DefaultProfileResolution,
@@ -886,6 +890,16 @@ class SessionService:
                 )
                 event_sink.path = event_dir / "session_events.jsonl"
                 self.registry._records[session_id] = record
+                if request.workspace is not None:
+                    durable_workspace = Path(request.workspace).expanduser().resolve()
+                    if (
+                        event_dir.resolve()
+                        == session_event_path(
+                            durable_workspace,
+                            session_id,
+                        ).parent.resolve()
+                    ):
+                        runner.bind_durable_product_session(durable_workspace)
             published = True
             await self._ensure_dispatcher(record)
             await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)
@@ -1882,6 +1896,17 @@ class SessionService:
                     os.close(open_descriptor)
             for handle in reversed(windows_handles):
                 AnchoredStorage.close_windows_handle(handle)
+        if manifest_name is None:
+            raise RuntimeError("attachment manifest was not published")
+        try:
+            authorize_session_artifact_manifest(
+                workspace_root,
+                session_id,
+                manifest_name,
+            )
+        except FileNotFoundError:
+            # Live bridge sessions have no durable product projection yet.
+            pass
         record.product_artifacts = artifact_refs
         (
             record.metadata["artifact_manifest"],

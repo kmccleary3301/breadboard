@@ -79,6 +79,11 @@ _TRANSACTION_FIELDS = frozenset(
 # Only the bounded intent metadata is parsed; projections remain in staged files.
 _MAX_TRANSACTION_INTENT_BYTES = 64 * 1024
 _MAX_SESSION_PROJECTION_BYTES = 64 * 1024 * 1024
+_PROJECTION_AUTHORITY_SCHEMA = "bb.session_projection_authority.v1"
+_MAX_PROJECTION_AUTHORITY_BYTES = 256 * 1024
+_MAX_ARTIFACT_MANIFEST_BYTES = 1024 * 1024
+_MAX_ARTIFACT_MANIFESTS = 256
+_MAX_ARTIFACT_MANIFEST_AGGREGATE_BYTES = 64 * 1024 * 1024
 _T = TypeVar("_T")
 _LOCAL_SESSION_LOCKS: weakref.WeakValueDictionary[tuple[str, str], threading.RLock] = (
     weakref.WeakValueDictionary()
@@ -100,9 +105,20 @@ def _workspace_root(workspace: str | Path) -> Path:
 
 
 def _session_lock_path(workspace: Path, session_id: str) -> Path:
-    identity = f"{workspace}\0{session_id}".encode("utf-8")
+    identity = f"{_workspace_identity(workspace)}\0{session_id}".encode("utf-8")
     digest = hashlib.sha256(identity).hexdigest()
-    return session_directory(workspace) / f"session-{digest}"
+    locks = _authority_root(workspace, create=True) / "locks"
+    locks.mkdir(mode=0o700, exist_ok=True)
+    metadata = os.lstat(locks)
+    if (
+        locks.resolve(strict=True) != locks
+        or stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISDIR(metadata.st_mode)
+    ):
+        raise OSError("unsafe session projection authority lock root")
+    if os.name != "nt":
+        os.chmod(locks, 0o700)
+    return locks / f"{digest}.lock"
 
 
 @contextmanager
@@ -212,6 +228,305 @@ def _validate_projection_sizes(event_size: object, metadata_size: object) -> Non
         raise ValueError("invalid session transaction intent metadata")
     if event_size + metadata_size > _MAX_SESSION_PROJECTION_BYTES:
         raise ValueError("session transaction projection is oversized")
+
+
+def _workspace_identity(workspace: Path) -> str:
+    canonical = os.path.normcase(str(workspace.resolve())).encode("utf-8")
+    return "sha256:" + hashlib.sha256(canonical).hexdigest()
+
+
+def _authority_root(workspace: Path, *, create: bool) -> Path:
+    configured = os.environ.get("BREADBOARD_SESSION_AUTHORITY_ROOT")
+    root = (
+        Path(configured).expanduser()
+        if configured
+        else Path.home() / ".breadboard" / "session-authority"
+    )
+    if not root.is_absolute():
+        raise ValueError("session projection authority root must be absolute")
+    lexical = Path(os.path.normpath(os.fspath(root)))
+    if create:
+        lexical.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        resolved = lexical.resolve(strict=True)
+        metadata = os.lstat(lexical)
+    except FileNotFoundError:
+        if create:
+            raise
+        return lexical
+    if (
+        resolved != lexical
+        or stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISDIR(metadata.st_mode)
+    ):
+        raise OSError("unsafe session projection authority root")
+    if (
+        resolved == workspace
+        or resolved.is_relative_to(workspace)
+        or workspace.is_relative_to(resolved)
+    ):
+        raise OSError("session projection authority overlaps the workspace")
+    current_uid = getattr(os, "geteuid", lambda: metadata.st_uid)()
+    if getattr(metadata, "st_uid", current_uid) != current_uid:
+        raise OSError("session projection authority has the wrong owner")
+    if os.name != "nt":
+        os.chmod(resolved, 0o700)
+        if stat.S_IMODE(os.lstat(resolved).st_mode) != 0o700:
+            raise OSError("session projection authority is not owner-only")
+    return resolved
+
+
+def _authority_name(workspace: Path, session_id: str) -> str:
+    identity = f"{_workspace_identity(workspace)}\0{session_id}".encode("utf-8")
+    return hashlib.sha256(identity).hexdigest() + ".json"
+
+
+def _projection_identity(
+    event_payload: bytes,
+    metadata_payload: bytes,
+) -> dict[str, Any]:
+    return {
+        "event_size": len(event_payload),
+        "metadata_size": len(metadata_payload),
+        "event_sha256": _digest(event_payload),
+        "metadata_sha256": _digest(metadata_payload),
+    }
+
+
+def _validate_projection_identity(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != {
+        "event_size",
+        "metadata_size",
+        "event_sha256",
+        "metadata_sha256",
+    }:
+        raise ValueError("invalid session projection authority")
+    _validate_projection_sizes(value["event_size"], value["metadata_size"])
+    if not _is_digest(value["event_sha256"]) or not _is_digest(
+        value["metadata_sha256"]
+    ):
+        raise ValueError("invalid session projection authority")
+    return value
+
+
+def _validate_authorized_manifests(
+    value: object,
+    *,
+    session_id: str,
+) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or len(value) > _MAX_ARTIFACT_MANIFESTS:
+        raise ValueError("invalid session artifact authority")
+    aggregate = 0
+    result: list[dict[str, Any]] = []
+    for row in value:
+        if not isinstance(row, dict) or set(row) != {"name", "size", "sha256"}:
+            raise ValueError("invalid session artifact authority")
+        name = row["name"]
+        size = row["size"]
+        digest = row["sha256"]
+        if (
+            not isinstance(name, str)
+            or not name.startswith(f"{session_id}.")
+            or not name.endswith(".json")
+            or type(size) is not int
+            or size < 0
+            or size > _MAX_ARTIFACT_MANIFEST_BYTES
+            or not _is_digest(digest)
+            or name != f"{session_id}.{digest[7:]}.json"
+        ):
+            raise ValueError("invalid session artifact authority")
+        aggregate += size
+        if aggregate > _MAX_ARTIFACT_MANIFEST_AGGREGATE_BYTES:
+            raise ValueError("session artifact authority is oversized")
+        result.append({"name": name, "size": size, "sha256": digest})
+    if result != sorted(result, key=lambda row: row["name"]):
+        raise ValueError("session artifact authority is not canonical")
+    return result
+
+
+def _validate_authority_record(
+    value: object,
+    *,
+    workspace: Path,
+    session_id: str,
+) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != {
+        "schema_version",
+        "workspace_id",
+        "session_id",
+        "generation",
+        "state",
+        "target",
+        "previous",
+        "manifests",
+    }:
+        raise ValueError("invalid session projection authority")
+    if (
+        value["schema_version"] != _PROJECTION_AUTHORITY_SCHEMA
+        or value["workspace_id"] != _workspace_identity(workspace)
+        or value["session_id"] != session_id
+        or type(value["generation"]) is not int
+        or value["generation"] < 1
+        or value["state"] not in {"preparing", "committed"}
+    ):
+        raise ValueError("invalid session projection authority")
+    _validate_projection_identity(value["target"])
+    previous = value["previous"]
+    if previous is not None:
+        _validate_projection_identity(previous)
+    if value["state"] == "committed" and previous is not None:
+        raise ValueError("invalid committed session projection authority")
+    _validate_authorized_manifests(value["manifests"], session_id=session_id)
+    return value
+
+
+def _read_projection_authority(
+    workspace: Path,
+    session_id: str,
+) -> dict[str, Any] | None:
+    root = _authority_root(workspace, create=False)
+    name = _authority_name(workspace, session_id)
+    try:
+        if os.name == "nt":
+            body = _read_windows_file(
+                root / name,
+                _MAX_PROJECTION_AUTHORITY_BYTES,
+            )
+        else:
+            descriptor = os.open(
+                root,
+                os.O_RDONLY
+                | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
+            try:
+                body = _read_posix_file(
+                    descriptor,
+                    name,
+                    _MAX_PROJECTION_AUTHORITY_BYTES,
+                )
+            finally:
+                os.close(descriptor)
+    except FileNotFoundError:
+        return None
+    try:
+        record = json.loads(body.decode("ascii"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("invalid session projection authority") from error
+    return _validate_authority_record(
+        record,
+        workspace=workspace,
+        session_id=session_id,
+    )
+
+
+def _write_projection_authority(
+    workspace: Path,
+    session_id: str,
+    record: Mapping[str, Any],
+) -> dict[str, Any]:
+    canonical = _validate_authority_record(
+        dict(record),
+        workspace=workspace,
+        session_id=session_id,
+    )
+    body = (json.dumps(canonical, sort_keys=True, separators=(",", ":")) + "\n").encode(
+        "ascii"
+    )
+    if len(body) > _MAX_PROJECTION_AUTHORITY_BYTES:
+        raise ValueError("session projection authority is oversized")
+    root = _authority_root(workspace, create=True)
+    name = _authority_name(workspace, session_id)
+    if os.name == "nt":
+        _write_windows_atomic(root / name, body)
+    else:
+        descriptor = os.open(
+            root,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+        try:
+            AnchoredStorage.write_at(descriptor, name, body)
+        finally:
+            os.close(descriptor)
+    return canonical
+
+
+def _committed_authority(
+    record: Mapping[str, Any],
+    *,
+    target: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        **record,
+        "state": "committed",
+        "target": dict(target or record["target"]),
+        "previous": None,
+    }
+
+
+def _prepare_projection_authority(
+    workspace: Path,
+    session_id: str,
+    target: Mapping[str, Any],
+) -> dict[str, Any]:
+    previous = _read_projection_authority(workspace, session_id)
+    if previous is not None and previous["state"] != "committed":
+        raise ValueError("session projection authority is not committed")
+    record = {
+        "schema_version": _PROJECTION_AUTHORITY_SCHEMA,
+        "workspace_id": _workspace_identity(workspace),
+        "session_id": session_id,
+        "generation": 1 if previous is None else previous["generation"] + 1,
+        "state": "preparing",
+        "target": dict(target),
+        "previous": None if previous is None else dict(previous["target"]),
+        "manifests": [] if previous is None else list(previous["manifests"]),
+    }
+    return _write_projection_authority(workspace, session_id, record)
+
+
+def _require_recovery_authority(
+    workspace: Path,
+    session_id: str,
+    target: Mapping[str, Any],
+) -> dict[str, Any]:
+    record = _read_projection_authority(workspace, session_id)
+    if (
+        record is None
+        or record["target"] != dict(target)
+        or record["state"] not in {"preparing", "committed"}
+    ):
+        raise ValueError("session projection authority mismatch")
+    return record
+
+
+def _reconcile_projection_authority(
+    workspace: Path,
+    session_id: str,
+    target: Mapping[str, Any],
+) -> None:
+    record = _read_projection_authority(workspace, session_id)
+    if record is None:
+        raise ValueError("session projection authority is missing")
+    if record["state"] == "committed":
+        if record["target"] != dict(target):
+            raise ValueError("session projection authority mismatch")
+        return
+    if record["target"] == dict(target):
+        _write_projection_authority(
+            workspace,
+            session_id,
+            _committed_authority(record),
+        )
+        return
+    if record["previous"] == dict(target):
+        _write_projection_authority(
+            workspace,
+            session_id,
+            _committed_authority(record, target=target),
+        )
+        return
+    raise ValueError("session projection authority mismatch")
 
 
 def _intent_bytes(
@@ -392,6 +707,7 @@ def _verify_staged_payload(
 
 def _recover_intent_posix(
     parent: int,
+    workspace: Path,
     session_id: str,
     *,
     legacy: bool,
@@ -420,6 +736,13 @@ def _recover_intent_posix(
         event_name=event_name,
         metadata_name=metadata_name,
     )
+    target = {
+        "event_size": event_size,
+        "metadata_size": metadata_size,
+        "event_sha256": event_sha256,
+        "metadata_sha256": metadata_sha256,
+    }
+    authority = _require_recovery_authority(workspace, session_id, target)
     event_payload = _read_posix_staged_file(parent, event_stage_name, event_size)
     metadata_payload = _read_posix_staged_file(
         parent, metadata_stage_name, metadata_size
@@ -441,6 +764,11 @@ def _recover_intent_posix(
         _assert_posix_target(parent, name)
     AnchoredStorage.write_at(parent, event_name, event_payload)
     AnchoredStorage.write_at(parent, metadata_name, metadata_payload)
+    _write_projection_authority(
+        workspace,
+        session_id,
+        _committed_authority(authority),
+    )
     for name in (intent_name, event_stage_name, metadata_stage_name):
         os.unlink(name, dir_fd=parent)
     os.fsync(parent)
@@ -480,6 +808,7 @@ def _read_windows_staged_file(path: Path, expected_size: int) -> bytes:
 
 def _recover_intent_windows(
     parent: Path,
+    workspace: Path,
     session_id: str,
     *,
     legacy: bool,
@@ -507,6 +836,13 @@ def _recover_intent_windows(
         event_name=event_name,
         metadata_name=metadata_name,
     )
+    target = {
+        "event_size": event_size,
+        "metadata_size": metadata_size,
+        "event_sha256": event_sha256,
+        "metadata_sha256": metadata_sha256,
+    }
+    authority = _require_recovery_authority(workspace, session_id, target)
     event_payload = _read_windows_staged_file(parent / event_stage_name, event_size)
     metadata_payload = _read_windows_staged_file(
         parent / metadata_stage_name, metadata_size
@@ -528,6 +864,11 @@ def _recover_intent_windows(
         _assert_windows_target(parent / name)
     _write_windows_atomic(parent / event_name, event_payload)
     _write_windows_atomic(parent / metadata_name, metadata_payload)
+    _write_projection_authority(
+        workspace,
+        session_id,
+        _committed_authority(authority),
+    )
     for name in (intent_name, event_stage_name, metadata_stage_name):
         (parent / name).unlink()
 
@@ -562,11 +903,13 @@ def _recover_pending_intents(workspace: Path, session_id: str) -> None:
             else:
                 _recover_intent_windows(
                     nested,
+                    workspace,
                     session_id,
                     legacy=False,
                 )
             _recover_intent_windows(
                 sessions,
+                workspace,
                 session_id,
                 legacy=True,
             )
@@ -605,11 +948,13 @@ def _recover_pending_intents(workspace: Path, session_id: str) -> None:
         else:
             _recover_intent_posix(
                 nested_descriptor,
+                workspace,
                 session_id,
                 legacy=False,
             )
         _recover_intent_posix(
             sessions,
+            workspace,
             session_id,
             legacy=True,
         )
@@ -678,6 +1023,8 @@ def _persist_session_locked(
         _digest(metadata_payload),
     )
     intent_name = _intent_name(session_id, legacy=legacy)
+    target = _projection_identity(event_payload, metadata_payload)
+    authority = _prepare_projection_authority(workspace, session_id, target)
 
     if os.name == "nt":
         handles: list[int] = []
@@ -717,6 +1064,11 @@ def _persist_session_locked(
             _write_windows_atomic(parent / intent_name, intent_payload)
             _write_windows_atomic(parent / event_name, event_payload)
             _write_windows_atomic(parent / metadata_name, metadata_payload)
+            _write_projection_authority(
+                workspace,
+                session_id,
+                _committed_authority(authority),
+            )
             for name in (intent_name, event_stage_name, metadata_stage_name):
                 (parent / name).unlink()
         finally:
@@ -763,6 +1115,11 @@ def _persist_session_locked(
         AnchoredStorage.write_at(parent, intent_name, intent_payload)
         AnchoredStorage.write_at(parent, event_name, event_payload)
         AnchoredStorage.write_at(parent, metadata_name, metadata_payload)
+        _write_projection_authority(
+            workspace,
+            session_id,
+            _committed_authority(authority),
+        )
         for name in (intent_name, event_stage_name, metadata_stage_name):
             os.unlink(name, dir_fd=parent)
         os.fsync(parent)
@@ -779,7 +1136,6 @@ def _load_anchored(
     _validate_session_id(session_id)
     if os.name == "nt":
         handles = []
-        descriptor = None
         try:
             for path in (
                 workspace,
@@ -794,6 +1150,7 @@ def _load_anchored(
                     )
                 )
             event_path = session_event_path(workspace, session_id)
+            metadata_path = session_metadata_path(workspace, session_id)
             try:
                 handles.append(
                     AnchoredStorage.windows_handle(
@@ -802,22 +1159,26 @@ def _load_anchored(
                         create=False,
                     )
                 )
-                descriptor = AnchoredStorage.windows_file_descriptor(
+                event_payload = _read_windows_file(
                     event_path,
-                    create=False,
+                    _MAX_SESSION_PROJECTION_BYTES,
+                )
+                metadata_payload = _read_windows_file(
+                    metadata_path,
+                    _MAX_SESSION_PROJECTION_BYTES - len(event_payload),
                 )
             except FileNotFoundError:
                 event_path = legacy_session_event_path(workspace, session_id)
-                descriptor = AnchoredStorage.windows_file_descriptor(
+                metadata_path = legacy_session_metadata_path(workspace, session_id)
+                event_payload = _read_windows_file(
                     event_path,
-                    create=False,
+                    _MAX_SESSION_PROJECTION_BYTES,
                 )
-            with os.fdopen(descriptor, "rb") as stream:
-                descriptor = None
-                body = stream.read()
+                metadata_payload = _read_windows_file(
+                    metadata_path,
+                    _MAX_SESSION_PROJECTION_BYTES - len(event_payload),
+                )
         finally:
-            if descriptor is not None:
-                os.close(descriptor)
             for handle in reversed(handles):
                 AnchoredStorage.close_windows_handle(handle)
     else:
@@ -845,15 +1206,27 @@ def _load_anchored(
                     session_id,
                     create=False,
                 )
-                body = AnchoredStorage.read_at(
+                event_payload = _read_posix_file(
                     session_descriptor,
                     "session_events.jsonl",
+                    _MAX_SESSION_PROJECTION_BYTES,
+                )
+                metadata_payload = _read_posix_file(
+                    session_descriptor,
+                    "session.json",
+                    _MAX_SESSION_PROJECTION_BYTES - len(event_payload),
                 )
                 event_path = session_event_path(workspace, session_id)
             except FileNotFoundError:
-                body = AnchoredStorage.read_at(
+                event_payload = _read_posix_file(
                     descriptors[-1],
                     f"{session_id}.events.jsonl",
+                    _MAX_SESSION_PROJECTION_BYTES,
+                )
+                metadata_payload = _read_posix_file(
+                    descriptors[-1],
+                    f"{session_id}.json",
+                    _MAX_SESSION_PROJECTION_BYTES - len(event_payload),
                 )
                 event_path = legacy_session_event_path(workspace, session_id)
         finally:
@@ -862,14 +1235,13 @@ def _load_anchored(
             for descriptor in reversed(descriptors):
                 os.close(descriptor)
 
-    events = [
-        event_from_record(json.loads(line))
-        for line in body.decode().splitlines()
-        if line.strip()
-    ]
-    session = Session.restore(events)
-    if session.read_model.session_id != session_id:
-        raise ValueError("session event identity mismatch")
+    target = _projection_identity(event_payload, metadata_payload)
+    _reconcile_projection_authority(workspace, session_id, target)
+    session = _session_from_payloads(
+        event_payload,
+        metadata_payload,
+        session_id=session_id,
+    )
     return session, event_path
 
 
@@ -915,32 +1287,126 @@ def _load_session_locked(
     return _load_anchored(workspace, session_id)
 
 
-def _pending_intent_exists(workspace: Path, session_id: str) -> bool:
-    candidates = (
-        session_event_path(workspace, session_id).parent
-        / _intent_name(session_id, legacy=False),
-        session_directory(workspace) / _intent_name(session_id, legacy=True),
-    )
-    for path in candidates:
+def _load_untrusted_running_anchored(
+    workspace: Path,
+    session_id: str,
+) -> tuple[Session, Path]:
+    if os.name == "nt":
+        handles = []
         try:
-            os.lstat(path)
-        except (FileNotFoundError, NotADirectoryError):
-            continue
-        return True
-    return False
+            for path in (
+                workspace,
+                workspace / ".breadboard",
+                session_directory(workspace),
+            ):
+                handles.append(
+                    AnchoredStorage.windows_handle(
+                        path,
+                        directory=True,
+                        create=False,
+                    )
+                )
+            event_path = session_event_path(workspace, session_id)
+            try:
+                handles.append(
+                    AnchoredStorage.windows_handle(
+                        event_path.parent,
+                        directory=True,
+                        create=False,
+                    )
+                )
+                event_payload = _read_windows_file(
+                    event_path,
+                    _MAX_SESSION_PROJECTION_BYTES,
+                )
+            except FileNotFoundError:
+                event_path = legacy_session_event_path(workspace, session_id)
+                event_payload = _read_windows_file(
+                    event_path,
+                    _MAX_SESSION_PROJECTION_BYTES,
+                )
+        finally:
+            for handle in reversed(handles):
+                AnchoredStorage.close_windows_handle(handle)
+    else:
+        descriptors = [
+            os.open(
+                workspace,
+                os.O_RDONLY
+                | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
+        ]
+        session_descriptor = None
+        try:
+            for name in (".breadboard", "sessions"):
+                descriptors.append(
+                    AnchoredStorage.open_directory(
+                        descriptors[-1],
+                        name,
+                        create=False,
+                    )
+                )
+            try:
+                session_descriptor = AnchoredStorage.open_directory(
+                    descriptors[-1],
+                    session_id,
+                    create=False,
+                )
+                event_payload = _read_posix_file(
+                    session_descriptor,
+                    "session_events.jsonl",
+                    _MAX_SESSION_PROJECTION_BYTES,
+                )
+                event_path = session_event_path(workspace, session_id)
+            except FileNotFoundError:
+                event_payload = _read_posix_file(
+                    descriptors[-1],
+                    f"{session_id}.events.jsonl",
+                    _MAX_SESSION_PROJECTION_BYTES,
+                )
+                event_path = legacy_session_event_path(workspace, session_id)
+        finally:
+            if session_descriptor is not None:
+                os.close(session_descriptor)
+            for descriptor in reversed(descriptors):
+                os.close(descriptor)
+    try:
+        events = [
+            event_from_record(json.loads(line))
+            for line in event_payload.decode().splitlines()
+            if line.strip()
+        ]
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("invalid session event projection") from error
+    session = Session.restore(events)
+    if session.read_model.session_id != session_id or session.read_model.status in {
+        "completed",
+        "failed",
+        "canceled",
+    }:
+        raise ValueError("terminal session projection lacks private authority")
+    return session, event_path
 
 
 def load_session(
     workspace: str | Path,
     session_id: str,
+    *,
+    allow_untrusted_running: bool = False,
 ) -> tuple[Session, Path]:
     root = _workspace_root(workspace)
     try:
-        with _local_session_guard(root, session_id, create=False):
-            if _pending_intent_exists(root, session_id):
-                with ProcessLock(_session_lock_path(root, session_id)):
-                    return _load_session_locked(root, session_id)
-            return _load_anchored(root, session_id)
+        with _session_guard(root, session_id, create=False):
+            try:
+                return _load_session_locked(root, session_id)
+            except (FileNotFoundError, ValueError):
+                if (
+                    not allow_untrusted_running
+                    or _read_projection_authority(root, session_id) is not None
+                ):
+                    raise
+                return _load_untrusted_running_anchored(root, session_id)
     except FileNotFoundError:
         raise
     except OSError as error:
@@ -1036,80 +1502,131 @@ def session_names(workspace: Path) -> list[str]:
             os.close(descriptor)
 
 
+def _manifest_digest_from_name(session_id: str, manifest_name: str) -> str:
+    prefix = f"{session_id}."
+    if (
+        not manifest_name.startswith(prefix)
+        or not manifest_name.endswith(".json")
+        or "/" in manifest_name
+        or "\\" in manifest_name
+    ):
+        raise ValueError("invalid artifact manifest name")
+    digest = manifest_name[len(prefix) : -5]
+    if len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        raise ValueError("invalid artifact manifest name")
+    return "sha256:" + digest
+
+
+def _read_workspace_manifest(
+    workspace: Path,
+    manifest_name: str,
+) -> bytes:
+    if os.name == "nt":
+        handles = []
+        try:
+            for path in (
+                workspace,
+                workspace / ".breadboard",
+                workspace / ".breadboard" / "artifacts",
+                workspace / ".breadboard" / "artifacts" / "manifests",
+            ):
+                handles.append(
+                    AnchoredStorage.windows_handle(
+                        path,
+                        directory=True,
+                        create=False,
+                    )
+                )
+            return _read_windows_file(
+                workspace / ".breadboard" / "artifacts" / "manifests" / manifest_name,
+                _MAX_ARTIFACT_MANIFEST_BYTES,
+            )
+        finally:
+            for handle in reversed(handles):
+                AnchoredStorage.close_windows_handle(handle)
+
+    descriptors = [
+        os.open(
+            workspace,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+    ]
+    try:
+        for component in (".breadboard", "artifacts", "manifests"):
+            descriptors.append(
+                AnchoredStorage.open_directory(
+                    descriptors[-1],
+                    component,
+                    create=False,
+                )
+            )
+        return _read_posix_file(
+            descriptors[-1],
+            manifest_name,
+            _MAX_ARTIFACT_MANIFEST_BYTES,
+        )
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+def authorize_session_artifact_manifest(
+    workspace: str | Path,
+    session_id: str,
+    manifest_name: str,
+) -> None:
+    root = _workspace_root(workspace)
+    _validate_session_id(session_id)
+    expected_digest = _manifest_digest_from_name(session_id, manifest_name)
+    with _session_guard(root, session_id, create=False):
+        _recover_pending_intents(root, session_id)
+        _load_anchored(root, session_id)
+        body = _read_workspace_manifest(root, manifest_name)
+        if _digest(body) != expected_digest:
+            raise ValueError("artifact manifest digest mismatch")
+        record = _read_projection_authority(root, session_id)
+        if record is None or record["state"] != "committed":
+            raise ValueError("missing committed session projection authority")
+        manifest = {
+            "name": manifest_name,
+            "size": len(body),
+            "sha256": expected_digest,
+        }
+        if manifest in record["manifests"]:
+            return
+        manifests = sorted(
+            [*record["manifests"], manifest],
+            key=lambda row: row["name"],
+        )
+        updated = dict(record)
+        updated["generation"] += 1
+        updated["manifests"] = manifests
+        _write_projection_authority(root, session_id, updated)
+
+
 def session_artifact_rows(
     workspace: Path,
     session_id: str,
 ) -> list[dict[str, Any]]:
+    root = _workspace_root(workspace)
+    _validate_session_id(session_id)
     rows: dict[str, dict[str, Any]] = {}
-    prefix = f"{session_id}."
-    handles = []
-    descriptors = []
-    try:
-        if os.name == "nt":
-            try:
-                for path in (
-                    workspace,
-                    workspace / ".breadboard",
-                    workspace / ".breadboard" / "artifacts",
-                    workspace / ".breadboard" / "artifacts" / "manifests",
-                ):
-                    handles.append(
-                        AnchoredStorage.windows_handle(
-                            path,
-                            directory=True,
-                            create=False,
-                        )
-                    )
-            except FileNotFoundError:
-                return []
-            root = workspace / ".breadboard" / "artifacts" / "manifests"
-            names = os.listdir(root)
-
-            def read_manifest(name: str) -> bytes:
-                descriptor = AnchoredStorage.windows_file_descriptor(
-                    root / name,
-                    create=False,
-                )
-                with os.fdopen(descriptor, "rb") as stream:
-                    return stream.read()
-
-        else:
-            descriptors = [
-                os.open(
-                    workspace,
-                    os.O_RDONLY
-                    | getattr(os, "O_DIRECTORY", 0)
-                    | getattr(os, "O_NOFOLLOW", 0),
-                )
-            ]
-            try:
-                for name in (".breadboard", "artifacts", "manifests"):
-                    descriptors.append(
-                        AnchoredStorage.open_directory(
-                            descriptors[-1],
-                            name,
-                            create=False,
-                        )
-                    )
-            except FileNotFoundError:
-                return []
-            names = os.listdir(descriptors[-1])
-
-            def read_manifest(name: str) -> bytes:
-                return AnchoredStorage.read_at(descriptors[-1], name)
-
-        for name in sorted(names):
-            if not name.startswith(prefix) or not name.endswith(".json"):
-                continue
-            digest = name[len(prefix) : -5]
-            body = read_manifest(name)
-            if (
-                len(digest) != 64
-                or any(character not in "0123456789abcdef" for character in digest)
-                or hashlib.sha256(body).hexdigest() != digest
-            ):
+    with _session_guard(root, session_id, create=False):
+        _recover_pending_intents(root, session_id)
+        _load_anchored(root, session_id)
+        record = _read_projection_authority(root, session_id)
+        if record is None or record["state"] != "committed":
+            raise ValueError("missing committed session projection authority")
+        for manifest in record["manifests"]:
+            body = _read_workspace_manifest(root, manifest["name"])
+            if len(body) != manifest["size"] or _digest(body) != manifest["sha256"]:
                 raise ValueError("artifact manifest digest mismatch")
-            document = json.loads(body)
+            try:
+                document = json.loads(body)
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise ValueError("invalid artifact manifest") from error
             if (
                 document.get("schema_version") != "bb.artifact_manifest.v1"
                 or document.get("session_id") != session_id
@@ -1122,9 +1639,4 @@ def session_artifact_rows(
                 prior = rows.setdefault(row["name"], row)
                 if prior != row:
                     raise ValueError("conflicting artifact manifest rows")
-        return [rows[name] for name in sorted(rows)]
-    finally:
-        for descriptor in reversed(descriptors):
-            os.close(descriptor)
-        for handle in reversed(handles):
-            AnchoredStorage.close_windows_handle(handle)
+    return [rows[name] for name in sorted(rows)]

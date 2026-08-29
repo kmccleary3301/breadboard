@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, List
 
 from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard.product.runtime.artifacts import _validate_artifact_name
+from breadboard.product.runtime import session_store
 from breadboard_engine.model_roles import (
     ModelRoleProblem,
     ModelRoleResolutionError,
@@ -90,6 +91,7 @@ class SessionRunner:
         self._published_events = 0
         self._session_failure_published = False
         self._workspace_path: Optional[Path] = None
+        self._durable_product_workspace: Path | None = None
         self._checkpoint_manager: Optional[CheckpointManager] = None
         self._closed = False
         self._attachment_store: Dict[str, Dict[str, Any]] = {}
@@ -145,6 +147,31 @@ class SessionRunner:
             permission_projection=self._control_controller.rehydrate_pending_permissions,
         )
         self._lifecycle_owner = SessionLifecycleOwner(self, self._task_execution)
+
+    def bind_durable_product_session(self, workspace: Path) -> None:
+        with self._product_session_lock:
+            self._durable_product_workspace = workspace.resolve()
+
+    def _commit_terminal_product_session_locked(self) -> None:
+        workspace = self._durable_product_workspace
+        product_session = getattr(self.session, "product_session", None)
+        if workspace is None or product_session is None:
+            return
+        session_store.create_session(workspace, product_session)
+        manifest_ref = self.session.metadata.get("artifact_manifest_ref")
+        if not isinstance(manifest_ref, Mapping):
+            return
+        digest = manifest_ref.get("digest")
+        if not isinstance(digest, str) or not digest.startswith("sha256:"):
+            raise ValueError("invalid attachment manifest reference")
+        session_store.authorize_session_artifact_manifest(
+            workspace,
+            product_session.read_model.session_id,
+            (
+                f"{product_session.read_model.session_id}."
+                f"{digest.removeprefix('sha256:')}.json"
+            ),
+        )
 
     def _default_factory(
         self,
@@ -424,6 +451,8 @@ class SessionRunner:
             }:
                 return
             getattr(product_session, transition)(*args)
+            if transition in {"complete", "fail", "cancel"}:
+                self._commit_terminal_product_session_locked()
             self.session.metadata["session_contract"] = (
                 product_session.read_model.as_dict()
             )

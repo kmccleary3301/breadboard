@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from collections.abc import Iterator
@@ -22,6 +23,18 @@ from breadboard.product.cli import session as session_operations
 from breadboard.product.runtime import session_store
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.events import KernelEvent, Session
+
+
+@pytest.fixture(autouse=True)
+def _isolated_projection_authority(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    authority_root = tmp_path.parent / f".session-authority-{tmp_path.name}"
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_AUTHORITY_ROOT",
+        str(authority_root),
+    )
 
 
 @pytest.fixture
@@ -318,10 +331,7 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
         ]
         profile = described["data"]["default_profile"]
         assert profile["profile_id"] == "daily_driver.v1"
-        assert (
-            profile["effective_lock_hash"]
-            == described["hashes"]["profile"]
-        )
+        assert profile["effective_lock_hash"] == described["hashes"]["profile"]
         assert restored_listing.status_code == 200
         assert restored_listing.json()["data"]["sessions"] == [
             {
@@ -1136,6 +1146,78 @@ def test_session_intent_oversized_projection_is_rejected_before_staged_reads(
         session_store.load_session(tmp_path, session_id)
 
 
+def test_session_artifact_manifest_requires_private_authority(tmp_path: Path) -> None:
+    session_id = "artifact-authority"
+    _new_durable_session(tmp_path, session_id)
+    artifact_row = {
+        "name": "proof.txt",
+        "digest": "sha256:" + "b" * 64,
+        "size": 5,
+    }
+    manifest = {
+        "schema_version": "bb.artifact_manifest.v1",
+        "manifest_id": "artifact_manifest:" + "c" * 64,
+        "session_id": session_id,
+        "artifacts": [artifact_row],
+    }
+    body = json.dumps(
+        manifest,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    digest = hashlib.sha256(body).hexdigest()
+    name = f"{session_id}.{digest}.json"
+    manifest_root = tmp_path / ".breadboard" / "artifacts" / "manifests"
+    manifest_root.mkdir(parents=True)
+    (manifest_root / name).write_bytes(body)
+
+    assert session_store.session_artifact_rows(tmp_path, session_id) == []
+
+    session_store.authorize_session_artifact_manifest(
+        tmp_path,
+        session_id,
+        name,
+    )
+    assert session_store.session_artifact_rows(tmp_path, session_id) == [artifact_row]
+
+
+def test_session_recovery_rejects_model_forged_projection(
+    tmp_path: Path,
+) -> None:
+    session_id = "forged-projection"
+    _new_durable_session(tmp_path, session_id)
+    forged, event_path = session_store.load_session(tmp_path, session_id)
+    forged.complete("forged success")
+    event_payload = session_store._event_bytes(forged)
+    metadata_payload = session_store._metadata_bytes(forged)
+    event_name = event_path.name
+    metadata_name = session_store.session_metadata_path(tmp_path, session_id).name
+    event_stage_name, metadata_stage_name = session_store._stage_names(
+        event_name,
+        metadata_name,
+    )
+    parent = event_path.parent
+    (parent / event_stage_name).write_bytes(event_payload)
+    (parent / metadata_stage_name).write_bytes(metadata_payload)
+    (parent / ".session.intent.json").write_bytes(
+        session_store._intent_bytes(
+            session_id,
+            event_name,
+            metadata_name,
+            event_stage_name,
+            metadata_stage_name,
+            len(event_payload),
+            len(metadata_payload),
+            session_store._digest(event_payload),
+            session_store._digest(metadata_payload),
+        )
+    )
+
+    with pytest.raises(ValueError, match="projection authority mismatch"):
+        session_store.load_session(tmp_path, session_id)
+    assert b"forged success" not in event_path.read_bytes()
+
+
 @pytest.mark.skipif(
     os.name == "nt" or not hasattr(os, "mkfifo"),
     reason="POSIX FIFO semantics required",
@@ -1168,10 +1250,40 @@ def test_session_intent_fifo_is_rejected_without_blocking(tmp_path: Path) -> Non
     assert (event_path.read_bytes(), metadata_path.read_bytes()) == before
 
 
+@pytest.mark.skipif(
+    os.name == "nt" or not hasattr(os, "mkfifo"),
+    reason="POSIX FIFO semantics required",
+)
+def test_canonical_session_fifo_is_rejected_without_blocking(tmp_path: Path) -> None:
+    session_id = "fifo-canonical"
+    _new_durable_session(tmp_path, session_id)
+    event_path = session_store.session_event_path(tmp_path, session_id)
+    event_path.unlink()
+    os.mkfifo(event_path)
+    result: dict[str, BaseException] = {}
+
+    def load() -> None:
+        try:
+            session_store.load_session(tmp_path, session_id)
+        except BaseException as error:
+            result["error"] = error
+
+    worker = Thread(target=load, daemon=True)
+    worker.start()
+    worker.join(timeout=1)
+
+    assert not worker.is_alive()
+    assert isinstance(result.get("error"), FileNotFoundError)
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
-        ("event_sha256", "sha256:" + "0" * 64, "digest mismatch"),
+        (
+            "event_sha256",
+            "sha256:" + "0" * 64,
+            "projection authority mismatch",
+        ),
         ("session_id", "other-session", "mismatched"),
     ],
 )
@@ -1250,7 +1362,7 @@ def test_session_intent_rejects_foreign_projection_identity(tmp_path: Path) -> N
         )
     )
 
-    with pytest.raises(ValueError, match="event identity mismatch"):
+    with pytest.raises(ValueError, match="projection authority mismatch"):
         session_store.load_session(tmp_path, session_id)
     assert (event_path.read_bytes(), metadata_path.read_bytes()) == before
 
@@ -1261,8 +1373,9 @@ def test_session_name_inventory_excludes_transaction_locks(tmp_path: Path) -> No
     session_store.load_session(tmp_path, session_id)
 
     assert session_store.session_names(tmp_path) == [session_id]
-    locks = list((tmp_path / ".breadboard" / "sessions").glob("*.lock"))
-    assert len(locks) == 1
+    assert not list((tmp_path / ".breadboard" / "sessions").glob("*.lock"))
+    authority_root = Path(os.environ["BREADBOARD_SESSION_AUTHORITY_ROOT"])
+    assert len(list((authority_root / "locks").glob("*.lock"))) == 1
 
 
 def test_concurrent_durable_create_has_one_winner(tmp_path: Path) -> None:

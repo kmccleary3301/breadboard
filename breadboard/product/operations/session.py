@@ -306,6 +306,7 @@ async def get_session(
             load_session,
             context.workspace,
             request.session_id,
+            allow_untrusted_running=live_port is not None,
         )
         if (
             live_port is not None
@@ -351,6 +352,7 @@ async def list_session_artifacts(
             load_session,
             context.workspace,
             request.session_id,
+            allow_untrusted_running=live_port is not None,
         )
         if (
             live_port is not None
@@ -395,6 +397,7 @@ async def read_session_event_batch(
                 load_session,
                 context.workspace,
                 request.session_id,
+                allow_untrusted_running=live_port is not None,
             )
             record_ref = portable_ref(event_path, context.workspace)
             if (

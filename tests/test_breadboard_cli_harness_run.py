@@ -21,13 +21,25 @@ from breadboard.product.harness.templates import (
     daily_driver_prompt_path,
     daily_driver_template_path,
 )
-from breadboard.product.runtime.events import JsonlEventSink, Session
+from breadboard.product.runtime.events import Session
 from breadboard.product.runtime import session_store
 
 
 HARNESS_PATH = daily_driver_template_path()
 PROMPT_PATH = daily_driver_prompt_path()
 MODEL_ROLES_PATH = daily_driver_model_roles_path()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_projection_authority(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    authority_root = tmp_path.parent / f".session-authority-{tmp_path.name}"
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_AUTHORITY_ROOT",
+        str(authority_root),
+    )
 
 
 @pytest.fixture
@@ -100,10 +112,13 @@ def test_session_cli_restores_flat_legacy_event_layout(tmp_path: Path) -> None:
     session_id = "legacy-session"
     event_path = session_store.legacy_session_event_path(tmp_path, session_id)
     lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64})
-    session = Session.start(
-        lock, "legacy task", session_id=session_id, sink=JsonlEventSink(event_path)
-    )
+    session = Session.start(lock, "legacy task", session_id=session_id)
     session.complete("legacy completion")
+    session_store.create_session(
+        tmp_path,
+        session,
+        event_path=event_path,
+    )
     args = SimpleNamespace(workspace=tmp_path, SESSION_ID=session_id)
     before_reads = {
         path.relative_to(tmp_path).as_posix(): path.read_bytes()
@@ -143,8 +158,9 @@ def test_session_cli_mutation_persists_through_anchored_storage(tmp_path: Path) 
     session_id = "anchored-session"
     event_path = session_store.session_event_path(tmp_path, session_id)
     lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "b" * 64})
-    Session.start(
-        lock, "anchored task", session_id=session_id, sink=JsonlEventSink(event_path)
+    session_store.create_session(
+        tmp_path,
+        Session.start(lock, "anchored task", session_id=session_id),
     )
     args = SimpleNamespace(
         workspace=tmp_path, SESSION_ID=session_id, reason="operator stop"

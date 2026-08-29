@@ -141,6 +141,7 @@ async def _require_live_product_session(
         session_store.load_session,
         workspace,
         session_id,
+        allow_untrusted_running=True,
     )
     raise HTTPException(
         status_code=409,
