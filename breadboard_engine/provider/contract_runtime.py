@@ -10,6 +10,7 @@ from .contract_wire import ProviderContractError, canonical_json
 from .contract_events import _safe_error_code
 from .contract_messages import ProviderMessage, ProviderResult
 from .contract_recorder import ProviderExchangeRecorder
+from .profiles import OpenAICompletionsProviderProfile
 from .routing import ProviderDescriptor
 
 
@@ -144,6 +145,7 @@ class ProviderRuntimeContext:
     turn_id: Optional[str] = None
     exchange_recorder: Optional[ProviderExchangeRecorder] = None
     cancel_requested: Optional[Callable[[], bool]] = None
+    provider_profile: Optional[OpenAICompletionsProviderProfile] = None
 
     def record_provider_event(
         self, kind: str, payload: Optional[Mapping[str, Any]] = None

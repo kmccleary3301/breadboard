@@ -43,6 +43,12 @@ from .contract_exchange import (
     strip_public_completion_sentinel_tree,
 )
 from .contract_recorder import ProviderExchangeRecorder
+from .profiles import (
+    OpenAICompletionsCapabilities,
+    OpenAICompletionsCompatibility,
+    OpenAICompletionsProviderProfile,
+    OpenAICompletionsSampling,
+)
 from .contract_runtime import (
     ProviderErrorKind,
     ProviderRuntime,
@@ -73,6 +79,10 @@ __all__ = [
     "ProviderToolCall",
     "ProviderMessage",
     "ProviderResult",
+    "OpenAICompletionsCapabilities",
+    "OpenAICompletionsCompatibility",
+    "OpenAICompletionsProviderProfile",
+    "OpenAICompletionsSampling",
     "ProviderRuntimeContext",
     "ProviderRuntimeError",
     "ProviderRuntime",

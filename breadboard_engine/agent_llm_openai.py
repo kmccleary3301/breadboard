@@ -50,6 +50,7 @@ from .provider.runtime import (
     ProviderRuntimeError,
 )
 from .provider.contracts import (
+    OpenAICompletionsProviderProfile,
     ProviderContractError,
     normalize_content,
     strip_provider_exchange_completion_sentinels,
@@ -5533,10 +5534,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         context: Optional[Dict[str, Any]] = None,
         kernel_emitter_run_dir: Optional[str] = None,
         kernel_emitter_mode: Optional[str] = None,
+        provider_profile: Optional[OpenAICompletionsProviderProfile] = None,
     ) -> Dict[str, Any]:
         # Clear any prior stop request from earlier runs (Esc in the TUI should only
         # interrupt the current in-flight run, not permanently disable the session).
         self._stop_requested = False
+        if provider_profile is not None and not isinstance(
+            provider_profile, OpenAICompletionsProviderProfile
+        ):
+            raise ProviderContractError("provider_profile is invalid")
         # Initialize components
         emitter = event_emitter
         if emitter is None and event_queue is not None:
@@ -5560,9 +5566,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 kernel_emitter = JsonlKernelEmitter(_Path(kernel_emitter_run_dir), mode=mode)  # type: ignore[arg-type]
             except Exception:
                 kernel_emitter = None
-        session_state = SessionState(self.workspace, self.image, self.config, event_emitter=emitter, kernel_emitter=kernel_emitter,
-        )
-        self._active_session_state = session_state
         if not isinstance(context, dict):
             raise ProviderContractError(
                 "run context requires admitted session/input/turn identifiers"
@@ -5600,6 +5603,14 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             raise ProviderContractError(
                 "run context input_media accepts only media blocks"
             )
+        session_state = SessionState(
+            self.workspace,
+            self.image,
+            self.config,
+            event_emitter=emitter,
+            kernel_emitter=kernel_emitter,
+            episode_provider_profile=provider_profile,
+        )
         session_state.set_provider_metadata("session_id", provider_session_id)
         session_state.set_turn_context(
             input_id=provider_input_id,
@@ -5725,7 +5736,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 self._reward_metrics_sqlite = None
                 self._todo_metrics_sqlite = None
 
-        self._ensure_capability_probes(session_state, markdown_logger)
         self.provider_metrics.reset()
         user_prompt, max_steps = self._prepare_replay_session(session_state, user_prompt, max_steps)
         
@@ -6312,7 +6322,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         # Main agentic loop - significantly simplified
         run_result = None
         run_loop_error: Optional[Dict[str, Any]] = None
+        self._active_session_state = session_state
         try:
+            if provider_profile is None:
+                self._ensure_capability_probes(session_state, markdown_logger)
             if is_longrun_enabled(getattr(self, "config", None)):
                 work_queue = build_work_queue(
                     getattr(self, "config", None),
@@ -6452,6 +6465,27 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             except Exception:
                 pass
         finally:
+            profile_client = getattr(session_state, "_episode_provider_client", None)
+            if profile_client is not None:
+                try:
+                    profile_client.close()
+                except Exception as exc:
+                    cleanup_error = public_error_projection(
+                        exc,
+                        default_code="profile_client_cleanup_failed",
+                    )
+                    try:
+                        session_state.set_provider_metadata(
+                            "profile_client_cleanup_error",
+                            {
+                                "type": cleanup_error["error_type"],
+                                "message": cleanup_error["error"],
+                            },
+                        )
+                    except Exception:
+                        pass
+                finally:
+                    session_state._episode_provider_client = None
             self._persist_final_workspace()
             try:
                 self._persist_multi_agent_log()
