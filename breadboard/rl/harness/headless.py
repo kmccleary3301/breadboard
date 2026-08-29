@@ -113,6 +113,8 @@ class HeadlessProviderRouteAuthority(BaseModel):
     schema_version: Literal["bb.rl.headless-provider-route-authority.v1"] = (
         "bb.rl.headless-provider-route-authority.v1"
     )
+    model: str = Field(min_length=1, max_length=512)
+    authority_model_id: str = Field(min_length=1, max_length=256)
     base_url: str
     caller_headers: Mapping[str, str] = Field(default_factory=dict)
     policy_observation_digest: str = Field(pattern=_DIGEST_PATTERN)
@@ -169,6 +171,8 @@ class HeadlessProviderRouteAuthority(BaseModel):
         header_names = [name for name, _value in header_items]
         return {
             "schema_version": self.schema_version,
+            "model": self.model,
+            "authority_model_id": self.authority_model_id,
             "base_url_sha256": _digest_bytes(self.base_url.encode("utf-8")),
             "caller_header_count": len(header_names),
             "caller_header_names_sha256": _digest_bytes(
@@ -302,6 +306,10 @@ async def run_headless_request(
     route: HeadlessProviderRouteAuthority | None = None
     composition: ProductionComposition | None = None
     try:
+        if request.expected_sandbox.runtime_class is c.RuntimeClass.TRUSTED_PROCESS:
+            raise ValueError(
+                "headless execution requires an isolated sandbox runtime"
+            )
         composition_secrets = _secret_file_bindings(
             secret_files,
             field_name="composition secret files",
@@ -329,6 +337,13 @@ async def run_headless_request(
                 "provider route authorities do not match the headless request"
             )
         route = provider_routes[request.provider.credential_handle]
+        if (
+            request.provider.model != route.model
+            or request.provider.authority_model_id != route.authority_model_id
+        ):
+            raise ValueError(
+                "provider model identities do not match launcher route authority"
+            )
         target = E4TargetPolicyProjection.load(
             request.target_id,
             request.target_dynamic_fields,
@@ -360,6 +375,7 @@ async def run_headless_request(
                 authority_model_ids={
                     episode_id: request.provider.authority_model_id
                 },
+                authority_wire_models={episode_id: route.model},
                 expected_observation_digests={
                     episode_id: route.policy_observation_digest
                 },
@@ -695,8 +711,7 @@ def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any
         additional_properties = openai_routing["additionalProperties"]
         if type(additional_properties) is not bool:
             raise ValueError("effective target tool routing is malformed")
-        if additional_properties:
-            parameter_schema["additionalProperties"] = True
+        parameter_schema["additionalProperties"] = additional_properties
     return {
         "type": "function",
         "function": {

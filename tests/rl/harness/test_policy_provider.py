@@ -553,6 +553,7 @@ async def test_profile_resolver_preserves_authoritative_observation_and_one_shot
         {"episode-one": _profile()},
         {"episode-one": "credential-one"},
         {"episode-one": MODEL_ID},
+        {"episode-one": MODEL},
         {"episode-one": _observation().canonical_digest()},
     )
     binding = c.PolicyBindingRef(
@@ -578,6 +579,40 @@ async def test_profile_resolver_preserves_authoritative_observation_and_one_shot
     await client.close()
     await resolver.close()
     assert authority.closed
+
+
+@pytest.mark.asyncio
+async def test_profile_resolver_rejects_wire_model_outside_launcher_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        OpenAIChatRuntime,
+        "create_client_from_profile",
+        lambda _self, _profile, **_kwargs: _Transport(),
+    )
+    resolver = EpisodeOpenAICompletionsPolicyResolver(
+        _AuthorityResolver(),
+        {"episode-one": _profile()},
+        {"episode-one": "credential-one"},
+        {"episode-one": MODEL_ID},
+        {"episode-one": "other/wire-model"},
+        {"episode-one": _observation().canonical_digest()},
+    )
+    binding = c.PolicyBindingRef(
+        registry_revision_digest=_digest("registry"),
+        route_id="policy-route",
+        attestation_digest=_digest("attestation"),
+    )
+
+    with pytest.raises(RunnerPolicyBindingError) as raised:
+        await resolver.resolve(
+            binding,
+            episode_id="episode-one",
+            effective_plan_digest=DIGEST,
+        )
+
+    assert raised.value.code == "provider_profile_mismatch"
+    await resolver.close()
 
 
 @pytest.mark.asyncio
@@ -607,6 +642,7 @@ async def test_profile_resolver_rejects_observation_outside_owned_provider_profi
         {"episode-one": _profile()},
         {"episode-one": "credential-one"},
         {"episode-one": MODEL_ID},
+        {"episode-one": MODEL},
         {"episode-one": _observation().canonical_digest()},
     )
     binding = c.PolicyBindingRef(

@@ -1085,7 +1085,7 @@ class TrustedProcessHandle:
         self._git_executable = git_executable
         self._workspace_fd = workspace_fd
         self._workspace_identity = workspace_identity
-        self._groups: set[int] = set()
+        self._groups: dict[int, Mapping[str, Any]] = {}
         self._launch_lock = asyncio.Lock()
         self._closing = False
         self._closed = False
@@ -1123,7 +1123,49 @@ class TrustedProcessHandle:
             return True
         return True
 
-    async def _drain_group(self, process_group: int) -> bool:
+    @classmethod
+    def _observe_group_identity(cls, pid: int) -> Mapping[str, Any]:
+        process_group = os.getpgid(pid)
+        if process_group != pid:
+            raise RuntimeError("trusted process group identity mismatch")
+        return MappingProxyType(
+            {
+                "process_pid": pid,
+                "process_group_id": process_group,
+                "process_start_identity": cls._start_identity(pid),
+                "process_cgroup_identity": cls._cgroup_identity(pid),
+            }
+        )
+
+    @classmethod
+    def _group_identity_matches(
+        cls,
+        process_group: int,
+        identity: Mapping[str, Any],
+    ) -> bool:
+        try:
+            return (
+                identity.get("process_pid") == process_group
+                and identity.get("process_group_id") == process_group
+                and os.getpgid(process_group) == process_group
+                and cls._start_identity(process_group)
+                == identity.get("process_start_identity")
+                and cls._cgroup_identity(process_group)
+                == identity.get("process_cgroup_identity")
+            )
+        except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+            return False
+
+
+    async def _drain_group(
+        self,
+        process_group: int,
+        identity: Mapping[str, Any],
+    ) -> bool:
+        if not self._group_exists(process_group):
+            return True
+        if not self._group_identity_matches(process_group, identity):
+            return False
         try:
             os.killpg(process_group, 15)
         except ProcessLookupError:
@@ -1132,6 +1174,8 @@ class TrustedProcessHandle:
         while self._group_exists(process_group) and asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(0.01)
         if self._group_exists(process_group):
+            if not self._group_identity_matches(process_group, identity):
+                return False
             try:
                 os.killpg(process_group, 9)
             except ProcessLookupError:
@@ -1144,13 +1188,25 @@ class TrustedProcessHandle:
     async def _cleanup_process(
         self, process: asyncio.subprocess.Process, *, clear_identity: bool
     ) -> bool:
-        absent = await self._drain_group(process.pid)
+        identity = self._groups.get(process.pid)
+        if identity is None:
+            try:
+                identity = self._observe_group_identity(process.pid)
+            except (OSError, RuntimeError):
+                identity = None
+            else:
+                self._groups[process.pid] = identity
+        absent = (
+            False
+            if identity is None
+            else await self._drain_group(process.pid, identity)
+        )
         try:
             await asyncio.wait_for(process.wait(), 0.25)
         except asyncio.TimeoutError:
             absent = False
         if absent:
-            self._groups.discard(process.pid)
+            self._groups.pop(process.pid, None)
             if clear_identity:
                 recorder = getattr(self, "_identity_recorder", None)
                 if recorder is not None:
@@ -1268,16 +1324,9 @@ class TrustedProcessHandle:
                             "trusted process did not stop before admission"
                         )
                     await asyncio.sleep(0.001)
-                process_group = os.getpgid(process.pid)
-                if process_group != process.pid:
-                    raise RuntimeError("trusted process group identity mismatch")
-                self._groups.add(process_group)
-                identity = {
-                    "process_pid": process.pid,
-                    "process_group_id": process_group,
-                    "process_start_identity": "linux-proc-start:" + fields[19],
-                    "process_cgroup_identity": self._cgroup_identity(process.pid),
-                }
+                identity = self._observe_group_identity(process.pid)
+                process_group = int(identity["process_group_id"])
+                self._groups[process_group] = identity
                 recorder = getattr(self, "_identity_recorder", None)
                 if recorder is None:
                     raise RuntimeError(
@@ -1405,11 +1454,11 @@ class TrustedProcessHandle:
                 return (CleanupStepReceipt("runtime", CleanupState.ALREADY_RELEASED),)
             self._closing = True
         failed = False
-        for process_group in tuple(self._groups):
-            if not await self._drain_group(process_group):
+        for process_group, identity in tuple(self._groups.items()):
+            if not await self._drain_group(process_group, identity):
                 failed = True
             else:
-                self._groups.discard(process_group)
+                self._groups.pop(process_group, None)
                 recorder = getattr(self, "_identity_recorder", None)
                 if recorder is not None:
                     recorder(f"process-group-{process_group}", None)

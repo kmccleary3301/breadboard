@@ -97,6 +97,47 @@ async def test_composition_retries_failed_runtime_cleanup_before_authorities() -
     assert composition._closed
 
 
+@pytest.mark.asyncio
+async def test_composition_close_defers_repeated_waiter_cancellation() -> None:
+    calls: list[str] = []
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def close_runtime() -> None:
+        calls.append("runtime")
+        started.set()
+        await release.wait()
+
+    composition = ProductionComposition(
+        app=None,
+        service=None,
+        server=None,
+        manifest=None,
+        manifest_ref=None,
+        authority_graph=None,
+        bridge_lifecycle=None,
+        cleanup_probe=None,
+        runtime_close_callbacks=(
+            lambda: calls.append("adapter"),
+            close_runtime,
+        ),
+        authority_close_callbacks=(lambda: calls.append("authority"),),
+    )
+    waiter = asyncio.create_task(composition.close())
+    await started.wait()
+
+    waiter.cancel()
+    await asyncio.sleep(0)
+    waiter.cancel()
+    release.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    assert calls == ["runtime", "adapter", "authority"]
+    assert composition._runtime_closed
+    assert composition._closed
+
+
 def test_cas_materialization_reader_uses_only_digest_bound_shared_cas(tmp_path) -> None:
     cas = FilesystemCAS(tmp_path / "cas")
     member = b"installed source bytes\n"

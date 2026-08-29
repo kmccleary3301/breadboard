@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -76,24 +74,7 @@ def _target_projection(plan: c.EffectiveExecutionPlan) -> E4TargetPolicyProjecti
         ordered_tool_names=(tool_name,),
         chat_tools=(
             freeze_json_object(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "description": "Run a shell command in the admitted workspace.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "command": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "description": "Shell command to execute.",
-                                }
-                            },
-                            "required": ["command"],
-                        },
-                    },
-                },
+                headless_module._project_effective_chat_tool(definition),
                 field_name="fixture target tool",
             ),
         ),
@@ -124,6 +105,8 @@ def test_atomic_result_publication_refuses_existing_destination(
 def test_provider_requires_usable_literal_loopback_authority(base_url: str) -> None:
     with pytest.raises(ValueError, match="explicit loopback port"):
         HeadlessProviderRouteAuthority(
+            model="Qwen/Qwen3.5-35B-A3B",
+            authority_model_id="qwen3.5-35b-a3b",
             base_url=base_url,
             policy_observation_digest="sha256:" + "0" * 64,
         )
@@ -174,10 +157,10 @@ async def test_target_semantics_reject_changed_tool_parameter_schema(
 
 @pytest.mark.skipif(
     sys.platform != "linux",
-    reason="production trusted-process sandbox requires Linux",
+    reason="development trusted-process sandbox requires Linux",
 )
 @pytest.mark.asyncio
-async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artifacts(
+async def test_headless_runner_rejects_development_trusted_process(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -216,6 +199,8 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
 
     credential_handle = str(fixture.policy_observation["credential_handle_id"])
     route = HeadlessProviderRouteAuthority(
+        model="Qwen/Qwen3.5-35B-A3B",
+        authority_model_id="qwen3.5-35b-a3b",
         base_url="http://127.0.0.1:8000/v1",
         caller_headers={"X-Episode-ID": resolution.episode_id},
         policy_observation_digest=c.PolicyCapabilityObservation.model_validate(
@@ -355,136 +340,21 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         {bound_digest: bound_commit},
     )
 
-    result = await run_headless_request(
-        request,
-        composition_ref_path=str(fixture.composition_ref_path),
-        secret_files=fixture.secret_files,
-        provider_credentials={credential_handle: str(credential)},
-        provider_routes={credential_handle: route},
-        repository_base_commits={},
-    )
-
-    assert result["terminal"]["status"] == "succeeded"
-    assert result["terminal"]["reason"] == "assistant_complete"
-    assert result["terminal"]["turn_count"] == 2
-    assert result["cleanup"]["disposition"] == "released"
-    assert result["cleanup"]["receipt_digest"] is not None
-    assert result["cleanup_inventory"]["active_lease_ids"] == []
-    assert result["cleanup_inventory"]["container_ids"] == []
-    assert result["workspace_evidence"]["materialization_digest"] is not None
-    assert result["workspace_evidence"]["final_workspace_snapshot_digest"] is not None
-    assert result["event_log"]["available"] is True
-    assert result["provider_profile_identity"]["capabilities"]["supports_tools"]
-    assert result["provider_profile_identity"]["compatibility"]["sdk_max_retries"] == 0
-    assert len(provider_calls) == 2
-    assert provider_calls[0]["messages"][:2] == [
-        {"role": "system", "content": target.system_prompt},
-        {"role": "user", "content": "Repair the task and verify the result."},
-    ]
-    assert transport.closed
-
-    persisted_result = result_path.read_bytes()
-    persisted_events = event_path.read_bytes()
-    assert json.loads(persisted_result) == result
-    event_ledger = json.loads(persisted_events)
-    assert event_ledger["schema_version"] == "bb.rl.runner-event-ledger.v2"
-    assert event_ledger["event_count"] > 0
-    assert b"headless-secret" not in persisted_result
-    assert b"headless-secret" not in persisted_events
-
-    publication_result_path = tmp_path / "publication-result.json"
-    occupied_event_path = tmp_path / "occupied-events.json"
-    occupied_event_path.write_text("occupied", encoding="utf-8")
-    publication_request = request.model_copy(
-        update={
-            "result_path": str(publication_result_path),
-            "event_log_path": str(occupied_event_path),
-        }
-    )
-    provider_results.extend(scripted_results)
-    with pytest.raises(HeadlessRunFailed) as publication:
+    with pytest.raises(HeadlessRunFailed) as rejected:
         await run_headless_request(
-            publication_request,
+            request,
             composition_ref_path=str(fixture.composition_ref_path),
             secret_files=fixture.secret_files,
             provider_credentials={credential_handle: str(credential)},
             provider_routes={credential_handle: route},
             repository_base_commits={},
         )
-    published_failure = json.loads(publication_result_path.read_bytes())
-    assert published_failure == publication.value.result
-    assert published_failure["terminal"]["status"] == "failed"
-    assert published_failure["terminal"]["publication_failure"]["code"] == "FileExistsError"
 
-    timeout_result_path = tmp_path / "timeout-result.json"
-    timeout_request = request.model_copy(
-        update={
-            "result_path": str(timeout_result_path),
-            "event_log_path": str(tmp_path / "timeout-events.json"),
-            "expected_resources": request.expected_resources.model_copy(
-                update={"wall_time_ms": 10}
-            ),
-        }
-    )
-
-    def slow_invoke(_self: Any, **_kwargs: Any) -> ProviderResult:
-        time.sleep(0.1)
-        return ProviderResult(
-            messages=[ProviderMessage(role="assistant", content="too late")],
-            raw_response={},
-        )
-
-    monkeypatch.setattr(OpenAIChatRuntime, "invoke", slow_invoke)
-    with pytest.raises(HeadlessRunFailed) as timed_out:
-        await run_headless_request(
-            timeout_request,
-            composition_ref_path=str(fixture.composition_ref_path),
-            secret_files=fixture.secret_files,
-            provider_credentials={credential_handle: str(credential)},
-            provider_routes={credential_handle: route},
-            repository_base_commits={},
-        )
-    assert timed_out.value.result["terminal"]["status"] == "failed"
-    assert "TimeoutError" in json.dumps(timed_out.value.result["terminal"])
-    assert timed_out.value.result["cleanup_inventory"]["active_lease_ids"] == []
-    assert timed_out.value.result["evidence"] is not None
-    assert timed_out.value.result["event_log"]["available"] is True
-    monkeypatch.setattr(OpenAIChatRuntime, "invoke", invoke)
-
-    started = threading.Event()
-    transport.closed_event.clear()
-
-    def cancelling_invoke(_self: Any, **_kwargs: Any) -> ProviderResult:
-        started.set()
-        if not transport.closed_event.wait(timeout=2):
-            raise AssertionError("transport close did not interrupt provider work")
-        raise RuntimeError("transport closed")
-
-    monkeypatch.setattr(OpenAIChatRuntime, "invoke", cancelling_invoke)
-    cancelled_result_path = tmp_path / "cancelled-result.json"
-    cancelled_request = request.model_copy(
-        update={
-            "result_path": str(cancelled_result_path),
-            "event_log_path": str(tmp_path / "cancelled-events.json"),
-        }
-    )
-    cancelled_run = asyncio.create_task(
-        run_headless_request(
-            cancelled_request,
-            composition_ref_path=str(fixture.composition_ref_path),
-            secret_files=fixture.secret_files,
-            provider_credentials={credential_handle: str(credential)},
-            provider_routes={credential_handle: route},
-            repository_base_commits={},
-        )
-    )
-    assert await asyncio.to_thread(started.wait, 1)
-    cancelled_run.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await cancelled_run
-    cancelled_result = json.loads(cancelled_result_path.read_bytes())
-    assert cancelled_result["terminal"]["status"] == "failed"
-    assert cancelled_result["evidence"] is not None
-    assert cancelled_result["event_log"]["available"] is True
-    assert cancelled_result["cleanup"]["disposition"] == "released"
-    assert cancelled_result["cleanup_inventory"]["active_lease_ids"] == []
+    assert rejected.value.result["terminal"]["status"] == "failed"
+    assert rejected.value.result["terminal"]["failure"] == {
+        "code": "ValueError",
+        "category": "ValueError",
+    }
+    assert json.loads(result_path.read_bytes()) == rejected.value.result
+    assert not event_path.exists()
+    assert provider_calls == []

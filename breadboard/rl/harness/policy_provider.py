@@ -60,6 +60,7 @@ def _validate_owned_profile_observation(
     profile: OpenAICompletionsProviderProfile,
     observation: PolicyCapabilityObservation,
     authority_model_id: str,
+    authority_wire_model: str,
     credential_handle_id: str,
     episode_id: str,
     effective_plan_digest: str,
@@ -69,6 +70,7 @@ def _validate_owned_profile_observation(
         profile.provider_id != observation.provider_id
         or profile.runtime_id != _provider_descriptor().runtime_id
         or authority_model_id != observation.model_id
+        or profile.model != authority_wire_model
         or credential_handle_id != observation.credential_handle_id
         or profile.context_window != capabilities.max_context_tokens
         or profile.max_output_tokens != capabilities.max_output_tokens
@@ -484,6 +486,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
         profiles: Mapping[str, OpenAICompletionsProviderProfile],
         credential_handle_ids: Mapping[str, str],
         authority_model_ids: Mapping[str, str],
+        authority_wire_models: Mapping[str, str],
         expected_observation_digests: Mapping[str, str],
         target_projections: Mapping[str, E4TargetPolicyProjection] | None = None,
         timeout_seconds: Mapping[str, float] | None = None,
@@ -507,6 +510,14 @@ class EpisodeOpenAICompletionsPolicyResolver:
                 "authority model identities must exactly match provider profiles"
             )
         copied_model_ids = dict(authority_model_ids)
+        if set(authority_wire_models) != set(copied) or any(
+            type(model) is not str or not model
+            for model in authority_wire_models.values()
+        ):
+            raise ValueError(
+                "authority wire models must exactly match provider profiles"
+            )
+        copied_wire_models = dict(authority_wire_models)
         if set(credential_handle_ids) != set(copied) or any(
             type(handle_id) is not str or not handle_id
             for handle_id in credential_handle_ids.values()
@@ -550,6 +561,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
         self._credential_handle_ids = copied_credential_handles
         self._timeout_seconds = copied_timeouts
         self._authority_model_ids = copied_model_ids
+        self._authority_wire_models = copied_wire_models
         self._expected_observation_digests = copied_observation_digests
         self._clients: set[EpisodeOpenAICompletionsPolicyClient] = set()
         self._lock = asyncio.Lock()
@@ -565,6 +577,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
         self._target_projections.clear()
         self._credential_handle_ids.clear()
         self._expected_observation_digests.clear()
+        self._authority_wire_models.clear()
         abort = getattr(self._authority_resolver, "abort_bootstrap", None)
         self._authority_model_ids.clear()
         if not callable(abort):
@@ -591,6 +604,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
             timeout_seconds = self._timeout_seconds.get(episode_id, 600.0)
             credential_handle_id = self._credential_handle_ids.get(episode_id)
             authority_model_id = self._authority_model_ids.get(episode_id)
+            authority_wire_model = self._authority_wire_models.get(episode_id)
             expected_observation_digest = self._expected_observation_digests.get(
                 episode_id
             )
@@ -613,6 +627,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
             if (
                 credential_handle_id is None
                 or authority_model_id is None
+                or authority_wire_model is None
                 or expected_observation_digest is None
             ):
                 raise RunnerPolicyBindingError(
@@ -632,6 +647,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
                 profile=profile,
                 observation=observation,
                 authority_model_id=authority_model_id,
+                authority_wire_model=authority_wire_model,
                 credential_handle_id=credential_handle_id,
                 episode_id=episode_id,
                 effective_plan_digest=effective_plan_digest,
@@ -650,6 +666,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
             self._timeout_seconds.pop(episode_id, None)
             self._credential_handle_ids.pop(episode_id)
             self._authority_model_ids.pop(episode_id)
+            self._authority_wire_models.pop(episode_id)
             self._expected_observation_digests.pop(episode_id)
             self._clients.add(client)
             return client
@@ -670,6 +687,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
                 self._timeout_seconds.clear()
                 self._credential_handle_ids.clear()
                 self._authority_model_ids.clear()
+                self._authority_wire_models.clear()
                 self._expected_observation_digests.clear()
             failures: list[BaseException] = []
             results = await asyncio.gather(

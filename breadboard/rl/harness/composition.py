@@ -3092,6 +3092,7 @@ class ProductionComposition:
         self._authority_close_lock = asyncio.Lock()
         self._runtime_closed = False
         self._closed = False
+        self._close_task: asyncio.Task[None] | None = None
 
     @property
     def outer_bridge_lease(self) -> OuterBridgeLeaseV1 | None:
@@ -3153,6 +3154,20 @@ class ProductionComposition:
 
 
     async def close(self) -> None:
+        async with self._lock:
+            task = self._close_task
+            if task is None:
+                task = asyncio.create_task(self._close_owner())
+                self._close_task = task
+        try:
+            await _await_composition_close(task)
+        finally:
+            if task.done() and not task.cancelled() and task.exception() is not None:
+                async with self._lock:
+                    if self._close_task is task:
+                        self._close_task = None
+
+    async def _close_owner(self) -> None:
         try:
             await self.close_runtime()
         except BaseException as exc:
@@ -3182,6 +3197,32 @@ class ProductionComposition:
                         and self._authority_callbacks[-1] is callback
                     ):
                         self._authority_callbacks.pop()
+
+
+async def _await_composition_close(task: asyncio.Task[None]) -> None:
+    cancellation: asyncio.CancelledError | None = None
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError as exc:
+            cancellation = cancellation or exc
+            current = asyncio.current_task()
+            if current is not None:
+                current.uncancel()
+    failure: BaseException | None = None
+    try:
+        task.result()
+    except BaseException as exc:
+        failure = exc
+    if cancellation is not None:
+        if failure is not None:
+            raise BaseExceptionGroup(
+                "production composition close cancelled and failed",
+                [cancellation, failure],
+            )
+        raise cancellation
+    if failure is not None:
+        raise failure
 
 
 def _secure_read(
