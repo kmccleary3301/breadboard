@@ -310,6 +310,32 @@ def test_wheel_provenance_uses_embedded_sdist_source_identity(
         "b" * 40,
     )
 
+def test_sdist_includes_dependency_locks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(setuptools, "setup", lambda **_kwargs: None)
+    namespace = runpy.run_path(str(ROOT / "setup.py"), run_name="bb_setup_test")
+    captured_files: list[str] = []
+    monkeypatch.setattr(
+        namespace["_sdist"],
+        "make_release_tree",
+        lambda _command, _base_dir, files: captured_files.extend(files),
+    )
+    namespace["SdistWithSourceIdentity"].make_release_tree.__globals__[
+        "_source_identity"
+    ] = lambda: (
+        "https://github.com/kmccleary3301/breadboard.git",
+        "a" * 40,
+        "b" * 40,
+    )
+    command = namespace["SdistWithSourceIdentity"](setuptools.Distribution())
+
+    command.make_release_tree(str(tmp_path / "release"), ["setup.py"])
+
+    assert "requirements.txt" in captured_files
+    assert "requirements_web.txt" in captured_files
+
 def test_wheel_provenance_validates_before_populating_build_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
