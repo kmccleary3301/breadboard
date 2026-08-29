@@ -51,6 +51,7 @@ SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION = "bb.rl.sandbox-capability-matrix.v1"
 SANDBOX_CAPABILITY_MATRIX_SHA256 = (
     "122065677cab2cf952b46a767ebb860d0f398a6b535946c857d059fac5b5baea"
 )
+_MAX_SANDBOX_CAPABILITY_MATRIX_BYTES = 64 * 1024
 _SANDBOX_ADAPTER_STATUSES = {
     "docker": "experimental",
     "firecracker": "unsupported",
@@ -71,14 +72,61 @@ _SANDBOX_CAPABILITY_KEYS = {
 }
 
 
+def _read_sandbox_capability_matrix_resource() -> bytes:
+    resource = files(__package__).joinpath(SANDBOX_CAPABILITY_MATRIX_RESOURCE)
+    limit = _MAX_SANDBOX_CAPABILITY_MATRIX_BYTES
+    if isinstance(resource, Path):
+        expected = os.stat(resource, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(expected.st_mode)
+            or expected.st_size > limit
+        ):
+            raise OSError("sandbox capability matrix resource is not regular and bounded")
+        descriptor = os.open(
+            resource,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        )
+        try:
+            opened = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(opened.st_mode)
+                or opened.st_size > limit
+                or (opened.st_dev, opened.st_ino)
+                != (expected.st_dev, expected.st_ino)
+            ):
+                raise OSError(
+                    "sandbox capability matrix resource identity changed"
+                )
+            chunks: list[bytes] = []
+            remaining = limit + 1
+            while remaining:
+                chunk = os.read(descriptor, min(8192, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+        finally:
+            os.close(descriptor)
+    else:
+        chunks = []
+        remaining = limit + 1
+        with resource.open("rb") as stream:
+            while remaining:
+                chunk = stream.read(min(8192, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+    encoded_matrix = b"".join(chunks)
+    if len(encoded_matrix) > limit:
+        raise OSError("sandbox capability matrix resource exceeds admitted size")
+    return encoded_matrix
+
+
 def load_sandbox_capability_matrix() -> Mapping[str, Any]:
     """Load and validate the installed canonical sandbox capability matrix."""
     try:
-        encoded_matrix = (
-            files(__package__)
-            .joinpath(SANDBOX_CAPABILITY_MATRIX_RESOURCE)
-            .read_bytes()
-        )
+        encoded_matrix = _read_sandbox_capability_matrix_resource()
         if hashlib.sha256(encoded_matrix).hexdigest() != SANDBOX_CAPABILITY_MATRIX_SHA256:
             raise SandboxRuntimeError(
                 "sandbox capability matrix digest is invalid",

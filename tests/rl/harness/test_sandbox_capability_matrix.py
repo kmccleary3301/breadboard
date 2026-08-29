@@ -6,6 +6,8 @@ from importlib.resources import files
 
 import pytest
 
+import breadboard.rl.harness.sandbox as sandbox_module
+
 from breadboard.rl.harness.sandbox import (
     SANDBOX_CAPABILITY_MATRIX_RESOURCE,
     SANDBOX_CAPABILITY_MATRIX_SHA256,
@@ -44,3 +46,38 @@ def test_sandbox_capability_matrix_is_an_installed_package_resource() -> None:
 
     assert payload["schema_version"] == SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION
     assert payload["workspace_root"] == "/testbed"
+
+
+def test_sandbox_capability_matrix_rejects_oversized_resource(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    resource = tmp_path / SANDBOX_CAPABILITY_MATRIX_RESOURCE
+    resource.write_bytes(b"x" * (64 * 1024 + 1))
+    monkeypatch.setattr(sandbox_module, "files", lambda _package: tmp_path)
+
+    with pytest.raises(sandbox_module.SandboxRuntimeError) as captured:
+        load_sandbox_capability_matrix()
+
+    assert captured.value.code == "capability_matrix_invalid"
+
+
+def test_sandbox_capability_matrix_rejects_symlink_resource(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "matrix-target.json"
+    target.write_bytes(
+        files("breadboard.rl.harness")
+        .joinpath(SANDBOX_CAPABILITY_MATRIX_RESOURCE)
+        .read_bytes()
+    )
+    resource = tmp_path / SANDBOX_CAPABILITY_MATRIX_RESOURCE
+    try:
+        resource.symlink_to(target)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+    monkeypatch.setattr(sandbox_module, "files", lambda _package: tmp_path)
+
+    with pytest.raises(sandbox_module.SandboxRuntimeError) as captured:
+        load_sandbox_capability_matrix()
+
+    assert captured.value.code == "capability_matrix_invalid"
