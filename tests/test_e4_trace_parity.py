@@ -344,6 +344,8 @@ def test_normalization_policy_fails_closed(monkeypatch: pytest.MonkeyPatch) -> N
     for reserved_path in (
         r"C:\tmp\reference\CON",
         r"\\server\share\reference\NUL.txt",
+        r"C:\tmp\reference\COM¹",
+        r"C:\tmp\reference\LPT².log",
     ):
         with pytest.raises(E4ParityError, match="unsafe Windows component"):
             TemporaryPathRoots(
@@ -868,6 +870,7 @@ def test_parity_report_binds_every_required_identity() -> None:
             clone_trace=clone,
             normalization_rules=iter(()),
         )
+
     reference["events"][0]["kind"] = "mutated"
     assert report["reference_trace_sha256"] == reference_sha256
     identity_sha256 = report["upstream_identity_sha256"]
@@ -947,4 +950,41 @@ def test_parity_report_binds_every_required_identity() -> None:
             built_package_sha256=SHA256,
             reference_trace=reference,
             clone_trace=clone,
+        )
+
+
+def test_report_admits_normalization_policy_before_trace_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _trace([{"kind": "done", "path": "/tmp/reference/result"}])
+    report_args = {
+        "target_id": "pi@0.57.1",
+        "target_descriptor_sha256": SHA256,
+        "target_config_sha256": SHA256,
+        "upstream_identity": {"name": "pi", "version": "0.57.1"},
+        "fixture_id": "surface.catalog.v1",
+        "fixture_sha256": SHA256,
+        "engine_commit": GIT_COMMIT,
+        "built_package_sha256": SHA256,
+        "reference_trace": trace,
+        "clone_trace": trace,
+    }
+
+    def forbidden_canonicalization(_value):
+        raise AssertionError("invalid policy must fail before trace traversal")
+
+    monkeypatch.setattr(parity, "canonical_json_bytes", forbidden_canonicalization)
+    with pytest.raises(TypeError, match="must contain exact NormalizationRule values"):
+        build_e4_parity_report(
+            **report_args,
+            normalization_rules=[object()],
+        )
+    with pytest.raises(E4ParityError, match="exact TemporaryPathRoots"):
+        build_e4_parity_report(
+            **report_args,
+            normalization_rules=[NormalizationRule("/events/0/path", "temporary_path")],
+            temporary_roots=SimpleNamespace(
+                reference="/tmp/reference",
+                clone="/tmp/clone",
+            ),
         )

@@ -29,6 +29,7 @@ _WINDOWS_RESERVED_COMPONENTS = frozenset(
         *(f"LPT{index}" for index in range(1, 10)),
     }
 )
+_WINDOWS_DEVICE_DIGIT_TRANSLATION = str.maketrans({"¹": "1", "²": "2", "³": "3"})
 _TRACE_KEYS = frozenset(
     {
         "schema_version",
@@ -409,23 +410,23 @@ def _resolve_json_pointer(value: Any, pointer: str) -> tuple[bool, Any]:
     return True, current
 
 
-def compare_e4_traces(
-    reference: Any,
-    clone: Any,
+def _admit_normalization_policy(
+    rules: Sequence[NormalizationRule],
+    temporary_roots: TemporaryPathRoots | None,
     *,
-    rules: Sequence[NormalizationRule] = (),
-    temporary_roots: TemporaryPathRoots | None = None,
-) -> TraceComparison:
+    field_name: str,
+) -> tuple[NormalizationRule, ...]:
     if type(rules) not in {list, tuple}:
-        raise TypeError("rules must be an exact list or tuple")
+        raise TypeError(f"{field_name} must be an exact list or tuple")
     if len(rules) > _MAX_NORMALIZATION_RULES:
         raise E4ParityError(
             f"normalization rule count exceeds {_MAX_NORMALIZATION_RULES}"
         )
+    admitted_rules = tuple(rules)
     rules_by_pointer: dict[str, NormalizationRule] = {}
-    for rule in rules:
+    for rule in admitted_rules:
         if type(rule) is not NormalizationRule:
-            raise TypeError("rules must contain exact NormalizationRule values")
+            raise TypeError(f"{field_name} must contain exact NormalizationRule values")
         if rule.pointer in rules_by_pointer:
             raise E4ParityError(f"duplicate normalization pointer {rule.pointer!r}")
         rules_by_pointer[rule.pointer] = rule
@@ -436,13 +437,32 @@ def compare_e4_traces(
             index + 1
         ].startswith(prefix):
             raise E4ParityError(f"normalization pointers overlap at {pointer!r}")
-    requires_temporary_roots = any(rule.kind == "temporary_path" for rule in rules)
+    requires_temporary_roots = any(
+        rule.kind == "temporary_path" for rule in admitted_rules
+    )
     if requires_temporary_roots and temporary_roots is None:
         raise E4ParityError("temporary_path normalization requires both trace roots")
     if requires_temporary_roots and type(temporary_roots) is not TemporaryPathRoots:
         raise E4ParityError(
             "temporary_path normalization requires exact TemporaryPathRoots"
         )
+    return admitted_rules
+
+
+def compare_e4_traces(
+    reference: Any,
+    clone: Any,
+    *,
+    rules: Sequence[NormalizationRule] = (),
+    temporary_roots: TemporaryPathRoots | None = None,
+) -> TraceComparison:
+    rules = _admit_normalization_policy(
+        rules,
+        temporary_roots,
+        field_name="rules",
+    )
+    rules_by_pointer = {rule.pointer: rule for rule in rules}
+    sorted_rule_pointers = sorted(rules_by_pointer)
 
     mismatches: list[TraceMismatch] = []
     normalized_fields: list[NormalizedField] = []
@@ -1114,12 +1134,11 @@ def build_e4_parity_report(
         raise TypeError("upstream_identity must be an exact dict")
     if type(reference_trace) is not dict or type(clone_trace) is not dict:
         raise TypeError("traces must be exact dicts")
-    if type(normalization_rules) not in {list, tuple}:
-        raise TypeError("normalization_rules must be an exact list or tuple")
-    if len(normalization_rules) > _MAX_NORMALIZATION_RULES:
-        raise E4ParityError(
-            f"normalization rule count exceeds {_MAX_NORMALIZATION_RULES}"
-        )
+    rules = _admit_normalization_policy(
+        normalization_rules,
+        temporary_roots,
+        field_name="normalization_rules",
+    )
     identity_bytes = canonical_json_bytes(upstream_identity)
     reference_bytes = canonical_json_bytes(reference_trace)
     clone_bytes = canonical_json_bytes(clone_trace)
@@ -1137,7 +1156,6 @@ def build_e4_parity_report(
         or clone_snapshot["fixture_id"] != fixture_id
     ):
         raise E4ParityError("trace fixture IDs must match the report fixture")
-    rules = tuple(normalization_rules)
     comparison = compare_e4_traces(
         reference_snapshot,
         clone_snapshot,
@@ -1270,7 +1288,8 @@ def _validate_absolute_path(value: str, field_name: str) -> None:
         raise E4ParityError(f"{field_name} contains an unsafe component")
     if is_windows and any(
         part.rstrip(" .") != part
-        or part.split(".", 1)[0].upper() in _WINDOWS_RESERVED_COMPONENTS
+        or part.split(".", 1)[0].translate(_WINDOWS_DEVICE_DIGIT_TRANSLATION).upper()
+        in _WINDOWS_RESERVED_COMPONENTS
         or any(character in '<>:"|?*' for character in part)
         for part in components
     ):
