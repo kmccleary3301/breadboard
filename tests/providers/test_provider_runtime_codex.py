@@ -541,6 +541,51 @@ def test_codex_runtime_starts_threads_read_only_without_approvals(
     runtime._release_leased_client(healthy=True)
 
 
+@pytest.mark.parametrize("failure_stage", ["initialize", "thread_start"])
+def test_codex_runtime_closes_client_when_setup_fails(
+    monkeypatch,
+    tmp_path,
+    failure_stage,
+) -> None:
+    monkeypatch.delenv("BREADBOARD_CODEX_APP_SERVER_POOL", raising=False)
+    closed: list[bool] = []
+
+    class _FailingSetupClient:
+        def __init__(self, *, codex_bin: str, cwd: str, env: dict, **_kwargs) -> None:
+            del codex_bin, cwd, env
+
+        def start(self) -> None:
+            pass
+
+        def initialize(self) -> dict:
+            if failure_stage == "initialize":
+                raise ProviderRuntimeError("initialize failed")
+            return {"ok": True}
+
+        def thread_start(self, _params: dict) -> dict:
+            if failure_stage == "thread_start":
+                raise ProviderRuntimeError("thread start failed")
+            return {"thread": {"id": "unreachable"}}
+
+        def close(self) -> None:
+            closed.append(True)
+
+    monkeypatch.setattr(
+        runtime_codex_module, "_CodexJsonRpcClient", _FailingSetupClient
+    )
+    descriptor, model = provider_router.get_runtime_descriptor("codex/gpt-5.5")
+    runtime = provider_registry.create_runtime(descriptor)
+
+    with pytest.raises(ProviderRuntimeError):
+        runtime._ensure_client(
+            model=model,
+            cwd=str(tmp_path),
+            client={"api_key": "test-key"},
+        )
+
+    assert closed == [True]
+
+
 def test_codex_runtime_streams_commentary_tool_exec_and_final_answer(
     monkeypatch,
 ) -> None:

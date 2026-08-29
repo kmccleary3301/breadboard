@@ -604,6 +604,14 @@ class CodexAppServerRuntime(ProviderRuntime):
             "default_headers": dict(default_headers or {}),
         }
 
+    def create_client_from_config(self, config: Mapping[str, Any]) -> Any:
+        return {
+            "api_key": config.get("api_key"),
+            "access_token": config.get("access_token"),
+            "base_url": config.get("base_url"),
+            "default_headers": dict(config.get("default_headers") or {}),
+        }
+
     def invoke(
         self,
         *,
@@ -891,36 +899,44 @@ class CodexAppServerRuntime(ProviderRuntime):
         )
         after_acquire_at = time.monotonic()
         after_initialize_at = after_acquire_at
-        if not cache_hit:
-            client_instance.start()
-            after_start_at = time.monotonic()
-            client_instance.initialize()
-            after_initialize_at = time.monotonic()
-        else:
-            after_start_at = spawn_started_at
-        thread_result = client_instance.thread_start(
-            {
-                "model": model,
-                "cwd": cwd,
-                "sandbox": "read-only",
-                "approvalPolicy": "never",
-                "ephemeral": True,
-                "dynamicTools": [],
-                "environments": [],
-            }
-        )
-        after_thread_start_at = time.monotonic()
-        thread = (
-            thread_result.get("thread") if isinstance(thread_result, dict) else None
-        )
-        thread_id = thread.get("id") if isinstance(thread, dict) else None
-        if not isinstance(thread_id, str) or not thread_id:
-            client_instance.close()
-            raise ProviderRuntimeError(
-                "Codex app-server thread/start did not return a valid thread id",
-                kind="protocol",
-                details={"code": "invalid_codex_thread_start"},
+        try:
+            if not cache_hit:
+                client_instance.start()
+                after_start_at = time.monotonic()
+                client_instance.initialize()
+                after_initialize_at = time.monotonic()
+            else:
+                after_start_at = spawn_started_at
+            thread_result = client_instance.thread_start(
+                {
+                    "model": model,
+                    "cwd": cwd,
+                    "sandbox": "read-only",
+                    "approvalPolicy": "never",
+                    "ephemeral": True,
+                    "dynamicTools": [],
+                    "environments": [],
+                }
             )
+            after_thread_start_at = time.monotonic()
+            thread = (
+                thread_result.get("thread")
+                if isinstance(thread_result, dict)
+                else None
+            )
+            thread_id = thread.get("id") if isinstance(thread, dict) else None
+            if not isinstance(thread_id, str) or not thread_id:
+                raise ProviderRuntimeError(
+                    "Codex app-server thread/start did not return a valid thread id",
+                    kind="protocol",
+                    details={"code": "invalid_codex_thread_start"},
+                )
+        except BaseException:
+            try:
+                client_instance.close()
+            except Exception:
+                pass
+            raise
         self._client = client_instance
         self._thread_id = thread_id
         self._session_model = model

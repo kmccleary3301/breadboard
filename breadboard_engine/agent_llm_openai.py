@@ -6801,11 +6801,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     details={"code": "policy_rejection"},
                     kind="configuration",
                 )
-            client = runtime.create_client(
-                cfg.get("api_key"),
-                base_url=cfg.get("base_url"),
-                default_headers=cfg.get("default_headers"),
-            )
+            client = runtime.create_client_from_config(cfg)
             yield client
 
     def _invoke_runtime_with_streaming(
