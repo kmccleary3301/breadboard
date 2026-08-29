@@ -959,7 +959,6 @@ def workspace_snapshot(root: Path) -> dict[str, Any]:
 
 
 def validate_workspace_snapshot(snapshot: dict[str, Any]) -> None:
-    _validate_closed_json(snapshot)
     if (
         type(snapshot) is not dict
         or set(snapshot) != {"schema_version", "entries"}
@@ -977,28 +976,44 @@ def validate_workspace_snapshot(snapshot: dict[str, Any]) -> None:
         if type(entry) is not dict:
             raise E4ParityError(f"{context} must be an object")
         path = entry.get("path")
+        if type(path) is not str or not path:
+            raise E4ParityError(f"{context} path must be safe and relative")
+        if len(path) > _MAX_WORKSPACE_PATH_BYTES:
+            raise E4ParityError(
+                f"{context} path exceeds {_MAX_WORKSPACE_PATH_BYTES} UTF-8 bytes"
+            )
+        if not path.isprintable():
+            raise E4ParityError(f"{context} path must be safe and relative")
+        try:
+            path_bytes = len(path.encode("utf-8"))
+        except UnicodeEncodeError as exc:
+            raise E4ParityError(f"{context} path must be safe and relative") from exc
+        if path_bytes > _MAX_WORKSPACE_PATH_BYTES:
+            raise E4ParityError(
+                f"{context} path exceeds {_MAX_WORKSPACE_PATH_BYTES} UTF-8 bytes"
+            )
         kind = entry.get("kind")
         mode = entry.get("mode")
-        if (
-            type(path) is not str
-            or not path
-            or path.startswith("/")
-            or "\\" in path
-            or ":" in path
-        ):
+        if path.startswith("/") or "\\" in path or ":" in path:
             raise E4ParityError(f"{context} path must be safe and relative")
         parts = path.split("/")
-        if (
-            len(path.encode("utf-8")) > _MAX_WORKSPACE_PATH_BYTES
-            or len(parts) > _MAX_WORKSPACE_DEPTH
-            or any(
-                part in {"", ".", ".."}
-                or not part.isprintable()
-                or len(part.encode("utf-8")) > _MAX_WORKSPACE_COMPONENT_BYTES
-                for part in parts
-            )
-        ):
+        if len(parts) > _MAX_WORKSPACE_DEPTH:
             raise E4ParityError(f"{context} path must be safe and relative")
+        for part in parts:
+            if (
+                part in {"", ".", ".."}
+                or len(part) > _MAX_WORKSPACE_COMPONENT_BYTES
+                or not part.isprintable()
+            ):
+                raise E4ParityError(f"{context} path must be safe and relative")
+            try:
+                part_bytes = len(part.encode("utf-8"))
+            except UnicodeEncodeError as exc:
+                raise E4ParityError(
+                    f"{context} path must be safe and relative"
+                ) from exc
+            if part_bytes > _MAX_WORKSPACE_COMPONENT_BYTES:
+                raise E4ParityError(f"{context} path must be safe and relative")
         if type(mode) is not int or not 0 <= mode <= 0o7777:
             raise E4ParityError(f"{context} mode must be an exact permission mode")
         if kind == "directory":
@@ -1020,19 +1035,17 @@ def validate_workspace_snapshot(snapshot: dict[str, Any]) -> None:
                 raise E4ParityError(f"workspace bytes exceed {_MAX_WORKSPACE_BYTES}")
         elif kind == "symlink":
             expected_keys = {"path", "kind", "mode", "target"}
-            target = entry.get("target")
-            if (
-                type(target) is not str
-                or not target
-                or not target.isprintable()
-                or len(target.encode("utf-8")) > _MAX_WORKSPACE_PATH_BYTES
-            ):
-                raise E4ParityError(f"{context} symlink target must be valid text")
+            _require_bounded_text(
+                entry.get("target"),
+                f"{context} symlink target",
+                max_bytes=_MAX_WORKSPACE_PATH_BYTES,
+            )
         else:
             raise E4ParityError(f"{context} kind is unsupported")
         if set(entry) != expected_keys:
             raise E4ParityError(f"{context} must contain exact {kind} fields")
         paths.append(path)
+    _validate_closed_json(snapshot)
     if paths != sorted(paths) or len(paths) != len(set(paths)):
         raise E4ParityError("workspace entries must be sorted with unique paths")
     entry_kinds = {entry["path"]: entry["kind"] for entry in entries}
@@ -1049,7 +1062,6 @@ def validate_workspace_snapshot(snapshot: dict[str, Any]) -> None:
 def validate_e4_trace(trace: dict[str, Any]) -> None:
     if type(trace) is not dict:
         raise TypeError("trace must be an exact dict")
-    _validate_closed_json(trace)
     if set(trace) != _TRACE_KEYS:
         raise E4ParityError("trace must contain the exact execution-trace fields")
     if trace["schema_version"] != "bb.e4.execution_trace.v1":
@@ -1072,6 +1084,10 @@ def validate_e4_trace(trace: dict[str, Any]) -> None:
         value = process[field_name]
         if type(value) is not str:
             raise E4ParityError(f"trace process.{field_name} must be base64 text")
+        if len(value) > _MAX_JSON_STRING_BYTES:
+            raise E4ParityError(
+                f"trace process.{field_name} exceeds admitted text bounds"
+            )
         try:
             decoded = base64.b64decode(value, validate=True)
         except (ValueError, binascii.Error) as exc:
@@ -1104,6 +1120,7 @@ def validate_e4_trace(trace: dict[str, Any]) -> None:
         raise E4ParityError("trace terminal.reason must be normalized text")
     if terminal["result"] is not None and terminal["error"] is not None:
         raise E4ParityError("trace terminal cannot contain both result and error")
+    _validate_closed_json(trace)
 
 
 def build_e4_parity_report(

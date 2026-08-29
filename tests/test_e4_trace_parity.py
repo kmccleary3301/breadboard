@@ -369,6 +369,23 @@ def test_text_limits_precede_printability_and_encoding(
     with pytest.raises(E4ParityError, match="JSON string byte size exceeds 4"):
         canonical_json_bytes({"value": oversized_invalid_unicode})
 
+    trace = _trace([{"kind": "ready"}], target_id="\ud800" * 257)
+    with pytest.raises(E4ParityError, match="exceeds 256 UTF-8 bytes"):
+        validate_e4_trace(trace)
+
+    snapshot = {
+        "schema_version": "bb.e4.workspace_snapshot.v1",
+        "entries": [
+            {
+                "path": "\ud800" * 4097,
+                "kind": "directory",
+                "mode": 0o755,
+            }
+        ],
+    }
+    with pytest.raises(E4ParityError, match="path exceeds 4096 UTF-8 bytes"):
+        validate_workspace_snapshot(snapshot)
+
 
 def test_trace_values_must_be_closed_json() -> None:
     with pytest.raises(E4ParityError, match="non-JSON tuple"):
