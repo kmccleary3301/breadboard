@@ -2127,7 +2127,7 @@ entries:
   - path: scripts/rl_phase5/swe_bench_evaluator_requirements.lock
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/swe-evaluator-lock.yml]
+    callers: [.github/workflows/swe-evaluator-lock.yml, scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/rl_phase5/validate_f1_preflight.py
     class: campaign
