@@ -578,7 +578,15 @@ def initialize_enhanced_executor(conductor: Any) -> None:
     if enhanced_config.get("lsp_integration", {}).get("enabled", False):
         try:
             from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
-            conductor.sandbox = LSPEnhancedSandbox.remote(conductor.sandbox, conductor.workspace)
+            conductor.sandbox = LSPEnhancedSandbox.remote(
+                conductor.sandbox,
+                conductor.workspace,
+                protected_paths=getattr(
+                    conductor,
+                    "_protected_credential_paths",
+                    (),
+                ),
+            )
         except ImportError:
             pass
     if enhanced_config.get("enabled", False) or enhanced_config.get("lsp_integration", {}).get("enabled", False):
@@ -586,7 +594,15 @@ def initialize_enhanced_executor(conductor: Any) -> None:
         if enhanced_config.get("lsp_integration", {}).get("enabled", False):
             try:
                 from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
-                sandbox_for_executor = LSPEnhancedSandbox.remote(conductor.sandbox, conductor.workspace)
+                sandbox_for_executor = LSPEnhancedSandbox.remote(
+                    conductor.sandbox,
+                    conductor.workspace,
+                    protected_paths=getattr(
+                        conductor,
+                        "_protected_credential_paths",
+                        (),
+                    ),
+                )
             except ImportError:
                 pass
         conductor.enhanced_executor = EnhancedToolExecutor(

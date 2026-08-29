@@ -1,38 +1,164 @@
 from __future__ import annotations
 
-import asyncio
-from contextlib import asynccontextmanager
 import hashlib
 import json
-import math
 import os
-import secrets
-import time
 import tempfile
-from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Deque, Dict, Iterable, Optional, Tuple, TypeVar
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    Optional,
+)
 
-from ..engine_identity_config import EngineProcessIdentity, LaunchBootstrapVerifier
-from ..events import EventType, SessionEvent, replay_retention_facts
+from ..events import EventType, SessionEvent
 from ..models import (
-    BeginControlDrainRequest, BootstrapChallengeRequest, BootstrapChallengeResponse,
-    ClientLeaseRequest, ClientRegisterRequest, ClientRegistrationResponse,
-    DrainControlRequest, DrainControlResponse, GracefulControlResultRequest,
-    HardSignalCommitRequest, HardSignalPreparationResponse, HardSignalPermitResponse,
-    HardSignalOutcomeRequest, HardSignalPrepareRequest, OwnerAcquireRequest,
-    OwnerLeaseRequest, OwnerLeaseResponse, SessionStatus, SessionSummary,
+    SessionStatus,
+    SessionSummary,
     TurnAdmission,
 )
 
 from .records import (
-    _STATE_SCHEMA_VERSION, _TERMINAL_EVENT_TYPES, _retained_model_id, _utcnow,
-    CancellationRecord, EventType, SessionRecord, SessionRecordDeletedError,
-    SessionEvent, SessionStatus, TurnAdmission, TurnRecord, cancellation_body_digest,
-    identity_digest, submission_body_digest,
+    _STATE_SCHEMA_VERSION,
+    _TERMINAL_EVENT_TYPES,
+    _retained_model_id,
+    _utcnow,
+    CancellationRecord,
+    SessionRecord,
+    SessionRecordDeletedError,
+    TurnRecord,
+    cancellation_body_digest,
+    identity_digest,
+    submission_body_digest,
 )
+
+_TURN_COMPLETED_FIELDS = {
+    "exchange_ref",
+    "finish_reason",
+    "output_emitted",
+    "raw_provider_finish",
+    "usage",
+}
+_PROVIDER_FINISH_REASONS = {"stop", "length", "toolUse", "error", "aborted"}
+_PROVIDER_USAGE_FIELDS = {
+    "inputTokens",
+    "outputTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+    "totalTokens",
+    "reasoningTokens",
+    "extensions",
+}
+
+
+def _retained_turn_completed_payload(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("turn_completed payload must be an object")
+    unknown = set(value) - _TURN_COMPLETED_FIELDS
+    if unknown:
+        raise ValueError("turn_completed payload has unknown fields")
+    payload: Dict[str, Any] = {}
+    if "exchange_ref" in value:
+        exchange_ref = value["exchange_ref"]
+        if (
+            not isinstance(exchange_ref, dict)
+            or set(exchange_ref) != {"exchange_id", "schema_version"}
+            or exchange_ref.get("schema_version") != "bb.provider_exchange.v2"
+            or not isinstance(exchange_ref.get("exchange_id"), str)
+            or not 1 <= len(exchange_ref["exchange_id"]) <= 256
+        ):
+            raise ValueError("turn_completed payload has an invalid exchange_ref")
+        payload["exchange_ref"] = dict(exchange_ref)
+    if "finish_reason" in value:
+        if value["finish_reason"] not in _PROVIDER_FINISH_REASONS:
+            raise ValueError("turn_completed payload has an invalid finish_reason")
+        payload["finish_reason"] = value["finish_reason"]
+    if "output_emitted" in value:
+        if not isinstance(value["output_emitted"], bool):
+            raise ValueError("turn_completed payload has an invalid output_emitted")
+        payload["output_emitted"] = value["output_emitted"]
+    if "raw_provider_finish" in value:
+        raw_finish = value["raw_provider_finish"]
+        if (
+            not isinstance(raw_finish, str)
+            or not 1 <= len(raw_finish) <= 128
+            or not raw_finish.isascii()
+            or not raw_finish[0].isalnum()
+            or any(
+                not (character.isalnum() or character in "._:/-")
+                for character in raw_finish
+            )
+        ):
+            raise ValueError(
+                "turn_completed payload has an invalid raw_provider_finish"
+            )
+        payload["raw_provider_finish"] = raw_finish
+    if "usage" in value:
+        usage = value["usage"]
+        if not isinstance(usage, dict) or set(usage) - _PROVIDER_USAGE_FIELDS:
+            raise ValueError("turn_completed payload has invalid usage")
+        retained_usage: Dict[str, Any] = {}
+        for field_name in _PROVIDER_USAGE_FIELDS - {"extensions"}:
+            if field_name not in usage:
+                continue
+            token_count = usage[field_name]
+            if (
+                isinstance(token_count, bool)
+                or not isinstance(token_count, int)
+                or token_count < 0
+            ):
+                raise ValueError("turn_completed payload has invalid usage")
+            retained_usage[field_name] = token_count
+        if "extensions" in usage:
+            extensions = usage["extensions"]
+            if not isinstance(extensions, dict) or any(
+                not isinstance(key, str) for key in extensions
+            ):
+                raise ValueError("turn_completed payload has invalid usage extensions")
+            try:
+                encoded = json.dumps(
+                    extensions,
+                    allow_nan=False,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "turn_completed payload has invalid usage extensions"
+                ) from None
+            if len(encoded.encode("utf-8")) > 65536:
+                raise ValueError(
+                    "turn_completed payload has oversized usage extensions"
+                )
+            retained_usage["extensions"] = json.loads(encoded)
+        payload["usage"] = retained_usage
+    return payload
+
+
+def _retained_terminal_payload(event_type: EventType, value: Any) -> Dict[str, Any]:
+    if event_type is EventType.TURN_COMPLETED:
+        return _retained_turn_completed_payload(value)
+    if not isinstance(value, dict):
+        raise ValueError("terminal event payload must be an object")
+    if event_type is EventType.TURN_CANCELLED:
+        reason = str(value.get("reason") or "user_requested")
+        return {
+            "reason": (
+                reason
+                if reason
+                in {"user_requested", "timeout", "superseded", "stop_requested"}
+                else "user_requested"
+            )
+        }
+    error = value.get("error")
+    code = error.get("code") if isinstance(error, dict) else None
+    safe_code = str(code or "turn_execution_failed")
+    if not safe_code.replace("_", "").replace("-", "").replace(".", "").isalnum():
+        safe_code = "turn_execution_failed"
+    return {"error": {"code": safe_code[:128]}}
 
 
 class PersistenceMixin:
@@ -47,6 +173,7 @@ class PersistenceMixin:
     async def get(self, session_id: str) -> Optional[SessionRecord]:
         async with self._lock:
             return self._records.get(session_id)
+
     async def records(self) -> list[SessionRecord]:
         async with self._lock:
             return list(self._records.values())
@@ -60,6 +187,11 @@ class PersistenceMixin:
             record = self._records.get(session_id)
             if not record:
                 return
+            if (
+                record.product_session is not None
+                and status is not record.projected_status()
+            ):
+                raise RuntimeError("bridge status disagrees with product Session")
             record.status = status
             record.last_activity_at = _utcnow()
             self._persist_record_locked(record)
@@ -77,6 +209,13 @@ class PersistenceMixin:
             record = self._records.get(session_id)
             if not record:
                 return
+            previous = (
+                record.logging_dir,
+                record.completion_summary,
+                record.reward_summary,
+                record.metadata,
+                record.last_activity_at,
+            )
             if logging_dir:
                 record.logging_dir = logging_dir
             if completion_summary is not None:
@@ -86,7 +225,17 @@ class PersistenceMixin:
             if metadata is not None:
                 record.metadata = metadata
             record.last_activity_at = _utcnow()
-            self._persist_record_locked(record)
+            try:
+                self._persist_record_locked(record)
+            except Exception:
+                (
+                    record.logging_dir,
+                    record.completion_summary,
+                    record.reward_summary,
+                    record.metadata,
+                    record.last_activity_at,
+                ) = previous
+                raise
 
     async def delete(self, session_id: str) -> None:
         async with self._lock:
@@ -124,8 +273,13 @@ class PersistenceMixin:
                     record.terminal_event_envelopes.append(candidate)
                 if terminal_event.turn_id is not None:
                     resolution_turn = record.turns_by_id.get(terminal_event.turn_id)
-                    if resolution_turn is None or resolution_turn.terminal_outcome is None:
-                        raise RuntimeError("terminal event does not resolve an admitted turn")
+                    if (
+                        resolution_turn is None
+                        or resolution_turn.terminal_outcome is None
+                    ):
+                        raise RuntimeError(
+                            "terminal event does not resolve an admitted turn"
+                        )
                     resolution_was_committed = (
                         resolution_turn.terminal_resolution_committed
                     )
@@ -136,7 +290,9 @@ class PersistenceMixin:
                 if retained is not None:
                     record.terminal_event_envelopes.remove(retained)
                 if resolution_turn is not None:
-                    resolution_turn.terminal_resolution_committed = resolution_was_committed
+                    resolution_turn.terminal_resolution_committed = (
+                        resolution_was_committed
+                    )
                 raise
 
     def _state_path(self, session_id: str) -> Path | None:
@@ -149,6 +305,7 @@ class PersistenceMixin:
         path = self._state_path(record.session_id)
         if path is None:
             return
+        path.parent.mkdir(parents=True, exist_ok=True)
         payload = self._serialize_record(record)
         with tempfile.NamedTemporaryFile(
             "w",
@@ -157,7 +314,13 @@ class PersistenceMixin:
             delete=False,
         ) as handle:
             temp_path = Path(handle.name)
-            json.dump(payload, handle, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+            json.dump(
+                payload,
+                handle,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            )
             handle.flush()
             os.fsync(handle.fileno())
         try:
@@ -167,6 +330,30 @@ class PersistenceMixin:
                 temp_path.unlink()
             except FileNotFoundError:
                 pass
+
+    @staticmethod
+    def _durable_replay_head(record: SessionRecord) -> tuple[int, str | None]:
+        for event in reversed(record.event_log):
+            if (
+                event.stable_cursor
+                and event.seq == record.event_seq
+                and record.event_seq > 0
+            ):
+                return record.event_seq, event.event_id
+        if record.event_seq > 0 and record.replay_head_event_id:
+            return record.event_seq, record.replay_head_event_id
+        for envelope in reversed(record.terminal_event_envelopes):
+            sequence = envelope.get("seq")
+            event_id = envelope.get("id")
+            if (
+                isinstance(sequence, int)
+                and not isinstance(sequence, bool)
+                and sequence > 0
+                and isinstance(event_id, str)
+                and event_id
+            ):
+                return sequence, event_id
+        return 0, None
 
     def _serialize_record(self, record: SessionRecord) -> Dict[str, Any]:
         submissions = []
@@ -179,11 +366,15 @@ class PersistenceMixin:
 
         cancellations = []
         for key, cancellation in record.cancellations_by_key.items():
-            cancellations.append(self._serialize_cancellation(identity_digest(key), cancellation))
+            cancellations.append(
+                self._serialize_cancellation(identity_digest(key), cancellation)
+            )
         known_cancellation_digests = {item["key_digest"] for item in cancellations}
         for key_digest, cancellation in record.cancellations_by_key_digest.items():
             if key_digest not in known_cancellation_digests:
-                cancellations.append(self._serialize_cancellation(key_digest, cancellation))
+                cancellations.append(
+                    self._serialize_cancellation(key_digest, cancellation)
+                )
 
         turns = [
             {
@@ -201,6 +392,12 @@ class PersistenceMixin:
             }
             for turn in record.turns_by_id.values()
         ]
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        role_lock = metadata.get("model_role_lock")
+        if not isinstance(role_lock, dict):
+            role_lock = None
+        active_role = metadata.get("active_model_role")
+        durable_event_seq, durable_head_event_id = self._durable_replay_head(record)
         return {
             "schema_version": _STATE_SCHEMA_VERSION,
             "session": {
@@ -208,8 +405,12 @@ class PersistenceMixin:
                 "status": record.status.value,
                 "created_at": record.created_at.isoformat(),
                 "last_activity_at": record.last_activity_at.isoformat(),
-                "event_seq": record.event_seq,
-                "model": _retained_model_id(record.metadata.get("model")),
+                "event_seq": durable_event_seq,
+                "event_head_id": durable_head_event_id,
+                "model": _retained_model_id(metadata.get("model")),
+                "config_path": str(metadata.get("config_path") or ""),
+                "model_role_lock": role_lock,
+                "active_model_role": str(active_role) if active_role else None,
             },
             "turns": turns,
             "submissions": submissions,
@@ -221,14 +422,17 @@ class PersistenceMixin:
     def _serialize_submission(key_digest: str, turn: TurnRecord) -> Dict[str, Any]:
         return {
             "key_digest": key_digest,
-            "body_digest": turn.body_digest or submission_body_digest(turn.content, turn.attachments),
+            "body_digest": turn.body_digest
+            or submission_body_digest(turn.content, turn.attachments),
             "input_id": turn.input_id,
             "turn_id": turn.turn_id,
             "original_disposition": turn.original_disposition,
         }
 
     @staticmethod
-    def _serialize_cancellation(key_digest: str, cancellation: CancellationRecord) -> Dict[str, Any]:
+    def _serialize_cancellation(
+        key_digest: str, cancellation: CancellationRecord
+    ) -> Dict[str, Any]:
         return {
             "key_digest": key_digest,
             "body_digest": cancellation.body_digest
@@ -244,17 +448,7 @@ class PersistenceMixin:
     def _retained_terminal_envelope(event: SessionEvent) -> Dict[str, Any] | None:
         if event.type not in _TERMINAL_EVENT_TYPES:
             return None
-        payload: Dict[str, Any] = {}
-        if event.type is EventType.TURN_CANCELLED:
-            reason = str(event.payload.get("reason") or "user_requested")
-            payload["reason"] = reason if reason in {"user_requested", "timeout", "superseded"} else "user_requested"
-        elif event.type is EventType.TURN_FAILED:
-            error = event.payload.get("error")
-            code = error.get("code") if isinstance(error, dict) else None
-            safe_code = str(code or "turn_execution_failed")
-            if not safe_code.replace("_", "").replace("-", "").replace(".", "").isalnum():
-                safe_code = "turn_execution_failed"
-            payload["error"] = {"code": safe_code[:128]}
+        payload = _retained_terminal_payload(event.type, event.payload)
         return {
             "id": event.event_id,
             "seq": event.seq,
@@ -296,9 +490,7 @@ class PersistenceMixin:
         timestamp_ms = envelope.get("timestamp_ms")
         if isinstance(timestamp_ms, bool) or not isinstance(timestamp_ms, int):
             raise ValueError("retained terminal event has an invalid timestamp")
-        payload = envelope.get("payload")
-        if not isinstance(payload, dict):
-            raise ValueError("retained terminal event has an invalid payload")
+        payload = _retained_terminal_payload(event_type, envelope.get("payload"))
         input_id = envelope.get("input_id")
         turn_id = envelope.get("turn_id")
         if input_id is not None and not isinstance(input_id, str):
@@ -317,7 +509,6 @@ class PersistenceMixin:
             turn_id=turn_id,
         )
 
-
     def _load_retained_records(self) -> None:
         assert self._state_root is not None
         for path in sorted(self._state_root.glob("*.json")):
@@ -332,15 +523,52 @@ class PersistenceMixin:
         if payload.get("schema_version") != _STATE_SCHEMA_VERSION:
             raise ValueError("unsupported session-state schema")
         session = payload["session"]
+        session_id = str(session["session_id"])
+        persisted_event_seq = int(session.get("event_seq") or 0)
+        persisted_head_event_id = session.get("event_head_id")
+        if persisted_head_event_id is not None and (
+            not isinstance(persisted_head_event_id, str) or not persisted_head_event_id
+        ):
+            raise ValueError("retained replay head identity is invalid")
+        if persisted_event_seq == 0 and persisted_head_event_id is not None:
+            raise ValueError("empty retained replay has a head identity")
         model = _retained_model_id(session.get("model"))
+        metadata: Dict[str, Any] = {}
+        if model is not None:
+            metadata["model"] = model
+        if session.get("config_path"):
+            metadata["config_path"] = str(session["config_path"])
+        role_lock = session.get("model_role_lock")
+        if role_lock is not None:
+            if not isinstance(role_lock, dict):
+                raise ValueError("retained model-role lock is not an object")
+            from ....model_roles import (
+                select_role_target,
+                validate_model_role_lock,
+            )
+
+            restored = validate_model_role_lock(role_lock)
+            active_role = str(session.get("active_model_role") or "").strip() or str(
+                (restored.get("defaults") or {}).get("role") or ""
+            )
+            if active_role not in restored["roles"]:
+                raise ValueError(
+                    "retained active model role is not present in its lock"
+                )
+            active_target = select_role_target(restored, active_role)
+            metadata["model_role_lock"] = restored.as_dict()
+            metadata["model_role_lock_hash"] = restored.lock_hash
+            metadata["active_model_role"] = active_role
+            metadata["model"] = str(active_target["route_id"])
         record = SessionRecord(
-            session_id=str(session["session_id"]),
+            session_id=session_id,
             status=SessionStatus(str(session["status"])),
             created_at=datetime.fromisoformat(str(session["created_at"])),
             last_activity_at=datetime.fromisoformat(str(session["last_activity_at"])),
-            event_seq=int(session.get("event_seq") or 0),
-            replay_history_partial=bool(session.get("event_seq")),
-            metadata={"model": model} if model is not None else {},
+            event_seq=persisted_event_seq,
+            replay_history_partial=bool(persisted_event_seq),
+            replay_head_event_id=persisted_head_event_id,
+            metadata=metadata,
         )
         for item in payload.get("turns") or []:
             turn = TurnRecord(
@@ -398,6 +626,13 @@ class PersistenceMixin:
             record.event_log.extend(
                 sorted(rehydrated_events, key=lambda event: int(event.seq or 0))
             )
+        if record.event_seq > 0 and record.replay_head_event_id is None:
+            if record.event_log:
+                legacy_head = record.event_log[-1]
+                record.event_seq = int(legacy_head.seq or 0)
+                record.replay_head_event_id = legacy_head.event_id
+            else:
+                record.event_seq = 0
         committed_turn_ids = {
             str(item.get("turn_id"))
             for item in record.terminal_event_envelopes

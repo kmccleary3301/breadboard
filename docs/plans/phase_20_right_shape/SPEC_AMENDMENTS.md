@@ -378,3 +378,7 @@ GATE_L_DECISION.md, and bd comments on bb-c6n.4/bb-c6n.6.
 
 ## Amendment 24 — 2026-07-17 — NS05A validation-only coordination contracts
 **User authorization and evidence:** the approved `bb-06u.6` NS05A packet requires `bb.work_item.v2`, `bb.work_placement.v1`, and `bb.coordination_view.v1` to validate exact event-sourced Work Item state, correlation-only placements, and disposable projections; the existing v1 schema bytes stay frozen. Scope is these three candidate-schema `$id` additions only: all have lifecycle `validate_only`, reject production emission, have no generation default or public CRUD surface, and are allowlisted in `scripts/check_phase20_freeze.py`.
+
+## Amendment 25 — 2026-08-27 — D6 kernel event correlation repair
+
+**User authorization and evidence:** the accepted D6 runtime emits an optional `input_id` beside `turn_id` so admitted inputs remain correlated without numeric synthesis. Exact-head E4 regeneration rejected those emitted records because `bb.kernel_event.v2` had `additionalProperties: false` but omitted `input_id`. This amendment authorizes only the optional non-empty string property on the existing schema ID, pins the evolved schema hash in `scripts/check_phase20_freeze.py`, and adds no route, required field, generation default, or compatibility shim.

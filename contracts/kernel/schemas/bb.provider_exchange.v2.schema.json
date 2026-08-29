@@ -1,0 +1,622 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",
+  "title": "BreadBoard Provider Exchange V2",
+  "$comment": "Supersedes bb.provider_exchange.v1, which remains frozen for accepted evidence. Generated runtime validators additionally enforce canonical tool arguments, bounded encoded size/depth, event lifecycle, and terminal output consistency.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "exchange_id",
+    "correlation",
+    "provider",
+    "request",
+    "events",
+    "terminal"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.provider_exchange.v2"
+    },
+    "exchange_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "correlation": {
+      "$ref": "#/$defs/correlation"
+    },
+    "provider": {
+      "$ref": "#/$defs/provider"
+    },
+    "request": {
+      "$ref": "#/$defs/request"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    },
+    "terminal": {
+      "$ref": "#/$defs/terminal"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "\\S"
+    },
+    "canonical_json": {
+      "description": "A finite JSON value serialized canonically by the invariant owner.",
+      "oneOf": [
+        {"type": "null"},
+        {"type": "boolean"},
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "number",
+          "not": {"type": "integer"}
+        },
+        {"type": "string"},
+        {
+          "type": "array",
+          "items": {"$ref": "#/$defs/canonical_json"}
+        },
+        {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/canonical_json"}
+        }
+      ]
+    },
+    "bounded_extension_json": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "boolean"},
+        {"type": "number"},
+        {"type": "string", "maxLength": 4096},
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/bounded_extension_json"}
+        },
+        {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": {"type": "string", "minLength": 1, "maxLength": 128},
+          "additionalProperties": {"$ref": "#/$defs/bounded_extension_json"}
+        }
+      ]
+    },
+    "provider_replay_bounded_json": {
+      "$comment": "Generated runtime validators additionally enforce depth 4 and 4096 canonical UTF-8 bytes.",
+      "oneOf": [
+        {"type": "null"},
+        {"type": "boolean"},
+        {"type": "number"},
+        {"type": "string", "maxLength": 4096},
+        {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/provider_replay_bounded_json"}
+        },
+        {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": {"type": "string", "minLength": 1, "maxLength": 128},
+          "additionalProperties": {"$ref": "#/$defs/provider_replay_bounded_json"}
+        }
+      ]
+    },
+    "provider_replay_non_null_bounded_json": {
+      "$comment": "Non-null replay root; nested arrays and objects may contain null.",
+      "oneOf": [
+        {"type": "boolean"},
+        {"type": "number"},
+        {"type": "string", "maxLength": 4096},
+        {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/provider_replay_bounded_json"}
+        },
+        {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": {"type": "string", "minLength": 1, "maxLength": 128},
+          "additionalProperties": {"$ref": "#/$defs/provider_replay_bounded_json"}
+        }
+      ]
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "input_id", "turn_id"],
+      "properties": {
+        "session_id": {"$ref": "#/$defs/identifier"},
+        "input_id": {"$ref": "#/$defs/identifier"},
+        "turn_id": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_id", "runtime_id", "route_id", "model"],
+      "properties": {
+        "provider_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9._-]*$",
+          "maxLength": 128
+        },
+        "runtime_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9._-]*$",
+          "maxLength": 128
+        },
+        "route_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stream", "messages", "tools"],
+      "properties": {
+        "stream": {"type": "boolean"},
+        "messages": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/message"}
+        },
+        "tools": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/tool"}
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "parameters"],
+      "properties": {
+        "name": {"$ref": "#/$defs/identifier"},
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384,
+          "pattern": "\\S"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/canonical_json"}
+        },
+        "strict": {"type": "boolean"}
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "message_id": {"$ref": "#/$defs/identifier"},
+        "role": {
+          "enum": ["system", "user", "developer", "assistant", "tool_result"]
+        },
+        "content": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/content_block"}
+        }
+      }
+    },
+    "content_block": {
+      "oneOf": [
+        {"$ref": "#/$defs/text_block"},
+        {"$ref": "#/$defs/media_block"},
+        {"$ref": "#/$defs/thinking_block"},
+        {"$ref": "#/$defs/redacted_thinking_block"},
+        {"$ref": "#/$defs/tool_call_block"},
+        {"$ref": "#/$defs/tool_result_block"},
+        {"$ref": "#/$defs/provider_replay_block"}
+      ]
+    },
+    "text_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": {"const": "text"},
+        "text": {"type": "string"}
+      }
+    },
+    "media_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "kind", "uri", "mime"],
+      "properties": {
+        "type": {"const": "media"},
+        "kind": {"const": "image"},
+        "uri": {
+          "type": "string",
+          "pattern": "^attachment://sha256:[0-9a-f]{64}$"
+        },
+        "mime": {
+          "type": "string",
+          "pattern": "^image/[a-z0-9][a-z0-9.+-]*$",
+          "maxLength": 128
+        }
+      }
+    },
+    "thinking_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": {"const": "thinking"},
+        "text": {"type": "string"}
+      }
+    },
+    "redacted_thinking_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data"],
+      "properties": {
+        "type": {"const": "redacted_thinking"},
+        "data": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "tool_call_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "call_id", "name", "arguments_json", "arguments"],
+      "properties": {
+        "type": {"const": "tool_call"},
+        "call_id": {"$ref": "#/$defs/identifier"},
+        "name": {"$ref": "#/$defs/identifier"},
+        "arguments_json": {"type": "string", "minLength": 2, "maxLength": 65536},
+        "arguments": {"$ref": "#/$defs/canonical_json"}
+      }
+    },
+    "tool_result_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "call_id", "content"],
+      "properties": {
+        "type": {"const": "tool_result"},
+        "call_id": {"$ref": "#/$defs/identifier"},
+        "content": {"type": "string"},
+        "is_error": {"type": "boolean"}
+      }
+    },
+    "provider_replay_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "encrypted_content": {
+          "$ref": "#/$defs/provider_replay_non_null_bounded_json"
+        },
+        "signature": {
+          "$ref": "#/$defs/provider_replay_non_null_bounded_json"
+        },
+        "redacted_data": {
+          "$ref": "#/$defs/provider_replay_non_null_bounded_json"
+        },
+        "item_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "\\S"
+        },
+        "reasoning_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "provider_replay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_id", "schema_version", "replay_scope", "payload"],
+      "properties": {
+        "provider_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9._-]*$",
+          "maxLength": 128
+        },
+        "schema_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        "replay_scope": {"enum": ["same_provider", "diagnostic"]},
+        "payload": {"$ref": "#/$defs/provider_replay_payload"}
+      }
+    },
+    "provider_replay_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "provider_id", "schema_version", "replay_scope", "payload"],
+      "properties": {
+        "type": {"const": "provider_replay"},
+        "provider_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9._-]*$",
+          "maxLength": 128
+        },
+        "schema_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        "replay_scope": {"enum": ["same_provider", "diagnostic"]},
+        "payload": {"$ref": "#/$defs/provider_replay_payload"}
+      }
+    },
+    "event_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "content_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "event": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sequence", "kind"],
+          "properties": {
+            "sequence": {"$ref": "#/$defs/event_sequence"},
+            "kind": {"const": "response_start"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sequence", "kind", "content_index", "message_id"],
+          "properties": {
+            "sequence": {"$ref": "#/$defs/event_sequence"},
+            "kind": {"const": "text_start"},
+            "content_index": {"$ref": "#/$defs/content_index"},
+            "message_id": {"$ref": "#/$defs/identifier"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sequence", "kind", "content_index", "message_id", "delta"],
+          "properties": {
+            "sequence": {"$ref": "#/$defs/event_sequence"},
+            "kind": {"const": "text_delta"},
+            "content_index": {"$ref": "#/$defs/content_index"},
+            "message_id": {"$ref": "#/$defs/identifier"},
+            "delta": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sequence", "kind", "content_index", "message_id"],
+          "properties": {
+            "sequence": {"$ref": "#/$defs/event_sequence"},
+            "kind": {"const": "text_end"},
+            "content_index": {"$ref": "#/$defs/content_index"},
+            "message_id": {"$ref": "#/$defs/identifier"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sequence", "kind", "content_index", "message_id"],
+          "properties": {
+            "sequence": {"$ref": "#/$defs/event_sequence"},
+            "kind": {"const": "thinking_start"},
+            "content_index": {"$ref": "#/$defs/content_index"},
+            "message_id": {"$ref": "#/$defs/identifier"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sequence", "kind", "content_index", "message_id", "delta"],
+          "properties": {
+            "sequence": {"$ref": "#/$defs/event_sequence"},
+            "kind": {"const": "thinking_delta"},
+            "content_index": {"$ref": "#/$defs/content_index"},
+            "message_id": {"$ref": "#/$defs/identifier"},
+            "delta": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sequence", "kind", "content_index", "message_id"],
+          "properties": {
+            "sequence": {"$ref": "#/$defs/event_sequence"},
+            "kind": {"const": "thinking_end"},
+            "content_index": {"$ref": "#/$defs/content_index"},
+            "message_id": {"$ref": "#/$defs/identifier"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sequence", "kind", "content_index", "message_id", "call_id", "name"],
+          "properties": {
+            "sequence": {"$ref": "#/$defs/event_sequence"},
+            "kind": {"const": "tool_call_start"},
+            "content_index": {"$ref": "#/$defs/content_index"},
+            "message_id": {"$ref": "#/$defs/identifier"},
+            "call_id": {"$ref": "#/$defs/identifier"},
+            "name": {"$ref": "#/$defs/identifier"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sequence", "kind", "content_index", "message_id", "call_id", "delta"],
+          "properties": {
+            "sequence": {"$ref": "#/$defs/event_sequence"},
+            "kind": {"const": "tool_call_delta"},
+            "content_index": {"$ref": "#/$defs/content_index"},
+            "message_id": {"$ref": "#/$defs/identifier"},
+            "call_id": {"$ref": "#/$defs/identifier"},
+            "delta": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sequence", "kind", "content_index", "message_id", "call_id", "arguments_json", "arguments"],
+          "properties": {
+            "sequence": {"$ref": "#/$defs/event_sequence"},
+            "kind": {"const": "tool_call_end"},
+            "content_index": {"$ref": "#/$defs/content_index"},
+            "message_id": {"$ref": "#/$defs/identifier"},
+            "call_id": {"$ref": "#/$defs/identifier"},
+            "arguments_json": {"type": "string", "minLength": 2, "maxLength": 65536},
+            "arguments": {"$ref": "#/$defs/canonical_json"}
+          }
+        }
+      ]
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inputTokens": {"type": "integer", "minimum": 0},
+        "outputTokens": {"type": "integer", "minimum": 0},
+        "cacheReadTokens": {"type": "integer", "minimum": 0},
+        "cacheWriteTokens": {"type": "integer", "minimum": 0},
+        "totalTokens": {"type": "integer", "minimum": 0},
+        "reasoningTokens": {"type": "integer", "minimum": 0},
+        "extensions": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/bounded_extension_json"
+          }
+        }
+      }
+    },
+    "assistant_message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "message_id": {"$ref": "#/$defs/identifier"},
+        "role": {"const": "assistant"},
+        "content": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/content_block"}
+        }
+      }
+    },
+    "terminal_evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "pattern": "\\S"
+      },
+      "uniqueItems": true
+    },
+    "terminal": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "output_emitted", "finish_reason", "assistant_messages", "evidence_refs"],
+          "properties": {
+            "kind": {"const": "done"},
+            "output_emitted": {"type": "boolean"},
+            "finish_reason": {"enum": ["stop", "length", "toolUse", "error", "aborted"]},
+            "raw_provider_finish": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+              "maxLength": 128
+            },
+            "usage": {"$ref": "#/$defs/usage"},
+            "assistant_messages": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/assistant_message"}
+            },
+            "provider_replay": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/provider_replay"}
+            },
+            "evidence_refs": {"$ref": "#/$defs/terminal_evidence_refs"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "output_emitted", "code", "category", "retryable", "evidence_refs"],
+          "properties": {
+            "kind": {"const": "error"},
+            "output_emitted": {"type": "boolean"},
+            "code": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$", "maxLength": 64},
+            "category": {"enum": ["adapter", "provider", "transport", "protocol", "configuration"]},
+            "retryable": {"type": "boolean"},
+            "http_status": {"type": "integer", "minimum": 100, "maximum": 599},
+            "evidence_refs": {"$ref": "#/$defs/terminal_evidence_refs"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "output_emitted", "owner", "reason_code", "evidence_refs"],
+          "properties": {
+            "kind": {"const": "cancelled"},
+            "output_emitted": {"type": "boolean"},
+            "owner": {"enum": ["caller", "provider", "transport", "engine"]},
+            "reason_code": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$", "maxLength": 64},
+            "evidence_refs": {"$ref": "#/$defs/terminal_evidence_refs"}
+          }
+        }
+      ]
+    }
+  }
+}

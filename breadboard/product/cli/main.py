@@ -70,11 +70,6 @@ def _legacy_explain(a):
 def main(argv:Sequence[str]|None=None):
     a=build_parser().parse_args(argv)
     if a.namespace=="harness" and a.command=="explain" and not a.json:return _legacy_explain(a)
-    if a.json and a.namespace=="harness" and a.command=="init":
-        r=a.handler(a)
-        if isinstance(r,CliResult) and r.ok:
-            d=Path(a.out or ".");r.data["path"]=str(d/"minimal_harness.v2.yaml");r.data["prompt_path"]=str(d/"prompts/minimal_system.md")
-        return r if isinstance(r,int) else emit(r,True,bool(a.quiet))
     try:r=a.handler(a)
     except Exception as e:return emit(from_exception([a.namespace,a.command],e),bool(a.json),bool(a.quiet))
     return r if isinstance(r,int) else emit(r,bool(a.json),bool(a.quiet))

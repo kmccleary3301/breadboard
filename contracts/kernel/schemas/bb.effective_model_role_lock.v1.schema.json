@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json",
+  "title": "BreadBoard effective model role lock V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "lock_id", "defaults", "roles", "dispatch", "policy", "source_model_roles_hash", "lock_hash"],
+  "properties": {
+    "schema_version": {"const": "bb.effective_model_role_lock.v1"},
+    "lock_id": {"type": "string", "minLength": 1},
+    "defaults": {"$ref": "#/$defs/defaults"},
+    "roles": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9._-]*$"},
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/role"}
+    },
+    "dispatch": {"$ref": "#/$defs/dispatch"},
+    "policy": {"$ref": "#/$defs/policy"},
+    "source_model_roles_hash": {"$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"},
+    "lock_hash": {"$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"}
+  },
+  "$defs": {
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "known_but_unbound_role", "unknown_role"],
+      "properties": {
+        "role": {"type": "string", "pattern": "^[a-z][a-z0-9._-]*$"},
+        "known_but_unbound_role": {"enum": ["error", "use_default"]},
+        "unknown_role": {"const": "error"}
+      }
+    },
+    "dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subagents", "lanes"],
+      "properties": {
+        "subagents": {"$ref": "#/$defs/dispatch_map"},
+        "lanes": {"$ref": "#/$defs/dispatch_map"}
+      }
+    },
+    "dispatch_map": {
+      "type": "object",
+      "propertyNames": {"minLength": 1},
+      "additionalProperties": {"type": "string", "pattern": "^[a-z][a-z0-9._-]*$"}
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allow_environment_overrides", "cross_provider_fallback", "account_failover"],
+      "properties": {
+        "allow_environment_overrides": {"type": "boolean"},
+        "cross_provider_fallback": {"enum": ["forbidden", "explicit_only"]},
+        "account_failover": {"enum": ["forbidden", "explicit_only"]}
+      }
+    },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "primary", "fallbacks", "fallback_on"],
+      "properties": {
+        "classification": {"enum": ["public", "internal", "custom"]},
+        "primary": {"$ref": "#/$defs/target"},
+        "fallbacks": {"type": "array", "items": {"$ref": "#/$defs/target"}},
+        "fallback_on": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["provider_unavailable", "rate_limited", "model_unavailable", "capability_drift", "timeout_before_output"]}
+        },
+        "reasoning": {"$ref": "#/$defs/reasoning"},
+        "generation": {"$ref": "#/$defs/generation"},
+        "requires": {"$ref": "#/$defs/capabilities"},
+        "service_tier": {"enum": ["default", "flex", "priority", "batch", "free", "enterprise"]},
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {"type": "string"},
+              {"type": "number"},
+              {"type": "boolean"},
+              {"type": "null"}
+            ]
+          }
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_id", "model_id", "route_id", "account_binding"],
+      "properties": {
+        "provider_id": {"type": "string", "pattern": "^[a-z][a-z0-9._-]*$"},
+        "model_id": {"type": "string", "minLength": 1},
+        "route_id": {"type": "string", "minLength": 3},
+        "model_revision": {"type": ["string", "null"]},
+        "endpoint_id": {"type": ["string", "null"], "pattern": "^[a-z][a-z0-9._-]*$"},
+        "auth_scheme_id": {"type": ["string", "null"], "pattern": "^[a-z][a-z0-9._-]*$"},
+        "account_selector": {"$ref": "#/$defs/account_selector"},
+        "account_binding": {"$ref": "#/$defs/account_binding"}
+      }
+    },
+    "account_selector": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "pin"],
+          "properties": {"mode": {"const": "default"}, "pin": {"enum": ["session", "lock"]}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "alias", "pin"],
+          "properties": {"mode": {"const": "alias"}, "alias": {"type": "string", "minLength": 1, "maxLength": 128}, "pin": {"enum": ["session", "lock"]}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "pin"],
+          "properties": {"mode": {"const": "none"}, "pin": {"const": "session"}}
+        }
+      ]
+    },
+    "account_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "pin"],
+      "properties": {
+        "kind": {"enum": ["account", "configured", "environment", "fallback", "provider_managed", "synthetic"]},
+        "pin": {"enum": ["session", "lock"]},
+        "account_id": {"type": "string", "minLength": 1},
+        "binding_ref": {"$ref": "#/$defs/binding_ref"},
+        "source": {"type": "string", "minLength": 1}
+      },
+      "oneOf": [
+        {
+          "properties": {"kind": {"const": "account"}, "pin": {"const": "session"}},
+          "required": ["binding_ref"],
+          "not": {"anyOf": [{"required": ["account_id"]}, {"required": ["source"]}]}
+        },
+        {
+          "properties": {"kind": {"const": "account"}, "pin": {"const": "lock"}},
+          "required": ["account_id"],
+          "not": {"anyOf": [{"required": ["binding_ref"]}, {"required": ["source"]}]}
+        },
+        {
+          "properties": {
+            "kind": {"enum": ["configured", "environment", "fallback"]},
+            "pin": {"const": "session"}
+          },
+          "required": ["binding_ref", "source"],
+          "not": {"required": ["account_id"]}
+        },
+        {
+          "properties": {
+            "kind": {"enum": ["provider_managed", "synthetic"]},
+            "pin": {"const": "session"}
+          },
+          "not": {"anyOf": [{"required": ["account_id"]}, {"required": ["binding_ref"]}, {"required": ["source"]}]}
+        }
+      ]
+    },
+    "binding_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_id", "session_id"],
+      "properties": {
+        "provider_id": {"type": "string", "pattern": "^[a-z][a-z0-9._-]*$"},
+        "session_id": {"type": ["string", "null"]}
+      }
+    },
+    "reasoning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"enum": ["inherit", "disabled", "effort", "budget"]},
+        "effort": {"enum": ["minimal", "low", "medium", "high", "xhigh", "max"]},
+        "budget_tokens": {"type": "integer", "minimum": 1},
+        "expose_summary": {"type": "boolean"}
+      },
+      "allOf": [
+        {"if": {"properties": {"mode": {"const": "effort"}}}, "then": {"required": ["effort"], "not": {"required": ["budget_tokens"]}}},
+        {"if": {"properties": {"mode": {"const": "budget"}}}, "then": {"required": ["budget_tokens"], "not": {"required": ["effort"]}}}
+      ]
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "temperature": {"type": "number", "minimum": 0},
+        "top_p": {"type": "number", "minimum": 0, "maximum": 1},
+        "max_output_tokens": {"type": "integer", "minimum": 1},
+        "seed": {"type": ["integer", "null"]}
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tools": {"type": "boolean"},
+        "parallel_tools": {"type": "boolean"},
+        "vision": {"type": "boolean"},
+        "streaming": {"type": "boolean"},
+        "structured_output": {"type": "boolean"},
+        "prompt_cache": {"type": "boolean"}
+      }
+    }
+  }
+}

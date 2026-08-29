@@ -11,10 +11,19 @@ import os
 import shutil
 import logging
 import threading
-import tempfile
+import uuid
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from pathlib import Path
 from .utils.safe_delete import is_disposable_workspace_path, validate_workspace_path
+
+
+def _admit_standalone_run() -> Dict[str, str]:
+    return {
+        "session_id": f"run-{uuid.uuid4().hex}",
+        "input_id": f"input-{uuid.uuid4().hex}",
+        "turn_id": f"turn-{uuid.uuid4().hex}",
+    }
+
 
 _ray = None
 _ray_attempted = False
@@ -38,85 +47,26 @@ from .provider.routing import provider_router
 from .provider import provider_adapter_manager
 from .compilation.tool_yaml_loader import load_yaml_tools
 from .compilation.system_prompt_compiler import get_compiler
+from .security import (
+    ProcessIsolationUnavailable,
+    WorkspaceFilesystem,
+    WorkspacePathError,
+    build_child_environment,
+    protected_credential_paths,
+    redaction,
+    sanitized_process_environment,
+    validate_workspace_credential_boundary,
+)
 
 
 logger = logging.getLogger(__name__)
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_PROVIDER_ENV_KEYS = (
-    "OPENAI_API_KEY",
-    "OPENROUTER_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "GOOGLE_API_KEY",
-    "GEMINI_API_KEY",
-    "BREADBOARD_OPENAI_AUTH_HEADERS_JSON",
-    "BREADBOARD_OPENAI_AUTH_BASE_URL",
-)
 
+class _UnsafeTaskSpecPath(RuntimeError):
+    """A task-file locator crossed the model credential boundary."""
 
-def _find_local_openai_bootstrap_token(value: Any, seen: Optional[set[int]] = None) -> Optional[str]:
-    if seen is None:
-        seen = set()
-    if value is None:
-        return None
-    marker = id(value)
-    if marker in seen:
-        return None
-    seen.add(marker)
-    if isinstance(value, dict):
-        for key in ("OPENAI_API_KEY", "codex_access_token", "access_token", "id_token", "token", "auth_token"):
-            candidate = value.get(key)
-            if isinstance(candidate, str) and candidate.strip():
-                return candidate.strip()
-        for nested in value.values():
-            found = _find_local_openai_bootstrap_token(nested, seen)
-            if found:
-                return found
-    elif isinstance(value, list):
-        for nested in value:
-            found = _find_local_openai_bootstrap_token(nested, seen)
-            if found:
-                return found
-    return None
-
-
-def _bootstrap_openai_env_from_local_codex_auth() -> None:
-    if os.environ.get("OPENAI_API_KEY"):
-        return
-    auth_path = Path.home() / ".codex" / "auth.json"
-    try:
-        if not auth_path.exists():
-            return
-        payload = json.loads(auth_path.read_text(encoding="utf-8"))
-        token = _find_local_openai_bootstrap_token(payload)
-        if token:
-            os.environ["OPENAI_API_KEY"] = token
-    except Exception:
-        return
-
-
-def _bootstrap_openai_env_from_runtime_config(config: Optional[Dict[str, Any]]) -> None:
-    if not isinstance(config, dict):
-        return
-    runtime_auth = config.get("provider_auth_runtime")
-    if not isinstance(runtime_auth, dict):
-        return
-    openai_auth = runtime_auth.get("openai")
-    if not isinstance(openai_auth, dict):
-        return
-    api_key = str(openai_auth.get("api_key") or "").strip()
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-    headers = openai_auth.get("headers")
-    if isinstance(headers, dict) and headers:
-        try:
-            os.environ["BREADBOARD_OPENAI_AUTH_HEADERS_JSON"] = json.dumps(
-                {str(k): str(v) for k, v in headers.items() if k and v is not None}
-            )
-        except Exception:
-            pass
-    base_url = str(openai_auth.get("base_url") or "").strip()
-    if base_url:
-        os.environ["BREADBOARD_OPENAI_AUTH_BASE_URL"] = base_url
+    def __init__(self) -> None:
+        super().__init__("Task specification path is unsafe")
 
 
 class AgenticCoder:
@@ -136,6 +86,11 @@ class AgenticCoder:
         self.config = self._load_config()
         if overrides:
             self._apply_overrides(overrides)
+        if redaction.contains_provider_auth_runtime(self.config):
+            logger.warning(
+                "Ignoring inline provider credentials; attach credentials through the provider broker."
+            )
+            self.config = redaction.strip_provider_auth_runtime(self.config)
         # Prefer v2 workspace.root if provided
         v2_ws_root = None
         try:
@@ -176,6 +131,11 @@ class AgenticCoder:
     def apply_runtime_overrides(self, overrides: Dict[str, Any]) -> bool:
         """Best-effort update to the active config (local or remote)."""
         if not isinstance(overrides, dict) or not overrides:
+            return False
+        if redaction.contains_provider_auth_runtime(overrides):
+            logger.warning(
+                "Rejecting runtime provider credentials; attach credentials through the provider broker."
+            )
             return False
         try:
             self._apply_overrides(overrides)
@@ -292,6 +252,59 @@ class AgenticCoder:
         except ValueError:
             return False
 
+    @classmethod
+    def _task_path_is_protected(cls, candidate: Path) -> bool:
+        lexical = Path(os.path.abspath(candidate))
+        try:
+            resolved = candidate.resolve(strict=False)
+        except OSError:
+            resolved = lexical
+        for protected_path in protected_credential_paths():
+            protected = Path(os.path.abspath(protected_path))
+            try:
+                resolved_protected = protected.resolve(strict=False)
+            except OSError:
+                resolved_protected = protected
+            if cls._is_within(protected, lexical) or cls._is_within(
+                resolved_protected,
+                resolved,
+            ):
+                return True
+        return False
+
+    def _read_task_spec(self, task: str) -> tuple[Path, str] | None:
+        candidate = Path(task).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path(os.path.abspath(candidate))
+        workspace = Path(os.path.abspath(self.workspace_dir))
+        if self._is_within(workspace, candidate):
+            relative = candidate.relative_to(workspace)
+            try:
+                with WorkspaceFilesystem(workspace) as filesystem:
+                    validate_workspace_credential_boundary(filesystem.root)
+                    if not filesystem.exists(relative):
+                        return None
+                    if filesystem.stat(relative).kind != "file":
+                        return None
+                    return candidate, filesystem.read_text(relative)
+            except (ProcessIsolationUnavailable, WorkspacePathError) as exc:
+                raise _UnsafeTaskSpecPath() from exc
+        if self._task_path_is_protected(candidate):
+            raise _UnsafeTaskSpecPath()
+        try:
+            with WorkspaceFilesystem.open_anchored_root(
+                candidate.parent
+            ) as filesystem:
+                if not filesystem.exists(candidate.name):
+                    return None
+                if filesystem.stat(candidate.name).kind != "file":
+                    return None
+                return candidate, filesystem.read_text(candidate.name)
+        except WorkspacePathError as exc:
+            if not candidate.parent.exists():
+                return None
+            raise _UnsafeTaskSpecPath() from exc
+
     def _resolve_workspace_path(self) -> Path:
         """Resolve and validate workspace path before any destructive operations.
 
@@ -311,8 +324,6 @@ class AgenticCoder:
 
     def initialize(self) -> None:
         """Initialize the agent with the loaded configuration."""
-        _bootstrap_openai_env_from_local_codex_auth()
-        _bootstrap_openai_env_from_runtime_config(self.config if isinstance(self.config, dict) else None)
         workspace_path = self._resolve_workspace_path()
         self.workspace_dir = str(workspace_path)
         try:
@@ -332,24 +343,32 @@ class AgenticCoder:
             # Ensure each run starts from a clean clone workspace
             shutil.rmtree(workspace_path)
         workspace_path.mkdir(parents=True, exist_ok=True)
+        protected_paths = tuple(
+            str(path) for path in protected_credential_paths()
+        )
         
         # Initialize Ray and underlying actor
         if not self._local_mode:
             ray = _get_ray()
             if ray is None:
-                self._local_mode = True
-            else:
+                raise RuntimeError(
+                    "Remote execution requested, but Ray is unavailable. "
+                    "Select local mode explicitly to run in-process."
+                )
+            if not ray.is_initialized():
+                if threading.current_thread() is not threading.main_thread():
+                    raise RuntimeError(
+                        "Remote execution requires Ray initialization on the main thread. "
+                        "Select local mode explicitly to run in-process."
+                    )
                 try:
-                    if not ray.is_initialized():
-                        if threading.current_thread() is not threading.main_thread():
-                            logger.warning(
-                                "Ray init requested from non-main thread; falling back to local mode."
-                            )
-                            raise RuntimeError("Ray init requested from non-main thread")
-                        # Start an isolated local cluster with a nonstandard dashboard port
+                    with sanitized_process_environment():
                         ray.init(address="local", include_dashboard=False)
-                except Exception:
-                    self._local_mode = True
+                except BaseException as exc:
+                    raise RuntimeError(
+                        "Remote execution initialization failed "
+                        f"({exc.__class__.__name__}); local execution was not selected."
+                    ) from None
 
         if self._local_mode:
             print("[Ray disabled] Using local in-process execution mode.")
@@ -359,19 +378,15 @@ class AgenticCoder:
                 config=self.config,
                 local_mode=True,
                 prompt_base_dirs=list(_config_resolution_base_dirs(self.config_path)),
+                protected_paths=protected_paths,
             )
         else:
-            runtime_env = {
-                "env_vars": {
-                    key: value
-                    for key in _PROVIDER_ENV_KEYS
-                    if (value := os.environ.get(key))
-                }
-            }
+            runtime_env = {"env_vars": build_child_environment()}
             self.agent = OpenAIConductor.options(runtime_env=runtime_env).remote(
                 workspace=self.workspace_dir,
                 config=self.config,
                 prompt_base_dirs=list(_config_resolution_base_dirs(self.config_path)),
+                protected_paths=protected_paths,
             )
     
     def run_task(
@@ -415,6 +430,8 @@ class AgenticCoder:
 
         if not self.agent:
             self.initialize()
+        if context is None:
+            context = _admit_standalone_run()
 
         model = self._select_model()
         loop_cfg = self.config.get('loop') or {}
@@ -426,16 +443,19 @@ class AgenticCoder:
             or 12
         )
         tool_prompt_mode = self._resolve_tool_prompt_mode() or "system_once"
-        # If task is a file path, read it as the user prompt content; else use as-is
+        # Existing files are accepted as task specifications, but every read is
+        # descriptor-anchored and protected credential paths are never inputs.
         user_prompt = task
         task_seed: Optional[Tuple[str, str]] = None
         try:
-            p = Path(task)
-            if p.exists() and p.is_file():
-                user_prompt = p.read_text(encoding="utf-8", errors="replace")
+            task_spec = self._read_task_spec(task)
+            if task_spec is not None:
+                source_path, user_prompt = task_spec
                 if not is_replay:
-                    task_seed = (p.name, user_prompt)
-                    self._materialize_task_spec(p, user_prompt)
+                    task_seed = (source_path.name, user_prompt)
+                    self._materialize_task_spec(source_path, user_prompt)
+        except _UnsafeTaskSpecPath:
+            raise
         except Exception:
             pass
         if task_seed and not is_replay:
@@ -512,6 +532,7 @@ class AgenticCoder:
                         model,
                         max_steps=5,
                         tool_prompt_mode=tool_prompt_mode,
+                        context=_admit_standalone_run(),
                     )
                 else:
                     ref = self.agent.run_agentic_loop.remote(
@@ -520,6 +541,7 @@ class AgenticCoder:
                         model,
                         max_steps=5,
                         tool_prompt_mode=tool_prompt_mode,
+                        context=_admit_standalone_run(),
                     )
                     ray_mod = _get_ray()
                     if ray_mod is None:
@@ -545,6 +567,16 @@ class AgenticCoder:
         return files
 
     def _select_model(self) -> str:
+        lock = self.config.get("model_role_lock") if isinstance(self.config, dict) else None
+        if isinstance(lock, dict):
+            role = str(self.config.get("active_model_role") or (lock.get("defaults") or {}).get("role") or "")
+            binding = (lock.get("roles") or {}).get(role)
+            target = binding.get("primary") if isinstance(binding, dict) else None
+            if isinstance(target, dict) and target.get("route_id"):
+                return str(target["route_id"])
+            if isinstance(target, dict) and target.get("provider_id") and target.get("model_id"):
+                return f"{target['provider_id']}/{target['model_id']}"
+            raise RuntimeError("active model role has no exact target")
         try:
             providers = self.config.get("providers", {})
             default_model = providers.get("default_model")
@@ -552,9 +584,7 @@ class AgenticCoder:
                 return str(default_model)
         except Exception:
             pass
-        # Legacy fallback
         return str(self.config.get("model", "gpt-4o-mini"))
-
     def _materialize_task_spec(self, source_path: Path, contents: str) -> None:
         """
         Copy the task specification into the workspace so shell/list/read guards have local context.
@@ -572,9 +602,12 @@ class AgenticCoder:
             except Exception:
                 pass
             for target in targets:
-                target.mkdir(parents=True, exist_ok=True)
-                dest_path = target / source_path.name
-                dest_path.write_text(contents, encoding="utf-8")
+                with WorkspaceFilesystem.open_anchored_root(
+                    target,
+                    create=True,
+                ) as filesystem:
+                    validate_workspace_credential_boundary(filesystem.root)
+                    filesystem.write_text(source_path.name, contents)
         except Exception:
             # Best-effort only
             pass

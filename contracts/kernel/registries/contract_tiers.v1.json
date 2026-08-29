@@ -608,6 +608,19 @@
    "consumers": [
     {
      "kind": "tests",
+     "path": "tests/test_model_roles.py"
+    }
+   ],
+   "disposition": "keep",
+   "notes": "Effective immutable model-role lock emitted by the model-role compiler.",
+   "schema_id": "bb.effective_model_role_lock.v1",
+   "superseded_by": null,
+   "tier": "host_protocol"
+  },
+  {
+   "consumers": [
+    {
+     "kind": "tests",
      "path": "tests/e4_parity/test_kernel_examples_manifest.py"
     }
    ],
@@ -648,9 +661,25 @@
      "path": "scripts/build_python_reference_contract_fixtures.py"
     }
    ],
-   "disposition": "keep",
-   "notes": "S5a confidence high.",
+   "disposition": "supersede",
+   "notes": "Superseded by bb.provider_exchange.v2; retained for frozen accepted evidence.",
    "schema_id": "bb.provider_exchange.v1",
+   "tier": "host_protocol"
+  },
+  {
+   "consumers": [
+    {
+     "kind": "runtime_emission",
+     "path": "breadboard_engine/provider/invoker.py"
+    },
+    {
+     "kind": "sdk",
+     "path": "sdk/ts-kernel-contracts/src/generated/index.ts"
+    }
+   ],
+   "disposition": "keep",
+   "notes": "F4 owning provider exchange aggregate.",
+   "schema_id": "bb.provider_exchange.v2",
    "tier": "host_protocol"
   },
   {

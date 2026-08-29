@@ -1,5 +1,6 @@
+import assert from "node:assert/strict"
 import { execFileSync, spawnSync } from "node:child_process"
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
@@ -9,6 +10,21 @@ const artifact = join(temp, "artifact")
 try {
   execFileSync("node", [join(root, "scripts/pack-canonical.mjs"), artifact], { cwd: root, stdio: "inherit" })
   const tarball = join(artifact, "breadboard-sdk-0.3.0.tgz")
+  const repeatArtifact = join(temp, "artifact-repeat")
+  execFileSync("node", [join(root, "scripts/pack-canonical.mjs"), repeatArtifact], { cwd: root, stdio: "inherit" })
+  const repeatTarball = join(repeatArtifact, "breadboard-sdk-0.3.0.tgz")
+  for (const suffix of ["", ".sha256", ".installed-files.json", ".engine-api-range"]) {
+    assert.deepEqual(
+      readFileSync(`${tarball}${suffix}`),
+      readFileSync(`${repeatTarball}${suffix}`),
+      `canonical package drift for ${suffix || "tarball"}`,
+    )
+  }
+  const inventory = JSON.parse(readFileSync(`${tarball}.installed-files.json`, "utf8"))
+  assert.equal(inventory.package, "@breadboard/sdk")
+  assert.equal(inventory.version, "0.3.0")
+  assert.equal(inventory.files.length, 24)
+  assert.equal(readFileSync(`${tarball}.engine-api-range`, "utf8"), ">=0.1.0 <0.4.0\n")
   writeFileSync(join(temp, "package.json"), JSON.stringify({ type: "module", dependencies: { "@breadboard/sdk": `file:${tarball}` }, devDependencies: { typescript: "^5.5.4" }, scripts: { test: "node consumer.mjs" } }, null, 2))
   writeFileSync(join(temp, "consumer.ts"), 'import { ApiError, createBreadboardClient, streamSessionEvents, type SessionEvent } from "@breadboard/sdk"; import { AcquireOwnerInput } from "@breadboard/sdk/internal"; const input: AcquireOwnerInput = { ownerCredential: "fixture", expectedOwnerGeneration: 1 }; void input; const client = createBreadboardClient({ baseUrl: "http://fixture.test" }); void client.resolveModelRoles; void streamSessionEvents; void ApiError; const event: SessionEvent = { id: "x", type: "completion", session_id: "s", turn: null, timestamp: 0, payload: {} }; void event;')
   writeFileSync(join(temp, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true, noEmit: true }, files: ["consumer.ts"] }, null, 2))

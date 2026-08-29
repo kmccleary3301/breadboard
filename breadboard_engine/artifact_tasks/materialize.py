@@ -5,7 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
-from .contracts import hash_file, safe_relative_path
+from breadboard_engine.security import WorkspaceFilesystem, WorkspacePathError
+
+from .contracts import safe_relative_path
 
 
 _FENCE_RE = re.compile(r"```(?P<language>[A-Za-z0-9_+.#-]*)[ \t]*\n(?P<body>.*?)\n```", re.DOTALL)
@@ -98,14 +100,7 @@ def materialize_response_artifact(
     *,
     root: Path,
 ) -> MaterializationResult:
-    root_path = root.resolve()
     output_rel = safe_relative_path(spec.output_path, field_name="output_path")
-    output_path = (root_path / output_rel).resolve()
-    try:
-        output_path.relative_to(root_path)
-    except ValueError:
-        raise ValueError(f"output_path escapes root: {spec.output_path}") from None
-
     blocks = _matching_blocks(response_text, spec.language)
     if not blocks:
         return MaterializationResult(
@@ -123,14 +118,6 @@ def materialize_response_artifact(
             failure_reasons=("multiple_fenced_blocks",),
             metadata={"required_language": spec.language},
         )
-    if output_path.exists() and not spec.overwrite:
-        return MaterializationResult(
-            ok=False,
-            output_path=spec.output_path,
-            absolute_path=str(output_path),
-            block_count=len(blocks),
-            failure_reasons=("output_exists",),
-        )
 
     selected_language, content = blocks[0]
     if spec.strip_surrounding_whitespace:
@@ -144,15 +131,42 @@ def materialize_response_artifact(
             failure_reasons=("empty_fenced_block",),
         )
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(content, encoding="utf-8")
+    absolute_path: str | None = None
+    try:
+        with WorkspaceFilesystem(root) as workspace:
+            absolute_path = workspace.display_path(output_rel)
+            if workspace.exists(output_rel) and not spec.overwrite:
+                return MaterializationResult(
+                    ok=False,
+                    output_path=spec.output_path,
+                    absolute_path=absolute_path,
+                    block_count=len(blocks),
+                    failure_reasons=("output_exists",),
+                )
+            workspace.write_text(
+                output_rel,
+                content,
+                encoding="utf-8",
+                overwrite=spec.overwrite,
+            )
+            info = workspace.inspect_file(output_rel, sha256=True)
+    except (FileExistsError, WorkspacePathError, OSError):
+        return MaterializationResult(
+            ok=False,
+            output_path=spec.output_path,
+            absolute_path=absolute_path,
+            block_count=len(blocks),
+            language=selected_language or None,
+            failure_reasons=("unsafe_output_path",),
+            metadata={"strategy": spec.strategy},
+        )
     return MaterializationResult(
         ok=True,
         output_path=spec.output_path,
-        absolute_path=str(output_path),
+        absolute_path=absolute_path,
         language=selected_language or None,
-        byte_count=output_path.stat().st_size,
-        sha256=hash_file(output_path),
+        byte_count=info.size,
+        sha256=info.sha256,
         block_count=len(blocks),
         metadata={"strategy": spec.strategy},
     )

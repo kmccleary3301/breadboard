@@ -28,14 +28,26 @@
     },
     {
       "id": "provider_response",
-      "status": "active",
-      "description": "Kernel-owned runtime event kind for provider.exchange.",
+      "status": "deprecated",
+      "description": "Historical kernel-owned runtime event kind for provider.exchange.v1.",
       "metadata": {
         "classification": "kernel",
         "kernel_family": "provider.exchange",
         "actor": "provider",
         "visibility": "host",
         "payload_schema_version": "bb.payload.provider.exchange.v1"
+      }
+    },
+    {
+      "id": "provider_response_v2",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind carrying a closed provider.exchange.v2 reference.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "provider.exchange",
+        "actor": "provider",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.provider.exchange.v2"
       }
     },
     {
@@ -96,6 +108,18 @@
         "actor": "subagent",
         "visibility": "host",
         "payload_schema_version": "bb.payload.task.progress.v1"
+      }
+    },
+    {
+      "id": "session_control",
+      "status": "active",
+      "description": "Kernel-owned runtime event kind for session.control.",
+      "metadata": {
+        "classification": "kernel",
+        "kernel_family": "session.control",
+        "actor": "service",
+        "visibility": "host",
+        "payload_schema_version": "bb.payload.session.control.v1"
       }
     },
     {

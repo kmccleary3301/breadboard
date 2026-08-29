@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import ray
 
@@ -107,6 +107,7 @@ def setup_sandbox(
     image: str,
     config: Optional[Dict[str, Any]],
     local_mode: bool,
+    protected_paths: Sequence[str],
 ) -> None:
     """Initialize sandbox based on virtualization mode."""
     sandbox_cfg = ((config or {}).get("workspace", {}) or {}).get("sandbox", {}) or {}
@@ -121,6 +122,7 @@ def setup_sandbox(
     print("MIRROR CFG", mirror_cfg)
     
     conductor.local_mode = bool(local_mode)
+    conductor._protected_credential_paths = tuple(protected_paths)
     conductor._ray_get = ray.get if not conductor.local_mode else identity_get
     
     conductor.using_virtualized = bool(use_virtualized) and not conductor.local_mode
@@ -137,11 +139,19 @@ def setup_sandbox(
                 "workspace": workspace,
                 "sandbox": {"driver": sandbox_driver, "options": sandbox_options},
             },
+            protected_paths=conductor._protected_credential_paths,
         )
         conductor.sandbox = vsb
     elif conductor.local_mode:
         dev_cls = DevSandboxV2.__ray_metadata__.modified_class
-        dev_impl = dev_cls(image=image, session_id=f"local-{uuid.uuid4()}", workspace=workspace, lsp_actor=None)
+        dev_impl = dev_cls(
+            image=image,
+            session_id=f"local-{uuid.uuid4()}",
+            workspace=workspace,
+            lsp_actor=None,
+            purge_process_environment=False,
+            protected_paths=conductor._protected_credential_paths,
+        )
         conductor.sandbox = LocalActorProxy(dev_impl)
     else:
         conductor.sandbox = new_dev_sandbox_v2(
@@ -150,6 +160,7 @@ def setup_sandbox(
             name=f"oa-sb-{uuid.uuid4()}",
             driver=sandbox_driver,
             driver_options=sandbox_options,
+            protected_paths=conductor._protected_credential_paths,
         )
 
 
@@ -264,7 +275,9 @@ def initialize_orchestration_components(conductor: Any) -> None:
         update_health_metadata=conductor._update_health_metadata,
         set_last_latency=lambda value: setattr(conductor, "_last_runtime_latency", value),
         set_html_detected=lambda flag: setattr(conductor, "_last_html_detected", flag),
+        client_lease=conductor._provider_client_lease,
     )
+    conductor.capability_probe_runner.provider_invoker = conductor.provider_invoker
     conductor.guardrail_coordinator = GuardrailCoordinator(conductor.config)
     conductor.tool_prompt_planner = ToolPromptPlanner()
     conductor.turn_relayer = TurnRelayer(conductor.logger_v2, conductor.md_writer)
@@ -291,6 +304,7 @@ def bootstrap_conductor(
     image: str,
     config: Optional[Dict[str, Any]],
     local_mode: bool,
+    protected_paths: Sequence[str],
     zero_tool_warn_message: str,
     zero_tool_abort_message: str,
     completion_guard_abort_threshold: int,
@@ -312,7 +326,14 @@ def bootstrap_conductor(
     effective_ws = resolve_workspace(workspace, config)
     
     # Setup sandbox
-    setup_sandbox(conductor, effective_ws, image, config, local_mode)
+    setup_sandbox(
+        conductor,
+        effective_ws,
+        image,
+        config,
+        local_mode,
+        protected_paths,
+    )
     
     # Set basic attributes
     conductor.workspace = effective_ws

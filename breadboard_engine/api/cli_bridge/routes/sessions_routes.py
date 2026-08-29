@@ -6,7 +6,7 @@ import json
 from typing import AsyncIterator
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from ..models import (
     AttachmentUploadResponse, CTreeSnapshotResponse, ErrorResponse,
@@ -16,6 +16,10 @@ from ..models import (
     SessionTurnCancelResponse, SkillCatalogResponse,
 )
 from ..service import SessionService
+from breadboard.product.cli.harness import (
+    DefaultProfileInvalidError,
+    DefaultProfileUnavailableError,
+)
 
 
 def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> None:
@@ -23,15 +27,42 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
     @app.post(
         "/v1/sessions",
         response_model=SessionCreateResponse,
-        responses={400: {"model": ErrorResponse}},
+        responses={
+            400: {"model": ErrorResponse},
+            500: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
     )
     @app.post(
         "/sessions",
         response_model=SessionCreateResponse,
-        responses={400: {"model": ErrorResponse}},
+        responses={
+            400: {"model": ErrorResponse},
+            500: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
     )
     async def create_session(payload: SessionCreateRequest, svc: SessionService = Depends(get_service)):
-        return await svc.create_session(payload)
+        try:
+            return await svc.create_session(payload)
+        except DefaultProfileUnavailableError as exc:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content=ErrorResponse(
+                    error=exc.error_code,
+                    detail=exc.hint,
+                    path=None,
+                ).model_dump(),
+            )
+        except DefaultProfileInvalidError as exc:
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content=ErrorResponse(
+                    error=exc.error_code,
+                    detail=exc.hint,
+                    path=None,
+                ).model_dump(),
+            )
 
     @app.get(
         "/v1/sessions",

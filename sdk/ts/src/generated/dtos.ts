@@ -1,15 +1,15 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
-// openapi-schema-sha256: cb30fc21b66032b85c13997638f9e9c066ddb29cd4d41acc7b87329a47315c05
-// app-source-sha256: 50c119e5883901a91eb0330c47a4594c22a17c833bfc87b77a623a3444a28d6f
+// openapi-schema-sha256: aca2a3e5eb4783edd9f8c27d49938838e837c610bb8b7b5756f0c9461fd64af8
+// app-source-sha256: 4b61a81504a4eb7d916c371df69e2e2019f9191cc651a7c12504c5d15aaf45fc
 
 export interface AuthActionResponse { "detail"?: { [key: string]: unknown; } | null; "ok": boolean; }
 
-export interface AuthCredentialView { "account_id": string; "alias"?: string | null; "auth_scheme_id": string; "created_at_ms": number; "credential_id": string; "credential_kind"?: string; "expires_at_ms"?: number | null; "has_api_key"?: boolean; "label": string; "metadata"?: { [key: string]: unknown; }; "provider_id": string; "secret_version": number; "source"?: string; "status": string; "updated_at_ms": number; }
+export interface AuthCredentialView { "account_id": string; "alias"?: string | null; "auth_scheme_id": string; "created_at_ms": number; "credential_id": string; "credential_kind"?: string; "expires_at_ms"?: number | null; "has_api_key"?: boolean; "label": string; "metadata"?: { [key: string]: unknown; }; "provider_id": string; "refresh_state"?: { [key: string]: unknown; }; "secret_version": number; "source"?: string; "status": string; "updated_at_ms": number; }
 
-export interface AuthLoginSession { "authorization_url"?: string | null; "created_at_ms"?: number | null; "credential"?: AuthCredentialView | null; "flow_id"?: string | null; "flow_kind"?: string | null; "instructions"?: string | null; "login_session_id": string; "problem"?: { [key: string]: unknown; } | null; "provider_id": string; "redirect_uri"?: string | null; "status": string; "updated_at_ms"?: number | null; "user_code"?: string | null; }
+export interface AuthLoginSession { "authorization_url"?: string | null; "created_at_ms"?: number | null; "credential"?: AuthCredentialView | null; "expires_at_ms"?: number | null; "flow_id"?: string | null; "flow_kind"?: string | null; "instructions"?: string | null; "login_session_id": string; "problem"?: { [key: string]: unknown; } | null; "provider_id": string; "redirect_uri"?: string | null; "status": string; "updated_at_ms"?: number | null; "user_code"?: string | null; }
 
-export interface AuthProviderView { "auth_schemes"?: Array<string>; "base_url"?: string | null; "compatible_protocol"?: string | null; "display_name": string; "login_available"?: boolean; "oauth_flows"?: Array<string>; "provider_id": string; "runtime_id"?: string | null; }
+export interface AuthProviderView { "aliases": Array<string>; "auth_owner": "broker" | "provider"; "auth_schemes": Array<string>; "availability_reason"?: "provider_managed" | "missing_auth" | null; "available": boolean; "base_url"?: string | null; "compatible_protocol"?: string | null; "display_name": string; "login_available"?: boolean; "model_discovery": "configured_only"; "oauth_flows"?: Array<string>; "provider_id": string; "runtime_id"?: string | null; "support_tier": "core"; }
 
 export interface BeginAuthLoginRequest { "auth_scheme_id"?: string | null; "flow"?: string; "provider_id": string; }
 
@@ -21,9 +21,9 @@ export interface BootstrapChallengeResponse { "challenge": string; "challenge_id
 
 export interface ClientLeaseRequest { "client_instance_id": string; "engine_instance_id": string; "registration_generation": number; "registration_id": string; }
 
-export interface ClientRegisterRequest { "client_instance_id": string; "engine_instance_id": string; "first_slice_contract_id"?: "p30-e4-session-v1"; "first_slice_schema_sha256"?: "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"; "lifecycle_mode": "local-owned" | "local-external" | "remote" | "off"; "workspace_id": string; }
+export interface ClientRegisterRequest { "client_instance_id": string; "engine_instance_id": string; "first_slice_contract_id"?: "p30-e4-session-v1"; "first_slice_schema_sha256"?: "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"; "lifecycle_mode": "local-owned" | "local-external" | "remote" | "off"; "workspace_id": string; }
 
-export interface ClientRegistrationResponse { "admission_epoch": number; "client_instance_id": string; "engine_instance_id": string; "expires_at_unix"?: number | null; "first_slice_contract_id"?: "p30-e4-session-v1"; "first_slice_schema_sha256"?: "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"; "lease_ttl_seconds"?: 30; "lifecycle_mode": "local-owned" | "local-external" | "remote"; "registered_at_unix": number; "registration_generation": number; "registration_id": string; "renewal_interval_seconds"?: 10; "result": "registered" | "renewed" | "detached" | "already_detached"; "schema_version"?: "bb.engine_client_registration.v1"; "workspace_id": string; }
+export interface ClientRegistrationResponse { "admission_epoch": number; "client_instance_id": string; "engine_instance_id": string; "expires_at_unix"?: number | null; "first_slice_contract_id"?: "p30-e4-session-v1"; "first_slice_schema_sha256"?: "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"; "lease_ttl_seconds"?: 30; "lifecycle_mode": "local-owned" | "local-external" | "remote"; "registered_at_unix": number; "registration_generation": number; "registration_id": string; "renewal_interval_seconds"?: 10; "result": "registered" | "renewed" | "detached" | "already_detached"; "schema_version"?: "bb.engine_client_registration.v1"; "workspace_id": string; }
 
 export interface CompleteAuthLoginRequest { "account_label"?: string | null; "alias"?: string | null; "authorization_code"?: string | null; "callback_url"?: string | null; "code"?: string | null; "state"?: string | null; }
 
@@ -43,7 +43,7 @@ export interface EngineProcessStart { "engine_boot_id": string; "engine_instance
 
 export interface EngineProtocolIdentity { "protocol_version"?: "1.0"; }
 
-export interface EngineSessionContractIdentity { "compatibility": "compatible" | "incompatible"; "contract_id"?: "p30-e4-session-v1"; "schema_sha256"?: "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"; "sessionReplayContractDigest": string; }
+export interface EngineSessionContractIdentity { "compatibility": "compatible" | "incompatible"; "contract_id"?: "p30-e4-session-v1"; "schema_sha256"?: "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"; "sessionReplayContractDigest": string; }
 
 export interface EngineSessionReadiness { "ready": boolean; "reason": "ready" | "session_contract_missing" | "session_contract_mismatch"; }
 
@@ -67,7 +67,13 @@ export interface HarnessCreateRequest { "directory"?: string; }
 
 export interface HarnessUpdateRequest { "definition": { [key: string]: unknown; }; }
 
-export interface ModelRolesResolveRequest { "model_roles": { [key: string]: unknown; }; "role_overrides"?: { [key: string]: unknown; } | null; "session_started"?: boolean; }
+export interface ModelCatalogEntry { "adapter"?: string | null; "availability_reason"?: "provider_managed" | "missing_auth" | "unsupported_provider" | "deferred_provider" | null; "available": boolean; "canonical_provider"?: string | null; "context_length"?: number | null; "discovery": "configured_only"; "id": string; "metadata"?: { [key: string]: unknown; } | null; "name"?: string | null; "params"?: { [key: string]: unknown; } | null; "provider"?: string | null; "routing"?: { [key: string]: unknown; } | null; "source": "configured"; "support_tier": "core" | "deferred" | "evidence" | "unsupported"; }
+
+export interface ModelCatalogIssue { "code": "invalid_model" | "duplicate_model" | "unsupported_provider" | "deferred_provider" | "stale_dynamic_catalog"; "index"?: number | null; "model_id"?: string | null; "provider_id"?: string | null; "source": "configured" | "dynamic"; }
+
+export interface ModelCatalogResponse { "config_path"?: string | null; "default_model"?: string | null; "discovery_policy": "configured_only"; "issues": Array<ModelCatalogIssue>; "models": Array<ModelCatalogEntry>; }
+
+export interface ModelRolesResolveRequest { "model_catalog"?: Array<{ [key: string]: unknown; }> | null; "model_roles": { [key: string]: unknown; }; "role_overrides"?: { [key: string]: unknown; } | null; "session_started"?: boolean; }
 
 export interface ModelRolesResolveResponse { "lock": { [key: string]: unknown; }; "lock_hash": string; }
 

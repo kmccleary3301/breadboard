@@ -770,7 +770,11 @@ def test_api_error_envelope_covers_auth_and_validation(monkeypatch: pytest.Monke
     assert auth_response.status_code == 401
     assert auth_response.json() == {"error": "unauthorized", "detail": "unauthorized", "path": None}
 
-    validation_response = TestClient(create_app()).post("/v1/sessions", json={}, headers={"Authorization": "Bearer secret"})
+    validation_response = TestClient(create_app()).post(
+        "/v1/sessions",
+        json={"config_path": "   "},
+        headers={"Authorization": "Bearer secret"},
+    )
     assert validation_response.status_code == 422
     assert validation_response.json()["error"] == "invalid_request"
     assert "errors" in validation_response.json()["detail"]

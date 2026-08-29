@@ -1,9 +1,56 @@
 ## LLM Provider Details and Integration Guide for BreadBoard
 
-This document consolidates provider behaviors and SDK patterns for OpenRouter, OpenAI, and Anthropic as they relate to BreadBoard’s modular agentic coder. It focuses on native tool calling, input/KV caching, chain-of-thought handling, and streaming. It also maps these capabilities to BreadBoard’s architecture (`provider/routing`, `provider/adapters`, `dialects`, and execution policies).
+This document separates BreadBoard's bounded, evidence-backed provider support claim from a broader protocol and implementation reference. Only the generated scope block below is product support proof; the remaining API examples and guidance do not expand that claim.
+
+<!-- BEGIN GENERATED PROVIDER PARITY CLAIMS -->
+## 0. Proved product scope
+
+> [!IMPORTANT]
+> This generated block is the complete BreadBoard provider-support claim.
+> The protocol guide below is implementation reference, not product support proof.
+
+Source pin: `can1357/oh-my-pi` `v18.0.1` at `6c1209842323bb4713f127ac303c97fd043d585c` (tree `67a19f0d45a71af8c3d9ae83562ffb1fcb579d61`). Oracle fixture SHA-256: `8d55c5adac18dacb90d4fce72d52c57745be16d91f8ad4284537c80153788faf`; runner SHA-256: `2f1896d905eda9be1425182a77f3e06330238f909a72ed4efe326fa93650db79`.
+
+Accepted F6 snapshot: BreadBoard `145912b8d2a235943f453ae8ac8fe825200c9bbd` (tree `7145ce07950f9384588eafe69f730760d41f4df0`), manifest SHA-256 `1d7b41facae20d6c6d39cfc9777867dae514970e19cd7d8e27447b86cbc4714e`; 45 rows = 42 matches + 3 approved divergences.
+
+Built-artifact bindings: wheel `935259a8b425b104e7391fcb78fda557a6f5c66135ab8c30a3ff2a3be0d23b70`; TypeScript SDK `3121c3c5ccd172dbfb60bacf1af43eefeeaa6d4f6598b465d5c42de7fc4b90fe`; provider-free installed trace `b5b7c8e1097ee0cbb14d878b85a8822f7151cfb3752b196f86f64b2e550ad8d6`.
+
+Machine-readable source: [`conformance/provider_parity_claims/manifest.v1.json`](../../conformance/provider_parity_claims/manifest.v1.json).
+
+### Bounded provider claims
+
+| BreadBoard provider / OMP id | Auth scheme / flow / owner | Representative model | Runtime / API | Contract / evidence | Live state | Divergences |
+|---|---|---|---|---|---|---|
+| `codex` / `openai-codex` | `provider_managed`; flow `openai-codex`; owner `provider` | `codex/gpt-5-codex` | `codex_app_server` / `openai-codex-responses` | `declared_supported` / `synthetic_verified` | `unproved`; requires `L1` + `L2` | `bounded-catalog`, `codex-alias`, `configured-only-models`, `codex-transport`, `auth-mechanics`, `subscription-material-policy`, `exchange-ir`, `role-resolution`, `fallback-policy`, `synthetic-only` |
+| `openai` / `openai` | `api_key`; owner `broker` | `openai/gpt-5-mini` | `openai_chat` / `openai-responses` | `declared_supported` / `synthetic_verified` | `unproved`; requires `L1` + `L2` | `bounded-catalog`, `configured-only-models`, `auth-mechanics`, `subscription-material-policy`, `exchange-ir`, `role-resolution`, `fallback-policy`, `synthetic-only` |
+| `anthropic` / `anthropic` | `api_key`, `oauth2`; flow `anthropic`; owner `broker` | `anthropic/claude-3-opus` | `anthropic_messages` / `anthropic-messages` | `declared_supported` / `synthetic_verified` | `unproved`; requires `L1` + `L2` | `bounded-catalog`, `configured-only-models`, `auth-mechanics`, `subscription-material-policy`, `exchange-ir`, `role-resolution`, `fallback-policy`, `synthetic-only` |
+| `openrouter` / `openrouter` | `api_key`; owner `broker` | `openrouter/deepseek/deepseek-v4-flash-0731` | `openrouter_chat` / `openrouter` | `declared_supported` / `synthetic_verified` | `unproved`; requires `L1` + `L2` | `bounded-catalog`, `configured-only-models`, `auth-mechanics`, `subscription-material-policy`, `exchange-ir`, `role-resolution`, `fallback-policy`, `synthetic-only` |
+
+Every row excludes real login, credential validity, live provider network, cost, latency, quota, model-quality, model-family, and release-wide claims. The representative model is a deterministic F6 fixture, not a family claim.
+
+Direct consumer-subscription material is a separate policy surface. Anthropic consumer subscription is unsupported. Codex/ChatGPT subscription material is default-off and harness-backed-only; neither policy broadens the broker API-key/OAuth rows above.
+
+Deferred providers: `google-gemini-cli`, `google-antigravity`. Evidence-only providers: `mock`, `cli_mock`, `smoke`, `replay`. Other OMP registry entries are `native_omp_only`, not BreadBoard support claims. Historical live evidence remains `historical_exact_scope` and does not prove the current head.
+
+### Known-divergence matrix
+
+| ID | Exact boundary | F6 intentional rows |
+|---|---|---|
+| `bounded-catalog` | BreadBoard supports four catalog providers; OMP v18.0.1 has a broader registry. Gemini is deferred and every other OMP entry is outside the product claim. | None |
+| `codex-alias` | BreadBoard's canonical provider id is codex; the pinned OMP provider id is openai-codex. | None |
+| `configured-only-models` | BreadBoard admits explicit configured models only; OMP may discover models dynamically and change defaults. | None |
+| `codex-transport` | BreadBoard uses the Codex app-server runtime; OMP's oracle exercises its Responses transport. Only normalized product-visible semantics are compared. | None |
+| `auth-mechanics` | BreadBoard owns a durable broker, precedence, affinity, refresh, revoke, and tombstones; OMP owns different credential storage and selection mechanics. | None |
+| `subscription-material-policy` | Broker API-key/OAuth schemes do not authorize direct consumer-subscription material; scheme-specific policy manifests remain authoritative. | None |
+| `exchange-ir` | BreadBoard exposes the strict F4 exchange IR and bounded native envelope, not OMP's internal or provider-native stream objects. | None |
+| `role-resolution` | BreadBoard exposes a bounded public role subset with exact targets; OMP also has fuzzy aliases and internal roles. | `role.lock_secret_rotation_restart` |
+| `fallback-policy` | BreadBoard forbids auth/policy-triggered model fallback and implicit cross-provider fallback; OMP permits fallback behavior. | `role.auth_policy_no_fallback`, `role.cross_provider_default_forbidden` |
+| `synthetic-only` | F6 proves deterministic local semantics and provider-free artifacts, not real login, network, cost, latency, quota, quality, or release readiness. | None |
+<!-- END GENERATED PROVIDER PARITY CLAIMS -->
 
 ### Table of Contents
 
+- [0. Proved product scope](#0-proved-product-scope)
 - [1. Overview](#1-overview)
 - [2. BreadBoard Architecture Hooks](#2-breadboard-architecture-hooks)
   - [2.1 Where provider behavior plugs in](#21-where-provider-behavior-plugs-in)
@@ -53,13 +100,13 @@ This document consolidates provider behaviors and SDK patterns for OpenRouter, O
 
 ## 1. Overview
 
-BreadBoard needs to support heterogeneous provider APIs while keeping a unified developer experience. We target:
+This protocol reference compares heterogeneous provider APIs without asserting that every described capability is a BreadBoard product contract:
 
-- OpenRouter: OpenAI-compatible SDK interface with chat completions. Adds routing, caching abstraction, SSE streaming details, and provider-specific capabilities.
-- OpenAI: Moving from Chat Completions to the Responses API for stateful, agentic primitives; function/tool calling differences; encrypted reasoning items; Conversations for state.
-- Anthropic: Messages API with explicit `tools`, structured `tool_use` and `tool_result` blocks, prompt caching via `cache_control` with 5m/1h TTL, and explicit guidance for extended thinking.
+- OpenRouter: OpenAI-compatible chat completions, routing, caching abstractions, SSE streaming, and provider-specific capabilities.
+- OpenAI: Chat Completions, Responses, function/tool calling, encrypted reasoning items, and Conversations.
+- Anthropic: Messages, `tool_use` and `tool_result` blocks, prompt caching, and extended thinking.
 
-We standardize around four themes:
+The guidance is organized around four themes:
 
 1) Native tool calling (provider-supplied schemas and server tools) alongside our text-based tool dialects.
 2) Input/KV caching: automatic (OpenAI/OpenRouter) vs explicit `cache_control` (Anthropic), pricing multipliers, and TTL.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 from pathlib import Path
 from typing import Any, Dict
 
@@ -22,6 +23,7 @@ def _load_env() -> None:
         for candidate in (repo_root / ".env", repo_root / ".env.local"):
             if candidate.exists():
                 load_dotenv(candidate, override=False)
+
 
 def _is_local_bind(host: str) -> bool:
     normalized = (host or "").strip().lower()
@@ -45,26 +47,38 @@ def build_uvicorn_config() -> Dict[str, Any]:
     log_level = os.environ.get("BREADBOARD_CLI_LOG_LEVEL", "info")
     if _is_externally_reachable_bind(host):
         token = (os.environ.get("BREADBOARD_API_TOKEN") or "").strip()
-        allow_insecure = (os.environ.get("BREADBOARD_ALLOW_INSECURE_REMOTE") or "").strip().lower() in {
+        allow_insecure = (
+            os.environ.get("BREADBOARD_ALLOW_INSECURE_REMOTE") or ""
+        ).strip().lower() in {
             "1",
             "true",
             "yes",
         }
-        if not token and not allow_insecure:
+        if not token or not allow_insecure:
             raise SystemExit(
-                "Refusing to start BreadBoard engine on a non-local bind without auth.\n"
+                "Refusing direct non-local BreadBoard engine bind.\n"
                 f"Host: {host}\n"
-                "Set BREADBOARD_API_TOKEN to require a Bearer token for all requests, or bind locally "
-                "(BREADBOARD_CLI_HOST=127.0.0.1).\n"
-                "To override (unsafe), set BREADBOARD_ALLOW_INSECURE_REMOTE=1."
+                "The built-in server does not provide TLS. Bind locally behind "
+                "a TLS-terminating protected channel, or set both "
+                "BREADBOARD_API_TOKEN and BREADBOARD_ALLOW_INSECURE_REMOTE=1 "
+                "for an explicitly unsupported insecure override."
             )
-    return {"host": host, "port": port, "reload": reload_enabled, "log_level": log_level}
+    return {
+        "host": host,
+        "port": port,
+        "reload": reload_enabled,
+        "log_level": log_level,
+    }
+
+
+def _request_shutdown() -> None:
+    os.kill(os.getpid(), signal.SIGTERM)
 
 
 def main() -> None:
     _load_env()
     config = build_uvicorn_config()
-    app = create_app()
+    app = create_app(request_shutdown=_request_shutdown)
     uvicorn.run(app, **config)
 
 

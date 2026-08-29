@@ -213,6 +213,7 @@ class SessionRecord:
     event_log: Deque[SessionEvent] = field(default_factory=deque)
     event_seq: int = 0
     replay_history_partial: bool = False
+    replay_head_event_id: Optional[str] = None
     terminal_event_envelopes: list[Dict[str, Any]] = field(default_factory=list, repr=False)
     subscribers: Dict["asyncio.Queue[Optional[SessionEvent]]", SubscriberState] = field(
         default_factory=dict,
@@ -261,6 +262,7 @@ class SessionRecord:
             self.event_log,
             head_sequence=self.event_seq,
             retained_history_partial=self.replay_history_partial,
+            persisted_head_event_id=self.replay_head_event_id,
         )
         terminal_turns = [
             {

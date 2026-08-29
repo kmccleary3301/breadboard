@@ -112,8 +112,16 @@ class ConductorContext(Protocol):
         """Get model routing preferences."""
         ...
     
-    def _select_fallback_route(self, route_id: Optional[str], provider_id: Optional[str], model: str, explicit_fallbacks: List[str]) -> tuple[Optional[str], Optional[str]]:
-        """Select fallback route."""
+    def _select_fallback_route(
+        self,
+        route_id: Optional[str],
+        provider_id: Optional[str],
+        model: str,
+        explicit_fallbacks: List[str],
+        *,
+        failure_reason: Any = None,
+    ) -> tuple[Optional[str], Dict[str, Any]]:
+        """Select a policy-authorized fallback route."""
         ...
     
     def _log_routing_event(self, session_state: SessionState, markdown_logger: Any, turn_index: Optional[int], tag: str, message: str, payload: Dict[str, Any]) -> None:

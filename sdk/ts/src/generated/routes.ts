@@ -1,7 +1,7 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
-// openapi-schema-sha256: cb30fc21b66032b85c13997638f9e9c066ddb29cd4d41acc7b87329a47315c05
-// app-source-sha256: 50c119e5883901a91eb0330c47a4594c22a17c833bfc87b77a623a3444a28d6f
+// openapi-schema-sha256: aca2a3e5eb4783edd9f8c27d49938838e837c610bb8b7b5756f0c9461fd64af8
+// app-source-sha256: 4b61a81504a4eb7d916c371df69e2e2019f9191cc651a7c12504c5d15aaf45fc
 
 export interface RouteEntry { path: string; method: string; operationId: string }
 
@@ -45,6 +45,7 @@ export const ROUTES: readonly RouteEntry[] = [
   { path: "/v1/integrations/{integration_id}", method: "GET", operationId: "integration.get" },
   { path: "/v1/integrations/{integration_id}/probe", method: "POST", operationId: "integration.probe" },
   { path: "/v1/model-roles/resolve", method: "POST", operationId: "resolve_model_roles_v1_model_roles_resolve_post" },
+  { path: "/v1/models", method: "GET", operationId: "list_models_v1_models_get" },
   { path: "/v1/schemas", method: "GET", operationId: "system.schemas" },
   { path: "/v1/sessions", method: "GET", operationId: "session.list" },
   { path: "/v1/sessions", method: "POST", operationId: "session.start" },

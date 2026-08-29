@@ -1,0 +1,30 @@
+{
+  "schema_version": "bb.provider_exchange.v2",
+  "exchange_id": "px-v2-error",
+  "correlation": {
+    "session_id": "session-1",
+    "input_id": "input-2",
+    "turn_id": "turn-2"
+  },
+  "provider": {
+    "provider_id": "anthropic",
+    "runtime_id": "anthropic_messages",
+    "route_id": null,
+    "model": "claude-sonnet-4-5"
+  },
+  "request": {
+    "stream": false,
+    "messages": [],
+    "tools": []
+  },
+  "events": [],
+  "terminal": {
+    "kind": "error",
+    "output_emitted": false,
+    "code": "provider_rate_limited",
+    "category": "provider",
+    "retryable": true,
+    "http_status": 429,
+    "evidence_refs": []
+  }
+}

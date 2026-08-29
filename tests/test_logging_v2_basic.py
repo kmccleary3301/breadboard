@@ -12,7 +12,13 @@ from breadboard_engine.logging_v2 import LoggerV2Manager as CompatLoggerV2Manage
 
 
 def test_logger_v2_creates_run_tree(tmp_path):
-    cfg = {"logging": {"root_dir": str(tmp_path / "logging"), "redact": True, "include_raw": True}}
+    cfg = {
+        "logging": {
+            "root_dir": str(tmp_path / "logging"),
+            "redact": True,
+            "include_raw": True,
+        }
+    }
     lm = LoggerV2Manager(cfg)
     run = lm.start_run("session-xyz")
     runp = Path(run)
@@ -33,7 +39,10 @@ def test_logger_v2_creates_run_tree(tmp_path):
         provider_id="openrouter",
         runtime_id="openrouter_chat",
         model="m",
-        request_headers={"Authorization": "Bearer SECRET", "Accept": "application/json"},
+        request_headers={
+            "Authorization": "Bearer SECRET",
+            "Accept": "application/json",
+        },
         request_body={"model": "m", "messages": [{"role": "user", "content": "Hello"}]},
         stream=False,
         tool_count=0,
@@ -75,8 +84,31 @@ def test_logging_v2_wrapper_emits_deprecation_warning():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", DeprecationWarning)
         package = importlib.import_module("breadboard_engine.logging_v2")
-        submodule = importlib.import_module("breadboard_engine.logging_v2.workspace_manifest")
+        submodule = importlib.import_module(
+            "breadboard_engine.logging_v2.workspace_manifest"
+        )
         importlib.reload(package)
         importlib.reload(submodule)
-    messages = [str(item.message) for item in caught if item.category is DeprecationWarning]
+    messages = [
+        str(item.message) for item in caught if item.category is DeprecationWarning
+    ]
     assert any("breadboard_engine.logging_v2" in message for message in messages)
+
+
+def test_logger_rejects_late_symlink_and_hardlink_targets(tmp_path):
+    manager = LoggerV2Manager({"logging": {"root_dir": str(tmp_path / "logging")}})
+    run = Path(manager.start_run("workspace-adversary"))
+
+    symlink_secret = tmp_path / "symlink-secret"
+    symlink_secret.write_text("symlink-canary", encoding="utf-8")
+    symlink_target = run / "conversation" / "late-write.txt"
+    symlink_target.symlink_to(symlink_secret)
+    assert manager.write_text("conversation/late-write.txt", "replacement") == ""
+    assert symlink_secret.read_text(encoding="utf-8") == "symlink-canary"
+
+    hardlink_secret = tmp_path / "hardlink-secret"
+    hardlink_secret.write_text("hardlink-canary", encoding="utf-8")
+    hardlink_target = run / "conversation" / "late-append.txt"
+    os.link(hardlink_secret, hardlink_target)
+    assert manager.append_text("conversation/late-append.txt", "replacement") == ""
+    assert hardlink_secret.read_text(encoding="utf-8") == "hardlink-canary"

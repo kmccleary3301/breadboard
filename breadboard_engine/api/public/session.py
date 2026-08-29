@@ -39,6 +39,11 @@ from .models import (
 
 router = APIRouter(tags=["public-session"])
 _TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "canceled"})
+_OBSERVATION_PAYLOAD_SCHEMAS = {
+    "assistant_message": "bb.payload.message.assistant.v1",
+    "tool_call": "bb.payload.tool.called.v1",
+    "tool_result": "bb.payload.tool.completed.v1",
+}
 class _ProductSessionUnavailable(RuntimeError):
     pass
 def _service(request: Request):
@@ -112,11 +117,20 @@ def _resolve_start_lock(request: SessionStartRequest, workspace: Path):
         check=True,
         contained=True,
     ))
-    return lock, source_path, checked
+    role_document = harness_operations.daily_driver_model_roles_for_harness(
+        source_path,
+        workspace,
+        contained=True,
+    )
+    return lock, source_path, checked, role_document
 async def _start_result(request: SessionStartRequest, workspace: Path, service) -> CliResult:
     if request.session_id and (request.session_id in {".", ".."} or request.session_id != Path(request.session_id).name):
         raise ValueError("session_id must be a portable identifier")
-    effective_lock, source_path, checked = await run_in_threadpool(_resolve_start_lock, request, workspace)
+    effective_lock, source_path, checked, role_document = await run_in_threadpool(
+        _resolve_start_lock,
+        request,
+        workspace,
+    )
     if not checked.ok:
         error = checked.error or {}
         return CliResult.failure(
@@ -129,12 +143,18 @@ async def _start_result(request: SessionStartRequest, workspace: Path, service) 
             refs=checked.record_refs,
             next_actions=checked.next_actions,
         )
+    request_metadata = {
+        "non_interactive_cli_session": True,
+        "cli_session_kind": "oneshot",
+    }
+    if role_document is not None:
+        request_metadata["bb.model_roles.v1"] = role_document
     created = await service.create_session(
         BridgeSessionCreateRequest(
             config_path=str(source_path),
             task=request.task,
             workspace=str(workspace),
-            metadata={"non_interactive_cli_session": True, "cli_session_kind": "oneshot"},
+            metadata=request_metadata,
         ),
         session_id=request.session_id,
         event_root=workspace_path(".breadboard/sessions", workspace),
@@ -207,7 +227,10 @@ def _kernel_event(event):
         },
         "kind": event["kind"],
         "payload": event["payload"],
-        "payload_schema_version": event["schema_version"],
+        "payload_schema_version": _OBSERVATION_PAYLOAD_SCHEMAS.get(
+            str(event["kind"]),
+            event["schema_version"],
+        ),
     }
 @router.post("/v1/sessions", operation_id="session.start", response_model=PublicResult, status_code=202)
 async def start(request: SessionStartRequest, context: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):

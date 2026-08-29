@@ -135,6 +135,7 @@ _CORE_SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = (
     ("bb.blob_ref.v1", "blob_id", None),
     ("bb.external_protocol_session.v1", "session_id", None),
     ("bb.provider_route.v1", "route_id", None),
+    ("bb.provider_exchange.v2", "exchange_id", None),
     ("bb.memory_compaction_plan.v1", "plan_id", None),
     ("bb.transcript_continuation_patch.v1", "patch_id", None),
     ("bb.work_item.v2", "work_item_id", None),

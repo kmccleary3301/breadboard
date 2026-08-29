@@ -24,10 +24,11 @@ bb-9c8, bb-ys7). The one-day thesis is unproven until those front doors exist an
 runtime_protocol / config_algebra / host_protocol / evidence / frozen_legacy. "Minimal" refers to the
 runtime_protocol tier only. A kept schema names a real consumer or it is frozen.
 
-**Layering.** Product harness configs are bb.agent_config_surface.v2 documents. E4 lane intent lives
-in lane manifests (bb.e4.lane_manifest.v1); deterministic resolution lives in lane locks
-(bb.e4.lane_lock.v1) and generated sidecars, machine-owned, never hand-edited.
-Run evidence references locks by digest. The chain is manifest ← lock ← evidence, never reversed.
+**Layering.** Canonical public product harness definitions are bb.harness_definition.v1 documents.
+bb.agent_config_surface.v2 remains input compatibility, not the ordinary profile authority. E4 lane
+intent lives in lane manifests (bb.e4.lane_manifest.v1); deterministic resolution lives in lane
+locks (bb.e4.lane_lock.v1) and generated sidecars, machine-owned, never hand-edited. Run evidence
+references locks by digest. The chain is manifest ← lock ← evidence, never reversed.
 Every stage reports an explicit outcome (executed, reused-with-provenance, disabled-by-manifest, or structurally not-applicable); silent skips are defects.
 
 **Change discipline.** Surface growth (schema families, SDK packages, lane kinds, ledgers,

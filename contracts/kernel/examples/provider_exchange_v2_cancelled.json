@@ -1,0 +1,38 @@
+{
+  "schema_version": "bb.provider_exchange.v2",
+  "exchange_id": "px-v2-cancelled",
+  "correlation": {
+    "session_id": "session-1",
+    "input_id": "input-3",
+    "turn_id": "turn-3"
+  },
+  "provider": {
+    "provider_id": "openai",
+    "runtime_id": "openai_chat",
+    "route_id": "openai/gpt-5.5",
+    "model": "gpt-5.5"
+  },
+  "request": {
+    "stream": true,
+    "messages": [
+      {
+        "message_id": "msg-user-3",
+        "role": "user",
+        "content": [{"type": "text", "text": "Stop this request."}]
+      }
+    ],
+    "tools": []
+  },
+  "events": [
+    {"sequence": 0, "kind": "response_start"},
+    {"sequence": 1, "kind": "text_start", "content_index": 0, "message_id": "msg-assistant-3"},
+    {"sequence": 2, "kind": "text_delta", "content_index": 0, "message_id": "msg-assistant-3", "delta": "Working"}
+  ],
+  "terminal": {
+    "kind": "cancelled",
+    "output_emitted": true,
+    "owner": "caller",
+    "reason_code": "stop_requested",
+    "evidence_refs": []
+  }
+}

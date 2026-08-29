@@ -91,6 +91,12 @@ export interface ModelCatalogEntry {
   readonly id: string
   readonly adapter?: string | null
   readonly provider?: string | null
+  readonly canonical_provider?: string | null
+  readonly support_tier: "core" | "deferred" | "evidence" | "unsupported"
+  readonly available: boolean
+  readonly availability_reason?: "provider_managed" | "missing_auth" | "unsupported_provider" | "deferred_provider" | null
+  readonly discovery: "configured_only"
+  readonly source: "configured"
   readonly name?: string | null
   readonly context_length?: number | null
   readonly params?: Record<string, unknown> | null
@@ -98,10 +104,20 @@ export interface ModelCatalogEntry {
   readonly metadata?: Record<string, unknown> | null
 }
 
+export interface ModelCatalogIssue {
+  readonly code: "invalid_model" | "duplicate_model" | "unsupported_provider" | "deferred_provider" | "stale_dynamic_catalog"
+  readonly model_id?: string | null
+  readonly provider_id?: string | null
+  readonly source: "configured" | "dynamic"
+  readonly index?: number | null
+}
+
 export interface ModelCatalogResponse {
   readonly models: ModelCatalogEntry[]
   readonly default_model?: string | null
   readonly config_path?: string | null
+  readonly discovery_policy: "configured_only"
+  readonly issues: ModelCatalogIssue[]
 }
 
 export type SkillType = "prompt" | "graph"
@@ -202,7 +218,7 @@ export interface CTreeEventsResponse {
 }
 
 export interface SessionCreateRequest {
-  readonly config_path: string
+  readonly config_path?: string | null
   readonly task: string
   readonly overrides?: Record<string, unknown> | null
   readonly metadata?: Record<string, unknown> | null
@@ -291,7 +307,7 @@ export interface ProviderAuthDetachRequest { readonly provider_id: string; reado
 export interface ProviderAuthDetachResponse { readonly ok?: boolean }
 export interface ProviderAuthStatusItem { readonly provider_id: string; readonly alias?: string | null; readonly base_url?: string | null; readonly expires_at_ms?: number | null; readonly expires_in_ms?: number | null; readonly has_api_key?: boolean; readonly header_keys?: ReadonlyArray<string>; readonly is_subscription_plan?: boolean; readonly issued_at_ms?: number | null; readonly required_profile?: Record<string, unknown> | null; readonly routing_keys?: ReadonlyArray<string> }
 export interface ProviderAuthStatusResponse { readonly attached?: ReadonlyArray<ProviderAuthStatusItem> }
-export interface AuthProviderView { readonly provider_id: string; readonly display_name: string; readonly auth_schemes: ReadonlyArray<string>; readonly login_available?: boolean; readonly oauth_flows?: ReadonlyArray<string>; readonly runtime_id?: string | null; readonly compatible_protocol?: string | null; readonly base_url?: string | null }
+export interface AuthProviderView { readonly provider_id: string; readonly aliases: ReadonlyArray<string>; readonly display_name: string; readonly support_tier: "core"; readonly auth_owner: "broker" | "provider"; readonly auth_schemes: ReadonlyArray<string>; readonly available: boolean; readonly availability_reason?: "provider_managed" | "missing_auth" | null; readonly login_available?: boolean; readonly oauth_flows?: ReadonlyArray<string>; readonly model_discovery: "configured_only"; readonly runtime_id?: string | null; readonly compatible_protocol?: string | null; readonly base_url?: string | null }
 export interface AuthCredentialView {
   readonly account_id: string
   readonly credential_id: string
@@ -338,7 +354,7 @@ export interface PutApiKeyInput {
   readonly metadata?: Record<string, unknown>
 }
 export interface AuthActionResponse { readonly ok: boolean; readonly detail?: Record<string, unknown> | null }
-export interface ModelRolesResolveInput { readonly model_roles: Record<string, unknown>; readonly role_overrides?: Record<string, unknown> | null; readonly session_started?: boolean }
+export interface ModelRolesResolveInput { readonly model_roles: Record<string, unknown>; readonly role_overrides?: Record<string, unknown> | null; readonly session_started?: boolean; readonly model_catalog?: ReadonlyArray<Record<string, unknown>> | null }
 export interface ModelRolesResolveResponse { readonly lock: Record<string, unknown>; readonly lock_hash: string }
 
 export interface E4CatalogBindingSegment { readonly segment_id: string; readonly stable_entries_hash: string }

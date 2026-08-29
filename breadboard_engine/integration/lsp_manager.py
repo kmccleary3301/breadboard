@@ -6,11 +6,22 @@ Based on OpenCode patterns with Ray integration for agentic workflows.
 import asyncio
 import json
 import logging
+import os
 import subprocess
-import tempfile
+import uuid
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from pathlib import Path, PurePosixPath
+from typing import Dict, List, Optional, Any, Sequence, Tuple
+from breadboard_engine.security import (
+    build_child_environment,
+    build_restricted_process_command,
+    protected_credential_paths,
+    provider_credential_values,
+    purge_provider_credentials,
+    WorkspaceFilesystem,
+    WorkspacePathError,
+    redaction,
+)
 import ray
 
 logger = logging.getLogger(__name__)
@@ -88,23 +99,100 @@ class LSPManager:
         )
     }
     
-    def __init__(self, workspace_root: str):
-        self.workspace_root = Path(workspace_root)
+    def __init__(
+        self,
+        workspace_root: str,
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ):
+        self._protected_paths = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        purge_provider_credentials()
+        self.workspace_root = Path(workspace_root).expanduser().resolve()
+        self._workspace_files = WorkspaceFilesystem(self.workspace_root)
         self.active_servers: Dict[str, subprocess.Popen] = {}
         self.file_diagnostics: Dict[str, List[Diagnostic]] = {}
-        
+
+    def _logical_file_path(self, file_path: str) -> str:
+        raw = os.fspath(file_path)
+        if not isinstance(raw, str):
+            raw = os.fsdecode(raw)
+        path = Path(raw)
+        if path.is_absolute():
+            try:
+                path = path.relative_to(self._workspace_files.root)
+            except ValueError as exc:
+                raise WorkspacePathError("path_outside_workspace") from exc
+        logical = PurePosixPath(path.as_posix())
+        if not logical.parts or any(
+            part in {"", ".", ".."} for part in logical.parts
+        ):
+            raise WorkspacePathError("path_outside_workspace")
+        return logical.as_posix()
+
+    def _display_file_path(self, file_path: str) -> str:
+        return self._workspace_files.display_path(self._logical_file_path(file_path))
+
+    def _isolated_command(
+        self,
+        command: Sequence[str],
+        *,
+        cwd: str | Path,
+        overrides: Dict[str, str] | None = None,
+    ) -> tuple[tuple[str, ...], dict[str, str]]:
+        environment = build_child_environment(overrides=overrides)
+        return build_restricted_process_command(
+            command,
+            workspace=self.workspace_root,
+            working_directory=cwd,
+            shell=False,
+            environment=environment,
+            protected_paths=self._protected_paths,
+        )
+
+    def _run_static_command(
+        self,
+        command: Sequence[str],
+        *,
+        cwd: str | Path,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        isolated_command, child_environment = self._isolated_command(
+            command,
+            cwd=cwd,
+        )
+        with redaction.secret_value_scope(*provider_credential_values()):
+            result = subprocess.run(
+                isolated_command,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=child_environment,
+                shell=False,
+            )
+            result.stdout = redaction.scrub_text(result.stdout or "")
+            result.stderr = redaction.scrub_text(result.stderr or "")
+            return result
+
     def find_project_root(self, file_path: str, server: LanguageServer) -> Optional[str]:
-        """Find project root by walking up directory tree (OpenCode pattern)"""
-        current = Path(file_path).parent
-        workspace_root = self.workspace_root
-        
-        while current >= workspace_root:
+        """Find a project root through the registered workspace descriptor."""
+        logical = PurePosixPath(self._logical_file_path(file_path))
+        current = logical.parent
+        while True:
             for marker in server.project_markers:
-                if (current / marker).exists():
-                    return str(current)
+                if self._workspace_files.exists(current / marker):
+                    return self._workspace_files.display_path(current)
+            if current == PurePosixPath("."):
+                break
             current = current.parent
-        
-        return str(workspace_root)  # Fallback to workspace root
+        return str(self.workspace_root)
     
     def get_language_server(self, file_path: str) -> Optional[LanguageServer]:
         """Get appropriate language server for file"""
@@ -125,65 +213,63 @@ class LSPManager:
                 del self.active_servers[server_key]
         
         try:
-            # Spawn language server (OpenCode pattern)
-            proc = subprocess.Popen(
+            isolated_command, child_environment = self._isolated_command(
                 server.command,
+                cwd=project_root,
+                overrides=server.env,
+            )
+            proc = subprocess.Popen(
+                isolated_command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=project_root,
-                env={**subprocess.os.environ, **server.env},
+                env=child_environment,
                 text=True,
-                bufsize=0
+                bufsize=0,
+                shell=False,
             )
-            
             self.active_servers[server_key] = proc
-            logger.info(f"Started {server.name} LSP server for {project_root}")
+            logger.info("Started %s LSP server", server.name)
             return True
-            
         except FileNotFoundError:
-            logger.warning(f"Language server {server.name} not found. Install with: npm install -g {server.command[0]}")
+            logger.warning("Language server %s is unavailable", server.name)
             return False
-        except Exception as e:
-            logger.error(f"Failed to start {server.name}: {e}")
+        except Exception as exc:
+            logger.error(
+                "Failed to start %s: %s",
+                server.name,
+                redaction.safe_exception_message(exc, operation="LSP server"),
+            )
             return False
     
     async def validate_file(self, file_path: str, content: Optional[str] = None) -> List[Diagnostic]:
         """
-        Validate file and return diagnostics
-        Uses simplified validation for agentic workflows
+        Validate a workspace-relative file through the registered descriptor.
         """
-        server = self.get_language_server(file_path)
+        logical_file_path = self._logical_file_path(file_path)
+        server = self.get_language_server(logical_file_path)
         if not server:
             return []
-        
-        project_root = self.find_project_root(file_path, server)
+        project_root = self.find_project_root(logical_file_path, server)
         if not await self.ensure_server_running(server, project_root):
             return []
-        
-        # For agentic workflows, use simplified file-based validation
-        # Write content to temp file and validate with static analysis
-        return await self._static_validate(file_path, content, server)
-    
+        return await self._static_validate(logical_file_path, content, server)
+
     async def _static_validate(self, file_path: str, content: Optional[str], server: LanguageServer) -> List[Diagnostic]:
-        """Simplified static validation for agentic workflows"""
+        """Simplified static validation for agentic workflows."""
         diagnostics = []
-        
-        # Use existing file or provided content
         if content is None:
-            if not Path(file_path).exists():
+            try:
+                content = self._workspace_files.read_text(file_path)
+            except FileNotFoundError:
                 return []
-            with open(file_path, 'r') as f:
-                content = f.read()
-        
-        # Language-specific static validation
         if server.name == "pyright":
             diagnostics.extend(await self._validate_python(file_path, content))
         elif server.name == "typescript":
             diagnostics.extend(await self._validate_typescript(file_path, content))
         elif server.name == "c_cpp":
             diagnostics.extend(await self._validate_c_cpp(file_path, content))
-        
         return diagnostics
     
     async def _validate_python(self, file_path: str, content: str) -> List[Diagnostic]:
@@ -244,101 +330,99 @@ class LSPManager:
         
         return diagnostics
     
-    async def _validate_typescript(self, file_path: str, content: str) -> List[Diagnostic]:
-        """TypeScript validation using tsc if available"""
-        diagnostics = []
-        
+    async def _validate_typescript(
+        self,
+        file_path: str,
+        content: str,
+    ) -> List[Diagnostic]:
+        """TypeScript validation using an isolated tsc process."""
+        diagnostics: List[Diagnostic] = []
+        temp_name = f".breadboard/tmp/lsp-{uuid.uuid4().hex}.ts"
+        workspace_files = self._workspace_files
         try:
-            # Create temp file for validation
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.ts', delete=False) as f:
-                f.write(content)
-                temp_path = f.name
-            
-            # Run tsc --noEmit for syntax checking
-            result = subprocess.run(
-                ['tsc', '--noEmit', '--target', 'es2020', temp_path],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            # Parse tsc output
-            for line in result.stderr.splitlines():
-                if temp_path in line and '(' in line:
+            workspace_files.write_text(temp_name, content)
+            temp_path = workspace_files.display_path(temp_name)
+            try:
+                result = self._run_static_command(
+                    ["tsc", "--noEmit", "--target", "es2020", temp_path],
+                    cwd=self.workspace_root,
+                    timeout=10,
+                )
+                for line in result.stderr.splitlines():
+                    if temp_path not in line or "(" not in line:
+                        continue
                     try:
-                        # Format: file.ts(line,col): error message
-                        pos_start = line.find('(') + 1
-                        pos_end = line.find(')')
-                        line_col = line[pos_start:pos_end].split(',')
+                        pos_start = line.find("(") + 1
+                        pos_end = line.find(")")
+                        line_col = line[pos_start:pos_end].split(",")
                         line_num = int(line_col[0]) - 1
                         char_num = int(line_col[1]) if len(line_col) > 1 else 0
-                        message = line[line.find(': ') + 2:] if ': ' in line else line
-                        
-                        severity = "Error" if "error" in line.lower() else "Warning"
-                        
-                        diagnostics.append(Diagnostic(
-                            message=message,
-                            severity=severity,
-                            line=line_num,
-                            character=char_num,
-                            source="TypeScript"
-                        ))
-                    except (ValueError, IndexError):
-                        continue
-            
-            Path(temp_path).unlink()  # Cleanup
-            
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            logger.debug("TypeScript compiler not available")
-        
-        return diagnostics
-    
-    async def _validate_c_cpp(self, file_path: str, content: str) -> List[Diagnostic]:
-        """C/C++ validation using compiler syntax check"""
-        diagnostics = []
-        
-        try:
-            # Create temp file
-            suffix = '.c' if file_path.endswith('.c') else '.cpp'
-            with tempfile.NamedTemporaryFile(mode='w', suffix=suffix, delete=False) as f:
-                f.write(content)
-                temp_path = f.name
-            
-            # Run compiler syntax check
-            compiler = 'gcc' if suffix == '.c' else 'g++'
-            result = subprocess.run(
-                [compiler, '-fsyntax-only', '-Wall', '-std=c11' if suffix == '.c' else '-std=c++17', temp_path],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            # Parse compiler output
-            for line in result.stderr.splitlines():
-                if temp_path in line and ':' in line:
-                    try:
-                        parts = line.split(':')
-                        if len(parts) >= 4:
-                            line_num = int(parts[1]) - 1
-                            char_num = int(parts[2]) if parts[2].isdigit() else 0
-                            severity = "Error" if "error" in parts[3] else "Warning"
-                            message = ':'.join(parts[4:]).strip()
-                            
-                            diagnostics.append(Diagnostic(
+                        message = line[line.find(": ") + 2 :] if ": " in line else line
+                        diagnostics.append(
+                            Diagnostic(
                                 message=message,
-                                severity=severity,
+                                severity="Error" if "error" in line.lower() else "Warning",
                                 line=line_num,
                                 character=char_num,
-                                source="GCC/G++"
-                            ))
+                                source="TypeScript",
+                            )
+                        )
                     except (ValueError, IndexError):
                         continue
-            
-            Path(temp_path).unlink()  # Cleanup
-            
-        except (FileNotFoundError, subprocess.TimeoutExpired):
+            finally:
+                workspace_files.unlink(temp_name)
+        except (FileNotFoundError, WorkspacePathError, subprocess.TimeoutExpired):
+            logger.debug("TypeScript compiler not available")
+        return diagnostics
+
+    async def _validate_c_cpp(
+        self,
+        file_path: str,
+        content: str,
+    ) -> List[Diagnostic]:
+        """C/C++ validation using an isolated compiler process."""
+        diagnostics: List[Diagnostic] = []
+        suffix = ".c" if file_path.endswith(".c") else ".cpp"
+        temp_name = f".breadboard/tmp/lsp-{uuid.uuid4().hex}{suffix}"
+        workspace_files = self._workspace_files
+        try:
+            workspace_files.write_text(temp_name, content)
+            temp_path = workspace_files.display_path(temp_name)
+            try:
+                compiler = "gcc" if suffix == ".c" else "g++"
+                result = self._run_static_command(
+                    [
+                        compiler,
+                        "-fsyntax-only",
+                        "-Wall",
+                        "-std=c11" if suffix == ".c" else "-std=c++17",
+                        temp_path,
+                    ],
+                    cwd=self.workspace_root,
+                    timeout=10,
+                )
+                for line in result.stderr.splitlines():
+                    if temp_path not in line or ":" not in line:
+                        continue
+                    try:
+                        parts = line.split(":")
+                        if len(parts) < 4:
+                            continue
+                        diagnostics.append(
+                            Diagnostic(
+                                message=":".join(parts[4:]).strip(),
+                                severity="Error" if "error" in parts[3] else "Warning",
+                                line=int(parts[1]) - 1,
+                                character=int(parts[2]) if parts[2].isdigit() else 0,
+                                source="GCC/G++",
+                            )
+                        )
+                    except (ValueError, IndexError):
+                        continue
+            finally:
+                workspace_files.unlink(temp_name)
+        except (FileNotFoundError, WorkspacePathError, subprocess.TimeoutExpired):
             logger.debug("C/C++ compiler not available")
-        
         return diagnostics
     
     def format_diagnostics_brief(self, diagnostics: List[Diagnostic], max_errors: int = 3) -> str:
@@ -379,13 +463,31 @@ class LSPManager:
                 logger.error(f"Error shutting down {server_key}: {e}")
         
         self.active_servers.clear()
+        self._workspace_files.close()
 
 @ray.remote
 class RemoteLSPManager:
     """Ray remote wrapper for LSPManager"""
     
-    def __init__(self, workspace_root: str):
-        self.lsp_manager = LSPManager(workspace_root)
+    def __init__(
+        self,
+        workspace_root: str,
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ):
+        captured = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        purge_provider_credentials()
+        self.lsp_manager = LSPManager(
+            workspace_root,
+            protected_paths=captured,
+        )
     
     async def validate_file(self, file_path: str, content: Optional[str] = None) -> List[Dict]:
         """Validate file and return serializable diagnostics"""

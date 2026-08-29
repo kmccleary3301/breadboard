@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import base64
 import types
+from pathlib import Path
+import pytest
 
+from breadboard.product.runtime.artifacts import ArtifactStore
+from breadboard_engine.provider.contracts import ProviderContractError
 from breadboard_engine.provider_routing import provider_router
 from breadboard_engine.provider_runtime import (
     OpenAIResponsesRuntime,
@@ -57,6 +62,7 @@ def test_openai_chat_runtime_produces_string_content_and_tool_call_arguments(mon
 
         def parse(self):
             return types.SimpleNamespace(
+                id="chatcmpl-1",
                 choices=[
                     _fake_choice(
                         "assistant",
@@ -153,6 +159,132 @@ def test_openai_chat_runtime_converts_null_content_to_empty_string() -> None:
     assert converted[0]["content"] == ""
 
 
+
+def test_image_media_reaches_each_supported_provider_input(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    artifact = ArtifactStore(workspace / ".breadboard" / "artifacts").put(
+        b"\x89PNG\r\n\x1a\nprovider-input",
+        media_type="image/png",
+    )
+    uri = f"attachment://{artifact.digest}"
+    metadata = {
+        "attachment_capabilities": {uri: artifact.as_dict()},
+    }
+    session_state = types.SimpleNamespace(
+        workspace=str(workspace),
+        get_provider_metadata=lambda key, default=None: metadata.get(key, default),
+        set_provider_metadata=lambda *_args, **_kwargs: None,
+    )
+    context = ProviderRuntimeContext(
+        session_state=session_state,
+        agent_config={},
+        stream=False,
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "describe"},
+                {
+                    "type": "media",
+                    "kind": "image",
+                    "uri": uri,
+                    "mime": "image/png",
+                },
+            ],
+        }
+    ]
+
+    chat_descriptor, _ = provider_router.get_runtime_descriptor(
+        "openai/gpt-4o-mini"
+    )
+    chat = provider_registry.create_runtime(chat_descriptor)
+    chat_content = chat._convert_messages_to_chat(
+        messages, context=context
+    )[0]["content"]
+    chat_url = chat_content[1]["image_url"]["url"]
+    assert chat_content[0] == {"type": "text", "text": "describe"}
+    assert base64.b64decode(chat_url.partition(",")[2]) == b"\x89PNG\r\n\x1a\nprovider-input"
+
+    responses = OpenAIResponsesRuntime(
+        types.SimpleNamespace(
+            provider_id="openai", runtime_id="openai_responses"
+        )
+    )
+    responses_content = responses._convert_messages_to_input(
+        messages, context=context
+    )[0]["content"]
+    assert responses_content[1]["type"] == "input_image"
+    assert (
+        base64.b64decode(
+            responses_content[1]["image_url"].partition(",")[2]
+        )
+        == b"\x89PNG\r\n\x1a\nprovider-input"
+    )
+
+    anthropic_descriptor, _ = provider_router.get_runtime_descriptor(
+        "anthropic/claude-sonnet-4-6"
+    )
+    anthropic = provider_registry.create_runtime(anthropic_descriptor)
+    _, anthropic_messages = anthropic._convert_messages(
+        messages, context=context
+    )
+    anthropic_source = anthropic_messages[0]["content"][1]["source"]
+    assert anthropic_source["media_type"] == "image/png"
+    assert (
+        base64.b64decode(anthropic_source["data"])
+        == b"\x89PNG\r\n\x1a\nprovider-input"
+    )
+
+    codex_descriptor, _ = provider_router.get_runtime_descriptor(
+        "codex/gpt-5.4-mini"
+    )
+    codex = provider_registry.create_runtime(codex_descriptor)
+    codex_input = codex._extract_latest_user_input(
+        messages, context=context
+    )
+    assert codex_input[0] == {"type": "text", "text": "describe"}
+    assert codex_input[1]["type"] == "image"
+    assert (
+        base64.b64decode(codex_input[1]["url"].partition(",")[2])
+        == b"\x89PNG\r\n\x1a\nprovider-input"
+    )
+
+
+def test_image_media_requires_turn_scoped_attachment_capability() -> None:
+    descriptor, _ = provider_router.get_runtime_descriptor(
+        "openai/gpt-4o-mini"
+    )
+    runtime = provider_registry.create_runtime(descriptor)
+    context = ProviderRuntimeContext(
+        session_state=types.SimpleNamespace(
+            workspace=".",
+            get_provider_metadata=lambda _key, default=None: default,
+        ),
+        agent_config={},
+        stream=False,
+    )
+
+    with pytest.raises(
+        ProviderContractError, match="not authorized for this turn"
+    ):
+        runtime._convert_messages_to_chat(
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "media",
+                            "kind": "image",
+                            "uri": "attachment://sha256:" + "a" * 64,
+                            "mime": "image/png",
+                        }
+                    ],
+                }
+            ],
+            context=context,
+        )
+
 def test_responses_runtime_produces_string_content(monkeypatch):
     """
     ProviderMessage invariants for OpenAIResponsesRuntime:
@@ -169,6 +301,7 @@ def test_responses_runtime_produces_string_content(monkeypatch):
         def create(self, **kwargs):
             self.calls += 1
             output_item = types.SimpleNamespace(
+                id="message-1",
                 type="message",
                 role="assistant",
                 content=[{"type": "output_text", "text": "ok"}],
@@ -176,6 +309,7 @@ def test_responses_runtime_produces_string_content(monkeypatch):
             )
             return types.SimpleNamespace(
                 id="resp_1",
+                status="completed",
                 model="gpt-4.1-mini",
                 output=[output_item],
                 usage={},

@@ -1,0 +1,112 @@
+{
+  "schema_version": "bb.model_roles.v1",
+  "defaults": {
+    "role": "default",
+    "known_but_unbound_role": "error",
+    "unknown_role": "error"
+  },
+  "roles": {
+    "default": {
+      "primary": {
+        "provider_id": "mock",
+        "model_id": "reference",
+        "account_selector": {
+          "mode": "none",
+          "pin": "session"
+        }
+      },
+      "fallbacks": [],
+      "fallback_on": []
+    },
+    "smol": {
+      "primary": {
+        "provider_id": "mock",
+        "model_id": "reference",
+        "account_selector": {
+          "mode": "none",
+          "pin": "session"
+        }
+      },
+      "fallbacks": [],
+      "fallback_on": []
+    },
+    "slow": {
+      "primary": {
+        "provider_id": "mock",
+        "model_id": "reference",
+        "account_selector": {
+          "mode": "none",
+          "pin": "session"
+        }
+      },
+      "fallbacks": [],
+      "fallback_on": []
+    },
+    "vision": {
+      "primary": {
+        "provider_id": "mock",
+        "model_id": "reference",
+        "account_selector": {
+          "mode": "none",
+          "pin": "session"
+        }
+      },
+      "fallbacks": [],
+      "fallback_on": []
+    },
+    "plan": {
+      "primary": {
+        "provider_id": "mock",
+        "model_id": "reference",
+        "account_selector": {
+          "mode": "none",
+          "pin": "session"
+        }
+      },
+      "fallbacks": [],
+      "fallback_on": []
+    },
+    "designer": {
+      "primary": {
+        "provider_id": "mock",
+        "model_id": "reference",
+        "account_selector": {
+          "mode": "none",
+          "pin": "session"
+        }
+      },
+      "fallbacks": [],
+      "fallback_on": []
+    },
+    "task": {
+      "primary": {
+        "provider_id": "mock",
+        "model_id": "reference",
+        "account_selector": {
+          "mode": "none",
+          "pin": "session"
+        }
+      },
+      "fallbacks": [],
+      "fallback_on": []
+    }
+  },
+  "dispatch": {
+    "subagents": {
+      "designer": "designer",
+      "task": "task"
+    },
+    "lanes": {
+      "default": "default",
+      "smol": "smol",
+      "slow": "slow",
+      "vision": "vision",
+      "plan": "plan"
+    }
+  },
+  "policy": {
+    "allow_environment_overrides": false,
+    "cross_provider_fallback": "forbidden",
+    "account_failover": "forbidden"
+  }
+}

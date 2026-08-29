@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import types
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.provider_routing import ProviderDescriptor
 from breadboard_engine.provider_runtime import ProviderMessage, ProviderResult, ProviderRuntimeError
+from breadboard_engine.provider.health import RouteHealthManager
+from breadboard_engine.provider.invoker import ProviderInvoker
+from breadboard_engine.provider.metrics import ProviderMetricsCollector
+from breadboard_engine.state.session_state import SessionState
 
 
 def _make_conductor(config: dict, workspace: Path) -> OpenAIConductor:
@@ -13,7 +19,38 @@ def _make_conductor(config: dict, workspace: Path) -> OpenAIConductor:
     inst = object.__new__(cls)
     inst.config = config
     inst.workspace = str(workspace)
-    inst._active_session_state = None
+    inst._current_route_id = None
+    inst._last_runtime_latency = None
+    inst._last_html_detected = False
+    inst.provider_metrics = ProviderMetricsCollector()
+    inst.route_health = RouteHealthManager()
+    inst.logger_v2 = types.SimpleNamespace(run_dir=None)
+    inst.md_writer = types.SimpleNamespace(system=lambda message: message)
+    session_state = SessionState(str(workspace), "test", config)
+    session_state.set_provider_metadata("session_id", "e5-parent-session")
+    session_state.set_turn_context(
+        input_id="input-parent",
+        turn_id="turn-parent",
+        turn_index=None,
+    )
+    inst._active_session_state = session_state
+
+    def no_provider_retry(*_args: Any, last_error=None, **_kwargs: Any):
+        if last_error is not None:
+            raise last_error
+        return None
+
+    inst.provider_invoker = ProviderInvoker(
+        provider_metrics=inst.provider_metrics,
+        route_health=inst.route_health,
+        logger_v2=inst.logger_v2,
+        md_writer=inst.md_writer,
+        retry_with_fallback=no_provider_retry,
+        update_health_metadata=lambda _state: None,
+        set_last_latency=lambda value: setattr(inst, "_last_runtime_latency", value),
+        set_html_detected=lambda value: setattr(inst, "_last_html_detected", value),
+        client_lease=inst._provider_client_lease,
+    )
     return inst  # type: ignore[return-value]
 
 
@@ -40,6 +77,21 @@ class _StubRouter:
     def create_client_config(self, model: str) -> Dict[str, Any]:
         _ = model
         return {"api_key": "stub-key", "base_url": None, "default_headers": {}}
+
+
+    def get_credential_origin(
+        self, model: str, **kwargs: Any
+    ) -> Dict[str, str]:
+        _ = (model, kwargs)
+        return {"kind": "synthetic", "source": "test"}
+
+    @contextmanager
+    def execution_client_config(self, model: str, **_kwargs: Any):
+        config = self.create_client_config(model)
+        try:
+            yield config
+        finally:
+            config.clear()
 
 
 class _StubRegistry:

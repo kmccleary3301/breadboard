@@ -5,6 +5,10 @@ import subprocess
 from typing import Any, Dict, List, Optional, Set
 
 import ray
+from breadboard_engine.security import (
+    build_child_environment,
+    purge_provider_credentials,
+)
 
 
 def _mk_diagnostic(path: str, message: str, line: int, col: int, severity: int = 1) -> Dict[str, Any]:
@@ -22,6 +26,7 @@ def _mk_diagnostic(path: str, message: str, line: int, col: int, severity: int =
 @ray.remote
 class LSPManager:
     def __init__(self):
+        purge_provider_credentials()
         self.roots: Set[str] = set()
         self.touched: Set[str] = set()
         # capability flags
@@ -62,6 +67,7 @@ class LSPManager:
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True,
+                        env=build_child_environment(),
                     )
                     out, _ = proc.communicate(timeout=10)
                     if proc.returncode is not None and out:

@@ -16,7 +16,13 @@ def _write_config(path: Path, text: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_model_allowlist_filters_catalog(tmp_path: Path) -> None:
+async def test_model_allowlist_filters_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.service.provider_router.get_credential_origin",
+        lambda _route, **_kwargs: None,
+    )
     cfg_path = _write_config(
         tmp_path / "cfg.yaml",
         """
@@ -47,6 +53,52 @@ policies:
     ids = [entry.id for entry in catalog.models]
     assert ids == ["openrouter/openai/gpt-5-nano"]
     assert catalog.default_model == "openrouter/openai/gpt-5-nano"
+    assert catalog.discovery_policy == "configured_only"
+    assert catalog.issues == []
+    assert catalog.models[0].canonical_provider == "openrouter"
+    assert catalog.models[0].available is False
+    assert catalog.models[0].availability_reason == "missing_auth"
+
+
+@pytest.mark.asyncio
+async def test_model_catalog_resolves_environment_credentials_through_route(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = []
+
+    def credential_origin(route, *, session_id):
+        observed.append((route, session_id))
+        return {"kind": "env", "env_var": "OPENAI_API_KEY"}
+
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.service.provider_router.get_credential_origin",
+        credential_origin,
+    )
+    cfg_path = _write_config(
+        tmp_path / "catalog.yaml",
+        """
+version: 2
+workspace:
+  root: .
+providers:
+  default_model: openai/gpt-4.1
+  models:
+    - id: openai/gpt-4.1
+      adapter: openai
+modes:
+  - name: build
+    prompt: noop
+loop:
+  sequence:
+    - mode: build
+""",
+    )
+
+    catalog = await SessionService(SessionRegistry()).list_models(cfg_path)
+
+    assert observed == [("openai/gpt-4.1", "model_catalog")]
+    assert catalog.models[0].available is True
 
 
 @pytest.mark.asyncio
@@ -82,6 +134,7 @@ policies:
     with pytest.raises(ValueError):
         await runner.handle_command("set_model", {"model": "openai/gpt-4.1"})
 
-    result = await runner.handle_command("set_model", {"model": "openrouter/openai/gpt-5-nano"})
+    result = await runner.handle_command(
+        "set_model", {"model": "openrouter/openai/gpt-5-nano"}
+    )
     assert result["status"] == "ok"
-

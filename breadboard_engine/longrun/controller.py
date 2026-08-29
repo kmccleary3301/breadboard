@@ -7,6 +7,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
+from ..error_handling.error_handler import public_error_projection
 from ..orchestration.coordination import (
     build_coordination_inspection_snapshot,
     build_directive,
@@ -241,11 +242,15 @@ class LongRunController:
             try:
                 result = episode_runner(episode_index)
             except Exception as exc:
+                public_error = public_error_projection(
+                    exc,
+                    default_code="provider_runtime_error",
+                )
                 state["provider_error_count"] = int(state["provider_error_count"]) + 1
                 state["retry_streak"] = int(state["retry_streak"]) + 1
                 error_payload = {
-                    "type": exc.__class__.__name__,
-                    "message": str(exc),
+                    "type": public_error["error_type"],
+                    "message": public_error["error"],
                 }
                 action = self._recovery_policy.on_provider_error(state, error_payload)
                 state["last_recovery_action"] = dict(action)
@@ -255,15 +260,16 @@ class LongRunController:
                     self._write_queue_snapshot(state["queue_snapshot"])
                 self._emit_retryable_failure_coordination(
                     state,
-                    failure_summary=str(exc),
+                    failure_summary=public_error["error"],
                     retry_basis=str(action.get("reason") or "provider_error_retry"),
                     attempt_count=int(state["retry_streak"]),
-                    error_type=exc.__class__.__name__,
+                    error_type=public_error["error_type"],
                     backoff_seconds=float(action.get("backoff_seconds") or 0.0),
                     current_item_id=current_item_id,
                     dedupe_key=(
                         f"retryable_failure:provider_error:{int(state['provider_error_count'])}:"
-                        f"{int(state['retry_streak'])}:{exc.__class__.__name__}:{str(exc)}"
+                        f"{int(state['retry_streak'])}:{public_error['error_type']}:"
+                        f"{public_error['error']}"
                     ),
                 )
                 if action.get("action") == "retry_with_backoff":
@@ -852,11 +858,15 @@ class LongRunController:
         try:
             output = self._reviewer_hook(request_context)
         except Exception as exc:
+            public_error = public_error_projection(
+                exc,
+                default_code="reviewer_hook_error",
+            )
             output = {
                 "status": "error",
                 "reason": "reviewer_hook_exception",
-                "error_type": exc.__class__.__name__,
-                "message": str(exc),
+                "error_type": public_error["error_type"],
+                "message": public_error["error"],
             }
 
         payload = dict(output) if isinstance(output, Mapping) else {"status": "ok", "details": output}

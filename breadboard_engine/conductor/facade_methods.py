@@ -373,6 +373,8 @@ class OpenAIConductorFacadeMethods:
         markdown_logger: Any,
         attempted: List[Tuple[str, bool, Optional[str]]],
         last_error: Optional[Any],
+        client_lease: Optional[Callable[[str, Any], Any]] = None,
+        route_id: Optional[str] = None,
     ) -> Optional[Any]:
         openai_module = sys.modules.get("breadboard_engine.agent_llm_openai")
         active_provider_router = getattr(openai_module, "provider_router", provider_router)
@@ -392,6 +394,8 @@ class OpenAIConductorFacadeMethods:
             last_error=last_error,
             provider_router_override=active_provider_router,
             provider_registry_override=active_provider_registry,
+            client_lease=client_lease,
+            route_id=route_id,
         )
 
     def _build_exec_func(self, session_state: Any) -> Callable[[Dict[str, Any]], Dict[str, Any]]:

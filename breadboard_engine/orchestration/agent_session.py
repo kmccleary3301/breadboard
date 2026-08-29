@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import ray
 
 from breadboard.lsp_manager import LSPManager
 from breadboard.sandbox import DevSandboxV2
+from ..security import protected_credential_paths, purge_provider_credentials
 
 
 def _now_ms() -> int:
@@ -28,13 +29,26 @@ class OpenCodeAgent:
         workspace: str,
         sandbox_image: str = "python-dev:latest",
         network: str = "none",
+        protected_paths: Optional[Sequence[str]] = None,
     ) -> None:
+        captured = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
+        purge_provider_credentials()
         self.session_id = str(uuid.uuid4())
         self.time_created = _now_ms()
-        self.lsp = LSPManager.remote()
+        self.lsp = LSPManager.remote(protected_paths=captured)
         ray.get(self.lsp.register_root.remote(workspace))
         self.sandbox = DevSandboxV2.options(name=f"sb-{self.session_id}").remote(
-            image=sandbox_image, workspace=workspace, lsp_actor=self.lsp
+            image=sandbox_image,
+            workspace=workspace,
+            lsp_actor=self.lsp,
+            protected_paths=captured,
         )
         self.messages: List[Dict[str, Any]] = []
         self.storage_root: Optional[str] = None

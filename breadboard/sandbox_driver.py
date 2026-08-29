@@ -21,15 +21,22 @@ class SandboxLaunchSpec:
     name: Optional[str] = None
     lsp_actor: Any = None
     driver_options: Dict[str, Any] = field(default_factory=dict)
+    protected_paths: tuple[str, ...] = ()
 
 
 def resolve_driver_from_env(default: str = "light") -> str:
     """Resolve sandbox driver name from environment (best-effort)."""
-    explicit = os.environ.get("BREADBOARD_SANDBOX_DRIVER") or os.environ.get("SANDBOX_DRIVER")
+    explicit = os.environ.get("BREADBOARD_SANDBOX_DRIVER") or os.environ.get(
+        "SANDBOX_DRIVER"
+    )
     if explicit and explicit.strip():
         return explicit.strip().lower()
     use_docker = os.environ.get("RAY_USE_DOCKER_SANDBOX")
-    if isinstance(use_docker, str) and use_docker.strip().lower() in {"1", "true", "yes"}:
+    if isinstance(use_docker, str) and use_docker.strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
         return "docker"
     return default
 
@@ -50,20 +57,31 @@ def create_sandbox(spec: SandboxLaunchSpec) -> ray.actor.ActorHandle:
             session_id=spec.session_id,
             workspace=str(spec.workspace),
             lsp_actor=spec.lsp_actor,
+            protected_paths=spec.protected_paths,
         )
 
     if driver == "docker":
         from .sandbox_docker import DockerSandboxV2
 
         opts = dict(spec.driver_options or {})
-        network = str(opts.get("network") or os.environ.get("BREADBOARD_DOCKER_NETWORK") or "none")
+        network = str(
+            opts.get("network") or os.environ.get("BREADBOARD_DOCKER_NETWORK") or "none"
+        )
+        if network.strip().lower() != "none":
+            raise ValueError("Docker model sandbox network must be disabled")
+        network = "none"
         runtime = opts.get("runtime") or os.environ.get("RAY_DOCKER_RUNTIME")
-        docker_bin = opts.get("docker_bin") or opts.get("dockerBin") or os.environ.get("BREADBOARD_DOCKER_BIN")
+        docker_bin = (
+            opts.get("docker_bin")
+            or opts.get("dockerBin")
+            or os.environ.get("BREADBOARD_DOCKER_BIN")
+        )
         return DockerSandboxV2.options(name=actor_name).remote(
             image=spec.image,
             session_id=spec.session_id,
             workspace=str(spec.workspace),
             lsp_actor=spec.lsp_actor,
+            protected_paths=spec.protected_paths,
             network=network,
             runtime=runtime,
             docker_bin=docker_bin,
@@ -76,6 +94,7 @@ def create_sandbox(spec: SandboxLaunchSpec) -> ray.actor.ActorHandle:
             session_id=spec.session_id,
             workspace=str(spec.workspace),
             lsp_actor=spec.lsp_actor,
+            protected_paths=spec.protected_paths,
         )
 
     # Default fallback: process sandbox.
@@ -84,4 +103,5 @@ def create_sandbox(spec: SandboxLaunchSpec) -> ray.actor.ActorHandle:
         session_id=spec.session_id,
         workspace=str(spec.workspace),
         lsp_actor=spec.lsp_actor,
+        protected_paths=spec.protected_paths,
     )

@@ -1,0 +1,175 @@
+{
+  "schema_version": "bb.provider_exchange_v2_parity_cases.v1",
+  "argument_cases": [
+    {
+      "name": "canonical_object",
+      "arguments_json": "{\"path\":\"README.md\"}",
+      "arguments": {"path": "README.md"},
+      "accepted": true
+    },
+    {
+      "name": "canonical_float",
+      "arguments_json": "{\"ratio\":1.0,\"tiny\":1e-05}",
+      "arguments": {"ratio": 1.0, "tiny": 0.00001},
+      "accepted": true
+    },
+    {
+      "name": "whitespace_spelling",
+      "arguments_json": "{\"path\": \"README.md\"}",
+      "arguments": {"path": "README.md"},
+      "accepted": false
+    },
+    {
+      "name": "escaped_spelling",
+      "arguments_json": "{\"path\":\"README\\u002emd\"}",
+      "arguments": {"path": "README.md"},
+      "accepted": false
+    },
+    {
+      "name": "numeric_spelling",
+      "arguments_json": "{\"value\":1e0}",
+      "arguments": {"value": 1.0},
+      "accepted": false
+    },
+    {
+      "name": "decoded_mismatch",
+      "arguments_json": "{\"value\":1}",
+      "arguments": {"value": 2},
+      "accepted": false
+    },
+    {
+      "name": "unsafe_integer",
+      "arguments_json": "{\"value\":9007199254740992}",
+      "arguments": {"value": 9007199254740992},
+      "accepted": false
+    },
+    {
+      "name": "unsafe_integer_mismatch",
+      "arguments_json": "{\"value\":9007199254740993}",
+      "arguments": {"value": 9007199254740992},
+      "accepted": false
+    }
+  ],
+  "replay_cases": [
+    {
+      "name": "null_encrypted_content",
+      "field": "encrypted_content",
+      "value": null,
+      "accepted": false
+    },
+    {
+      "name": "null_signature",
+      "field": "signature",
+      "value": null,
+      "accepted": false
+    },
+    {
+      "name": "null_redacted_data",
+      "field": "redacted_data",
+      "value": null,
+      "accepted": false
+    },
+    {
+      "name": "null_item_id_with_valid_replay_data",
+      "field": "item_id",
+      "value": null,
+      "accepted": false
+    },
+    {
+      "name": "null_reasoning_id_with_valid_replay_data",
+      "field": "reasoning_id",
+      "value": null,
+      "accepted": false
+    },
+    {
+      "name": "nested_null_signature",
+      "field": "signature",
+      "value": {"nested": null},
+      "accepted": true
+    }
+  ],
+  "wire_shape_cases": [
+    {
+      "name": "request_content_missing",
+      "path": ["request", "messages", 0, "content"],
+      "operation": "delete",
+      "accepted": false
+    },
+    {
+      "name": "request_content_null",
+      "path": ["request", "messages", 0, "content"],
+      "operation": "set",
+      "value": null,
+      "accepted": false
+    },
+    {
+      "name": "request_content_string",
+      "path": ["request", "messages", 0, "content"],
+      "operation": "set",
+      "value": "adapter-only text",
+      "accepted": false
+    },
+    {
+      "name": "request_role_alias",
+      "path": ["request", "messages", 0, "role"],
+      "operation": "set",
+      "value": "tool",
+      "accepted": false
+    },
+    {
+      "name": "request_tool_calls_alias",
+      "path": ["request", "messages", 0, "tool_calls"],
+      "operation": "set",
+      "value": [],
+      "accepted": false
+    },
+    {
+      "name": "request_tool_results_alias",
+      "path": ["request", "messages", 0, "tool_results"],
+      "operation": "set",
+      "value": [],
+      "accepted": false
+    },
+    {
+      "name": "request_tool_wrapper",
+      "path": ["request", "tools", 0],
+      "operation": "set",
+      "value": {
+        "type": "function",
+        "function": {
+          "name": "read",
+          "description": "Read a file",
+          "parameters": {"type": "object"}
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "terminal_content_missing",
+      "path": ["terminal", "assistant_messages", 0, "content"],
+      "operation": "delete",
+      "accepted": false
+    },
+    {
+      "name": "terminal_content_null",
+      "path": ["terminal", "assistant_messages", 0, "content"],
+      "operation": "set",
+      "value": null,
+      "accepted": false
+    },
+    {
+      "name": "terminal_content_string",
+      "path": ["terminal", "assistant_messages", 0, "content"],
+      "operation": "set",
+      "value": "adapter-only text",
+      "accepted": false
+    },
+    {
+      "name": "terminal_adapter_tool_calls",
+      "path": ["terminal", "assistant_messages", 0, "tool_calls"],
+      "operation": "set",
+      "value": [],
+      "accepted": false
+    }
+  ]
+}

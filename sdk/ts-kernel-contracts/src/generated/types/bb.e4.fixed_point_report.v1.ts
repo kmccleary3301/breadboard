@@ -31,6 +31,8 @@ export interface E4FixedPointReportV1 {
    */
   second_pass_snapshot_sha256: string;
   byte_identical: boolean;
+  first_pass_watch_set: WatchSetEntry[];
+  second_pass_watch_set: WatchSetEntry[];
   first_exit_code?: number;
   second_exit_code?: number;
   changed_paths: string[];
@@ -52,4 +54,15 @@ export interface ScoreAuthorityValues {
   points: number;
   target_claims: number;
   non_target_claims: number;
+}
+/**
+ * This interface was referenced by `E4FixedPointReportV1`'s JSON-Schema
+ * via the `definition` "watch_set_entry".
+ */
+export interface WatchSetEntry {
+  path: string;
+  /**
+   * Lowercase hex sha256 with mandatory 'sha256:' prefix. The only digest string form for new contracts.
+   */
+  sha256: string;
 }

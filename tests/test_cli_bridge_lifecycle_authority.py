@@ -472,9 +472,11 @@ async def _rollback_control_drain(
 
 async def owned_registered_registry(
     *,
+    state_root: Path | None = None,
     control_request_capacity: int = 4096,
 ) -> tuple[SessionRegistry, EngineProcessIdentity, Clock, Any]:
     registry, process_identity, clock, _ = registry_fixture(
+        state_root=state_root,
         control_request_capacity=control_request_capacity,
     )
     await _acquire_owner(registry, owner_acquire(process_identity))
@@ -2207,8 +2209,12 @@ async def test_detach_and_drain_are_serialized_without_cross_client_window() -> 
 
 
 @pytest.mark.asyncio
-async def test_paused_terminal_publish_remains_unresolved_for_drain() -> None:
-    registry, process_identity, _, registration = await owned_registered_registry()
+async def test_paused_terminal_publish_remains_unresolved_for_drain(
+    tmp_path: Path,
+) -> None:
+    registry, process_identity, _, registration = await owned_registered_registry(
+        state_root=tmp_path
+    )
     record = SessionRecord(session_id="paused-terminal", status=SessionStatus.RUNNING)
     turn = TurnRecord(
         input_id="input-paused",
@@ -2278,12 +2284,13 @@ async def test_no_state_root_terminal_dispatch_stays_unresolved_and_blocks_drain
         request=SessionCreateRequest(config_path="unused"),
     )
     await service._ensure_dispatcher(record)
-    assert await runner._finish_turn(turn, "completed") is True
+    with pytest.raises(RuntimeError, match="turn_terminal_persistence_failed"):
+        await runner._finish_turn(turn, "completed")
     dispatcher = record.dispatcher_task
     assert dispatcher is not None
     await dispatcher
 
-    assert turn.terminal_outcome == "completed"
+    assert (turn.terminal_outcome, turn.state) == (None, "active")
     assert turn.terminal_resolution_committed is False
     assert record.terminal_event_envelopes == []
     assert not record.event_log
@@ -3079,7 +3086,7 @@ def test_http_contract_is_typed_secret_safe_and_accepts_no_pid_authority(caplog:
     registration_body = registration_response.json()
     assert registration_body["first_slice_contract_id"] == "p30-e4-session-v1"
     assert registration_body["first_slice_schema_sha256"] == (
-        "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"
+        "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
     )
     assert registration_body["workspace_id"] == WORKSPACE_A
 
@@ -3370,15 +3377,26 @@ async def test_graceful_control_replay_survives_controller_restart(
     _take_proofs(request)
     payload = request.model_dump(mode="json")
     headers = {"X-Breadboard-Owner-Credential": OWNER_SECRET}
+    shutdown_requests: list[str] = []
 
-    first_controller = TestClient(create_app(SessionService(registry=registry)))
+    first_controller = TestClient(
+        create_app(
+            SessionService(registry=registry),
+            request_shutdown=lambda: shutdown_requests.append("requested"),
+        )
+    )
     first = first_controller.post(
         "/v1/engine/control/graceful-result",
         json=payload,
         headers=headers,
     )
     first_controller.close()
-    restarted_controller = TestClient(create_app(SessionService(registry=registry)))
+    restarted_controller = TestClient(
+        create_app(
+            SessionService(registry=registry),
+            request_shutdown=lambda: shutdown_requests.append("requested"),
+        )
+    )
     replay = restarted_controller.post(
         "/v1/engine/control/graceful-result",
         json=payload,
@@ -3393,6 +3411,7 @@ async def test_graceful_control_replay_survives_controller_restart(
     assert replay.json()["admission_epoch"] == committed.admission_epoch
     assert replay.json()["signal_permitted"] is expected_signal_permitted
     assert registry.admission_epoch == committed.admission_epoch
+    assert shutdown_requests == (["requested", "requested"] if outcome == "accepted" else [])
 
 
 @pytest.mark.asyncio

@@ -514,6 +514,7 @@
       "id": "model_roles",
       "metadata": {
         "schema_versions": [
+          "bb.effective_model_role_lock.v1",
           "bb.model_roles.v1"
         ]
       },
@@ -560,7 +561,8 @@
       "id": "provider_exchange",
       "metadata": {
         "schema_versions": [
-          "bb.provider_exchange.v1"
+          "bb.provider_exchange.v1",
+          "bb.provider_exchange.v2"
         ]
       },
       "status": "active"

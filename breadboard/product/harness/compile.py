@@ -5,12 +5,15 @@ from dataclasses import dataclass, field
 from pathlib import PurePath
 from typing import Any
 from .explain import HarnessExplanation
-from .lock import EffectiveHarnessLock, _copy, graph_content_hash, sha256_json
+from .lock import EffectiveHarnessLock, _copy, graph_content_hash, sha256_bytes, sha256_json
 from .model import HarnessDefinition
 from .validate import HarnessDefinitionValidationError, parse_harness_definition
 LoadReference = Callable[[str, str], tuple[str, Mapping[str, Any]]]
 class HarnessCompileError(ValueError):
     """Raised before a compilation exists when an input cannot be resolved."""
+class HarnessReferenceMissingError(HarnessCompileError):
+    """Raised when a declared Harness Definition source is unavailable."""
+
 @dataclass(frozen=True, slots=True, init=False)
 class HarnessCompilation:
     """One immutable authority projected as values, lock, and explanation."""
@@ -31,6 +34,39 @@ class HarnessCompilation:
         return _copy(self._effective, freeze=False)
     def resolved_author_dict(self) -> dict[str, Any]:
         return _copy(self._resolved_author, freeze=False)
+    def with_resource_inputs(
+        self,
+        resource_inputs: Mapping[str, bytes] | None,
+    ) -> HarnessCompilation:
+        """Bind resource bytes to this compilation's resolved source snapshot."""
+        graph = self.lock.as_dict()
+        additions = _resource_source_layers(
+            resource_inputs,
+            start_precedence=len(graph["source_layers"]) * 10,
+        )
+        if not additions:
+            return self
+        if any(
+            str(layer["layer_id"]).startswith("harness-resource:")
+            for layer in graph["source_layers"]
+        ):
+            raise HarnessCompileError("resource inputs are already bound")
+        graph["source_layers"].extend(additions)
+        graph["graph_hash"] = graph_content_hash(graph)
+        instance = object.__new__(type(self))
+        object.__setattr__(
+            instance,
+            "lock",
+            EffectiveHarnessLock._from_record(graph),
+        )
+        object.__setattr__(instance, "explanation", self.explanation)
+        object.__setattr__(instance, "_effective", self._effective)
+        object.__setattr__(
+            instance,
+            "_resolved_author",
+            self._resolved_author,
+        )
+        return instance
 def _mapping(value: Mapping[str, Any], label: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise HarnessCompileError(f"{label} must be a mapping")
@@ -118,10 +154,45 @@ def _summary(values: Mapping[str, Any], extends_chain: Sequence[str]) -> dict[st
         "tool_count": len(tools), "prompt_files": sorted(set(strings(packs))),
         "extends_chain": list(extends_chain),
     }
+def _resource_source_layers(
+    resource_inputs: Mapping[str, bytes] | None,
+    *,
+    start_precedence: int,
+) -> list[dict[str, Any]]:
+    if resource_inputs is None:
+        return []
+    if not isinstance(resource_inputs, Mapping):
+        raise HarnessCompileError("resource_inputs must be a mapping")
+    items: list[tuple[str, bytes]] = []
+    for source_ref, content in resource_inputs.items():
+        if not isinstance(source_ref, str) or not source_ref.strip():
+            raise HarnessCompileError(
+                "resource reference must be a non-empty string"
+            )
+        if not isinstance(content, bytes):
+            raise HarnessCompileError(
+                f"resource {source_ref!r} content must be bytes"
+            )
+        items.append((source_ref, content))
+    layers: list[dict[str, Any]] = []
+    for index, (source_ref, content) in enumerate(sorted(items)):
+        layers.append({
+            "host_visible": True,
+            "layer_hash": sha256_bytes(content),
+            "layer_id": f"harness-resource:{index:04d}",
+            "model_visible": True,
+            "precedence": start_precedence + index * 10,
+            "scope": "resource",
+            "source_kind": "project",
+            "source_ref": source_ref,
+        })
+    return layers
+
 def compile_harness_definition(
     definition: Mapping[str, Any] | HarnessDefinition, *, source_ref: str,
     load_ref: LoadReference | None = None, defaults: Mapping[str, Any] | None = None,
     overlays: Sequence[Mapping[str, Any]] = (),
+    resource_inputs: Mapping[str, bytes] | None = None,
 ) -> HarnessCompilation:
     """Resolve, merge, hash, and freeze one Harness Definition."""
     if not isinstance(source_ref, str) or not source_ref.strip():
@@ -152,7 +223,7 @@ def compile_harness_definition(
             try:
                 resolved, loaded = load_ref(ref, declared)
             except (FileNotFoundError, KeyError):
-                raise HarnessCompileError(
+                raise HarnessReferenceMissingError(
                     f"missing reference {declared!r} from {ref!r}") from None
             except Exception:
                 raise HarnessCompileError(
@@ -209,6 +280,10 @@ def compile_harness_definition(
         diagnostics.extend(_override(path, source, record["layer_id"])
                            for path, source in before.items()
                            if after.get(path) != source)
+    source_layers.extend(_resource_source_layers(
+        resource_inputs,
+        start_precedence=len(source_layers) * 10,
+    ))
 
     if author.get("schema_version") == "bb.harness_definition.v1":
         try:

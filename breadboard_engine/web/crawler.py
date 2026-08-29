@@ -3,11 +3,10 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import List, Optional
 from urllib.parse import urljoin, urlparse, urldefrag
 from urllib.robotparser import RobotFileParser
 
-import httpx
 
 from .frontier import BaseFrontier, MemoryFrontier
 from .models import ScrapeOptions, WebDocument
@@ -31,16 +30,24 @@ class CrawlRequest:
     scrape_options: Optional[ScrapeOptions] = None
 
 
-async def _get_sitemap_links(url: str) -> List[str]:
+async def _get_sitemap_links(
+    url: str,
+    *,
+    scraper: WebScraper,
+) -> List[str]:
     parsed = urlparse(url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
     sitemap_url = urljoin(origin, "/sitemap.xml")
     try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            resp = await client.get(sitemap_url)
-            if resp.status_code != 200:
-                return []
-            body = resp.text
+        status_code, _headers, body_bytes = await scraper._fetch_bytes(
+            sitemap_url,
+            headers={"User-Agent": scraper.settings.user_agent},
+            timeout_s=10.0,
+            verify_tls=True,
+        )
+        if status_code != 200:
+            return []
+        body = body_bytes.decode("utf-8", errors="replace")
     except Exception:
         return []
     # Minimal XML parse: look for <loc>...</loc>
@@ -99,12 +106,16 @@ async def crawl_site(
         rp = RobotFileParser()
         robots_url = urljoin(origin, "/robots.txt")
         try:
-            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-                resp = await client.get(robots_url)
-                if resp.status_code == 200:
-                    rp.parse(resp.text.splitlines())
-                else:
-                    rp.parse([])
+            status_code, _headers, body = await scraper._fetch_bytes(
+                robots_url,
+                headers={"User-Agent": scraper.settings.user_agent},
+                timeout_s=10.0,
+                verify_tls=True,
+            )
+            if status_code == 200:
+                rp.parse(body.decode("utf-8", errors="replace").splitlines())
+            else:
+                rp.parse([])
         except Exception:
             rp.parse([])
         robots_cache[origin] = rp
@@ -115,15 +126,21 @@ async def crawl_site(
         if req.allow_external_links:
             return True
         if req.include_subdomains:
-            return parsed.netloc == base_domain or parsed.netloc.endswith("." + base_domain)
+            return parsed.netloc == base_domain or parsed.netloc.endswith(
+                "." + base_domain
+            )
         return parsed.netloc == base_domain
 
     def path_allowed(u: str) -> bool:
         parsed = urlparse(u)
         path = parsed.path or "/"
-        if req.include_paths and not any(path.startswith(p) for p in (req.include_paths or [])):
+        if req.include_paths and not any(
+            path.startswith(p) for p in (req.include_paths or [])
+        ):
             return False
-        if req.exclude_paths and any(path.startswith(p) for p in (req.exclude_paths or [])):
+        if req.exclude_paths and any(
+            path.startswith(p) for p in (req.exclude_paths or [])
+        ):
             return False
         return True
 
@@ -148,7 +165,10 @@ async def crawl_site(
     # Optional sitemap boost
     if not req.ignore_sitemap:
         try:
-            for link in await _get_sitemap_links(req.url):
+            for link in await _get_sitemap_links(
+                req.url,
+                scraper=scraper,
+            ):
                 if req.limit and (len(results) + frontier.size()) >= req.limit:
                     break
                 await enqueue(link, 0)
@@ -163,7 +183,9 @@ async def crawl_site(
     async def worker(worker_id: int) -> None:
         nonlocal total_bytes
         while True:
-            if req.max_time_s is not None and (time.time() - start_time) > float(req.max_time_s):
+            if req.max_time_s is not None and (time.time() - start_time) > float(
+                req.max_time_s
+            ):
                 break
             if req.max_bytes is not None and total_bytes >= int(req.max_bytes):
                 break
@@ -203,7 +225,9 @@ async def crawl_site(
                     doc = await scraper.scrape_url(url, options=options)
                     results.append(doc)
                     # crude byte accounting: markdown+html+text
-                    total_bytes += len((doc.markdown or "") + (doc.html or "") + (doc.text or ""))
+                    total_bytes += len(
+                        (doc.markdown or "") + (doc.html or "") + (doc.text or "")
+                    )
 
                     if depth < req.max_depth and doc.links:
                         for link in doc.links:
@@ -232,6 +256,7 @@ async def crawl_site(
     return results
 
 
-def crawl_site_sync(req: CrawlRequest, *, scraper: Optional[WebScraper] = None) -> List[WebDocument]:
+def crawl_site_sync(
+    req: CrawlRequest, *, scraper: Optional[WebScraper] = None
+) -> List[WebDocument]:
     return asyncio.run(crawl_site(req, scraper=scraper))
-

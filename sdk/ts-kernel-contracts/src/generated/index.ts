@@ -21,8 +21,10 @@ export const PACKS = {
       "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.credentials.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.effective_tool_surface.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.environment_selector.v2.schema.json",
@@ -33,9 +35,10 @@ export const PACKS = {
       "https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v2.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.kernel.common.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.model_roles.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.permission.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.projection_event.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.provider_route.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.registry.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.replay_session.v1.schema.json",
@@ -119,6 +122,7 @@ export const PACKS = {
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_coverage.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.environment_selector.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.session_transcript.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.task.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.tool_call.v1.schema.json",
@@ -150,8 +154,10 @@ export const GENERATED_SCHEMAS_BY_PACK = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.credentials.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.credentials.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.effective_tool_surface.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.effective_tool_surface.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.environment_selector.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.environment_selector.v2.schema.json"],
@@ -162,9 +168,10 @@ export const GENERATED_SCHEMAS_BY_PACK = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v2.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.kernel.common.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.kernel.common.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.model_roles.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.model_roles.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.permission.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.permission.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.projection_event.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.projection_event.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.provider_route.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.provider_route.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.registry.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.registry.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.replay_session.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.replay_session.v1.schema.json"],
@@ -233,6 +240,7 @@ export const GENERATED_SCHEMAS_BY_PACK = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_coverage.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_coverage.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.environment_selector.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.environment_selector.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.session_transcript.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.session_transcript.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.task.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.task.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.tool_call.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.tool_call.v1.schema.json"],
@@ -262,6 +270,7 @@ export type { CoordinationReferenceSliceV1 } from "./types/bb.coordination_refer
 export type { CoordinationSliceV2 } from "./types/bb.coordination_slice.v2.js"
 export type { CoordinationVerificationResultV1 } from "./types/bb.coordination_verification_result.v1.js"
 export type { CoordinationViewV1 } from "./types/bb.coordination_view.v1.js"
+export type { CredentialsV1 } from "./types/bb.credentials.v1.js"
 export type { DirectiveV1 } from "./types/bb.directive.v1.js"
 export type { DistributedTaskDescriptorV1 } from "./types/bb.distributed_task_descriptor.v1.js"
 export type { E4ArtifactCatalogV1 } from "./types/bb.e4.artifact_catalog.v1.js"
@@ -283,6 +292,7 @@ export type { E4SupportClaimV4 } from "./types/bb.e4.support_claim.v4.js"
 export type { E4TargetCoverageV1 } from "./types/bb.e4.target_coverage.v1.js"
 export type { E4TargetCoverageV2 } from "./types/bb.e4.target_coverage.v2.js"
 export type { EffectiveConfigGraphV1 } from "./types/bb.effective_config_graph.v1.js"
+export type { EffectiveModelRoleLockV1 } from "./types/bb.effective_model_role_lock.v1.js"
 export type { EffectiveOperationPolicyV1 } from "./types/bb.effective_operation_policy.v1.js"
 export type { EffectiveToolSurfaceV1 } from "./types/bb.effective_tool_surface.v1.js"
 export type { EnvironmentSelectorV1 } from "./types/bb.environment_selector.v1.js"
@@ -297,9 +307,11 @@ export type { KernelEventV2 } from "./types/bb.kernel_event.v2.js"
 export type { KernelCommonV1 } from "./types/bb.kernel.common.v1.js"
 export type { LaneValidationReportV1 } from "./types/bb.lane_validation_report.v1.js"
 export type { MemoryCompactionPlanV1 } from "./types/bb.memory_compaction_plan.v1.js"
+export type { ModelRolesV1 } from "./types/bb.model_roles.v1.js"
 export type { PermissionV1 } from "./types/bb.permission.v1.js"
 export type { ProjectionEventV1 } from "./types/bb.projection_event.v1.js"
 export type { ProviderExchangeV1 } from "./types/bb.provider_exchange.v1.js"
+export type { ProviderExchangeV2 } from "./types/bb.provider_exchange.v2.js"
 export type { ProviderRouteV1 } from "./types/bb.provider_route.v1.js"
 export type { RegistryV1 } from "./types/bb.registry.v1.js"
 export type { ReplaySessionV1 } from "./types/bb.replay_session.v1.js"

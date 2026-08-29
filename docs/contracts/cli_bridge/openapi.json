@@ -89,6 +89,11 @@
             "title": "Provider Id",
             "type": "string"
           },
+          "refresh_state": {
+            "additionalProperties": true,
+            "title": "Refresh State",
+            "type": "object"
+          },
           "secret_version": {
             "title": "Secret Version",
             "type": "integer"
@@ -154,6 +159,17 @@
                 "type": "null"
               }
             ]
+          },
+          "expires_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At Ms"
           },
           "flow_id": {
             "anyOf": [
@@ -256,12 +272,46 @@
       },
       "AuthProviderView": {
         "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
+          "auth_owner": {
+            "enum": [
+              "broker",
+              "provider"
+            ],
+            "title": "Auth Owner",
+            "type": "string"
+          },
           "auth_schemes": {
             "items": {
               "type": "string"
             },
             "title": "Auth Schemes",
             "type": "array"
+          },
+          "availability_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "provider_managed",
+                  "missing_auth"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability Reason"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
           },
           "base_url": {
             "anyOf": [
@@ -294,6 +344,11 @@
             "title": "Login Available",
             "type": "boolean"
           },
+          "model_discovery": {
+            "const": "configured_only",
+            "title": "Model Discovery",
+            "type": "string"
+          },
           "oauth_flows": {
             "items": {
               "type": "string"
@@ -315,11 +370,22 @@
               }
             ],
             "title": "Runtime Id"
+          },
+          "support_tier": {
+            "const": "core",
+            "title": "Support Tier",
+            "type": "string"
           }
         },
         "required": [
           "provider_id",
-          "display_name"
+          "aliases",
+          "display_name",
+          "support_tier",
+          "auth_owner",
+          "auth_schemes",
+          "available",
+          "model_discovery"
         ],
         "title": "AuthProviderView",
         "type": "object"
@@ -585,8 +651,8 @@
             "type": "string"
           },
           "first_slice_schema_sha256": {
-            "const": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
-            "default": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
+            "const": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
+            "default": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
             "title": "First Slice Schema Sha256",
             "type": "string"
           },
@@ -650,8 +716,8 @@
             "type": "string"
           },
           "first_slice_schema_sha256": {
-            "const": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
-            "default": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
+            "const": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
+            "default": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
             "title": "First Slice Schema Sha256",
             "type": "string"
           },
@@ -1137,8 +1203,8 @@
             "type": "string"
           },
           "schema_sha256": {
-            "const": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
-            "default": "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813",
+            "const": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
+            "default": "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a",
             "title": "Schema Sha256",
             "type": "string"
           },
@@ -1658,8 +1724,287 @@
         "title": "HarnessUpdateRequest",
         "type": "object"
       },
+      "ModelCatalogEntry": {
+        "properties": {
+          "adapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adapter"
+          },
+          "availability_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "provider_managed",
+                  "missing_auth",
+                  "unsupported_provider",
+                  "deferred_provider"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability Reason"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "canonical_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Provider"
+          },
+          "context_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Length"
+          },
+          "discovery": {
+            "const": "configured_only",
+            "title": "Discovery",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing"
+          },
+          "source": {
+            "const": "configured",
+            "title": "Source",
+            "type": "string"
+          },
+          "support_tier": {
+            "enum": [
+              "core",
+              "deferred",
+              "evidence",
+              "unsupported"
+            ],
+            "title": "Support Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "support_tier",
+          "available",
+          "discovery",
+          "source"
+        ],
+        "title": "ModelCatalogEntry",
+        "type": "object"
+      },
+      "ModelCatalogIssue": {
+        "properties": {
+          "code": {
+            "enum": [
+              "invalid_model",
+              "duplicate_model",
+              "unsupported_provider",
+              "deferred_provider",
+              "stale_dynamic_catalog"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "provider_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Id"
+          },
+          "source": {
+            "enum": [
+              "configured",
+              "dynamic"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "source"
+        ],
+        "title": "ModelCatalogIssue",
+        "type": "object"
+      },
+      "ModelCatalogResponse": {
+        "properties": {
+          "config_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Path"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "discovery_policy": {
+            "const": "configured_only",
+            "title": "Discovery Policy",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCatalogIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCatalogEntry"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "models",
+          "discovery_policy",
+          "issues"
+        ],
+        "title": "ModelCatalogResponse",
+        "type": "object"
+      },
       "ModelRolesResolveRequest": {
         "properties": {
+          "model_catalog": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional secret-free configured-only catalog for availability validation.",
+            "title": "Model Catalog"
+          },
           "model_roles": {
             "additionalProperties": true,
             "title": "Model Roles",
@@ -4345,6 +4690,55 @@
         "tags": [
           "auth"
         ]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "list_models_v1_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "config_path",
+            "required": true,
+            "schema": {
+              "title": "Config Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Models"
       }
     },
     "/v1/schemas": {

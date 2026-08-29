@@ -114,6 +114,15 @@ def test_record_surface_semantic_mapping_is_strict(mode, match) -> None:
     else: value["roles"][0]["schema_ids"] = ["bb.syntactically_valid_missing.v1"]
     with pytest.raises(ContractValidationError, match=match):
         validate_record_surface(value)
+def test_harness_definition_role_names_v1_authority_and_v2_compatibility() -> None:
+    value = load_json(PUBLIC_DIR / "record_surface.v1.json")
+    role = next(row for row in value["roles"] if row["role_id"] == "harness_definition")
+    assert role["schema_ids"] == [
+        "bb.harness_definition.v1",
+        "bb.agent_config_surface.v2",
+    ]
+
+
 def staged_root(tmp_path):
     root = tmp_path / "staged"
     shutil.copytree(PUBLIC_DIR, root / "contracts" / "public")

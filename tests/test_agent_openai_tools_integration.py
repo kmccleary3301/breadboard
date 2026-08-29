@@ -1,9 +1,10 @@
+from contextlib import contextmanager
 import json
 import os
 import sys
 import types
-
 import pytest
+
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if PROJECT_ROOT not in sys.path:
@@ -15,6 +16,12 @@ if TOOLS_ROOT not in sys.path:
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.provider.capability_probe import ProviderCapabilityProbeRunner
 from breadboard_engine.provider.health import RouteHealthManager
+from breadboard_engine.provider.contracts import (
+    ProviderCorrelation,
+    ProviderExchangeRecorder,
+    ProviderIdentity,
+    ProviderRequest,
+)
 from breadboard_engine.provider_runtime import (
     ProviderRuntimeContext,
     ProviderRuntimeError,
@@ -143,6 +150,7 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
     markdown_logger = _DummyMarkdownLogger()
     session_state = SessionState(workspace=".", image="img")
     session_state.set_provider_metadata("current_turn_index", 2)
+    secret = "provider-retry-secret-canary"
     session_state.messages.append({
         "role": "assistant",
         "tool_calls": [{"function": {"name": "run_shell"}}],
@@ -155,7 +163,7 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
 
         def invoke(self, *, client, model, messages, tools, stream, context):
             self.calls += 1
-            raise ProviderRuntimeError("primary failure")
+            raise ProviderRuntimeError(f"primary failure {secret}")
 
     class FallbackRuntime:
         def __init__(self):
@@ -176,7 +184,19 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
         def create_client(self, api_key, *, base_url=None, default_headers=None):
             return object()
 
+        def create_client_from_config(self, config):
+            return self.create_client(
+                config.get("api_key"),
+                base_url=config.get("base_url"),
+                default_headers=config.get("default_headers"),
+            )
+
         def invoke(self, *, client, model, messages, tools, stream, context):
+            assert context.session_id == "session-1"
+            assert context.input_id == "input-1"
+            assert context.turn_id == "turn-1"
+            assert context.exchange_recorder is recorder
+            context.record_provider_event("response_start")
             return ProviderResult(
                 messages=[ProviderMessage(role="assistant", content="fallback", tool_calls=[])],
                 raw_response={"id": "fallback"},
@@ -241,6 +261,14 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
         def create_client_config(self, model):
             return {"api_key": "dummy", "base_url": None, "default_headers": {}}
 
+        @contextmanager
+        def execution_client_config(self, model, **_kwargs):
+            config = self.create_client_config(model)
+            try:
+                yield config
+            finally:
+                config.clear()
+
     class StubRegistry:
         def create_runtime(self, descriptor):
             if descriptor.provider_id == "openai":
@@ -255,10 +283,30 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
     monkeypatch.setattr("breadboard_engine.agent_llm_openai.time.sleep", lambda _: None)
     monkeypatch.setattr("breadboard_engine.agent_llm_openai.random.uniform", lambda a, b: 0.0)
 
+    recorder = ProviderExchangeRecorder(
+        correlation=ProviderCorrelation(
+            session_id="session-1", input_id="input-1", turn_id="turn-1"
+        ),
+        provider=ProviderIdentity(
+            provider_id="openrouter",
+            runtime_id="openrouter_chat",
+            route_id="openrouter/openai/gpt-4o-mini",
+            model="openai/gpt-4o-mini",
+        ),
+        request=ProviderRequest(
+            stream=False,
+            messages=[{"role": "user", "content": "hello"}],
+            tools=[{"name": "run_shell", "parameters": {}}],
+        ),
+    )
     runtime_context = ProviderRuntimeContext(
         session_state=session_state,
         agent_config={},
         stream=False,
+        session_id="session-1",
+        input_id="input-1",
+        turn_id="turn-1",
+        exchange_recorder=recorder,
     )
 
     result = conductor._retry_with_fallback(
@@ -271,8 +319,14 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
         stream_responses=False,
         session_state=session_state,
         markdown_logger=markdown_logger,
-        attempted=[("openrouter/openai/gpt-4o-mini", False, "primary failure")],
-        last_error=ProviderRuntimeError("primary failure"),
+        attempted=[
+            (
+                "openrouter/openai/gpt-4o-mini",
+                False,
+                f"primary failure {secret}",
+            )
+        ],
+        last_error=ProviderRuntimeError(f"primary failure {secret}"),
     )
 
     assert result.messages[0].content == "fallback"
@@ -283,6 +337,88 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
     assert fallback_meta["from"] == "openrouter/openai/gpt-4o-mini"
     assert fallback_meta["to"] == "openai/gpt-4o-mini"
     assert markdown_logger.messages
+    assert secret not in "\n".join(markdown_logger.messages)
+    assert secret not in json.dumps(session_state.provider_metadata, sort_keys=True)
+    assert recorder.provider.as_dict() == {
+        "provider_id": "openai",
+        "runtime_id": "openai_chat",
+        "route_id": "openai/gpt-4o-mini",
+        "model": "gpt-4o-mini",
+    }
+    assert [event.kind for event in recorder.events] == ["response_start"]
+    assert result.metadata["provider_exchange_identity"] == recorder.provider.as_dict()
+
+
+def test_retry_with_fallback_stops_when_recorder_observes_output(monkeypatch):
+    conductor = _make_conductor_for_retry()
+    session_state = SessionState(workspace=".", image="img")
+    recorder = ProviderExchangeRecorder(
+        correlation=ProviderCorrelation(
+            session_id="session-1", input_id="input-1", turn_id="turn-1"
+        ),
+        provider=ProviderIdentity(
+            provider_id="mock",
+            runtime_id="mock_chat",
+            route_id="mock/primary",
+            model="primary",
+        ),
+        request=ProviderRequest(
+            stream=True,
+            messages=[{"role": "user", "content": "hello"}],
+            tools=[],
+        ),
+    )
+    runtime_context = ProviderRuntimeContext(
+        session_state=session_state,
+        agent_config={},
+        stream=True,
+        session_id="session-1",
+        input_id="input-1",
+        turn_id="turn-1",
+        exchange_recorder=recorder,
+    )
+
+    class Runtime:
+        descriptor = types.SimpleNamespace(
+            provider_id="mock", runtime_id="mock_chat"
+        )
+
+        def invoke(self, *, context, **_kwargs):
+            context.record_provider_event(
+                "text_start", {"item_id": "message-1"}
+            )
+            context.record_provider_event(
+                "text_delta", {"item_id": "message-1", "delta": "partial"}
+            )
+            raise ProviderRuntimeError(
+                "transport incorrectly claimed replay safety",
+                kind="transport",
+                output_emitted=False,
+            )
+
+    monkeypatch.setattr(
+        "breadboard_engine.conductor.model_output.time.sleep", lambda _: None
+    )
+    with pytest.raises(ProviderRuntimeError):
+        conductor._retry_with_fallback(
+            runtime=Runtime(),
+            client=object(),
+            model="mock/primary",
+            messages=[{"role": "user", "content": "hello"}],
+            tools_schema=None,
+            runtime_context=runtime_context,
+            stream_responses=True,
+            session_state=session_state,
+            markdown_logger=_DummyMarkdownLogger(),
+            attempted=[("mock/primary", True, "initial failure")],
+            last_error=ProviderRuntimeError("initial failure"),
+        )
+
+    assert [event.kind for event in recorder.events] == [
+        "response_start",
+        "text_start",
+        "text_delta",
+    ]
 
 
 def test_streaming_policy_disables_after_capability_probe(monkeypatch):

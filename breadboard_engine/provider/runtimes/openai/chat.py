@@ -5,9 +5,17 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from ...contracts import ProviderMessage, ProviderResult, ProviderRuntimeContext, ProviderRuntimeError
+from ...contracts import (
+    ProviderMessage,
+    ProviderResult,
+    ProviderRuntimeContext,
+    ProviderRuntimeError,
+)
+from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
+from ....security import redaction
 from .streaming import OpenAIBaseRuntime
+from .chat_stream_decoder import OpenAIChatStreamDecoder
 
 
 class OpenAIChatRuntime(OpenAIBaseRuntime):
@@ -45,245 +53,17 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         tools: Optional[List[Dict[str, Any]]],
         context: ProviderRuntimeContext,
         extra_body: Optional[Dict[str, Any]] = None,
+        request_options: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Any, Dict[int, Dict[str, Any]]]:
-        kwargs: Dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-        }
-        if tools:
-            kwargs["tools"] = tools
-        if extra_body:
-            kwargs["extra_body"] = extra_body
-        try:
-            stream_factory = client.chat.completions.stream
-            stream_ctx = stream_factory(**kwargs)
-        except (AttributeError, TypeError) as exc:
-            raise ProviderRuntimeError(
-                "OpenAI SDK chat streaming adapter failure",
-                kind="adapter",
-            ) from exc
-        except Exception as exc:  # pragma: no cover - provider SDK boundary
-            kind = (
-                "transport"
-                if exc.__class__.__name__ in {"APIConnectionError", "APITimeoutError"}
-                else "provider"
-            )
-            raise ProviderRuntimeError(str(exc), kind=kind) from exc
-
-        session_state = getattr(context, "session_state", None)
-        turn_index = getattr(session_state, "_active_turn_index", None)
-        message_id: Optional[str] = None
-        message_started = False
-        message_ended = False
-        output_emitted = False
-        text_parts: List[str] = []
-        reasoning_fields: Dict[int, Dict[str, Any]] = {}
-        tool_states: Dict[int, Dict[str, Any]] = {}
-        started_tool_indices: set[int] = set()
-
-        def ensure_message_started() -> None:
-            nonlocal message_started
-            if message_started:
-                return
-            message_started = True
-            self._stream_emit_event(
-                context,
-                "assistant.message.start",
-                {"message_id": message_id},
-                turn_index=turn_index,
-            )
-
-        def end_message() -> None:
-            nonlocal message_ended
-            if not message_started or message_ended:
-                return
-            message_ended = True
-            payload = {"message_id": message_id}
-            text = "".join(text_parts)
-            if text:
-                payload["text"] = text
-            self._stream_emit_event(
-                context,
-                "assistant.message.end",
-                payload,
-                turn_index=turn_index,
-            )
-
-        def emit_tool_start(index: int, state: Dict[str, Any]) -> None:
-            if index in started_tool_indices or not state.get("call_id"):
-                return
-            ensure_message_started()
-            started_tool_indices.add(index)
-            self._stream_emit_event(
-                context,
-                "assistant.tool_call.start",
-                {
-                    "index": index,
-                    "call_id": state["call_id"],
-                    "tool": state.get("name"),
-                },
-                turn_index=turn_index,
-            )
-
-        try:
-            with stream_ctx as stream:
-                for event in stream:
-                    event_type = self._get_attr(event, "type")
-                    chunk = (
-                        self._get_attr(event, "chunk")
-                        if event_type == "chunk"
-                        else event
-                    )
-                    if event_type not in {None, "chunk"} or not self._get_attr(
-                        chunk, "choices"
-                    ):
-                        continue
-                    chunk_id = self._get_attr(chunk, "id")
-                    if chunk_id and message_id is None:
-                        message_id = str(chunk_id)
-                    for choice in self._get_attr(chunk, "choices", []) or []:
-                        choice_index = int(self._get_attr(choice, "index", 0) or 0)
-                        delta = self._get_attr(choice, "delta", {}) or {}
-                        content_delta = self._get_attr(delta, "content")
-                        if isinstance(content_delta, str) and content_delta:
-                            ensure_message_started()
-                            text_parts.append(content_delta)
-                            output_emitted = True
-                            self._stream_emit_event(
-                                context,
-                                "assistant.message.delta",
-                                {"message_id": message_id, "text": content_delta},
-                                turn_index=turn_index,
-                            )
-
-                        delta_reasoning = self._extract_reasoning_fields(delta)
-                        for field_name in ("reasoning_content", "reasoning"):
-                            reasoning_delta = delta_reasoning.get(field_name)
-                            if (
-                                not isinstance(reasoning_delta, str)
-                                or not reasoning_delta
-                            ):
-                                continue
-                            ensure_message_started()
-                            choice_reasoning = reasoning_fields.setdefault(
-                                choice_index, {}
-                            )
-                            choice_reasoning[field_name] = (
-                                str(choice_reasoning.get(field_name, ""))
-                                + reasoning_delta
-                            )
-                            output_emitted = True
-                            self._stream_emit_event(
-                                context,
-                                "assistant.reasoning.delta",
-                                {
-                                    "message_id": message_id,
-                                    "text": reasoning_delta,
-                                    "provider_field": field_name,
-                                },
-                                turn_index=turn_index,
-                            )
-                            break
-
-                        if self._get_attr(delta, "tool_calls") and text_parts:
-                            end_message()
-                        for tool_delta in self._get_attr(delta, "tool_calls", []) or []:
-                            tool_index = int(
-                                self._get_attr(tool_delta, "index", 0) or 0
-                            )
-                            state = tool_states.setdefault(
-                                tool_index,
-                                {"call_id": None, "name": None, "arguments": ""},
-                            )
-                            call_id = self._get_attr(tool_delta, "id")
-                            if call_id:
-                                state["call_id"] = str(call_id)
-                            function_delta = (
-                                self._get_attr(tool_delta, "function", {}) or {}
-                            )
-                            name_delta = self._get_attr(function_delta, "name")
-                            if name_delta:
-                                state["name"] = str(name_delta)
-                            arguments_delta = self._get_attr(
-                                function_delta, "arguments"
-                            )
-                            emit_tool_start(tool_index, state)
-                            if isinstance(arguments_delta, str) and arguments_delta:
-                                state["arguments"] += arguments_delta
-                                output_emitted = True
-                                if tool_index in started_tool_indices:
-                                    self._stream_emit_event(
-                                        context,
-                                        "assistant.tool_call.delta",
-                                        {
-                                            "index": tool_index,
-                                            "call_id": state["call_id"],
-                                            "tool": state.get("name"),
-                                            "arguments_delta": arguments_delta,
-                                        },
-                                        turn_index=turn_index,
-                                    )
-
-                finalizer = getattr(stream, "get_final_completion", None)
-                if not callable(finalizer):
-                    raise ProviderRuntimeError(
-                        "OpenAI SDK chat stream has no Chat Completions finalizer",
-                        kind="adapter",
-                        output_emitted=output_emitted,
-                    )
-                final_response = finalizer()
-
-            for choice in getattr(final_response, "choices", []) or []:
-                final_message = self._get_attr(choice, "message", {}) or {}
-                for fallback_index, tool_call in enumerate(
-                    self._get_attr(final_message, "tool_calls", []) or []
-                ):
-                    tool_index = int(
-                        self._get_attr(tool_call, "index", fallback_index)
-                        or fallback_index
-                    )
-                    function = self._get_attr(tool_call, "function", {}) or {}
-                    state = tool_states.setdefault(
-                        tool_index, {"call_id": None, "name": None, "arguments": ""}
-                    )
-                    state["call_id"] = self._get_attr(tool_call, "id") or state.get(
-                        "call_id"
-                    )
-                    state["name"] = self._get_attr(function, "name") or state.get(
-                        "name"
-                    )
-                    final_arguments = self._get_attr(function, "arguments")
-                    if isinstance(final_arguments, str):
-                        state["arguments"] = final_arguments
-                    emit_tool_start(tool_index, state)
-                    if tool_index in started_tool_indices:
-                        self._stream_emit_event(
-                            context,
-                            "assistant.tool_call.end",
-                            {
-                                "index": tool_index,
-                                "call_id": state["call_id"],
-                                "tool": state.get("name"),
-                                "arguments": state.get("arguments", ""),
-                            },
-                            turn_index=turn_index,
-                        )
-            end_message()
-            return final_response, reasoning_fields
-        except ProviderRuntimeError:
-            raise
-        except Exception as exc:  # pragma: no cover - provider SDK boundary
-            if isinstance(exc, (AttributeError, TypeError)):
-                kind = "adapter"
-            elif exc.__class__.__name__ in {"APIConnectionError", "APITimeoutError"}:
-                kind = "transport"
-            else:
-                kind = "provider"
-            raise ProviderRuntimeError(
-                str(exc),
-                kind=kind,
-                output_emitted=output_emitted,
-            ) from exc
+        return OpenAIChatStreamDecoder(self).stream(
+            client,
+            model=model,
+            messages=messages,
+            tools=tools,
+            context=context,
+            extra_body=extra_body,
+            request_options=request_options,
+        )
 
     def invoke(
         self,
@@ -295,7 +75,10 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
     ) -> ProviderResult:
-        request_messages = self._convert_messages_to_chat(messages)
+        context.raise_if_cancelled()
+        request_messages = self._convert_messages_to_chat(
+            messages, context=context
+        )
         request_tools = self._convert_tools_to_openai(tools)
         extra_body: Optional[Dict[str, Any]] = None
         if (
@@ -306,6 +89,12 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             # Force provider routing away from Azure for GPT-5 OpenAI models on OpenRouter,
             # since some upstreams reject tool outputs.
             extra_body = {"provider": {"order": ["openai"], "allow_fallbacks": False}}
+        role_request, role_extra_body = openai_chat_role_options(
+            context,
+            provider_id=self.descriptor.provider_id,
+        )
+        if role_extra_body:
+            extra_body = {**(extra_body or {}), **role_extra_body}
 
         response: Any = None
         streamed_reasoning: Dict[int, Dict[str, Any]] = {}
@@ -317,6 +106,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 tools=request_tools,
                 context=context,
                 extra_body=extra_body,
+                request_options=role_request,
             )
 
         if response is None:
@@ -326,6 +116,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 "stream": False,
                 "extra_body": extra_body,
             }
+            call_kwargs.update(role_request)
             if request_tools:
                 call_kwargs["tools"] = request_tools
             try:
@@ -343,34 +134,159 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     if isinstance(exc, (AttributeError, TypeError))
                     else "provider"
                 )
-                raise ProviderRuntimeError(str(exc), kind=kind) from exc
+                raise ProviderRuntimeError(redaction.safe_exception_message(exc), kind=kind) from None
 
+        if self._non_null_unknown_fields(
+            response,
+            {
+                "id",
+                "choices",
+                "created",
+                "model",
+                "object",
+                "service_tier",
+                "system_fingerprint",
+                "usage",
+            },
+        ):
+            raise ProviderRuntimeError(
+                "Unknown Chat Completions response semantic",
+                kind="protocol",
+                details={"code": "unknown_chat_response"},
+            )
+        response_id = self._get_attr(response, "id")
+        if not isinstance(response_id, str) or not response_id:
+            raise ProviderRuntimeError(
+                "Chat Completions response is missing its id",
+                kind="protocol",
+                details={"code": "invalid_chat_response_id"},
+            )
+        choices = self._get_attr(response, "choices")
+        if not isinstance(choices, (list, tuple)) or not choices:
+            raise ProviderRuntimeError(
+                "Chat Completions response has no choices",
+                kind="protocol",
+                details={"code": "invalid_chat_choices"},
+            )
         normalized_messages: List[ProviderMessage] = []
-        for idx, choice in enumerate(getattr(response, "choices", []) or []):
+        seen_choice_indices: set[int] = set()
+        for choice in choices:
+            if self._non_null_unknown_fields(
+                choice,
+                {
+                    "index",
+                    "message",
+                    "finish_reason",
+                    "logprobs",
+                    "error",
+                },
+            ):
+                raise ProviderRuntimeError(
+                    "Unknown Chat Completions choice semantic",
+                    kind="protocol",
+                    details={"code": "unknown_chat_choice"},
+                )
+            if self._get_attr(choice, "logprobs") is not None:
+                raise ProviderRuntimeError(
+                    "Unsupported Chat Completions log probabilities",
+                    kind="protocol",
+                    details={"code": "unsupported_chat_logprobs"},
+                )
+            choice_index = self._get_attr(choice, "index")
+            if (
+                not isinstance(choice_index, int)
+                or isinstance(choice_index, bool)
+                or choice_index < 0
+                or choice_index in seen_choice_indices
+            ):
+                raise ProviderRuntimeError(
+                    "Chat Completions choice index is invalid",
+                    kind="protocol",
+                    details={"code": "invalid_chat_choice_index"},
+                )
+            seen_choice_indices.add(choice_index)
             error_obj = self._get_attr(choice, "error")
-            if error_obj:
-                msg = self._get_attr(error_obj, "message") or str(error_obj)
-                raise ProviderRuntimeError(msg)
-            message = self._get_attr(choice, "message", {})
+            if error_obj is not None:
+                raise ProviderRuntimeError(
+                    "Chat Completions provider returned a choice error",
+                    kind="provider",
+                    details={"code": "chat_choice_error"},
+                )
+            message = self._get_attr(choice, "message")
+            if message is None:
+                raise ProviderRuntimeError(
+                    "Chat Completions choice is missing its message",
+                    kind="protocol",
+                    details={"code": "invalid_chat_message"},
+                )
+            if self._non_null_unknown_fields(
+                message,
+                {
+                    "role",
+                    "content",
+                    "tool_calls",
+                    "refusal",
+                    "function_call",
+                    "audio",
+                    "annotations",
+                    "reasoning",
+                    "reasoning_content",
+                    "reasoning_details",
+                },
+            ):
+                raise ProviderRuntimeError(
+                    "Unknown Chat Completions message semantic",
+                    kind="protocol",
+                    details={"code": "unknown_chat_message"},
+                )
+            role = self._get_attr(message, "role")
+            if role != "assistant":
+                raise ProviderRuntimeError(
+                    "Chat Completions message has an invalid role",
+                    kind="protocol",
+                    details={"code": "invalid_chat_role"},
+                )
+            for unsupported_field in (
+                "refusal",
+                "function_call",
+                "audio",
+                "annotations",
+            ):
+                if self._get_attr(message, unsupported_field) is not None:
+                    raise ProviderRuntimeError(
+                        "Unsupported Chat Completions message semantic",
+                        kind="protocol",
+                        details={"code": "unsupported_chat_message"},
+                    )
             reasoning_fields = self._extract_reasoning_fields(message)
-            for field_name, field_value in streamed_reasoning.get(idx, {}).items():
+            for field_name, field_value in streamed_reasoning.get(
+                choice_index, {}
+            ).items():
+                existing = reasoning_fields.get(field_name)
+                if existing is not None and existing != field_value:
+                    raise ProviderRuntimeError(
+                        "Final Chat Completions reasoning does not match the stream",
+                        kind="protocol",
+                        details={"code": "chat_reasoning_mismatch"},
+                    )
                 reasoning_fields.setdefault(field_name, field_value)
             reasoning = reasoning_fields.get(
                 "reasoning_content", reasoning_fields.get("reasoning")
             )
             normalized_messages.append(
                 ProviderMessage(
-                    role=self._get_attr(message, "role", "assistant"),
+                    role=role,
                     content=self._message_content_to_text(
                         self._get_attr(message, "content")
                     ),
                     tool_calls=self._extract_tool_calls(message),
                     finish_reason=self._get_attr(choice, "finish_reason"),
-                    index=idx,
+                    index=choice_index,
                     raw_message=message,
                     raw_choice=choice,
                     reasoning=reasoning,
                     annotations=reasoning_fields,
+                    message_id=response_id,
                 )
             )
 

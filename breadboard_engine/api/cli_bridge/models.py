@@ -31,7 +31,10 @@ class TurnAdmission(str, enum.Enum):
 class SessionCreateRequest(BaseModel):
     """Incoming payload for POST /sessions."""
 
-    config_path: str = Field(..., description="Path to agent config YAML/JSON.")
+    config_path: Optional[str] = Field(
+        default=None,
+        description="Path to agent config YAML/JSON; omit to use the packaged default profile.",
+    )
     task: str = Field(default="", description="Optional initial task; omit for an idle session.")
     overrides: Dict[str, Any] | None = Field(default=None, description="Dotted-key override map.")
     metadata: Dict[str, Any] | None = Field(default=None, description="Opaque metadata for UX features.")
@@ -41,9 +44,9 @@ class SessionCreateRequest(BaseModel):
     stream: bool = Field(default=True, description="Request streaming responses when supported.")
 
     @validator("config_path")
-    def _validate_config(cls, value: str) -> str:
-        if not value:
-            raise ValueError("config_path must be provided")
+    def _validate_config(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("config_path must not be empty")
         return value
 
 
@@ -150,8 +153,8 @@ class EngineProtocolIdentity(_StrictEngineIdentityModel):
 class EngineSessionContractIdentity(_StrictEngineIdentityModel):
     contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
     schema_sha256: Literal[
-        "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"
-    ] = "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"
+        "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
+    ] = "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
     session_replay_contract_digest: str = Field(
         ...,
         alias="sessionReplayContractDigest",
@@ -259,8 +262,8 @@ class ClientRegisterRequest(_StrictLifecycleModel):
     lifecycle_mode: Literal["local-owned", "local-external", "remote", "off"]
     first_slice_contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
     first_slice_schema_sha256: Literal[
-        "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"
-    ] = "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"
+        "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
+    ] = "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
 
 
 class ClientLeaseRequest(_StrictLifecycleModel):
@@ -281,8 +284,8 @@ class ClientRegistrationResponse(_StrictLifecycleModel):
     lifecycle_mode: Literal["local-owned", "local-external", "remote"]
     first_slice_contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
     first_slice_schema_sha256: Literal[
-        "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"
-    ] = "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"
+        "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
+    ] = "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
     registered_at_unix: float = Field(..., ge=0)
     expires_at_unix: float | None = Field(default=None, ge=0)
     admission_epoch: int = Field(..., ge=0)
@@ -510,6 +513,19 @@ class ModelCatalogEntry(BaseModel):
     id: str
     adapter: Optional[str] = None
     provider: Optional[str] = None
+    canonical_provider: Optional[str] = None
+    support_tier: Literal["core", "deferred", "evidence", "unsupported"]
+    available: bool
+    availability_reason: Optional[
+        Literal[
+            "provider_managed",
+            "missing_auth",
+            "unsupported_provider",
+            "deferred_provider",
+        ]
+    ] = None
+    discovery: Literal["configured_only"]
+    source: Literal["configured"]
     name: Optional[str] = None
     context_length: Optional[int] = None
     params: Dict[str, Any] | None = None
@@ -517,10 +533,26 @@ class ModelCatalogEntry(BaseModel):
     metadata: Dict[str, Any] | None = None
 
 
+class ModelCatalogIssue(BaseModel):
+    code: Literal[
+        "invalid_model",
+        "duplicate_model",
+        "unsupported_provider",
+        "deferred_provider",
+        "stale_dynamic_catalog",
+    ]
+    model_id: Optional[str] = None
+    provider_id: Optional[str] = None
+    source: Literal["configured", "dynamic"]
+    index: Optional[int] = None
+
+
 class ModelCatalogResponse(BaseModel):
     models: List[ModelCatalogEntry]
     default_model: Optional[str] = None
     config_path: Optional[str] = None
+    discovery_policy: Literal["configured_only"]
+    issues: List[ModelCatalogIssue]
 
 
 class SkillCatalogResponse(BaseModel):
@@ -710,10 +742,16 @@ class EvoLakeRunCampaignResponse(BaseModel):
 
 class AuthProviderView(BaseModel):
     provider_id: str
+    aliases: List[str]
     display_name: str
-    auth_schemes: List[str] = Field(default_factory=list)
+    support_tier: Literal["core"]
+    auth_owner: Literal["broker", "provider"]
+    auth_schemes: List[str]
+    available: bool
+    availability_reason: Optional[Literal["provider_managed", "missing_auth"]] = None
     login_available: bool = False
     oauth_flows: List[str] = Field(default_factory=list)
+    model_discovery: Literal["configured_only"]
     runtime_id: Optional[str] = None
     compatible_protocol: Optional[str] = None
     base_url: Optional[str] = None
@@ -734,6 +772,7 @@ class AuthCredentialView(BaseModel):
     expires_at_ms: Optional[int] = None
     has_api_key: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    refresh_state: Dict[str, Any] = Field(default_factory=dict)
 
 
 class AuthLoginSession(BaseModel):
@@ -742,6 +781,7 @@ class AuthLoginSession(BaseModel):
     status: str
     created_at_ms: Optional[int] = None
     updated_at_ms: Optional[int] = None
+    expires_at_ms: Optional[int] = None
     problem: Dict[str, Any] | None = None
     authorization_url: Optional[str] = None
     redirect_uri: Optional[str] = None
@@ -788,6 +828,10 @@ class ModelRolesResolveRequest(BaseModel):
     model_roles: Dict[str, Any]
     role_overrides: Dict[str, Any] | None = None
     session_started: bool = False
+    model_catalog: List[Dict[str, Any]] | None = Field(
+        default=None,
+        description="Optional secret-free configured-only catalog for availability validation.",
+    )
 
 
 class ModelRolesResolveResponse(BaseModel):

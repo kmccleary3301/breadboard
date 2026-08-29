@@ -175,7 +175,7 @@ async def test_policy_authority_unset_keeps_emission_off(monkeypatch: pytest.Mon
 
     monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.SessionRunner.schedule_start", lambda _runner: None)
     monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.SessionRunner.authorize_start", lambda _runner: None)
-    service = SessionService(SessionRegistry())
+    service = SessionService(SessionRegistry(state_root=tmp_path / "session-state"))
 
     response = await service.create_session(
         SessionCreateRequest(
@@ -190,6 +190,7 @@ async def test_policy_authority_unset_keeps_emission_off(monkeypatch: pytest.Mon
     assert "runtime_records" not in record.metadata
     assert record.metadata["client"] == "test"
     assert not (tmp_path / "runtime_records").exists()
+    await service.delete_session(response.session_id)
 
 
 def test_parity_authority_logs_no_divergence_for_fixture(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:

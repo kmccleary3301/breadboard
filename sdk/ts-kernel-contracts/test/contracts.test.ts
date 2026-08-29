@@ -4,6 +4,12 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { assertValid, kernelValidators } from "../src/index.js"
+import { GENERATED_SCHEMAS } from "../src/generated/index.js"
+
+const PROVIDER_EXCHANGE_V2_SCHEMA_ID =
+  "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json"
+const providerExchangeV2Validator = GENERATED_SCHEMAS[PROVIDER_EXCHANGE_V2_SCHEMA_ID]?.validate
+if (!providerExchangeV2Validator) throw new Error("generated provider exchange v2 validator is missing")
 
 function loadJson(relPath: string): unknown {
   return JSON.parse(readFileSync(join(process.cwd(), relPath), "utf8"))
@@ -15,6 +21,14 @@ test("kernel validators accept tracked examples", () => {
   assert.doesNotThrow(() => assertValid("runRequest", loadJson("../../contracts/kernel/examples/run_request_minimal.json")))
   assert.doesNotThrow(() => assertValid("runContext", loadJson("../../contracts/kernel/examples/run_context_minimal.json")))
   assert.doesNotThrow(() => assertValid("providerExchange", loadJson("../../contracts/kernel/examples/provider_exchange_minimal.json")))
+  for (const filename of [
+    "provider_exchange_v2_done.json",
+    "provider_exchange_v2_error.json",
+    "provider_exchange_v2_cancelled.json",
+  ]) {
+    const value = loadJson(`../../contracts/kernel/examples/${filename}`)
+    assert.equal(providerExchangeV2Validator(value), true, JSON.stringify(providerExchangeV2Validator.errors))
+  }
   assert.doesNotThrow(() =>
     assertValid("executionCapability", loadJson("../../contracts/kernel/examples/execution_capability_minimal.json")),
   )
@@ -124,6 +138,139 @@ test("kernel validators accept tracked examples", () => {
 
 test("kernel validator rejects malformed run request", () => {
   assert.equal(kernelValidators.runRequest({ schema_version: "bb.run_request.v1", request_id: "r1", entry_mode: "interactive" }), false)
+})
+
+test("provider exchange v2 validator rejects Python-incompatible wire values", () => {
+  interface MutableContentBlock extends Record<string, unknown> {
+    payload?: Record<string, unknown>
+  }
+  interface MutableProviderExchangeFixture {
+    exchange_id: string
+    provider: { route_id: string; model: string }
+    correlation: { turn_id: string }
+    request: {
+      messages: Array<{ content: MutableContentBlock[] }>
+      tools: Array<Record<string, unknown>>
+    }
+    events: Array<Record<string, unknown>>
+    terminal: {
+      output_emitted: boolean
+      raw_provider_finish: string
+      evidence_refs: string[]
+      usage: { extensions: Record<string, unknown> }
+      provider_replay: Array<{ payload: Record<string, unknown> }>
+    }
+  }
+  interface ProviderExchangeParityCases {
+    argument_cases: Array<{
+      name: string
+      arguments_json: string
+      arguments: unknown
+      accepted: boolean
+    }>
+    replay_cases: Array<{
+      name: string
+      field: string
+      value: unknown
+      accepted: boolean
+    }>
+    wire_shape_cases: Array<{
+      name: string
+      path: Array<string | number>
+      operation: "delete" | "set"
+      value?: unknown
+      accepted: boolean
+    }>
+
+  }
+  const loaded = loadJson("../../contracts/kernel/examples/provider_exchange_v2_done.json")
+  assert.equal(providerExchangeV2Validator(loaded), true)
+  const base = loaded as unknown as MutableProviderExchangeFixture
+  const reject = (label: string, mutate: (value: MutableProviderExchangeFixture) => void) => {
+    const value = structuredClone(base)
+    mutate(value)
+    assert.equal(providerExchangeV2Validator(value), false, label)
+  }
+
+  const parityCases = loadJson(
+    "../../tests/fixtures/provider_exchange_v2_parity_cases.json",
+  ) as ProviderExchangeParityCases
+  for (const parityCase of parityCases.argument_cases) {
+    const value = structuredClone(base)
+    value.request.messages[3].content[0].arguments_json = parityCase.arguments_json
+    value.request.messages[3].content[0].arguments = parityCase.arguments
+    assert.equal(
+      providerExchangeV2Validator(value),
+      parityCase.accepted,
+      parityCase.name,
+    )
+  }
+  for (const parityCase of parityCases.replay_cases) {
+    const value = structuredClone(base)
+    value.terminal.provider_replay[0].payload[parityCase.field] = parityCase.value
+    assert.equal(
+      providerExchangeV2Validator(value),
+      parityCase.accepted,
+      parityCase.name,
+    )
+  }
+  for (const parityCase of parityCases.wire_shape_cases) {
+    const value = structuredClone(base)
+    let target = value as unknown as Record<string | number, unknown>
+    for (const part of parityCase.path.slice(0, -1)) {
+      target = target[part] as Record<string | number, unknown>
+    }
+    const field = parityCase.path.at(-1)
+    assert.notEqual(field, undefined)
+    if (parityCase.operation === "delete") {
+      delete target[field!]
+    } else {
+      target[field!] = structuredClone(parityCase.value)
+    }
+    assert.equal(
+      providerExchangeV2Validator(value),
+      parityCase.accepted,
+      parityCase.name,
+    )
+  }
+
+  reject("whitespace exchange identity", (value) => { value.exchange_id = " " })
+  reject("noncanonical route", (value) => { value.provider.route_id = " route" })
+  reject("noncanonical model", (value) => { value.provider.model = "模型" })
+  reject("whitespace correlation", (value) => { value.correlation.turn_id = " \t" })
+  reject("whitespace redacted data", (value) => { value.request.messages[2].content[1].data = " " })
+  reject("whitespace tool description", (value) => { value.request.tools[0].description = " " })
+  reject("whitespace replay schema", (value) => { value.request.messages[3].content[1].schema_version = " " })
+  reject("whitespace replay identity", (value) => { value.request.messages[3].content[1].payload!.item_id = "\n" })
+  reject("whitespace event delta", (value) => { value.events[2].delta = "\n" })
+  reject("invalid provider finish token", (value) => { value.terminal.raw_provider_finish = "complete now" })
+  reject("whitespace evidence ref", (value) => { value.terminal.evidence_refs = [" "] })
+  reject("mismatched tool arguments", (value) => {
+    value.events[9].arguments = { path: "OTHER.md" }
+  })
+  reject("oversized replay collection", (value) => {
+    value.terminal.provider_replay[0].payload.signature = Array.from({ length: 33 }, (_, index) => index)
+  })
+  reject("deep replay value", (value) => {
+    value.terminal.provider_replay[0].payload.signature = [[[[["too-deep"]]]]]
+  })
+  reject("oversized replay bytes", (value) => {
+    value.terminal.provider_replay[0].payload.signature = "é".repeat(4096)
+  })
+  reject("oversized usage extension bytes", (value) => {
+    value.terminal.usage.extensions = {
+      first: "é".repeat(4096),
+      second: "é".repeat(4096),
+      third: "é".repeat(4096),
+    }
+  })
+  reject("sequence gap", (value) => { value.events[1].sequence = 2 })
+  reject("duplicate response start", (value) => { value.events[1] = { sequence: 1, kind: "response_start" } })
+  reject("unclosed done content", (value) => {
+    value.events.splice(3, 1)
+    value.events.forEach((event, index) => { event.sequence = index })
+  })
+  reject("false output claim", (value) => { value.terminal.output_emitted = false })
 })
 
 test("kernel validator accepts a coordination verification result payload", () => {

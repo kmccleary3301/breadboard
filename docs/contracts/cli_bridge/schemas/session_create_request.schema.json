@@ -2,9 +2,17 @@
   "description": "Incoming payload for POST /sessions.",
   "properties": {
     "config_path": {
-      "description": "Path to agent config YAML/JSON.",
-      "title": "Config Path",
-      "type": "string"
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Path to agent config YAML/JSON; omit to use the packaged default profile.",
+      "title": "Config Path"
     },
     "max_steps": {
       "anyOf": [
@@ -86,9 +94,6 @@
       "title": "Workspace"
     }
   },
-  "required": [
-    "config_path"
-  ],
   "title": "SessionCreateRequest",
   "type": "object"
 }

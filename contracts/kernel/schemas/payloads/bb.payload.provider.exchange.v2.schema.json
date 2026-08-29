@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.provider.exchange.v2.schema.json",
+  "title": "BreadBoard Kernel Event Payload provider.exchange V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["exchange_ref"],
+  "properties": {
+    "exchange_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exchange_id", "schema_version"],
+      "properties": {
+        "exchange_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "schema_version": {"const": "bb.provider_exchange.v2"}
+      }
+    }
+  }
+}

@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.provider_semantic_trace.v1",
+  "title": "BreadBoard provider semantic trace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "provider", "model", "request", "events", "result", "usage", "terminal"],
+  "properties": {
+    "schema_version": {"const": "bb.provider_semantic_trace.v1"},
+    "provider": {"enum": ["codex", "openai", "anthropic", "openrouter"]},
+    "model": {"type": "string", "minLength": 1},
+    "request": {"$ref": "#/$defs/request"},
+    "events": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/event"},
+      "minItems": 1
+    },
+    "result": {"$ref": "#/$defs/result"},
+    "usage": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/usage"}]},
+    "terminal": {"$ref": "#/$defs/terminal"}
+  },
+  "$defs": {
+    "json_value": {
+      "anyOf": [
+        {"type": "null"},
+        {"type": "boolean"},
+        {"type": "integer"},
+        {"type": "number"},
+        {"type": "string"},
+        {"type": "array", "items": {"$ref": "#/$defs/json_value"}},
+        {"type": "object", "additionalProperties": {"$ref": "#/$defs/json_value"}}
+      ]
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "role": {"enum": ["system", "user", "assistant", "tool"]},
+        "content": {"$ref": "#/$defs/json_value"},
+        "name": {"type": ["string", "null"]},
+        "tool_call_id": {"type": ["string", "null"]},
+        "tool_calls": {"$ref": "#/$defs/json_value"}
+      }
+    },
+    "tool_definition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "parameters"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "description": {"type": "string"},
+            "parameters": {"$ref": "#/$defs/json_value"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "function"],
+          "properties": {
+            "type": {"const": "function"},
+            "function": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "parameters"],
+              "properties": {
+                "name": {"type": "string", "minLength": 1},
+                "description": {"type": "string"},
+                "parameters": {"$ref": "#/$defs/json_value"}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messages", "tools"],
+      "properties": {
+        "messages": {"type": "array", "items": {"$ref": "#/$defs/message"}},
+        "tools": {"type": "array", "items": {"$ref": "#/$defs/tool_definition"}},
+        "temperature": {"type": ["number", "null"]},
+        "max_output_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "reasoning": {"$ref": "#/$defs/json_value"}
+      }
+    },
+    "event_common": {
+      "type": "object",
+      "required": ["sequence", "kind"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 0},
+        "kind": {"type": "string"},
+        "content_index": {"type": "integer", "minimum": 0}
+      }
+    },
+    "event": {
+      "oneOf": [
+        {
+          "allOf": [
+            {"$ref": "#/$defs/event_common"},
+            {"type": "object", "additionalProperties": false, "required": ["sequence", "kind"], "properties": {"sequence": {"type": "integer", "minimum": 0}, "kind": {"const": "response_start"}}}
+          ]
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["sequence", "kind"],
+          "properties": {"sequence": {"type": "integer", "minimum": 0}, "kind": {"const": "text_start"}, "content_index": {"type": "integer", "minimum": 0}}
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["sequence", "kind", "delta"],
+          "properties": {"sequence": {"type": "integer", "minimum": 0}, "kind": {"const": "text_delta"}, "content_index": {"type": "integer", "minimum": 0}, "delta": {"type": "string"}}
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["sequence", "kind"],
+          "properties": {"sequence": {"type": "integer", "minimum": 0}, "kind": {"const": "text_end"}, "content_index": {"type": "integer", "minimum": 0}}
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["sequence", "kind"],
+          "properties": {"sequence": {"type": "integer", "minimum": 0}, "kind": {"const": "thinking_start"}, "content_index": {"type": "integer", "minimum": 0}}
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["sequence", "kind", "delta"],
+          "properties": {"sequence": {"type": "integer", "minimum": 0}, "kind": {"const": "thinking_delta"}, "content_index": {"type": "integer", "minimum": 0}, "delta": {"type": "string"}}
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["sequence", "kind"],
+          "properties": {"sequence": {"type": "integer", "minimum": 0}, "kind": {"const": "thinking_end"}, "content_index": {"type": "integer", "minimum": 0}}
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["sequence", "kind", "call_id", "name"],
+          "properties": {"sequence": {"type": "integer", "minimum": 0}, "kind": {"const": "tool_call_start"}, "content_index": {"type": "integer", "minimum": 0}, "call_id": {"type": "string", "minLength": 1}, "name": {"type": "string", "minLength": 1}}
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["sequence", "kind", "call_id", "delta"],
+          "properties": {"sequence": {"type": "integer", "minimum": 0}, "kind": {"const": "tool_call_delta"}, "content_index": {"type": "integer", "minimum": 0}, "call_id": {"type": "string", "minLength": 1}, "delta": {"type": "string"}}
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["sequence", "kind", "call_id", "name", "arguments_json", "arguments"],
+          "properties": {"sequence": {"type": "integer", "minimum": 0}, "kind": {"const": "tool_call_end"}, "content_index": {"type": "integer", "minimum": 0}, "call_id": {"type": "string", "minLength": 1}, "name": {"type": "string", "minLength": 1}, "arguments_json": {"type": "string"}, "arguments": {"$ref": "#/$defs/json_value"}}
+        }
+      ]
+    },
+    "tool_call": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["call_id", "name", "arguments_json", "arguments"],
+      "properties": {
+        "call_id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "arguments_json": {"type": "string"},
+        "arguments": {"$ref": "#/$defs/json_value"}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assembled_text", "assembled_reasoning", "tool_calls"],
+      "properties": {
+        "assembled_text": {"type": "string"},
+        "assembled_reasoning": {"type": "string"},
+        "tool_calls": {"type": "array", "items": {"$ref": "#/$defs/tool_call"}}
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "output_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "total_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "reasoning_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "cached_input_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "cache_read_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "cache_write_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "prompt_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "completion_tokens": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "terminal": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "output_emitted"],
+          "properties": {
+            "state": {"const": "done"},
+            "finish_reason": {"type": "string", "maxLength": 128},
+            "output_emitted": {"const": true}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "error_code", "error_message", "retryable", "output_emitted"],
+          "properties": {
+            "state": {"const": "error"},
+            "error_code": {"type": "string", "minLength": 1, "maxLength": 128},
+            "error_message": {"type": "string", "minLength": 1, "maxLength": 2048},
+            "retryable": {"type": "boolean"},
+            "http_status": {"type": ["integer", "null"], "minimum": 100, "maximum": 599},
+            "finish_reason": {"type": "string", "maxLength": 128},
+            "output_emitted": {"type": "boolean"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "reason", "output_emitted"],
+          "properties": {
+            "state": {"const": "cancelled"},
+            "reason": {"type": "string", "minLength": 1, "maxLength": 256},
+            "finish_reason": {"type": "string", "maxLength": 128},
+            "output_emitted": {"type": "boolean"}
+          }
+        }
+      ]
+    }
+  }
+}

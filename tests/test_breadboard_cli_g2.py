@@ -9,6 +9,8 @@ import pytest
 import yaml
 
 from scripts import breadboard_cli
+from breadboard.product.cli import harness as harness_operations
+from breadboard.product.harness.lock import sha256_bytes
 from breadboard.product.evidence import load_lane
 from breadboard.product.runtime.artifacts import ArtifactStore
 
@@ -33,14 +35,17 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
     exit_code, _, stderr = _invoke(["harness", "create", "--out", str(out_dir)], capsys)
 
     assert exit_code == 0, stderr
-    harness_path = out_dir / "minimal_harness.v2.yaml"
-    prompt_path = out_dir / "prompts" / "minimal_system.md"
+    harness_path = out_dir / "daily_driver.v1.yaml"
+    prompt_path = out_dir / "prompts" / "daily_driver_system.md"
+    model_roles_path = out_dir / "daily_driver_roles.v1.json"
     assert harness_path.is_file()
     assert prompt_path.is_file()
+    assert model_roles_path.is_file()
     harness = yaml.safe_load(harness_path.read_text(encoding="utf-8"))
     assert harness["prompts"]["packs"]["base"]["system"] == (
-        "prompts/minimal_system.md"
+        "prompts/daily_driver_system.md"
     )
+    assert json.loads(model_roles_path.read_text())["defaults"]["role"] == "default"
     prompt_path.write_text(
         "This content exists only in the initialized bundle.\n",
         encoding="utf-8",
@@ -57,7 +62,7 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
     assert exit_code == 0, stderr
     explanation = json.loads(stdout)
     assert explanation["schema_version"] == "bb.config_explanation.v1"
-    assert explanation["surface_schema_version"] == "bb.agent_config_surface.v2"
+    assert explanation["surface_schema_version"] == "bb.agent_config_surface.v1"
     assert explanation["ok"] is True
     assert explanation["diagnostics"] == []
     assert explanation["resolved_summary"]["prompt_files"] == [
@@ -66,9 +71,11 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
 
     harness_path.write_text("author-owned harness\n", encoding="utf-8")
     prompt_path.write_text("author-owned prompt\n", encoding="utf-8")
+    model_roles_path.write_text('{"owner": "author-owned model roles"}\n', encoding="utf-8")
     before = {
         harness_path: harness_path.read_bytes(),
         prompt_path: prompt_path.read_bytes(),
+        model_roles_path: model_roles_path.read_bytes(),
     }
 
     exit_code, _, stderr = _invoke(["harness", "create", "--out", str(out_dir)], capsys)
@@ -78,10 +85,159 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
     assert {path: path.read_bytes() for path in before} == before
 
 
+def test_harness_init_rolls_back_partial_bundle_after_late_publish_failure(
+    tmp_path: Path,
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out_dir = tmp_path / "harness"
+    publish_seed = harness_operations._publish_seed
+    def fail_on_roles(path: Path, content: bytes):
+        if path.name == "daily_driver_roles.v1.json":
+            raise OSError("injected late publish failure")
+        return publish_seed(path, content)
+    monkeypatch.setattr(harness_operations, "_publish_seed", fail_on_roles)
+    exit_code, _, _ = _invoke(["harness", "create", "--out", str(out_dir)], capsys)
+    assert exit_code != 0
+    assert not any(path.exists() for path in harness_operations.daily_driver_bundle_paths(out_dir))
+    monkeypatch.setattr(harness_operations, "_publish_seed", publish_seed)
+    exit_code, _, stderr = _invoke(["harness", "create", "--out", str(out_dir)], capsys)
+    assert exit_code == 0, stderr
+
+
+def _extended_prompt_harness(tmp_path: Path) -> tuple[Path, Path, Path]:
+    base_dir = tmp_path / "base"
+    root_dir = tmp_path / "root"
+    (base_dir / "prompts").mkdir(parents=True)
+    root_dir.mkdir()
+    prompt_path = base_dir / "prompts" / "daily_driver_system.md"
+    prompt_path.write_text("Extended system prompt.\n", encoding="utf-8")
+    definition = yaml.safe_load(
+        (
+            Path(__file__).resolve().parents[1]
+            / "agent_configs/templates/daily_driver.v1.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    prompt_config = definition.pop("prompts")
+    base_path = base_dir / "base.yaml"
+    base_path.write_text(
+        yaml.safe_dump({"prompts": prompt_config}, sort_keys=False),
+        encoding="utf-8",
+    )
+    definition["extends"] = "../base/base.yaml"
+    harness_path = root_dir / "custom.yaml"
+    harness_path.write_text(
+        yaml.safe_dump(definition, sort_keys=False),
+        encoding="utf-8",
+    )
+    return harness_path, base_path, prompt_path
+
+def test_lock_resolves_prompt_relative_to_declaring_extended_config(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    harness_path, _, prompt_path = _extended_prompt_harness(tmp_path)
+
+    exit_code, stdout, stderr = _invoke(
+        ["--json", "harness", "lock", str(harness_path)],
+        capsys,
+    )
+    assert exit_code == 0, (stdout, stderr)
+    prompt_path.write_text("Changed extended prompt.\n", encoding="utf-8")
+    exit_code, stdout, stderr = _invoke(
+        ["--json", "harness", "lock", str(harness_path), "--check"],
+        capsys,
+    )
+    assert exit_code == 5
+    assert stderr == ""
+    assert json.loads(stdout)["error"]["error_code"] == "lock_drift"
+
+def test_daily_driver_role_resource_is_content_addressed_lock_input(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    out_dir = tmp_path / "harness"
+    assert _invoke(["harness", "create", "--out", str(out_dir)], capsys)[0] == 0
+    harness_path = out_dir / "daily_driver.v1.yaml"
+    model_roles_path = out_dir / "daily_driver_roles.v1.json"
+    exit_code, _, stderr = _invoke(["harness", "lock", str(harness_path)], capsys)
+    assert exit_code == 0, stderr
+    lock = json.loads((out_dir / "daily_driver.v1.lock.json").read_text())
+    role_layers = [
+        layer for layer in lock["source_layers"]
+        if str(layer["source_ref"]).endswith("::daily_driver_roles.v1.json")
+    ]
+    assert len(role_layers) == 1
+    assert role_layers[0]["layer_hash"] == sha256_bytes(model_roles_path.read_bytes())
+    model_roles = json.loads(model_roles_path.read_text())
+    model_roles["roles"]["smol"]["primary"]["model_id"] = "changed"
+    model_roles_path.write_text(json.dumps(model_roles, indent=2) + "\n")
+    exit_code, stdout, stderr = _invoke(
+        ["--json", "harness", "lock", str(harness_path), "--check"],
+        capsys,
+    )
+    assert exit_code == 5
+    assert stderr == ""
+    assert json.loads(stdout)["error"]["error_code"] == "lock_drift"
+
+def test_resource_binding_uses_one_resolved_config_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness_path, base_path, prompt_path = _extended_prompt_harness(tmp_path)
+    original_prompt_bytes = prompt_path.read_bytes()
+    resolve_resources = harness_operations._prompt_resources
+
+    def mutate_extended_config(*args):
+        resources = resolve_resources(*args)
+        base = yaml.safe_load(base_path.read_text(encoding="utf-8"))
+        base["prompts"]["packs"]["base"]["system"] = (
+            "prompts/replacement.md"
+        )
+        base_path.write_text(
+            yaml.safe_dump(base, sort_keys=False),
+            encoding="utf-8",
+        )
+        return resources
+
+    monkeypatch.setattr(
+        harness_operations,
+        "_prompt_resources",
+        mutate_extended_config,
+    )
+    compiled = harness_operations._compile(
+        harness_path,
+        tmp_path,
+    )
+
+    values = {
+        row["path"]: row["value"]
+        for row in compiled.lock["effective_values"]
+    }
+    resource_layers = [
+        layer for layer in compiled.lock["source_layers"]
+        if layer["scope"] == "resource"
+    ]
+    assert values["prompts.packs.base.system"] == (
+        "prompts/daily_driver_system.md"
+    )
+    assert resource_layers == [{
+        "host_visible": True,
+        "layer_hash": sha256_bytes(original_prompt_bytes),
+        "layer_id": "harness-resource:0000",
+        "model_visible": True,
+        "precedence": 20,
+        "scope": "resource",
+        "source_kind": "project",
+        "source_ref": (
+            "base/base.yaml::prompts/daily_driver_system.md"
+        ),
+    }]
+
 def test_harness_update_replaces_definition_from_explicit_source(tmp_path: Path, capsys) -> None:
     out_dir = tmp_path / "harness"
     assert _invoke(["harness", "create", "--out", str(out_dir)], capsys)[0] == 0
-    harness_path = out_dir / "minimal_harness.v2.yaml"
+    harness_path = out_dir / "daily_driver.v1.yaml"
     definition = yaml.safe_load(harness_path.read_text())
     definition["modes"][0]["name"] = "review"
     definition["loop"]["sequence"][0]["mode"] = "review"
@@ -286,7 +442,7 @@ def test_validate_returns_resolution_failure_for_unresolvable_paths(
     [
         (
             "harness",
-            ("minimal_harness.v2.yaml", "prompts/minimal_system.md"),
+            ("daily_driver.v1.yaml", "prompts/daily_driver_system.md", "daily_driver_roles.v1.json"),
         ),
         ("lane", (".breadboard/lanes/new_lane.manifest.json",)),
     ],
@@ -319,6 +475,7 @@ def test_init_json_is_the_only_output_and_identifies_every_created_file(
     assert payload["data"]["path"] == created_paths[0]
     if namespace == "harness":
         assert payload["data"]["prompt_path"] == Path(created_paths[1]).name
+        assert payload["data"]["model_roles_path"] == Path(created_paths[2]).name
     assert stderr == ""
 
 

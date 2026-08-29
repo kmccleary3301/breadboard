@@ -1,17 +1,28 @@
 from __future__ import annotations
 from types import SimpleNamespace; from pathlib import Path; import asyncio, hashlib, json, os, threading, pytest, yaml
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from breadboard.product.cli import harness as harness_operations
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import events as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
+from breadboard_engine.api.cli_bridge.app import create_app
 from breadboard_engine.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
 from breadboard_engine.api.cli_bridge.events import EventType; from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.session_runner import MAX_ATTACHMENT_BYTES
 from breadboard_engine.api.cli_bridge.runtime_emission import _tool_names
 from breadboard_engine.auth.enforcer import apply_dotted_overrides; from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard.product.cli.harness import DefaultProfileInvalidError, DefaultProfileUnavailableError
 CONFIG = "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml"
 RUNNER = "breadboard_engine.api.cli_bridge.session_runner.SessionRunner."
 SERVICE = "breadboard_engine.api.cli_bridge.service."
+
+
+@pytest.fixture(autouse=True)
+def _clear_default_profile_cache():
+    harness_operations.resolve_default_profile.cache_clear()
+    yield
+    harness_operations.resolve_default_profile.cache_clear()
 class _Failing:
     def append(self, _event) -> None: raise OSError("sink unavailable")  # type: ignore[no-untyped-def]
     def put_nowait(self, _item) -> None: raise RuntimeError("broker unavailable")  # type: ignore[no-untyped-def]
@@ -30,6 +41,300 @@ async def test_invalid_config_fails_before_session_publication(monkeypatch, tmp_
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events)); service = SessionService()
     with pytest.raises(error): await service.create_session(SessionCreateRequest(config_path=str(config), task="task"))
     assert service.registry._records == {} and not records.exists() and not events.exists()
+
+
+def test_session_create_rejects_empty_config_path() -> None:
+    for value in ("", " ", "\t\n"):
+        with pytest.raises(ValueError):
+            SessionCreateRequest(config_path=value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "create_request",
+    [SessionCreateRequest(), SessionCreateRequest(config_path=None)],
+)
+async def test_default_session_create_uses_exact_profile_authority(
+    monkeypatch, tmp_path, create_request
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    workspace = (tmp_path / "workspace").resolve()
+    workspace.mkdir()
+    service = SessionService()
+    response = await service.create_session(
+        create_request.model_copy(
+            update={
+                "task": "",
+                "workspace": str(workspace),
+                "metadata": {
+                    "config_path": "forged-config",
+                    "default_profile": {"profile_id": "forged-profile"},
+                    "safe": "retained",
+                },
+            }
+        ),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    resolution = harness_operations.resolve_default_profile()
+    identity = resolution.public_identity()
+    assert record.runner.request.config_path == str(resolution.source_path)
+    assert record.metadata["config_path"] == identity["definition_ref"]
+    assert record.metadata["default_profile"] == identity
+    assert record.metadata["safe"] == "retained"
+    assert str(resolution.source_path) not in json.dumps(record.metadata)
+    assert record.product_session.read_model.effective_lock_hash != (
+        resolution.compilation.lock["graph_hash"]
+    )
+    assert record.metadata["active_model_role"] == "default"
+    assert set(record.metadata["model_role_lock"]["roles"]) == {
+        "default",
+        "smol",
+        "slow",
+        "vision",
+        "plan",
+        "designer",
+        "task",
+    }
+    assert record.runner.current_runtime_config()["workspace"]["root"] == str(workspace)
+    skill_catalog = await service.list_skills(response.session_id)
+    skill_payload = skill_catalog.model_dump(mode="json")
+    assert skill_payload["sources"]["config_path"] == identity["definition_ref"]
+    assert str(resolution.source_path) not in json.dumps(skill_payload)
+    await service.stop_session(response.session_id)
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_default_profile_overrides_define_product_runtime_lock(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    service = SessionService()
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            workspace=str(workspace),
+            overrides={"providers.default_model": "mock/overridden"},
+        ),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    default_lock = harness_operations.resolve_default_profile().compilation.lock
+
+    assert (
+        record.runner.current_runtime_config()["providers"]["default_model"]
+        == "mock/overridden"
+    )
+    assert (
+        record.product_session.read_model.effective_lock_hash
+        != default_lock["graph_hash"]
+    )
+    await service.stop_session(response.session_id)
+    await _stop(record)
+
+@pytest.mark.asyncio
+async def test_default_profile_non_provider_override_preserves_model_roles(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    service = SessionService()
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            workspace=str(workspace),
+            overrides={"completion.natural_finish.idle_turn_limit": 3},
+        ),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+
+    assert (
+        record.runner.current_runtime_config()["completion"]["natural_finish"][
+            "idle_turn_limit"
+        ]
+        == 3
+    )
+    assert record.metadata["active_model_role"] == "default"
+    assert set(record.metadata["model_role_lock"]["roles"]) == {
+        "default",
+        "smol",
+        "slow",
+        "vision",
+        "plan",
+        "designer",
+        "task",
+    }
+    await service.stop_session(response.session_id)
+    await _stop(record)
+
+
+def test_prewarm_sync_invokes_codex_runtime_module(monkeypatch, tmp_path) -> None:
+    calls = []
+    monkeypatch.setattr(
+        SERVICE + "runtime_codex_module.prewarm_codex_app_server",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    SessionService()._prewarm_request_runtime_sync(
+        SessionCreateRequest(workspace=str(tmp_path)),
+        {"model": "codex/gpt-5.4-mini"},
+        {},
+    )
+
+    assert calls == [{"model": "gpt-5.4-mini", "cwd": str(tmp_path)}]
+
+
+@pytest.mark.asyncio
+async def test_default_profile_role_metadata_defines_product_runtime_lock(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    role_document = {
+        "schema_version": "bb.model_roles.v1",
+        "defaults": {
+            "role": "default",
+            "known_but_unbound_role": "error",
+            "unknown_role": "error",
+        },
+        "roles": {
+            "default": {
+                "primary": {
+                    "provider_id": "mock",
+                    "model_id": "reference",
+                },
+                "fallbacks": [],
+                "fallback_on": [],
+            }
+        },
+        "dispatch": {"subagents": {}, "lanes": {"main": "default"}},
+        "policy": {
+            "allow_environment_overrides": False,
+            "cross_provider_fallback": "forbidden",
+            "account_failover": "forbidden",
+        },
+    }
+    service = SessionService()
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            workspace=str(workspace),
+            metadata={"bb.model_roles.v1": role_document},
+        ),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    default_lock = harness_operations.resolve_default_profile().compilation.lock
+
+    assert record.runner.current_runtime_config()["model_role_lock"]["lock_hash"]
+    assert (
+        record.product_session.read_model.effective_lock_hash
+        != default_lock["graph_hash"]
+    )
+    await service.stop_session(response.session_id)
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_explicit_config_metadata_remains_custom(monkeypatch, tmp_path) -> None:
+    service, response, record = await _create(
+        monkeypatch,
+        tmp_path,
+        metadata={"default_profile": {"profile_id": "forged"}},
+    )
+    assert record.metadata["config_path"] == CONFIG
+    assert "default_profile" not in record.metadata
+    await service.stop_session(response.session_id)
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_default_session_rejects_conflicting_supplied_lock(tmp_path) -> None:
+    service = SessionService(state_root=tmp_path / "state")
+    conflicting = EffectiveHarnessLock._from_record(
+        {"graph_hash": "sha256:" + "f" * 64}
+    )
+    with pytest.raises(ValueError, match="conflicts"):
+        await service.create_session(
+            SessionCreateRequest(),
+            effective_lock=conflicting,
+            event_root=tmp_path / "events",
+            runtime_root=tmp_path / "records",
+        )
+    assert service.registry._records == {}
+
+
+@pytest.mark.asyncio
+async def test_missing_or_corrupt_default_profile_fails_before_publication(
+    monkeypatch, tmp_path
+) -> None:
+    profile = tmp_path / "package" / "agent_configs" / "templates" / "daily_driver.v1.yaml"
+    monkeypatch.setattr(
+        harness_operations, "daily_driver_template_path", lambda: profile
+    )
+    service = SessionService(state_root=tmp_path / "missing-state")
+    with pytest.raises(DefaultProfileUnavailableError):
+        await service.create_session(SessionCreateRequest())
+    assert service.registry._records == {}
+    assert not (tmp_path / "records").exists()
+    assert not (tmp_path / "events").exists()
+
+    profile.parent.mkdir(parents=True)
+    profile.write_text("schema_version: bb.harness_definition.v1\n", encoding="utf-8")
+    harness_operations.resolve_default_profile.cache_clear()
+    service = SessionService(state_root=tmp_path / "corrupt-state")
+    with pytest.raises(DefaultProfileInvalidError):
+        await service.create_session(SessionCreateRequest())
+    assert service.registry._records == {}
+    assert not (tmp_path / "records").exists()
+    assert not (tmp_path / "events").exists()
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code"),
+    [
+        (DefaultProfileUnavailableError, 503),
+        (DefaultProfileInvalidError, 500),
+    ],
+)
+def test_default_profile_route_errors_are_typed_and_secret_safe(
+    monkeypatch, tmp_path, error, status_code
+) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
+    service = SessionService(state_root=tmp_path / "state")
+
+    async def fail(_request):
+        raise error("internal profile path must not escape")
+
+    monkeypatch.setattr(service, "create_session", fail)
+    response = TestClient(create_app(service=service)).post(
+        "/v1/sessions",
+        json={},
+    )
+    assert response.status_code == status_code
+    assert response.json() == {
+        "error": error.error_code,
+        "detail": error.hint,
+        "path": None,
+    }
+    assert "internal profile path" not in response.text
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("metadata", "task"), [({"cli_session_kind": "oneshot", "non_interactive_cli_session": True}, "Say hi"), ({"cli_session_kind": "interactive"}, "Say hi"), ({"cli_session_kind": "interactive"}, "")])
 async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch, tmp_path, metadata, task) -> None:
@@ -42,6 +347,223 @@ async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch
         assert [item["name"] for item in work] == ["work_item_created", "work_item_lease_acquired", "work_item_attempt_started", "work_item_snapshot"] and [item["record"].get("kind") for item in work] == ["work_item.created", "lease.acquired", "attempt.started", None] and work[-1]["schema_version"] == "bb.work_item.v2"
         assert work[-1]["record"]["title"] == title and record.product_session.events[0].payload["task_hash"] == "sha256:" + hashlib.sha256(title.encode()).hexdigest() and record.runner.request.task == "" and record.runner._input_queue.empty()
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.STOPPED and type(record.product_session).restore(record.product_session.events).read_model.status == "canceled"; await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_one_shot_completion_terminalizes_queued_turns(
+    monkeypatch, tmp_path
+) -> None:
+    service, response, record = await _create(
+        monkeypatch,
+        tmp_path,
+        metadata={
+            "cli_session_kind": "oneshot",
+            "non_interactive_cli_session": True,
+        },
+    )
+    initial_turn = next(iter(record.turns_by_id.values()))
+    accepted = []
+
+    async def initialize_lifecycle() -> None:
+        record.runner._input_queue.put_nowait(
+            {
+                "content": initial_turn.content,
+                "attachments": [],
+                "input_id": initial_turn.input_id,
+                "turn_id": initial_turn.turn_id,
+            }
+        )
+        accepted.append(
+            await service.send_input(
+                response.session_id,
+                SessionInputRequest(content="second task"),
+            )
+        )
+
+    async def initialize_agent() -> None:
+        return None
+
+    monkeypatch.setattr(
+        record.runner._lifecycle_owner,
+        "_initialize",
+        initialize_lifecycle,
+    )
+    monkeypatch.setattr(record.runner, "_ensure_agent_initialized", initialize_agent)
+    monkeypatch.setattr(
+        record.runner._task_execution,
+        "execute_task",
+        lambda *_args, **_kwargs: {
+            "completion_summary": {"completed": True, "reason": "completed"},
+            "reward_metrics": {},
+            "logging_dir": None,
+        },
+    )
+
+    await record.runner._run()
+
+    queued_turn = next(
+        turn
+        for turn in record.turns_by_id.values()
+        if turn.turn_id != initial_turn.turn_id
+    )
+    assert accepted[0].disposition == "queued"
+    assert initial_turn.terminal_outcome == "completed"
+    assert queued_turn.terminal_outcome == "cancelled"
+    assert record.terminal_event_envelopes[-1]["payload"]["reason"] == "superseded"
+    assert record.product_session.read_model.status == "completed"
+    assert record.status is SessionStatus.COMPLETED
+    assert record.active_turn_id is None
+    assert not record.queued_turn_ids
+    assert record.runner._input_queue.empty()
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_incomplete_execution_fails_product_session(
+    monkeypatch, tmp_path
+) -> None:
+    service, response, record = await _create(
+        monkeypatch,
+        tmp_path,
+        metadata={
+            "cli_session_kind": "oneshot",
+            "non_interactive_cli_session": True,
+        },
+    )
+    turn = next(iter(record.turns_by_id.values()))
+
+    async def initialize_agent() -> None:
+        return None
+
+    monkeypatch.setattr(record.runner, "_ensure_agent_initialized", initialize_agent)
+    monkeypatch.setattr(
+        record.runner._task_execution,
+        "execute_task",
+        lambda *_args, **_kwargs: {
+            "completion_summary": {
+                "completed": False,
+                "reason": "provider_error",
+            },
+            "reward_metrics": {},
+            "logging_dir": None,
+        },
+    )
+
+    await record.runner._run()
+
+    assert record.product_session.read_model.status == "failed"
+    assert record.status is SessionStatus.FAILED
+    assert turn.state == "failed"
+    assert turn.terminal_outcome == "failed"
+    assert record.product_session.read_model.terminal_outcome == {
+        "outcome": "failed",
+        "error": "runtime_failure",
+        "detail": "provider_error",
+    }
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_failure_recovery_preserves_terminal_product_session(
+    monkeypatch, tmp_path
+) -> None:
+    service, _, record = await _create(
+        monkeypatch,
+        tmp_path,
+        metadata={
+            "cli_session_kind": "oneshot",
+            "non_interactive_cli_session": True,
+        },
+    )
+    turn = next(iter(record.turns_by_id.values()))
+
+    async def initialize_agent() -> None:
+        return None
+
+    real_finish_turn = record.runner._task_execution.finish_turn
+    finish_outcomes = []
+
+    async def fail_first_finish(turn_record, outcome, **kwargs):
+        finish_outcomes.append(outcome)
+        if len(finish_outcomes) == 1:
+            raise OSError("terminal projection unavailable")
+        return await real_finish_turn(turn_record, outcome, **kwargs)
+
+    monkeypatch.setattr(record.runner, "_ensure_agent_initialized", initialize_agent)
+    monkeypatch.setattr(
+        record.runner._task_execution,
+        "execute_task",
+        lambda *_args, **_kwargs: {
+            "completion_summary": {
+                "completed": False,
+                "reason": "provider_error",
+            },
+            "reward_metrics": {},
+            "logging_dir": None,
+        },
+    )
+    monkeypatch.setattr(
+        record.runner._task_execution,
+        "finish_turn",
+        fail_first_finish,
+    )
+
+    await record.runner._run()
+
+    assert finish_outcomes == ["failed", "failed"]
+    assert record.product_session.read_model.status == "failed"
+    assert record.product_session.read_model.terminal_outcome["detail"] == "provider_error"
+    assert record.status is SessionStatus.FAILED
+    assert turn.terminal_outcome == "failed"
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_terminalization_closes_admission_before_async_resolution(
+    monkeypatch, tmp_path
+) -> None:
+    service, response, record = await _create(monkeypatch, tmp_path)
+    turn = next(iter(record.turns_by_id.values()))
+    finish_started = asyncio.Event()
+    finish_release = asyncio.Event()
+    real_finish_turn = record.runner._task_execution.finish_turn
+
+    async def blocking_finish(turn_record, outcome, **kwargs):
+        finish_started.set()
+        await finish_release.wait()
+        return await real_finish_turn(turn_record, outcome, **kwargs)
+
+    monkeypatch.setattr(
+        record.runner._task_execution,
+        "finish_turn",
+        blocking_finish,
+    )
+    terminalizing = asyncio.create_task(
+        record.runner._lifecycle_owner.terminalize_admitted_turns(
+            outcome="failed",
+            reason="worker_crash",
+            error_code="worker_crash",
+        )
+    )
+    await finish_started.wait()
+
+    with pytest.raises(HTTPException) as rejected:
+        await service.send_input(
+            response.session_id,
+            SessionInputRequest(content="racing task"),
+        )
+
+    assert rejected.value.status_code == 409
+    assert rejected.value.detail == "session is closed"
+    finish_release.set()
+    await terminalizing
+
+    assert set(record.turns_by_id) == {turn.turn_id}
+    assert turn.terminal_outcome == "failed"
+    assert record.active_turn_id is None
+    assert not record.queued_turn_ids
+    assert record.runner._input_queue.empty()
+    await _stop(record)
 @pytest.mark.asyncio
 async def test_session_summary_projects_effective_model(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(monkeypatch, tmp_path)
@@ -112,7 +634,7 @@ async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_p
     with pytest.raises(OSError, match="sink unavailable"): await service.send_input(response.session_id, SessionInputRequest(content="next"))
     assert record.runner._input_queue.empty(); assert [event.kind for event in record.product_session.events] == ["session.started"]
     record.product_session._sink = sink; record.runner._rehydrate_pending_permissions("permission_request", {"request_id": "perm-1", "category": "shell"}); record.runner._permission_queue = _Failing(); persisted = []
-    monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_runner.upsert_permission_rule", lambda *_args, **_kwargs: persisted.append(True) or True); request = SessionCommandRequest(command="permission_decision", payload={"request_id": "perm-1", "decision": "always", "rule": "*.sh"})
+    monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_control.upsert_permission_rule", lambda *_args, **_kwargs: persisted.append(True) or True); request = SessionCommandRequest(command="permission_decision", payload={"request_id": "perm-1", "decision": "always", "rule": "*.sh"})
     with pytest.raises(HTTPException) as error: await service.execute_command(response.session_id, request)
     assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["approval.resolved", "session.failed"]; assert record.status.value == "failed"
     assert persisted == [True] and record.metadata["permission_rules"][0]["rule"] == "*.sh"
@@ -163,7 +685,7 @@ async def test_pause_append_failure_restores_running_gate(monkeypatch, tmp_path)
 @pytest.mark.asyncio
 async def test_setup_failure_terminalizes_registered_session(monkeypatch, tmp_path) -> None:
     def fail(_runner) -> None: raise RuntimeError("runner setup exploded")  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(RUNNER + "authorize_start", fail); monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "setup-failure"); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events")); service = SessionService()
+    monkeypatch.setattr(RUNNER + "authorize_start", fail); monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "setup-failure"); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records")); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events")); service = SessionService()
     with pytest.raises(RuntimeError, match="runner setup exploded"): await service.create_session(SessionCreateRequest(config_path=CONFIG, task="task"))
     record = await service.ensure_session("setup-failure"); assert (record.status.value, record.product_session.events[-1].kind) == ("failed", "session.failed"); assert record.product_session.read_model.terminal_outcome["error"] == "session_setup_failed"; assert record.runner._stop_event.is_set() and record.dispatcher_task.done()
 @pytest.mark.asyncio
@@ -253,6 +775,38 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
     assert raced_upload.attachments and await service.registry.get(response.session_id) is None and manifest_path.is_file() and record.dispatcher_task.done()
     with pytest.raises(HTTPException) as missing: await service.ensure_session(response.session_id)
     assert missing.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_image_attachment_becomes_first_class_model_input(
+    monkeypatch, tmp_path
+) -> None:
+    workspace = tmp_path / "workspace"
+    service, response, record = await _create(
+        monkeypatch, tmp_path, workspace=str(workspace)
+    )
+    upload = _Upload()
+    upload.filename = "pixel.png"
+    upload.content_type = "image/png"
+    upload.data = b"\x89PNG\r\n\x1a\nmodel-input"
+    attachment_id = (
+        await service.upload_attachments(response.session_id, [upload])
+    ).attachments[0].id
+
+    helper = record.runner._format_attachment_helper([attachment_id])
+    artifact = record.product_artifacts[attachment_id]
+    assert "read with read_file" in helper
+    assert record.runner._active_input_media == [
+        {
+            "type": "media",
+            "kind": "image",
+            "uri": f"attachment://{artifact.digest}",
+            "mime": "image/png",
+        }
+    ]
+
+    await service.stop_session(response.session_id)
+    await _stop(record)
 @pytest.mark.asyncio
 async def test_attachment_size_limit_is_rejected_before_durable_input(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(monkeypatch, tmp_path, workspace=str(tmp_path / "workspace"))
@@ -291,6 +845,6 @@ async def test_completed_dispatch_replay_is_ordered_and_finite(monkeypatch, tmp_
     service, response, record = await _create(monkeypatch, tmp_path)
     for order in (1, 2): await record.runner.publish_event_async(EventType.WARNING, {"order": order})
     assert record.dispatcher_task; record.runner.transition_product_session("complete"); await service.stop_session(response.session_id); assert record.dispatcher_task.done()
-    replay = service.event_stream(response.session_id, replay=True); assert [await anext(replay), await anext(replay)] == list(record.event_log)
+    replay = service.event_stream(response.session_id, replay=True); replayed = [event async for event in replay]; assert replayed == list(record.event_log); assert [event.type for event in replayed] == [EventType.WARNING, EventType.WARNING, EventType.TURN_COMPLETED]
     nonreplay = service.event_stream(response.session_id); snapshot = await asyncio.wait_for(anext(nonreplay), 0.1); assert snapshot.type is EventType.TOOL_RESULT and "todo" in snapshot.payload
     outcomes = await asyncio.wait_for(asyncio.gather(anext(replay), anext(nonreplay), return_exceptions=True), 0.1); assert len(outcomes) == 2 and all(isinstance(item, StopAsyncIteration) for item in outcomes)

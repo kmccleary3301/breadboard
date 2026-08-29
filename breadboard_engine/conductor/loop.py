@@ -5,12 +5,11 @@ import json
 import os
 import time
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from ..core.core import ToolDefinition
-from ..error_handling.error_handler import ErrorHandler
+from ..error_handling.error_handler import ErrorHandler, public_error_projection
 from ..messaging.markdown_logger import MarkdownLogger
-from ..provider.contracts import ProviderResult, ProviderRuntimeError
 from ..state.completion_detector import CompletionDetector
 from ..state.session_state import SessionState
 from ..todo.store import TODO_OPEN_STATUSES
@@ -706,10 +705,18 @@ def run_main_loop(
                 except Exception:
                     pass
             except RuntimeError as exc:
+                public_error = public_error_projection(
+                    exc,
+                    default_code="provider_runtime_error",
+                )
                 try:
                     session_state.record_lifecycle_event(
                         "model_call_finished",
-                        {"turn": turn_index, "error": str(exc)},
+                        {
+                            "turn": turn_index,
+                            "error": public_error["error"],
+                            "error_type": public_error["error_type"],
+                        },
                         turn=turn_index,
                     )
                 except Exception:
@@ -906,10 +913,18 @@ def run_main_loop(
                             reason="loop_post_receipt_terminal_state",
                         )
                 except Exception as exc:
+                    public_error = public_error_projection(
+                        exc,
+                        default_code="terminal_state_error",
+                    )
                     try:
                         session_state.record_guardrail_event(
                             "implementation_post_receipt_terminal_state_error",
-                            {"error": str(exc), "turn": turn_index},
+                            {
+                                "error": public_error["error"],
+                                "error_type": public_error["error_type"],
+                                "turn": turn_index,
+                            },
                         )
                     except Exception:
                         pass
@@ -1016,8 +1031,8 @@ def run_main_loop(
                     e, session_state.messages, session_state.transcript
                 )
                 warning_text = (
-                    f"[provider-error] {result.get('error_type', type(e).__name__)}: "
-                    f"{result.get('error', str(e))}"
+                    f"[provider-error] {result.get('error_type') or 'runtime'}: "
+                    f"{result.get('error') or 'provider_runtime_error'}"
                 )
                 try:
                     markdown_logger.log_system_message(warning_text)

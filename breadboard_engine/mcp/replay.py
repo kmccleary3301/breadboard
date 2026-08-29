@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
+
+from ..security import WorkspaceFilesystem, WorkspacePathError
+
+
+_TAPE_LOCK = threading.Lock()
 
 
 @dataclass
@@ -23,10 +29,25 @@ class MCPReplayTape:
 
 
 def load_mcp_replay_tape(path: Path) -> MCPReplayTape:
-    if not path.exists():
-        return MCPReplayTape(entries=[])
+    target = Path(path).expanduser().absolute()
+    try:
+        filesystem = WorkspaceFilesystem.open_anchored_root(
+            target.parent,
+            create=False,
+        )
+    except WorkspacePathError as exc:
+        if exc.code == "workspace_root_unavailable":
+            return MCPReplayTape(entries=[])
+        raise
+    try:
+        try:
+            raw = filesystem.read_text(target.name, encoding="utf-8", errors="replace")
+        except FileNotFoundError:
+            return MCPReplayTape(entries=[])
+    finally:
+        filesystem.close()
     entries: List[Dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in raw.splitlines():
         line = line.strip()
         if not line:
             continue
@@ -40,7 +61,20 @@ def load_mcp_replay_tape(path: Path) -> MCPReplayTape:
 
 
 def append_mcp_replay_entry(path: Path, payload: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
-
+    target = Path(path).expanduser().absolute()
+    filesystem = WorkspaceFilesystem.open_anchored_root(
+        target.parent,
+        create=True,
+    )
+    try:
+        with _TAPE_LOCK:
+            try:
+                existing = filesystem.read_bytes(target.name)
+            except FileNotFoundError:
+                existing = b""
+            content = existing + (
+                json.dumps(payload, ensure_ascii=False) + "\n"
+            ).encode("utf-8")
+            filesystem.write_bytes(target.name, content)
+    finally:
+        filesystem.close()

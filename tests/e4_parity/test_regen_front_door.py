@@ -97,20 +97,36 @@ def test_e4_battery_workflow_runs_complete_pytest_and_fixed_point_gates() -> Non
     assert "continue-on-error:" not in workflow_text
 
 
-def test_product_spine_provisions_workspace_evidence() -> None:
+def test_product_spine_parallel_lanes_provision_workspace_evidence() -> None:
     workflow_path = ROOT / ".github/workflows/ci.yml"
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
-    job = workflow["jobs"]["product-spine"]
-    commands = {
+    jobs = workflow["jobs"]
+    aggregate = jobs["product-spine"]
+    lane_ids = {"product-spine-checks", "product-compilation"}
+
+    assert set(aggregate["needs"]) == lane_ids
+    assert aggregate["name"] == "product-spine"
+    for lane_id in lane_ids:
+        lane = jobs[lane_id]
+        commands = {
+            step["name"]: step["run"]
+            for step in lane["steps"]
+            if isinstance(step, dict) and "name" in step and "run" in step
+        }
+        assert lane["env"]["BB_WORKSPACE_ROOT"] == "${{ github.workspace }}/.."
+        assert commands["Provision immutable E4 inputs"] == (
+            "python scripts/e4_parity/provision_immutable_inputs.py "
+            '--repo-root "$GITHUB_WORKSPACE" '
+            '--workspace-root "$GITHUB_WORKSPACE/.."'
+        )
+
+    compilation_commands = {
         step["name"]: step["run"]
-        for step in job["steps"]
+        for step in jobs["product-compilation"]["steps"]
         if isinstance(step, dict) and "name" in step and "run" in step
     }
-
-    assert job["env"]["BB_WORKSPACE_ROOT"] == "${{ github.workspace }}/.."
-    assert commands["Provision immutable E4 inputs"] == (
-        "python scripts/e4_parity/provision_immutable_inputs.py "
-        '--repo-root "$GITHUB_WORKSPACE" --workspace-root "$GITHUB_WORKSPACE/.."'
+    assert compilation_commands["Verify compilation"] == (
+        "python -m pytest -q tests/compilation"
     )
 
 

@@ -17,7 +17,7 @@ KERNEL_SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
 SURFACES = ("bbh", "openapi", "python_sdk", "typescript_sdk", "tui", "docs")
 FROZEN_SHA256 = "sha256:72817b7b1bc5e5d10f752acb48157491aaeb3eb268337461a4fd6f0bd10cbfe0"
 AXIS_MANIFEST_SHA256 = "sha256:dff057633730b1bbb28ebd4fceff3060227f5532b6caabb0f3ed2a325d437db0"
-RECORD_ROLE_PROJECTION_SHA256 = "sha256:f169f9804766f9a13fe7599011ca14bee62d092983d672b8a30b47fa339b8994"
+RECORD_ROLE_PROJECTION_SHA256 = "sha256:f25e6b92c7f2ac57bc9599989f928a763bcb7f6d61c8ecb983cfdf848587fa94"
 class ContractValidationError(ValueError):
     """A candidate public contract violates its frozen contract."""
 def load_json(path: Path) -> dict[str, Any]:
@@ -179,6 +179,16 @@ def validate_current_catalogs(public_dir: Path = PUBLIC_DIR, internal_dir: Path 
         counts = {family: sum(row["operation_id"].startswith(f"{family}.") for row in rows) for family in expected}
         if counts != expected:
             raise ContractValidationError(f"{label} operation family mismatch: expected={expected}, actual={counts}")
+
+_DUAL_NAMESPACE_SCHEMA_IDENTITIES = frozenset(
+    {
+        # Public v2 is an immutable attempt record. Kernel v2 is the production
+        # request/stream/result aggregate; namespace-qualified $ids disambiguate them.
+        "bb.provider_exchange.v2",
+    }
+)
+
+
 def _schema_index(schema_dir: Path, kernel_schema_dir: Path) -> dict[str, Path]:
     by_id: dict[str, Path] = {}
     by_uri: dict[str, Path] = {}
@@ -196,7 +206,11 @@ def _schema_index(schema_dir: Path, kernel_schema_dir: Path) -> dict[str, Path]:
                 raise ContractValidationError(f"{path}: $id must equal {expected_uri}")
             schema_id = path.name.removesuffix(".schema.json")
             if schema_id in by_id:
-                raise ContractValidationError(f"{path}: duplicate schema identity also declared by {by_id[schema_id]}")
+                if schema_id not in _DUAL_NAMESPACE_SCHEMA_IDENTITIES:
+                    raise ContractValidationError(
+                        f"{path}: duplicate schema identity also declared by {by_id[schema_id]}"
+                    )
+                continue
             by_id[schema_id] = path
     return by_id
 def validate_record_surface(

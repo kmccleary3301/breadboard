@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import secrets
 import time
 import urllib.error
@@ -14,6 +15,8 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
 from .catalog import OAuthFlowSpec
+
+DEFAULT_OAUTH_HTTP_TIMEOUT_SECONDS = 30
 
 
 class OAuthTransport(Protocol):
@@ -29,7 +32,10 @@ def default_oauth_transport(
 ) -> tuple[int, Mapping[str, str], bytes]:
     request = urllib.request.Request(url, data=body, headers=dict(headers), method=method)
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(
+            request,
+            timeout=DEFAULT_OAUTH_HTTP_TIMEOUT_SECONDS,
+        ) as response:
             return int(response.status), dict(response.headers.items()), response.read()
     except urllib.error.HTTPError as error:
         return int(error.code), dict(error.headers.items()), error.read()
@@ -56,6 +62,54 @@ def _json_body(status: int, body: bytes) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise OAuthFlowError("oauth_invalid_response", "OAuth endpoint returned a non-object response", status=status)
     return value
+
+
+def _refresh_error_code(body: bytes) -> str | None:
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    value = payload.get("error")
+    if isinstance(value, Mapping):
+        value = value.get("code") or value.get("type")
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if not normalized or len(normalized) > 64:
+        return None
+    if any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_.-" for character in normalized):
+        return None
+    return normalized
+
+
+def _refresh_failure_class(status: int, error_code: str | None) -> str:
+    if error_code in {
+        "invalid_client",
+        "invalid_grant",
+        "invalid_token",
+        "revoked_token",
+        "unauthorized_client",
+    }:
+        return "definitive"
+    if error_code in {
+        "rate_limit",
+        "rate_limited",
+        "server_error",
+        "temporarily_unavailable",
+    }:
+        return "transient"
+    return "definitive" if int(status) in {400, 401, 403} else "transient"
+
+
+def _header_value(headers: Mapping[str, str], name: str) -> str | None:
+    expected = name.lower()
+    for key, value in headers.items():
+        if str(key).lower() == expected and value is not None:
+            rendered = str(value).strip()
+            return rendered[:128] if rendered else None
+    return None
 
 
 def _pkce() -> tuple[str, str]:
@@ -109,8 +163,24 @@ class OAuthFlowAdapter:
                 raise OAuthFlowError("oauth_device_start_failed", "Device authorization initiation failed", status=status)
             data = _json_body(status, raw)
             device_id, user_code = data.get("device_auth_id"), data.get("user_code")
-            if not isinstance(device_id, str) or not isinstance(user_code, str):
-                raise OAuthFlowError("oauth_invalid_response", "Device response missing device_auth_id or user_code", status=status)
+            expires = data.get("expires_in", 600)
+            try:
+                expires_seconds = float(expires)
+            except (TypeError, ValueError):
+                expires_seconds = 0.0
+            if (
+                not isinstance(device_id, str)
+                or not isinstance(user_code, str)
+                or isinstance(expires, bool)
+                or not math.isfinite(expires_seconds)
+                or expires_seconds <= 0
+                or expires_seconds > 31_536_000
+            ):
+                raise OAuthFlowError(
+                    "oauth_invalid_response",
+                    "Device response has invalid identity or expiry fields",
+                    status=status,
+                )
             internal = {
                 "flow_id": self.spec.flow_id,
                 "flow_kind": "device",
@@ -118,7 +188,7 @@ class OAuthFlowAdapter:
                 "device_auth_id": device_id,
                 "user_code": user_code,
                 "interval": data.get("interval", 5),
-                "expires_in": data.get("expires_in", 600),
+                "expires_in": expires_seconds,
             }
             return OAuthLoginStart(
                 public={"flow_id": self.spec.flow_id, "flow_kind": "device", "authorization_url": self.spec.device_auth_url, "user_code": user_code, "instructions": f"Enter code: {user_code}"},
@@ -207,34 +277,103 @@ class OAuthFlowAdapter:
         return self._token_material(_json_body(status, raw))
 
     @staticmethod
-    def _token_material(data: Mapping[str, Any], *, require_refresh: bool = True) -> dict[str, Any]:
-        access, refresh, expires = data.get("access_token"), data.get("refresh_token"), data.get("expires_in")
-        if not isinstance(access, str) or not isinstance(expires, (int, float)) or (require_refresh and not isinstance(refresh, str)):
-            raise OAuthFlowError("oauth_invalid_response", "Token response missing access_token, refresh_token, or expires_in")
-        result: dict[str, Any] = {"access_token": access, "token_type": data.get("token_type", "Bearer"), "expires_at_ms": int(time.time() * 1000 + float(expires) * 1000)}
-        if isinstance(refresh, str) and refresh:
+    def _token_material(
+        data: Mapping[str, Any],
+        *,
+        require_refresh: bool = True,
+    ) -> dict[str, Any]:
+        access = data.get("access_token")
+        refresh = data.get("refresh_token")
+        expires = data.get("expires_in")
+        try:
+            expires_seconds = float(expires)
+        except (TypeError, ValueError):
+            expires_seconds = float("nan")
+        malformed = (
+            not isinstance(access, str)
+            or not access
+            or isinstance(expires, bool)
+            or not math.isfinite(expires_seconds)
+            or expires_seconds <= 0
+            or expires_seconds > 31_536_000
+            or (require_refresh and (not isinstance(refresh, str) or not refresh))
+            or (refresh is not None and not isinstance(refresh, str))
+        )
+        if malformed:
+            raise OAuthFlowError(
+                "oauth_invalid_response",
+                "Token response has invalid access_token, refresh_token, or expires_in",
+            )
+        result: dict[str, Any] = {
+            "access_token": access,
+            "token_type": data.get("token_type", "Bearer"),
+            "expires_at_ms": int(
+                time.time() * 1000 + expires_seconds * 1000
+            ),
+        }
+        if refresh:
             result["refresh_token"] = refresh
         account_id = _jwt_claim(access, ("https://api.openai.com/auth", "chatgpt_account_id"))
         email = _jwt_claim(access, ("https://api.openai.com/profile", "email"))
-        if account_id: result["provider_account_id"] = account_id
-        if email: result["email"] = email
+        if account_id:
+            result["provider_account_id"] = account_id
+        if email:
+            result["email"] = email
         for key in ("projectId", "project_id"):
-            if isinstance(data.get(key), str): result["project_id"] = data[key]
+            if isinstance(data.get(key), str):
+                result["project_id"] = data[key]
         return result
 
     def refresh(self, material: Mapping[str, Any]) -> dict[str, Any]:
         refresh_token = material.get("refresh_token")
         if not isinstance(refresh_token, str) or not refresh_token:
-            raise OAuthFlowError("oauth_refresh_unavailable", "Stored OAuth credential has no refresh token")
+            raise OAuthFlowError(
+                "oauth_refresh_unavailable",
+                "Stored OAuth credential has no refresh token",
+                failure_class="definitive",
+            )
         values = {"grant_type": "refresh_token", "client_id": self._require_client_id(), "refresh_token": refresh_token}
         headers = {"Content-Type": "application/json"} if self.spec.flow_id == "anthropic" else {"Content-Type": "application/x-www-form-urlencoded"}
         if self.spec.flow_id == "anthropic":
             headers.update({"anthropic-beta": "oauth-2025-04-20", "User-Agent": "anthropic-sdk-typescript/0.94.0 userOAuthProvider"})
         body = json.dumps(values).encode() if self.spec.flow_id == "anthropic" else urllib.parse.urlencode(values).encode()
-        status, _response_headers, raw = self.transport(self.spec.token_url, method="POST", headers=headers, body=body)
+        try:
+            status, response_headers, raw = self.transport(
+                self.spec.token_url,
+                method="POST",
+                headers=headers,
+                body=body,
+            )
+        except Exception:
+            raise OAuthFlowError(
+                "oauth_refresh_transport_failed",
+                "OAuth token refresh transport failed",
+                failure_class="transient",
+            ) from None
         if status < 200 or status >= 300:
-            raise OAuthFlowError("oauth_refresh_failed", "OAuth token refresh failed", status=status)
-        result = self._token_material(_json_body(status, raw), require_refresh=False)
+            error_code = _refresh_error_code(raw)
+            details: dict[str, Any] = {
+                "status": int(status),
+                "failure_class": _refresh_failure_class(status, error_code),
+            }
+            if error_code:
+                details["oauth_error"] = error_code
+            retry_after = _header_value(response_headers, "retry-after")
+            if retry_after:
+                details["retry_after"] = retry_after
+            raise OAuthFlowError(
+                "oauth_refresh_failed",
+                "OAuth token refresh failed",
+                **details,
+            )
+        try:
+            result = self._token_material(
+                _json_body(status, raw),
+                require_refresh=False,
+            )
+        except OAuthFlowError as error:
+            error.details.setdefault("failure_class", "transient")
+            raise
         if not result.get("refresh_token"):
             result["refresh_token"] = refresh_token
         return result

@@ -5,7 +5,10 @@ import json
 import threading
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from ..security import build_child_environment, build_restricted_process_command
 
 try:
     from mcp.client.session import ClientSession
@@ -36,7 +39,14 @@ class MCPManager:
       - Routes tool calls to the correct server session
     """
 
-    def __init__(self, servers: List[Dict[str, Any]] | None = None, *, startup_timeout_s: float = 20.0) -> None:
+    def __init__(
+        self,
+        servers: List[Dict[str, Any]] | None = None,
+        *,
+        workspace: str,
+        protected_paths: Sequence[str] = (),
+        startup_timeout_s: float = 20.0,
+    ) -> None:
         if _MCP_IMPORT_ERROR is not None or stdio_client is None:
             raise RuntimeError(
                 "MCP support requires the optional 'mcp' Python package. "
@@ -48,20 +58,54 @@ class MCPManager:
         self._tool_infos: List[MCPToolInfo] = []
         self._sessions: Dict[str, ClientSession] = {}
         self._stack: AsyncExitStack | None = None
+        self._workspace = Path(workspace).expanduser().absolute()
+        self._protected_paths = tuple(str(path) for path in protected_paths)
 
         self._loop = asyncio.new_event_loop()
         self._loop_ready = threading.Event()
-        self._thread = threading.Thread(target=self._run_loop, name="mcp-manager-loop", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run_loop, name="mcp-manager-loop", daemon=True
+        )
         self._thread.start()
         self._loop_ready.wait(timeout=5.0)
 
         fut = asyncio.run_coroutine_threadsafe(self._async_start(), self._loop)
-        fut.result(timeout=startup_timeout_s)
+        try:
+            fut.result(timeout=startup_timeout_s)
+        except BaseException:
+            self.close()
+            raise
 
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self._loop)
         self._loop_ready.set()
         self._loop.run_forever()
+
+    def _stdio_parameters(
+        self,
+        command: str,
+        args: Sequence[str],
+        env: Dict[str, Any] | None,
+        cwd: str | None,
+    ) -> Any:
+        child_environment = build_child_environment(
+            overrides=env,
+            allowed_override_keys=() if env is None else env.keys(),
+        )
+        isolated_command, child_environment = build_restricted_process_command(
+            (command, *args),
+            workspace=self._workspace,
+            working_directory=cwd or self._workspace,
+            shell=False,
+            environment=child_environment,
+            protected_paths=self._protected_paths,
+        )
+        return StdioServerParameters(
+            command=isolated_command[0],
+            args=list(isolated_command[1:]),
+            env=child_environment,
+            cwd=str(cwd or self._workspace),
+        )
 
     async def _async_start(self) -> None:
         self._stack = AsyncExitStack()
@@ -81,19 +125,29 @@ class MCPManager:
             if not isinstance(command, str) or not command.strip():
                 continue
             args_raw = server_cfg.get("args") or server_cfg.get("arguments") or []
-            args = [str(a) for a in (args_raw or []) if isinstance(a, (str, int, float))]
-            env = server_cfg.get("env") if isinstance(server_cfg.get("env"), dict) else None
+            args = [
+                str(a) for a in (args_raw or []) if isinstance(a, (str, int, float))
+            ]
+            env = (
+                server_cfg.get("env")
+                if isinstance(server_cfg.get("env"), dict)
+                else None
+            )
             cwd = server_cfg.get("cwd") if server_cfg.get("cwd") is not None else None
 
-            params = StdioServerParameters(
-                command=command.strip(),
-                args=args,
-                env={str(k): str(v) for k, v in (env or {}).items()} if env else None,
-                cwd=cwd,
+            params = self._stdio_parameters(
+                command.strip(),
+                args,
+                env,
+                str(cwd) if cwd is not None else None,
             )
 
-            read_stream, write_stream = await self._stack.enter_async_context(stdio_client(params))
-            session = await self._stack.enter_async_context(ClientSession(read_stream, write_stream))
+            read_stream, write_stream = await self._stack.enter_async_context(
+                stdio_client(params)
+            )
+            session = await self._stack.enter_async_context(
+                ClientSession(read_stream, write_stream)
+            )
             await session.initialize()
             tools_result = await session.list_tools()
             self._sessions[server_name] = session
@@ -109,7 +163,9 @@ class MCPManager:
                     schema = {}
                 info = MCPToolInfo(
                     name=internal,
-                    description=str(description) if isinstance(description, str) else None,
+                    description=str(description)
+                    if isinstance(description, str)
+                    else None,
                     schema=dict(schema),
                     server=server_name,
                 )
@@ -135,7 +191,9 @@ class MCPManager:
         if session is None:
             raise RuntimeError(f"MCP server '{server_name}' not initialized.")
 
-        result = await session.call_tool(tool_name, arguments=arguments if isinstance(arguments, dict) else {})
+        result = await session.call_tool(
+            tool_name, arguments=arguments if isinstance(arguments, dict) else {}
+        )
         structured = getattr(result, "structuredContent", None)
         is_error = bool(getattr(result, "isError", False))
         if isinstance(structured, dict) and structured:
@@ -170,7 +228,9 @@ class MCPManager:
         return {"ok": True}
 
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
-        fut = asyncio.run_coroutine_threadsafe(self._async_call_tool(name, dict(arguments or {})), self._loop)
+        fut = asyncio.run_coroutine_threadsafe(
+            self._async_call_tool(name, dict(arguments or {})), self._loop
+        )
         return fut.result(timeout=120.0)
 
     async def _async_close(self) -> None:
@@ -181,23 +241,27 @@ class MCPManager:
                 self._stack = None
 
     def close(self) -> None:
+        loop = getattr(self, "_loop", None)
+        if loop is None:
+            return
         try:
-            fut = asyncio.run_coroutine_threadsafe(self._async_close(), self._loop)
+            fut = asyncio.run_coroutine_threadsafe(self._async_close(), loop)
             fut.result(timeout=10.0)
         except Exception:
             pass
         try:
-            self._loop.call_soon_threadsafe(self._loop.stop)
+            loop.call_soon_threadsafe(loop.stop)
         except Exception:
             pass
-        try:
-            self._thread.join(timeout=2.0)
-        except Exception:
-            pass
+        thread = getattr(self, "_thread", None)
+        if thread is not None:
+            try:
+                thread.join(timeout=2.0)
+            except Exception:
+                pass
 
     def __del__(self) -> None:  # pragma: no cover - best-effort
         try:
             self.close()
         except Exception:
             pass
-

@@ -90,8 +90,9 @@ class JsonlEventSink:
         finally: os.close(descriptor)
 class NullEventSink:
     def append(self, event: object) -> None: return None
-_EVENT_KINDS = frozenset({"session.started", "input.accepted", "approval.requested", "approval.resolved", "session.reconfigured", "session.paused", "session.resumed", "session.completed", "session.failed", "session.canceled"})
-_ALLOWED = MappingProxyType({"input.accepted": ("running",), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",), "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"), "session.resumed": ("paused",), "session.completed": ("running",), "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused")})
+_OBSERVATION_EVENT_KINDS = frozenset({"assistant_message", "tool_call", "tool_result"})
+_EVENT_KINDS = frozenset({"session.started", "input.accepted", "approval.requested", "approval.resolved", "session.reconfigured", "session.paused", "session.resumed", "session.completed", "session.failed", "session.canceled"}) | _OBSERVATION_EVENT_KINDS
+_ALLOWED = MappingProxyType({"input.accepted": ("running",), "assistant_message": ("running",), "tool_call": ("running",), "tool_result": ("running",), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",), "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"), "session.resumed": ("paused",), "session.completed": ("running",), "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused")})
 _STATUSES, _DECISIONS = frozenset({"running", "awaiting_approval", "paused", "completed", "failed", "canceled"}), frozenset({"allow", "deny", "once", "always", "reject"})
 _TERMINAL = {"session.completed": ("completed", ("summary",)), "session.failed": ("failed", ("error", "detail")), "session.canceled": ("canceled", ("reason",))}
 def _string(value: Any, name: str, populated: bool = True) -> str:
@@ -102,6 +103,15 @@ def _sha256(value: Any, name: str) -> str:
     return value
 def _validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
     if kind == "session.started": _sha256(payload.get("effective_lock_hash"), "effective_lock_hash"); _sha256(payload.get("task_hash"), "task_hash")
+    elif kind == "assistant_message":
+        metadata = payload.get("metadata")
+        if set(payload) != {"metadata"} or not isinstance(metadata, Mapping) or set(metadata) != {"has_content"} or type(metadata.get("has_content")) is not bool: raise ValueError("assistant_message payload must contain only boolean metadata.has_content")
+    elif kind == "tool_call":
+        if set(payload) != {"tool"}: raise ValueError("tool_call payload must contain only tool")
+        _string(payload.get("tool"), "tool")
+    elif kind == "tool_result":
+        if set(payload) != {"tool", "error"} or type(payload.get("error")) is not bool: raise ValueError("tool_result payload must contain tool and one boolean error field")
+        _string(payload.get("tool"), "tool")
     elif kind == "input.accepted":
         _sha256(payload.get("content_hash"), "content_hash"); attachments = payload.get("attachments")
         if not isinstance(attachments, (list, tuple)): raise ValueError("attachments must be an array")
@@ -176,7 +186,7 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
         elif event.kind == "session.resumed": status = "running"
         elif event.kind.startswith("session."): pending, status, outcome = None, event.kind.removeprefix("session."), event.payload
     return SessionView(start.session_id, status, lock_hash, start.payload["task_hash"], len(rows), pending, outcome)
-_SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
+_SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
 def _graph_hash(lock: EffectiveHarnessLock) -> str:
     graph_hash = lock.as_dict().get("graph_hash")
     if not isinstance(graph_hash, str) or not graph_hash.startswith("sha256:"): raise ValueError("EffectiveHarnessLock has no canonical graph_hash")
@@ -185,7 +195,7 @@ def _hash(value: str) -> str: return "sha256:" + hashlib.sha256(value.encode()).
 def _check(condition: bool, error: type[Exception], message: str) -> None:
     if not condition: raise error(message)
 class Session:
-    """Single lifecycle owner; conductor/provider/tool details stay behind adapters."""
+    """Lifecycle owner; adapters may add only validated, minimal runtime observations."""
     def __init__(self, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> None:
         self._transition_lock = RLock(); self._appending = False; self._events = list(events); self._clock = clock if clock is not None else SystemClock(); self._sink = sink if sink is not None else NullEventSink(); self._view = rebuild(self._events)
     @classmethod
@@ -204,6 +214,9 @@ class Session:
     def read_model(self) -> SessionView:
         with self._transition_lock: return self._view
     def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])
+    def assistant_message(self, content: str) -> SessionView: return self._append("observe assistant", "assistant_message", lambda: (_check(type(content) is str, TypeError, "assistant content must be a string"), {"metadata": {"has_content": bool(content)}})[1])
+    def tool_called(self, tool: str) -> SessionView: return self._append("observe tool call", "tool_call", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), {"tool": tool})[1])
+    def tool_completed(self, tool: str, failed: bool) -> SessionView: return self._append("observe tool result", "tool_result", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), _check(type(failed) is bool, TypeError, "tool completion error flag must be boolean"), {"tool": tool, "error": failed})[2])
     def request_approval(self, request_id: str, operation: str) -> SessionView: return self._append("request approval", "approval.requested", lambda: (_check(bool(request_id and operation), ValueError, "approval request fields must be populated"), {"request_id": request_id, "operation": operation})[1])
     def resolve_approval(self, request_id: str, decision: str) -> SessionView: return self._append("resolve approval", "approval.resolved", lambda: (_check(bool(request_id and decision in _DECISIONS), ValueError, "invalid approval decision"), {"request_id": request_id, "decision": decision})[1])
     def reconfigure(self, lock: EffectiveHarnessLock, reason: str) -> SessionView: return self._append("reconfigure", "session.reconfigured", lambda: (_check(isinstance(lock, EffectiveHarnessLock), TypeError, "reconfigure requires an EffectiveHarnessLock"), {"effective_lock_hash": _graph_hash(lock), "reason": reason})[1])

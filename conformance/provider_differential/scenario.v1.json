@@ -1,0 +1,33 @@
+{
+  "schema_version": "bb.provider_differential_scenario.v1",
+  "request": {
+    "messages": [
+      {"role": "system", "content": "Be concise."},
+      {"role": "user", "content": "Inspect the file."},
+      {"role": "assistant", "content": [], "tool_calls": [{"id": "call-fixture", "name": "shell_command", "arguments_json": "{\"command\":\"cat README.md\",\"command_actions\":[],\"cwd\":\"/bb-fixture/workspace\",\"source\":\"agent\"}", "arguments": {"command": "cat README.md", "command_actions": [], "cwd": "/bb-fixture/workspace", "source": "agent"}}]},
+      {"role": "tool", "content": "{\"ok\":true}", "tool_call_id": "call-fixture", "name": null}
+    ],
+    "tools": [
+      {"name": "shell_command", "description": "Run one shell command", "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "command_actions": {"type": "array"}, "cwd": {"type": "string"}, "source": {"type": "string"}}, "required": ["command", "command_actions", "cwd", "source"], "additionalProperties": false}}
+    ],
+    "max_output_tokens": 1024,
+    "reasoning": {"enabled": true}
+  },
+  "models": {
+    "codex": {"id": "codex/gpt-5-codex", "provider": "openai-codex", "runtime": "codex_app_server", "api": "openai-codex-responses"},
+    "openai": {"id": "openai/gpt-5-mini", "provider": "openai", "runtime": "openai_chat", "api": "openai-responses"},
+    "anthropic": {"id": "anthropic/claude-3-opus", "provider": "anthropic", "runtime": "anthropic_messages", "api": "anthropic-messages"},
+    "openrouter": {"id": "openrouter/deepseek/deepseek-v4-flash-0731", "provider": "openrouter", "runtime": "openrouter_chat", "api": "openrouter"}
+  },
+  "fake": {
+    "text": {"delta": "fixed answer"},
+    "tool": {"call_id": "call-fixture", "name": "shell_command", "arguments_json": "{\"command\":\"cat README.md\",\"command_actions\":[],\"cwd\":\"/bb-fixture/workspace\",\"source\":\"agent\"}", "arguments": {"command": "cat README.md", "command_actions": [], "cwd": "/bb-fixture/workspace", "source": "agent"}, "reasoning_delta": "inspect"},
+    "usage": {"input_tokens": 9, "output_tokens": 18, "total_tokens": 30, "reasoning_tokens": 4, "cached_input_tokens": 3, "cache_read_tokens": 3, "cache_write_tokens": 0},
+    "errors": [
+      {"label": "auth", "error_code": "auth_failure", "error_message": "provider authentication failed", "retryable": false, "http_status": 401},
+      {"label": "rate_limit", "error_code": "rate_limited", "error_message": "provider rate limit", "retryable": true, "http_status": 429},
+      {"label": "malformed", "error_code": "malformed_provider_event", "error_message": "provider stream malformed or truncated", "retryable": false, "http_status": null}
+    ],
+    "cancel": {"before_output": {"reason": "caller_cancelled"}, "after_partial": {"reason": "caller_cancelled", "delta": "partial"}}
+  }
+}

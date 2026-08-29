@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, Header, status
+from fastapi import BackgroundTasks, Depends, FastAPI, Header
 
 from ..events import PROTOCOL_VERSION, replay_configuration_digest
 from ..engine_identity_config import (
@@ -31,6 +31,7 @@ def register_engine_routes(
     p30_session_contract_descriptor,
     engine_provenance,
     process_identity,
+    request_shutdown,
 ) -> None:
     _authority_credential_buffers = authority_credential_buffers
     _p30_session_contract_descriptor = p30_session_contract_descriptor
@@ -204,6 +205,7 @@ def register_engine_routes(
     )
     async def record_engine_graceful_control(
         payload: GracefulControlResultRequest,
+        background_tasks: BackgroundTasks,
         owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
         svc: SessionService = Depends(get_service),
     ) -> DrainControlResponse:
@@ -211,10 +213,13 @@ def register_engine_routes(
             (owner_proof, "owner_identity_mismatch"),
         )
         assert owner_credential is not None
-        return await svc.record_graceful_control(
+        response = await svc.record_graceful_control(
             payload,
             owner_credential=owner_credential,
         )
+        if response.result == "shutdown_started" and request_shutdown is not None:
+            background_tasks.add_task(request_shutdown)
+        return response
 
     @app.post(
         "/v1/engine/control/hard-signal/prepare",

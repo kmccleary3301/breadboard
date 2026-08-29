@@ -1,21 +1,46 @@
 """BreadBoard provider credential broker and SQLite store."""
 
-from .broker import BrokerProblem, ProviderBroker, get_provider_broker, provider_broker
-from .catalog import OAuthFlowSpec, ProviderCatalogEntry, get_provider_catalog_entry, provider_catalog
+from .broker import (
+    AUTH_SOURCE_PRECEDENCE,
+    REMOTE_BROKER_URL_ENV,
+    BrokerProblem,
+    CredentialAuditPersistenceError,
+    CredentialOrigin,
+    ProviderBroker,
+    ProviderBrokerConfigurationError,
+    get_provider_broker,
+    provider_broker,
+)
+from .catalog import (
+    OAuthFlowSpec,
+    ProviderCatalogEntry,
+    get_provider_catalog_entry,
+    get_provider_catalog_entry_for_adapter,
+    product_provider_catalog,
+    provider_catalog,
+    routable_provider_catalog,
+)
 from .oauth import OAuthFlowAdapter, OAuthFlowError
 from .store import SQLiteCredentialStore, default_store_path
-
 __all__ = [
+    "AUTH_SOURCE_PRECEDENCE",
     "BrokerProblem",
+    "CredentialAuditPersistenceError",
+    "CredentialOrigin",
     "OAuthFlowAdapter",
     "OAuthFlowError",
     "OAuthFlowSpec",
     "ProviderBroker",
+    "ProviderBrokerConfigurationError",
+    "REMOTE_BROKER_URL_ENV",
     "ProviderCatalogEntry",
     "SQLiteCredentialStore",
     "default_store_path",
     "get_provider_broker",
     "get_provider_catalog_entry",
+    "get_provider_catalog_entry_for_adapter",
+    "product_provider_catalog",
     "provider_broker",
     "provider_catalog",
+    "routable_provider_catalog",
 ]

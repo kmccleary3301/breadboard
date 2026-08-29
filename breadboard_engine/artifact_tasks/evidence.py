@@ -1,31 +1,36 @@
 from __future__ import annotations
 
 import json
-import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Mapping, Sequence
 
-from .contracts import ArtifactValidationResult, hash_file, safe_relative_path
-from .evaluators import EvaluatorResult
+from breadboard_engine.security import (
+    WorkspaceFilesystem,
+    WorkspacePathError,
+    protected_credential_paths,
+)
+
+from .contracts import ArtifactValidationResult, safe_relative_path
+from .evaluators import (
+    EvaluatorResult,
+    _lexical_absolute,
+    validate_output_destination,
+)
 from .materialize import MaterializationResult
 
 
 SCHEMA_VERSION = "artifact_task_bundle.v1"
+_MAX_BUNDLE_DEPTH = 64
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def write_json(path: Path, payload: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def _hash_or_none(path: Path) -> str | None:
-    return hash_file(path) if path.exists() and path.is_file() else None
+def _json_text(payload: Mapping[str, Any]) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True)
 
 
 @dataclass(frozen=True)
@@ -68,65 +73,124 @@ class EvidenceBundleManifest:
         }
 
 
-def _copy_artifacts(bundle_dir: Path, artifact_root: Path, validation: ArtifactValidationResult) -> dict[str, Any]:
-    artifacts_dir = bundle_dir / "artifacts"
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
+def _copy_artifacts(
+    output: WorkspaceFilesystem,
+    bundle_path: Path,
+    artifact_root: Path,
+    validation: ArtifactValidationResult,
+) -> dict[str, Any]:
     copied: list[dict[str, Any]] = []
-    for check in validation.checks:
-        if not check.exists:
-            copied.append(check.to_dict())
-            continue
-        rel = safe_relative_path(check.path)
-        src = (artifact_root / rel).resolve()
-        if not src.exists() or not src.is_file() or src.is_symlink():
-            copied.append(check.to_dict())
-            continue
-        dst = artifacts_dir / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-        row = check.to_dict()
-        row["bundle_path"] = str(dst.relative_to(bundle_dir))
-        copied.append(row)
-    artifact_manifest = {
-        "artifact_root": str(artifact_root),
-        "artifacts": copied,
-        "validation": validation.to_dict(),
-    }
-    write_json(artifacts_dir / "artifact_manifest.json", artifact_manifest)
+    with WorkspaceFilesystem(artifact_root) as source:
+        for check in validation.checks:
+            row = check.to_dict()
+            if not check.exists:
+                copied.append(row)
+                continue
+            relative = safe_relative_path(check.path)
+            bundled_relative = Path("artifacts") / relative
+            try:
+                source.copy_file_to(
+                    relative,
+                    output,
+                    bundle_path / bundled_relative,
+                    overwrite=True,
+                )
+            except FileNotFoundError:
+                copied.append(row)
+                continue
+            row["bundle_path"] = bundled_relative.as_posix()
+            copied.append(row)
+        artifact_manifest = {
+            "artifact_root": str(source.root),
+            "artifacts": copied,
+            "validation": validation.to_dict(),
+        }
+    output.write_text(
+        bundle_path / "artifacts" / "artifact_manifest.json",
+        _json_text(artifact_manifest),
+    )
     return artifact_manifest
 
 
-def _copy_evaluator_outputs(bundle_dir: Path, evaluator_results: Sequence[EvaluatorResult]) -> list[Dict[str, Any]]:
+def _copy_evaluator_outputs(
+    output: WorkspaceFilesystem,
+    output_root: Path,
+    bundle_path: Path,
+    evaluator_root: Path,
+    evaluator_results: Sequence[EvaluatorResult],
+) -> list[Dict[str, Any]]:
     rows: list[Dict[str, Any]] = []
-    evaluators_dir = bundle_dir / "evaluators"
+    evaluator_root = _lexical_absolute(evaluator_root)
+    try:
+        evaluator_root.relative_to(output_root)
+    except ValueError as exc:
+        raise WorkspacePathError("evaluator_output_outside_output_root") from exc
+
     for result in evaluator_results:
-        result_dir = evaluators_dir / result.name
-        result_dir.mkdir(parents=True, exist_ok=True)
+        result_name = safe_relative_path(result.name, field_name="evaluator name")
+        result_dir = bundle_path / "evaluators" / result_name
         row = result.to_dict()
         for stream_name in ("stdout", "stderr"):
-            src_value = row.get(f"{stream_name}_path")
-            dst = result_dir / f"{stream_name}.txt"
-            if src_value and Path(src_value).exists():
-                shutil.copy2(Path(src_value), dst)
+            source_value = row.get(f"{stream_name}_path")
+            destination = result_dir / f"{stream_name}.txt"
+            if source_value:
+                source_absolute = _lexical_absolute(str(source_value))
+                try:
+                    source_absolute.relative_to(evaluator_root)
+                    source_relative = source_absolute.relative_to(output_root)
+                except ValueError as exc:
+                    raise WorkspacePathError(
+                        "evaluator_output_outside_output_root"
+                    ) from exc
+                try:
+                    output.copy_file_to(
+                        source_relative,
+                        output,
+                        destination,
+                        overwrite=True,
+                    )
+                except FileNotFoundError:
+                    output.write_text(destination, "")
             else:
-                dst.write_text("", encoding="utf-8")
-            row[f"{stream_name}_path"] = str(dst.relative_to(bundle_dir))
-        write_json(result_dir / "result.json", row)
-        row["result_path"] = str((result_dir / "result.json").relative_to(bundle_dir))
+                output.write_text(destination, "")
+            row[f"{stream_name}_path"] = destination.relative_to(
+                bundle_path
+            ).as_posix()
+        result_path = result_dir / "result.json"
+        output.write_text(result_path, _json_text(row))
+        row["result_path"] = result_path.relative_to(bundle_path).as_posix()
         rows.append(row)
     return rows
 
 
-def _build_hash_manifest(bundle_dir: Path) -> Dict[str, str]:
+def _build_hash_manifest(
+    output: WorkspaceFilesystem,
+    bundle_path: Path,
+) -> Dict[str, str]:
     hashes: Dict[str, str] = {}
-    for path in sorted(bundle_dir.rglob("*")):
-        if not path.is_file():
+    entries = output.list_entries(bundle_path, depth=_MAX_BUNDLE_DEPTH)
+    for entry in sorted(entries, key=lambda item: item.path):
+        if entry.kind != "file":
             continue
-        rel = str(path.relative_to(bundle_dir))
-        if rel in {"manifest.json", "hashes/sha256_manifest.json"}:
+        relative = Path(entry.path)
+        relative_text = relative.as_posix()
+        if relative_text in {"manifest.json", "hashes/sha256_manifest.json"}:
             continue
-        hashes[rel] = hash_file(path)
+        inspected = output.inspect_file(bundle_path / relative, sha256=True)
+        if inspected.sha256 is None:
+            raise WorkspacePathError("evidence_hash_unavailable")
+        hashes[relative_text] = inspected.sha256
     return hashes
+
+
+def _hash_file(
+    output: WorkspaceFilesystem,
+    path: Path,
+) -> str:
+    inspected = output.inspect_file(path, sha256=True)
+    if inspected.sha256 is None:
+        raise WorkspacePathError("evidence_hash_unavailable")
+    return inspected.sha256
 
 
 def write_evidence_bundle(
@@ -141,56 +205,99 @@ def write_evidence_bundle(
     validation: ArtifactValidationResult,
     materialization: MaterializationResult | None = None,
     evaluator_results: Sequence[EvaluatorResult] = (),
+    evaluator_root: Path | None = None,
+    output_root: Path | None = None,
     route: Mapping[str, Any] | None = None,
     workspace: Mapping[str, Any] | None = None,
     notes: Mapping[str, Any] | None = None,
     failure_reasons: Sequence[str] = (),
 ) -> EvidenceBundleManifest:
-    bundle_dir = bundle_dir.resolve()
-    if bundle_dir.exists():
-        shutil.rmtree(bundle_dir)
-    inputs_dir = bundle_dir / "inputs"
-    responses_dir = bundle_dir / "responses"
-    hashes_dir = bundle_dir / "hashes"
-    inputs_dir.mkdir(parents=True, exist_ok=True)
-    responses_dir.mkdir(parents=True, exist_ok=True)
-    hashes_dir.mkdir(parents=True, exist_ok=True)
-
-    task_path = inputs_dir / "task.md"
-    response_path = responses_dir / "raw_response.md"
-    task_path.write_text(task_text, encoding="utf-8")
-    response_path.write_text(response_text, encoding="utf-8")
-
-    artifact_manifest = _copy_artifacts(bundle_dir, artifact_root.resolve(), validation)
-    evaluator_rows = _copy_evaluator_outputs(bundle_dir, evaluator_results)
-
-    hashes = _build_hash_manifest(bundle_dir)
-    write_json(hashes_dir / "sha256_manifest.json", hashes)
-    hashes["hashes/sha256_manifest.json"] = hash_file(hashes_dir / "sha256_manifest.json")
-
-    manifest_path = bundle_dir / "manifest.json"
-    manifest = EvidenceBundleManifest(
-        schema_version=SCHEMA_VERSION,
-        task_id=task_id,
-        candidate_id=candidate_id,
-        created_at=utc_now(),
-        status=status,
-        bundle_dir=str(bundle_dir),
-        manifest_path=str(manifest_path),
-        inputs={
-            "task_path": str(task_path.relative_to(bundle_dir)),
-            "response_path": str(response_path.relative_to(bundle_dir)),
-            "task_sha256": _hash_or_none(task_path),
-            "response_sha256": _hash_or_none(response_path),
-        },
-        artifacts=artifact_manifest,
-        materialization=materialization.to_dict() if materialization else {},
-        evaluators=evaluator_rows,
-        hashes=hashes,
-        workspace=dict(workspace or {}),
-        route=dict(route or {}),
-        notes=dict(notes or {}),
-        failure_reasons=list(failure_reasons),
+    protected_paths = protected_credential_paths()
+    artifact_root = Path(artifact_root).expanduser().resolve(strict=True)
+    bundle_absolute = validate_output_destination(
+        bundle_dir,
+        workspace_root=artifact_root,
+        protected_paths=protected_paths,
     )
-    write_json(manifest_path, manifest.to_dict())
-    return manifest
+    output_absolute = _lexical_absolute(output_root or bundle_absolute.parent)
+    try:
+        bundle_path = bundle_absolute.relative_to(output_absolute)
+    except ValueError as exc:
+        raise WorkspacePathError("evidence_bundle_outside_output_root") from exc
+    if not bundle_path.parts:
+        raise WorkspacePathError("evidence_bundle_path_required")
+    if evaluator_results and evaluator_root is None:
+        raise WorkspacePathError("evaluator_output_root_required")
+    if evaluator_root is not None:
+        validate_output_destination(
+            evaluator_root,
+            workspace_root=artifact_root,
+            protected_paths=protected_paths,
+        )
+
+    with WorkspaceFilesystem.open_anchored_root(
+        output_absolute,
+        create=True,
+    ) as output:
+        try:
+            output.remove_tree(bundle_path)
+        except FileNotFoundError:
+            pass
+        output.create_directory(bundle_path)
+
+        task_path = bundle_path / "inputs" / "task.md"
+        response_path = bundle_path / "responses" / "raw_response.md"
+        hash_manifest_path = bundle_path / "hashes" / "sha256_manifest.json"
+        manifest_path = bundle_path / "manifest.json"
+        output.write_text(task_path, task_text)
+        output.write_text(response_path, response_text)
+
+        artifact_manifest = _copy_artifacts(
+            output,
+            bundle_path,
+            artifact_root,
+            validation,
+        )
+        evaluator_rows = _copy_evaluator_outputs(
+            output,
+            output_absolute,
+            bundle_path,
+            evaluator_root or output_absolute,
+            evaluator_results,
+        )
+
+        hashes = _build_hash_manifest(output, bundle_path)
+        output.write_text(hash_manifest_path, _json_text(hashes))
+        hashes["hashes/sha256_manifest.json"] = _hash_file(
+            output,
+            hash_manifest_path,
+        )
+
+        manifest_absolute = Path(output.display_path(manifest_path))
+        manifest = EvidenceBundleManifest(
+            schema_version=SCHEMA_VERSION,
+            task_id=task_id,
+            candidate_id=candidate_id,
+            created_at=utc_now(),
+            status=status,
+            bundle_dir=str(bundle_absolute),
+            manifest_path=str(manifest_absolute),
+            inputs={
+                "task_path": task_path.relative_to(bundle_path).as_posix(),
+                "response_path": response_path.relative_to(bundle_path).as_posix(),
+                "task_sha256": _hash_file(output, task_path),
+                "response_sha256": _hash_file(output, response_path),
+            },
+            artifacts=artifact_manifest,
+            materialization=(
+                materialization.to_dict() if materialization else {}
+            ),
+            evaluators=evaluator_rows,
+            hashes=hashes,
+            workspace=dict(workspace or {}),
+            route=dict(route or {}),
+            notes=dict(notes or {}),
+            failure_reasons=list(failure_reasons),
+        )
+        output.write_text(manifest_path, _json_text(manifest.to_dict()))
+        return manifest

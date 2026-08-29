@@ -192,7 +192,11 @@ def test_dev_ci_runtime_emission_mode_resolves_strict_when_unset_or_invalid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from breadboard_engine.api.cli_bridge.models import SessionStatus
-    from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+    from breadboard_engine.api.cli_bridge.registry import (
+        SessionRecord,
+        SessionRegistry,
+        TurnRecord,
+    )
     from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 
     class FakeAgent:
@@ -221,6 +225,17 @@ def test_dev_ci_runtime_emission_mode_resolves_strict_when_unset_or_invalid(
             status=SessionStatus.RUNNING,
             metadata={"runtime_record_dir": str(tmp_path / f"runtime_records_{raw_mode or 'unset'}")},
         )
+        turn = TurnRecord(
+            input_id="input-probe",
+            turn_id="turn-probe",
+            client_message_id="message-probe",
+            content="probe",
+            attachments=(),
+            original_disposition="started",
+            state="active",
+        )
+        session.turns_by_id[turn.turn_id] = turn
+        session.active_turn_id = turn.turn_id
         runner = SessionRunner(
             session=session,
             registry=SessionRegistry(),
@@ -229,7 +244,9 @@ def test_dev_ci_runtime_emission_mode_resolves_strict_when_unset_or_invalid(
         fake_agent = FakeAgent()
         runner._agent = fake_agent
 
-        runner._execute_task("probe")
+        runner._execute_task(
+            "probe", input_id=turn.input_id, turn_id=turn.turn_id
+        )
 
         return fake_agent.calls[0]["kernel_emitter_mode"]
 

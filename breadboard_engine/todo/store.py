@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+from ..security import WorkspaceFilesystem, WorkspacePathError
 
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -39,7 +40,11 @@ class TodoRef:
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "TodoRef":
-        return TodoRef(kind=data.get("kind", ""), value=data.get("value", ""), note=data.get("note"))
+        return TodoRef(
+            kind=data.get("kind", ""),
+            value=data.get("value", ""),
+            note=data.get("note"),
+        )
 
 
 @dataclass
@@ -155,7 +160,11 @@ class TodoStore:
     FILENAME = ".breadboard/todos.json"
 
     def __init__(self, workspace: str, *, load_existing: bool = True):
-        self.workspace = Path(workspace)
+        self.workspace = Path(workspace).expanduser().absolute()
+        self._workspace_files = WorkspaceFilesystem.open_anchored_root(
+            self.workspace,
+            create=True,
+        )
         self._todos: Dict[str, Todo] = {}
         self._order: List[str] = []
         self._journal: List[TodoEvent] = []
@@ -198,7 +207,9 @@ class TodoStore:
     def update(self, todo_id: str, patch: TodoPatch) -> Todo:
         todo = self._require(todo_id)
         if patch.version is not None and patch.version != todo.version:
-            raise ValueError(f"Version mismatch for {todo_id}: expected {todo.version}, got {patch.version}")
+            raise ValueError(
+                f"Version mismatch for {todo_id}: expected {todo.version}, got {patch.version}"
+            )
 
         changed_fields: Dict[str, Any] = {}
         if patch.title is not None and patch.title != todo.title:
@@ -266,7 +277,11 @@ class TodoStore:
         self._append_event(
             "todo.attached",
             todo_id,
-            {"refs": [ref.to_dict() for ref in refs], "updated_at": todo.updated_at, "version": todo.version},
+            {
+                "refs": [ref.to_dict() for ref in refs],
+                "updated_at": todo.updated_at,
+                "version": todo.version,
+            },
         )
         self._persist()
         return todo
@@ -280,7 +295,11 @@ class TodoStore:
         self._append_event(
             "todo.noted",
             todo_id,
-            {"note": note.to_dict(), "updated_at": todo.updated_at, "version": todo.version},
+            {
+                "note": note.to_dict(),
+                "updated_at": todo.updated_at,
+                "version": todo.version,
+            },
         )
         self._persist()
         return todo
@@ -305,7 +324,9 @@ class TodoStore:
             if todo_id not in self._order:
                 yield todo
 
-    def _append_event(self, event_type: str, todo_id: str, payload: Dict[str, Any]) -> None:
+    def _append_event(
+        self, event_type: str, todo_id: str, payload: Dict[str, Any]
+    ) -> None:
         self._journal.append(TodoEvent(event_type, todo_id, payload, _utc_now()))
         # limit journal growth? keep full for now
 
@@ -316,18 +337,28 @@ class TodoStore:
             "order": list(self._order),
             "journal": [event.to_dict() for event in self._journal],
         }
-        path = self.workspace / self.FILENAME
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(blob, indent=2, sort_keys=True), encoding="utf-8")
-        tmp.replace(path)
+        self._workspace_files.create_directory(".breadboard")
+        self._workspace_files.write_text(
+            self.FILENAME,
+            json.dumps(blob, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
 
     def _load_from_disk(self) -> None:
-        path = self.workspace / self.FILENAME
-        if not path.exists():
+        try:
+            raw = self._workspace_files.read_text(
+                self.FILENAME,
+                encoding="utf-8",
+                errors="strict",
+            )
+        except FileNotFoundError:
+            return
+        except WorkspacePathError:
+            raise
+        except Exception:
             return
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(raw)
         except Exception:
             return
         todos = data.get("todos") or []
@@ -365,9 +396,13 @@ class TodoStore:
             return []
         return list(self._journal[-count:])
 
-    def prune_to_ids(self, keep_ids: Sequence[str], reason: str = "todo.write_board") -> None:
+    def prune_to_ids(
+        self, keep_ids: Sequence[str], reason: str = "todo.write_board"
+    ) -> None:
         keep = {str(todo_id) for todo_id in keep_ids}
-        removed = [todo_id for todo_id in list(self._todos.keys()) if todo_id not in keep]
+        removed = [
+            todo_id for todo_id in list(self._todos.keys()) if todo_id not in keep
+        ]
         if not removed:
             return
         for todo_id in removed:

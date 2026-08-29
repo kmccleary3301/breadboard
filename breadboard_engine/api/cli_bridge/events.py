@@ -16,7 +16,9 @@ REPLAY_RETENTION_MAX_EVENTS = 1000
 REPLAY_RETENTION_MAX_AGE_MS = 24 * 60 * 60 * 1000
 REPLAY_CONTRACT_SCHEMA_VERSION = "bb.cli_bridge.session_replay.v1"
 SNAPSHOT_RECOVERY_ACTION = "fetch_session_snapshot_then_reconnect_without_cursor"
-OVERFLOW_RECOVERY_ACTION = "reconnect_from_last_safely_delivered_cursor_or_fetch_session_snapshot"
+OVERFLOW_RECOVERY_ACTION = (
+    "reconnect_from_last_safely_delivered_cursor_or_fetch_session_snapshot"
+)
 
 
 def _stable_digest(payload: Dict[str, Any]) -> str:
@@ -39,11 +41,14 @@ def replay_retention_facts(
     *,
     head_sequence: int,
     retained_history_partial: bool,
+    persisted_head_event_id: str | None = None,
 ) -> Dict[str, Any]:
     retained = [event for event in events if event.stable_cursor and event.seq is not None]
     first = retained[0] if retained else None
     head = retained[-1] if retained and retained[-1].seq == head_sequence else None
-    retained_history = "partial" if retained_history_partial or (head_sequence and first is None) else "complete"
+    retained_history = (
+        "partial" if retained_history_partial or (head_sequence and first is None) else "complete"
+    )
     facts: Dict[str, Any] = {
         "replayRetention": {
             "maxEvents": REPLAY_RETENTION_MAX_EVENTS,
@@ -53,7 +58,11 @@ def replay_retention_facts(
         "earliestRetainedSequence": first.seq if first is not None else None,
         "earliestRetainedEventId": first.event_id if first is not None else None,
         "headSequence": head_sequence,
-        "headEventId": head.event_id if head is not None else None,
+        "headEventId": (
+            head.event_id
+            if head is not None
+            else persisted_head_event_id if head_sequence > 0 else None
+        ),
         "retainedHistory": retained_history,
     }
     facts["sessionReplayContractDigest"] = _stable_digest(

@@ -1,7 +1,12 @@
 from __future__ import annotations
+import os
 
 from pathlib import Path
 import time
+import pytest
+
+from breadboard_engine.orchestration.event_log import EventLog
+from breadboard_engine.security import WorkspacePathError
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 
@@ -23,13 +28,19 @@ def test_task_tool_requires_multi_agent_enabled() -> None:
     out = conductor._exec_raw(
         {
             "function": "task",
-            "arguments": {"description": "x", "prompt": "y", "subagent_type": "reviewer"},
+            "arguments": {
+                "description": "x",
+                "prompt": "y",
+                "subagent_type": "reviewer",
+            },
         }
     )
     assert "unknown tool" in str(out.get("error"))
 
 
-def test_lowercase_task_tool_can_launch_background_multi_agent_job(tmp_path: Path) -> None:
+def test_lowercase_task_tool_can_launch_background_multi_agent_job(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "README.md").write_text("dummy workspace\n", encoding="utf-8")
     config = {
         "multi_agent": {
@@ -46,7 +57,11 @@ def test_lowercase_task_tool_can_launch_background_multi_agent_job(tmp_path: Pat
                             "capabilities": {"read_only": True, "allow_spawn": False},
                         },
                     },
-                    "topology": {"edges": [{"from": "main", "to": "repo-scanner", "mode": ["sync"]}]},
+                    "topology": {
+                        "edges": [
+                            {"from": "main", "to": "repo-scanner", "mode": ["sync"]}
+                        ]
+                    },
                 }
             },
         }
@@ -77,10 +92,32 @@ def test_lowercase_task_tool_can_launch_background_multi_agent_job(tmp_path: Pat
     assert any(event.get("kind") == "subagent_spawned" for event in events)
 
     deadline = time.time() + 5
-    while time.time() < deadline and not any(event.get("kind") == "subagent_completed" for event in events):
+    while time.time() < deadline and not any(
+        event.get("kind") == "subagent_completed" for event in events
+    ):
         time.sleep(0.05)
 
     completed = [event for event in events if event.get("kind") == "subagent_completed"]
     assert completed
     assert completed[-1].get("subagent_type") == "repo-scanner"
     assert "README.md" in str(completed[-1].get("output_excerpt"))
+
+
+@pytest.mark.parametrize("link_kind", ("symlink", "hardlink"))
+def test_multi_agent_event_log_rejects_linked_target(
+    tmp_path: Path, link_kind: str
+) -> None:
+    event_log = EventLog()
+    event_log.add("run.started", agent_id="main")
+    secret = tmp_path / "credential"
+    secret.write_text("event-log-link-canary", encoding="utf-8")
+    target = tmp_path / "events.jsonl"
+    if link_kind == "symlink":
+        target.symlink_to(secret)
+    else:
+        os.link(secret, target)
+
+    with pytest.raises(WorkspacePathError):
+        event_log.to_jsonl(str(target))
+
+    assert secret.read_text(encoding="utf-8") == "event-log-link-canary"

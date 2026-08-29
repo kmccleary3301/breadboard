@@ -3,13 +3,19 @@ from __future__ import annotations
 import json
 import threading
 import time
+import types
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict
 
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.provider_routing import ProviderDescriptor
 from breadboard_engine.provider_runtime import ProviderMessage, ProviderResult, ProviderRuntimeError
-
-from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.model_roles import compile_model_roles
+from breadboard_engine.provider.health import RouteHealthManager
+from breadboard_engine.provider.invoker import ProviderInvoker
+from breadboard_engine.provider.metrics import ProviderMetricsCollector
+from breadboard_engine.state.session_state import SessionState
 
 
 def _make_conductor(config: dict, workspace: Path) -> OpenAIConductor:
@@ -17,12 +23,44 @@ def _make_conductor(config: dict, workspace: Path) -> OpenAIConductor:
     inst = object.__new__(cls)
     inst.config = config
     inst.workspace = str(workspace)
-    inst._active_session_state = None
+    inst._current_route_id = None
+    inst._last_runtime_latency = None
+    inst._last_html_detected = False
+    inst.provider_metrics = ProviderMetricsCollector()
+    inst.route_health = RouteHealthManager()
+    inst.logger_v2 = types.SimpleNamespace(run_dir=None)
+    inst.md_writer = types.SimpleNamespace(system=lambda message: message)
+    session_state = SessionState(str(workspace), "test", config)
+    session_state.set_provider_metadata("session_id", "e5-parent-session")
+    session_state.set_turn_context(
+        input_id="input-parent",
+        turn_id="turn-parent",
+        turn_index=None,
+    )
+    inst._active_session_state = session_state
+
+    def no_provider_retry(*_args: Any, last_error=None, **_kwargs: Any):
+        if last_error is not None:
+            raise last_error
+        return None
+
+    inst.provider_invoker = ProviderInvoker(
+        provider_metrics=inst.provider_metrics,
+        route_health=inst.route_health,
+        logger_v2=inst.logger_v2,
+        md_writer=inst.md_writer,
+        retry_with_fallback=no_provider_retry,
+        update_health_metadata=lambda _state: None,
+        set_last_latency=lambda value: setattr(inst, "_last_runtime_latency", value),
+        set_html_detected=lambda value: setattr(inst, "_last_html_detected", value),
+        client_lease=inst._provider_client_lease,
+    )
     return inst  # type: ignore[return-value]
 
 
 class _StubRouter:
     def __init__(self) -> None:
+        self.execution_calls: list[tuple[str, dict[str, Any]]] = []
         self._descriptor = ProviderDescriptor(
             provider_id="stub",
             runtime_id="stub_runtime",
@@ -46,10 +84,27 @@ class _StubRouter:
         return {"api_key": "stub-key", "base_url": None, "default_headers": {}}
 
 
+    def get_credential_origin(
+        self, model: str, **kwargs: Any
+    ) -> Dict[str, str]:
+        _ = (model, kwargs)
+        return {"kind": "synthetic", "source": "test"}
+
+    @contextmanager
+    def execution_client_config(self, model: str, **kwargs: Any):
+        self.execution_calls.append((model, dict(kwargs)))
+        config = self.create_client_config(model)
+        try:
+            yield config
+        finally:
+            config.clear()
+
+
 class _StubRegistry:
     def __init__(self, handler: Any) -> None:
         self._handler = handler
         self.invocation_count = 0
+        self.router: _StubRouter | None = None
 
     def create_runtime(self, descriptor: ProviderDescriptor) -> Any:
         outer = self
@@ -72,12 +127,41 @@ class _StubRegistry:
                 stream: bool,
                 context: Any,
             ) -> ProviderResult:
-                _ = (client, model, tools, stream, context)
+                _ = (client, model, tools, stream)
                 outer.invocation_count += 1
+                context.record_provider_event("response_start")
                 try:
-                    return outer._handler(messages, context)
+                    result = outer._handler(messages, context)
                 except TypeError:
-                    return outer._handler(messages)
+                    result = outer._handler(messages)
+                for index, message in enumerate(result.messages):
+                    if not isinstance(message, ProviderMessage):
+                        continue
+                    message_id = message.message_id or f"message-{index}"
+                    context.record_provider_event(
+                        "text_start",
+                        {
+                            "content_index": index,
+                            "message_id": message_id,
+                        },
+                    )
+                    if isinstance(message.content, str) and message.content:
+                        context.record_provider_event(
+                            "text_delta",
+                            {
+                                "content_index": index,
+                                "message_id": message_id,
+                                "delta": message.content,
+                            },
+                        )
+                    context.record_provider_event(
+                        "text_end",
+                        {
+                            "content_index": index,
+                            "message_id": message_id,
+                        },
+                    )
+                return result
 
         return _Runtime(descriptor)
 
@@ -85,9 +169,51 @@ class _StubRegistry:
 def _install_stub_provider(monkeypatch: Any, handler: Any) -> _StubRegistry:
     router = _StubRouter()
     registry = _StubRegistry(handler)
+    registry.router = router
     monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_router", router)
     monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_registry", registry)
     return registry
+
+
+def test_rlm_provider_subcalls_preserve_parent_session_affinity(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    def _handler(messages: list[Dict[str, Any]]) -> ProviderResult:
+        _ = messages
+        return ProviderResult(
+            messages=[ProviderMessage(role="assistant", content="ok")],
+            raw_response={},
+        )
+
+    registry = _install_stub_provider(monkeypatch, _handler)
+    conductor = _make_conductor({}, tmp_path)
+    execution = conductor._execute_rlm_provider_subcall(
+        model_route="stub/model",
+        messages=[{"role": "user", "content": "hello"}],
+        runtime_extra={},
+    )
+
+    assert registry.router is not None
+    assert registry.router.execution_calls == [
+        (
+            "stub/model",
+            {
+                "session_id": "e5-parent-session",
+                "endpoint_id": "stub/model",
+                "account_selector": None,
+            },
+        )
+    ]
+    assert execution.provider_exchange["correlation"] == {
+        "session_id": "e5-parent-session",
+        "input_id": "input-parent",
+        "turn_id": "turn-parent",
+    }
+    history = conductor._active_session_state.get_provider_metadata(
+        "provider_exchange_history"
+    )
+    assert history == [execution.provider_exchange]
 
 
 def test_blob_tools_require_rlm_feature(tmp_path: Path) -> None:
@@ -143,6 +269,15 @@ def test_llm_query_budget_blocked_before_provider_call(tmp_path: Path) -> None:
     }
     conductor = _make_conductor(cfg, tmp_path)
     conductor._rlm_budget_state_cache = {"started_at": 1.0, "subcalls": 1, "total_tokens": 0, "total_cost_usd": 0.0}
+    conductor._active_session_state.set_provider_metadata(
+        "rlm_budget_state",
+        {
+            "started_at": 1.0,
+            "subcalls": 1,
+            "total_tokens": 0,
+            "total_cost_usd": 0.0,
+        },
+    )
     out = conductor._exec_raw({"function": "llm.query", "arguments": {"prompt": "hello"}})
     assert out.get("reason") == "subcall_limit_exceeded"
     ledger_path = tmp_path / ".breadboard" / "meta" / "rlm_branches.json"
@@ -214,6 +349,20 @@ def test_llm_batch_query_preserves_request_order_under_parallel_completion(monke
     rows = out.get("results") or []
     assert [int(row.get("request_index", -1)) for row in rows] == [0, 1]
     assert [str(row.get("text") or "") for row in rows] == ["slow", "fast"]
+    history = conductor._active_session_state.get_provider_metadata(
+        "provider_exchange_history"
+    )
+    assert len(history) == 2
+    assert len({exchange["exchange_id"] for exchange in history}) == 2
+    assert all(
+        exchange["correlation"]
+        == {
+            "session_id": "e5-parent-session",
+            "input_id": "input-parent",
+            "turn_id": "turn-parent",
+        }
+        for exchange in history
+    )
 
 
 def test_llm_batch_query_retries_then_completes(monkeypatch: Any, tmp_path: Path) -> None:
@@ -254,6 +403,7 @@ def test_llm_batch_query_retries_then_completes(monkeypatch: Any, tmp_path: Path
     attempts_list = row.get("attempts") or []
     assert len(attempts_list) == 2
     assert str(attempts_list[0].get("status")) == "provider_error"
+    assert attempts_list[0].get("error") == "provider_error"
     assert str(attempts_list[1].get("status")) == "completed"
     assert registry.invocation_count == 2
 
@@ -290,6 +440,7 @@ def test_llm_batch_query_fail_fast_short_circuit(monkeypatch: Any, tmp_path: Pat
     )
     rows = out.get("results") or []
     assert [str(row.get("status") or "") for row in rows] == ["failed", "blocked"]
+    assert rows[0].get("error") == "provider_error"
     assert str(rows[1].get("reason") or "") == "fail_fast_short_circuit"
     assert registry.invocation_count == 1
     summary = out.get("summary") or {}
@@ -433,6 +584,141 @@ def test_llm_batch_query_honors_per_branch_concurrency_cap(monkeypatch: Any, tmp
     assert int(summary.get("max_concurrency_per_branch") or 0) == 1
 
 
+def test_llm_query_model_argument_cannot_escape_active_role_lock(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    def _handler(
+        messages: list[Dict[str, Any]],
+        context: Any,
+    ) -> ProviderResult:
+        _ = (messages, context)
+        return ProviderResult(
+            messages=[ProviderMessage(role="assistant", content="locked")],
+            raw_response={},
+            usage={},
+        )
+
+    registry = _install_stub_provider(monkeypatch, _handler)
+    assert registry.router is not None
+    config = {
+        "features": {
+            "rlm": {
+                "enabled": True,
+                "budget": {"max_subcalls": 8},
+                "scheduling": {
+                    "mode": "batch",
+                    "batch": {
+                        "enabled": True,
+                        "max_concurrency": 2,
+                    },
+                },
+            }
+        },
+        "providers": {"default_model": "mock/slow"},
+    }
+    conductor = _make_conductor(config, tmp_path)
+    conductor._model_role_lock = compile_model_roles(
+        {
+            "schema_version": "bb.model_roles.v1",
+            "defaults": {
+                "role": "default",
+                "known_but_unbound_role": "error",
+                "unknown_role": "error",
+            },
+            "roles": {
+                "default": {
+                    "primary": {
+                        "provider_id": "mock",
+                        "model_id": "primary",
+                    },
+                    "fallbacks": [],
+                    "fallback_on": [],
+                },
+                "slow": {
+                    "primary": {
+                        "provider_id": "mock",
+                        "model_id": "slow",
+                    },
+                    "fallbacks": [],
+                    "fallback_on": [],
+                },
+            },
+            "dispatch": {
+                "subagents": {},
+                "lanes": {
+                    "main": "default",
+                    "balanced": "slow",
+                },
+            },
+            "policy": {
+                "allow_environment_overrides": False,
+                "cross_provider_fallback": "forbidden",
+                "account_failover": "forbidden",
+            },
+        }
+    ).as_dict()
+    conductor._active_model_role = "default"
+    leased_routes: list[str] = []
+
+    @contextmanager
+    def client_lease(model_route: str, _runtime: Any):
+        leased_routes.append(model_route)
+        yield object()
+
+    conductor.provider_invoker.client_lease = client_lease
+
+    result = conductor._exec_raw(
+        {
+            "function": "llm.query",
+            "arguments": {
+                "prompt": "use the active role",
+                "model": "mock/slow",
+            },
+        }
+    )
+    mapped_result = conductor._exec_raw(
+        {
+            "function": "llm.query",
+            "arguments": {
+                "prompt": "use the mapped lane",
+                "model": "mock/primary",
+                "lane": "balanced",
+            },
+        }
+    )
+    batch_result = conductor._exec_raw(
+        {
+            "function": "llm.batch_query",
+            "arguments": {
+                "queries": [
+                    {
+                        "prompt": "batch active role",
+                        "model": "mock/slow",
+                    },
+                    {
+                        "prompt": "batch mapped lane",
+                        "model": "mock/primary",
+                        "lane": "balanced",
+                    },
+                ]
+            },
+        }
+    )
+
+
+
+    assert result.get("text") == "locked", result
+    assert result["route_id"] == "mock/primary"
+    assert mapped_result["route_id"] == "mock/slow"
+    assert [row["route_id"] for row in batch_result["results"]] == [
+        "mock/primary",
+        "mock/slow",
+    ]
+    assert leased_routes[:2] == ["mock/primary", "mock/slow"]
+    assert sorted(leased_routes[2:]) == ["mock/primary", "mock/slow"]
+
+
 def test_llm_query_artifact_write_handles_non_serializable_usage(monkeypatch: Any, tmp_path: Path) -> None:
     class _OpaqueUsage:
         def __repr__(self) -> str:  # pragma: no cover - defensive
@@ -551,6 +837,9 @@ def test_rlm_provider_execution_preserves_single_and_batch_results_and_context(
             "branch_id": "single-branch",
             "max_completion_tokens": 123,
             "temperature": 0.25,
+            "session_id": "e5-parent-session",
+            "input_id": "input-parent",
+            "turn_id": "turn-parent",
         },
         {
             "rlm_subcall": True,
@@ -560,17 +849,24 @@ def test_rlm_provider_execution_preserves_single_and_batch_results_and_context(
             "request_index": 0,
             "max_completion_tokens": 456,
             "temperature": 0.5,
+            "session_id": "e5-parent-session",
+            "input_id": "input-parent",
+            "turn_id": "turn-parent",
         },
     ]
 
 
-def test_rlm_provider_execution_preserves_missing_key_errors_for_single_and_batch(
+def test_rlm_provider_execution_redacts_missing_key_errors_for_single_and_batch(
     monkeypatch: Any,
     tmp_path: Path,
 ) -> None:
     router = _StubRouter()
     registry = _StubRegistry(lambda _messages: None)
-    monkeypatch.setattr(router, "create_client_config", lambda _model: {"api_key": None})
+    monkeypatch.setattr(
+        router,
+        "get_credential_origin",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_router", router)
     monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_registry", registry)
     cfg = {
@@ -596,12 +892,12 @@ def test_rlm_provider_execution_preserves_missing_key_errors_for_single_and_batc
     batch_row = (batch.get("results") or [{}])[0]
 
     assert single["reason"] == "api_key_missing"
-    assert single["error"] == "RLM api_key_missing: STUB_API_KEY missing in environment."
+    assert single["error"] == "RLM api_key_missing: api_key_missing"
     assert batch_row == {
         "request_index": 0,
         "status": "failed",
         "reason": "api_key_missing",
-        "error": "STUB_API_KEY missing in environment.",
+        "error": "api_key_missing",
         "branch_id": "root",
         "depth": 0,
         "lane": "tool_heavy",

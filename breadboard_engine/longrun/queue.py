@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Protocol
 
+from ..security import WorkspaceFilesystem, WorkspacePathError
 from ..todo.store import TODO_OPEN_STATUSES, TodoPatch, TodoStore
 
 
@@ -16,23 +17,24 @@ def _utc_now() -> str:
 
 
 class WorkQueue(Protocol):
-    def peek_next(self, state: Mapping[str, Any] | None = None) -> Optional[Dict[str, Any]]:
-        ...
+    def peek_next(
+        self, state: Mapping[str, Any] | None = None
+    ) -> Optional[Dict[str, Any]]: ...
 
-    def claim(self, item_id: str, episode_id: int) -> Dict[str, Any]:
-        ...
+    def claim(self, item_id: str, episode_id: int) -> Dict[str, Any]: ...
 
-    def complete(self, item_id: str, outcome: Mapping[str, Any] | None = None) -> Dict[str, Any]:
-        ...
+    def complete(
+        self, item_id: str, outcome: Mapping[str, Any] | None = None
+    ) -> Dict[str, Any]: ...
 
-    def defer(self, item_id: str, reason: str) -> Dict[str, Any]:
-        ...
+    def defer(self, item_id: str, reason: str) -> Dict[str, Any]: ...
 
-    def snapshot(self) -> Dict[str, Any]:
-        ...
+    def snapshot(self) -> Dict[str, Any]: ...
 
 
-def _item_payload(item_id: str, title: str, status: str, metadata: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+def _item_payload(
+    item_id: str, title: str, status: str, metadata: Mapping[str, Any] | None = None
+) -> Dict[str, Any]:
     return {
         "id": item_id,
         "title": title,
@@ -42,7 +44,9 @@ def _item_payload(item_id: str, title: str, status: str, metadata: Mapping[str, 
 
 
 class TodoStoreQueue:
-    def __init__(self, *, workspace: str | None = None, store: TodoStore | None = None) -> None:
+    def __init__(
+        self, *, workspace: str | None = None, store: TodoStore | None = None
+    ) -> None:
         if store is not None:
             self._store = store
         elif workspace is not None:
@@ -50,7 +54,9 @@ class TodoStoreQueue:
         else:
             raise ValueError("TodoStoreQueue requires either workspace or store")
 
-    def peek_next(self, state: Mapping[str, Any] | None = None) -> Optional[Dict[str, Any]]:
+    def peek_next(
+        self, state: Mapping[str, Any] | None = None
+    ) -> Optional[Dict[str, Any]]:
         todos = list(self._store.list_items())
         if not todos:
             return None
@@ -58,7 +64,9 @@ class TodoStoreQueue:
         for preferred in ("todo", "in_progress", "blocked"):
             for todo in todos:
                 if todo.status == preferred and todo.status in TODO_OPEN_STATUSES:
-                    return _item_payload(todo.id, todo.title, todo.status, todo.metadata)
+                    return _item_payload(
+                        todo.id, todo.title, todo.status, todo.metadata
+                    )
         return None
 
     def claim(self, item_id: str, episode_id: int) -> Dict[str, Any]:
@@ -78,7 +86,9 @@ class TodoStoreQueue:
         self._store.update(item_id, patch)
         return self.snapshot()
 
-    def complete(self, item_id: str, outcome: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+    def complete(
+        self, item_id: str, outcome: Mapping[str, Any] | None = None
+    ) -> Dict[str, Any]:
         summary = None
         if isinstance(outcome, Mapping):
             summary = outcome.get("summary") or outcome.get("completion_reason")
@@ -127,23 +137,57 @@ class FeatureFileQueue:
     }
     """
 
-    def __init__(self, path: str | Path) -> None:
-        self._path = Path(path)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        if not self._path.exists():
+    def __init__(
+        self, path: str | Path, *, workspace: str | Path | None = None
+    ) -> None:
+        requested = Path(path).expanduser()
+        if workspace is None:
+            target = requested.absolute()
+            self._workspace_files = WorkspaceFilesystem.open_anchored_root(
+                target.parent,
+                create=True,
+            )
+            self._logical_path = target.name
+        else:
+            workspace_root = Path(workspace).expanduser().absolute()
+            target = (
+                requested if requested.is_absolute() else workspace_root / requested
+            )
+            target = target.absolute()
+            try:
+                logical = target.relative_to(workspace_root)
+            except ValueError as exc:
+                raise WorkspacePathError("path_outside_workspace") from exc
+            self._workspace_files = WorkspaceFilesystem.open_anchored_root(
+                workspace_root,
+                create=True,
+            )
+            self._logical_path = logical
+        self._path = Path(self._workspace_files.display_path(self._logical_path))
+        parent = Path(self._logical_path).parent
+        if str(parent) not in {"", "."}:
+            self._workspace_files.create_directory(parent)
+        if not self._workspace_files.exists(self._logical_path):
             self._write({"version": 1, "items": []})
 
-    def peek_next(self, state: Mapping[str, Any] | None = None) -> Optional[Dict[str, Any]]:
+    def peek_next(
+        self, state: Mapping[str, Any] | None = None
+    ) -> Optional[Dict[str, Any]]:
         payload = self._read()
         items = payload.get("items", [])
         for preferred in ("todo", "in_progress", "blocked"):
             for item in items:
-                if str(item.get("status")) == preferred and preferred in TODO_OPEN_STATUSES:
+                if (
+                    str(item.get("status")) == preferred
+                    and preferred in TODO_OPEN_STATUSES
+                ):
                     return _item_payload(
                         str(item.get("id", "")),
                         str(item.get("title", "")),
                         str(item.get("status", "todo")),
-                        item.get("metadata") if isinstance(item.get("metadata"), Mapping) else {},
+                        item.get("metadata")
+                        if isinstance(item.get("metadata"), Mapping)
+                        else {},
                     )
         return None
 
@@ -163,7 +207,9 @@ class FeatureFileQueue:
         self._write(payload)
         return self.snapshot()
 
-    def complete(self, item_id: str, outcome: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+    def complete(
+        self, item_id: str, outcome: Mapping[str, Any] | None = None
+    ) -> Dict[str, Any]:
         payload = self._read()
         for item in payload.get("items", []):
             if str(item.get("id")) != item_id:
@@ -205,15 +251,27 @@ class FeatureFileQueue:
                     str(item.get("id", "")),
                     str(item.get("title", "")),
                     str(item.get("status", "todo")),
-                    item.get("metadata") if isinstance(item.get("metadata"), Mapping) else {},
+                    item.get("metadata")
+                    if isinstance(item.get("metadata"), Mapping)
+                    else {},
                 )
             )
-        open_count = sum(1 for item in out_items if item["status"] in TODO_OPEN_STATUSES)
+        open_count = sum(
+            1 for item in out_items if item["status"] in TODO_OPEN_STATUSES
+        )
         return {"backend": "feature_file", "open_count": open_count, "items": out_items}
 
     def _read(self) -> Dict[str, Any]:
         try:
-            raw = json.loads(self._path.read_text(encoding="utf-8"))
+            raw = json.loads(
+                self._workspace_files.read_text(
+                    self._logical_path,
+                    encoding="utf-8",
+                    errors="strict",
+                )
+            )
+        except WorkspacePathError:
+            raise
         except Exception:
             raw = {}
         if not isinstance(raw, dict):
@@ -230,13 +288,19 @@ class FeatureFileQueue:
                     "id": str(item.get("id", "")),
                     "title": str(item.get("title", "")),
                     "status": str(item.get("status", "todo")),
-                    "metadata": dict(item.get("metadata")) if isinstance(item.get("metadata"), Mapping) else {},
+                    "metadata": dict(item.get("metadata"))
+                    if isinstance(item.get("metadata"), Mapping)
+                    else {},
                 }
             )
         return {"version": int(raw.get("version") or 1), "items": normalized}
 
     def _write(self, payload: Mapping[str, Any]) -> None:
-        self._path.write_text(json.dumps(dict(payload), indent=2, ensure_ascii=False), encoding="utf-8")
+        self._workspace_files.write_text(
+            self._logical_path,
+            json.dumps(dict(payload), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
 
 def build_work_queue(
@@ -275,6 +339,6 @@ def build_work_queue(
                 path = Path(workspace) / path
         else:
             path = Path(workspace) / ".breadboard" / "longrun_feature_queue.json"
-        return FeatureFileQueue(path)
+        return FeatureFileQueue(path, workspace=workspace)
 
     return None

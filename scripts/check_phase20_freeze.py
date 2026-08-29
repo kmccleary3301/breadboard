@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
+
 try:
     from scripts.check_contract_tiers import validate_contract_tiers
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from check_contract_tiers import validate_contract_tiers
-
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,7 +54,11 @@ ALLOWED_SCHEMA_IDS = {
     # EXECUTION_MASTER_V1 §9.1 C-G0: provider-parity contract substrate adds
     # the credential and model-role kernel contracts (owner-approved plan).
     "https://breadboard.dev/contracts/kernel/schemas/bb.credentials.v1.schema.json",  # C-G0
+    "https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json",  # F5
     "https://breadboard.dev/contracts/kernel/schemas/bb.model_roles.v1.schema.json",  # C-G0
+    "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",  # F4
+    "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.provider.exchange.v2.schema.json",  # F4
+    "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.session.control.v1.schema.json",  # P30
 }
 
 # FREEZE_POLICY.md permits plan-required tightening of an existing schema only
@@ -90,6 +94,12 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "packet": "bb-31n",
         "sha256": "63aa96ffceb9983d7374065872613c5f335a74b0df257c147c9373be55a2f622",
         "class": "tightening",
+    },
+    "https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v2.schema.json": {
+        "packet": "D6-CI-REPAIR",
+        "sha256": "f26e62a605c179e9eadc6df6d49838a5d9c44be44d7791e977b4547dfc171704",
+        "class": "plan_mandated_evolution",
+        "ref": "AM25",
     },
 }
 
@@ -366,7 +376,6 @@ def _validate_evolution_ref(ref: str, tracked_files: set[Path]) -> None:
                 )
             continue
         raise AllowlistConfigError(f"invalid evolution ref segment {segment!r}")
-
 
 
 def _validated_tightening_allowlist(tracked_files: set[Path]) -> dict[str, str]:

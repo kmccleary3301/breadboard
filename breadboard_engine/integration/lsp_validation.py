@@ -4,11 +4,12 @@ Integrates with existing sequence_validator.py framework
 """
 
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 import logging
 
 from ..execution.sequence_validator import ValidationRule
 from ..integration.lsp_manager import RemoteLSPManager, Diagnostic
+from ..security import protected_credential_paths
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +19,30 @@ class LSPValidationRule(ValidationRule):
     Validates code changes using language servers and provides feedback.
     """
     
-    def __init__(self, workspace_root: str, enabled: bool = True, max_errors_shown: int = 3):
-        config = {"enabled": enabled, "workspace_root": workspace_root, "max_errors_shown": max_errors_shown}
+    def __init__(
+        self,
+        workspace_root: str,
+        enabled: bool = True,
+        max_errors_shown: int = 3,
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ):
+        config = {
+            "enabled": enabled,
+            "workspace_root": workspace_root,
+            "max_errors_shown": max_errors_shown,
+        }
         super().__init__(config)
         self.workspace_root = workspace_root
         self.max_errors_shown = max_errors_shown
+        self._protected_paths = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
         self.lsp_manager: Optional[RemoteLSPManager] = None
     
     @property
@@ -36,7 +56,10 @@ class LSPValidationRule(ValidationRule):
     def _ensure_lsp_manager(self):
         """Lazy initialization of remote LSP manager"""
         if self.lsp_manager is None:
-            self.lsp_manager = RemoteLSPManager.remote(self.workspace_root)
+            self.lsp_manager = RemoteLSPManager.remote(
+                self.workspace_root,
+                protected_paths=self._protected_paths,
+            )
     
     def validate(self, tool_call: Dict[str, Any], context: Dict[str, Any]) -> Optional[str]:
         """
@@ -93,15 +116,32 @@ class PostExecutionLSPValidator:
     Provides the "Patch Completed with 0 linter errors" style feedback.
     """
     
-    def __init__(self, workspace_root: str, enabled: bool = True):
+    def __init__(
+        self,
+        workspace_root: str,
+        enabled: bool = True,
+        *,
+        protected_paths: Optional[Sequence[str]] = None,
+    ):
         self.workspace_root = workspace_root
         self.enabled = enabled
+        self._protected_paths = tuple(
+            str(path)
+            for path in (
+                protected_paths
+                if protected_paths is not None
+                else protected_credential_paths()
+            )
+        )
         self.lsp_manager: Optional[RemoteLSPManager] = None
     
     async def _ensure_lsp_manager(self):
         """Lazy initialization of remote LSP manager"""
         if self.lsp_manager is None:
-            self.lsp_manager = RemoteLSPManager.remote(self.workspace_root)
+            self.lsp_manager = RemoteLSPManager.remote(
+                self.workspace_root,
+                protected_paths=self._protected_paths,
+            )
     
     async def validate_post_execution(self, file_path: str, operation_type: str) -> str:
         """

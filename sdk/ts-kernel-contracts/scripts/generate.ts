@@ -187,6 +187,7 @@ function emitRegistry(entries: SchemaEntry[], outputFilename: string): void {
 
   const registry = `${generatedHeader(relative(PACKAGE_ROOT, SCHEMA_DIR))}import * as Ajv2020Module from "ajv/dist/2020.js"
 import type { ValidateFunction } from "ajv"
+import { withProviderExchangeV2Semantics } from "../provider-exchange-v2.js"
 
 const Ajv2020Candidate: unknown =
   Ajv2020Module && typeof Ajv2020Module === "object" && "default" in Ajv2020Module ? Ajv2020Module.default : Ajv2020Module
@@ -211,7 +212,11 @@ for (const [schemaId, schema] of Object.entries(GENERATED_SCHEMA_OBJECTS)) {
 }
 
 for (const [schemaId, schema] of Object.entries(GENERATED_SCHEMA_OBJECTS)) {
-  const validate = ajv.getSchema(schemaId) ?? ajv.compile(schema)
+  const structuralValidate = ajv.getSchema(schemaId) ?? ajv.compile(schema)
+  const validate =
+    schemaId === "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json"
+      ? withProviderExchangeV2Semantics(structuralValidate)
+      : structuralValidate
   GENERATED_SCHEMAS[schemaId] = { schema, validate }
 }
 `

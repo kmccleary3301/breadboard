@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import subprocess
 import sys
 from copy import deepcopy
@@ -18,6 +19,8 @@ from breadboard_engine.api.cli_bridge import events as events_module
 from breadboard_engine.api.cli_bridge.events import replay_configuration_digest
 from breadboard_engine.api.cli_bridge.registry import SessionRecord
 from breadboard_engine.api.cli_bridge.app import (
+    ENGINE_BUILD_PROVENANCE_FILENAME,
+    ENGINE_BUILD_PROVENANCE_SCHEMA,
     _compute_engine_provenance,
     _p30_session_contract_descriptor,
     create_app,
@@ -367,12 +370,23 @@ def test_fixed_digest_is_exact_and_excludes_lifecycle_operations(tmp_path: Path)
         ("DELETE", "/v1/sessions/{session_id}"),
     ]
     assert p30_session_schema_sha256(contract) == (
-        "sha256:4c796e33684136cd7304c989318ec7ea2735c3702b15de9067a687dcc5310813"
+        "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
     )
     assert p30_session_schema_sha256(contract) == P30_SESSION_SCHEMA_SHA256
     assert contract["event_stream"]["envelope_schema"]["properties"]["payload"] == {
         "type": "object"
     }
+    payload_schemas = contract["event_stream"]["payload_schemas"]
+    assert set(payload_schemas["turn_completed"]["properties"]) == {
+        "exchange_ref",
+        "finish_reason",
+        "output_emitted",
+        "raw_provider_finish",
+        "usage",
+    }
+    assert "stop_requested" in payload_schemas["turn_cancelled"]["properties"][
+        "reason"
+    ]["enum"]
 
     encoded = json.dumps(contract, sort_keys=True, separators=(",", ":")).lower()
     for excluded in ("registration", "owner", "drain", "control", "capability"):
@@ -513,6 +527,133 @@ def test_git_provenance_distinguishes_clean_dirty_and_failure(
     )
 
     assert _compute_engine_provenance(tmp_path)["dirty"] is expected_dirty
+
+
+def _write_packaged_engine_provenance(package_root: Path) -> tuple[Path, dict[str, object]]:
+    package_root.mkdir(parents=True)
+    (package_root / "runtime.py").write_text("ENGINE = 'breadboard'\n", encoding="utf-8")
+    runtime_platform = (
+        "darwin"
+        if sys.platform == "darwin"
+        else "linux"
+        if sys.platform.startswith("linux")
+        else None
+    )
+    runtime_architecture = {
+        "arm64": "arm64",
+        "aarch64": "arm64",
+        "x86_64": "x64",
+        "amd64": "x64",
+    }.get(platform.machine().lower())
+    assert runtime_platform is not None
+    assert runtime_architecture is not None
+    payload: dict[str, object] = {
+        "schemaVersion": ENGINE_BUILD_PROVENANCE_SCHEMA,
+        "sourceRepository": "https://github.com/kmccleary3301/breadboard.git",
+        "sourceCommit": "a" * 40,
+        "sourceTree": "b" * 40,
+        "engineSourceSha256": engine_source_artifact_sha256(package_root),
+        "dependencyLockSha256": "sha256:" + "c" * 64,
+        "buildRecipeSha256": "sha256:" + "d" * 64,
+        "target": {
+            "platform": runtime_platform,
+            "architecture": runtime_architecture,
+        },
+    }
+    provenance_path = package_root / ENGINE_BUILD_PROVENANCE_FILENAME
+    provenance_path.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    return provenance_path, payload
+
+
+def test_packaged_build_provenance_supplies_immutable_installed_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    package_root = tmp_path / "site-packages" / "breadboard_engine"
+    provenance_path, _ = _write_packaged_engine_provenance(package_root)
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.app._run_git_command",
+        lambda *_args, **_kwargs: None,
+    )
+
+    revision = _compute_engine_provenance(
+        tmp_path / "site-packages",
+        package_root=package_root,
+        packaged_provenance_path=provenance_path,
+    )
+
+    assert revision == {
+        "repo_root": "https://github.com/kmccleary3301/breadboard.git",
+        "commit": "a" * 40,
+        "branch": None,
+        "dirty": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["source_changed", "extra_field", "invalid_target", "unsafe_permissions"],
+)
+def test_packaged_build_provenance_rejects_untrusted_identity(
+    failure: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    package_root = tmp_path / "site-packages" / "breadboard_engine"
+    provenance_path, payload = _write_packaged_engine_provenance(package_root)
+    if failure == "source_changed":
+        (package_root / "runtime.py").write_text("ENGINE = 'tampered'\n", encoding="utf-8")
+    elif failure == "extra_field":
+        payload["untrusted"] = True
+        provenance_path.write_text(json.dumps(payload), encoding="utf-8")
+    elif failure == "invalid_target":
+        target = payload["target"]
+        assert isinstance(target, dict)
+        target["platform"] = "windows"
+        provenance_path.write_text(json.dumps(payload), encoding="utf-8")
+    else:
+        provenance_path.chmod(0o666)
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.app._run_git_command",
+        lambda *_args, **_kwargs: None,
+    )
+
+    revision = _compute_engine_provenance(
+        tmp_path / "site-packages",
+        package_root=package_root,
+        packaged_provenance_path=provenance_path,
+    )
+
+    assert revision["commit"] is None
+    assert revision["dirty"] is None
+
+
+def test_packaged_build_provenance_is_portable_across_supported_targets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    package_root = tmp_path / "site-packages" / "breadboard_engine"
+    provenance_path, payload = _write_packaged_engine_provenance(package_root)
+    target = payload["target"]
+    assert isinstance(target, dict)
+    target["platform"] = "linux" if target["platform"] == "darwin" else "darwin"
+    provenance_path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.app._run_git_command",
+        lambda *_args, **_kwargs: None,
+    )
+
+    revision = _compute_engine_provenance(
+        tmp_path / "site-packages",
+        package_root=package_root,
+        packaged_provenance_path=provenance_path,
+    )
+
+    assert revision["commit"] == "a" * 40
+    assert revision["dirty"] is False
 
 
 @pytest.mark.asyncio

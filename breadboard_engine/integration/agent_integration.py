@@ -10,6 +10,7 @@ import json
 import os
 import time
 import logging
+import uuid
 from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
 
@@ -340,11 +341,23 @@ class LegacyAgentAdapter:
                                **kwargs) -> Dict[str, Any]:
                 """Enhanced agentic loop with new tool calling system."""
                 # Inject enhanced tool calling context
-                context = {
-                    "provider": "openai" if not os.getenv("OPENROUTER_API_KEY") else "openrouter",
-                    "model_id": model,
-                    "task_type": "general"
-                }
+                provided_context = kwargs.pop("context", None)
+                if provided_context is None:
+                    context = {
+                        "session_id": f"integration-{uuid.uuid4().hex}",
+                        "input_id": f"input-{uuid.uuid4().hex}",
+                        "turn_id": f"turn-{uuid.uuid4().hex}",
+                    }
+                elif isinstance(provided_context, dict):
+                    context = dict(provided_context)
+                else:
+                    raise TypeError("context must be a dictionary")
+                context.setdefault(
+                    "provider",
+                    "openai" if not os.getenv("OPENROUTER_API_KEY") else "openrouter",
+                )
+                context.setdefault("model_id", model)
+                context.setdefault("task_type", "general")
                 
                 # Get optimal format for this context
                 optimal_format = self.enhanced_tool_manager.get_optimal_format(

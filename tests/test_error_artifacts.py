@@ -1,6 +1,11 @@
 import types
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.error_handling.error_handler import (
+    ErrorHandler,
+    public_error_projection,
+)
+from breadboard_engine.provider.contracts import ProviderRuntimeError
 
 
 def _make_conductor_with_logger():
@@ -25,6 +30,32 @@ def _make_conductor_with_logger():
     inst.md_writer = types.SimpleNamespace(system=lambda text: text)
     inst.config = {}
     return inst, inst.logger_v2
+
+
+def test_public_provider_error_projection_never_copies_exception_text() -> None:
+    provider_error = ProviderRuntimeError(
+        "secret provider response",
+        details={"code": "provider_denied", "body": "secret body"},
+        kind="provider",
+    )
+
+    assert ErrorHandler().handle_provider_error(
+        provider_error,
+        messages=[],
+        transcript=[],
+    ) == {
+        "error": "provider_denied",
+        "error_type": "provider",
+        "hint": None,
+    }
+    assert public_error_projection(
+        RuntimeError("secret runtime exception"),
+        default_code="run_loop_error",
+    ) == {
+        "error": "run_loop_error",
+        "error_type": "runtime",
+        "hint": None,
+    }
 
 
 def test_persist_error_artifacts_writes_expected_files():

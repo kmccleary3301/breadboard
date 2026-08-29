@@ -42,9 +42,11 @@ it is treated as kernel truth.
 - `limits_update` is emitted as a best-effort host-facing bridge event from
   provider runtime code when provider rate-limit headers are parsed. It is
   intentionally not treated as kernel truth.
-- `provider_response` is kernel truth for the scoped TS program because both the
-  Python reference fixtures and the TS kernel/provider-aware execution slices
-  rely on a shared host-visible provider exchange event family.
+- `provider_response` is the frozen historical event for
+  `bb.provider_exchange.v1`; the scoped TS reference program still consumes it.
+- `provider_response_v2` is the active host-visible event and carries only an
+  `bb.provider_exchange.v2` reference. The aggregate remains owned and persisted
+  by the provider invocation boundary.
 - long-running macro events are currently collapsed through
   `SessionState.record_lifecycle_event(...)`, so their cross-engine contract
   surface today is `lifecycle_event`, not a separate macro-event family.

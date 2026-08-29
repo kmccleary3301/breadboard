@@ -62,3 +62,43 @@ def test_candidate_python_sdk_preserves_public_result_and_idempotency(
     assert client.get_artifact("sha256:abc") == result
     assert requests[0]["headers"]["Idempotency-Key"] == "start-key"
     assert requests[1]["url"] == "https://breadboard.test/v1/artifacts/sha256%3Aabc"
+
+
+def test_compatibility_create_session_omits_only_an_absent_config_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[tuple[str, str, dict[str, Any]]] = []
+
+    def fake_request(
+        _self: CompatibilityBreadboardClient,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        requests.append((method, path, kwargs))
+        return {}
+
+    monkeypatch.setattr(CompatibilityBreadboardClient, "_request", fake_request)
+    client = CompatibilityBreadboardClient()
+
+    client.create_session(workspace="/workspace")
+    client.create_session(config_path="/custom.yaml", task="run")
+
+    assert requests == [
+        (
+            "POST",
+            "/v1/sessions",
+            {"body": {"task": "", "stream": True, "workspace": "/workspace"}},
+        ),
+        (
+            "POST",
+            "/v1/sessions",
+            {
+                "body": {
+                    "config_path": "/custom.yaml",
+                    "task": "run",
+                    "stream": True,
+                }
+            },
+        ),
+    ]

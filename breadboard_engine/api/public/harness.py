@@ -13,8 +13,8 @@ def _contained(path, workspace):
     return workspace_path(str(path.relative_to(workspace)), workspace)
 def _create(request: HarnessCreateRequest, workspace):
     directory = workspace_path(request.directory, workspace)
-    _contained(directory / "minimal_harness.v2.yaml", workspace)
-    _contained(directory / "prompts/minimal_system.md", workspace)
+    for target in operations.daily_driver_bundle_paths(directory):
+        _contained(target, workspace)
     return operations.init(_args(workspace, out=directory))
 def _lock(harness_id: str, workspace):
     args = _args(workspace, harness_id, out=None, check=False)
