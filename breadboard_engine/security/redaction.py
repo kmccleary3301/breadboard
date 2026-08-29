@@ -314,8 +314,6 @@ def iter_registered_secret_values() -> tuple[str, ...]:
 
 
 def _registered_secret_occurs(text: str, secret: str) -> bool:
-    if len(secret) < _MIN_REGISTERED_SECRET_SUBSTRING_LENGTH:
-        return text == secret
     return secret in text
 
 
@@ -577,6 +575,11 @@ def scrub_text(
     )
     for secret in iter_registered_secret_values():
         if occurs(text, secret):
+            if (
+                len(secret) < _MIN_REGISTERED_SECRET_SUBSTRING_LENGTH
+                and not exact_short_registered_secrets
+            ):
+                return REDACTED
             text = text.replace(secret, REDACTED)
     for pattern in SECRET_VALUE_PATTERNS:
         text = pattern.sub(REDACTED, text)

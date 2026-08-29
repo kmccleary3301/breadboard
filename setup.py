@@ -39,6 +39,44 @@ _WHEEL_INPUT_PATHS = (
 )
 
 
+def _canonical_repository(value: str) -> str:
+    raw = value.strip()
+    scp_remote = re.fullmatch(r"git@([^:/]+):(.+)", raw)
+    if scp_remote is not None:
+        raw = f"https://{scp_remote.group(1)}/{scp_remote.group(2)}"
+    parsed = urlsplit(raw)
+    if parsed.scheme == "ssh":
+        try:
+            port = parsed.port
+        except ValueError:
+            port = None
+        if (
+            not parsed.hostname
+            or parsed.username not in {None, "git"}
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.path in {"", "/"}
+        ):
+            raise RuntimeError(
+                "wheel provenance requires an HTTPS source repository URL"
+            )
+        netloc = parsed.hostname + (f":{port}" if port is not None else "")
+        raw = f"https://{netloc}{parsed.path}"
+        parsed = urlsplit(raw)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path in {"", "/"}
+    ):
+        raise RuntimeError("wheel provenance requires an HTTPS source repository URL")
+    return raw
+
+
 def _git(*arguments: str) -> str:
     completed = subprocess.run(
         ("git", *arguments),
@@ -52,8 +90,15 @@ def _git(*arguments: str) -> str:
 
 
 def _source_identity() -> tuple[str, str, str]:
+    raw_repository_override = os.environ.get(
+        "BREADBOARD_BUILD_SOURCE_REPOSITORY"
+    )
     overrides = (
-        os.environ.get("BREADBOARD_BUILD_SOURCE_REPOSITORY"),
+        (
+            _canonical_repository(raw_repository_override)
+            if raw_repository_override is not None
+            else None
+        ),
         os.environ.get("BREADBOARD_BUILD_SOURCE_COMMIT"),
         os.environ.get("BREADBOARD_BUILD_SOURCE_TREE"),
     )
@@ -78,7 +123,7 @@ def _source_identity() -> tuple[str, str, str]:
         if status:
             raise RuntimeError("wheel provenance requires clean wheel build inputs")
         actual = (
-            _git("remote", "get-url", "origin"),
+            _canonical_repository(_git("remote", "get-url", "origin")),
             _git("rev-parse", "HEAD"),
             _git("rev-parse", "HEAD^{tree}"),
         )
@@ -101,17 +146,7 @@ def _source_identity() -> tuple[str, str, str]:
         raise RuntimeError(
             "wheel provenance requires exact lowercase commit and tree IDs"
         )
-    parsed_repository = urlsplit(repository)
-    if (
-        parsed_repository.scheme != "https"
-        or not parsed_repository.hostname
-        or parsed_repository.username is not None
-        or parsed_repository.password is not None
-        or parsed_repository.query
-        or parsed_repository.fragment
-        or parsed_repository.path in {"", "/"}
-    ):
-        raise RuntimeError("wheel provenance requires an HTTPS source repository URL")
+    repository = _canonical_repository(repository)
     return repository, commit, tree
 
 
@@ -171,8 +206,8 @@ class BuildPyWithProvenance(_build_py):
         return Path(self.build_lib) / "breadboard_engine" / _PROVENANCE_FILENAME
 
     def run(self) -> None:
-        super().run()
         repository, commit, tree = _source_identity()
+        super().run()
         package_root = Path(self.build_lib) / "breadboard_engine"
         payload = {
             "schemaVersion": "bb.engine_build_provenance.v1",

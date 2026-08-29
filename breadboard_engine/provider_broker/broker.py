@@ -220,7 +220,11 @@ class ProviderBroker:
         path: str,
         identity_fields: tuple[str, ...],
     ) -> dict[str, Any]:
-        scrubbed, _ = redaction.scrub_structure(view, path=path)
+        scrubbed, _ = redaction.scrub_structure(
+            view,
+            path=path,
+            identity_mapping_keys=True,
+        )
         if not isinstance(scrubbed, Mapping):
             raise ValueError("credential store returned an invalid view")
         result = dict(scrubbed)
@@ -545,6 +549,8 @@ class ProviderBroker:
             "credential",
         }
         result = {key: login[key] for key in allowed if key in login}
+        if result.get("status") == "completing":
+            result["status"] = "pending"
         flow = login.get("flow")
         if isinstance(flow, Mapping):
             for key in ("flow_id", "flow_kind", "authorization_url", "redirect_uri"):
@@ -688,9 +694,14 @@ class ProviderBroker:
                 "problem": problem,
             }
 
+        with self.store.atomic():
+            if not self.store.claim_pending_login(str(login_id)):
+                current = self.store.get_login(str(login_id)) or login
+                return self._public_login(current)
+
         def login_is_terminal() -> bool:
             current = self.store.get_login(str(login_id))
-            return current is None or str(current.get("status") or "") != "pending"
+            return current is None or str(current.get("status") or "") != "completing"
 
         try:
             material = adapter.complete(
@@ -708,7 +719,7 @@ class ProviderBroker:
                     allow_short=True,
                 ):
                     with self.store.atomic():
-                        if not self.store.finish_pending_login(
+                        if not self.store.finish_claimed_login(
                             str(login_id),
                             "completed",
                         ):
@@ -808,7 +819,7 @@ class ProviderBroker:
                 **exc.details,
             )
             with self.store.atomic():
-                changed = self.store.finish_pending_login(
+                changed = self.store.finish_claimed_login(
                     str(login_id), "failed", problem
                 )
                 if changed:
