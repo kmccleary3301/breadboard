@@ -19,7 +19,6 @@ from breadboard_engine.e4_trace_parity import (
     workspace_snapshot,
 )
 
-
 SHA256 = "0" * 64
 GIT_COMMIT = "a" * 40
 
@@ -230,6 +229,23 @@ def test_normalization_policy_fails_closed() -> None:
             rules=(NormalizationRule("/timestamps/99", "timestamp"),),
         )
 
+    with pytest.raises(E4ParityError, match="did not match trace fields"):
+        compare_e4_traces(
+            {"meta": 1},
+            {},
+            rules=(NormalizationRule("/meta/timestamp", "timestamp"),),
+        )
+
+    with pytest.raises(E4ParityError, match="normalization pointers overlap"):
+        compare_e4_traces(
+            {"meta": {"timestamp": "2026-08-29T06:00:00Z"}},
+            {"meta": {"timestamp": "2026-08-29T06:00:01Z"}},
+            rules=(
+                NormalizationRule("/meta", "timestamp"),
+                NormalizationRule("/meta/timestamp", "timestamp"),
+            ),
+        )
+
     large_timestamp = 1 << 4000
     large_timestamp_comparison = compare_e4_traces(
         {"timestamp": large_timestamp},
@@ -283,6 +299,23 @@ def test_trace_comparison_bounds_mismatch_evidence() -> None:
     assert not comparison.matches
     assert len(comparison.mismatches) == 10_001
     assert comparison.mismatches[-1].reason == "mismatch count exceeds 10000"
+
+    reference["timestamp"] = "2026-08-29T06:00:00Z"
+    clone["timestamp"] = "2026-08-29T06:00:01Z"
+    normalized = compare_e4_traces(
+        reference,
+        clone,
+        rules=(NormalizationRule("/timestamp", "timestamp"),),
+    )
+    assert len(normalized.mismatches) == 10_001
+    assert [field.pointer for field in normalized.normalized_fields] == ["/timestamp"]
+
+    with pytest.raises(E4ParityError, match="did not match trace fields"):
+        compare_e4_traces(
+            reference,
+            clone,
+            rules=(NormalizationRule("/zzz", "timestamp"),),
+        )
 
 
 def test_workspace_snapshot_requires_directory_ancestors() -> None:

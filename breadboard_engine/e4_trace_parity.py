@@ -1,19 +1,18 @@
 from __future__ import annotations
-import base64
-from bisect import bisect_left
-import binascii
 
-from dataclasses import dataclass
-from datetime import datetime
+import base64
+import binascii
 import hashlib
 import json
 import math
 import os
-from pathlib import Path
 import re
 import stat
-from typing import Any, Sequence
-
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 _NORMALIZATION_KINDS = frozenset({"timestamp", "pid", "temporary_path"})
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -161,6 +160,14 @@ def _json_string_bytes(value: str, pointer: str) -> int:
     return (raw_bytes * 6) + 2
 
 
+def _account_json_bytes(state: list[int], amount: int, pointer: str) -> None:
+    state[1] += amount
+    if state[1] > _MAX_JSON_BYTES:
+        raise E4ParityError(
+            f"JSON byte size exceeds {_MAX_JSON_BYTES} at {pointer or '/'}"
+        )
+
+
 def _validate_closed_json(
     value: Any,
     *,
@@ -174,30 +181,31 @@ def _validate_closed_json(
     if state is None:
         state = [0, 0]
     state[0] += 1
-    state[1] += 8
+    _account_json_bytes(state, 8, pointer)
     if state[0] > _MAX_JSON_NODES:
         raise E4ParityError(f"JSON node count exceeds {_MAX_JSON_NODES}")
     if value is None:
-        state[1] += 4
+        _account_json_bytes(state, 4, pointer)
     elif type(value) is bool:
-        state[1] += 4 if value else 5
+        _account_json_bytes(state, 4 if value else 5, pointer)
     elif type(value) is int:
         if value.bit_length() > _MAX_JSON_INTEGER_BITS:
             raise E4ParityError(
                 f"integer exceeds {_MAX_JSON_INTEGER_BITS} bits at {pointer or '/'}"
             )
         try:
-            state[1] += len(str(value))
+            integer_bytes = len(str(value))
         except (ValueError, MemoryError) as exc:
             raise E4ParityError(
                 f"integer cannot be serialized at {pointer or '/'}"
             ) from exc
+        _account_json_bytes(state, integer_bytes, pointer)
     elif type(value) is str:
-        state[1] += _json_string_bytes(value, pointer)
+        _account_json_bytes(state, _json_string_bytes(value, pointer), pointer)
     elif type(value) is float:
         if not math.isfinite(value):
             raise E4ParityError(f"non-finite number at {pointer or '/'}")
-        state[1] += len(repr(value))
+        _account_json_bytes(state, len(repr(value)), pointer)
     elif type(value) is list:
         identity = id(value)
         if identity in ancestors:
@@ -219,7 +227,11 @@ def _validate_closed_json(
         for key, child in value.items():
             if type(key) is not str:
                 raise E4ParityError(f"non-string object key at {pointer or '/'}")
-            state[1] += _json_string_bytes(key, pointer) + 1
+            _account_json_bytes(
+                state,
+                _json_string_bytes(key, pointer) + 1,
+                pointer,
+            )
             _validate_closed_json(
                 child,
                 pointer=_child_pointer(pointer, key),
@@ -231,8 +243,6 @@ def _validate_closed_json(
         raise E4ParityError(
             f"non-JSON {type(value).__name__} value at {pointer or '/'}"
         )
-    if state[1] > _MAX_JSON_BYTES:
-        raise E4ParityError(f"JSON byte size exceeds {_MAX_JSON_BYTES}")
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -256,6 +266,32 @@ def json_sha256(value: Any) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
 
+def _resolve_json_pointer(value: Any, pointer: str) -> tuple[bool, Any]:
+    current = value
+    for encoded_token in pointer[1:].split("/"):
+        token = encoded_token.replace("~1", "/").replace("~0", "~")
+        if type(current) is dict:
+            if token not in current:
+                return False, None
+            current = current[token]
+            continue
+        if type(current) is list:
+            canonical_index = (
+                token.isascii()
+                and token.isdecimal()
+                and (token == "0" or not token.startswith("0"))
+            )
+            if not canonical_index:
+                return False, None
+            index = int(token)
+            if index >= len(current):
+                return False, None
+            current = current[index]
+            continue
+        return False, None
+    return True, current
+
+
 def compare_e4_traces(
     reference: Any,
     clone: Any,
@@ -277,10 +313,15 @@ def compare_e4_traces(
             raise E4ParityError(f"duplicate normalization pointer {rule.pointer!r}")
         rules_by_pointer[rule.pointer] = rule
     sorted_rule_pointers = sorted(rules_by_pointer)
+    for index, pointer in enumerate(sorted_rule_pointers):
+        prefix = pointer + "/"
+        if index + 1 < len(sorted_rule_pointers) and sorted_rule_pointers[
+            index + 1
+        ].startswith(prefix):
+            raise E4ParityError(f"normalization pointers overlap at {pointer!r}")
     if any(rule.kind == "temporary_path" for rule in rules) and temporary_roots is None:
         raise E4ParityError("temporary_path normalization requires both trace roots")
 
-    used_rules: set[str] = set()
     mismatches: list[TraceMismatch] = []
     normalized_fields: list[NormalizedField] = []
     truncated = False
@@ -292,45 +333,64 @@ def compare_e4_traces(
             return
         mismatches.append(mismatch)
 
-    def mark_inaccessible_rules(pointer: str) -> None:
-        if pointer in rules_by_pointer:
-            used_rules.add(pointer)
-        prefix = f"{pointer}/" if pointer else "/"
-        index = bisect_left(sorted_rule_pointers, prefix)
-        while index < len(sorted_rule_pointers) and sorted_rule_pointers[
-            index
-        ].startswith(prefix):
-            used_rules.add(sorted_rule_pointers[index])
-            index += 1
-
-    def mark_omitted_array_rules(pointer: str, start: int, stop: int) -> None:
-        prefix = f"{pointer}/" if pointer else "/"
-        index = bisect_left(sorted_rule_pointers, prefix)
-        max_index_digits = len(str(stop - 1))
-        while index < len(sorted_rule_pointers) and sorted_rule_pointers[
-            index
-        ].startswith(prefix):
-            rule_pointer = sorted_rule_pointers[index]
-            token = rule_pointer[len(prefix) :].split("/", 1)[0]
-            canonical_index = (
-                token.isascii()
-                and token.isdecimal()
-                and (token == "0" or not token.startswith("0"))
+    for pointer in sorted_rule_pointers:
+        rule = rules_by_pointer[pointer]
+        reference_exists, reference_value = _resolve_json_pointer(reference, pointer)
+        clone_exists, clone_value = _resolve_json_pointer(clone, pointer)
+        if not reference_exists and not clone_exists:
+            raise E4ParityError(
+                f"normalization rules did not match trace fields: {pointer}"
             )
-            if canonical_index and len(token) <= max_index_digits:
-                child_index = int(token)
-                if start <= child_index < stop:
-                    used_rules.add(rule_pointer)
-            index += 1
+        if (
+            not reference_exists
+            or not clone_exists
+            or type(reference_value) is not type(clone_value)
+        ):
+            continue
+        try:
+            reference_normalized = _normalize_value(
+                reference_value,
+                rule.kind,
+                temporary_roots.reference if temporary_roots else None,
+            )
+            clone_normalized = _normalize_value(
+                clone_value,
+                rule.kind,
+                temporary_roots.clone if temporary_roots else None,
+            )
+        except E4ParityError as exc:
+            record_mismatch(
+                TraceMismatch(
+                    pointer,
+                    f"invalid {rule.kind} normalization input: {exc}",
+                    reference_value,
+                    clone_value,
+                )
+            )
+            continue
+        normalized_fields.append(
+            NormalizedField(
+                pointer,
+                rule.kind,
+                reference_value,
+                clone_value,
+                reference_normalized,
+            )
+        )
+        if reference_normalized != clone_normalized:
+            record_mismatch(
+                TraceMismatch(
+                    pointer,
+                    f"normalized {rule.kind} values differ",
+                    reference_value,
+                    clone_value,
+                )
+            )
 
     def compare(reference_value: Any, clone_value: Any, pointer: str) -> None:
         if truncated:
             return
-        rule = rules_by_pointer.get(pointer)
-        if rule is not None:
-            used_rules.add(pointer)
         if type(reference_value) is not type(clone_value):
-            mark_inaccessible_rules(pointer)
             record_mismatch(
                 TraceMismatch(
                     pointer,
@@ -340,46 +400,7 @@ def compare_e4_traces(
                 )
             )
             return
-        if rule is not None:
-            try:
-                reference_normalized = _normalize_value(
-                    reference_value,
-                    rule.kind,
-                    temporary_roots.reference if temporary_roots else None,
-                )
-                clone_normalized = _normalize_value(
-                    clone_value,
-                    rule.kind,
-                    temporary_roots.clone if temporary_roots else None,
-                )
-            except E4ParityError as exc:
-                record_mismatch(
-                    TraceMismatch(
-                        pointer,
-                        f"invalid {rule.kind} normalization input: {exc}",
-                        reference_value,
-                        clone_value,
-                    )
-                )
-                return
-            normalized_fields.append(
-                NormalizedField(
-                    pointer,
-                    rule.kind,
-                    reference_value,
-                    clone_value,
-                    reference_normalized,
-                )
-            )
-            if reference_normalized != clone_normalized:
-                record_mismatch(
-                    TraceMismatch(
-                        pointer,
-                        f"normalized {rule.kind} values differ",
-                        reference_value,
-                        clone_value,
-                    )
-                )
+        if pointer in rules_by_pointer:
             return
 
         if isinstance(reference_value, dict):
@@ -387,7 +408,6 @@ def compare_e4_traces(
             clone_keys = set(clone_value)
             for key in sorted(reference_keys - clone_keys):
                 child_pointer = _child_pointer(pointer, key)
-                mark_inaccessible_rules(child_pointer)
                 record_mismatch(
                     TraceMismatch(
                         child_pointer,
@@ -402,7 +422,6 @@ def compare_e4_traces(
                 return
             for key in sorted(clone_keys - reference_keys):
                 child_pointer = _child_pointer(pointer, key)
-                mark_inaccessible_rules(child_pointer)
                 record_mismatch(
                     TraceMismatch(
                         child_pointer,
@@ -426,11 +445,6 @@ def compare_e4_traces(
             return
         if isinstance(reference_value, list):
             if len(reference_value) != len(clone_value):
-                mark_omitted_array_rules(
-                    pointer,
-                    min(len(reference_value), len(clone_value)),
-                    max(len(reference_value), len(clone_value)),
-                )
                 record_mismatch(
                     TraceMismatch(
                         pointer,
@@ -472,13 +486,6 @@ def compare_e4_traces(
                 None,
             )
         )
-    else:
-        unused_rules = sorted(set(rules_by_pointer) - used_rules)
-        if unused_rules:
-            joined = ", ".join(unused_rules)
-            raise E4ParityError(
-                f"normalization rules did not match trace fields: {joined}"
-            )
     return TraceComparison(tuple(mismatches), tuple(normalized_fields))
 
 
