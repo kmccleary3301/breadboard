@@ -128,10 +128,11 @@ def test_stored_alternate_credentials_are_scoped_through_provider_errors(
     ):
         assert secret not in str(error.value)
     assert error.value.details == {
-        "classification": "rate_limited",
+        "classification": redaction.REDACTED,
         "status_code": 429,
         "retry_after": 300,
     }
+    assert redaction.exception_is_rate_limited_429(error.value) is True
     assert redaction.iter_registered_secret_values() == ()
 
 
