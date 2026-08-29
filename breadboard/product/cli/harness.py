@@ -132,18 +132,41 @@ def _prompt_resources(c,paths,w,contained):
         prior=resources.setdefault(resource_ref,content)
         if prior!=content:raise ValueError(f"resource identity collision: {resource_ref}")
     return resources
-def _daily_driver_role_resources(p,w,contained):
-    temporary_prefix=f".{DAILY_DRIVER_TEMPLATE_NAME}."
-    if p.name!=DAILY_DRIVER_TEMPLATE_NAME and not p.name.startswith(temporary_prefix):return {}
-    unresolved=p.parent/DAILY_DRIVER_MODEL_ROLES_NAME
-    target=(
-        _contained_target(unresolved,w,"harness resource",strict=True)
+def _daily_driver_role_path(p, w, contained):
+    p = Path(p)
+    temporary_prefix = f".{DAILY_DRIVER_TEMPLATE_NAME}."
+    if p.name != DAILY_DRIVER_TEMPLATE_NAME and not p.name.startswith(
+        temporary_prefix
+    ):
+        return None
+    unresolved = p.parent / DAILY_DRIVER_MODEL_ROLES_NAME
+    target = (
+        _contained_target(unresolved, w, "harness resource", strict=True)
         if contained
         else unresolved.resolve(strict=True)
     )
-    if not target.is_file():raise IsADirectoryError(f"harness resource is not a file: {DAILY_DRIVER_MODEL_ROLES_NAME}")
+    if not target.is_file():
+        raise IsADirectoryError(
+            f"harness resource is not a file: {DAILY_DRIVER_MODEL_ROLES_NAME}"
+        )
+    return target
+
+
+def daily_driver_model_roles_for_harness(p, w, contained=False) -> dict | None:
+    """Load the model-role document paired with a daily-driver harness."""
+
+    target = _daily_driver_role_path(p, w, contained)
+    return None if target is None else load_daily_driver_model_roles(target)
+
+
+def _daily_driver_role_resources(p, w, contained):
+    target = _daily_driver_role_path(p, w, contained)
+    if target is None:
+        return {}
     load_daily_driver_model_roles(target)
-    return {f"{_ref(p,w)}::{DAILY_DRIVER_MODEL_ROLES_NAME}":target.read_bytes()}
+    return {
+        f"{_ref(Path(p), w)}::{DAILY_DRIVER_MODEL_ROLES_NAME}": target.read_bytes()
+    }
 def _compile(p,w,contained=False):
     p=Path(p); w=Path(w).resolve()
     if contained:
