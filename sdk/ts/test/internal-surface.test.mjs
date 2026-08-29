@@ -98,6 +98,10 @@ test("internal event decoder accepts explicit session-scoped control and gap eve
   assert.equal(control.kind, "session_control_observed")
   assert.equal(gap.inputId, null)
   assert.equal(control.turnId, null)
+  assert.equal(
+    internal.projectEventEvidence(control).eventKind,
+    "session_control_observed",
+  )
   assert.equal(internal.projectEventEvidence(gap).eventKind, "stream_gap_observed")
 
   const cancelled = internal.decodeLoggedSessionEvent({

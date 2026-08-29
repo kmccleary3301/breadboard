@@ -566,6 +566,7 @@ const LOGGED_SESSION_EVENT_KINDS: readonly LoggedSessionEvent["kind"][] = [
   "tool_result_observed",
   "todo_updated",
   "stream_gap_observed",
+  "session_control_observed",
   "permission_requested",
   "permission_responded",
   "checkpoint_list_observed",
