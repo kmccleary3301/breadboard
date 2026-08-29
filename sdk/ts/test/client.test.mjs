@@ -235,3 +235,40 @@ test("structured FastAPI problem detail preserves its code and message", async (
     },
   )
 })
+
+test("canonical public result problem remains actionable", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const problem = {
+    schema_version: "bb.problem.v1",
+    error_code: "invalid_state",
+    message: "session is already terminal",
+    path: null,
+    details: null,
+  }
+  const response = {
+    ok: false,
+    command: ["session", "cancel"],
+    data: null,
+    error: problem,
+    hashes: {},
+    metadata: {},
+  }
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify(response), {
+      status: 409,
+      headers: { "content-type": "application/json" },
+    })
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+
+  await assert.rejects(
+    () => client.cancelSession("terminal-session"),
+    (error) => {
+      assert.ok(error instanceof ApiError)
+      assert.equal(error.status, 409)
+      assert.equal(error.message, "invalid_state: session is already terminal")
+      assert.deepEqual(error.body, response)
+      return true
+    },
+  )
+})
