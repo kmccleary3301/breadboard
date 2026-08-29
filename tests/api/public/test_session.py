@@ -1087,6 +1087,55 @@ def test_oversized_sparse_session_intent_is_rejected_before_reads_or_writes(
     assert (event_path.read_bytes(), metadata_path.read_bytes()) == before
 
 
+def test_session_intent_oversized_projection_is_rejected_before_staged_reads(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session_id = "oversized-projection"
+    _new_durable_session(tmp_path, session_id)
+    event_path = session_store.session_event_path(tmp_path, session_id)
+    event_name = event_path.name
+    metadata_name = session_store.session_metadata_path(tmp_path, session_id).name
+    event_stage_name, metadata_stage_name = session_store._stage_names(
+        event_name,
+        metadata_name,
+    )
+    intent = event_path.parent / ".session.intent.json"
+    intent.write_text(
+        json.dumps(
+            {
+                "schema_version": session_store._TRANSACTION_SCHEMA,
+                "session_id": session_id,
+                "event_name": event_name,
+                "metadata_name": metadata_name,
+                "event_stage_name": event_stage_name,
+                "metadata_stage_name": metadata_stage_name,
+                "event_size": session_store._MAX_SESSION_PROJECTION_BYTES + 1,
+                "metadata_size": 0,
+                "event_sha256": "sha256:" + "0" * 64,
+                "metadata_sha256": "sha256:" + "0" * 64,
+            }
+        ),
+        encoding="ascii",
+    )
+
+    def staged_read_forbidden(*_args, **_kwargs):
+        raise AssertionError("oversized projection reached a staged read")
+
+    monkeypatch.setattr(
+        session_store,
+        "_read_posix_staged_file",
+        staged_read_forbidden,
+    )
+    monkeypatch.setattr(
+        session_store,
+        "_read_windows_staged_file",
+        staged_read_forbidden,
+    )
+    with pytest.raises(ValueError, match="projection is oversized"):
+        session_store.load_session(tmp_path, session_id)
+
+
 @pytest.mark.skipif(
     os.name == "nt" or not hasattr(os, "mkfifo"),
     reason="POSIX FIFO semantics required",

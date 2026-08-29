@@ -78,6 +78,7 @@ _TRANSACTION_FIELDS = frozenset(
 )
 # Only the bounded intent metadata is parsed; projections remain in staged files.
 _MAX_TRANSACTION_INTENT_BYTES = 64 * 1024
+_MAX_SESSION_PROJECTION_BYTES = 64 * 1024 * 1024
 _T = TypeVar("_T")
 _LOCAL_SESSION_LOCKS: weakref.WeakValueDictionary[tuple[str, str], threading.RLock] = (
     weakref.WeakValueDictionary()
@@ -201,6 +202,18 @@ def _is_digest(value: object) -> bool:
     )
 
 
+def _validate_projection_sizes(event_size: object, metadata_size: object) -> None:
+    if (
+        type(event_size) is not int
+        or event_size < 0
+        or type(metadata_size) is not int
+        or metadata_size < 0
+    ):
+        raise ValueError("invalid session transaction intent metadata")
+    if event_size + metadata_size > _MAX_SESSION_PROJECTION_BYTES:
+        raise ValueError("session transaction projection is oversized")
+
+
 def _intent_bytes(
     session_id: str,
     event_name: str,
@@ -212,6 +225,7 @@ def _intent_bytes(
     event_sha256: str,
     metadata_sha256: str,
 ) -> bytes:
+    _validate_projection_sizes(event_size, metadata_size)
     document = {
         "schema_version": _TRANSACTION_SCHEMA,
         "session_id": session_id,
@@ -261,14 +275,8 @@ def _decode_intent(
     metadata_size = document.get("metadata_size")
     event_sha256 = document.get("event_sha256")
     metadata_sha256 = document.get("metadata_sha256")
-    if (
-        type(event_size) is not int
-        or event_size < 0
-        or type(metadata_size) is not int
-        or metadata_size < 0
-        or not _is_digest(event_sha256)
-        or not _is_digest(metadata_sha256)
-    ):
+    _validate_projection_sizes(event_size, metadata_size)
+    if not _is_digest(event_sha256) or not _is_digest(metadata_sha256):
         raise ValueError("invalid session transaction intent metadata")
     return (
         event_stage_name,
@@ -350,6 +358,7 @@ def _read_posix_file(parent: int, name: str, max_bytes: int) -> bytes:
 
 
 def _read_posix_staged_file(parent: int, name: str, expected_size: int) -> bytes:
+    _validate_projection_sizes(expected_size, 0)
     descriptor = os.open(
         name,
         os.O_RDONLY
@@ -366,7 +375,7 @@ def _read_posix_staged_file(parent: int, name: str, expected_size: int) -> bytes
             raise ValueError("session transaction staging size mismatch")
         with os.fdopen(descriptor, "rb") as stream:
             descriptor = -1
-            return stream.read()
+            return stream.read(expected_size + 1)
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -453,6 +462,7 @@ def _read_windows_file(path: Path, max_bytes: int) -> bytes:
 
 
 def _read_windows_staged_file(path: Path, expected_size: int) -> bytes:
+    _validate_projection_sizes(expected_size, 0)
     descriptor = AnchoredStorage.windows_file_descriptor(path, create=False)
     try:
         metadata = os.fstat(descriptor)
@@ -462,7 +472,7 @@ def _read_windows_staged_file(path: Path, expected_size: int) -> bytes:
             raise ValueError("session transaction staging size mismatch")
         with os.fdopen(descriptor, "rb") as stream:
             descriptor = -1
-            return stream.read()
+            return stream.read(expected_size + 1)
     finally:
         if descriptor >= 0:
             os.close(descriptor)
