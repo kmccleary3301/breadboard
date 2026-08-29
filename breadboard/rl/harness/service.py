@@ -1902,12 +1902,8 @@ class BreadBoardV2EpisodeService:
             raw_workspace_diff = coordinator.lease.sealed_workspace_diff()
             if raw_workspace_diff is not None:
                 expected_keys = {
-                    "returncode",
-                    "stdout",
-                    "stderr",
-                    "base_commit",
-                    "git_executable_digest",
-                    "patch_digest",
+                    "returncode", "stdout", "stderr", "base_commit",
+                    "git_executable_digest", "patch_digest",
                     "snapshot_root_digest",
                 }
                 patch_bytes = raw_workspace_diff.get("stdout", "").encode("utf-8")
@@ -1922,8 +1918,7 @@ class BreadBoardV2EpisodeService:
                     or type(raw_workspace_diff["snapshot_root_digest"]) is not str
                     or raw_workspace_diff["returncode"] != 0
                     or raw_workspace_diff["stderr"] != ""
-                    or raw_workspace_diff["snapshot_root_digest"]
-                    != snapshot.root_digest
+                    or raw_workspace_diff["snapshot_root_digest"] != snapshot.root_digest
                     or raw_workspace_diff["patch_digest"]
                     != "sha256:" + hashlib.sha256(patch_bytes).hexdigest()
                 ):

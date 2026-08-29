@@ -99,11 +99,8 @@ async def _opened_snapshot(tmp_path: Path) -> tuple[RuntimeHarness, Any, Any]:
     await primary.runner_workspace.write_text("work/candidate.txt", "candidate")
     snapshot = await primary.seal_for_verifier()
     return harness, primary, snapshot
-
-
 async def test_seal_terminates_before_patch_and_binds_patch_to_snapshot(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fixture = make_runtime_fixture(with_writable_mount=True)
     harness = RuntimeHarness(tmp_path, fixture)
@@ -131,14 +128,15 @@ async def test_seal_terminates_before_patch_and_binds_patch_to_snapshot(
 
     monkeypatch.setattr(sandbox_module, "_sealed_repository_diff", sealed_diff)
     monkeypatch.setattr(harness.store, "seal_snapshot", seal_snapshot)
-
     snapshot = await primary.seal_for_verifier()
     workspace_diff = primary.sealed_workspace_diff()
-
     assert order == ["patch", "snapshot"]
     assert workspace_diff is not None
     assert workspace_diff["snapshot_root_digest"] == snapshot.root_digest
-    assert workspace_diff["patch_digest"] == digest(workspace_diff["stdout"].encode())
+    assert workspace_diff["patch_digest"] == digest(
+        workspace_diff["stdout"].encode()
+    )
+
 
 
 def _isolated_verifier_fixture(runtime_class: c.RuntimeClass) -> Any:
@@ -282,10 +280,8 @@ async def test_snapshot_digest_independently_binds_every_path_byte_and_mode(
     tmp_path: Path,
 ) -> None:
     harness, primary, snapshot = await _opened_snapshot(tmp_path)
-    object_root = (
-        harness.cache_root
-        / "snapshot-objects"
-        / snapshot.root_digest.removeprefix("sha256:")
+    object_root = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
+        "sha256:"
     )
     entries = _snapshot_entries(object_root)
 
@@ -310,9 +306,7 @@ async def test_snapshot_digest_independently_binds_every_path_byte_and_mode(
     await primary.close()
 
 
-@pytest.mark.parametrize(
-    "attack", ["symlink", "hardlink", "fifo", "depth", "files", "bytes"]
-)
+@pytest.mark.parametrize("attack", ["symlink", "hardlink", "fifo", "depth", "files", "bytes"])
 async def test_snapshot_rejects_links_special_files_and_budget_bombs_before_verifier(
     tmp_path: Path, attack: str
 ) -> None:
@@ -369,10 +363,7 @@ async def test_snapshot_requires_positive_runtime_quiescence_and_starts_no_verif
     assert captured.value.code == "snapshot_not_quiescent"
     assert primary.state is WorkspaceLeaseState.QUARANTINED
     assert len(harness.backend.launches) == 1
-    assert (
-        list((harness.cache_root / "snapshot-objects").glob("*/work/candidate.txt"))
-        == []
-    )
+    assert list((harness.cache_root / "snapshot-objects").glob("*/work/candidate.txt")) == []
     assert (await primary.close()).state is CleanupState.RELEASED
 
 
@@ -388,23 +379,12 @@ async def test_verifier_uses_distinct_runtime_workspace_and_read_only_snapshot(
     assert verifier.measurement.workspace_id != primary.measurement.workspace_id
     assert verifier.plan.runtime.runtime_id == "verifier-runtime"
     assert verifier.plan.image.image_digest == primary.plan.verifier.grant.image_digest
-    assert (
-        verifier.plan.security_policy.policy_digest
-        == primary.plan.verifier.security_policy_digest
-    )
-    assert (
-        verifier.plan.network_policy.policy_digest
-        == primary.plan.verifier.grant.network_policy_digest
-    )
-    assert (
-        verifier.workspace / "snapshot" / "work" / "candidate.txt"
-    ).read_bytes() == b"candidate"
-    assert (
-        stat.S_IMODE(
-            (verifier.workspace / "snapshot" / "work" / "candidate.txt").stat().st_mode
-        )
-        == 0o400
-    )
+    assert verifier.plan.security_policy.policy_digest == primary.plan.verifier.security_policy_digest
+    assert verifier.plan.network_policy.policy_digest == primary.plan.verifier.grant.network_policy_digest
+    assert (verifier.workspace / "snapshot" / "work" / "candidate.txt").read_bytes() == b"candidate"
+    assert stat.S_IMODE(
+        (verifier.workspace / "snapshot" / "work" / "candidate.txt").stat().st_mode
+    ) == 0o400
     assert stat.S_IMODE((verifier.workspace / "result").stat().st_mode) == 0o700
     assert len(harness.backend.launches) == 2
     assert primary.measurement.reward_eligible is False
@@ -412,9 +392,7 @@ async def test_verifier_uses_distinct_runtime_workspace_and_read_only_snapshot(
     assert verifier.measurement.reward_eligible is False
 
     payload = _valid_result(primary, snapshot)
-    result_path = (
-        verifier.workspace / "result" / verifier.plan.verifier.result_relative_path
-    )
+    result_path = verifier.workspace / "result" / verifier.plan.verifier.result_relative_path
     result_path.write_text(json.dumps(payload), encoding="utf-8")
     result = await verifier.execute()
     assert isinstance(result, MappingProxyType)
@@ -522,14 +500,10 @@ async def test_reward_eligible_primary_requires_equally_isolated_verifier_measur
         assert len(list(harness.lease_root.iterdir())) == 2
     else:
         verifier = await harness.manager.open_verifier(primary, snapshot)
-        assert (
-            primary.measurement.isolation_disposition is IsolationDisposition.ISOLATED
-        )
+        assert primary.measurement.isolation_disposition is IsolationDisposition.ISOLATED
         assert primary.measurement.isolated is True
         assert primary.measurement.reward_eligible is True
-        assert (
-            verifier.measurement.isolation_disposition is IsolationDisposition.ISOLATED
-        )
+        assert verifier.measurement.isolation_disposition is IsolationDisposition.ISOLATED
         assert verifier.measurement.isolated is True
         assert verifier.measurement.reward_eligible is True
         assert (await verifier.close()).state is CleanupState.RELEASED
@@ -567,9 +541,7 @@ async def test_malicious_verifier_results_are_typed_and_cleanup_is_authoritative
     harness, primary, snapshot = await _opened_snapshot(tmp_path)
     verifier = await harness.manager.open_verifier(primary, snapshot)
     handle = harness.backend.handles[1]
-    result_path = (
-        verifier.workspace / "result" / verifier.plan.verifier.result_relative_path
-    )
+    result_path = verifier.workspace / "result" / verifier.plan.verifier.result_relative_path
     payload = _valid_result(primary, snapshot)
     device_fd: int | None = None
     if case == "nonzero":
@@ -592,7 +564,9 @@ async def test_malicious_verifier_results_are_typed_and_cleanup_is_authoritative
         device_fd = os.open("/dev/null", os.O_RDONLY)
         original_open = os.open
 
-        def substitute_device(path: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+        def substitute_device(
+            path: Any, flags: int, *args: Any, **kwargs: Any
+        ) -> int:
             if path == result_path.name and kwargs.get("dir_fd") is not None:
                 return os.dup(device_fd)
             return original_open(path, flags, *args, **kwargs)
@@ -745,7 +719,6 @@ async def test_snapshot_seal_cancellation_releases_completed_snapshot_worker(
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
 
-
 async def test_identical_snapshot_seal_holds_reference_during_release(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -813,7 +786,9 @@ async def test_snapshot_copy_cancellation_waits_before_verifier_workspace_releas
         return original_copy(*args, **kwargs)
 
     monkeypatch.setattr(harness.store, "copy_snapshot", blocked_copy)
-    opening = asyncio.create_task(harness.manager.open_verifier(primary, snapshot))
+    opening = asyncio.create_task(
+        harness.manager.open_verifier(primary, snapshot)
+    )
     assert await asyncio.to_thread(entered.wait, 1)
 
     opening.cancel()
@@ -828,7 +803,8 @@ async def test_snapshot_copy_cancellation_waits_before_verifier_workspace_releas
         for path in harness.workspace_root.iterdir()
     )
     assert not any(
-        path.name.startswith("verifier-lease-") for path in harness.lease_root.iterdir()
+        path.name.startswith("verifier-lease-")
+        for path in harness.lease_root.iterdir()
     )
     assert (await primary.close()).state is CleanupState.RELEASED
     assert harness.manager._snapshots == {}
@@ -841,10 +817,8 @@ async def test_post_seal_snapshot_mutation_starts_no_verifier_and_cleans_primary
     tmp_path: Path,
 ) -> None:
     harness, primary, snapshot = await _opened_snapshot(tmp_path)
-    object_root = (
-        harness.cache_root
-        / "snapshot-objects"
-        / snapshot.root_digest.removeprefix("sha256:")
+    object_root = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
+        "sha256:"
     )
     candidate = object_root / "work" / "candidate.txt"
     candidate.chmod(0o600)
@@ -877,7 +851,9 @@ async def test_open_verifier_reservation_precedes_parent_close_and_child_cleanup
     backend = harness.backend
     backend.launch_entered = asyncio.Event()
     backend.release_launch = asyncio.Event()
-    opening = asyncio.create_task(harness.manager.open_verifier(primary, snapshot))
+    opening = asyncio.create_task(
+        harness.manager.open_verifier(primary, snapshot)
+    )
 
     await asyncio.wait_for(backend.launch_entered.wait(), 1)
     assert len(backend.launches) == 2
@@ -966,8 +942,6 @@ async def test_primary_close_aggregates_failed_child_without_duplicate_resource(
     reconciled = await harness.manager.close()
     assert len(reconciled) == 1
     assert reconciled[0].state is CleanupState.RELEASED
-
-
 @pytest.mark.parametrize(
     "primary_case",
     ["fabricated", "subclass", "foreign-manager", "stale", "non-live"],
@@ -983,7 +957,6 @@ async def test_open_verifier_rejects_noncanonical_primary_before_effects(
 
     if primary_case in {"fabricated", "subclass"}:
         if primary_case == "subclass":
-
             class DerivedPrimary(SandboxWorkspaceLease):
                 pass
 
@@ -1016,7 +989,10 @@ async def test_open_verifier_rejects_noncanonical_primary_before_effects(
     before = (
         len(harness.backend.launches),
         tuple(sorted(path.name for path in harness.workspace_root.iterdir())),
-        {path.name: path.read_bytes() for path in sorted(harness.lease_root.iterdir())},
+        {
+            path.name: path.read_bytes()
+            for path in sorted(harness.lease_root.iterdir())
+        },
         dict(harness.manager._snapshots),
     )
     foreign_before = (
@@ -1036,7 +1012,10 @@ async def test_open_verifier_rejects_noncanonical_primary_before_effects(
     assert (
         len(harness.backend.launches),
         tuple(sorted(path.name for path in harness.workspace_root.iterdir())),
-        {path.name: path.read_bytes() for path in sorted(harness.lease_root.iterdir())},
+        {
+            path.name: path.read_bytes()
+            for path in sorted(harness.lease_root.iterdir())
+        },
         dict(harness.manager._snapshots),
     ) == before
     if foreign_harness is not None:
@@ -1074,7 +1053,6 @@ async def test_open_verifier_rejects_caller_substituted_authority_before_effects
             executable_digest=foreign_grant.executable_digest,
         )
     else:
-
         class DerivedVerifier(type(canonical)):
             pass
 
@@ -1094,7 +1072,10 @@ async def test_open_verifier_rejects_caller_substituted_authority_before_effects
     before = (
         len(harness.backend.launches),
         tuple(sorted(path.name for path in harness.workspace_root.iterdir())),
-        {path.name: path.read_bytes() for path in sorted(harness.lease_root.iterdir())},
+        {
+            path.name: path.read_bytes()
+            for path in sorted(harness.lease_root.iterdir())
+        },
         dict(harness.manager._snapshots),
     )
 
@@ -1108,10 +1089,15 @@ async def test_open_verifier_rejects_caller_substituted_authority_before_effects
     assert (
         len(harness.backend.launches),
         tuple(sorted(path.name for path in harness.workspace_root.iterdir())),
-        {path.name: path.read_bytes() for path in sorted(harness.lease_root.iterdir())},
+        {
+            path.name: path.read_bytes()
+            for path in sorted(harness.lease_root.iterdir())
+        },
         dict(harness.manager._snapshots),
     ) == before
     assert (await primary.close()).state is CleanupState.RELEASED
+
+
 
 
 class VerifierRestartBackend(RecordingBackend):
@@ -1156,7 +1142,9 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
     if phase == "allocating":
         harness.backend.launch_entered = asyncio.Event()
         harness.backend.release_launch = asyncio.Event()
-        opening = asyncio.create_task(harness.manager.open_verifier(primary, snapshot))
+        opening = asyncio.create_task(
+            harness.manager.open_verifier(primary, snapshot)
+        )
         await asyncio.wait_for(harness.backend.launch_entered.wait(), 1)
         verifier_lease_id = harness.backend.launches[-1][2].lease_id
     else:
@@ -1226,7 +1214,9 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
     assert not verifier_record_path.exists()
-    assert not (harness.lease_root / f"{primary.lease_id}.json").exists()
+    assert not (
+        harness.lease_root / f"{primary.lease_id}.json"
+    ).exists()
     assert list(harness.workspace_root.iterdir()) == []
 
 
@@ -1253,6 +1243,7 @@ async def test_same_manager_reconcile_skips_live_primary_and_verifier_leases(
     assert (await primary.close()).state is CleanupState.RELEASED
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
+
 
 
 @pytest.mark.parametrize(
@@ -1318,9 +1309,7 @@ async def test_verifier_open_record_failure_obeys_detailed_runtime_cleanup_proof
         assert captured.value.primary.args == (
             "verifier active record durability fault",
         )
-        assert (
-            captured.value.cleanup_receipt.steps[: len(runtime_steps)] == runtime_steps
-        )
+        assert captured.value.cleanup_receipt.steps[: len(runtime_steps)] == runtime_steps
 
     assert calls == 2
     assert harness.backend.handles[1].terminate_calls == 1
@@ -1330,7 +1319,6 @@ async def test_verifier_open_record_failure_obeys_detailed_runtime_cleanup_proof
     else:
         assert len(set(harness.workspace_root.iterdir()) - primary_workspaces) == 1
         assert len(set(harness.lease_root.iterdir()) - primary_records) == 2
-
 
 @pytest.mark.parametrize(
     "runtime_state",
@@ -1344,7 +1332,9 @@ async def test_verifier_close_retains_dependents_until_runtime_absence_is_proven
     handle = harness.backend.handles[1]
     handle.termination_states = [runtime_state, CleanupState.RELEASED]
     result_path = (
-        verifier.workspace / "result" / verifier.plan.verifier.result_relative_path
+        verifier.workspace
+        / "result"
+        / verifier.plan.verifier.result_relative_path
     )
     result_path.write_text("retained", encoding="utf-8")
     record_path = harness.lease_root / f"{verifier.lease_id}.json"
@@ -1398,6 +1388,8 @@ async def test_verifier_close_retains_dependents_until_runtime_absence_is_proven
     assert (await primary.close()).state is CleanupState.RELEASED
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
+
+
 
 
 class BlockingVerifierHandle(RecordingHandle):

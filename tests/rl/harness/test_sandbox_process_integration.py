@@ -49,13 +49,11 @@ from tests.rl.harness.wp7_fixtures import (
     DeterministicRandom,
     make_runtime_fixture,
 )
-
 pytestmark = pytest.mark.local_process
 
 
 RUNTIME_ABI = TERMINAL_RUNTIME_ABI
 RUNNER_DIGEST = TERMINAL_IMPLEMENTATION_DIGEST
-
 
 def _sealed_execution_supported() -> bool:
     required_fcntl = (
@@ -82,8 +80,7 @@ requires_sealed_execution = pytest.mark.skipif(
 
 
 def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repository = tmp_path / "source"
     git_path = shutil.which("git")
@@ -106,11 +103,7 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
 
     def git(*arguments: str, cwd: Path = repository) -> str:
         completed = subprocess.run(
-            ("git", *arguments),
-            cwd=cwd,
-            check=True,
-            capture_output=True,
-            text=True,
+            ("git", *arguments), cwd=cwd, check=True, capture_output=True, text=True
         )
         return completed.stdout.strip()
 
@@ -120,14 +113,9 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
     (repository / "tracked.txt").write_text("before\n", encoding="utf-8")
     git("add", ".")
     git(
-        "-c",
-        "user.name=BreadBoard",
-        "-c",
-        "user.email=breadboard@example.invalid",
-        "commit",
-        "--quiet",
-        "-m",
-        "base",
+        "-c", "user.name=BreadBoard",
+        "-c", "user.email=breadboard@example.invalid",
+        "commit", "--quiet", "-m", "base",
     )
     base_commit = git("rev-parse", "HEAD")
     git("config", "diff.hide.command", "/usr/bin/true")
@@ -136,38 +124,27 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
     binary = b"\x00\x01\xffbinary\n"
     (repository / "new.bin").write_bytes(binary)
     plan = type(
-        "SealedDiffPlan",
-        (),
+        "SealedDiffPlan", (),
         {
             "runtime": type(
-                "Runtime",
-                (),
-                {"fixed_environment": (("PATH", os.environ["PATH"]),)},
+                "Runtime", (), {"fixed_environment": (("PATH", os.environ["PATH"]),)}
             )(),
             "limits": type(
-                "Limits",
-                (),
+                "Limits", (),
                 {"action_timeout_ms": 10_000, "artifact_bytes_each": 1024 * 1024},
             )(),
         },
     )()
-
     result = _sealed_repository_diff(
-        repository=repository,
-        base_commit=base_commit,
-        plan=plan,
+        repository=repository, base_commit=base_commit, plan=plan
     )
-
     reconstruction = tmp_path / "reconstruction"
     subprocess.run(
-        ("git", "clone", "--quiet", str(repository), str(reconstruction)),
-        check=True,
+        ("git", "clone", "--quiet", str(repository), str(reconstruction)), check=True
     )
     subprocess.run(
-        ("git", "apply", "--binary", "-"),
-        cwd=reconstruction,
-        input=result["stdout"].encode(),
-        check=True,
+        ("git", "apply", "--binary", "-"), cwd=reconstruction,
+        input=result["stdout"].encode(), check=True,
     )
     assert (reconstruction / "tracked.txt").read_text(encoding="utf-8") == "after\n"
     assert (reconstruction / "ignored.txt").read_text(encoding="utf-8") == "included\n"
@@ -210,7 +187,9 @@ async def test_run_shell_delegates_pinned_descriptor_as_workload_argv() -> None:
     )
 
     assert result is expected
-    assert calls == [(("/proc/self/fd/71", "-lc", "printf delegated"), 1_234, 5_678)]
+    assert calls == [
+        (("/proc/self/fd/71", "-lc", "printf delegated"), 1_234, 5_678)
+    ]
 
 
 async def test_run_argv_executes_requested_command_through_pinned_shell() -> None:
@@ -347,9 +326,7 @@ async def test_unsupported_host_refuses_before_subprocess_recorder_or_workload_e
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     if _sealed_execution_supported():
-        pytest.skip(
-            "unsupported-host contract is exercised only without sealed execution"
-        )
+        pytest.skip("unsupported-host contract is exercised only without sealed execution")
     fixture = make_runtime_fixture(
         with_writable_mount=True, runtime_install_root=tmp_path
     )
@@ -378,7 +355,8 @@ async def test_unsupported_host_refuses_before_subprocess_recorder_or_workload_e
     assert captured.value.code == "runtime_unsupported"
     assert calls == []
     assert not any(
-        path.name == "workload-effect" for path in harness.workspace_root.rglob("*")
+        path.name == "workload-effect"
+        for path in harness.workspace_root.rglob("*")
     )
 
 
@@ -464,19 +442,14 @@ async def test_symlinked_runtime_ancestor_is_rejected_before_child_creation(
         if runtime.runtime_id == fixture.plan.sandbox.runtime_id
     )
     alias = tmp_path / "alias"
-    alias.symlink_to(
-        Path(real_runtime.executable_path).parent, target_is_directory=True
-    )
+    alias.symlink_to(Path(real_runtime.executable_path).parent, target_is_directory=True)
     aliased_runtime = replace(
-        real_runtime,
-        executable_path=str(alias / Path(real_runtime.executable_path).name),
+        real_runtime, executable_path=str(alias / Path(real_runtime.executable_path).name)
     )
     authorities = replace(
         fixture.authorities,
         runtimes=tuple(
-            aliased_runtime
-            if runtime.runtime_id == aliased_runtime.runtime_id
-            else runtime
+            aliased_runtime if runtime.runtime_id == aliased_runtime.runtime_id else runtime
             for runtime in fixture.authorities.runtimes
         ),
     )
@@ -524,9 +497,7 @@ async def test_catalog_argv0_and_proc_exe_bind_different_objects_at_private_barr
         pid = int(identity["process_pid"])
         observed["cmdline"] = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
         observed["exe"] = os.readlink(f"/proc/{pid}/exe")
-        observed["state"] = (
-            Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
-        )
+        observed["state"] = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
         original(lease_id, resource_id, identity)
 
     monkeypatch.setattr(
@@ -574,7 +545,9 @@ async def test_cancellation_at_private_barrier_reaps_group_and_handle_remains_us
     assert len(attempted_groups) == 1
     with pytest.raises(ProcessLookupError):
         os.killpg(attempted_groups[0], 0)
-    assert not (primary._materialized.workspace_path / "work/forbidden-effect").exists()
+    assert not (
+        primary._materialized.workspace_path / "work/forbidden-effect"
+    ).exists()
 
     monkeypatch.setattr(harness.manager, "_record_process_identity", original)
     later = await primary._runtime.run_shell(
@@ -582,6 +555,10 @@ async def test_cancellation_at_private_barrier_reaps_group_and_handle_remains_us
     )
     assert later["stdout"] == "later"
     assert (await primary.close()).state is CleanupState.RELEASED
+
+
+
+
 
 
 @requires_sealed_execution
@@ -711,29 +688,19 @@ async def test_real_process_plan_runs_through_wp5_port_seals_snapshot_and_cleans
 
     assert result.termination is RunnerTermination.SUBMITTED
     assert result.effective_plan_digest == fixture.plan.canonical_digest()
-    assert (await primary.runner_workspace.read_text("work/copied.txt"))[
-        "content"
-    ] == "candidate"
-    assert (
-        primary.measurement.isolation_disposition
-        is IsolationDisposition.TRUSTED_PROCESS
-    )
+    assert (await primary.runner_workspace.read_text("work/copied.txt"))["content"] == "candidate"
+    assert primary.measurement.isolation_disposition is IsolationDisposition.TRUSTED_PROCESS
     assert primary.measurement.isolated is False
     assert primary.measurement.reward_eligible is False
     snapshot = await primary.seal_for_verifier()
-    immutable = (
-        harness.cache_root
-        / "snapshot-objects"
-        / snapshot.root_digest.removeprefix("sha256:")
+    immutable = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
+        "sha256:"
     )
     assert (immutable / "work" / "candidate.txt").read_bytes() == b"candidate"
     assert (immutable / "work" / "copied.txt").read_bytes() == b"candidate"
 
     verifier = await harness.manager.open_verifier(primary, snapshot)
-    assert (
-        verifier.measurement.isolation_disposition
-        is IsolationDisposition.TRUSTED_PROCESS
-    )
+    assert verifier.measurement.isolation_disposition is IsolationDisposition.TRUSTED_PROCESS
     with pytest.raises(VerifierExecutionError) as captured:
         await verifier.execute()
     assert captured.value.code == "verifier_result_malformed"
@@ -747,6 +714,7 @@ async def test_real_process_plan_runs_through_wp5_port_seals_snapshot_and_cleans
     assert list(harness.lease_root.iterdir()) == []
 
 
+
 @requires_sealed_execution
 async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority(
     tmp_path: Path,
@@ -758,8 +726,8 @@ async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority
     descendant_command = (
         "for descriptor in /proc/self/fd/*; do "
         "descriptor=${descriptor##*/}; "
-        'case "$descriptor" in 0|1|2) ;; '
-        '*) eval "exec ${descriptor}>&-" ;; esac; '
+        "case \"$descriptor\" in 0|1|2) ;; "
+        "*) eval \"exec ${descriptor}>&-\" ;; esac; "
         "done; "
         "printf '%s' \"$$\" > work/.descendant.tmp && "
         "mv work/.descendant.tmp work/descendant.pid; "
@@ -773,7 +741,9 @@ async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority
     descendant_pid: int | None = None
     try:
         await primary.runner_workspace.run_shell(command, timeout=2)
-        descendant = await primary.runner_workspace.read_text("work/descendant.pid")
+        descendant = await primary.runner_workspace.read_text(
+            "work/descendant.pid"
+        )
         descendant_pid = int(descendant["content"])
         async with asyncio.timeout(1):
             while True:
@@ -791,7 +761,6 @@ async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority
                 os.kill(descendant_pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-
 
 @requires_sealed_execution
 @pytest.mark.parametrize("mode", ["timeout", "cancel"])
@@ -824,7 +793,7 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
         "mv work/.spawned.tmp work/spawned.pid; "
         f"printf ready > {quoted_ready}; "
         "exec 1>&- 2>&-; "
-        'wait "$descendant"'
+        "wait \"$descendant\""
     )
     descendant_pid: int | None = None
     receipt = None
@@ -924,9 +893,7 @@ async def test_trusted_process_handle_enforces_exact_500ms_deadline_and_cleans_d
     under_elapsed = loop.time() - under_started
     assert under["returncode"] == 0
     assert 0 <= under_elapsed < 0.75
-    assert (await primary.runner_workspace.read_text("work/under"))[
-        "content"
-    ] == "under"
+    assert (await primary.runner_workspace.read_text("work/under"))["content"] == "under"
 
     descendant_command = (
         "trap '' TERM; "
@@ -943,7 +910,7 @@ async def test_trusted_process_handle_enforces_exact_500ms_deadline_and_cleans_d
         "printf '%s' \"$child\" > work/.deadline-spawned.tmp && "
         "mv work/.deadline-spawned.tmp work/deadline-spawned.pid; "
         "exec 1>&- 2>&-; "
-        'wait "$child"'
+        "wait \"$child\""
     )
     over_started = loop.time()
     with pytest.raises(SandboxLaunchError) as captured:
@@ -1012,7 +979,9 @@ async def test_real_process_restart_never_signals_from_stale_lease_record(
         "exec 1>&- 2>&-; "
         "sleep 10"
     )
-    action = asyncio.create_task(primary.runner_workspace.run_shell(command, timeout=2))
+    action = asyncio.create_task(
+        primary.runner_workspace.run_shell(command, timeout=2)
+    )
     loop = asyncio.get_running_loop()
     ready: asyncio.Future[None] = loop.create_future()
 
@@ -1156,12 +1125,8 @@ async def test_concurrent_trusted_actions_persist_distinct_identities_and_reconc
                 identities = tuple(record.get("process_identities", ()))
                 if (
                     len(identities) == 2
-                    and (
-                        primary._materialized.workspace_path / "work/first-ready"
-                    ).exists()
-                    and (
-                        primary._materialized.workspace_path / "work/second-ready"
-                    ).exists()
+                    and (primary._materialized.workspace_path / "work/first-ready").exists()
+                    and (primary._materialized.workspace_path / "work/second-ready").exists()
                 ):
                     break
                 await asyncio.sleep(0.005)

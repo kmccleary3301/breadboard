@@ -460,6 +460,7 @@ class DeterministicLease:
         self.close_release: asyncio.Event | None = None
         self._sealed_workspace_diff: dict[str, Any] | None = None
 
+
     async def seal_for_verifier(self) -> VerifierSnapshotReceipt:
         self.calls.append("lease.seal")
         receipt = VerifierSnapshotReceipt(

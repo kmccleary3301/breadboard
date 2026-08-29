@@ -1034,13 +1034,8 @@ def _project_headless_run(
         result["workspace_evidence"] = evidence_projection
         return event_bytes, None
     expected_keys = {
-        "returncode",
-        "stdout",
-        "stderr",
-        "base_commit",
-        "git_executable_digest",
-        "patch_digest",
-        "snapshot_root_digest",
+        "returncode", "stdout", "stderr", "base_commit",
+        "git_executable_digest", "patch_digest", "snapshot_root_digest",
     }
     if (
         not isinstance(workspace_diff, Mapping)
