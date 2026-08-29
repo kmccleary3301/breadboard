@@ -1109,10 +1109,19 @@ class SessionService:
         record = await self.ensure_session(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="session not active",
+            )
         key = payload.cancellation_request_key
         key_digest = identity_digest(key)
         body_digest = cancellation_body_digest(turn_id, payload.reason)
+        retry_queued_turn: TurnRecord | None = None
+        response: SessionTurnCancelResponse | None = None
+        existing: CancellationRecord | None = None
+        turn: TurnRecord | None = None
+        cancellation: CancellationRecord | None = None
+        disposition: str | None = None
         async with record.admission_lock:
             existing = record.cancellations_by_key.get(key)
             if existing is None:
@@ -1121,9 +1130,12 @@ class SessionService:
                 if existing.body_digest != body_digest:
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
-                        detail={"code": "cancellation_idempotency_conflict", "turn_id": existing.turn_id},
+                        detail={
+                            "code": "cancellation_idempotency_conflict",
+                            "turn_id": existing.turn_id,
+                        },
                     )
-                return SessionTurnCancelResponse(
+                response = SessionTurnCancelResponse(
                     cancellation_request_id=existing.cancellation_request_id,
                     cancellation_request_key=key,
                     input_id=existing.input_id,
@@ -1131,47 +1143,98 @@ class SessionService:
                     disposition="deduplicated",
                     original_disposition=existing.original_disposition,
                 )
-            turn = record.turns_by_id.get(turn_id)
-            if turn is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="turn not found")
-            if turn.terminal_outcome is not None:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="turn is already terminal")
-            if record.active_turn_id == turn_id:
-                disposition = "cancellation_requested"
-            elif turn.state == "queued":
-                disposition = "queued_cancelled"
-                try:
-                    record.queued_turn_ids.remove(turn_id)
-                except ValueError:
-                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="turn is not cancellable") from None
+                retained_turn = record.turns_by_id.get(existing.turn_id)
+                if (
+                    existing.original_disposition == "queued_cancelled"
+                    and retained_turn is not None
+                    and retained_turn.terminal_outcome is None
+                ):
+                    retry_queued_turn = retained_turn
+                else:
+                    return response
             else:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="turn is not cancellable")
-            turn.cancellation_requested = True
-            turn.cancellation_reason = payload.reason
-            cancellation = CancellationRecord(
-                cancellation_request_id=uuid.uuid4().hex,
-                cancellation_request_key=key,
-                turn_id=turn_id,
-                input_id=turn.input_id,
-                reason=payload.reason,
-                original_disposition=disposition,
-                body_digest=body_digest,
+                turn = record.turns_by_id.get(turn_id)
+                if turn is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="turn not found",
+                    )
+                if turn.terminal_outcome is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="turn is already terminal",
+                    )
+                queued_index: int | None = None
+                if record.active_turn_id == turn_id:
+                    disposition = "cancellation_requested"
+                elif turn.state == "queued":
+                    disposition = "queued_cancelled"
+                    try:
+                        queued_index = record.queued_turn_ids.index(turn_id)
+                    except ValueError:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail="turn is not cancellable",
+                        ) from None
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="turn is not cancellable",
+                    )
+                previous_cancellation_requested = turn.cancellation_requested
+                previous_cancellation_reason = turn.cancellation_reason
+                turn.cancellation_requested = True
+                turn.cancellation_reason = payload.reason
+                cancellation = CancellationRecord(
+                    cancellation_request_id=uuid.uuid4().hex,
+                    cancellation_request_key=key,
+                    turn_id=turn_id,
+                    input_id=turn.input_id,
+                    reason=payload.reason,
+                    original_disposition=disposition,
+                    body_digest=body_digest,
+                )
+                record.cancellations_by_key[key] = cancellation
+                record.cancellations_by_key_digest[key_digest] = cancellation
+                if queued_index is not None:
+                    record.queued_turn_ids.remove(turn_id)
+                try:
+                    await self.registry.persist(record)
+                except Exception:
+                    turn.cancellation_requested = previous_cancellation_requested
+                    turn.cancellation_reason = previous_cancellation_reason
+                    record.cancellations_by_key.pop(key, None)
+                    record.cancellations_by_key_digest.pop(key_digest, None)
+                    if queued_index is not None:
+                        record.queued_turn_ids.insert(queued_index, turn_id)
+                    raise
+                response = SessionTurnCancelResponse(
+                    cancellation_request_id=cancellation.cancellation_request_id,
+                    cancellation_request_key=key,
+                    input_id=turn.input_id,
+                    turn_id=turn_id,
+                    disposition=disposition,
+                    original_disposition=disposition,
+                )
+        if retry_queued_turn is not None:
+            assert existing is not None
+            assert response is not None
+            await runner.finish_queued_turn_cancellation(
+                retry_queued_turn,
+                existing.reason,
             )
-            record.cancellations_by_key[key] = cancellation
-            record.cancellations_by_key_digest[key_digest] = cancellation
-            await self.registry.persist(record)
+            return response
+        assert turn is not None
+        assert disposition is not None
+        assert response is not None
         if disposition == "queued_cancelled":
             await runner.finish_queued_turn_cancellation(turn, payload.reason)
         elif not runner.request_turn_cancellation(turn_id):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="turn is no longer active")
-        return SessionTurnCancelResponse(
-            cancellation_request_id=cancellation.cancellation_request_id,
-            cancellation_request_key=key,
-            input_id=turn.input_id,
-            turn_id=turn_id,
-            disposition=disposition,
-            original_disposition=disposition,
-        )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="turn is no longer active",
+            )
+        return response
 
     async def ensure_session(self, session_id: str) -> SessionRecord:
         record = await self.registry.get(session_id)
@@ -1186,6 +1249,13 @@ class SessionService:
         return record
 
     async def _resume_retained_session(self, record: SessionRecord) -> None:
+        if record.status in {
+            SessionStatus.COMPLETED,
+            SessionStatus.FAILED,
+            SessionStatus.STOPPED,
+        }:
+            record.loaded_from_retained_state = False
+            return
         profile = resolve_default_profile()
         default_identity = profile.public_identity()
         metadata = dict(record.metadata or {})
@@ -1597,7 +1667,11 @@ class SessionService:
         return (
             record.replay_head_sequence > 0
             and record.replay_head_event_id is not None
-            and from_id == record.replay_head_event_id
+            and from_id
+            in {
+                record.replay_head_event_id,
+                str(record.replay_head_sequence),
+            }
         )
 
     def _resolve_start_index(
