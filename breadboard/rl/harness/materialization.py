@@ -2490,6 +2490,37 @@ class FilesystemMaterializationStore:
             os.close(lock_fd)
 
 
+    @contextmanager
+    def _snapshot_staging_lock(self, snapshot_id: str) -> Iterator[None]:
+        import fcntl
+
+        if (
+            not snapshot_id.startswith("snapshot-")
+            or len(snapshot_id) != 41
+            or any(
+                character not in "0123456789abcdef"
+                for character in snapshot_id[9:]
+            )
+        ):
+            raise RuntimeError("snapshot_tampered")
+        lock_fd = self._cache.open_file(
+            "leases/staging-" + snapshot_id + ".lock",
+            os.O_RDWR | os.O_CREAT,
+            0o600,
+        )
+        try:
+            metadata = os.fstat(lock_fd)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                raise RuntimeError("snapshot_lock_invalid")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
+
+
     def verify_snapshot(
         self,
         receipt: VerifierSnapshotReceipt,
@@ -2630,17 +2661,18 @@ class FilesystemMaterializationStore:
             source_lease_id=source_lease_id,
         )
         relative = "snapshot-staging/" + snapshot_id
-        descriptor = self._cache.open_file(
-            relative,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            0o600,
-        )
-        try:
-            _write_all(descriptor, payload, failure="snapshot_tampered")
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-        self._cache.fsync_dir("snapshot-staging")
+        with self._lock, self._snapshot_staging_lock(snapshot_id):
+            descriptor = self._cache.open_file(
+                relative,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+            try:
+                _write_all(descriptor, payload, failure="snapshot_tampered")
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            self._cache.fsync_dir("snapshot-staging")
         return payload
 
     def _remove_snapshot_staging_record(
@@ -2651,33 +2683,34 @@ class FilesystemMaterializationStore:
     ) -> None:
         relative = "snapshot-staging/" + snapshot_id
         staging = "staging/" + snapshot_id
-        try:
-            descriptor = self._cache.open_file(relative, os.O_RDONLY)
-        except FileNotFoundError:
+        with self._lock, self._snapshot_staging_lock(snapshot_id):
+            try:
+                descriptor = self._cache.open_file(relative, os.O_RDONLY)
+            except FileNotFoundError:
+                if self._cache.exists(staging):
+                    raise RuntimeError("snapshot_tampered")
+                return
+            try:
+                metadata = os.fstat(descriptor)
+                observed = os.read(descriptor, len(payload) + 1)
+                if (
+                    not stat.S_ISREG(metadata.st_mode)
+                    or metadata.st_nlink != 1
+                    or stat.S_IMODE(metadata.st_mode) != 0o600
+                    or observed != payload
+                ):
+                    raise RuntimeError("snapshot_tampered")
+            finally:
+                os.close(descriptor)
+            self._cache.remove_tree(staging, missing_ok=True)
             if self._cache.exists(staging):
-                raise RuntimeError("snapshot_tampered")
-            return
-        try:
-            metadata = os.fstat(descriptor)
-            observed = os.read(descriptor, len(payload) + 1)
-            if (
-                not stat.S_ISREG(metadata.st_mode)
-                or metadata.st_nlink != 1
-                or stat.S_IMODE(metadata.st_mode) != 0o600
-                or observed != payload
-            ):
-                raise RuntimeError("snapshot_tampered")
-        finally:
-            os.close(descriptor)
-        self._cache.remove_tree(staging, missing_ok=True)
-        if self._cache.exists(staging):
-            raise RuntimeError("snapshot_release_failed")
-        staging_root_fd = self._cache.open_dir("snapshot-staging")
-        try:
-            os.unlink(snapshot_id, dir_fd=staging_root_fd)
-            os.fsync(staging_root_fd)
-        finally:
-            os.close(staging_root_fd)
+                raise RuntimeError("snapshot_release_failed")
+            staging_root_fd = self._cache.open_dir("snapshot-staging")
+            try:
+                os.unlink(snapshot_id, dir_fd=staging_root_fd)
+                os.fsync(staging_root_fd)
+            finally:
+                os.close(staging_root_fd)
 
     def _release_snapshot_staging_for_lease(
         self,
@@ -2700,19 +2733,23 @@ class FilesystemMaterializationStore:
             ):
                 raise RuntimeError("snapshot_tampered")
             relative = "snapshot-staging/" + snapshot_id
-            descriptor = self._cache.open_file(relative, os.O_RDONLY)
-            try:
-                metadata = os.fstat(descriptor)
-                if (
-                    not stat.S_ISREG(metadata.st_mode)
-                    or metadata.st_nlink != 1
-                    or stat.S_IMODE(metadata.st_mode) != 0o600
-                    or metadata.st_size > 1024
-                ):
-                    raise RuntimeError("snapshot_tampered")
-                observed = os.read(descriptor, metadata.st_size + 1)
-            finally:
-                os.close(descriptor)
+            with self._lock, self._snapshot_staging_lock(snapshot_id):
+                try:
+                    descriptor = self._cache.open_file(relative, os.O_RDONLY)
+                except FileNotFoundError:
+                    continue
+                try:
+                    metadata = os.fstat(descriptor)
+                    if (
+                        not stat.S_ISREG(metadata.st_mode)
+                        or metadata.st_nlink != 1
+                        or stat.S_IMODE(metadata.st_mode) != 0o600
+                        or metadata.st_size > 1024
+                    ):
+                        raise RuntimeError("snapshot_tampered")
+                    observed = os.read(descriptor, metadata.st_size + 1)
+                finally:
+                    os.close(descriptor)
             try:
                 projection = json.loads(observed)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -2745,6 +2782,22 @@ class FilesystemMaterializationStore:
         source_lease_id: str,
     ) -> bool:
         suffix = root_digest.removeprefix(_DIGEST_PREFIX)
+        with self._lock, self._snapshot_lock(suffix):
+            return self._release_snapshot_reference_locked(
+                suffix=suffix,
+                root_digest=root_digest,
+                snapshot_id=snapshot_id,
+                source_lease_id=source_lease_id,
+            )
+
+    def _release_snapshot_reference_locked(
+        self,
+        *,
+        suffix: str,
+        root_digest: str,
+        snapshot_id: str,
+        source_lease_id: str,
+    ) -> bool:
         relative = "snapshot-objects/" + suffix
         reference_directory = "snapshot-references/" + suffix
         reference_relative = reference_directory + "/" + snapshot_id
@@ -2753,43 +2806,42 @@ class FilesystemMaterializationStore:
             snapshot_id=snapshot_id,
             source_lease_id=source_lease_id,
         )
-        with self._lock, self._snapshot_lock(suffix):
-            try:
-                marker_fd = self._cache.open_file(reference_relative, os.O_RDONLY)
-            except FileNotFoundError:
-                return not self._cache.exists(relative)
-            try:
-                metadata = os.fstat(marker_fd)
-                observed = os.read(marker_fd, len(marker_payload) + 1)
-                if (
-                    not stat.S_ISREG(metadata.st_mode)
-                    or metadata.st_nlink != 1
-                    or observed != marker_payload
-                ):
-                    raise RuntimeError("snapshot_tampered")
-            finally:
-                os.close(marker_fd)
-            reference_fd = self._cache.open_dir(reference_directory)
-            try:
-                other_references = tuple(
-                    name
-                    for name in os.listdir(reference_fd)
-                    if name != snapshot_id
-                )
-                if other_references:
-                    os.unlink(snapshot_id, dir_fd=reference_fd)
-                    os.fsync(reference_fd)
-                    return True
-                self._cache.remove_tree(relative, missing_ok=True)
-                if self._cache.exists(relative):
-                    return False
+        try:
+            marker_fd = self._cache.open_file(reference_relative, os.O_RDONLY)
+        except FileNotFoundError:
+            return not self._cache.exists(relative)
+        try:
+            metadata = os.fstat(marker_fd)
+            observed = os.read(marker_fd, len(marker_payload) + 1)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_nlink != 1
+                or observed != marker_payload
+            ):
+                raise RuntimeError("snapshot_tampered")
+        finally:
+            os.close(marker_fd)
+        reference_fd = self._cache.open_dir(reference_directory)
+        try:
+            other_references = tuple(
+                name
+                for name in os.listdir(reference_fd)
+                if name != snapshot_id
+            )
+            if other_references:
                 os.unlink(snapshot_id, dir_fd=reference_fd)
                 os.fsync(reference_fd)
-            finally:
-                os.close(reference_fd)
-            self._cache.remove_tree(reference_directory)
-            self._cache.fsync_dir("snapshot-references")
-            return True
+                return True
+            self._cache.remove_tree(relative, missing_ok=True)
+            if self._cache.exists(relative):
+                return False
+            os.unlink(snapshot_id, dir_fd=reference_fd)
+            os.fsync(reference_fd)
+        finally:
+            os.close(reference_fd)
+        self._cache.remove_tree(reference_directory)
+        self._cache.fsync_dir("snapshot-references")
+        return True
 
     def _reject_unreferenced_snapshot_object(self, suffix: str) -> None:
         reference_directory = "snapshot-references/" + suffix
@@ -2857,30 +2909,36 @@ class FilesystemMaterializationStore:
                 )
             ):
                 raise RuntimeError("snapshot_tampered")
-            reference_fd = self._cache.open_dir(
-                "snapshot-references/" + suffix
-            )
-            try:
-                snapshot_ids = tuple(sorted(os.listdir(reference_fd)))
-            finally:
-                os.close(reference_fd)
-            for snapshot_id in snapshot_ids:
+            with self._lock, self._snapshot_lock(suffix):
                 try:
-                    marker = self._read_snapshot_reference(
-                        suffix=suffix,
-                        snapshot_id=snapshot_id,
+                    reference_fd = self._cache.open_dir(
+                        "snapshot-references/" + suffix
                     )
                 except FileNotFoundError:
-                    continue
-                if marker["source_lease_id"] != source_lease_id:
-                    continue
-                if not self._release_snapshot_reference(
-                    root_digest=marker["root_digest"],
-                    snapshot_id=snapshot_id,
-                    source_lease_id=source_lease_id,
-                ):
-                    raise RuntimeError("snapshot_release_failed")
-                released.add(snapshot_id)
+                    snapshot_ids = ()
+                else:
+                    try:
+                        snapshot_ids = tuple(sorted(os.listdir(reference_fd)))
+                    finally:
+                        os.close(reference_fd)
+                for snapshot_id in snapshot_ids:
+                    try:
+                        marker = self._read_snapshot_reference(
+                            suffix=suffix,
+                            snapshot_id=snapshot_id,
+                        )
+                    except FileNotFoundError:
+                        continue
+                    if marker["source_lease_id"] != source_lease_id:
+                        continue
+                    if not self._release_snapshot_reference_locked(
+                        suffix=suffix,
+                        root_digest=marker["root_digest"],
+                        snapshot_id=snapshot_id,
+                        source_lease_id=source_lease_id,
+                    ):
+                        raise RuntimeError("snapshot_release_failed")
+                    released.add(snapshot_id)
             self._reject_unreferenced_snapshot_object(suffix)
         return tuple(sorted(released))
 

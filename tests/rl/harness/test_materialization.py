@@ -1347,6 +1347,155 @@ def test_snapshot_references_coordinate_across_store_instances(
     second_store.close()
     store.close()
 
+
+def test_snapshot_staging_recovery_waits_for_record_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, workspace, cache_root, workspace_root = _empty_materialized_workspace(
+        tmp_path
+    )
+    recovery = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=store.source_reader,
+        clock=store.clock,
+        lease_ttl=store.lease_ttl,
+        storage_backend=directory_storage(),
+        random_bytes=DeterministicRandom(90_500),
+    )
+    snapshot_id = "snapshot-" + ("a" * 32)
+    source_lease_id = workspace.cache_token.lease_id
+    payload = store._snapshot_staging_payload(
+        snapshot_id=snapshot_id,
+        source_lease_id=source_lease_id,
+    )
+    relative = "snapshot-staging/" + snapshot_id
+    recovery_started = Event()
+    recovery_read_attempted = Event()
+    rooted_type = type(recovery._cache)
+    original_open_file = rooted_type.open_file
+
+    def observed_open_file(
+        rooted: Any,
+        requested: str,
+        flags: int,
+        mode: int = 0o600,
+    ) -> int:
+        if rooted is recovery._cache and requested == relative:
+            recovery_read_attempted.set()
+        return original_open_file(rooted, requested, flags, mode)
+
+    monkeypatch.setattr(rooted_type, "open_file", observed_open_file)
+
+    def recover() -> tuple[str, ...]:
+        recovery_started.set()
+        return recovery.release_snapshots_for_lease(source_lease_id)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with store._snapshot_staging_lock(snapshot_id):
+            descriptor = store._cache.open_file(
+                relative,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+            assert os.write(descriptor, payload[:1]) == 1
+            future = pool.submit(recover)
+            assert recovery_started.wait(1)
+            assert not recovery_read_attempted.wait(0.1)
+            materialization_module._write_all(
+                descriptor,
+                payload[1:],
+                failure="snapshot_tampered",
+            )
+            os.fsync(descriptor)
+            os.close(descriptor)
+            store._cache.fsync_dir("snapshot-staging")
+        assert future.result(timeout=1) == (snapshot_id,)
+
+    assert not (cache_root / relative).exists()
+    workspace.close()
+    recovery.close()
+    store.close()
+
+
+def test_snapshot_reference_recovery_waits_for_marker_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, workspace, cache_root, workspace_root = _empty_materialized_workspace(
+        tmp_path
+    )
+    recovery = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=store.source_reader,
+        clock=store.clock,
+        lease_ttl=store.lease_ttl,
+        storage_backend=directory_storage(),
+        random_bytes=DeterministicRandom(90_600),
+    )
+    suffix = "c" * 64
+    root_digest = "sha256:" + suffix
+    snapshot_id = "snapshot-" + ("d" * 32)
+    source_lease_id = workspace.cache_token.lease_id
+    reference_directory = "snapshot-references/" + suffix
+    reference_relative = reference_directory + "/" + snapshot_id
+    payload = store._snapshot_reference_payload(
+        root_digest=root_digest,
+        snapshot_id=snapshot_id,
+        source_lease_id=source_lease_id,
+    )
+    store._cache.mkdir("snapshot-objects/" + suffix)
+    store._cache.mkdir(reference_directory)
+    recovery_started = Event()
+    recovery_read_attempted = Event()
+    rooted_type = type(recovery._cache)
+    original_open_file = rooted_type.open_file
+
+    def observed_open_file(
+        rooted: Any,
+        requested: str,
+        flags: int,
+        mode: int = 0o600,
+    ) -> int:
+        if rooted is recovery._cache and requested == reference_relative:
+            recovery_read_attempted.set()
+        return original_open_file(rooted, requested, flags, mode)
+
+    monkeypatch.setattr(rooted_type, "open_file", observed_open_file)
+
+    def recover() -> tuple[str, ...]:
+        recovery_started.set()
+        return recovery.release_snapshots_for_lease(source_lease_id)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with store._snapshot_lock(suffix):
+            descriptor = store._cache.open_file(
+                reference_relative,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+            assert os.write(descriptor, payload[:1]) == 1
+            future = pool.submit(recover)
+            assert recovery_started.wait(1)
+            assert not recovery_read_attempted.wait(0.1)
+            materialization_module._write_all(
+                descriptor,
+                payload[1:],
+                failure="snapshot_tampered",
+            )
+            os.fsync(descriptor)
+            os.close(descriptor)
+            store._cache.fsync_dir(reference_directory)
+        assert future.result(timeout=1) == (snapshot_id,)
+
+    assert not (cache_root / "snapshot-objects" / suffix).exists()
+    assert not (cache_root / reference_directory).exists()
+    workspace.close()
+    recovery.close()
+    store.close()
+
 def test_restart_releases_only_durable_snapshots_owned_by_stale_lease(
     tmp_path: Path,
 ) -> None:
