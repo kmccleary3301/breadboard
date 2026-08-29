@@ -222,6 +222,24 @@ def test_profile_client_sets_sdk_retries_to_zero(monkeypatch):
     assert "Authorization" not in captured["default_headers"]
 
 
+def test_profile_client_applies_explicit_bounded_transport_timeout(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        sdk_bindings.provider_sdk_bindings,
+        "openai",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+    runtime = _runtime()
+
+    runtime.create_client_from_profile(_profile(), timeout_seconds=30)
+
+    assert captured["timeout"] == 30.0
+    with pytest.raises(ProviderRuntimeError) as raised:
+        runtime.create_client_from_profile(_profile(), timeout_seconds=0)
+    assert raised.value.details["code"] == "invalid_provider_timeout"
+
+
 def test_profile_binds_production_runtime_client(monkeypatch):
     created = []
 

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import socket
 import sys
+from builtins import BaseExceptionGroup
 from collections.abc import Awaitable, Callable, Sequence
 from types import FrameType
 from typing import Any
@@ -11,6 +13,7 @@ import uvicorn
 
 
 from .composition import load_production_composition
+from .headless import HeadlessRunFailed, run_headless_request_file
 
 
 def _secret_file(value: str) -> tuple[str, str]:
@@ -42,6 +45,8 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--composition-ref", required=True)
         command.add_argument("--secret-file", action="append", type=_secret_file, default=[], metavar="HANDLE=/absolute/path")
         command.add_argument("--prebound-service-fd", action="append", type=_service_fd, default=[], metavar="ROLE=FD")
+    run = commands.add_parser("run", allow_abbrev=False)
+    run.add_argument("--request", required=True)
     return parser
 
 
@@ -163,9 +168,45 @@ class _LifecycleServer(uvicorn.Server):
             raise failure
 
 
+async def _run_headless(path: str) -> int:
+    try:
+        result = await run_headless_request_file(path)
+    except HeadlessRunFailed as exc:
+        terminal = exc.result.get("terminal", {})
+        print(
+            json.dumps(
+                {
+                    "schema_version": exc.result.get("schema_version"),
+                    "episode_id": exc.result.get("episode_id"),
+                    "config_digest": exc.result.get("config_digest"),
+                    "status": terminal.get("status"),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        json.dumps(
+            {
+                "schema_version": result["schema_version"],
+                "episode_id": result["episode_id"],
+                "config_digest": result["config_digest"],
+                "status": result["terminal"]["status"],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
+        if args.command == "run":
+            return asyncio.run(_run_headless(args.request))
         bindings = _bindings(args.secret_file)
         socket_fds = _socket_bindings(args.prebound_service_fd)
         if args.command == "inspect":

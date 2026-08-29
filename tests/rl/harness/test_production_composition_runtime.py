@@ -41,6 +41,7 @@ async def test_composition_retries_failed_runtime_cleanup_before_authorities() -
 
     composition = ProductionComposition(
         app=None,
+        service=None,
         server=None,
         manifest=None,
         manifest_ref=None,
@@ -302,6 +303,33 @@ async def test_lifecycle_server_cancellation_waits_for_owned_shutdown(
         await serve_task
     assert server._service_shutdown_task is not None
     assert server._service_shutdown_task.done() is True
+
+
+def test_cli_run_emits_only_secret_free_result_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def run(_path: str) -> dict[str, object]:
+        return {
+            "schema_version": "bb.rl.headless-result.v1",
+            "episode_id": "episode-one",
+            "config_digest": "sha256:" + "a" * 64,
+            "terminal": {"status": "succeeded"},
+        }
+
+    monkeypatch.setattr(harness_main, "run_headless_request_file", run)
+
+    result = harness_main.main(["run", "--request", "/request.json"])
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert json.loads(captured.out) == {
+        "schema_version": "bb.rl.headless-result.v1",
+        "episode_id": "episode-one",
+        "config_digest": "sha256:" + "a" * 64,
+        "status": "succeeded",
+    }
+    assert captured.err == ""
 
 
 def test_cli_sanitizes_runtime_failure_without_exposing_exception(

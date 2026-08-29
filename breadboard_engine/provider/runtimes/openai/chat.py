@@ -58,7 +58,10 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         return provider_sdk_bindings.openai(**kwargs)
 
     def create_client_from_profile(
-        self, profile: OpenAICompletionsProviderProfile
+        self,
+        profile: OpenAICompletionsProviderProfile,
+        *,
+        timeout_seconds: float | None = None,
     ) -> Any:
         """Create a zero-retry SDK client from one immutable episode profile."""
         if not isinstance(profile, OpenAICompletionsProviderProfile):
@@ -67,6 +70,15 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 kind="configuration",
                 details={"code": "invalid_provider_profile"},
             )
+        if timeout_seconds is not None and (
+            type(timeout_seconds) not in (int, float)
+            or not 0 < timeout_seconds <= 3_600
+        ):
+            raise ProviderRuntimeError(
+                "OpenAI Chat profile timeout is invalid",
+                kind="configuration",
+                details={"code": "invalid_provider_timeout"},
+            )
         self._require_openai()
         with redaction.secret_value_scope(
             profile.scoped_credential,
@@ -74,12 +86,15 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             allow_short=True,
         ):
             try:
-                transport = provider_sdk_bindings.openai(
-                    api_key=profile.scoped_credential,
-                    base_url=profile.base_url,
-                    default_headers=dict(profile.caller_headers),
-                    max_retries=0,
-                )
+                kwargs: Dict[str, Any] = {
+                    "api_key": profile.scoped_credential,
+                    "base_url": profile.base_url,
+                    "default_headers": dict(profile.caller_headers),
+                    "max_retries": 0,
+                }
+                if timeout_seconds is not None:
+                    kwargs["timeout"] = float(timeout_seconds)
+                transport = provider_sdk_bindings.openai(**kwargs)
             except Exception as exc:
                 raise ProviderRuntimeError(
                     redaction.safe_exception_message(exc),
