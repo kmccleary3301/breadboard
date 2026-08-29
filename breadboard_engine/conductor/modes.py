@@ -88,15 +88,29 @@ def _provider_wire_evidence(
     client_config: Dict[str, Any],
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[str], Optional[Dict[str, Any]]]:
     if profile is not None:
+        profile_identity = profile.identity_dict()
         request_headers = {"Authorization": redaction.REDACTED}
         request_headers.update(
             {name: redaction.REDACTED for name in profile.caller_headers}
         )
+        secret_values = [
+            profile.scoped_credential,
+            *profile.caller_headers.values(),
+        ]
+        with redaction.secret_value_scope(*secret_values):
+            request_body, _redaction_problems = redaction.scrub_structure(
+                profile.chat_request(messages, tools),
+                path="$.provider_request",
+            )
+        if not isinstance(request_body, dict):
+            raise ProviderContractError(
+                "profile request evidence must remain an object after redaction"
+            )
         return (
-            profile.chat_request(messages, tools),
+            request_body,
             request_headers,
-            profile.base_url,
-            profile.identity_dict(),
+            f"sha256:{profile_identity['base_url_sha256']}",
+            profile_identity,
         )
     try:
         request_headers = dict(client_config.get("default_headers") or {})

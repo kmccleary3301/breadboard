@@ -460,13 +460,44 @@ def test_profile_wire_evidence_records_exact_authoritative_request():
     assert body["seed"] == 7
     assert body["enable_thinking"] is False
     assert body["tools"][0]["function"]["strict"] is False
-    assert endpoint == profile.base_url
+    assert endpoint == f"sha256:{identity['base_url_sha256']}"
     assert identity == profile.identity_dict()
     assert headers == {
         "Authorization": "***REDACTED***",
         "X-Request-ID": "***REDACTED***",
     }
     assert "episode-secret" not in repr((body, headers, endpoint, identity))
+
+
+def test_profile_wire_evidence_redacts_echoes_and_raw_endpoint():
+    profile = _profile(
+        base_url="http://127.0.0.1:8111/caller-secret/v1",
+        caller_headers={"X-Request-ID": "caller-secret"},
+    )
+
+    evidence = _provider_wire_evidence(
+        profile=profile,
+        provider_id="openai",
+        model=MODEL,
+        messages=[{"role": "user", "content": "episode-secret caller-secret"}],
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "read",
+                    "description": "episode-secret caller-secret",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ],
+        stream=True,
+        client_config={},
+    )
+
+    assert "episode-secret" not in repr(evidence)
+    assert "caller-secret" not in repr(evidence)
+    assert profile.base_url not in repr(evidence)
+    assert evidence[2] == f"sha256:{profile.identity_dict()['base_url_sha256']}"
 
 
 def test_rejected_episode_does_not_retain_provider_profile():
