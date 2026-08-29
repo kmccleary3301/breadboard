@@ -790,6 +790,10 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
                         raise E4ParityError(
                             f"workspace directory changed during snapshot: {relative_text}"
                         )
+                except OSError as exc:
+                    raise E4ParityError(
+                        f"could not inspect workspace directory {relative_text}"
+                    ) from exc
                 finally:
                     os.close(child_fd)
                 continue
@@ -1197,6 +1201,8 @@ def _normalize_temporary_path(value: Any, root: str) -> str:
 def _validate_absolute_path(value: str, field_name: str) -> None:
     _require_bounded_text(value, field_name, max_bytes=_MAX_WORKSPACE_PATH_BYTES)
     normalized = value.replace("\\", "/")
+    if normalized.startswith(("//?/", "//./")):
+        raise E4ParityError(f"{field_name} cannot use a device namespace")
     is_unc = normalized.startswith("//")
     is_posix = normalized.startswith("/") and not is_unc
     is_windows = is_unc or _WINDOWS_ABSOLUTE_RE.match(normalized) is not None

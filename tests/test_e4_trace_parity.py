@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import os
+import stat
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -280,6 +281,11 @@ def test_normalization_policy_fails_closed() -> None:
             r"\\server\share",
             r"\\server\share\clone",
         )
+    with pytest.raises(E4ParityError, match="device namespace"):
+        TemporaryPathRoots(
+            r"\\?\UNC\server\share\reference",
+            r"\\server\share\clone",
+        )
     assert type_mismatch.mismatches[0].reason == "JSON types differ"
 
 
@@ -519,6 +525,30 @@ def test_workspace_snapshot_translates_file_read_failure(
     monkeypatch.setattr(os, "read", fail_read)
 
     with pytest.raises(E4ParityError, match="could not read workspace file source.py"):
+        workspace_snapshot(workspace)
+
+
+def test_workspace_snapshot_translates_directory_fstat_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    child = workspace / "child"
+    child.mkdir(parents=True)
+    root_inode = os.stat(workspace).st_ino
+    real_fstat = os.fstat
+
+    def fail_child_directory(fd: int):
+        opened_stat = real_fstat(fd)
+        if stat.S_ISDIR(opened_stat.st_mode) and opened_stat.st_ino != root_inode:
+            raise OSError("simulated ESTALE")
+        return opened_stat
+
+    monkeypatch.setattr(os, "fstat", fail_child_directory)
+
+    with pytest.raises(
+        E4ParityError,
+        match="could not inspect workspace directory child",
+    ):
         workspace_snapshot(workspace)
 
 
