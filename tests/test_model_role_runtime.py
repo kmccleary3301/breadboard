@@ -109,7 +109,6 @@ def test_role_policy_translates_provider_native_request_options() -> None:
                     "expose_summary": True,
                 },
                 "generation": {
-                    "temperature": 0.2,
                     "max_output_tokens": 2048,
                 },
                 "service_tier": "priority",
@@ -117,7 +116,6 @@ def test_role_policy_translates_provider_native_request_options() -> None:
         )
     )
     assert openai == {
-        "temperature": 0.2,
         "max_output_tokens": 2048,
         "service_tier": "priority",
         "reasoning": {"effort": "xhigh", "summary": "auto"},
@@ -181,6 +179,14 @@ def test_role_policy_translates_provider_native_request_options() -> None:
             "unsupported_role_generation_seed",
         ),
         (
+            openai_responses_role_options,
+            {
+                "reasoning": {"mode": "effort", "effort": "high"},
+                "generation": {"temperature": 0.2},
+            },
+            "unsupported_role_generation_sampling_with_reasoning",
+        ),
+        (
             anthropic_role_options,
             {
                 "reasoning": {"mode": "budget", "budget_tokens": 4096},
@@ -195,6 +201,22 @@ def test_role_policy_translates_provider_native_request_options() -> None:
                 "generation": {"top_p": 0.8},
             },
             "unsupported_role_generation_sampling_with_thinking",
+        ),
+        (
+            anthropic_role_options,
+            {
+                "reasoning": {"mode": "budget", "budget_tokens": 1},
+                "generation": {"max_output_tokens": 8192},
+            },
+            "unsupported_role_reasoning_budget",
+        ),
+        (
+            anthropic_role_options,
+            {
+                "reasoning": {"mode": "budget", "budget_tokens": 4096},
+                "generation": {"max_output_tokens": 4096},
+            },
+            "unsupported_role_reasoning_budget",
         ),
     ],
 )
