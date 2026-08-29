@@ -45,13 +45,14 @@ from .runners.base import (
     RunnerToolBinding,
     freeze_json_object,
 )
+from .sandbox_docker import VERIFIER_RESULT_MAX_BYTES
 
 VERIFIER_REQUEST_RELATIVE_PATH = "input/verifier-request.json"
 VERIFIER_REQUEST_SCHEMA_VERSION = "bb.rl.verifier-request.v1"
 SANDBOX_CAPABILITY_MATRIX_RESOURCE = "SANDBOX_CAPABILITY_MATRIX.json"
 SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION = "bb.rl.sandbox-capability-matrix.v1"
 SANDBOX_CAPABILITY_MATRIX_SHA256 = (
-    "55a22e6c8986e5c014ccbf2a4965c69bfab348ea7495240662a584100aa9ef19"
+    "996389caba529c555c1d6755aeda0727ade5d29ae7fd83b0e1da51643dee7538"
 )
 _MAX_SANDBOX_CAPABILITY_MATRIX_BYTES = 64 * 1024
 _SANDBOX_ADAPTER_STATUSES = {
@@ -145,9 +146,16 @@ def load_sandbox_capability_matrix() -> Mapping[str, Any]:
         ) from exc
     if (
         type(payload) is not dict
-        or set(payload) != {"schema_version", "workspace_root", "adapters"}
+        or set(payload)
+        != {
+            "schema_version",
+            "workspace_root",
+            "verifier_result_max_bytes",
+            "adapters",
+        }
         or payload.get("schema_version") != SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION
         or payload.get("workspace_root") != "/testbed"
+        or payload.get("verifier_result_max_bytes") != VERIFIER_RESULT_MAX_BYTES
         or type(payload.get("adapters")) is not list
     ):
         raise SandboxRuntimeError(
@@ -2033,6 +2041,7 @@ class VerifierWorkspaceLease:
         ceiling = min(
             self.plan.limits.artifact_bytes_each,
             self.plan.limits.artifact_bytes_total,
+            VERIFIER_RESULT_MAX_BYTES,
         )
         try:
             remote_read = getattr(self._runtime, "read_artifact_text", None)

@@ -1,6 +1,7 @@
 {
   "schema_version": "bb.rl.sandbox-capability-matrix.v1",
   "workspace_root": "/testbed",
+  "verifier_result_max_bytes": 1048576,
   "adapters": [
     {
       "adapter_id": "docker",
