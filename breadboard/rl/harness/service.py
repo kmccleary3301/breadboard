@@ -1,36 +1,36 @@
 from __future__ import annotations
-from builtins import BaseExceptionGroup
 
 import asyncio
 import hashlib
 import json
 import threading
+from builtins import BaseExceptionGroup
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from types import MappingProxyType
 from typing import Any, Callable, Generic, Mapping, Protocol, TypeVar
 
-from breadboard.rl.state.state_ref import ArtifactRef
 from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+
 from breadboard.rl.harness.config_runtime import ConfigRuntime
 from breadboard.rl.harness.contracts import ArtifactRef as ContractArtifactRef
 from breadboard.rl.harness.contracts import (
     EffectiveExecutionPlan,
     PolicyBindingRef,
-    ResolveEpisodeRequest,
     ResolvedEpisodePlan,
+    ResolveEpisodeRequest,
     RuntimeClass,
     SelectionCommitToken,
 )
 from breadboard.rl.harness.evidence import (
     AuthorityAccessEventV2,
+    ClosedEpisodeEnvelopeV2,
     ClosedPublicationInputsV2,
     ClosedPublicationV2,
-    ClosedEpisodeEnvelopeV2,
+    CompletedEpisodeEnvelopeV2,
     CompletedPublicationInputsV2,
     CompletedPublicationV2,
-    CompletedEpisodeEnvelopeV2,
     EpisodeEvidenceRepository,
     EvidenceAuthorityPlanV2,
     EvidenceCorruptError,
@@ -57,8 +57,8 @@ from breadboard.rl.harness.runners.base import (
     RunnerAdapter,
     RunnerAdapterRegistry,
     RunnerCancellationProbe,
-    RunnerEvent,
     RunnerCancelled,
+    RunnerEvent,
     RunnerEventSink,
     RunnerOpenRequest,
     RunnerPlanError,
@@ -79,13 +79,14 @@ from breadboard.rl.harness.runners.terminal import (
     TerminalRunRequest,
 )
 from breadboard.rl.harness.sandbox import (
-    SandboxFault,
     SandboxExecutionPlan,
+    SandboxFault,
     SandboxRuntimeManager,
     SandboxWorkspaceLease,
     VerifierWorkspaceLease,
     build_sandbox_execution_plan,
 )
+from breadboard.rl.state.state_ref import ArtifactRef
 
 
 class EpisodeLifecycleState(str, Enum):
@@ -2306,64 +2307,79 @@ class BreadBoardV2EpisodeService:
                 self._lifecycle_state = _ServiceLifecycleState.CLOSING
                 task = asyncio.create_task(self._shutdown_owner())
                 self._close_task = task
-        await _await_owned_close(task)
+        try:
+            await _await_owned_close(task)
+        finally:
+            if task.done() and not task.cancelled() and task.exception() is not None:
+                async with self._dictionary_lock:
+                    if self._close_task is task:
+                        self._close_task = None
 
     async def _shutdown_owner(self) -> None:
         errors: list[BaseException] = []
-        try:
-            async with self._dictionary_lock:
-                start_task = self._start_task
-            if start_task is not None:
-                try:
-                    await asyncio.shield(start_task)
-                except asyncio.CancelledError:
-                    pass
-                except BaseException as exc:
-                    errors.append(exc)
-            async with self._dictionary_lock:
-                coordinators = tuple(self._coordinators.values())
-            for coordinator in coordinators:
-                if coordinator.state not in {
-                    EpisodeLifecycleState.CLOSED,
-                    EpisodeLifecycleState.QUARANTINED,
-                }:
-                    try:
-                        await self.cancel(
-                            coordinator.request.episode_id,
-                            "service shutdown",
-                        )
-                    except BaseException as exc:
-                        errors.append(exc)
-                    cancel_owner: asyncio.Task[Any] | None = None
-                    async with coordinator.lock:
-                        if (
-                            coordinator.run_task is not None
-                            and not coordinator.run_task.done()
-                            and not coordinator.owner_cancel_sent
-                        ):
-                            cancel_owner = coordinator.run_task
-                            coordinator.owner_cancel_sent = True
-                    if cancel_owner is not None:
-                        cancel_owner.cancel()
-                        await asyncio.sleep(0)
-                    try:
-                        await self.close_episode(coordinator.request.episode_id)
-                    except BaseException as exc:
-                        errors.append(exc)
-                else:
-                    errors.extend(
-                        await self._coordinator_operation_failures(coordinator)
-                    )
-            errors.extend(await self._drain_operation_tasks())
+        async with self._dictionary_lock:
+            start_task = self._start_task
+        if start_task is not None:
             try:
-                await self._dependencies.sandbox_runtime.close()
+                await asyncio.shield(start_task)
+            except asyncio.CancelledError:
+                pass
             except BaseException as exc:
                 errors.append(exc)
-        finally:
-            async with self._dictionary_lock:
-                self._lifecycle_state = _ServiceLifecycleState.CLOSED
+        async with self._dictionary_lock:
+            coordinators = tuple(self._coordinators.values())
+        for coordinator in coordinators:
+            if coordinator.state not in {
+                EpisodeLifecycleState.CLOSED,
+                EpisodeLifecycleState.QUARANTINED,
+            }:
+                try:
+                    await self.cancel(
+                        coordinator.request.episode_id,
+                        "service shutdown",
+                    )
+                except BaseException as exc:
+                    errors.append(exc)
+                cancel_owner: asyncio.Task[Any] | None = None
+                async with coordinator.lock:
+                    if (
+                        coordinator.run_task is not None
+                        and not coordinator.run_task.done()
+                        and not coordinator.owner_cancel_sent
+                    ):
+                        cancel_owner = coordinator.run_task
+                        coordinator.owner_cancel_sent = True
+                if cancel_owner is not None:
+                    cancel_owner.cancel()
+                    await asyncio.sleep(0)
+                try:
+                    await self.close_episode(coordinator.request.episode_id)
+                except BaseException as exc:
+                    errors.append(exc)
+            else:
+                errors.extend(
+                    await self._coordinator_operation_failures(coordinator)
+                )
+        errors.extend(await self._drain_operation_tasks())
+        try:
+            sandbox_receipts = await self._dependencies.sandbox_runtime.close()
+            errors.extend(
+                SandboxFault(
+                    RuntimeError("sandbox runtime cleanup pending"),
+                    receipt,
+                    (),
+                )
+                for receipt in sandbox_receipts
+                if receipt.state not in {
+                    CleanupState.RELEASED, CleanupState.ALREADY_RELEASED
+                }
+            )
+        except BaseException as exc:
+            errors.append(exc)
         if errors:
             raise BaseExceptionGroup("V2 service shutdown failed", errors)
+        async with self._dictionary_lock:
+            self._lifecycle_state = _ServiceLifecycleState.CLOSED
 
     async def _coordinator(self, episode_id: str) -> _V2EpisodeCoordinator:
         async with self._dictionary_lock:

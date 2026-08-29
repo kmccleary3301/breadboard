@@ -2069,6 +2069,12 @@ class VerifierWorkspaceLease:
             return receipt
 
 
+@dataclass
+class _PendingLaunchCleanup:
+    workspace: Path
+    materialized: MaterializedWorkspace | None
+
+
 class SandboxRuntimeManager:
     def __init__(self, *, registries: RegistrySnapshotSet,
                  installed_authorities: InstalledSandboxAuthoritySet,
@@ -2101,8 +2107,10 @@ class SandboxRuntimeManager:
         self.process_backend = process_backend; self.docker_backend = docker_backend
         self._random_bytes = random_bytes; self._leases: dict[str, SandboxWorkspaceLease] = {}
         self._snapshots: dict[str, tuple[VerifierSnapshotReceipt, Path]] = {}
+        self._pending_launch_cleanups: dict[str, _PendingLaunchCleanup] = {}
         self._lock = asyncio.Lock(); self._closed = False
         self._close_task: asyncio.Future[list[SandboxCleanupReceipt]] | None = None
+        self._last_close_receipts: tuple[SandboxCleanupReceipt, ...] | None = None
 
     def abort_bootstrap(self) -> None:
         """Release constructor-owned descriptors before any lease can be admitted."""
@@ -2363,6 +2371,7 @@ class SandboxRuntimeManager:
             owner_token = self._nonce(); epoch = 1
             materialized: MaterializedWorkspace | None = None
             runtime: RuntimeHandle | None = None
+            backend: RuntimeBackend | None = None
             record_written = False
             try:
                 materialized = await asyncio.to_thread(self.materialization_store.materialize, plan.materialization_plan)
@@ -2453,9 +2462,24 @@ class SandboxRuntimeManager:
                         cleanup_errors.append(f"runtime:{type(cleanup_exc).__name__}")
                         cleanup_steps.append(CleanupStepReceipt("runtime", CleanupState.FAILED,
                                                                 type(cleanup_exc).__name__))
-                runtime_released = runtime is None or _runtime_cleanup_released(
-                    cleanup_steps
+                backend_cleanup_pending = (
+                    runtime is None
+                    and backend is self.docker_backend
+                    and bool(getattr(backend, "cleanup_pending", False))
                 )
+                if backend_cleanup_pending:
+                    cleanup_steps.append(CleanupStepReceipt(
+                        "runtime", CleanupState.QUARANTINED,
+                        "backend retained launch cleanup authority",
+                    ))
+                    if materialized is not None:
+                        self._pending_launch_cleanups[lease_id] = _PendingLaunchCleanup(
+                            workspace=materialized.workspace_path,
+                            materialized=materialized,
+                        )
+                runtime_released = (
+                    runtime is None and not backend_cleanup_pending
+                ) or _runtime_cleanup_released(cleanup_steps)
                 if materialized is not None and runtime_released:
                     try:
                         await asyncio.to_thread(materialized.close)
@@ -2603,6 +2627,7 @@ class SandboxRuntimeManager:
                 "state": "allocating",
             })
             launched: RuntimeHandle | None = None
+            backend: RuntimeBackend | None = None
             try:
                 workspace = self.materialization_store.storage_backend.allocate(
                     workspace_id=workspace_id, root=self.materialization_store.workspace_root,
@@ -2770,9 +2795,23 @@ class SandboxRuntimeManager:
                         cleanup_steps.append(CleanupStepReceipt(
                             "runtime", CleanupState.FAILED, type(cleanup_error).__name__
                         ))
-                runtime_released = launched is None or _runtime_cleanup_released(
-                    cleanup_steps
+                backend_cleanup_pending = (
+                    launched is None
+                    and backend is self.docker_backend
+                    and bool(getattr(backend, "cleanup_pending", False))
                 )
+                if backend_cleanup_pending:
+                    cleanup_steps.append(CleanupStepReceipt(
+                        "runtime", CleanupState.QUARANTINED,
+                        "backend retained launch cleanup authority",
+                    ))
+                    self._pending_launch_cleanups[lease_id] = _PendingLaunchCleanup(
+                        workspace=workspace,
+                        materialized=None,
+                    )
+                runtime_released = (
+                    launched is None and not backend_cleanup_pending
+                ) or _runtime_cleanup_released(cleanup_steps)
                 if runtime_released:
                     try:
                         await asyncio.to_thread(
@@ -2794,7 +2833,8 @@ class SandboxRuntimeManager:
                         ))
                 else:
                     cleanup_steps.append(CleanupStepReceipt(
-                        "workspace", CleanupState.FAILED, "dependent runtime cleanup incomplete"
+                        "workspace", CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
                     ))
                 dependencies_released = all(
                     step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
@@ -2903,8 +2943,125 @@ class SandboxRuntimeManager:
                 self._leases.pop(lease.lease_id, None)
             return receipt
 
+    async def _reconcile_pending_launch_cleanups(
+        self,
+    ) -> tuple[SandboxCleanupReceipt, ...]:
+        pending = tuple(self._pending_launch_cleanups.items())
+        if not pending:
+            return ()
+        close_runtime = getattr(self.docker_backend, "close_runtime", None)
+        if not callable(close_runtime):
+            return tuple(
+                SandboxCleanupReceipt.from_steps(
+                    lease_id,
+                    (
+                        CleanupStepReceipt(
+                            "runtime", CleanupState.QUARANTINED,
+                            "backend cleanup authority unavailable",
+                        ),
+                        CleanupStepReceipt(
+                            "workspace", CleanupState.QUARANTINED,
+                            "dependent runtime cleanup incomplete",
+                        ),
+                        CleanupStepReceipt(
+                            "lease_record", CleanupState.QUARANTINED,
+                            "dependent runtime cleanup incomplete",
+                        ),
+                    ),
+                )
+                for lease_id, _ in pending
+            )
+        try:
+            await close_runtime()
+        except BaseException as exc:
+            return tuple(
+                SandboxCleanupReceipt.from_steps(
+                    lease_id,
+                    (
+                        CleanupStepReceipt(
+                            "runtime", CleanupState.QUARANTINED,
+                            type(exc).__name__,
+                        ),
+                        CleanupStepReceipt(
+                            "workspace", CleanupState.QUARANTINED,
+                            "dependent runtime cleanup incomplete",
+                        ),
+                        CleanupStepReceipt(
+                            "lease_record", CleanupState.QUARANTINED,
+                            "dependent runtime cleanup incomplete",
+                        ),
+                    ),
+                )
+                for lease_id, _ in pending
+            )
+        receipts: list[SandboxCleanupReceipt] = []
+        for lease_id, retained in pending:
+            steps = [CleanupStepReceipt("runtime", CleanupState.RELEASED)]
+            try:
+                if retained.materialized is not None:
+                    await asyncio.to_thread(retained.materialized.close)
+                    steps.extend((
+                        CleanupStepReceipt("workspace", CleanupState.RELEASED),
+                        CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
+                    ))
+                else:
+                    await asyncio.to_thread(
+                        self._make_workspace_releasable, retained.workspace
+                    )
+                    await asyncio.to_thread(
+                        self.materialization_store.storage_backend.release,
+                        retained.workspace,
+                    )
+                    absent = self.materialization_store.storage_backend.verify_absent(
+                        retained.workspace
+                    )
+                    steps.extend((
+                        CleanupStepReceipt(
+                            "workspace",
+                            CleanupState.RELEASED if absent else CleanupState.FAILED,
+                        ),
+                        CleanupStepReceipt(
+                            "cache_holder", CleanupState.ALREADY_RELEASED
+                        ),
+                    ))
+            except FileNotFoundError:
+                steps.extend((
+                    CleanupStepReceipt("workspace", CleanupState.ALREADY_RELEASED),
+                    CleanupStepReceipt("cache_holder", CleanupState.ALREADY_RELEASED),
+                ))
+            except BaseException as exc:
+                steps.append(CleanupStepReceipt(
+                    "workspace", CleanupState.FAILED, type(exc).__name__
+                ))
+            dependencies_released = all(
+                step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+                for step in steps
+            )
+            if dependencies_released:
+                try:
+                    self._unlink_lease_record(lease_id)
+                    steps.append(CleanupStepReceipt(
+                        "lease_record", CleanupState.RELEASED
+                    ))
+                    self._pending_launch_cleanups.pop(lease_id, None)
+                except BaseException as exc:
+                    steps.append(CleanupStepReceipt(
+                        "lease_record", CleanupState.FAILED, type(exc).__name__
+                    ))
+            else:
+                steps.append(CleanupStepReceipt(
+                    "lease_record", CleanupState.QUARANTINED,
+                    "dependent cleanup incomplete",
+                ))
+            receipts.append(SandboxCleanupReceipt.from_steps(
+                lease_id, tuple(steps)
+            ))
+        return tuple(receipts)
+
+
     async def reconcile_stale(self) -> tuple[SandboxCleanupReceipt, ...]:
         receipts: list[SandboxCleanupReceipt] = []
+        receipts.extend(await self._reconcile_pending_launch_cleanups())
         now = self.materialization_store.clock.current()
         if self._lease_root_fd is None:
             return ()
@@ -2923,6 +3080,8 @@ class SandboxRuntimeManager:
             )
         ]
         for path in paths:
+            if path.stem in self._pending_launch_cleanups:
+                continue
             owned = self._leases.get(path.stem)
             if owned is None:
                 owned = next(
@@ -3155,21 +3314,48 @@ class SandboxRuntimeManager:
                          if lease.state in {WorkspaceLeaseState.FAILED, WorkspaceLeaseState.QUARANTINED}])
         return tuple(receipts)
 
+    async def _close_all(
+        self, leases: Sequence[SandboxWorkspaceLease]
+    ) -> list[SandboxCleanupReceipt]:
+        receipts = list(await asyncio.gather(*(lease.close() for lease in leases)))
+        receipts.extend(await self._reconcile_pending_launch_cleanups())
+        return receipts
+
     async def close(self) -> tuple[SandboxCleanupReceipt, ...]:
         async with self._lock:
             if self._close_task is not None:
                 close_task = self._close_task
             else:
-                if self._closed and not self._leases:
-                    return ()
+                if (
+                    self._closed
+                    and not self._leases
+                    and not self._pending_launch_cleanups
+                ):
+                    return self._last_close_receipts or ()
                 self._closed = True
                 leases = tuple(self._leases.values())
-                close_task = asyncio.ensure_future(
-                    asyncio.gather(*(lease.close() for lease in leases))
-                )
+                close_task = asyncio.create_task(self._close_all(leases))
                 self._close_task = close_task
-        result = tuple(await asyncio.shield(close_task))
-        if not self._leases and self._lease_root_fd is not None:
+        try:
+            result = tuple(await asyncio.shield(close_task))
+        finally:
+            if close_task.done():
+                async with self._lock:
+                    if self._close_task is close_task:
+                        self._close_task = None
+        pending = tuple(
+            receipt for receipt in result
+            if receipt.state not in {
+                CleanupState.RELEASED, CleanupState.ALREADY_RELEASED
+            }
+        )
+        if not pending:
+            self._last_close_receipts = result
+        if (
+            not self._leases
+            and not self._pending_launch_cleanups
+            and self._lease_root_fd is not None
+        ):
             os.close(self._lease_root_fd)
             self._lease_root_fd = None
         return result

@@ -1441,9 +1441,9 @@ async def test_manager_close_cancellation_preserves_whole_shared_cleanup_outcome
         receipt.state is CleanupState.RELEASED for receipt in receipts[1:]
     )
     assert [handle.terminate_calls for handle in harness.backend.handles] == [1, 1, 1]
-    assert await harness.manager.close() == receipts
     if first_state is CleanupState.RELEASED:
         assert list(harness.workspace_root.iterdir()) == []
+        assert await harness.manager.close() == receipts
         assert list(harness.lease_root.iterdir()) == []
     else:
         assert receipts[0].steps == (
@@ -1471,8 +1471,8 @@ async def test_manager_close_cancellation_preserves_whole_shared_cleanup_outcome
         assert leases[0]._materialized.workspace_path.exists()
         assert len(list(harness.workspace_root.iterdir())) == 1
         assert len(list(harness.lease_root.iterdir())) == 1
-        retry = await leases[0].close()
-        assert retry.state is CleanupState.RELEASED
+        retry_receipts = await harness.manager.close()
+        assert retry_receipts[0].state is CleanupState.RELEASED
         assert first_handle.terminate_calls == 2
         assert list(harness.workspace_root.iterdir()) == []
         assert list(harness.lease_root.iterdir()) == []

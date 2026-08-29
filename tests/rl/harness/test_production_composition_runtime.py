@@ -5,16 +5,18 @@ import hashlib
 import json
 import os
 import signal
+from builtins import BaseExceptionGroup
 
-import uvicorn
 import pytest
+import uvicorn
 
 from breadboard.rl.harness import __main__ as harness_main
 from breadboard.rl.harness.composition import (
+    ProductionComposition,
     _CASMaterializationSourceReader,
     _DirectoryIdentityGuard,
-    _PinnedDirectoryStorageBackend,
     _measure_installed_runtime,
+    _PinnedDirectoryStorageBackend,
 )
 from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.sandbox import InstalledRuntime
@@ -23,6 +25,47 @@ from breadboard.rl.state.cas import FilesystemCAS
 
 def _digest(payload: bytes) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_composition_retries_failed_runtime_cleanup_before_authorities() -> None:
+    calls: list[str] = []
+    backend_attempts = 0
+
+    async def close_backend() -> None:
+        nonlocal backend_attempts
+        backend_attempts += 1
+        calls.append(f"backend:{backend_attempts}")
+        if backend_attempts == 1:
+            raise RuntimeError("runtime cleanup pending")
+
+    composition = ProductionComposition(
+        app=None,
+        server=None,
+        manifest=None,
+        manifest_ref=None,
+        authority_graph=None,
+        bridge_lifecycle=None,
+        cleanup_probe=None,
+        runtime_close_callbacks=(
+            lambda: calls.append("owner"),
+            lambda: calls.append("adapter"),
+            close_backend,
+        ),
+        authority_close_callbacks=(lambda: calls.append("authority"),),
+    )
+
+    with pytest.raises(BaseExceptionGroup, match="production composition close failed"):
+        await composition.close()
+    assert calls == ["backend:1"]
+    assert not composition._runtime_closed
+    assert not composition._closed
+
+    await composition.close()
+
+    assert calls == ["backend:1", "backend:2", "adapter", "owner", "authority"]
+    assert composition._runtime_closed
+    assert composition._closed
 
 
 def test_cas_materialization_reader_uses_only_digest_bound_shared_cas(tmp_path) -> None:

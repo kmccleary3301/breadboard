@@ -48,32 +48,50 @@ async def test_broker_executor_transports_stdin_by_sealed_descriptor(
         digest="sha256:" + hashlib.sha256(b"docker").hexdigest(),
     )
     payload = b"x" * (512 * 1024)
+    output_payload = b"o" * (3 * 1024 * 1024)
     observed: dict[str, object] = {}
 
     class Broker:
-        def _call(self, operation, request, descriptors):
+        def _call(
+            self,
+            operation,
+            request,
+            descriptors,
+            *,
+            expected_return_fds,
+        ):
             observed["operation"] = operation
             observed["request"] = request
             observed["descriptors"] = descriptors
+            observed["expected_return_fds"] = expected_return_fds
             payload_fd = descriptors[1]
             observed["payload"] = os.pread(payload_fd, len(payload) + 1, 0)
             observed["seals"] = broker_module.fcntl.fcntl(
                 payload_fd, broker_module.fcntl.F_GET_SEALS
             )
-            return {
-                "returncode": 0,
-                "stdout": "",
-                "stderr": "",
-                "timed_out": False,
-                "output_limited": False,
-            }
+            stdout_fd = broker_module._sealed_payload_fd(output_payload)
+            stderr_fd = broker_module._sealed_payload_fd(b"")
+            return (
+                {
+                    "returncode": 0,
+                    "stdout_size": len(output_payload),
+                    "stdout_digest": (
+                        "sha256:" + hashlib.sha256(output_payload).hexdigest()
+                    ),
+                    "stderr_size": 0,
+                    "stderr_digest": "sha256:" + hashlib.sha256(b"").hexdigest(),
+                    "timed_out": False,
+                    "output_limited": False,
+                },
+                (stdout_fd, stderr_fd),
+            )
 
     try:
         result = await broker_module.BrokerDockerCliExecutor(Broker()).execute(
             invocation,
             ("exec", "-i", "container", "cat"),
             timeout_ms=1_000,
-            output_limit=128,
+            output_limit=len(output_payload) + 1,
             environment=(),
             input_bytes=payload,
         )
@@ -94,7 +112,10 @@ async def test_broker_executor_transports_stdin_by_sealed_descriptor(
         | broker_module.fcntl.F_SEAL_WRITE
     )
     assert observed["seals"] & required == required
+    assert observed["expected_return_fds"] == 2
     assert result.returncode == 0
+    assert result.stdout == output_payload
+    assert result.stderr == b""
 
 
 @pytest.mark.skipif(

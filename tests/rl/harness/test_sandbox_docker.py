@@ -29,6 +29,7 @@ from breadboard.rl.harness.materialization import (
 from breadboard.rl.harness.sandbox import (
     RuntimeLaunchContext,
     RuntimePreparedIdentity,
+    SandboxFault,
     SandboxMeasurement,
     SandboxRuntimeManager,
     WorkspaceStorageIdentity,
@@ -173,6 +174,38 @@ class LeaseOnlyBackend:
             isolated=isolated,
             reward_eligible=isolated,
         )
+
+
+class PendingLaunchBackend:
+    def __init__(self) -> None:
+        self.cleanup_pending = True
+        self.close_attempts = 0
+        self.workspace_fd = -1
+
+    async def launch(
+        self,
+        plan: Any,
+        workspace: Path,
+        *,
+        context: RuntimeLaunchContext,
+    ) -> tuple[LeaseOnlyHandle, SandboxMeasurement]:
+        del plan, workspace
+        self.workspace_fd = context.workspace_fd
+        raise DockerAdapterError(
+            "runtime_cleanup_pending",
+            "launch cleanup retained by backend",
+        )
+
+    async def close_runtime(self) -> None:
+        self.close_attempts += 1
+        if self.close_attempts == 1:
+            raise DockerAdapterError(
+                "runtime_cleanup_pending",
+                "launch cleanup still pending",
+            )
+        os.close(self.workspace_fd)
+        self.workspace_fd = -1
+        self.cleanup_pending = False
 
 
 class QuotaStorageBackend(DirectoryStorageBackend):
@@ -1775,6 +1808,34 @@ async def test_subprocess_executor_streams_payload_above_exec_argument_budget() 
     assert result.stdout == payload
     assert result.stderr == b""
     assert result.output_limited is False
+
+
+async def test_subprocess_executor_stops_process_group_at_output_limit() -> None:
+    executable = Path("/bin/sh")
+    descriptor = os.open(executable, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable),
+        executable_fd=descriptor,
+        executable_descriptor_path=str(executable),
+        digest=observe_binary_digest(executable),
+    )
+    started = asyncio.get_running_loop().time()
+    try:
+        result = await SubprocessDockerCliExecutor().execute(
+            invocation,
+            ("-c", "while :; do printf 0123456789abcdef; done"),
+            timeout_ms=5_000,
+            output_limit=128,
+            environment=(("PATH", "/usr/bin:/bin"),),
+        )
+    finally:
+        os.close(descriptor)
+    elapsed = asyncio.get_running_loop().time() - started
+
+    assert result.output_limited is True
+    assert len(result.stdout) + len(result.stderr) == 128
+    assert result.timed_out is False
+    assert elapsed < 1.5
 
 
 async def test_oci_runtime_symlink_is_rejected_before_image_or_create(
@@ -3682,6 +3743,63 @@ async def test_legacy_reconcile_never_consumes_a_scripted_matching_identity(
     assert executor.calls == []
     assert executor.invocations == []
     assert len(executor.results) == 1
+
+
+async def test_manager_retries_backend_launch_quarantine_before_workspace_release(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(
+        runtime_class=c.RuntimeClass.HARDENED_DOCKER,
+        with_writable_mount=True,
+    )
+    source_digest = digest("workspace-source")
+    cache_root, workspace_root = make_store_roots(tmp_path)
+    store = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=MemorySourceReader(
+            {source_digest: {"seed.txt": b"seed"}}
+        ),
+        clock=FrozenClock(),
+        lease_ttl=timedelta(minutes=5),
+        storage_backend=QuotaStorageBackend(),
+        random_bytes=DeterministicRandom(60_000),
+    )
+    lease_root = tmp_path / "leases"
+    lease_root.mkdir(mode=0o700)
+    backend = PendingLaunchBackend()
+    manager = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=store,
+        lease_root=lease_root,
+        process_backend=None,
+        docker_backend=backend,
+        random_bytes=DeterministicRandom(60_500),
+    )
+
+    with pytest.raises(SandboxFault) as captured:
+        await manager.open(fixture.request)
+
+    receipt = captured.value.cleanup_receipt
+    assert receipt.state is CleanupState.QUARANTINED
+    assert len(manager._pending_launch_cleanups) == 1
+    retained = next(iter(manager._pending_launch_cleanups.values()))
+    assert retained.workspace.exists()
+    assert (lease_root / f"{receipt.lease_id}.json").exists()
+
+    first_close = await manager.close()
+    assert first_close[0].state is CleanupState.QUARANTINED
+    assert backend.close_attempts == 1
+    assert retained.workspace.exists()
+    assert (lease_root / f"{receipt.lease_id}.json").exists()
+
+    second_close = await manager.close()
+    assert second_close[0].state is CleanupState.RELEASED
+    assert backend.close_attempts == 2
+    assert not retained.workspace.exists()
+    assert not (lease_root / f"{receipt.lease_id}.json").exists()
+    assert manager._pending_launch_cleanups == {}
 
 
 @pytest.mark.parametrize("identity", ["matching", "mismatched"])

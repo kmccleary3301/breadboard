@@ -484,13 +484,13 @@ def _retry_write(fd: int, payload: bytes) -> int:
 
 
 def _sealed_payload_fd(payload: bytes) -> int:
-    if not payload or not hasattr(os, "memfd_create"):
+    if not hasattr(os, "memfd_create"):
         raise MountNamespaceBrokerError(
             "runtime_unsupported",
-            "sealed Docker stdin descriptor is unavailable",
+            "sealed Docker payload descriptor is unavailable",
         )
     descriptor = os.memfd_create(
-        "breadboard-docker-stdin",
+        "breadboard-docker-payload",
         os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING,
     )
     try:
@@ -515,6 +515,51 @@ def _sealed_payload_fd(payload: bytes) -> int:
     except BaseException:
         os.close(descriptor)
         raise
+
+
+def _read_sealed_payload_fd(
+    descriptor: int, *, expected_size: int, expected_digest: str, limit: int
+) -> bytes:
+    if (
+        type(expected_size) is not int
+        or not 0 <= expected_size <= limit
+        or type(expected_digest) is not str
+        or len(expected_digest) != 71
+        or not expected_digest.startswith("sha256:")
+    ):
+        raise MountNamespaceBrokerError(
+            "runtime_unsupported", "broker payload metadata is invalid"
+        )
+    metadata = os.fstat(descriptor)
+    required_seals = (
+        fcntl.F_SEAL_SEAL
+        | fcntl.F_SEAL_SHRINK
+        | fcntl.F_SEAL_GROW
+        | fcntl.F_SEAL_WRITE
+    )
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_size != expected_size
+        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & required_seals
+        != required_seals
+        or _digest_fd_exact(descriptor) != expected_digest
+    ):
+        raise MountNamespaceBrokerError(
+            "runtime_unsupported", "broker payload descriptor changed"
+        )
+    chunks: list[bytes] = []
+    offset = 0
+    while offset < expected_size:
+        chunk = _retry_pread(
+            descriptor, min(64 * 1024, expected_size - offset), offset
+        )
+        if not chunk:
+            raise MountNamespaceBrokerError(
+                "runtime_unsupported", "broker payload descriptor was truncated"
+            )
+        chunks.append(chunk)
+        offset += len(chunk)
+    return b"".join(chunks)
 
 
 def _copy_runtime_authority(source_fd: int, target: str, size: int, mode: int) -> None:
@@ -1321,6 +1366,7 @@ def _child_loop(
             request, fds = _receive(sock)
             opened_stage_fd = -1
             stage_target: str | None = None
+            response_fds: tuple[int, ...] = ()
             try:
                 if (
                     request.get("token") != token
@@ -1554,7 +1600,7 @@ def _child_loop(
                         or type(timeout_ms) is not int
                         or not 1 <= timeout_ms <= 600_000
                         or type(output_limit) is not int
-                        or not 1 <= output_limit <= _MAX_OUTPUT
+                        or not 1 <= output_limit <= (1 << 53) - 1
                     ):
                         raise ValueError("execute request is out of bounds")
                     if (
@@ -1587,10 +1633,19 @@ def _child_loop(
                             expected_mount_id=runtime_mount_id,
                             expected_tmpfs_size=runtime_tmpfs_size,
                         )
+                    stdout_fd = _sealed_payload_fd(stdout)
+                    try:
+                        stderr_fd = _sealed_payload_fd(stderr)
+                    except BaseException:
+                        os.close(stdout_fd)
+                        raise
+                    response_fds = (stdout_fd, stderr_fd)
                     result = {
                         "returncode": returncode,
-                        "stdout": base64.b64encode(stdout).decode("ascii"),
-                        "stderr": base64.b64encode(stderr).decode("ascii"),
+                        "stdout_size": len(stdout),
+                        "stdout_digest": "sha256:" + hashlib.sha256(stdout).hexdigest(),
+                        "stderr_size": len(stderr),
+                        "stderr_digest": "sha256:" + hashlib.sha256(stderr).hexdigest(),
                         "timed_out": timed_out,
                         "output_limited": output_limited,
                     }
@@ -1655,17 +1710,28 @@ def _child_loop(
                     return
                 else:
                     raise ValueError("unknown broker operation")
-                _send(
-                    sock,
-                    {
-                        "ok": True,
-                        "result": result,
-                        "sequence": request["sequence"],
-                        "token": token,
-                    },
-                )
+                try:
+                    _send(
+                        sock,
+                        {
+                            "ok": True,
+                            "result": result,
+                            "sequence": request["sequence"],
+                            "token": token,
+                        },
+                        response_fds,
+                    )
+                finally:
+                    for response_fd in response_fds:
+                        os.close(response_fd)
+                    response_fds = ()
             except BaseException as exc:
                 cleanup_errors: list[BaseException] = []
+                for response_fd in response_fds:
+                    try:
+                        os.close(response_fd)
+                    except OSError as cleanup_exc:
+                        cleanup_errors.append(cleanup_exc)
                 if opened_stage_fd >= 0:
                     try:
                         os.close(opened_stage_fd)
@@ -2801,6 +2867,7 @@ class BrokerDockerCliExecutor:
             "output_limit": output_limit,
         }
         payload_fd = -1
+        returned_fds: tuple[int, ...] = ()
         descriptors = [executable.executable_fd]
         try:
             if input_bytes:
@@ -2810,19 +2877,47 @@ class BrokerDockerCliExecutor:
                     "sha256:" + hashlib.sha256(input_bytes).hexdigest()
                 )
                 descriptors.append(payload_fd)
-            result = self._broker._call(
+            result, returned_fds = self._broker._call(
                 "execute",
                 request,
                 tuple(descriptors),
+                expected_return_fds=2,
+            )
+            stdout_size = result.get("stdout_size")
+            stderr_size = result.get("stderr_size")
+            if (
+                type(stdout_size) is not int
+                or type(stderr_size) is not int
+                or stdout_size < 0
+                or stderr_size < 0
+                or stdout_size + stderr_size > output_limit
+            ):
+                raise MountNamespaceBrokerError(
+                    "runtime_unsupported",
+                    "broker output descriptor bounds are invalid",
+                )
+            stdout = _read_sealed_payload_fd(
+                returned_fds[0],
+                expected_size=stdout_size,
+                expected_digest=result.get("stdout_digest"),
+                limit=output_limit,
+            )
+            stderr = _read_sealed_payload_fd(
+                returned_fds[1],
+                expected_size=stderr_size,
+                expected_digest=result.get("stderr_digest"),
+                limit=output_limit - stdout_size,
             )
         finally:
             if payload_fd >= 0:
                 os.close(payload_fd)
+            for returned_fd in returned_fds:
+                os.close(returned_fd)
         return DockerCommandResult(
             (executable.argv0, *tuple(argv_tail)),
             result["returncode"],
-            base64.b64decode(result["stdout"], validate=True),
-            base64.b64decode(result["stderr"], validate=True),
+            stdout,
+            stderr,
             timed_out=result["timed_out"],
             output_limited=result["output_limited"],
         )

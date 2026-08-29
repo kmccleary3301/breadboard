@@ -410,6 +410,7 @@ class SubprocessDockerCliExecutor:
         )
         captured = [bytearray(), bytearray()]
         limited = False
+        output_limit_reached = asyncio.Event()
 
         async def drain(stream: asyncio.StreamReader, destination: bytearray) -> None:
             nonlocal limited
@@ -419,6 +420,7 @@ class SubprocessDockerCliExecutor:
                     destination.extend(chunk[:remaining])
                 if len(chunk) > max(remaining, 0):
                     limited = True
+                    output_limit_reached.set()
 
         async def feed_input() -> None:
             if process.stdin is None:
@@ -435,44 +437,47 @@ class SubprocessDockerCliExecutor:
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
+        async def terminate_process_group() -> None:
+            try:
+                os.killpg(process.pid, 15)
+            except ProcessLookupError:
+                pass
+            try:
+                await asyncio.wait_for(asyncio.shield(process_wait), 0.25)
+            except asyncio.TimeoutError:
+                try:
+                    os.killpg(process.pid, 9)
+                except ProcessLookupError:
+                    pass
+                await asyncio.wait_for(asyncio.shield(process_wait), 0.75)
+
         readers = (
             asyncio.create_task(drain(process.stdout, captured[0])),
             asyncio.create_task(drain(process.stderr, captured[1])),
         )
         writer = asyncio.create_task(feed_input())
+        process_wait = asyncio.create_task(process.wait())
+        output_wait = asyncio.create_task(output_limit_reached.wait())
         timed_out = False
         try:
             async with asyncio.timeout(timeout_ms / 1000):
-                await process.wait()
+                completed, _ = await asyncio.wait(
+                    (process_wait, output_wait),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if output_wait in completed and not process_wait.done():
+                    await terminate_process_group()
+                else:
+                    await process_wait
         except TimeoutError:
             timed_out = True
-            try:
-                os.killpg(process.pid, 15)
-            except ProcessLookupError:
-                pass
-            try:
-                await asyncio.wait_for(process.wait(), 0.25)
-            except asyncio.TimeoutError:
-                try:
-                    os.killpg(process.pid, 9)
-                except ProcessLookupError:
-                    pass
-                await asyncio.wait_for(process.wait(), 0.75)
+            await terminate_process_group()
         except BaseException:
-            try:
-                os.killpg(process.pid, 15)
-            except ProcessLookupError:
-                pass
-            try:
-                await asyncio.wait_for(process.wait(), 0.25)
-            except asyncio.TimeoutError:
-                try:
-                    os.killpg(process.pid, 9)
-                except ProcessLookupError:
-                    pass
-                await asyncio.shield(process.wait())
+            await terminate_process_group()
             raise
         finally:
+            output_wait.cancel()
+            await asyncio.gather(output_wait, return_exceptions=True)
             await asyncio.gather(*readers, writer)
         return DockerCommandResult(
             logical_argv, process.returncode, bytes(captured[0]), bytes(captured[1]),
@@ -2373,6 +2378,11 @@ class DockerSandboxBackend:
         self._quarantined_fds: list[int] = []
         self._quarantined_handles: list[DockerRuntimeHandle] = []
         self._quarantined_stages: list[StagedDockerDescriptorMount] = []
+
+    @property
+    def cleanup_pending(self) -> bool:
+        return bool(self._quarantined_handles or self._quarantined_stages)
+
 
     def close(self) -> None:
         if self._quarantined_handles or self._quarantined_stages:

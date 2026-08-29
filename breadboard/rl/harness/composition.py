@@ -11,7 +11,7 @@ import re
 import socket
 import stat
 import subprocess
-from builtins import ExceptionGroup
+from builtins import BaseExceptionGroup, ExceptionGroup
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -3039,6 +3039,8 @@ class ProductionComposition:
         self._runtime_callbacks = list(runtime_close_callbacks)
         self._authority_callbacks = list(authority_close_callbacks)
         self._lock = asyncio.Lock()
+        self._runtime_close_lock = asyncio.Lock()
+        self._authority_close_lock = asyncio.Lock()
         self._runtime_closed = False
         self._closed = False
 
@@ -3076,49 +3078,61 @@ class ProductionComposition:
 
 
     async def close_runtime(self) -> None:
-        async with self._lock:
-            if self._runtime_closed:
-                return
-            self._runtime_closed = True
-            callbacks = tuple(reversed(self._runtime_callbacks))
-            self._runtime_callbacks.clear()
-        errors: list[BaseException] = []
-        for callback in callbacks:
-            try:
-                result = callback()
-                if hasattr(result, "__await__"):
-                    await result
-            except BaseException as exc:
-                errors.append(exc)
-        if errors:
-            raise ExceptionGroup("production runtime close failed", errors)
+        async with self._runtime_close_lock:
+            while True:
+                async with self._lock:
+                    if self._runtime_closed:
+                        return
+                    if not self._runtime_callbacks:
+                        self._runtime_closed = True
+                        return
+                    callback = self._runtime_callbacks[-1]
+                try:
+                    result = callback()
+                    if hasattr(result, "__await__"):
+                        await result
+                except BaseException as exc:
+                    raise BaseExceptionGroup(
+                        "production runtime close failed", [exc]
+                    ) from exc
+                async with self._lock:
+                    if (
+                        self._runtime_callbacks
+                        and self._runtime_callbacks[-1] is callback
+                    ):
+                        self._runtime_callbacks.pop()
 
 
     async def close(self) -> None:
-        errors: list[BaseException] = []
         try:
             await self.close_runtime()
         except BaseException as exc:
-            errors.append(exc)
-        async with self._lock:
-            if self._closed:
-                if errors:
-                    raise ExceptionGroup(
-                        "production composition close failed", errors
-                    )
-                return
-            self._closed = True
-            callbacks = tuple(reversed(self._authority_callbacks))
-            self._authority_callbacks.clear()
-        for callback in callbacks:
-            try:
-                result = callback()
-                if hasattr(result, "__await__"):
-                    await result
-            except BaseException as exc:
-                errors.append(exc)
-        if errors:
-            raise ExceptionGroup("production composition close failed", errors)
+            raise BaseExceptionGroup(
+                "production composition close failed", [exc]
+            ) from exc
+        async with self._authority_close_lock:
+            while True:
+                async with self._lock:
+                    if self._closed:
+                        return
+                    if not self._authority_callbacks:
+                        self._closed = True
+                        return
+                    callback = self._authority_callbacks[-1]
+                try:
+                    result = callback()
+                    if hasattr(result, "__await__"):
+                        await result
+                except BaseException as exc:
+                    raise BaseExceptionGroup(
+                        "production composition close failed", [exc]
+                    ) from exc
+                async with self._lock:
+                    if (
+                        self._authority_callbacks
+                        and self._authority_callbacks[-1] is callback
+                    ):
+                        self._authority_callbacks.pop()
 
 
 def _secure_read(
