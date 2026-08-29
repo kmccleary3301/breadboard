@@ -164,6 +164,10 @@ def test_profile_identity_is_deterministic_and_secret_free():
         base_url="https://episode-secret.provider.example/v1",
         caller_headers={"X-Custom-Trace": "also-secret"},
     )
+    different_value = _profile(
+        base_url="https://episode-secret.provider.example/v1",
+        caller_headers={"X-Custom-Trace": "different-secret"},
+    )
     identity = first.identity_dict()
     assert first.identity_json() == second.identity_json()
     assert "episode-secret" not in first.identity_json()
@@ -173,6 +177,14 @@ def test_profile_identity_is_deterministic_and_secret_free():
     assert "caller_headers" not in identity
     assert identity["base_url_sha256"]
     assert identity["caller_header_names_sha256"]
+    assert (
+        identity["caller_header_names_sha256"]
+        == different_value.identity_dict()["caller_header_names_sha256"]
+    )
+    assert (
+        identity["caller_headers_sha256"]
+        != different_value.identity_dict()["caller_headers_sha256"]
+    )
 
 
 def test_profile_rejects_nonzero_retry_and_unsupported_tools():

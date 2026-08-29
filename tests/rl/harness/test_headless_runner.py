@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 import sys
@@ -7,9 +8,11 @@ from typing import Any
 
 import pytest
 
+import breadboard.rl.harness.headless as headless_module
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import load_production_composition
 from breadboard.rl.harness.headless import (
+    HeadlessRunFailed,
     HeadlessProviderInput,
     HeadlessRunRequest,
     HeadlessWorkspaceInput,
@@ -158,7 +161,7 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
     )
     transport = _Transport()
     provider_calls: list[dict[str, Any]] = []
-    provider_results = [
+    scripted_results = (
         ProviderResult(
             messages=[
                 ProviderMessage(
@@ -184,7 +187,8 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
             messages=[ProviderMessage(role="assistant", content="done")],
             raw_response={},
         ),
-    ]
+    )
+    provider_results = list(scripted_results)
     monkeypatch.setattr(
         OpenAIChatRuntime,
         "create_client_from_profile",
@@ -247,6 +251,20 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         path not in request.model_dump_json() for path in fixture.secret_files.values()
     )
     assert str(fixture.composition_ref_path) not in request.model_dump_json()
+    alternate_provider = HeadlessProviderInput(
+        **{
+            **request.provider.model_dump(),
+            "caller_headers": {"X-Episode-ID": "different-episode"},
+        }
+    )
+    assert (
+        alternate_provider.identity_dict()["caller_header_names_sha256"]
+        == request.provider.identity_dict()["caller_header_names_sha256"]
+    )
+    assert (
+        alternate_provider.identity_dict()["caller_headers_sha256"]
+        != request.provider.identity_dict()["caller_headers_sha256"]
+    )
 
     bound_digest = "sha256:" + "1" * 64
     bound_commit = "2" * 40
@@ -301,3 +319,61 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
     assert event_ledger["event_count"] > 0
     assert b"headless-secret" not in persisted_result
     assert b"headless-secret" not in persisted_events
+
+    publication_result_path = tmp_path / "publication-result.json"
+    occupied_event_path = tmp_path / "occupied-events.json"
+    occupied_event_path.write_text("occupied", encoding="utf-8")
+    publication_request = request.model_copy(
+        update={
+            "result_path": str(publication_result_path),
+            "event_log_path": str(occupied_event_path),
+        }
+    )
+    provider_results.extend(scripted_results)
+    with pytest.raises(HeadlessRunFailed) as publication:
+        await run_headless_request(
+            publication_request,
+            composition_ref_path=str(fixture.composition_ref_path),
+            secret_files=fixture.secret_files,
+            provider_credentials={"episode-provider": str(credential)},
+            repository_base_commits={},
+        )
+    published_failure = json.loads(publication_result_path.read_bytes())
+    assert published_failure == publication.value.result
+    assert published_failure["terminal"]["status"] == "failed"
+    assert published_failure["terminal"]["publication_failure"]["code"] == "FileExistsError"
+
+    original_loader = headless_module.load_production_composition
+
+    def cancelling_loader(*args: Any, **kwargs: Any):
+        composition = original_loader(*args, **kwargs)
+
+        async def cancel_create(_request: Any) -> None:
+            raise asyncio.CancelledError
+
+        composition.service.create = cancel_create  # type: ignore[method-assign]
+        return composition
+
+    monkeypatch.setattr(
+        headless_module,
+        "load_production_composition",
+        cancelling_loader,
+    )
+    cancelled_result_path = tmp_path / "cancelled-result.json"
+    cancelled_request = request.model_copy(
+        update={
+            "result_path": str(cancelled_result_path),
+            "event_log_path": str(tmp_path / "cancelled-events.json"),
+        }
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await run_headless_request(
+            cancelled_request,
+            composition_ref_path=str(fixture.composition_ref_path),
+            secret_files=fixture.secret_files,
+            provider_credentials={"episode-provider": str(credential)},
+            repository_base_commits={},
+        )
+    cancelled_result = json.loads(cancelled_result_path.read_bytes())
+    assert cancelled_result["terminal"]["status"] == "failed"
+    assert cancelled_result["cleanup_inventory"]["active_lease_ids"] == []

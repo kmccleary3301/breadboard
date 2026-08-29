@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 
 from builtins import BaseExceptionGroup
 from dataclasses import asdict
@@ -95,6 +96,25 @@ class HeadlessProviderInput(BaseModel):
             raise ValueError("provider base_url must use an explicit loopback port")
         return value
 
+    @model_validator(mode="after")
+    def _caller_headers_are_exact(self) -> HeadlessProviderInput:
+        normalized_names = []
+        for name, value in self.caller_headers.items():
+            if (
+                type(name) is not str
+                or not name
+                or "\r" in name
+                or "\n" in name
+                or type(value) is not str
+                or "\r" in value
+                or "\n" in value
+            ):
+                raise ValueError("caller headers must contain valid text")
+            normalized_names.append(name.casefold())
+        if len(normalized_names) != len(set(normalized_names)):
+            raise ValueError("caller header names must be unique case-insensitively")
+        return self
+
     def load_profile(self, credential: str) -> OpenAICompletionsProviderProfile:
         return OpenAICompletionsProviderProfile(
             model=self.model,
@@ -109,7 +129,10 @@ class HeadlessProviderInput(BaseModel):
         )
 
     def identity_dict(self) -> dict[str, Any]:
-        header_names = sorted(name.casefold() for name in self.caller_headers)
+        header_items = sorted(
+            (name.casefold(), value) for name, value in self.caller_headers.items()
+        )
+        header_names = [name for name, _value in header_items]
         return {
             "model": self.model,
             "base_url_sha256": hashlib.sha256(
@@ -128,6 +151,9 @@ class HeadlessProviderInput(BaseModel):
             "caller_header_count": len(header_names),
             "caller_header_names_sha256": hashlib.sha256(
                 _canonical_bytes(header_names)
+            ).hexdigest(),
+            "caller_headers_sha256": hashlib.sha256(
+                _canonical_bytes(header_items)
             ).hexdigest(),
         }
 
@@ -302,6 +328,9 @@ async def run_headless_request(
             composition=composition,
         )
     except BaseException as exc:
+        preflight_cancellation = (
+            exc if isinstance(exc, asyncio.CancelledError) else None
+        )
         failure: BaseException = exc
         if composition is not None:
             try:
@@ -319,9 +348,12 @@ async def run_headless_request(
             failure=failure,
         )
         _atomic_write(request.result_path, _canonical_bytes(result))
+        if preflight_cancellation is not None:
+            raise preflight_cancellation
         raise HeadlessRunFailed(result) from None
     primary_failure: BaseException | None = None
     cleanup_failure: BaseException | None = None
+    cancellation: asyncio.CancelledError | None = None
     created = False
     terminal_unsuccessful = False
     event_bytes: bytes | None = None
@@ -384,6 +416,9 @@ async def run_headless_request(
             "closed_envelope_digest": closed.digest,
         }
         terminal_unsuccessful = run.primary_disposition.value != "succeeded"
+    except asyncio.CancelledError as exc:
+        cancellation = exc
+        primary_failure = exc
     except BaseException as exc:
         primary_failure = exc
     finally:
@@ -417,12 +452,30 @@ async def run_headless_request(
         except BaseException as exc:
             cleanup_failure = cleanup_failure or exc
 
-    if primary_failure is not None or cleanup_failure is not None:
+    result["event_log"] = _event_log_projection(event_bytes, request.event_log_path)
+    publication_failure: BaseException | None = None
+    if event_bytes is not None:
+        try:
+            _atomic_write(request.event_log_path, event_bytes)
+        except Exception as exc:
+            publication_failure = exc
+            result["event_log"] = {
+                **result["event_log"],
+                "publication_failure": _safe_failure_projection(exc),
+            }
+    if (
+        primary_failure is not None
+        or cleanup_failure is not None
+        or publication_failure is not None
+    ):
         result["terminal"] = {
             **result.get("terminal", {}),
             "status": "failed",
             "failure": _safe_failure_projection(
-                cleanup_failure or primary_failure or RuntimeError()
+                publication_failure
+                or cleanup_failure
+                or primary_failure
+                or RuntimeError()
             ),
             "primary_failure": (
                 None
@@ -434,15 +487,20 @@ async def run_headless_request(
                 if cleanup_failure is None
                 else _safe_failure_projection(cleanup_failure)
             ),
+            "publication_failure": (
+                None
+                if publication_failure is None
+                else _safe_failure_projection(publication_failure)
+            ),
         }
-    result["event_log"] = _event_log_projection(event_bytes, request.event_log_path)
-    if event_bytes is not None:
-        _atomic_write(request.event_log_path, event_bytes)
     result_bytes = _canonical_bytes(result)
     _atomic_write(request.result_path, result_bytes)
+    if cancellation is not None:
+        raise cancellation
     if (
         primary_failure is not None
         or cleanup_failure is not None
+        or publication_failure is not None
         or terminal_unsuccessful
     ):
         raise HeadlessRunFailed(result)
