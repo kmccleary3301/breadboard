@@ -9,8 +9,10 @@ from fastapi.testclient import TestClient
 
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import load_production_composition
-from tests.rl.harness.production_composition_fixture import (
+from breadboard.rl.harness.qualification import (
     materialize_production_composition_fixture,
+)
+from tests.rl.harness.test_production_composition_fixture_generator import (
     production_source_occurrences,
 )
 from tests.rl.harness.test_production_composition_public_lifecycle import (
@@ -35,9 +37,7 @@ def test_generated_unknown_name_is_selected_and_drives_public_v2_lifecycle(
 ) -> None:
     catalog = json.loads(CATALOG.read_bytes())
     historical = next(
-        item
-        for item in catalog["entries"]
-        if item["name"] == HISTORICAL_UNKNOWN
+        item for item in catalog["entries"] if item["name"] == HISTORICAL_UNKNOWN
     )
     assert historical["disposition"] == "v2_only"
     assert production_source_occurrences(HISTORICAL_UNKNOWN) == ()
@@ -48,9 +48,7 @@ def test_generated_unknown_name_is_selected_and_drives_public_v2_lifecycle(
         str(fixture.composition_ref_path),
         fixture.secret_files,
     )
-    request = c.ResolveEpisodeRequest.model_validate(
-        fixture.create_body["resolution"]
-    )
+    request = c.ResolveEpisodeRequest.model_validate(fixture.create_body["resolution"])
     resolved = composition.authority_graph.config_runtime.resolve_episode(request)
     selection_record = c.SelectionRecord.model_validate_json(
         composition.authority_graph.store.load(
@@ -64,9 +62,7 @@ def test_generated_unknown_name_is_selected_and_drives_public_v2_lifecycle(
     headers = {"Authorization": f"Bearer {fixture.api_bearer}"}
     episode_id = request.episode_id
     policy_server = (
-        _policy_https_server(fixture)
-        if sys.platform.startswith("linux")
-        else None
+        _policy_https_server(fixture) if sys.platform.startswith("linux") else None
     )
     try:
         if policy_server is None:
@@ -78,16 +74,15 @@ def test_generated_unknown_name_is_selected_and_drives_public_v2_lifecycle(
                 )
             assert rejected.status_code == 503
             assert rejected.json()["code"] == "runtime_unsupported"
-            replayed = (
-                composition.authority_graph.config_runtime.resolve_episode(request)
+            replayed = composition.authority_graph.config_runtime.resolve_episode(
+                request
             )
             assert (
                 replayed.effective_plan.canonical_digest()
                 == resolved.effective_plan.canonical_digest()
             )
             assert (
-                replayed.selection_commit.binding
-                == resolved.selection_commit.binding
+                replayed.selection_commit.binding == resolved.selection_commit.binding
             )
             assert (
                 replayed.selection_commit.binding_ref
@@ -105,18 +100,15 @@ def test_generated_unknown_name_is_selected_and_drives_public_v2_lifecycle(
                 )
                 assert created.status_code == 200, created.text
                 create_payload = created.json()
-                assert (
-                    create_payload["selection_record_ref"]
-                    == resolved.selection_record_ref.model_dump(mode="json")
-                )
+                assert create_payload[
+                    "selection_record_ref"
+                ] == resolved.selection_record_ref.model_dump(mode="json")
 
                 ran = client.post(
                     f"/v2/episodes/{episode_id}:run",
                     json={
                         "schema_version": "bb.rl.episode.v2",
-                        "create_fingerprint": create_payload[
-                            "create_fingerprint"
-                        ],
+                        "create_fingerprint": create_payload["create_fingerprint"],
                         "task_input": {
                             "prompt": "execute selected generated candidate"
                         },

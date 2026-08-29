@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 from breadboard.rl.harness.runners.base import freeze_json_object
 from breadboard.rl.harness.runners.conductor import _supported_output_item
 from breadboard.rl.harness.composition import load_production_composition
-from tests.rl.harness.production_composition_fixture import (
+from breadboard.rl.harness.qualification import (
     MaterializedProductionCompositionFixture,
     materialize_production_composition_fixture,
 )
@@ -60,6 +60,7 @@ def _fd_identities() -> set[tuple[int, int, str]]:
             continue
         identities.add((current.st_dev, current.st_ino, target))
     return identities
+
 
 def _runtime_children(
     fixture: MaterializedProductionCompositionFixture,
@@ -112,9 +113,7 @@ def _descendant_processes(root_pid: int) -> set[tuple[int, str]]:
     while changed:
         changed = False
         for pid, (parent, _) in records.items():
-            if pid not in descendants and (
-                parent == root_pid or parent in descendants
-            ):
+            if pid not in descendants and (parent == root_pid or parent in descendants):
                 descendants.add(pid)
                 changed = True
     return {(pid, records[pid][1]) for pid in descendants}
@@ -159,10 +158,6 @@ def _secret_arguments(fixture: MaterializedProductionCompositionFixture) -> list
     ]
 
 
-
-
-
-
 def _cli_command(
     fixture: MaterializedProductionCompositionFixture, command: str
 ) -> list[str]:
@@ -175,7 +170,6 @@ def _cli_command(
         str(fixture.composition_ref_path),
         *_secret_arguments(fixture),
     ]
-
 
 
 def _assert_no_authority_leak(
@@ -218,14 +212,14 @@ def _policy_https_server(
     responses = (
         dict(fixture.policy_response_body),
         {
-            "response_digest": "sha256:"
-            + hashlib.sha256(completion_bytes).hexdigest(),
+            "response_digest": "sha256:" + hashlib.sha256(completion_bytes).hexdigest(),
             "response_payload": completion_payload,
         },
     )
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = _POLICY_HTTP_VERSION
+
         def do_POST(self) -> None:  # noqa: N802
             length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(length)
@@ -573,7 +567,9 @@ def test_public_loader_staged_bootstrap_failures_release_everything(
     else:
         executable = fixture.expected_executable_identity.path
         executable.chmod(0o700)
-        executable.write_bytes(executable.read_bytes() + b"\n# changed after admission\n")
+        executable.write_bytes(
+            executable.read_bytes() + b"\n# changed after admission\n"
+        )
         executable.chmod(0o500)
     with pytest.raises((OSError, ValueError)) as caught:
         load_production_composition(
@@ -624,9 +620,10 @@ def test_cli_inspect_is_cwd_env_independent_canonical_and_secret_free(
     assert first.stdout == second.stdout
     assert first.stderr == second.stderr == b""
     document = json.loads(first.stdout)
-    assert first.stdout == json.dumps(
-        document, sort_keys=True, separators=(",", ":")
-    ).encode() + b"\n"
+    assert (
+        first.stdout
+        == json.dumps(document, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+    )
     assert document["schema_version"] == "bb.rl.harness-composed.v1"
     _assert_no_authority_leak(fixture, document)
 
@@ -748,9 +745,7 @@ def test_cli_serve_sigterm_leaves_no_socket_child_lease_or_secret_residue(
             assert recovered_payload["state"] == "closed"
             assert recovered_payload["primary_disposition"] == "cancelled"
             assert recovered_payload["cleanup_disposition"] == "released"
-            coordinator = (
-                restarted.app.state.episode_service._coordinators[episode_id]
-            )
+            coordinator = restarted.app.state.episode_service._coordinators[episode_id]
             assert coordinator.last_event.cancel_reason == "service shutdown"
             assert coordinator.last_event.primary_fact is None
             closed_envelope = client.get(
@@ -791,5 +786,8 @@ def test_cli_serve_sigterm_leaves_no_socket_child_lease_or_secret_residue(
     assert not _port_accepts(host, port)
     _assert_no_authority_leak(
         fixture,
-        {"stdout": stdout.decode(errors="replace"), "stderr": stderr.decode(errors="replace")},
+        {
+            "stdout": stdout.decode(errors="replace"),
+            "stderr": stderr.decode(errors="replace"),
+        },
     )

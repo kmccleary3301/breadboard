@@ -1,22 +1,24 @@
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 import os
 import stat
 import secrets
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from importlib.resources import files
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
+from typing import Any, Mapping
+from breadboard.rl.harness import contracts as c
 
 
-FIXTURE_ROOT = (
-    Path(__file__).resolve().parents[2]
-    / "fixtures"
-    / "rl"
-    / "harness"
-    / "production_composition"
-)
-TLS_ROOT = FIXTURE_ROOT / "tls"
+QUALIFICATION_RESOURCE_PACKAGE = "breadboard.rl.harness.resources.qualification"
+FIXTURE_ROOT = files(QUALIFICATION_RESOURCE_PACKAGE)
+TLS_ROOT = FIXTURE_ROOT.joinpath("tls")
+CANONICAL_VECTORS = FIXTURE_ROOT.joinpath("canonical_artifact_vectors_v1.json")
 STORE_NAMES = (
     "cas",
     "locator",
@@ -26,50 +28,183 @@ STORE_NAMES = (
     "security_profile",
 )
 
-PRODUCTION_SOURCE_ROOT_NAMES = (
-    "agent_configs",
-    "agentic_coder_prototype",
-    "breadboard",
-    "breadboard_ext",
-    "breadboard_sdk",
-    "config",
-    "conformance",
-    "container_templates",
-    "contracts",
-    "examples",
-    "implementations",
-    "scripts",
-    "sdk",
-    "tool_calling",
-    "tools",
-)
-PRODUCTION_SOURCE_EXTENSIONS = {
-    ".cfg",
-    ".ini",
-    ".json",
-    ".py",
-    ".sh",
-    ".toml",
-    ".yaml",
-    ".yml",
-}
 
-
-def production_source_occurrences(value: str) -> tuple[Path, ...]:
-    project_root = Path(__file__).resolve().parents[3]
-    needle = value.encode("utf-8")
-    return tuple(
-        path
-        for name in PRODUCTION_SOURCE_ROOT_NAMES
-        if (root := project_root / name).is_dir()
-        for path in root.rglob("*")
-        if path.is_file()
-        and (
-            path.suffix in PRODUCTION_SOURCE_EXTENSIONS
-            or path.name.endswith("Dockerfile")
-        )
-        and needle in path.read_bytes()
+def _write_exclusive(path: Path, payload: bytes, mode: int) -> None:
+    descriptor = os.open(
+        path,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
+        mode,
     )
+    try:
+        view = memoryview(payload)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("short qualification fixture write")
+            view = view[written:]
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.chmod(path, mode, follow_symlinks=False)
+    current = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(current.st_mode) or stat.S_IMODE(current.st_mode) != mode:
+        raise RuntimeError("qualification file mode was not installed exactly")
+
+
+def _read_resource(resource: Any, *, max_bytes: int = 1024 * 1024) -> bytes:
+    payload = resource.read_bytes()
+    if len(payload) > max_bytes:
+        raise RuntimeError("qualification resource exceeds its byte limit")
+    return payload
+
+
+def _load_json(resource: Any) -> Mapping[str, Any]:
+    def reject_duplicates(items: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for name, value in items:
+            if name in result:
+                raise RuntimeError("qualification resource has duplicate keys")
+            result[name] = value
+        return result
+
+    value = json.loads(_read_resource(resource), object_pairs_hook=reject_duplicates)
+    if not isinstance(value, Mapping):
+        raise RuntimeError("qualification resource must contain a JSON object")
+    return value
+
+
+def independent_digest(value: Any) -> str:
+    payload = json.dumps(
+        value,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def _d(character: str) -> str:
+    if len(character) != 1 or character not in "0123456789abcdef":
+        raise ValueError("digest seed must be one lowercase hexadecimal character")
+    return "sha256:" + character * 64
+
+
+def _policy_capabilities(**updates: Any) -> Any:
+    from breadboard.rl.harness import contracts as c
+
+    payload = {
+        "responses_protocol": "responses-v1",
+        "modalities": ["text", "vision"],
+        "tool_calling": True,
+        "parallel_tool_calls": True,
+        "token_ids": True,
+        "token_logprobs": True,
+        "routing_metadata": True,
+        "cancellation": True,
+        "max_context_tokens": 32_768,
+        "max_output_tokens": 4_096,
+        "policy_slot_count": 1,
+        "request_features": ["json_mode", "seed"],
+    }
+    payload.update(updates)
+    return c.PolicyCapabilityVector.model_validate(payload)
+
+
+def _capability_projection(
+    *,
+    protocol_abi: str,
+    model_digest: str,
+    tokenizer_digest: str,
+    checkpoint_digest: str,
+    capabilities: Any,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "bb.rl.policy-selection-capabilities.v1",
+        "protocol_abi": protocol_abi,
+        "model_digest": model_digest,
+        "tokenizer_digest": tokenizer_digest,
+        "checkpoint_digest": checkpoint_digest,
+        "capabilities": capabilities.model_dump(mode="json"),
+    }
+
+
+def _options(*, runtime_abi: str) -> Any:
+    from agentic_coder_prototype.compilation.contracts import (
+        CompileOptions,
+        CompileTarget,
+        TaskContract,
+        TaskEvidenceContract,
+        TaskRetentionContract,
+        TaskVerifierContract,
+    )
+
+    return CompileOptions(
+        target=CompileTarget(
+            runner_adapter_id="breadboard.conductor.v1",
+            runtime_abi=runtime_abi,
+        ),
+        task_contract=TaskContract(
+            contract_id="swe-task.v1",
+            parameter_schema={
+                "type": "object",
+                "properties": {"instruction": {"type": "string"}},
+                "required": ["instruction"],
+                "additionalProperties": False,
+            },
+            artifacts=(),
+            verifier=TaskVerifierContract(
+                binding_id=None,
+                input_artifact_ids=(),
+                result_schema={
+                    "type": "object",
+                    "properties": {"passed": {"type": "boolean"}},
+                    "required": ["passed"],
+                    "additionalProperties": False,
+                },
+                timeout_ms=30_000,
+            ),
+            evidence=TaskEvidenceContract(
+                required_event_types=("turn.completed",),
+                required_artifact_ids=(),
+            ),
+            retention=TaskRetentionContract(
+                retention_class_id="test-evidence",
+                minimum_retention_seconds=60,
+            ),
+        ),
+        source_contract="v2",
+        v1_loss_policy="reject_all",
+    )
+
+
+def _inputs(
+    members: dict[str, bytes],
+    *,
+    edges: tuple[Any, ...],
+    root: str,
+) -> tuple[Any, Any, Any]:
+    from agentic_coder_prototype.compilation.bundle import (
+        ManifestReader,
+        build_dependency_closure,
+        ingest_member_map,
+    )
+    from breadboard.rl.state import InMemoryCAS
+
+    cas = InMemoryCAS()
+    bundle = ingest_member_map(
+        members,
+        cas,
+        entrypoints={"main": root},
+        source_label="installed-qualification",
+    )
+    closure = build_dependency_closure(
+        bundle,
+        root_entrypoint="main",
+        edges=edges,
+    )
+    return ManifestReader(cas=cas, bundle=bundle, closure=closure), closure, bundle
+
 
 @dataclass(frozen=True, slots=True)
 class ExecutableIdentity:
@@ -116,72 +251,6 @@ class InstalledFixturePaths:
     launch_seeds: Mapping[str, bytes]
 
 
-def _write_exclusive(path: Path, payload: bytes, mode: int) -> None:
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0), mode)
-    try:
-        view = memoryview(payload)
-        while view:
-            written = os.write(fd, view)
-            if written <= 0:
-                raise OSError("short fixture write")
-            view = view[written:]
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    os.chmod(path, mode, follow_symlinks=False)
-    current = path.stat(follow_symlinks=False)
-    if not stat.S_ISREG(current.st_mode) or stat.S_IMODE(current.st_mode) != mode:
-        raise RuntimeError("fixture file mode was not installed exactly")
-
-def _read_regular_nofollow(path: Path) -> bytes:
-    source_before = path.stat(follow_symlinks=False)
-    fd = os.open(path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
-    try:
-        before = os.fstat(fd)
-        if not stat.S_ISREG(before.st_mode) or (
-            source_before.st_dev,
-            source_before.st_ino,
-            source_before.st_size,
-            source_before.st_mtime_ns,
-        ) != (
-            before.st_dev,
-            before.st_ino,
-            before.st_size,
-            before.st_mtime_ns,
-        ):
-            raise RuntimeError("fixture source identity changed before read")
-        payload = os.read(fd, before.st_size + 1)
-        after = os.fstat(fd)
-        source_after = path.stat(follow_symlinks=False)
-        expected_identity = (
-            before.st_dev,
-            before.st_ino,
-            before.st_size,
-            before.st_mtime_ns,
-        )
-        if (
-            len(payload) != before.st_size
-            or expected_identity
-            != (
-                after.st_dev,
-                after.st_ino,
-                after.st_size,
-                after.st_mtime_ns,
-            )
-            or expected_identity
-            != (
-                source_after.st_dev,
-                source_after.st_ino,
-                source_after.st_size,
-                source_after.st_mtime_ns,
-            )
-        ):
-            raise RuntimeError("fixture source changed during read")
-        return payload
-    finally:
-        os.close(fd)
-
-
 def install_runtime_paths(root: Path) -> InstalledFixturePaths:
     """Install mutable roots and secret material required by the immutable corpus.
 
@@ -212,7 +281,7 @@ def install_runtime_paths(root: Path) -> InstalledFixturePaths:
 
     tls_key = root / "policy-server.key.pem"
     source = TLS_ROOT / "server.key.pem"
-    _write_exclusive(tls_key, _read_regular_nofollow(source), 0o600)
+    _write_exclusive(tls_key, _read_resource(source), 0o600)
 
     return InstalledFixturePaths(
         stores=MappingProxyType(stores),
@@ -220,6 +289,461 @@ def install_runtime_paths(root: Path) -> InstalledFixturePaths:
         tls_server_key=tls_key.resolve(strict=True),
         launch_seeds=MappingProxyType(secret_payloads),
     )
+
+
+def _setup_authority_projection(
+    grant: dict[str, Any], task: dict[str, Any]
+) -> dict[str, Any]:
+    return {
+        "schema_version": "bb.rl.setup-plan.v1",
+        "setup_id": grant["setup_id"],
+        "implementation_digest": grant["implementation_digest"],
+        "argv": ["breadboard-setup", "--prepare-workspace"],
+        "input_digests": list(task["input_artifact_digests"]),
+        "writable_output_subtrees": ["workspace/output"],
+        "writable_output_slots": ["patch"],
+        "route_ids": ["policy-route"],
+        "secret_handle_ids": ["policy-credential"],
+        "timeout_ms": 60_000,
+        "expected_outputs": [{"role": "patch", "artifact_id": "patch"}],
+    }
+
+
+def _route_authority_projection(grant: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": "bb.rl.route-authority.v1",
+        "route_id": grant["route_id"],
+        "protocol_abi": grant["protocol_abi"],
+        "credential_handle_id": grant["credential_handle_id"],
+        "scheme": "https",
+        "authority": "policy.example.test",
+        "paths": ["/v1/responses"],
+        "methods": ["POST"],
+        "ip_policy_digest": _d("2"),
+        "dns_policy_digest": _d("3"),
+        "request_schema_digest": _d("4"),
+        "response_schema_digest": _d("5"),
+        "max_request_bytes": 65_536,
+        "max_response_bytes": 32_768,
+        "max_requests_per_minute": 60,
+        "data_classification": "confidential",
+        "owner": {"owner_id": "operator", "authority_scope_digest": _d("1")},
+    }
+
+
+def _rebind_registry_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    rebound = copy.deepcopy(payload)
+    component_digest_fields = {
+        "runners": "runner_registry_digest",
+        "tools": "tool_registry_digest",
+        "setups": "setup_registry_digest",
+        "routes": "route_registry_digest",
+        "secret_handles": "secret_handle_registry_digest",
+        "sandbox_runtimes": "sandbox_runtime_registry_digest",
+        "images": "image_registry_digest",
+        "repository_bindings": "repository_binding_registry_digest",
+        "task_datasets": "task_dataset_registry_digest",
+        "models": "model_registry_digest",
+        "verifiers": "verifier_registry_digest",
+        "evidence_policies": "evidence_policy_registry_digest",
+        "retention_policies": "retention_policy_registry_digest",
+        "policy_capability_attestations": "policy_capability_registry_digest",
+    }
+    component_digests = {
+        digest_field: independent_digest(
+            {
+                "schema_version": c.REGISTRY_SNAPSHOT_SCHEMA_VERSION,
+                "component": component,
+                "records": rebound[component],
+            }
+        )
+        for component, digest_field in component_digest_fields.items()
+    }
+    rebound["digests"] = {
+        **component_digests,
+        "snapshot_digest": independent_digest(
+            {
+                "schema_version": c.REGISTRY_SNAPSHOT_SCHEMA_VERSION,
+                "component_digests": component_digests,
+            }
+        ),
+    }
+    return rebound
+
+
+def _base_capability_payload() -> dict[str, Any]:
+    payload = copy.deepcopy(
+        next(
+            item["payload"]
+            for item in _load_json(CANONICAL_VECTORS)["vectors"]
+            if item["artifact_kind"] == "capability_vector"
+        )
+    )
+    payload["sandbox"]["mounts"].append(
+        {
+            "source_artifact_digest": _d("b"),
+            "target_logical_path": "workspace/output",
+            "access": "rw",
+            "max_bytes": 1_048_576,
+        }
+    )
+    setup = payload["setup_plans"][0]
+    setup["plan_digest"] = independent_digest(
+        _setup_authority_projection(setup, payload["task"])
+    )
+    route = payload["routes"][0]
+    route["route_revision_digest"] = independent_digest(
+        _route_authority_projection(route)
+    )
+    return payload
+
+
+@dataclass(frozen=True, slots=True)
+class _AdmissionSeed:
+    request: object
+    policy: object
+    registries: object
+
+
+def _admission_seed(
+    *,
+    capability_payload: dict[str, Any] | None = None,
+    ceiling_capability_payload: dict[str, Any] | None = None,
+) -> _AdmissionSeed:
+    capability = c.CapabilityVector.model_validate(
+        capability_payload or _base_capability_payload()
+    )
+    ceiling_vector = c.CapabilityVector.model_validate(
+        ceiling_capability_payload or _base_capability_payload()
+    )
+    repository_binding_digest = _d("7")
+    retention_grant = c.RetentionPolicyGrant(
+        policy=capability.retention,
+        minimum_seconds=86_400,
+        maximum_seconds=2_592_000,
+    )
+    setup_projection = _setup_authority_projection(
+        capability.setup_plans[0].to_canonical_obj(),
+        capability.task.to_canonical_obj(),
+    )
+    setup_record = c.SetupRegistryRecord(
+        grant=capability.setup_plans[0],
+        argv=tuple(setup_projection["argv"]),
+        input_digests=tuple(setup_projection["input_digests"]),
+        writable_output_subtrees=tuple(setup_projection["writable_output_subtrees"]),
+        writable_output_slots=tuple(setup_projection["writable_output_slots"]),
+        route_ids=tuple(setup_projection["route_ids"]),
+        secret_handle_ids=tuple(setup_projection["secret_handle_ids"]),
+        timeout_ms=setup_projection["timeout_ms"],
+        expected_outputs=tuple(
+            c.SetupOutput.model_validate(output)
+            for output in setup_projection["expected_outputs"]
+        ),
+    )
+    route_projection = _route_authority_projection(
+        capability.routes[0].to_canonical_obj()
+    )
+    route_record = c.RouteRegistryRecord(
+        grant=capability.routes[0],
+        scheme=route_projection["scheme"],
+        authority=route_projection["authority"],
+        paths=tuple(route_projection["paths"]),
+        methods=tuple(route_projection["methods"]),
+        ip_policy_digest=route_projection["ip_policy_digest"],
+        dns_policy_digest=route_projection["dns_policy_digest"],
+        request_schema_digest=route_projection["request_schema_digest"],
+        response_schema_digest=route_projection["response_schema_digest"],
+        max_request_bytes=route_projection["max_request_bytes"],
+        max_response_bytes=route_projection["max_response_bytes"],
+        max_requests_per_minute=route_projection["max_requests_per_minute"],
+        data_classification=route_projection["data_classification"],
+        owner=c.RouteOwnerAuthority.model_validate(route_projection["owner"]),
+    )
+    verifier_runtime = c.SandboxBinding(
+        runtime_id="verifier-runtime",
+        runtime_class=c.RuntimeClass.HARDENED_DOCKER,
+        driver_implementation_digest=_d("7"),
+        runtime_binary_digest=_d("8"),
+        security_policy_digest=_d("9"),
+        image_digest=capability.verifier.image_digest,
+        network_policy_digest=capability.verifier.network_policy_digest,
+    )
+    attestation_projection = {
+        "schema_version": "bb.rl.policy-capability-attestation.v1",
+        "route_id": capability.routes[0].route_id,
+        "route_revision_digest": capability.routes[0].route_revision_digest,
+        "model_digest": capability.policy_slots[0].model_digest,
+        "tokenizer_digest": capability.policy_slots[0].tokenizer_digest,
+        "checkpoint_digest": capability.policy_slots[0].checkpoint_digest,
+        "capability_digest": capability.policy_slots[
+            0
+        ].required_policy_capabilities_digest,
+        "authorized_signer_key_ids": [
+            "operator-signing-key",
+            "startup-key",
+            "startup-probe-key",
+        ],
+        "signature_verification_policy_digest": _d("d"),
+        "validity": {
+            "issued_at": "2026-07-10T11:00:00Z",
+            "not_before": "2026-07-10T11:00:00Z",
+            "expires_at": "2026-07-10T14:00:00Z",
+        },
+        "revocation": {
+            "scope_digest": _d("1"),
+            "epoch": 7,
+            "state_digest": _d("3"),
+        },
+    }
+    attestation_record = c.PolicyCapabilityAttestationRecord(
+        **{
+            key: value
+            for key, value in attestation_projection.items()
+            if key != "schema_version"
+        },
+        attestation_digest=independent_digest(attestation_projection),
+    )
+    registry_records: dict[str, tuple[Any, ...]] = {
+        "runners": (c.RunnerRegistryRecord(grant=capability.runner),),
+        "tools": (
+            c.ToolRegistryRecord(
+                grant=capability.tools[0],
+                argument_schema_digest=_d("1"),
+                result_schema_digest=_d("2"),
+                reserved=False,
+            ),
+        ),
+        "setups": (setup_record,),
+        "routes": (route_record,),
+        "secret_handles": (
+            c.SecretHandleRegistryRecord(
+                grant=capability.secret_handles[0],
+                route_ids=(capability.routes[0].route_id,),
+            ),
+        ),
+        "sandbox_runtimes": (
+            c.SandboxRuntimeRegistryRecord(
+                binding=c.SandboxBinding(
+                    runtime_id=capability.sandbox.runtime_id,
+                    runtime_class=capability.sandbox.runtime_class,
+                    driver_implementation_digest=capability.sandbox.driver_implementation_digest,
+                    runtime_binary_digest=capability.sandbox.runtime_binary_digest,
+                    security_policy_digest=capability.sandbox.security_policy_digest,
+                    image_digest=capability.sandbox.image_digest,
+                    network_policy_digest=capability.sandbox.network_policy_digest,
+                )
+            ),
+            c.SandboxRuntimeRegistryRecord(binding=verifier_runtime),
+        ),
+        "images": (
+            c.ImageRegistryRecord(
+                image_digest=capability.verifier.image_digest,
+                runtime_id=verifier_runtime.runtime_id,
+                repository_binding_digests=(),
+            ),
+            c.ImageRegistryRecord(
+                image_digest=capability.sandbox.image_digest,
+                runtime_id=capability.sandbox.runtime_id,
+                repository_binding_digests=(repository_binding_digest,),
+            ),
+        ),
+        "repository_bindings": (
+            c.RepositoryBindingRegistryRecord(
+                binding_digest=repository_binding_digest,
+                repository_snapshot_digest=capability.task.repository_snapshot_digest,
+                image_digest=capability.sandbox.image_digest,
+            ),
+        ),
+        "task_datasets": (
+            c.TaskDatasetRegistryRecord(
+                task_contract_digest=capability.task.task_contract_digest,
+                task_binding_digest=capability.task.task_binding_digest,
+                repository_snapshot_digest=capability.task.repository_snapshot_digest,
+                dataset_digests=capability.task.dataset_digests,
+                input_artifact_digests=capability.task.input_artifact_digests,
+            ),
+        ),
+        "models": (
+            c.ModelRegistryRecord(
+                identity=c.ModelIdentity(
+                    model_id="model-a",
+                    model_digest=capability.policy_slots[0].model_digest,
+                    tokenizer_digest=capability.policy_slots[0].tokenizer_digest,
+                    checkpoint_digest=capability.policy_slots[0].checkpoint_digest,
+                )
+            ),
+        ),
+        "verifiers": (
+            c.VerifierRegistryRecord(
+                grant=capability.verifier,
+                runtime_id=verifier_runtime.runtime_id,
+                runtime_class=verifier_runtime.runtime_class,
+                security_policy_digest=verifier_runtime.security_policy_digest,
+            ),
+        ),
+        "evidence_policies": (
+            c.EvidencePolicyRegistryRecord(
+                policy=capability.evidence,
+                required_roles=("patch", "transcript"),
+            ),
+        ),
+        "retention_policies": (c.RetentionPolicyRegistryRecord(grant=retention_grant),),
+        "policy_capability_attestations": (attestation_record,),
+    }
+    component_digest_fields = {
+        "runners": "runner_registry_digest",
+        "tools": "tool_registry_digest",
+        "setups": "setup_registry_digest",
+        "routes": "route_registry_digest",
+        "secret_handles": "secret_handle_registry_digest",
+        "sandbox_runtimes": "sandbox_runtime_registry_digest",
+        "images": "image_registry_digest",
+        "repository_bindings": "repository_binding_registry_digest",
+        "task_datasets": "task_dataset_registry_digest",
+        "models": "model_registry_digest",
+        "verifiers": "verifier_registry_digest",
+        "evidence_policies": "evidence_policy_registry_digest",
+        "retention_policies": "retention_policy_registry_digest",
+        "policy_capability_attestations": "policy_capability_registry_digest",
+    }
+    component_digests = {
+        component_digest_fields[component]: independent_digest(
+            {
+                "schema_version": c.REGISTRY_SNAPSHOT_SCHEMA_VERSION,
+                "component": component,
+                "records": [record.to_canonical_obj() for record in records],
+            }
+        )
+        for component, records in registry_records.items()
+    }
+    digests = c.RegistryDigestSet(
+        **component_digests,
+        snapshot_digest=independent_digest(
+            {
+                "schema_version": c.REGISTRY_SNAPSHOT_SCHEMA_VERSION,
+                "component_digests": component_digests,
+            }
+        ),
+    )
+    registries = c.RegistrySnapshotSet(digests=digests, **registry_records)
+    compiler_payload = next(
+        item["payload"]["compiled"]["compiler"]
+        for item in _load_json(CANONICAL_VECTORS)["vectors"]
+        if item["artifact_kind"] == "admission_request"
+    )
+    compiler_identity = c.CompilerIdentity.model_validate(compiler_payload)
+    ceiling_retention = c.RetentionPolicyGrant(
+        policy=ceiling_vector.retention,
+        minimum_seconds=86_400,
+        maximum_seconds=2_592_000,
+    )
+    ceiling = c.OperatorCeiling(
+        runner_bindings=(ceiling_vector.runner,),
+        tool_grants=ceiling_vector.tools,
+        setup_grants=ceiling_vector.setup_plans,
+        route_grants=ceiling_vector.routes,
+        secret_handle_grants=ceiling_vector.secret_handles,
+        sandbox_bindings=(
+            c.SandboxBinding(
+                runtime_id=ceiling_vector.sandbox.runtime_id,
+                runtime_class=ceiling_vector.sandbox.runtime_class,
+                driver_implementation_digest=ceiling_vector.sandbox.driver_implementation_digest,
+                runtime_binary_digest=ceiling_vector.sandbox.runtime_binary_digest,
+                security_policy_digest=ceiling_vector.sandbox.security_policy_digest,
+                image_digest=ceiling_vector.sandbox.image_digest,
+                network_policy_digest=ceiling_vector.sandbox.network_policy_digest,
+            ),
+        ),
+        repository_snapshot_digests=(ceiling_vector.task.repository_snapshot_digest,),
+        task_contract_digests=(ceiling_vector.task.task_contract_digest,),
+        task_binding_digests=(ceiling_vector.task.task_binding_digest,),
+        dataset_digests=ceiling_vector.task.dataset_digests,
+        model_bindings=(
+            c.ModelIdentity(
+                model_id="model-a",
+                model_digest=ceiling_vector.policy_slots[0].model_digest,
+                tokenizer_digest=ceiling_vector.policy_slots[0].tokenizer_digest,
+                checkpoint_digest=ceiling_vector.policy_slots[0].checkpoint_digest,
+            ),
+        ),
+        verifier_grants=(ceiling_vector.verifier,),
+        policy_slot_grants=ceiling_vector.policy_slots,
+        evidence_policies=(ceiling_vector.evidence,),
+        retention_policies=(ceiling_retention,),
+        mutable_pointer_rules=ceiling_vector.mutable_pointers,
+        resource_maxima=ceiling_vector.resources,
+        execution_maxima=ceiling_vector.limits,
+        allowed_egress_route_ids=ceiling_vector.sandbox.egress_route_ids,
+        mount_grants=ceiling_vector.sandbox.mounts,
+        artifact_policy_maximum=ceiling_vector.artifacts,
+    )
+    policy = c.AdmissionPolicySnapshot(
+        policy_id="operator-default",
+        revision="2026-07-10.1",
+        subject_scope_digest=_d("1"),
+        compiler_constraints=c.CompilerConstraints(
+            allowed_compilers=(compiler_identity,)
+        ),
+        registry_digests=digests,
+        ceiling=ceiling,
+        required_security=c.RequiredSecurityPolicy(
+            minimum_isolation_class=c.RuntimeClass.HARDENED_DOCKER,
+            required_verifier_isolation_class=c.RuntimeClass.HARDENED_DOCKER,
+            required_evidence_roles=("patch", "transcript"),
+            prohibited_runtime_classes=(c.RuntimeClass.TRUSTED_PROCESS,),
+            minimum_retention_seconds=86_400,
+        ),
+        receipt_ttl_seconds=3_600,
+        validity=c.ValidityWindow(
+            issued_at="2026-07-10T11:00:00Z",
+            not_before="2026-07-10T11:00:00Z",
+            expires_at="2026-07-10T14:00:00Z",
+        ),
+        revocation=c.RevocationBinding(
+            scope_digest=_d("1"), epoch=7, state_digest=_d("3")
+        ),
+    )
+    provenance = {"entries": []}
+    diagnostics = {"defaults": [], "notices": []}
+    compiled_payload = next(
+        item["payload"]["compiled"]
+        for item in _load_json(CANONICAL_VECTORS)["vectors"]
+        if item["artifact_kind"] == "admission_request"
+    )
+    compiled_payload = copy.deepcopy(compiled_payload)
+    compiled_payload["provenance_digest"] = independent_digest(provenance)
+    compiled_payload["diagnostics_digest"] = independent_digest(diagnostics)
+    compiled = c.CompiledArtifactIdentity.model_validate(compiled_payload)
+    request = c.AdmissionRequest(
+        subject=c.AuthenticatedSubject(
+            tenant_id="tenant-a",
+            principal_id="principal-a",
+            authority_scope_digest=_d("1"),
+        ),
+        behavior_source=c.CompiledBehaviorSource(
+            manifest_digest=compiled.manifest_digest,
+            semantic_digest=compiled.semantic_digest,
+        ),
+        compiled=compiled,
+        requested_capabilities=capability,
+        requested_capability_digest=capability.canonical_digest(),
+        task_binding_digest=capability.task.task_binding_digest,
+        policy_binding_ref=c.PolicyBindingRef(
+            route_id=capability.routes[0].route_id,
+            registry_revision_digest=digests.route_registry_digest,
+            attestation_digest=attestation_record.attestation_digest,
+        ),
+        admission_policy_digest=policy.canonical_digest(),
+        registry_snapshot_digest=digests.snapshot_digest,
+        validity=c.ValidityWindow(
+            issued_at="2026-07-10T12:00:00Z",
+            not_before="2026-07-10T12:00:00Z",
+            expires_at="2026-07-10T13:00:00Z",
+        ),
+        parent_receipt_digest=None,
+        overlay_chain_digest=None,
+    )
+    return _AdmissionSeed(request=request, policy=policy, registries=registries)
 
 
 def materialize_production_composition_fixture(
@@ -299,18 +823,6 @@ def materialize_production_composition_fixture(
         CONDUCTOR_RUNTIME_ABI,
     )
     from breadboard.rl.state.cas import FilesystemCAS
-    from tests.compilation.test_server_compiler import _inputs, _options
-    from tests.rl.harness.test_config_admission import (
-        _admission_fixture,
-        _base_capability_payload,
-        _rebind_registry_payload,
-        _setup_authority_projection,
-        independent_digest,
-    )
-    from tests.rl.harness.test_config_selection import (
-        _capability_projection,
-        _policy_capabilities,
-    )
 
     root = (tmp_path / "production-composition").resolve()
     installed_paths = install_runtime_paths(root / "installed")
@@ -474,7 +986,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
             capabilities=selection_capabilities,
         )
     )
-    seed = _admission_fixture(
+    seed = _admission_seed(
         capability_payload=copy.deepcopy(capability_payload),
         ceiling_capability_payload=copy.deepcopy(capability_payload),
     )
@@ -638,9 +1150,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
             snapshot_max_inodes=128,
         )
 
-    platform_identity = (
-        f"{os.uname().sysname.lower()}-{os.uname().machine.lower()}"
-    )
+    platform_identity = f"{os.uname().sysname.lower()}-{os.uname().machine.lower()}"
     installed_runtimes = tuple(
         sorted(
             (
@@ -834,6 +1344,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
     )
 
     now = datetime.now(UTC).replace(microsecond=0)
+
     def utc_second(value: datetime) -> str:
         return value.isoformat().replace("+00:00", "Z")
 
@@ -890,7 +1401,11 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
     }
     attestation_projection = {
         "schema_version": "bb.rl.policy-capability-attestation.v1",
-        **{key: value for key, value in attestation.items() if key != "attestation_digest"},
+        **{
+            key: value
+            for key, value in attestation.items()
+            if key != "attestation_digest"
+        },
     }
     attestation["attestation_digest"] = independent_digest(attestation_projection)
     registry_payload["policy_capability_attestations"] = [attestation]
@@ -907,7 +1422,9 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
         compiler_identity.model_dump(mode="json")
     ]
     policy_payload["registry_digests"] = registries.digests.model_dump(mode="json")
-    policy_payload["ceiling"]["runner_bindings"] = [capability.runner.model_dump(mode="json")]
+    policy_payload["ceiling"]["runner_bindings"] = [
+        capability.runner.model_dump(mode="json")
+    ]
     policy_payload["ceiling"]["route_grants"] = [
         item.model_dump(mode="json") for item in capability.routes
     ]
@@ -942,8 +1459,12 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
     policy_payload["ceiling"]["verifier_grants"] = [
         capability.verifier.model_dump(mode="json")
     ]
-    policy_payload["ceiling"]["resource_maxima"] = capability.resources.model_dump(mode="json")
-    policy_payload["ceiling"]["execution_maxima"] = capability.limits.model_dump(mode="json")
+    policy_payload["ceiling"]["resource_maxima"] = capability.resources.model_dump(
+        mode="json"
+    )
+    policy_payload["ceiling"]["execution_maxima"] = capability.limits.model_dump(
+        mode="json"
+    )
     policy_payload["ceiling"]["allowed_egress_route_ids"] = list(
         capability.sandbox.egress_route_ids
     )
@@ -1049,7 +1570,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
             kind=c.ArtifactKind.ADMITTED_SET,
             canonical_bytes=admitted_set.canonical_bytes(),
         )
-        generated_name = "fixture-candidate-canonical-7d4a6f"
+        generated_name = f"qualification-candidate-{secrets.token_hex(12)}"
         selector = c.DirectSelector(
             admitted_set_root=admitted_ref.sha256,
             compiler_abi=admitted_set.compiler_abi,
@@ -1191,9 +1712,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
             route_id=capability.routes[0].route_id,
             server_name="127.0.0.1",
             ca_bundle_ref=ca_ref,
-            expected_leaf_certificate_sha256=tls_metadata[
-                "server_leaf_der_sha256"
-            ],
+            expected_leaf_certificate_sha256=tls_metadata["server_leaf_der_sha256"],
             minimum_tls_version="TLSv1.3",
             cipher_suite="TLS_AES_256_GCM_SHA384",
             dedicated_single_leaf_ca=True,
@@ -1217,6 +1736,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
             path = installed_paths.stores[name]
             current = path.stat(follow_symlinks=False)
             from breadboard.rl.harness.composition import DirectoryAuthorityRefV1
+
             return DirectoryAuthorityRefV1(
                 authority_id=f"production-{name}",
                 path=str(path),
@@ -1290,9 +1810,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
             ),
             secret_handles=SecretHandlesV1(
                 records=(
-                    SecretHandleSpecV1(
-                        handle_id="api-auth", purpose="api_bearer"
-                    ),
+                    SecretHandleSpecV1(handle_id="api-auth", purpose="api_bearer"),
                     SecretHandleSpecV1(
                         handle_id="policy-callback",
                         purpose="policy_callback",
@@ -1351,7 +1869,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
                     "arguments": json.dumps(
                         {
                             "command": (
-                                "printf '{\"answer\":\"breadboard-production-fixture\"}' "
+                                'printf \'{"answer":"breadboard-production-fixture"}\' '
                                 "> task-output.json"
                             )
                         },
@@ -1420,8 +1938,6 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
         selector_digest=selector_runtime_ref.sha256,
         create_body=MappingProxyType(create_body),
         policy_response_body=MappingProxyType(policy_response),
-        policy_observation=MappingProxyType(
-            policy_observation.model_dump(mode="json")
-        ),
+        policy_observation=MappingProxyType(policy_observation.model_dump(mode="json")),
         cleanup_paths=(),
     )

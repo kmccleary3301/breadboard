@@ -30,7 +30,7 @@ from breadboard_engine.provider.contracts import (
 )
 from breadboard_engine.provider.runtimes.openai.chat import OpenAIChatRuntime
 
-from tests.rl.harness.production_composition_fixture import (
+from breadboard.rl.harness.qualification import (
     materialize_production_composition_fixture,
 )
 
@@ -111,6 +111,7 @@ def test_provider_requires_usable_literal_loopback_authority(base_url: str) -> N
             policy_observation_digest="sha256:" + "0" * 64,
         )
 
+
 @pytest.mark.asyncio
 async def test_target_semantics_reject_changed_tool_parameter_schema(
     tmp_path: Path,
@@ -152,7 +153,6 @@ async def test_target_semantics_reject_changed_tool_parameter_schema(
             )
     finally:
         await composition.close()
-
 
 
 @pytest.mark.skipif(
@@ -269,9 +269,7 @@ async def test_headless_runner_rejects_development_trusted_process(
         workspace=HeadlessWorkspaceInput(
             repository_snapshot_digest=plan.task.repository_snapshot_digest,
             base_commit=(
-                None
-                if plan.task.repository_snapshot_digest is None
-                else "0" * 40
+                None if plan.task.repository_snapshot_digest is None else "0" * 40
             ),
             task_image_digest=plan.sandbox.image_digest,
         ),
