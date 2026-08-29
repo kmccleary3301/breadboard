@@ -574,7 +574,7 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
     monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_runner.load_agent_config", load); monkeypatch.setattr("breadboard_engine.api.cli_bridge.runtime_emission.load_agent_config", lambda _: pytest.fail("emitter reloaded mutable source")); monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.primitive_emission_enabled", enable_primitives)
     monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.uuid.uuid4", lambda: "frozen-session"); monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_runner.SessionRunner.schedule_start", lambda _runner: None); monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_runner.SessionRunner.authorize_start", lambda _runner: None); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records")); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events"))
     service = SessionService(); response = await service.create_session(SessionCreateRequest(config_path="mutating.json", task="test")); record = await service.ensure_session(response.session_id); root = tmp_path / "records" / response.session_id; names = ("effective_config_graph", "capability_registry", "effective_tool_surface", "effective_operation_policy"); payloads = {name: json.loads((root / f"{name}.json").read_text()) for name in names}
-    graph, policy = payloads["effective_config_graph"], payloads["effective_operation_policy"]; tool_ids = {item["capability_id"] for item in payloads["capability_registry"]["capabilities"] if item["capability_type"] == "tool"}; assert calls == ["mutating.json"] and graph["graph_hash"] == record.product_session.events[0].payload["effective_lock_hash"]
+    graph, policy = payloads["effective_config_graph"], payloads["effective_operation_policy"]; tool_ids = {item["capability_id"] for item in payloads["capability_registry"]["capabilities"] if item["capability_type"] == "tool"}; assert calls == [str(Path("mutating.json").resolve())] and graph["graph_hash"] == record.product_session.events[0].payload["effective_lock_hash"]
     assert tool_ids == {"tool.list"} == set(payloads["effective_tool_surface"]["tool_ids"]) and [(rule["decision"], rule["match"]["pattern"]) for rule in policy["tool_policy"]["rules"]] == [("allow", "list"), ("deny", "blocked_tool")]
     serialized = json.dumps(payloads) + "".join(path.read_text() for path in tmp_path.rglob("*") if path.is_file()); assert policy["approvals"]["mode"] == "always_required" and all(secret not in serialized for secret in ("provider_auth_runtime", "runtime-secret", "flat-secret", "nested-secret", '"read"'))
     captured = {}
@@ -612,7 +612,7 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
         "flat-secret",
         "nested-secret",
     )
-    assert calls == ["mutating.json"]
+    assert calls == [str(Path("mutating.json").resolve())]
     assert captured["config"] == expected
     assert not redaction.contains_provider_auth_runtime(captured["overrides"])
     assert "workspace.root" in captured["overrides"]

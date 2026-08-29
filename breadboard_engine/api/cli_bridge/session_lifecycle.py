@@ -259,13 +259,24 @@ class SessionLifecycleOwner:
                 completion_reason,
                 default="runtime_failure",
             )
+            turn_was_cancelled = bool(
+                task_turn is not None and task_turn.cancellation_requested
+            )
             with host._product_session_lock:
                 product_session = getattr(host.session, "product_session", None)
                 if product_session is None:
-                    durable_success = execution_completed
+                    durable_success = execution_completed or (
+                        turn_was_cancelled and not one_shot
+                    )
                 else:
                     product_state = product_session.read_model.status
-                    if product_state == "running" and not host._stop_event.is_set():
+                    if turn_was_cancelled:
+                        if one_shot and product_state == "running":
+                            host.transition_product_session(
+                                "cancel",
+                                task_turn.cancellation_reason or "user_requested",
+                            )
+                    elif product_state == "running" and not host._stop_event.is_set():
                         if execution_completed:
                             if one_shot:
                                 host.transition_product_session("complete")
@@ -277,9 +288,9 @@ class SessionLifecycleOwner:
                             )
                     product_state = product_session.read_model.status
                     durable_success = (
-                        product_state == "completed"
-                        if one_shot
-                        else product_state not in {"failed", "canceled"}
+                        product_state not in {"failed", "canceled"}
+                        if not one_shot
+                        else product_state == "completed"
                     )
             if durable_success:
                 try:
@@ -327,14 +338,15 @@ class SessionLifecycleOwner:
                         reason=completion_reason,
                         error_code=failure_code,
                     )
-            turn_was_cancelled = bool(
-                task_turn is not None and task_turn.cancellation_requested
-            )
             if one_shot:
-                if host._stop_event.is_set():
+                if turn_was_cancelled:
                     await self.terminalize_admitted_turns(
                         outcome="cancelled",
-                        reason="stop_requested",
+                        reason=task_turn.cancellation_reason or "user_requested",
+                    )
+                elif host._stop_event.is_set():
+                    await self.terminalize_admitted_turns(
+                        outcome="cancelled", reason="stop_requested"
                     )
                 elif execution_completed:
                     await self.terminalize_admitted_turns(
@@ -347,6 +359,12 @@ class SessionLifecycleOwner:
                         reason=completion_reason,
                         error_code=failure_code,
                     )
+            if not one_shot and not durable_success:
+                await self.terminalize_admitted_turns(
+                    outcome="failed",
+                    reason=completion_reason,
+                    error_code=failure_code,
+                )
             if durable_success and not turn_was_cancelled:
                 for (
                     event_type,

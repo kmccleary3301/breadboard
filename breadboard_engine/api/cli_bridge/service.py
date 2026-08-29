@@ -767,6 +767,14 @@ class SessionService:
             request = request.model_copy(
                 update={"config_path": str(default_profile.source_path)}
             )
+        else:
+            request = request.model_copy(
+                update={
+                    "config_path": str(
+                        Path(str(request.config_path)).expanduser().resolve()
+                    )
+                }
+            )
         default_profile_overridden = any(
             key != "workspace.root" for key in (request.overrides or {})
         )
@@ -1240,12 +1248,23 @@ class SessionService:
         record = await self.registry.get(session_id)
         if not record:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="session not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="session not found",
+            )
+        if not record.loaded_from_retained_state:
+            return record
+        async with self._session_lock(session_id):
+            return await self._ensure_session_locked(session_id)
+
+    async def _ensure_session_locked(self, session_id: str) -> SessionRecord:
+        record = await self.registry.get(session_id)
+        if not record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="session not found",
             )
         if record.loaded_from_retained_state:
-            async with self._session_lock(session_id):
-                if record.loaded_from_retained_state:
-                    await self._resume_retained_session(record)
+            await self._resume_retained_session(record)
         return record
 
     async def _resume_retained_session(self, record: SessionRecord) -> None:
@@ -1699,7 +1718,7 @@ class SessionService:
     async def _stop_session_locked(
         self, session_id: str, *, reason: str | None = None
     ) -> None:
-        record = await self.ensure_session(session_id)
+        record = await self._ensure_session_locked(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         try:
             if runner:
@@ -1747,6 +1766,7 @@ class SessionService:
         attachments = tuple(payload.attachments or ())
         body_digest = submission_body_digest(payload.content, attachments)
         key_digest = identity_digest(client_message_id)
+        scheduled_after_admission: list[Callable[[], Awaitable[None]]] = []
 
         async def admit() -> SessionInputResponse:
             async with record.admission_lock:
@@ -1828,10 +1848,30 @@ class SessionService:
                         status_code=http_status, detail=str(exc)
                     ) from exc
                 scheduled_operation = scheduled_operations[0]
-                if defer_execution is None:
-                    await scheduled_operation()
-                else:
-                    defer_execution(scheduled_operation)
+
+                async def execute_admitted_turn() -> None:
+                    try:
+                        await scheduled_operation()
+                    except Exception:
+                        advance_queue = (
+                            turn.state == "active"
+                            and record.active_turn_id == turn.turn_id
+                        )
+                        await runner._finish_turn(
+                            turn,
+                            "failed",
+                            error_code="runtime_failure",
+                            advance_queue=advance_queue,
+                        )
+                        logger.warning(
+                            "Input execution failed after durable admission",
+                            extra={
+                                "session_id": record.session_id,
+                                "turn_id": turn.turn_id,
+                            },
+                        )
+
+                scheduled_after_admission.append(execute_admitted_turn)
                 return SessionInputResponse(
                     client_message_id=client_message_id,
                     input_id=turn.input_id,
@@ -1840,7 +1880,16 @@ class SessionService:
                     original_disposition=disposition,
                 )
 
-        return await self.registry.admit_turn(admit)
+        response = await self.registry.admit_turn(admit)
+        if scheduled_after_admission:
+            if len(scheduled_after_admission) != 1:
+                raise RuntimeError("admitted input has an invalid execution schedule")
+            scheduled_operation = scheduled_after_admission[0]
+            if defer_execution is None:
+                await scheduled_operation()
+            else:
+                defer_execution(scheduled_operation)
+        return response
 
     async def execute_command(
         self, session_id: str, payload: SessionCommandRequest
@@ -1913,7 +1962,7 @@ class SessionService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="no files provided"
             )
-        record = await self.ensure_session(session_id)
+        record = await self._ensure_session_locked(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
             raise HTTPException(

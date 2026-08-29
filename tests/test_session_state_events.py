@@ -840,6 +840,48 @@ async def test_session_input_is_durable_before_deferred_execution(tmp_path: Path
     assert queued["input_id"] == receipt.input_id
     assert queued["turn_id"] == receipt.turn_id
 
+@pytest.mark.asyncio
+async def test_deferred_input_failure_terminalizes_durable_turn(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-deferred-input-terminal-race",
+        status=SessionStatus.RUNNING,
+    )
+
+    class TerminalProductSession:
+        def input(self, _content: str, _artifacts: list[Any]) -> None:
+            raise RuntimeError("product session is terminal")
+
+    record.product_session = TerminalProductSession()
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    record.runner = runner
+    await registry.create(record)
+    deferred: list[Any] = []
+
+    receipt = await SessionService(registry=registry).send_input(
+        record.session_id,
+        SessionInputRequest(
+            content="continue",
+            client_message_id="client-terminal-race",
+        ),
+        defer_execution=deferred.append,
+    )
+    assert len(deferred) == 1
+
+    await deferred[0]()
+
+    turn = record.turns_by_id[receipt.turn_id]
+    assert turn.terminal_outcome == "failed"
+    assert turn.terminal_resolution_committed is True
+    assert record.active_turn_id is None
+    assert runner._input_queue.empty()
+
 
 @pytest.mark.asyncio
 async def test_retained_submission_digest_deduplicates_after_restart(
@@ -1474,6 +1516,82 @@ async def test_retained_terminal_session_is_not_resurrected(
     assert restored.runner is None
     assert restored.loaded_from_retained_state is False
     assert (await service.ensure_session(record.session_id)) is restored
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["stop", "delete"])
+async def test_locked_operation_resumes_retained_session_without_deadlock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    config_path = tmp_path / "retained-config.yaml"
+    config_path.write_text("{}\n", encoding="utf-8")
+    state_root = tmp_path / "state"
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id=f"session-retained-{operation}",
+        status=SessionStatus.RUNNING,
+        metadata={
+            "config_path": str(config_path),
+            "permission_mode": "configured",
+        },
+    )
+    await registry.create(record)
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
+        lambda: SimpleNamespace(
+            source_path=config_path,
+            public_identity=lambda: {
+                "definition_ref": "agent_configs/templates/daily_driver.v1.yaml"
+            },
+        ),
+    )
+    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    service = SessionService(registry=SessionRegistry(state_root=state_root))
+
+    if operation == "stop":
+        await asyncio.wait_for(service.stop_session(record.session_id), timeout=2)
+        stopped = await service.registry.get(record.session_id)
+        assert stopped is not None
+        assert stopped.status is SessionStatus.STOPPED
+    else:
+        await asyncio.wait_for(service.delete_session(record.session_id), timeout=2)
+        assert await service.registry.get(record.session_id) is None
+
+
+@pytest.mark.asyncio
+async def test_session_creation_persists_absolute_explicit_config_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "relative-config.yaml"
+    config_path.write_text("profile: {name: relative-test}\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(
+        "BREADBOARD_RUNTIME_RECORD_ROOT",
+        str(tmp_path / "runtime-records"),
+    )
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_EVENT_ROOT",
+        str(tmp_path / "session-events"),
+    )
+    monkeypatch.setattr(SessionRunner, "schedule_start", lambda self: None)
+    monkeypatch.setattr(SessionRunner, "authorize_start", lambda self: None)
+    service = SessionService(state_root=tmp_path / "state")
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=config_path.name,
+            task="",
+            stream=False,
+        )
+    )
+    created = await service.ensure_session(response.session_id)
+
+    assert created.metadata["config_path"] == str(config_path)
+    assert created.runner is not None
+    assert created.runner.request.config_path == str(config_path)
+    await service.delete_session(response.session_id)
 
 
 
@@ -2410,6 +2528,164 @@ def test_session_runner_unknown_runtime_event_fails_closed_and_strips_sentinel()
     )
     assert session_scoped is not None
     assert session_scoped[2] is None
+
+
+def _lifecycle_runner_with_product_session(
+    registry: SessionRegistry,
+    record: SessionRecord,
+    monkeypatch: pytest.MonkeyPatch,
+    outcomes: list[bool],
+) -> tuple[SessionRunner, Any]:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "active",
+        session_id=record.session_id,
+    )
+    record.product_session = product_session
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(
+            config_path="cfg.yaml",
+            task="active",
+            stream=False,
+        ),
+    )
+    record.runner = runner
+    monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
+
+    async def initialized() -> None:
+        return None
+
+    monkeypatch.setattr(runner, "_ensure_agent_initialized", initialized)
+
+    def execute_task(
+        _task: str,
+        *,
+        input_id: str | None = None,
+        turn_id: str | None = None,
+    ) -> dict[str, Any]:
+        completed = outcomes.pop(0)
+        return {
+            "completion_summary": {
+                "completed": completed,
+                "reason": "completed" if completed else "stopped_by_user",
+            },
+            "reward_metrics": None,
+            "logging_dir": None,
+            "_terminal_events": [],
+            "_turn_completion_payload": {},
+        }
+    monkeypatch.setattr(runner._task_execution, "execute_task", execute_task)
+    return runner, product_session
+
+
+async def _wait_for_terminal_turn(turn: TurnRecord) -> None:
+    for _ in range(200):
+        if turn.terminal_resolution_committed:
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"turn {turn.turn_id} did not become terminal")
+
+
+@pytest.mark.asyncio
+async def test_active_turn_cancellation_keeps_interactive_session_running(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-active-cancel-continues",
+        status=SessionStatus.STARTING,
+    )
+    runner, product_session = _lifecycle_runner_with_product_session(
+        registry,
+        record,
+        monkeypatch,
+        [False, True],
+    )
+    await registry.create(record)
+    await runner.prepare_start()
+    active = record.turns_by_id[record.active_turn_id or ""]
+    active.cancellation_requested = True
+    active.cancellation_reason = "user_requested"
+    record.turn_admission = record.turn_admission.__class__.ACTIVE
+    await registry.persist(record)
+    runner.schedule_start()
+    runner.authorize_start()
+
+    await _wait_for_terminal_turn(active)
+    assert active.terminal_outcome == "cancelled", record.terminal_event_envelopes
+    assert product_session.read_model.status == "running"
+    assert record.status is SessionStatus.RUNNING
+
+    receipt = await SessionService(registry=registry).send_input(
+        record.session_id,
+        SessionInputRequest(
+            content="continue",
+            client_message_id="message-continue",
+        ),
+    )
+    continued = record.turns_by_id[receipt.turn_id]
+    await _wait_for_terminal_turn(continued)
+
+    assert continued.terminal_outcome == "completed"
+    assert product_session.read_model.status == "running"
+    assert record.status is SessionStatus.RUNNING
+    await runner.stop()
+
+
+@pytest.mark.asyncio
+async def test_interactive_failure_terminalizes_remaining_admitted_turns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-failure-drains-admitted",
+        status=SessionStatus.STARTING,
+    )
+    runner, product_session = _lifecycle_runner_with_product_session(
+        registry,
+        record,
+        monkeypatch,
+        [False],
+    )
+    await registry.create(record)
+    await runner.prepare_start()
+    active = record.turns_by_id[record.active_turn_id or ""]
+    queued = TurnRecord(
+        input_id="input-queued",
+        turn_id="turn-queued",
+        client_message_id="message-queued",
+        content="queued",
+        attachments=(),
+        original_disposition="queued",
+        state="queued",
+    )
+    record.turns_by_id[queued.turn_id] = queued
+    record.queued_turn_ids.append(queued.turn_id)
+    record.turn_admission = record.turn_admission.__class__.ACTIVE
+    await registry.persist(record)
+    runner.schedule_start()
+    runner.authorize_start()
+
+    await _wait_for_terminal_turn(queued)
+
+    assert active.terminal_outcome == "failed"
+    assert queued.terminal_outcome == "failed"
+    assert active.terminal_resolution_committed is True
+    assert queued.terminal_resolution_committed is True
+    assert record.active_turn_id is None
+    assert list(record.queued_turn_ids) == []
+    assert product_session.read_model.status == "failed"
+    assert record.status is SessionStatus.FAILED
+    await runner.stop()
 
 
 @pytest.mark.asyncio
