@@ -78,7 +78,7 @@ const detailMessage = (value: unknown): string | undefined => {
 
 const apiErrorMessage = (status: number, payload: unknown): string => {
   if (typeof payload === "object" && payload !== null && !Array.isArray(payload)) {
-    const error = "error" in payload && typeof payload.error === "string" ? payload.error : undefined
+    const error = "error" in payload ? detailMessage(payload.error) : undefined
     const detail = "detail" in payload ? detailMessage(payload.detail) : undefined
     if (error) return detail && !detail.startsWith(`${error}:`) ? `${error}: ${detail}` : detail ?? error
     if (detail) return detail
