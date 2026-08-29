@@ -1955,6 +1955,45 @@ async def test_unreadable_verifier_record_blocks_primary_reconcile_until_removed
     assert not corrupt_child.exists()
     assert not workspace.exists()
 
+
+async def test_restart_reclaims_orphan_verifier_owner_lock_without_blocking_primary(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    workspace = lease._materialized.workspace_path
+    orphan_lease_id = "verifier-lease-" + ("a" * 32)
+    orphan_lock = original.lease_root / f"{orphan_lease_id}.owner.lock"
+    orphan_lock.touch(mode=0o600)
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(27_000),
+    )
+
+    receipts = await recovery.reconcile_stale()
+
+    orphan = next(
+        receipt for receipt in receipts if receipt.lease_id == orphan_lease_id
+    )
+    primary = next(
+        receipt for receipt in receipts if receipt.lease_id == lease.lease_id
+    )
+    assert orphan.steps == (
+        CleanupStepReceipt("owner_lock", CleanupState.RELEASED),
+    )
+    assert primary.state is CleanupState.RELEASED
+    assert not orphan_lock.exists()
+    assert not workspace.exists()
+    assert not (original.lease_root / f"{lease.lease_id}.json").exists()
+
 @pytest.mark.parametrize("identity_field", ["uid", "gid"])
 async def test_hardened_root_identity_is_rejected_before_materialization_or_launch(
     tmp_path: Path, identity_field: str

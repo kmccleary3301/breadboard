@@ -3446,8 +3446,67 @@ class SandboxRuntimeManager:
             return ()
         names = tuple(
             name for name in os.listdir(self._lease_root_fd)
-            if name.endswith(".json") and "/" not in name and name not in {".", ".."}
+            if "/" not in name and name not in {".", ".."}
         )
+        record_names = frozenset(
+            name for name in names if name.endswith(".json")
+        )
+        for lock_name in sorted(
+            name for name in names if name.endswith(".owner.lock")
+        ):
+            lease_id = lock_name.removesuffix(".owner.lock")
+            if lease_id + ".json" in record_names:
+                continue
+            try:
+                owner_claimed = self._claim_lease_owner_lock(lease_id)
+            except Exception:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        lease_id,
+                        (
+                            CleanupStepReceipt(
+                                "owner_lock",
+                                CleanupState.QUARANTINED,
+                                "owner_lock_invalid",
+                            ),
+                        ),
+                    )
+                )
+                continue
+            if not owner_claimed:
+                continue
+            if self._lease_record_exists(lease_id):
+                self._release_lease_owner_lock(lease_id, unlink=False)
+                continue
+            try:
+                self._release_lease_owner_lock(lease_id, unlink=True)
+                os.fsync(self._lease_root_fd)
+            except Exception:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        lease_id,
+                        (
+                            CleanupStepReceipt(
+                                "owner_lock",
+                                CleanupState.QUARANTINED,
+                                "owner_lock_cleanup_failed",
+                            ),
+                        ),
+                    )
+                )
+            else:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        lease_id,
+                        (
+                            CleanupStepReceipt(
+                                "owner_lock",
+                                CleanupState.RELEASED,
+                            ),
+                        ),
+                    )
+                )
+        names = tuple(sorted(record_names))
         paths = [
             self.lease_root / name
             for name in sorted(
@@ -3547,7 +3606,10 @@ class SandboxRuntimeManager:
             if role == "primary":
                 remaining_children: list[str] = []
                 for child_name in os.listdir(self._lease_root_fd):
-                    if not child_name.startswith("verifier-lease-"):
+                    if not (
+                        child_name.startswith("verifier-lease-")
+                        and child_name.endswith(".json")
+                    ):
                         continue
                     child_path = self.lease_root / child_name
                     try:
