@@ -29,6 +29,7 @@ from breadboard.product.harness.default_profile import (
     DefaultProfileResolution,
     resolve_default_profile,
 )
+from breadboard.product.harness.templates import load_daily_driver_model_roles
 from .events import (
     EventType,
     SessionEvent,
@@ -727,6 +728,8 @@ class SessionService:
             )
         request_metadata = dict(request.metadata or {})
         role_document = request_metadata.pop(MODEL_ROLES_METADATA_KEY, None)
+        if role_document is None and default_profile is not None:
+            role_document = load_daily_driver_model_roles()
         for reserved_key in (
             "config_path",
             "default_profile",

@@ -85,9 +85,19 @@ async def test_default_session_create_uses_exact_profile_authority(
     assert record.metadata["default_profile"] == identity
     assert record.metadata["safe"] == "retained"
     assert str(resolution.source_path) not in json.dumps(record.metadata)
-    assert record.product_session.read_model.effective_lock_hash == (
+    assert record.product_session.read_model.effective_lock_hash != (
         resolution.compilation.lock["graph_hash"]
     )
+    assert record.metadata["active_model_role"] == "default"
+    assert set(record.metadata["model_role_lock"]["roles"]) == {
+        "default",
+        "smol",
+        "slow",
+        "vision",
+        "plan",
+        "designer",
+        "task",
+    }
     assert record.runner.current_runtime_config()["workspace"]["root"] == str(workspace)
     skill_catalog = await service.list_skills(response.session_id)
     skill_payload = skill_catalog.model_dump(mode="json")

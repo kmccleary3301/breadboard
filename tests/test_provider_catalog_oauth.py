@@ -454,10 +454,18 @@ def test_oauth_refresh_scrubs_legacy_token_aliases_from_metadata(tmp_path):
 
 
 def test_codex_device_flow_uses_source_endpoints(tmp_path, monkeypatch):
+    import breadboard_engine.provider_broker.oauth as oauth_module
     import breadboard_engine.provider_broker.store as store_module
 
     started_at_ms = 1_800_000_000_000
-    monkeypatch.setattr(store_module, "now_ms", lambda: started_at_ms)
+    clock = _FakeClock(started_at_ms)
+    monkeypatch.setattr(store_module, "now_ms", lambda: clock.now_ms)
+    monkeypatch.setattr(oauth_module.time, "time", clock)
+    monkeypatch.setattr(
+        oauth_module.time,
+        "sleep",
+        lambda seconds: clock.advance_ms(int(seconds * 1000)),
+    )
     access = "device-access"
     responses = [
         (
@@ -467,11 +475,13 @@ def test_codex_device_flow_uses_source_endpoints(tmp_path, monkeypatch):
                 {
                     "device_auth_id": "device-1",
                     "user_code": "ABCD-EFGH",
-                    "interval": 1,
+                    "interval": 90,
                     "expires_in": 1200,
                 }
             ).encode(),
         ),
+        (403, {}, b"{}"),
+        (403, {}, b"{}"),
         (
             200,
             {},
@@ -510,6 +520,8 @@ def test_codex_device_flow_uses_source_endpoints(tmp_path, monkeypatch):
     assert completed["status"] == "completed"
     assert [call[0] for call in calls] == [
         "https://auth.openai.com/api/accounts/deviceauth/usercode",
+        "https://auth.openai.com/api/accounts/deviceauth/token",
+        "https://auth.openai.com/api/accounts/deviceauth/token",
         "https://auth.openai.com/api/accounts/deviceauth/token",
         "https://auth.openai.com/oauth/token",
     ]

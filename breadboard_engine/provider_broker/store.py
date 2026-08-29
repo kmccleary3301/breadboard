@@ -2209,23 +2209,38 @@ class SQLiteCredentialStore:
             )
             return result.rowcount > 0
 
-    def login_claim_is_active(
+    def renew_login_claim(
         self,
         login_session_id: str,
         *,
         claim_id: str,
+        lease_duration_ms: int = _LOGIN_COMPLETION_LEASE_MS,
     ) -> bool:
+        claim_ref = str(claim_id)
+        duration_ms = int(lease_duration_ms)
+        if not claim_ref or duration_ms <= 0:
+            raise ValueError("login completion claim is invalid")
         with self._transaction() as connection:
             timestamp = now_ms()
             self._expire_stale_login(connection, str(login_session_id), timestamp)
-            row = connection.execute(
-                """SELECT 1 FROM login_sessions
+            result = connection.execute(
+                """UPDATE login_sessions
+                   SET updated_at_ms = ?,
+                       completion_claim_expires_at_ms = ?
                    WHERE login_session_id = ? AND status = 'completing'
                      AND completion_claim_id = ?
                      AND completion_claim_expires_at_ms > ?""",
-                (str(login_session_id), str(claim_id), timestamp),
-            ).fetchone()
-            return row is not None
+                (
+                    timestamp,
+                    timestamp + duration_ms,
+                    str(login_session_id),
+                    claim_ref,
+                    timestamp,
+                ),
+            )
+            return result.rowcount > 0
+
+
 
 
     def finish_claimed_login(

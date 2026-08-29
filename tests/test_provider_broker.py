@@ -1916,6 +1916,54 @@ def test_abandoned_login_completion_claim_is_reclaimed_with_owner_fencing(
     )
 
 
+def test_login_completion_claim_renewal_extends_owner_lease(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.store as store_module
+
+    started_at_ms = 1_800_000_000_000
+    current_ms = [started_at_ms]
+    monkeypatch.setattr(store_module, "now_ms", lambda: current_ms[0])
+    store = SQLiteCredentialStore(tmp_path / "renewed-login.sqlite3")
+    login = store.create_login(
+        "openai",
+        "pending",
+        flow={"pkce_verifier": "renew-flow"},
+    )
+    assert store.claim_pending_login(
+        login["login_session_id"],
+        claim_id="poll-owner",
+    )
+
+    current_ms[0] += store_module._LOGIN_COMPLETION_LEASE_MS - 1
+    assert store.renew_login_claim(
+        login["login_session_id"],
+        claim_id="poll-owner",
+    )
+    current_ms[0] = started_at_ms + store_module._LOGIN_COMPLETION_LEASE_MS + 1
+    assert (
+        store.claim_pending_login(
+            login["login_session_id"],
+            claim_id="early-recovery-owner",
+        )
+        is False
+    )
+
+    current_ms[0] = started_at_ms + 2 * store_module._LOGIN_COMPLETION_LEASE_MS
+    assert store.claim_pending_login(
+        login["login_session_id"],
+        claim_id="recovery-owner",
+    )
+    assert (
+        store.renew_login_claim(
+            login["login_session_id"],
+            claim_id="poll-owner",
+        )
+        is False
+    )
+
+
 def test_audit_events_are_durable_and_use_fixed_secret_free_fields(
     tmp_path, monkeypatch
 ):
