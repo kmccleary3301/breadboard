@@ -55,7 +55,7 @@ class SessionLifecycleHost(Protocol):
 class _LifecycleRunState:
     session_started_at: float
     input_inflight: bool = False
-
+    terminal_status: Optional[SessionStatus] = None
 
 class SessionLifecycleOwner:
     """Owns the ordered phases that run one CLI bridge session."""
@@ -74,7 +74,7 @@ class SessionLifecycleOwner:
             await self._mark_running()
             await self._initialize()
             await self._process_inputs(state)
-            await self._finalize()
+            await self._finalize(state)
         except Exception as exc:  # noqa: BLE001
             await self._fail(state, exc)
         finally:
@@ -102,20 +102,6 @@ class SessionLifecycleOwner:
             else host.prepare_runtime_config()
         )
         try:
-            todo_cfg = GuardrailCoordinator(base_cfg).todo_config()
-        except Exception:
-            todo_cfg = {"enabled": False}
-        host._todo_enabled = bool(todo_cfg.get("enabled"))
-        await execution.maybe_publish_todo_snapshot(
-            host._workspace_path, call_id="todo:snapshot:init"
-        )
-        try:
-            if host._workspace_path and host._checkpoint_manager is None:
-                host._checkpoint_manager = CheckpointManager(host._workspace_path)
-                host._checkpoint_manager.create_checkpoint("Session start")
-        except Exception:
-            host._checkpoint_manager = None
-        try:
             catalog_payload = host.get_skill_catalog()
             await host.publish_event_async(EventType.SKILLS_CATALOG, catalog_payload)
             selection = (
@@ -129,6 +115,20 @@ class SessionLifecycleOwner:
                 )
         except Exception:
             pass
+        try:
+            todo_cfg = GuardrailCoordinator(base_cfg).todo_config()
+        except Exception:
+            todo_cfg = {"enabled": False}
+        host._todo_enabled = bool(todo_cfg.get("enabled"))
+        await execution.maybe_publish_todo_snapshot(
+            host._workspace_path, call_id="todo:snapshot:init"
+        )
+        try:
+            if host._workspace_path and host._checkpoint_manager is None:
+                host._checkpoint_manager = CheckpointManager(host._workspace_path)
+                host._checkpoint_manager.create_checkpoint("Session start")
+        except Exception:
+            host._checkpoint_manager = None
         if initial_task:
             host._accepted_task_texts.append(initial_task)
             initial_turn = host.session.turns_by_id.get(
@@ -172,6 +172,10 @@ class SessionLifecycleOwner:
                 if isinstance(task_turn_id, str)
                 else None
             )
+            if task_turn is not None and task_turn.terminal_outcome is not None:
+                host._input_queue.task_done()
+                state.input_inflight = False
+                continue
             if (
                 task_turn is not None
                 and host.session.active_turn_id != task_turn.turn_id
@@ -255,13 +259,24 @@ class SessionLifecycleOwner:
                 completion_reason,
                 default="runtime_failure",
             )
+            turn_was_cancelled = bool(
+                task_turn is not None and task_turn.cancellation_requested
+            )
             with host._product_session_lock:
                 product_session = getattr(host.session, "product_session", None)
                 if product_session is None:
-                    durable_success = execution_completed
+                    durable_success = execution_completed or (
+                        turn_was_cancelled and not one_shot
+                    )
                 else:
                     product_state = product_session.read_model.status
-                    if product_state == "running" and not host._stop_event.is_set():
+                    if turn_was_cancelled:
+                        if one_shot and product_state == "running":
+                            host.transition_product_session(
+                                "cancel",
+                                task_turn.cancellation_reason or "user_requested",
+                            )
+                    elif product_state == "running" and not host._stop_event.is_set():
                         if execution_completed:
                             if one_shot:
                                 host.transition_product_session("complete")
@@ -273,9 +288,9 @@ class SessionLifecycleOwner:
                             )
                     product_state = product_session.read_model.status
                     durable_success = (
-                        product_state == "completed"
-                        if one_shot
-                        else product_state not in {"failed", "canceled"}
+                        product_state not in {"failed", "canceled"}
+                        if not one_shot
+                        else product_state == "completed"
                     )
             if durable_success:
                 try:
@@ -300,7 +315,13 @@ class SessionLifecycleOwner:
                     )
                     durable_success = False
             if task_turn is not None:
-                if host._stop_event.is_set():
+                if task_turn.cancellation_requested:
+                    await execution.finish_turn(
+                        task_turn,
+                        "cancelled",
+                        reason=task_turn.cancellation_reason or "user_requested",
+                    )
+                elif host._stop_event.is_set():
                     await execution.finish_turn(
                         task_turn, "cancelled", reason=completion_reason
                     )
@@ -318,10 +339,14 @@ class SessionLifecycleOwner:
                         error_code=failure_code,
                     )
             if one_shot:
-                if host._stop_event.is_set():
+                if turn_was_cancelled:
                     await self.terminalize_admitted_turns(
                         outcome="cancelled",
-                        reason="stop_requested",
+                        reason=task_turn.cancellation_reason or "user_requested",
+                    )
+                elif host._stop_event.is_set():
+                    await self.terminalize_admitted_turns(
+                        outcome="cancelled", reason="stop_requested"
                     )
                 elif execution_completed:
                     await self.terminalize_admitted_turns(
@@ -334,7 +359,19 @@ class SessionLifecycleOwner:
                         reason=completion_reason,
                         error_code=failure_code,
                     )
-            if durable_success:
+            if not one_shot and not durable_success:
+                if host._stop_event.is_set():
+                    await self.terminalize_admitted_turns(
+                        outcome="cancelled",
+                        reason="stop_requested",
+                    )
+                else:
+                    await self.terminalize_admitted_turns(
+                        outcome="failed",
+                        reason=completion_reason,
+                        error_code=failure_code,
+                    )
+            if durable_success and not turn_was_cancelled:
                 for (
                     event_type,
                     event_payload,
@@ -362,9 +399,15 @@ class SessionLifecycleOwner:
             host._input_queue.task_done()
             state.input_inflight = False
             if one_shot or not durable_success:
+                if host._stop_event.is_set() or turn_was_cancelled:
+                    state.terminal_status = SessionStatus.STOPPED
+                elif execution_completed:
+                    state.terminal_status = SessionStatus.COMPLETED
+                else:
+                    state.terminal_status = SessionStatus.FAILED
                 break
 
-    async def _finalize(self) -> None:
+    async def _finalize(self, state: _LifecycleRunState) -> None:
         host = self._host
         if host._stop_event.is_set():
             await self.terminalize_admitted_turns(
@@ -380,7 +423,7 @@ class SessionLifecycleOwner:
                 metadata.get("non_interactive_cli_session")
                 or metadata.get("cli_session_kind") == "oneshot"
             )
-            final_status = (
+            final_status = state.terminal_status or (
                 SessionStatus.STOPPED
                 if host._stop_event.is_set() and not legacy_one_shot
                 else SessionStatus.COMPLETED
@@ -415,9 +458,15 @@ class SessionLifecycleOwner:
         logger.error(
             "Session %s failed with code=%s", host.session.session_id, error_code
         )
-        await self.terminalize_admitted_turns(
-            outcome="failed", reason=error_code, error_code=error_code
-        )
+        try:
+            await self.terminalize_admitted_turns(
+                outcome="failed", reason=error_code, error_code=error_code
+            )
+        except Exception:
+            logger.error(
+                "Session %s could not persist terminal turn events",
+                host.session.session_id,
+            )
         product_session = getattr(host.session, "product_session", None)
         if product_session is None:
             product_state = "failed"
@@ -430,15 +479,26 @@ class SessionLifecycleOwner:
                     "runtime failure",
                 )
                 product_state = product_session.read_model.status
-        await host.registry.update_status(
-            host.session.session_id,
-            {
-                "completed": SessionStatus.COMPLETED,
-                "failed": SessionStatus.FAILED,
-                "canceled": SessionStatus.STOPPED,
-            }.get(product_state, SessionStatus.FAILED),
-        )
-        await host._publish_session_failure(error_code)
+        final_status = {
+            "completed": SessionStatus.COMPLETED,
+            "failed": SessionStatus.FAILED,
+            "canceled": SessionStatus.STOPPED,
+        }.get(product_state, SessionStatus.FAILED)
+        try:
+            await host.registry.update_status(host.session.session_id, final_status)
+        except Exception:
+            host.session.status = final_status
+            logger.error(
+                "Session %s could not persist terminal session status",
+                host.session.session_id,
+            )
+        try:
+            await host._publish_session_failure(error_code)
+        except Exception:
+            logger.error(
+                "Session %s could not publish its terminal failure event",
+                host.session.session_id,
+            )
 
     async def terminalize_admitted_turns(
         self,

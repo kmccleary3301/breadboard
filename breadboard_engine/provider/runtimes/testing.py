@@ -8,6 +8,15 @@ from typing import Any, Dict, List, Optional
 
 from ..contracts import ProviderMessage, ProviderResult, ProviderRuntime, ProviderRuntimeContext, ProviderToolCall
 
+def _exact_zero_usage() -> Dict[str, int]:
+    return {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalTokens": 0,
+    }
+
 
 class MockRuntime(ProviderRuntime):
     """A simple mock provider runtime for offline validation.
@@ -51,7 +60,7 @@ class MockRuntime(ProviderRuntime):
             return ProviderResult(
                 messages=out_messages,
                 raw_response={"mock": True, "mode": model_hint},
-                usage=None,
+                usage=_exact_zero_usage(),
                 encrypted_reasoning=None,
                 reasoning_summaries=None,
                 model="mock",
@@ -64,20 +73,6 @@ class MockRuntime(ProviderRuntime):
             tool_calls = msg.get("tool_calls")
             if isinstance(tool_calls, list):
                 prior_calls += len(tool_calls)
-
-        def _seen_tool(name: str) -> bool:
-            for msg in messages:
-                if msg.get("role") != "assistant":
-                    continue
-                for call in msg.get("tool_calls") or []:
-                    fn = getattr(getattr(call, "function", None), "name", "") or call.get("function")
-                    if fn == name:
-                        return True
-            return False
-
-        has_todo = _seen_tool("todo.write_board")
-        has_write = _seen_tool("write")
-        has_shell = _seen_tool("run_shell")
 
         def _mk_tool_call(name: str, args: Dict[str, Any]) -> ProviderToolCall:
             try:
@@ -172,7 +167,7 @@ class MockRuntime(ProviderRuntime):
         else:
             out_messages.append(ProviderMessage(role="assistant", content="Proceed to build and test.", tool_calls=[], finish_reason="stop", index=0))
 
-        return ProviderResult(messages=out_messages, raw_response={"mock": True}, usage=None, encrypted_reasoning=None, reasoning_summaries=None, model="mock")
+        return ProviderResult(messages=out_messages, raw_response={"mock": True}, usage=_exact_zero_usage(), encrypted_reasoning=None, reasoning_summaries=None, model="mock")
 
 
 class SmokeRuntime(ProviderRuntime):
@@ -219,7 +214,7 @@ class SmokeRuntime(ProviderRuntime):
                 )
             ],
             raw_response={"smoke": True},
-            usage=None,
+            usage=_exact_zero_usage(),
             encrypted_reasoning=None,
             reasoning_summaries=None,
             model="smoke",
@@ -255,8 +250,18 @@ class CliMockRuntime(ProviderRuntime):
         for msg in messages:
             if msg.get("role") != "assistant":
                 continue
-            tool_calls = msg.get("tool_calls")
-            if not isinstance(tool_calls, list):
+            tool_calls: List[Any] = []
+            direct_calls = msg.get("tool_calls")
+            if isinstance(direct_calls, list):
+                tool_calls.extend(direct_calls)
+            content = msg.get("content")
+            if isinstance(content, list):
+                tool_calls.extend(
+                    block
+                    for block in content
+                    if isinstance(block, dict) and block.get("type") == "tool_call"
+                )
+            if not tool_calls:
                 continue
             prior_calls += len(tool_calls)
             for call in tool_calls:
@@ -266,18 +271,27 @@ class CliMockRuntime(ProviderRuntime):
                     if isinstance(fn_block, dict):
                         name = fn_block.get("name")
                     name = name or call.get("name")
-                if not name:
+                else:
+                    fn_block = getattr(call, "function", None)
+                    name = getattr(fn_block, "name", None) or getattr(call, "name", None)
+                if not isinstance(name, str) or not name.strip():
                     continue
-                if name.startswith("todo."):
+                normalized_name = name.strip().lower()
+                if normalized_name.startswith("todo."):
                     has_todo = True
-                elif name.startswith("write") or name == "create_file_from_block":
+                elif normalized_name.startswith("write") or normalized_name == "create_file_from_block":
                     has_write = True
-                elif name.startswith("run_shell") or name == "bash.run":
+                elif normalized_name.startswith("run_shell") or normalized_name == "bash.run":
                     has_shell = True
 
         def _mk_tool_call(name: str, args: Dict[str, Any]) -> ProviderToolCall:
             payload = json.dumps(args)
-            call = ProviderToolCall(id=None, name=name, arguments=payload, type="function")
+            call = ProviderToolCall(
+                id=f"cli-mock-call-{prior_calls + 1}-{name.replace('.', '-')}",
+                name=name,
+                arguments=payload,
+                type="function",
+            )
             try:
                 from types import SimpleNamespace as _SNS
                 setattr(call, "function", _SNS(name=name, arguments=payload))
@@ -303,7 +317,7 @@ class CliMockRuntime(ProviderRuntime):
             call = _mk_tool_call(
                 "write",
                 {
-                    "path": "bubble_sort.py",
+                    "filePath": "bubble_sort.py",
                     "content": "def bubble_sort(nums):\n    n = len(nums)\n    for i in range(n):\n        for j in range(0, n - i - 1):\n            if nums[j] > nums[j + 1]:\n                nums[j], nums[j + 1] = nums[j + 1], nums[j]\n    return nums\n\nif __name__ == '__main__':\n    data = [5, 3, 1, 4, 2]\n    print(bubble_sort(data))\n",
                 },
             )
@@ -311,7 +325,7 @@ class CliMockRuntime(ProviderRuntime):
                 ProviderMessage(role="assistant", content=None, tool_calls=[call], finish_reason="stop", index=0)
             )
         elif not has_shell:
-            call = _mk_tool_call("run_shell", {"command": "python bubble_sort.py", "timeout": 30})
+            call = _mk_tool_call("run_shell", {"command": "python3 bubble_sort.py", "timeout": 30})
             out_messages.append(
                 ProviderMessage(role="assistant", content=None, tool_calls=[call], finish_reason="stop", index=0)
             )
@@ -319,7 +333,7 @@ class CliMockRuntime(ProviderRuntime):
             out_messages.append(
                 ProviderMessage(
                     role="assistant",
-                    content="TASK COMPLETE",
+                    content="Bubble sort validation complete.\n\nTASK COMPLETE",
                     tool_calls=[],
                     finish_reason="stop",
                     index=0,
@@ -330,7 +344,7 @@ class CliMockRuntime(ProviderRuntime):
             "mock": True,
             "prior_tool_calls": prior_calls,
         }
-        return ProviderResult(messages=out_messages, raw_response=raw_response, metadata={"status_code": 200})
+        return ProviderResult(messages=out_messages, raw_response=raw_response, usage=_exact_zero_usage(), metadata={"status_code": 200})
 
 
 __all__ = ["MockRuntime", "SmokeRuntime", "CliMockRuntime"]

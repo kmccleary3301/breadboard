@@ -12,8 +12,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Mapping, Optional, Sequence, List
-
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence, List
 from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard.product.runtime.artifacts import _validate_artifact_name
 from breadboard.product.runtime import session_store
@@ -265,6 +264,8 @@ class SessionRunner:
                 return
             if self._stop_event.is_set():
                 queue.put({"kind": "stop"})
+            elif self._active_turn_cancellation_requested():
+                queue.put({"kind": "stop"})
             elif not self._resume_event.is_set():
                 queue.put({"kind": "pause"})
 
@@ -305,6 +306,31 @@ class SessionRunner:
                 except Exception:
                     pass
             return stopping
+
+    def _active_turn_cancellation_requested(self) -> bool:
+        turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
+        return bool(turn is not None and turn.cancellation_requested and turn.terminal_outcome is None)
+
+    def request_turn_cancellation(self, turn_id: str) -> bool:
+        with self._product_session_lock:
+            turn = self.session.turns_by_id.get(turn_id)
+            if (
+                turn is None
+                or self.session.active_turn_id != turn_id
+                or not turn.cancellation_requested
+                or turn.terminal_outcome is not None
+            ):
+                return False
+            self._signal_control("stop")
+            return True
+
+    async def finish_queued_turn_cancellation(self, turn: TurnRecord, reason: str) -> None:
+        await self._finish_turn(
+            turn,
+            "cancelled",
+            reason=reason,
+            advance_queue=False,
+        )
 
     async def stop(self, reason: str = "operator request") -> None:
         if self._closed:
@@ -362,6 +388,7 @@ class SessionRunner:
         *,
         input_id: Optional[str] = None,
         turn_id: Optional[str] = None,
+        defer_execution: Optional[Callable[[Callable[[], Awaitable[None]]], None]] = None,
     ) -> str:
         if self._closed:
             raise RuntimeError("session is closed")
@@ -409,9 +436,10 @@ class SessionRunner:
             ]
             if unknown:
                 raise ValueError(f"unknown attachment IDs: {', '.join(unknown)}")
+            selected_artifacts = [artifacts[item] for item in attachment_ids]
             total_bytes = sum(
-                int(getattr(artifacts[item], "size_bytes", MAX_ATTACHMENT_BYTES + 1))
-                for item in attachment_ids
+                int(getattr(item, "size_bytes", MAX_ATTACHMENT_BYTES + 1))
+                for item in selected_artifacts
             )
             if total_bytes > MAX_ATTACHMENT_BYTES:
                 raise ValueError(
@@ -424,15 +452,22 @@ class SessionRunner:
                 "input_id": input_id,
                 "turn_id": turn_id,
             }
-            product_session = getattr(self.session, "product_session", None)
-            if product_session is not None:
-                product_session.input(
-                    content, [artifacts[item] for item in attachment_ids]
-                )
-                self.session.metadata["session_contract"] = (
-                    product_session.read_model.as_dict()
-                )
-            self._input_queue.put_nowait(payload)
+            def enqueue() -> None:
+                product_session = getattr(self.session, "product_session", None)
+                if product_session is not None:
+                    product_session.input(content, selected_artifacts)
+                    self.session.metadata["session_contract"] = (
+                        product_session.read_model.as_dict()
+                    )
+                self._input_queue.put_nowait(payload)
+            if defer_execution is None:
+                enqueue()
+            else:
+                async def enqueue_after_response() -> None:
+                    with self._product_session_lock:
+                        enqueue()
+
+                defer_execution(enqueue_after_response)
         return content
 
     def transition_product_session(self, transition: str, *args: Any) -> None:
@@ -704,6 +739,9 @@ class SessionRunner:
             overrides.setdefault("permissions.shell.default", "ask")
             overrides.setdefault("permissions.webfetch.default", "ask")
             overrides.setdefault("permissions.read.default", "ask")
+        if requested_permission_mode in {"prompt", "ask", "interactive", "configured"}:
+            self.request.permission_mode = requested_permission_mode
+            self.session.metadata["permission_mode"] = requested_permission_mode
         workspace_guess_path = self._resolve_workspace_guess(base_cfg)
         if workspace_guess_path:
             self._workspace_path = workspace_guess_path
@@ -763,9 +801,8 @@ class SessionRunner:
                 if isinstance(workspace, dict)
                 else None
             )
-        candidate = (
-            candidate
-            or f"tmp/agent_ws_{os.path.basename(self.request.config_path).split('.')[0]}"
+        candidate = candidate or (
+            "tmp/agent_ws_" + identity_digest(self.session.session_id)[:16]
         )
         try:
             path = Path(str(candidate)).expanduser()
@@ -1000,6 +1037,7 @@ class SessionRunner:
             task_text, input_id=input_id, turn_id=turn_id
         )
 
+
     async def _finish_turn(
         self,
         turn: TurnRecord,
@@ -1088,6 +1126,8 @@ class SessionRunner:
             future.result()
             return
         try:
+            if getattr(self.session, "_dispatcher_complete", False):
+                raise RuntimeError("session event dispatcher is unavailable")
             self.session.event_queue.put_nowait(event)
             self._published_events += 1
         except asyncio.QueueFull:  # pragma: no cover - defensive
@@ -1097,8 +1137,14 @@ class SessionRunner:
             )
 
     async def _enqueue_event_async(self, event: SessionEvent) -> None:
-        await self.session.event_queue.put(event)
-        self._published_events += 1
+        async with self.session.dispatch_lock:
+            if getattr(self.session, "_dispatcher_complete", False):
+                raise RuntimeError("session event dispatcher is unavailable")
+            try:
+                self.session.event_queue.put_nowait(event)
+            except asyncio.QueueFull as error:
+                raise RuntimeError("session event queue is full") from error
+            self._published_events += 1
 
     def _touch_last_activity(self) -> None:
         try:

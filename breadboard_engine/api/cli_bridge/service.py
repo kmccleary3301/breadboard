@@ -12,7 +12,7 @@ import weakref
 from pathlib import Path
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, AsyncIterator, Mapping, Optional, Sequence
+from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, Sequence
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import (
     AnchoredStorage,
@@ -80,10 +80,12 @@ from .models import (
 )
 from .atp_diagnostics import build_atp_harness_diagnostic
 from .registry import (
+    CancellationRecord,
     SessionRecord,
     SessionRegistry,
     SubscriberState,
     TurnRecord,
+    cancellation_body_digest,
     identity_digest,
     submission_body_digest,
 )
@@ -765,6 +767,14 @@ class SessionService:
             request = request.model_copy(
                 update={"config_path": str(default_profile.source_path)}
             )
+        else:
+            request = request.model_copy(
+                update={
+                    "config_path": str(
+                        Path(str(request.config_path)).expanduser().resolve()
+                    )
+                }
+            )
         default_profile_overridden = any(
             key != "workspace.root" for key in (request.overrides or {})
         )
@@ -792,6 +802,7 @@ class SessionService:
             "effective_lock_schema_version",
             "effective_lock_hash",
             "resources",
+            "workspace",
         ):
             request_metadata.pop(reserved_key, None)
         if default_profile is not None:
@@ -812,6 +823,10 @@ class SessionService:
         )
         runner = SessionRunner(session=record, registry=self.registry, request=request)
         runtime_config = runner.prepare_runtime_config()
+        if runner.request.workspace:
+            metadata["workspace"] = str(
+                Path(runner.request.workspace).expanduser().resolve()
+            )
         runtime_providers = (
             runtime_config.get("providers")
             if isinstance(runtime_config, dict)
@@ -1099,27 +1114,234 @@ class SessionService:
         turn_id: str,
         payload: SessionTurnCancelRequest,
     ) -> SessionTurnCancelResponse:
-        # The canonical runner exposes stop at session scope; preserve the fixed
-        # cancel DTO while routing cancellation through that authority boundary.
-        await self.stop_session(session_id, reason=payload.reason)
-        opaque = uuid.uuid4().hex
-        return SessionTurnCancelResponse(
-            cancellation_request_id=opaque,
-            cancellation_request_key=payload.cancellation_request_key,
-            input_id=opaque,
-            turn_id=turn_id,
-            disposition="cancellation_requested",
-            original_disposition="cancellation_requested",
-        )
+        record = await self.ensure_session(session_id)
+        runner: Optional[SessionRunner] = getattr(record, "runner", None)
+        if not runner:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="session not active",
+            )
+        key = payload.cancellation_request_key
+        key_digest = identity_digest(key)
+        body_digest = cancellation_body_digest(turn_id, payload.reason)
+        retry_queued_turn: TurnRecord | None = None
+        response: SessionTurnCancelResponse | None = None
+        existing: CancellationRecord | None = None
+        turn: TurnRecord | None = None
+        cancellation: CancellationRecord | None = None
+        disposition: str | None = None
+        async with record.admission_lock:
+            existing = record.cancellations_by_key.get(key)
+            if existing is None:
+                existing = record.cancellations_by_key_digest.get(key_digest)
+            if existing is not None:
+                if existing.body_digest != body_digest:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={
+                            "code": "cancellation_idempotency_conflict",
+                            "turn_id": existing.turn_id,
+                        },
+                    )
+                response = SessionTurnCancelResponse(
+                    cancellation_request_id=existing.cancellation_request_id,
+                    cancellation_request_key=key,
+                    input_id=existing.input_id,
+                    turn_id=existing.turn_id,
+                    disposition="deduplicated",
+                    original_disposition=existing.original_disposition,
+                )
+                retained_turn = record.turns_by_id.get(existing.turn_id)
+                if (
+                    existing.original_disposition == "queued_cancelled"
+                    and retained_turn is not None
+                    and retained_turn.terminal_outcome is None
+                ):
+                    retry_queued_turn = retained_turn
+                else:
+                    return response
+            else:
+                turn = record.turns_by_id.get(turn_id)
+                if turn is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="turn not found",
+                    )
+                if turn.terminal_outcome is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="turn is already terminal",
+                    )
+                queued_index: int | None = None
+                if record.active_turn_id == turn_id:
+                    disposition = "cancellation_requested"
+                elif turn.state == "queued":
+                    disposition = "queued_cancelled"
+                    try:
+                        queued_index = record.queued_turn_ids.index(turn_id)
+                    except ValueError:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail="turn is not cancellable",
+                        ) from None
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="turn is not cancellable",
+                    )
+                previous_cancellation_requested = turn.cancellation_requested
+                previous_cancellation_reason = turn.cancellation_reason
+                turn.cancellation_requested = True
+                turn.cancellation_reason = payload.reason
+                cancellation = CancellationRecord(
+                    cancellation_request_id=uuid.uuid4().hex,
+                    cancellation_request_key=key,
+                    turn_id=turn_id,
+                    input_id=turn.input_id,
+                    reason=payload.reason,
+                    original_disposition=disposition,
+                    body_digest=body_digest,
+                )
+                record.cancellations_by_key[key] = cancellation
+                record.cancellations_by_key_digest[key_digest] = cancellation
+                if queued_index is not None:
+                    record.queued_turn_ids.remove(turn_id)
+                try:
+                    await self.registry.persist(record)
+                except Exception:
+                    turn.cancellation_requested = previous_cancellation_requested
+                    turn.cancellation_reason = previous_cancellation_reason
+                    record.cancellations_by_key.pop(key, None)
+                    record.cancellations_by_key_digest.pop(key_digest, None)
+                    if queued_index is not None:
+                        record.queued_turn_ids.insert(queued_index, turn_id)
+                    raise
+                response = SessionTurnCancelResponse(
+                    cancellation_request_id=cancellation.cancellation_request_id,
+                    cancellation_request_key=key,
+                    input_id=turn.input_id,
+                    turn_id=turn_id,
+                    disposition=disposition,
+                    original_disposition=disposition,
+                )
+        if retry_queued_turn is not None:
+            assert existing is not None
+            assert response is not None
+            await runner.finish_queued_turn_cancellation(
+                retry_queued_turn,
+                existing.reason,
+            )
+            return response
+        assert turn is not None
+        assert disposition is not None
+        assert response is not None
+        if disposition == "queued_cancelled":
+            await runner.finish_queued_turn_cancellation(turn, payload.reason)
+        elif not runner.request_turn_cancellation(turn_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="turn is no longer active",
+            )
+        return response
 
     async def ensure_session(self, session_id: str) -> SessionRecord:
         record = await self.registry.get(session_id)
         if not record:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="session not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="session not found",
             )
+        if not record.loaded_from_retained_state:
+            return record
+        async with self._session_lock(session_id):
+            return await self._ensure_session_locked(session_id)
+
+    async def _ensure_session_locked(self, session_id: str) -> SessionRecord:
+        record = await self.registry.get(session_id)
+        if not record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="session not found",
+            )
+        if record.loaded_from_retained_state:
+            await self._resume_retained_session(record)
         return record
 
+    async def _resume_retained_session(self, record: SessionRecord) -> None:
+        if record.status in {
+            SessionStatus.COMPLETED,
+            SessionStatus.FAILED,
+            SessionStatus.STOPPED,
+        }:
+            record.loaded_from_retained_state = False
+            return
+        metadata = dict(record.metadata or {})
+        recorded_config_path = str(metadata.get("config_path") or "").strip()
+        retained_config_path = (
+            Path(recorded_config_path).expanduser()
+            if recorded_config_path
+            else None
+        )
+        if retained_config_path is not None and retained_config_path.is_absolute():
+            config_path = str(retained_config_path)
+        else:
+            profile = resolve_default_profile()
+            default_identity = profile.public_identity()
+            config_path = (
+                str(profile.source_path)
+                if not recorded_config_path
+                or recorded_config_path == default_identity["definition_ref"]
+                else recorded_config_path
+            )
+        recorded_workspace = metadata.get("workspace")
+        workspace = (
+            str(recorded_workspace).strip()
+            if isinstance(recorded_workspace, str) and recorded_workspace.strip()
+            else None
+        )
+        permission_mode = str(
+            metadata.get("permission_mode") or "configured"
+        ).strip().lower()
+        if permission_mode not in {"prompt", "ask", "interactive", "configured"}:
+            permission_mode = "configured"
+        metadata["permission_mode"] = permission_mode
+        record.metadata = metadata
+        runner = SessionRunner(
+            session=record,
+            registry=self.registry,
+            request=SessionCreateRequest(
+                config_path=config_path,
+                task="",
+                metadata=metadata,
+                workspace=workspace,
+                permission_mode=permission_mode,
+            ),
+        )
+        runner.prepare_runtime_config()
+        for turn in record.turns_by_id.values():
+            if turn.terminal_outcome is not None:
+                continue
+            if turn.cancellation_requested:
+                await runner._finish_turn(
+                    turn,
+                    "cancelled",
+                    reason=turn.cancellation_reason,
+                    advance_queue=False,
+                )
+            else:
+                await runner._finish_turn(
+                    turn,
+                    "failed",
+                    error_code="runtime_failure",
+                    advance_queue=False,
+                )
+        record.active_turn_id = None
+        record.queued_turn_ids.clear()
+        record.turn_admission = record.turn_admission.__class__.IDLE
+        record.runner = runner
+        runner.schedule_start()
+        runner.authorize_start()
+        record.loaded_from_retained_state = False
     async def event_stream(
         self,
         session_id: str,
@@ -1174,7 +1396,18 @@ class SessionService:
                 events = list(record.event_log)
                 if from_id:
                     start_index = self._resolve_start_index(events, from_id)
-                    if start_index is None:
+                    if start_index is not None and not self._retained_replay_suffix_is_contiguous(
+                        record,
+                        events,
+                        start_index,
+                    ):
+                        start_index = None
+                    if start_index is None and self._is_retained_head_cursor(record, from_id):
+                        events = [
+                            event for event in events
+                            if event.seq is not None and event.seq > record.replay_head_sequence
+                        ]
+                    elif start_index is None:
                         if not validated:
                             raise HTTPException(
                                 status_code=status.HTTP_409_CONFLICT,
@@ -1262,20 +1495,21 @@ class SessionService:
                         event.seq = record.event_seq
                     else:
                         record.event_seq = max(record.event_seq, int(event.seq))
-                    if event.type in {
-                        EventType.TURN_COMPLETED,
-                        EventType.TURN_FAILED,
-                        EventType.TURN_CANCELLED,
-                    }:
-                        try:
+                    try:
+                        if event.type in {
+                            EventType.TURN_COMPLETED,
+                            EventType.TURN_FAILED,
+                            EventType.TURN_CANCELLED,
+                        }:
                             await self.registry.persist(record, terminal_event=event)
-                        except Exception:
-                            record.event_seq = previous_event_seq
-                            event.seq = previous_event_seq_value
-                            # A terminal event without durable retention is not safe
-                            # to expose as resolved evidence.
-                            setattr(record, "_dispatcher_complete", True)
-                            break
+                        else:
+                            await self.registry.persist(record, cursor_event=event)
+                    except Exception:
+                        record.event_seq = previous_event_seq
+                        event.seq = previous_event_seq_value
+                        # Never expose an event cursor that is not durably resumable.
+                        setattr(record, "_dispatcher_complete", True)
+                        break
                     record.event_log.append(event)
                     if record.subscribers:
                         for subscriber in list(record.subscribers):
@@ -1285,6 +1519,13 @@ class SessionService:
                                 # Drop on overflow; subscribers are best-effort observers.
                                 continue
             finally:
+                record.event_queue.task_done()
+        while True:
+            try:
+                record.event_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            else:
                 record.event_queue.task_done()
         async with record.dispatch_lock:
             setattr(record, "_dispatcher_complete", True)
@@ -1439,7 +1680,13 @@ class SessionService:
             self._ensure_event_sequence(record)
             events = list(record.event_log)
             start_index = self._resolve_start_index(events, from_id)
-            if start_index is None:
+            if start_index is not None and not self._retained_replay_suffix_is_contiguous(
+                record,
+                events,
+                start_index,
+            ):
+                start_index = None
+            if start_index is None and not self._is_retained_head_cursor(record, from_id):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
@@ -1461,6 +1708,38 @@ class SessionService:
             else:
                 seq = max(seq, int(event.seq))
         record.event_seq = seq
+    @staticmethod
+    def _is_retained_head_cursor(record: SessionRecord, from_id: str) -> bool:
+        return (
+            record.replay_head_sequence > 0
+            and record.replay_head_event_id is not None
+            and from_id
+            in {
+                record.replay_head_event_id,
+                str(record.replay_head_sequence),
+            }
+        )
+
+    @staticmethod
+    def _retained_replay_suffix_is_contiguous(
+        record: SessionRecord,
+        events: list[SessionEvent],
+        start_index: int,
+    ) -> bool:
+        if not record.replay_history_partial:
+            return True
+        if start_index <= 0:
+            return False
+        cursor_sequence = events[start_index - 1].seq
+        replay_head = record.replay_head_sequence
+        if cursor_sequence is None or cursor_sequence > replay_head:
+            return False
+        expected_sequence = cursor_sequence + 1
+        for event in events[start_index:]:
+            if event.seq != expected_sequence or expected_sequence > replay_head:
+                return False
+            expected_sequence += 1
+        return expected_sequence == replay_head + 1
 
     def _resolve_start_index(
         self, events: list[SessionEvent], from_id: str
@@ -1487,7 +1766,7 @@ class SessionService:
     async def _stop_session_locked(
         self, session_id: str, *, reason: str | None = None
     ) -> None:
-        record = await self.ensure_session(session_id)
+        record = await self._ensure_session_locked(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         try:
             if runner:
@@ -1518,9 +1797,12 @@ class SessionService:
         async with self._session_lock(session_id):
             await self._stop_session_locked(session_id)
             await self.registry.delete(session_id)
-
     async def send_input(
-        self, session_id: str, payload: SessionInputRequest
+        self,
+        session_id: str,
+        payload: SessionInputRequest,
+        *,
+        defer_execution: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
     ) -> SessionInputResponse:
         record = await self.ensure_session(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
@@ -1531,10 +1813,14 @@ class SessionService:
         client_message_id = payload.client_message_id or uuid.uuid4().hex
         attachments = tuple(payload.attachments or ())
         body_digest = submission_body_digest(payload.content, attachments)
+        key_digest = identity_digest(client_message_id)
+        scheduled_after_admission: list[Callable[[], Awaitable[None]]] = []
 
         async def admit() -> SessionInputResponse:
             async with record.admission_lock:
-                existing = record.submissions_by_key.get(client_message_id)
+                existing = record.submissions_by_key.get(
+                    client_message_id
+                ) or record.submissions_by_key_digest.get(key_digest)
                 if existing is not None:
                     if existing.body_digest != body_digest:
                         raise HTTPException(
@@ -1564,27 +1850,29 @@ class SessionService:
                 )
                 record.turns_by_id[turn.turn_id] = turn
                 record.submissions_by_key[client_message_id] = turn
-                record.submissions_by_key_digest[identity_digest(client_message_id)] = (
-                    turn
-                )
+                record.submissions_by_key_digest[key_digest] = turn
                 if disposition == "started":
                     record.active_turn_id = turn.turn_id
                 else:
                     record.queued_turn_ids.append(turn.turn_id)
                 record.turn_admission = record.turn_admission.__class__.ACTIVE
+                scheduled_operations: list[Callable[[], Awaitable[None]]] = []
                 try:
                     accepted_content = await runner.enqueue_input(
                         payload.content,
                         attachments=list(attachments),
                         input_id=turn.input_id,
                         turn_id=turn.turn_id,
+                        defer_execution=scheduled_operations.append,
                     )
-                except (ValueError, RuntimeError) as exc:
+                    if len(scheduled_operations) != 1:
+                        raise RuntimeError("input execution was not scheduled exactly once")
+                    turn.content = accepted_content
+                    await self.registry.persist(record)
+                except Exception as exc:
                     record.turns_by_id.pop(turn.turn_id, None)
                     record.submissions_by_key.pop(client_message_id, None)
-                    record.submissions_by_key_digest.pop(
-                        identity_digest(client_message_id), None
-                    )
+                    record.submissions_by_key_digest.pop(key_digest, None)
                     if record.active_turn_id == turn.turn_id:
                         record.active_turn_id = None
                     else:
@@ -1597,6 +1885,8 @@ class SessionService:
                         if record.active_turn_id is not None
                         else record.turn_admission.__class__.IDLE
                     )
+                    if not isinstance(exc, (ValueError, RuntimeError)):
+                        raise
                     http_status = (
                         status.HTTP_400_BAD_REQUEST
                         if isinstance(exc, ValueError)
@@ -1605,7 +1895,31 @@ class SessionService:
                     raise HTTPException(
                         status_code=http_status, detail=str(exc)
                     ) from exc
-                turn.content = accepted_content
+                scheduled_operation = scheduled_operations[0]
+
+                async def execute_admitted_turn() -> None:
+                    try:
+                        await scheduled_operation()
+                    except Exception:
+                        advance_queue = (
+                            turn.state == "active"
+                            and record.active_turn_id == turn.turn_id
+                        )
+                        await runner._finish_turn(
+                            turn,
+                            "failed",
+                            error_code="runtime_failure",
+                            advance_queue=advance_queue,
+                        )
+                        logger.warning(
+                            "Input execution failed after durable admission",
+                            extra={
+                                "session_id": record.session_id,
+                                "turn_id": turn.turn_id,
+                            },
+                        )
+
+                scheduled_after_admission.append(execute_admitted_turn)
                 return SessionInputResponse(
                     client_message_id=client_message_id,
                     input_id=turn.input_id,
@@ -1614,7 +1928,16 @@ class SessionService:
                     original_disposition=disposition,
                 )
 
-        return await self.registry.admit_turn(admit)
+        response = await self.registry.admit_turn(admit)
+        if scheduled_after_admission:
+            if len(scheduled_after_admission) != 1:
+                raise RuntimeError("admitted input has an invalid execution schedule")
+            scheduled_operation = scheduled_after_admission[0]
+            if defer_execution is None:
+                await scheduled_operation()
+            else:
+                defer_execution(scheduled_operation)
+        return response
 
     async def execute_command(
         self, session_id: str, payload: SessionCommandRequest
@@ -1687,7 +2010,7 @@ class SessionService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="no files provided"
             )
-        record = await self.ensure_session(session_id)
+        record = await self._ensure_session_locked(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
             raise HTTPException(
@@ -2113,12 +2436,18 @@ class SessionService:
         )
 
     async def list_models(self, config_path: str) -> ModelCatalogResponse:
-        if not config_path or not str(config_path).strip():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="config_path required"
-            )
+        requested_path = str(config_path).strip()
+        if not requested_path:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="config_path required")
+        default_profile = resolve_default_profile()
+        default_identity = default_profile.public_identity()
+        resolved_path = (
+            str(default_profile.source_path)
+            if requested_path == default_identity["definition_ref"]
+            else requested_path
+        )
         try:
-            config = load_agent_config(config_path)
+            config = load_agent_config(resolved_path)
         except Exception as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -2139,7 +2468,7 @@ class SessionService:
         policy = policy_pack_for_config_authority(
             config,
             session_id="model_catalog",
-            config_path=config_path,
+            config_path=resolved_path,
             logger=logger,
         )
         if policy.model_allowlist is not None or policy.model_denylist:
@@ -2151,7 +2480,7 @@ class SessionService:
         return ModelCatalogResponse(
             models=entries,
             default_model=str(default_model) if default_model else None,
-            config_path=str(config_path),
+            config_path=requested_path,
             discovery_policy="configured_only",
             issues=issues,
         )

@@ -64,6 +64,62 @@ def test_provider_schema_names_roundtrip():
     assert "read_file" in names
 
 
+def test_opencode_write_alias_preserves_file_path() -> None:
+    conductor_class = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = object.__new__(conductor_class)
+    captured: dict[str, str] = {}
+    conductor.config = {}
+    conductor._normalize_workspace_path = lambda value: value
+    conductor._private_workspace_path = lambda _value: False
+    conductor._ray_get = lambda value: value
+    conductor.sandbox = types.SimpleNamespace(
+        write_text=types.SimpleNamespace(
+            remote=lambda path, content: (
+                captured.update(path=path, content=content) or {"ok": True}
+            )
+        )
+    )
+
+    result = conductor._exec_raw(
+        {
+            "function": "write",
+            "arguments": {"filePath": "bubble_sort.py", "content": "content\n"},
+        }
+    )
+
+    assert result == {"ok": True}
+    assert captured == {"path": "bubble_sort.py", "content": "content\n"}
+
+def test_claude_write_alias_rejects_private_workspace_storage() -> None:
+    conductor_class = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = object.__new__(conductor_class)
+    conductor.config = {}
+    conductor._normalize_workspace_path = lambda value: value
+    conductor._private_workspace_path = lambda _value: True
+    conductor._ray_get = lambda value: value
+    conductor.sandbox = types.SimpleNamespace(
+        write_text=types.SimpleNamespace(
+            remote=lambda _path, _content: pytest.fail(
+                "private workspace write reached sandbox"
+            )
+        )
+    )
+
+    result = conductor._exec_raw(
+        {
+            "function": "Write",
+            "arguments": {
+                "filePath": ".breadboard/artifacts/secret",
+                "content": "overwrite\n",
+            },
+        }
+    )
+
+    assert result == {
+        "error": "private workspace storage is unavailable to model tools"
+    }
+
+
 class _DummyMarkdownLogger:
     def __init__(self):
         self.messages = []

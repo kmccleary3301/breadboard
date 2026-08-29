@@ -12,12 +12,20 @@ providers:
   models:
     - id: mock/reference
       adapter: mock_chat
+    - id: cli_mock/reference
+      adapter: cli_mock_chat
 
 # Prompt files are package resources and immutable inputs to the effective lock.
 prompts:
   packs:
     base:
       system: prompts/daily_driver_system.md
+
+# Todo state is part of the ordinary coding workflow and its durable transcript.
+features:
+  todos:
+    enabled: true
+    strict: true
 
 # The packaged runtime registry supplies these ordinary coding tools.
 tools:

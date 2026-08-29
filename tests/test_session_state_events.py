@@ -5,20 +5,25 @@ import json
 import queue
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
+from fastapi import HTTPException
 
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest,
     SessionInputRequest,
     SessionStatus,
+    SessionTurnCancelRequest,
 )
 from breadboard_engine.api.cli_bridge.registry import (
     SessionRecord,
     SessionRegistry,
     TurnRecord,
+    identity_digest,
+    submission_body_digest,
 )
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.runtime_event_projector import (
@@ -705,6 +710,47 @@ def test_session_runner_recognizes_replay_after_injected_system_reminder(
 
 
 @pytest.mark.asyncio
+async def test_session_runner_can_defer_execution_until_after_admission_response() -> None:
+    registry = SessionRegistry()
+    record = SessionRecord(session_id="sess-deferred-execution", status=SessionStatus.RUNNING)
+    turn = TurnRecord(
+        input_id="input-deferred",
+        turn_id="turn-deferred",
+        client_message_id="client-deferred",
+        content="continue",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+    deferred: list[Any] = []
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+
+    accepted = await runner.enqueue_input(
+        "continue",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+        defer_execution=deferred.append,
+    )
+
+    assert accepted == "continue"
+    assert runner._input_queue.empty()
+    assert len(deferred) == 1
+    await deferred[0]()
+    assert await runner._input_queue.get() == {
+        "content": "continue",
+        "attachments": [],
+        "input_id": turn.input_id,
+        "turn_id": turn.turn_id,
+    }
+
+
+@pytest.mark.asyncio
 async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None:
     registry = SessionRegistry()
     record = SessionRecord(
@@ -724,10 +770,17 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
             *,
             input_id: str | None = None,
             turn_id: str | None = None,
+            defer_execution: Any = None,
         ) -> str:
-            self.inputs.append(
-                (content, attachments, input_id, turn_id, record.active_turn_id)
-            )
+            async def execute() -> None:
+                self.inputs.append(
+                    (content, attachments, input_id, turn_id, record.active_turn_id)
+                )
+
+            if defer_execution is None:
+                await execute()
+            else:
+                defer_execution(execute)
             return content
 
     runner = Runner()
@@ -758,8 +811,446 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
 
 
 @pytest.mark.asyncio
-async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(
+async def test_session_input_is_durable_before_deferred_execution(tmp_path: Path) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(session_id="sess-durable-admission", status=SessionStatus.RUNNING)
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    record.runner = runner
+    await registry.create(record)
+    service = SessionService(registry=registry)
+    deferred: list[Any] = []
+
+    receipt = await service.send_input(
+        record.session_id,
+        SessionInputRequest(content="continue", client_message_id="client-durable"),
+        defer_execution=deferred.append,
+    )
+
+    assert runner._input_queue.empty()
+    assert len(deferred) == 1
+    restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+    assert restored is not None
+    assert restored.turns_by_id[receipt.turn_id].input_id == receipt.input_id
+    assert restored.turns_by_id[receipt.turn_id].state == "active"
+    await deferred[0]()
+    queued = await runner._input_queue.get()
+    assert queued["input_id"] == receipt.input_id
+    assert queued["turn_id"] == receipt.turn_id
+
+@pytest.mark.asyncio
+async def test_deferred_input_failure_terminalizes_durable_turn(
     tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-deferred-input-terminal-race",
+        status=SessionStatus.RUNNING,
+    )
+
+    class TerminalProductSession:
+        def input(self, _content: str, _artifacts: list[Any]) -> None:
+            raise RuntimeError("product session is terminal")
+
+    record.product_session = TerminalProductSession()
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    record.runner = runner
+    await registry.create(record)
+    deferred: list[Any] = []
+
+    receipt = await SessionService(registry=registry).send_input(
+        record.session_id,
+        SessionInputRequest(
+            content="continue",
+            client_message_id="client-terminal-race",
+        ),
+        defer_execution=deferred.append,
+    )
+    assert len(deferred) == 1
+
+    await deferred[0]()
+
+    turn = record.turns_by_id[receipt.turn_id]
+    assert turn.terminal_outcome == "failed"
+    assert turn.terminal_resolution_committed is True
+    assert record.active_turn_id is None
+    assert runner._input_queue.empty()
+
+
+@pytest.mark.asyncio
+async def test_retained_submission_digest_deduplicates_after_restart(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-retained-dedupe",
+        status=SessionStatus.RUNNING,
+    )
+    client_message_id = "client-retained"
+    turn = TurnRecord(
+        input_id="input-retained",
+        turn_id="turn-retained",
+        client_message_id=client_message_id,
+        content="continue",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+        body_digest=submission_body_digest("continue", ()),
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.submissions_by_key[client_message_id] = turn
+    record.submissions_by_key_digest[identity_digest(client_message_id)] = turn
+    record.active_turn_id = turn.turn_id
+    record.turn_admission = record.turn_admission.__class__.ACTIVE
+    await registry.create(record)
+
+    restarted = SessionRegistry(state_root=tmp_path)
+    restored = await restarted.get(record.session_id)
+    assert restored is not None
+    assert restored.submissions_by_key == {}
+    restored.loaded_from_retained_state = False
+
+    class Runner:
+        async def enqueue_input(self, *_args: Any, **_kwargs: Any) -> str:
+            raise AssertionError("deduplicated input must not execute")
+
+    restored.runner = Runner()
+    receipt = await SessionService(registry=restarted).send_input(
+        restored.session_id,
+        SessionInputRequest(
+            content="continue",
+            client_message_id=client_message_id,
+        ),
+    )
+
+    assert receipt.disposition == "deduplicated"
+    assert receipt.turn_id == turn.turn_id
+    assert receipt.input_id == turn.input_id
+
+
+@pytest.mark.asyncio
+async def test_admission_persistence_failure_rolls_back_unscheduled_turn(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-admission-persist-failure",
+        status=SessionStatus.RUNNING,
+    )
+
+    class Runner:
+        async def enqueue_input(
+            self,
+            content: str,
+            attachments: list[str],
+            *,
+            defer_execution: Any,
+            **_kwargs: Any,
+        ) -> str:
+            async def execute() -> None:
+                raise AssertionError("failed admission must not execute")
+
+            defer_execution(execute)
+            return content
+
+    record.runner = Runner()
+    await registry.create(record)
+
+    async def fail_persist(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("injected admission persistence failure")
+
+    monkeypatch.setattr(registry, "persist", fail_persist)
+    deferred: list[Any] = []
+    with pytest.raises(OSError, match="injected admission persistence failure"):
+        await SessionService(registry=registry).send_input(
+            record.session_id,
+            SessionInputRequest(
+                content="continue",
+                client_message_id="client-persist-failure",
+            ),
+            defer_execution=deferred.append,
+        )
+
+    assert deferred == []
+    assert record.turns_by_id == {}
+    assert record.submissions_by_key == {}
+    assert record.submissions_by_key_digest == {}
+    assert record.active_turn_id is None
+    assert record.turn_admission.value == "idle"
+
+@pytest.mark.asyncio
+async def test_cancel_turn_requests_only_the_active_turn_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(session_id="sess-active-cancel", status=SessionStatus.RUNNING)
+    turn = TurnRecord(
+        input_id="input-active",
+        turn_id="turn-active",
+        client_message_id="client-active",
+        content="active",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+
+    class Runner:
+        def __init__(self) -> None:
+            self.requests: list[str] = []
+
+        def request_turn_cancellation(self, turn_id: str) -> bool:
+            self.requests.append(turn_id)
+            return True
+
+        async def finish_queued_turn_cancellation(
+            self, queued_turn: TurnRecord, reason: str,
+        ) -> None:
+            raise AssertionError((queued_turn, reason))
+
+    runner = Runner()
+    record.runner = runner
+    await registry.create(record)
+    service = SessionService(registry=registry)
+    request = SessionTurnCancelRequest(
+        cancellation_request_key="cancel-active",
+        reason="user_requested",
+    )
+
+    first = await service.cancel_turn(record.session_id, turn.turn_id, request)
+    duplicate = await service.cancel_turn(record.session_id, turn.turn_id, request)
+
+    assert first.disposition == "cancellation_requested"
+    assert first.original_disposition == "cancellation_requested"
+    assert duplicate.disposition == "deduplicated"
+    assert duplicate.cancellation_request_id == first.cancellation_request_id
+    assert runner.requests == [turn.turn_id]
+    assert turn.cancellation_requested is True
+    assert turn.cancellation_reason == "user_requested"
+    assert turn.terminal_outcome is None
+    assert record.status is SessionStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_cancel_turn_terminalizes_queued_turn_without_stopping_session(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(session_id="sess-queued-cancel", status=SessionStatus.RUNNING)
+    active = TurnRecord(
+        input_id="input-active",
+        turn_id="turn-active",
+        client_message_id="client-active",
+        content="active",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    queued = TurnRecord(
+        input_id="input-queued",
+        turn_id="turn-queued",
+        client_message_id="client-queued",
+        content="queued",
+        attachments=(),
+        original_disposition="queued",
+        state="queued",
+    )
+    record.turns_by_id = {active.turn_id: active, queued.turn_id: queued}
+    record.active_turn_id = active.turn_id
+    record.queued_turn_ids.append(queued.turn_id)
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    record.runner = runner
+    await registry.create(record)
+    service = SessionService(registry=registry)
+
+    response = await service.cancel_turn(
+        record.session_id,
+        queued.turn_id,
+        SessionTurnCancelRequest(
+            cancellation_request_key="cancel-queued",
+            reason="superseded",
+        ),
+    )
+
+    assert response.disposition == "queued_cancelled"
+    assert queued.terminal_outcome == "cancelled"
+    assert queued.terminal_resolution_committed is True
+    assert record.active_turn_id == active.turn_id
+    assert list(record.queued_turn_ids) == []
+    assert record.status is SessionStatus.RUNNING
+    assert [envelope["turn_id"] for envelope in record.terminal_event_envelopes] == [
+        queued.turn_id
+    ]
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queued", [False, True])
+async def test_cancellation_persistence_failure_rolls_back_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    queued: bool,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id=f"sess-cancel-persist-failure-{queued}",
+        status=SessionStatus.RUNNING,
+    )
+    active = TurnRecord(
+        input_id="input-active",
+        turn_id="turn-active",
+        client_message_id="client-active",
+        content="active",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    target = (
+        TurnRecord(
+            input_id="input-queued",
+            turn_id="turn-queued",
+            client_message_id="client-queued",
+            content="queued",
+            attachments=(),
+            original_disposition="queued",
+            state="queued",
+        )
+        if queued
+        else active
+    )
+    record.turns_by_id[active.turn_id] = active
+    record.active_turn_id = active.turn_id
+    if queued:
+        record.turns_by_id[target.turn_id] = target
+        record.queued_turn_ids.append(target.turn_id)
+
+    class Runner:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def request_turn_cancellation(self, turn_id: str) -> bool:
+            self.calls.append(turn_id)
+            return True
+
+        async def finish_queued_turn_cancellation(
+            self,
+            turn: TurnRecord,
+            _reason: str,
+        ) -> None:
+            self.calls.append(turn.turn_id)
+
+    runner = Runner()
+    record.runner = runner
+    await registry.create(record)
+    queued_ids_before = list(record.queued_turn_ids)
+
+    async def fail_persist(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("injected cancellation persistence failure")
+
+    monkeypatch.setattr(registry, "persist", fail_persist)
+    with pytest.raises(OSError, match="injected cancellation persistence failure"):
+        await SessionService(registry=registry).cancel_turn(
+            record.session_id,
+            target.turn_id,
+            SessionTurnCancelRequest(
+                cancellation_request_key=f"cancel-persist-failure-{queued}",
+                reason="user_requested",
+            ),
+        )
+
+    assert target.cancellation_requested is False
+    assert target.cancellation_reason is None
+    assert record.cancellations_by_key == {}
+    assert record.cancellations_by_key_digest == {}
+    assert list(record.queued_turn_ids) == queued_ids_before
+    assert runner.calls == []
+
+@pytest.mark.asyncio
+async def test_queued_cancellation_retry_finishes_after_terminal_persist_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-queued-cancel-terminal-retry",
+        status=SessionStatus.RUNNING,
+    )
+    active = TurnRecord(
+        input_id="input-active",
+        turn_id="turn-active",
+        client_message_id="client-active",
+        content="active",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    queued = TurnRecord(
+        input_id="input-queued",
+        turn_id="turn-queued",
+        client_message_id="client-queued",
+        content="queued",
+        attachments=(),
+        original_disposition="queued",
+        state="queued",
+    )
+    record.turns_by_id = {active.turn_id: active, queued.turn_id: queued}
+    record.active_turn_id = active.turn_id
+    record.queued_turn_ids.append(queued.turn_id)
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    record.runner = runner
+    await registry.create(record)
+    original_persist = registry.persist
+    terminal_failure_injected = False
+
+    async def fail_first_terminal_persist(
+        persisted_record: SessionRecord,
+        **kwargs: Any,
+    ) -> None:
+        nonlocal terminal_failure_injected
+        if kwargs.get("terminal_event") is not None and not terminal_failure_injected:
+            terminal_failure_injected = True
+            raise OSError("injected terminal persistence failure")
+        await original_persist(persisted_record, **kwargs)
+
+    monkeypatch.setattr(registry, "persist", fail_first_terminal_persist)
+    request = SessionTurnCancelRequest(
+        cancellation_request_key="cancel-queued-terminal-retry",
+        reason="user_requested",
+    )
+    service = SessionService(registry=registry)
+
+    with pytest.raises(OSError, match="injected terminal persistence failure"):
+        await service.cancel_turn(record.session_id, queued.turn_id, request)
+
+    assert queued.terminal_outcome is None
+    assert list(record.queued_turn_ids) == []
+    assert record.cancellations_by_key
+
+    duplicate = await service.cancel_turn(record.session_id, queued.turn_id, request)
+
+    assert duplicate.disposition == "deduplicated"
+    assert duplicate.original_disposition == "queued_cancelled"
+    assert queued.terminal_outcome == "cancelled"
+    assert queued.terminal_resolution_committed is True
+
+
+@pytest.mark.asyncio
+async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_path: Path,
 ) -> None:
     registry = SessionRegistry(state_root=tmp_path)
     record = SessionRecord(
@@ -808,8 +1299,8 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(
     assert record.dispatcher_task is not None
     assert not record.dispatcher_task.done()
 
-    # Completion bookkeeping can advance the observed cursor after the retained
-    # terminal envelope. Persist only its head identity, never its payload.
+    # Retention stores only sanitized terminal envelopes plus the exact durable
+    # cursor identity, never the payload behind a nonterminal replay head.
     completion_tail = SessionEvent(
         EventType.COMPLETION,
         record.session_id,
@@ -824,12 +1315,13 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(
     )
     record.event_log.extend((completion_tail, replay_head))
     record.event_seq = 3
-    await registry.persist(record)
+    await registry.persist(record, cursor_event=replay_head)
     retained_bytes = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
     assert "completion-payload-must-not-persist" not in retained_bytes
     assert "path-must-not-persist" not in retained_bytes
     retained = json.loads(retained_bytes)
     assert retained["session"]["event_seq"] == replay_head.seq
+    assert retained["session"]["replay_head_sequence"] == replay_head.seq
     assert retained["session"]["event_head_id"] == replay_head.event_id
 
     await record.event_queue.put(None)
@@ -844,6 +1336,338 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(
     stream_open = SessionService._stream_open_event(restored)
     assert stream_open.payload["headSequence"] == replay_head.seq
     assert stream_open.payload["headEventId"] == replay_head.event_id
+    assert restored.event_seq == replay_head.seq
+    assert [event.seq for event in restored.event_log] == [terminal_envelope["seq"]]
+    replay_queue: asyncio.Queue[SessionEvent | None] = asyncio.Queue()
+    restarted_service = SessionService(registry=restarted)
+    gap_queue: asyncio.Queue[SessionEvent | None] = asyncio.Queue()
+    with pytest.raises(HTTPException) as gap_error:
+        await restarted_service._register_subscriber(
+            restored,
+            gap_queue,
+            replay=True,
+            from_id=terminal_envelope["id"],
+        )
+    assert gap_error.value.status_code == 409
+    assert gap_error.value.detail["code"] == "resume_window_exceeded"
+    await restarted_service._register_subscriber(
+        restored,
+        replay_queue,
+        replay=True,
+        from_id=replay_head.event_id,
+    )
+    assert replay_queue.empty()
+    await restarted_service._unregister_subscriber(restored, replay_queue)
+    assert restarted_service._is_retained_head_cursor(
+        restored,
+        str(replay_head.seq),
+    )
+    numeric_replay_queue: asyncio.Queue[SessionEvent | None] = asyncio.Queue()
+    await restarted_service._register_subscriber(
+        restored,
+        numeric_replay_queue,
+        replay=True,
+        from_id=str(replay_head.seq),
+    )
+    assert numeric_replay_queue.empty()
+    await restarted_service._unregister_subscriber(
+        restored,
+        numeric_replay_queue,
+    )
+
+@pytest.mark.asyncio
+async def test_dispatcher_failure_drains_queue_and_rejects_future_events(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-dispatcher-persist-failure",
+        status=SessionStatus.RUNNING,
+    )
+    await registry.create(record)
+    service = SessionService(registry=registry)
+    await service._ensure_dispatcher(record)
+
+    async def fail_persist(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("injected dispatcher persistence failure")
+
+    monkeypatch.setattr(registry, "persist", fail_persist)
+    record.event_queue.put_nowait(
+        SessionEvent(EventType.TASK_EVENT, record.session_id, {"index": 1})
+    )
+    record.event_queue.put_nowait(
+        SessionEvent(EventType.TASK_EVENT, record.session_id, {"index": 2})
+    )
+    assert record.dispatcher_task is not None
+    await record.dispatcher_task
+    await asyncio.wait_for(record.event_queue.join(), timeout=1)
+
+    assert record.event_queue.empty()
+    assert getattr(record, "_dispatcher_complete", False) is True
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task=""),
+    )
+    with pytest.raises(RuntimeError, match="dispatcher is unavailable"):
+        await runner._enqueue_event_async(
+            SessionEvent(EventType.TASK_EVENT, record.session_id, {"index": 3})
+        )
+
+
+@pytest.mark.asyncio
+async def test_async_event_enqueue_fails_fast_when_bounded_queue_is_full() -> None:
+    record = SessionRecord(
+        session_id="session-bounded-event-queue",
+        status=SessionStatus.RUNNING,
+    )
+    record.event_queue = asyncio.Queue(maxsize=1)
+    record.event_queue.put_nowait(
+        SessionEvent(EventType.TASK_EVENT, record.session_id, {"index": 1})
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(config_path="cfg.yaml", task=""),
+    )
+
+    with pytest.raises(RuntimeError, match="event queue is full"):
+        await asyncio.wait_for(
+            runner._enqueue_event_async(
+                SessionEvent(EventType.TASK_EVENT, record.session_id, {"index": 2})
+            ),
+            timeout=1,
+        )
+
+
+@pytest.mark.asyncio
+async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-restart-interrupted",
+        status=SessionStatus.RUNNING,
+        metadata={"permission_mode": "configured"},
+    )
+    interrupted = TurnRecord(
+        input_id="input-interrupted",
+        turn_id="turn-interrupted",
+        client_message_id="client-interrupted",
+        content="must-not-persist",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    record.turns_by_id[interrupted.turn_id] = interrupted
+    record.active_turn_id = interrupted.turn_id
+    await registry.create(record)
+    record.event_seq = 390
+    record.replay_head_sequence = 390
+    record.replay_head_event_id = "event-before-process-death"
+    await registry.persist(record)
+
+    replacement_profile = tmp_path / "replacement-session.yaml"
+    replacement_profile.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
+        lambda: SimpleNamespace(
+            source_path=replacement_profile,
+            public_identity=lambda: {
+                "definition_ref": "agent_configs/templates/daily_driver.v1.yaml"
+            },
+        ),
+    )
+    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+
+    restarted = SessionRegistry(state_root=tmp_path)
+    service = SessionService(registry=restarted)
+    restored = await service.ensure_session(record.session_id)
+    try:
+        await asyncio.sleep(0)
+        assert restored.loaded_from_retained_state is False
+        assert restored.runner is not None
+        restored_turn = restored.turns_by_id[interrupted.turn_id]
+        assert restored_turn.terminal_outcome == "failed"
+        assert restored_turn.terminal_resolution_committed is True
+        assert restored.active_turn_id is None
+        assert restored.turn_admission.value == "idle"
+        assert len(restored.terminal_event_envelopes) == 1
+        terminal = restored.terminal_event_envelopes[0]
+        assert terminal["seq"] == 391
+        summary = restored.to_summary()
+        assert summary.head_sequence == 391
+        assert summary.head_event_id == terminal["id"]
+        assert terminal["type"] == "turn_failed"
+        assert terminal["input_id"] == interrupted.input_id
+        assert terminal["turn_id"] == interrupted.turn_id
+        assert terminal["payload"] == {"error": {"code": "runtime_failure"}}
+        assert (await service.ensure_session(record.session_id)).runner is restored.runner
+        retained = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
+        assert retained["session"]["permission_mode"] == "configured"
+        assert retained["turns"][0]["terminal_resolution_committed"] is True
+        assert len(retained["terminal_event_envelopes"]) == 1
+    finally:
+        if restored.runner is not None:
+            await restored.runner.stop()
+
+@pytest.mark.asyncio
+async def test_retained_restart_preserves_explicit_config_and_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    explicit_config = tmp_path / "explicit-session.yaml"
+    explicit_config.write_text("{}\n", encoding="utf-8")
+    explicit_workspace = tmp_path / "workspace"
+    explicit_workspace.mkdir()
+    registry = SessionRegistry(state_root=tmp_path / "state")
+    record = SessionRecord(
+        session_id="session-restart-explicit-context",
+        status=SessionStatus.RUNNING,
+        metadata={
+            "config_path": str(explicit_config),
+            "workspace": str(explicit_workspace),
+            "permission_mode": "configured",
+            "mode": "review",
+        },
+    )
+    await registry.create(record)
+
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
+        lambda: pytest.fail("explicit retained config resolved the default profile"),
+    )
+    prepared_requests: list[SessionCreateRequest] = []
+    prepared_modes: list[str | None] = []
+
+    def capture_runtime_request(runner: SessionRunner) -> dict[str, Any]:
+        prepared_requests.append(runner.request)
+        prepared_modes.append(runner._mode)
+        return {}
+
+    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", capture_runtime_request)
+
+    restarted = SessionRegistry(state_root=tmp_path / "state")
+    restored = await SessionService(registry=restarted).ensure_session(record.session_id)
+    try:
+        assert prepared_requests
+        assert prepared_requests[0].config_path == str(explicit_config)
+        assert prepared_requests[0].workspace == str(explicit_workspace)
+        assert prepared_modes == ["review"]
+        assert restored.metadata["config_path"] == str(explicit_config)
+        assert restored.metadata["workspace"] == str(explicit_workspace)
+        assert restored.metadata["mode"] == "review"
+    finally:
+        if restored.runner is not None:
+            await restored.runner.stop()
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "terminal_status",
+    [
+        SessionStatus.COMPLETED,
+        SessionStatus.FAILED,
+        SessionStatus.STOPPED,
+    ],
+)
+async def test_retained_terminal_session_is_not_resurrected(
+    tmp_path: Path,
+    terminal_status: SessionStatus,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id=f"session-retained-{terminal_status.value}",
+        status=terminal_status,
+    )
+    await registry.create(record)
+
+    restarted = SessionRegistry(state_root=tmp_path)
+    service = SessionService(registry=restarted)
+    restored = await service.ensure_session(record.session_id)
+
+    assert restored.status is terminal_status
+    assert restored.runner is None
+    assert restored.loaded_from_retained_state is False
+    assert (await service.ensure_session(record.session_id)) is restored
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["stop", "delete"])
+async def test_locked_operation_resumes_retained_session_without_deadlock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    config_path = tmp_path / "retained-config.yaml"
+    config_path.write_text("{}\n", encoding="utf-8")
+    state_root = tmp_path / "state"
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id=f"session-retained-{operation}",
+        status=SessionStatus.RUNNING,
+        metadata={
+            "config_path": str(config_path),
+            "permission_mode": "configured",
+        },
+    )
+    await registry.create(record)
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
+        lambda: SimpleNamespace(
+            source_path=config_path,
+            public_identity=lambda: {
+                "definition_ref": "agent_configs/templates/daily_driver.v1.yaml"
+            },
+        ),
+    )
+    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    service = SessionService(registry=SessionRegistry(state_root=state_root))
+
+    if operation == "stop":
+        await asyncio.wait_for(service.stop_session(record.session_id), timeout=2)
+        stopped = await service.registry.get(record.session_id)
+        assert stopped is not None
+        assert stopped.status is SessionStatus.STOPPED
+    else:
+        await asyncio.wait_for(service.delete_session(record.session_id), timeout=2)
+        assert await service.registry.get(record.session_id) is None
+
+
+@pytest.mark.asyncio
+async def test_session_creation_persists_absolute_explicit_config_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "relative-config.yaml"
+    config_path.write_text("profile: {name: relative-test}\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(
+        "BREADBOARD_RUNTIME_RECORD_ROOT",
+        str(tmp_path / "runtime-records"),
+    )
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_EVENT_ROOT",
+        str(tmp_path / "session-events"),
+    )
+    monkeypatch.setattr(SessionRunner, "schedule_start", lambda self: None)
+    monkeypatch.setattr(SessionRunner, "authorize_start", lambda self: None)
+    service = SessionService(state_root=tmp_path / "state")
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=config_path.name,
+            task="",
+            stream=False,
+        )
+    )
+    created = await service.ensure_session(response.session_id)
+
+    assert created.metadata["config_path"] == str(config_path)
+    assert created.runner is not None
+    assert created.runner.request.config_path == str(config_path)
+    await service.delete_session(response.session_id)
+
 
 
 @pytest.mark.asyncio
@@ -1779,6 +2603,311 @@ def test_session_runner_unknown_runtime_event_fails_closed_and_strips_sentinel()
     )
     assert session_scoped is not None
     assert session_scoped[2] is None
+
+
+def _lifecycle_runner_with_product_session(
+    registry: SessionRegistry,
+    record: SessionRecord,
+    monkeypatch: pytest.MonkeyPatch,
+    outcomes: list[bool],
+) -> tuple[SessionRunner, Any]:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "active",
+        session_id=record.session_id,
+    )
+    record.product_session = product_session
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(
+            config_path="cfg.yaml",
+            task="active",
+            stream=False,
+        ),
+    )
+    record.runner = runner
+    monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
+
+    async def initialized() -> None:
+        return None
+
+    monkeypatch.setattr(runner, "_ensure_agent_initialized", initialized)
+
+    def execute_task(
+        _task: str,
+        *,
+        input_id: str | None = None,
+        turn_id: str | None = None,
+    ) -> dict[str, Any]:
+        completed = outcomes.pop(0)
+        return {
+            "completion_summary": {
+                "completed": completed,
+                "reason": "completed" if completed else "stopped_by_user",
+            },
+            "reward_metrics": None,
+            "logging_dir": None,
+            "_terminal_events": [],
+            "_turn_completion_payload": {},
+        }
+    monkeypatch.setattr(runner._task_execution, "execute_task", execute_task)
+    return runner, product_session
+
+
+async def _wait_for_terminal_turn(turn: TurnRecord) -> None:
+    for _ in range(200):
+        if turn.terminal_resolution_committed:
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"turn {turn.turn_id} did not become terminal")
+
+
+@pytest.mark.asyncio
+async def test_active_turn_cancellation_keeps_interactive_session_running(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-active-cancel-continues",
+        status=SessionStatus.STARTING,
+    )
+    runner, product_session = _lifecycle_runner_with_product_session(
+        registry,
+        record,
+        monkeypatch,
+        [False, True],
+    )
+    await registry.create(record)
+    await runner.prepare_start()
+    active = record.turns_by_id[record.active_turn_id or ""]
+    active.cancellation_requested = True
+    active.cancellation_reason = "user_requested"
+    record.turn_admission = record.turn_admission.__class__.ACTIVE
+    await registry.persist(record)
+    runner.schedule_start()
+    runner.authorize_start()
+
+    await _wait_for_terminal_turn(active)
+    assert active.terminal_outcome == "cancelled", record.terminal_event_envelopes
+    assert product_session.read_model.status == "running"
+    assert record.status is SessionStatus.RUNNING
+
+    receipt = await SessionService(registry=registry).send_input(
+        record.session_id,
+        SessionInputRequest(
+            content="continue",
+            client_message_id="message-continue",
+        ),
+    )
+    continued = record.turns_by_id[receipt.turn_id]
+    await _wait_for_terminal_turn(continued)
+
+    assert continued.terminal_outcome == "completed"
+    assert product_session.read_model.status == "running"
+    assert record.status is SessionStatus.RUNNING
+    await runner.stop()
+
+
+@pytest.mark.asyncio
+async def test_interactive_failure_terminalizes_remaining_admitted_turns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-failure-drains-admitted",
+        status=SessionStatus.STARTING,
+    )
+    runner, product_session = _lifecycle_runner_with_product_session(
+        registry,
+        record,
+        monkeypatch,
+        [False],
+    )
+    await registry.create(record)
+    await runner.prepare_start()
+    active = record.turns_by_id[record.active_turn_id or ""]
+    queued = TurnRecord(
+        input_id="input-queued",
+        turn_id="turn-queued",
+        client_message_id="message-queued",
+        content="queued",
+        attachments=(),
+        original_disposition="queued",
+        state="queued",
+    )
+    record.turns_by_id[queued.turn_id] = queued
+    record.queued_turn_ids.append(queued.turn_id)
+    record.turn_admission = record.turn_admission.__class__.ACTIVE
+    await registry.persist(record)
+    runner.schedule_start()
+    runner.authorize_start()
+
+    await _wait_for_terminal_turn(queued)
+
+    assert active.terminal_outcome == "failed"
+    assert queued.terminal_outcome == "failed"
+    assert active.terminal_resolution_committed is True
+    assert queued.terminal_resolution_committed is True
+    assert record.active_turn_id is None
+    assert list(record.queued_turn_ids) == []
+    assert product_session.read_model.status == "failed"
+    assert record.status is SessionStatus.FAILED
+    await runner.stop()
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_persistence_failure_still_fails_session_lifecycle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-dispatcher-failure-lifecycle",
+        status=SessionStatus.STARTING,
+    )
+    runner, product_session = _lifecycle_runner_with_product_session(
+        registry,
+        record,
+        monkeypatch,
+        [False],
+    )
+    await registry.create(record)
+    await runner.prepare_start()
+    service = SessionService(registry=registry)
+    await service._ensure_dispatcher(record)
+
+    async def fail_event_persist(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("injected event persistence failure")
+
+    monkeypatch.setattr(registry, "persist", fail_event_persist)
+    runner.schedule_start()
+    runner.authorize_start()
+    assert runner._task is not None
+    await asyncio.wait_for(runner._task, timeout=2)
+
+    assert getattr(record, "_dispatcher_complete", False) is True
+    assert product_session.read_model.status == "failed"
+    assert record.status is SessionStatus.FAILED
+    assert runner._closed is True
+
+
+@pytest.mark.asyncio
+async def test_productless_interactive_failure_marks_session_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-productless-failure",
+        status=SessionStatus.RUNNING,
+    )
+    runner, _ = _lifecycle_runner_with_product_session(
+        registry,
+        record,
+        monkeypatch,
+        [False],
+    )
+    record.product_session = None
+    await registry.create(record)
+    await runner.prepare_start()
+    active = record.turns_by_id[record.active_turn_id or ""]
+    record.turn_admission = record.turn_admission.__class__.ACTIVE
+    await registry.persist(record)
+    runner.schedule_start()
+    runner.authorize_start()
+    assert runner._task is not None
+    await runner._task
+
+    assert active.terminal_outcome == "failed"
+    assert active.terminal_resolution_committed is True
+    assert record.status is SessionStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_interactive_stop_cancels_remaining_admitted_turns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-stop-cancels-admitted",
+        status=SessionStatus.STARTING,
+    )
+    runner, product_session = _lifecycle_runner_with_product_session(
+        registry,
+        record,
+        monkeypatch,
+        [],
+    )
+    entered = threading.Event()
+    release = threading.Event()
+
+    def execute_task(
+        _task: str,
+        *,
+        input_id: str | None = None,
+        turn_id: str | None = None,
+    ) -> dict[str, Any]:
+        entered.set()
+        assert release.wait(2)
+        return {
+            "completion_summary": {
+                "completed": False,
+                "reason": "stopped_by_user",
+            },
+            "reward_metrics": None,
+            "logging_dir": None,
+            "_terminal_events": [],
+            "_turn_completion_payload": {},
+        }
+
+    monkeypatch.setattr(runner._task_execution, "execute_task", execute_task)
+    await registry.create(record)
+    await runner.prepare_start()
+    active = record.turns_by_id[record.active_turn_id or ""]
+    queued = TurnRecord(
+        input_id="input-queued",
+        turn_id="turn-queued",
+        client_message_id="message-queued",
+        content="queued",
+        attachments=(),
+        original_disposition="queued",
+        state="queued",
+    )
+    record.turns_by_id[queued.turn_id] = queued
+    record.queued_turn_ids.append(queued.turn_id)
+    record.turn_admission = record.turn_admission.__class__.ACTIVE
+    await registry.persist(record)
+    runner.schedule_start()
+    runner.authorize_start()
+    assert await asyncio.to_thread(entered.wait, 2)
+
+    stop_task = asyncio.create_task(runner.stop())
+    for _ in range(200):
+        if runner._stop_event.is_set():
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("runner stop did not signal execution")
+    release.set()
+    await stop_task
+
+    assert active.terminal_outcome == "cancelled"
+    assert queued.terminal_outcome == "cancelled"
+    assert active.terminal_resolution_committed is True
+    assert queued.terminal_resolution_committed is True
+    assert record.active_turn_id is None
+    assert list(record.queued_turn_ids) == []
+    assert product_session.read_model.status == "canceled"
+    assert record.status is SessionStatus.STOPPED
 
 
 @pytest.mark.asyncio
