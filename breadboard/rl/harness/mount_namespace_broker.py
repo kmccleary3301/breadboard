@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import array
+import asyncio
 import base64
 import ctypes
 import errno
@@ -4204,12 +4205,42 @@ class BrokerDockerCliExecutor:
                     "sha256:" + hashlib.sha256(input_bytes).hexdigest()
                 )
                 descriptors.append(payload_fd)
-            result, returned_fds = self._broker._call(
-                "execute",
-                request,
-                tuple(descriptors),
-                expected_return_fds=2,
-            )
+            duplicated: list[int] = []
+            try:
+                for descriptor in descriptors:
+                    duplicated.append(os.dup(descriptor))
+            except BaseException:
+                for descriptor in duplicated:
+                    os.close(descriptor)
+                raise
+            worker_descriptors = tuple(duplicated)
+
+            def broker_call() -> Any:
+                try:
+                    return self._broker._call(
+                        "execute",
+                        request,
+                        worker_descriptors,
+                        expected_return_fds=2,
+                    )
+                finally:
+                    for descriptor in worker_descriptors:
+                        os.close(descriptor)
+
+            call_task = asyncio.create_task(asyncio.to_thread(broker_call))
+            try:
+                result, returned_fds = await asyncio.shield(call_task)
+            except asyncio.CancelledError:
+                def close_abandoned_result(task: asyncio.Task[Any]) -> None:
+                    try:
+                        _result, abandoned_fds = task.result()
+                    except BaseException:
+                        return
+                    for descriptor in abandoned_fds:
+                        os.close(descriptor)
+
+                call_task.add_done_callback(close_abandoned_result)
+                raise
             stdout_size = result.get("stdout_size")
             stderr_size = result.get("stderr_size")
             if (

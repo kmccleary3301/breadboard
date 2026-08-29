@@ -739,6 +739,43 @@ async def test_runtime_handle_reads_exact_observation_limit_through_json_protoco
 
 
 @pytest.mark.asyncio
+async def test_verifier_artifact_read_uses_artifact_ceiling_not_observation_ceiling(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    content = b'{"resolved":true}'
+    executor.results.append(
+        _result(
+            stdout=json.dumps(
+                {
+                    "bytes": len(content),
+                    "content_base64": base64.b64encode(content).decode("ascii"),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("ascii")
+        )
+    )
+    ceiling = min(
+        plan.limits.artifact_bytes_each,
+        plan.limits.artifact_bytes_total,
+    )
+    assert ceiling > plan.limits.observation_bytes
+
+    result = await handle.read_artifact_text("result/verifier-result.json")
+
+    assert result["content"] == content.decode("utf-8")
+    assert executor.calls[0][0][-5:] == (
+        "read",
+        "result/verifier-result.json",
+        "0",
+        str(ceiling),
+        "1",
+    )
+    assert executor.calls[0][2] == 4 * ((ceiling + 3) // 3) + 128
+
+
+@pytest.mark.asyncio
 async def test_runtime_handle_zero_byte_read_is_a_nonfencing_success(
     tmp_path: Path,
 ) -> None:

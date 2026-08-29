@@ -103,7 +103,7 @@ async def test_run_shell_delegates_pinned_descriptor_as_workload_argv() -> None:
         calls.append((argv, timeout_ms, output_limit))
         return expected
 
-    handle.run_argv = scripted_run_argv  # type: ignore[method-assign]
+    handle._run_pinned_argv = scripted_run_argv  # type: ignore[method-assign]
 
     result = await handle.run_shell(
         "printf delegated",
@@ -114,6 +114,47 @@ async def test_run_shell_delegates_pinned_descriptor_as_workload_argv() -> None:
     assert result is expected
     assert calls == [
         (("/proc/self/fd/71", "-lc", "printf delegated"), 1_234, 5_678)
+    ]
+
+
+async def test_run_argv_executes_requested_command_through_pinned_shell() -> None:
+    handle = object.__new__(TrustedProcessHandle)
+    handle._executable = type(
+        "ScriptedPinnedExecutable",
+        (),
+        {"proc_fd_path": "/proc/self/fd/71"},
+    )()
+    calls: list[tuple[tuple[str, ...], int, int]] = []
+    expected = {"returncode": 0, "stdout": "ok\n", "stderr": ""}
+
+    async def scripted_pinned_argv(
+        argv: tuple[str, ...], *, timeout_ms: int, output_limit: int
+    ) -> dict[str, object]:
+        calls.append((argv, timeout_ms, output_limit))
+        return expected
+
+    handle._run_pinned_argv = scripted_pinned_argv  # type: ignore[method-assign]
+
+    result = await handle.run_argv(
+        ("/bin/echo", "ok"),
+        timeout_ms=1_234,
+        output_limit=5_678,
+    )
+
+    assert result is expected
+    assert calls == [
+        (
+            (
+                "/proc/self/fd/71",
+                "-lc",
+                'exec "$@"',
+                "breadboard-execute",
+                "/bin/echo",
+                "ok",
+            ),
+            1_234,
+            5_678,
+        )
     ]
 
 
@@ -165,7 +206,7 @@ async def test_workspace_diff_uses_nested_repository_and_types_missing_git() -> 
         calls.append((argv, timeout_ms, output_limit))
         return results.pop(0)
 
-    handle.run_argv = scripted_run_argv  # type: ignore[method-assign]
+    handle._run_pinned_argv = scripted_run_argv  # type: ignore[method-assign]
 
     assert (await handle.workspace_diff())["stdout"] == "diff"
     assert calls[0] == (
@@ -295,6 +336,23 @@ async def test_pinned_shell_executes_admitted_bytes_after_source_mutation(
 
     assert result["returncode"] == 0
     assert result["stdout"] == "admitted-snapshot"
+    assert (await primary.close()).state is CleanupState.RELEASED
+
+
+@requires_sealed_execution
+async def test_process_lease_execute_runs_requested_argv(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True,
+        runtime_install_root=tmp_path / "runtime",
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+
+    result = await primary.execute(("/usr/bin/printf", "requested-argv"))
+
+    assert result["returncode"] == 0
+    assert result["stdout"] == "requested-argv"
     assert (await primary.close()).state is CleanupState.RELEASED
 
 

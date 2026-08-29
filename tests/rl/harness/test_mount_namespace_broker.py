@@ -9,6 +9,8 @@ import signal
 import socket
 import stat
 import sys
+import threading
+import time
 from builtins import BaseExceptionGroup
 from pathlib import Path
 from types import SimpleNamespace
@@ -115,6 +117,76 @@ async def test_broker_executor_transports_stdin_by_sealed_descriptor(
     assert result.returncode == 0
     assert result.stdout == output_payload
     assert result.stderr == b""
+
+
+@pytest.mark.asyncio
+async def test_broker_executor_does_not_block_event_loop_during_rpc(
+    tmp_path: Path,
+) -> None:
+    executable_path = tmp_path / "docker"
+    executable_path.write_bytes(b"docker")
+    executable_fd = os.open(executable_path, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable_path),
+        executable_fd=executable_fd,
+        executable_descriptor_path=f"/proc/self/fd/{executable_fd}",
+        digest="sha256:" + hashlib.sha256(b"docker").hexdigest(),
+    )
+    started = threading.Event()
+    release = threading.Event()
+
+    class Broker:
+        def _call(
+            self,
+            operation,
+            request,
+            descriptors,
+            *,
+            expected_return_fds,
+        ):
+            del operation, request, descriptors, expected_return_fds
+            started.set()
+            release.wait(timeout=2)
+            return (
+                {
+                    "returncode": 0,
+                    "stdout_size": 0,
+                    "stdout_digest": "sha256:" + hashlib.sha256(b"").hexdigest(),
+                    "stderr_size": 0,
+                    "stderr_digest": "sha256:" + hashlib.sha256(b"").hexdigest(),
+                    "timed_out": False,
+                    "output_limited": False,
+                },
+                (os.open(os.devnull, os.O_RDONLY), os.open(os.devnull, os.O_RDONLY)),
+            )
+
+    timer = threading.Timer(0.5, release.set)
+    timer.start()
+    started_at = time.monotonic()
+    task = asyncio.create_task(
+        broker_module.BrokerDockerCliExecutor(Broker()).execute(
+            invocation,
+            ("version",),
+            timeout_ms=1_000,
+            output_limit=1,
+            environment=(),
+        )
+    )
+    try:
+        while not started.is_set():
+            if task.done():
+                await task
+            await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert time.monotonic() - started_at < 0.2
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    finally:
+        release.set()
+        timer.cancel()
+        os.close(executable_fd)
+    await asyncio.sleep(0.05)
 
 
 def test_broker_wire_budget_covers_encoded_maximum_observation() -> None:

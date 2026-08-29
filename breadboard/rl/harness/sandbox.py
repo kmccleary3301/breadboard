@@ -1163,13 +1163,36 @@ class TrustedProcessHandle:
     async def run_shell(
         self, command: str, *, timeout_ms: int, output_limit: int
     ) -> Mapping[str, Any]:
-        return await self.run_argv(
+        return await self._run_pinned_argv(
             (self._executable.proc_fd_path, "-lc", command),
             timeout_ms=timeout_ms,
             output_limit=output_limit,
         )
 
     async def run_argv(
+        self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
+    ) -> Mapping[str, Any]:
+        if not argv or any(
+            type(item) is not str or not item or "\x00" in item for item in argv
+        ):
+            raise SandboxLaunchError(
+                "fixed argv is invalid",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        return await self._run_pinned_argv(
+            (
+                self._executable.proc_fd_path,
+                "-lc",
+                'exec "$@"',
+                "breadboard-execute",
+                *argv,
+            ),
+            timeout_ms=timeout_ms,
+            output_limit=output_limit,
+        )
+
+    async def _run_pinned_argv(
         self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
     ) -> Mapping[str, Any]:
         if not argv or any(type(item) is not str or "\x00" in item for item in argv):
@@ -1316,7 +1339,7 @@ class TrustedProcessHandle:
                 code="runtime_preflight_failed",
                 lease_id=self.lease_id,
             )
-        result = await self.run_argv(
+        result = await self._run_pinned_argv(
             (
                 self._executable.proc_fd_path,
                 "-lc",
@@ -2012,12 +2035,10 @@ class VerifierWorkspaceLease:
             self.plan.limits.artifact_bytes_total,
         )
         try:
-            remote_read = getattr(self._runtime, "read_text", None)
+            remote_read = getattr(self._runtime, "read_artifact_text", None)
             if callable(remote_read):
                 remote = await remote_read(
-                    "result/" + self.plan.verifier.result_relative_path,
-                    offset=0,
-                    limit=ceiling,
+                    "result/" + self.plan.verifier.result_relative_path
                 )
                 raw = str(remote["content"]).encode("utf-8")
             else:
