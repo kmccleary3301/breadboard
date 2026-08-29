@@ -22,6 +22,9 @@ from breadboard.rl.harness.swe_bench_runner import (
     E4_PROFILE_IDS,
     InstalledHeadlessInvocation,
     InstalledSweBenchRequest,
+    OFFICIAL_EVALUATOR_DOCKER_DIGEST,
+    OFFICIAL_EVALUATOR_ENVIRONMENT_DIGEST,
+    OFFICIAL_EVALUATOR_PYTHON_DIGEST,
     OFFICIAL_SWE_BENCH_EVALUATOR,
     OfficialEvaluatorOutcome,
     PINNED_SWE_BENCH_TASK,
@@ -242,11 +245,11 @@ def _evaluator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> SubprocessOfficialEvaluator:
     measurement = {
-        "environment_digest": f"sha256:{'0' * 64}",
+        "environment_digest": OFFICIAL_EVALUATOR_ENVIRONMENT_DIGEST,
         "python_path": "/usr/bin/python3",
-        "python_digest": f"sha256:{'0' * 64}",
+        "python_digest": OFFICIAL_EVALUATOR_PYTHON_DIGEST,
         "docker_path": "/usr/bin/docker",
-        "docker_digest": f"sha256:{'0' * 64}",
+        "docker_digest": OFFICIAL_EVALUATOR_DOCKER_DIGEST,
         "file_count": 1,
         "total_bytes": 1,
     }
@@ -317,7 +320,10 @@ def test_evaluator_identity_cannot_be_self_declared(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = _evaluator(tmp_path, monkeypatch)
-    assert adapter.identity_dict()["environment_digest"] == f"sha256:{'0' * 64}"
+    assert (
+        adapter.identity_dict()["environment_digest"]
+        == OFFICIAL_EVALUATOR_ENVIRONMENT_DIGEST
+    )
     with pytest.raises(TypeError):
         SubprocessOfficialEvaluator(  # type: ignore[call-arg]
             environment_root=str(tmp_path),
@@ -328,8 +334,8 @@ def test_evaluator_identity_cannot_be_self_declared(
         "breadboard.rl.harness.swe_bench_runner.measure_official_evaluator_environment",
         lambda _root: {
             "environment_digest": f"sha256:{'f' * 64}",
-            "python_digest": f"sha256:{'0' * 64}",
-            "docker_digest": f"sha256:{'0' * 64}",
+            "python_digest": OFFICIAL_EVALUATOR_PYTHON_DIGEST,
+            "docker_digest": OFFICIAL_EVALUATOR_DOCKER_DIGEST,
         },
     )
     with pytest.raises(SweBenchRunnerError, match="environment digest mismatch"):
