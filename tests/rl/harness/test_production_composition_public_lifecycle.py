@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import os
 import signal
 import socket
-import ssl
 import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -24,9 +22,10 @@ from fastapi.testclient import TestClient
 from breadboard.rl.harness.runners.base import freeze_json_object
 from breadboard.rl.harness.runners.conductor import _supported_output_item
 from breadboard.rl.harness.composition import load_production_composition
-from tests.rl.harness.production_composition_fixture import (
+from breadboard.rl.harness.qualification import (
     MaterializedProductionCompositionFixture,
     materialize_production_composition_fixture,
+    qualification_policy_server,
 )
 
 
@@ -60,6 +59,7 @@ def _fd_identities() -> set[tuple[int, int, str]]:
             continue
         identities.add((current.st_dev, current.st_ino, target))
     return identities
+
 
 def _runtime_children(
     fixture: MaterializedProductionCompositionFixture,
@@ -112,9 +112,7 @@ def _descendant_processes(root_pid: int) -> set[tuple[int, str]]:
     while changed:
         changed = False
         for pid, (parent, _) in records.items():
-            if pid not in descendants and (
-                parent == root_pid or parent in descendants
-            ):
+            if pid not in descendants and (parent == root_pid or parent in descendants):
                 descendants.add(pid)
                 changed = True
     return {(pid, records[pid][1]) for pid in descendants}
@@ -159,10 +157,6 @@ def _secret_arguments(fixture: MaterializedProductionCompositionFixture) -> list
     ]
 
 
-
-
-
-
 def _cli_command(
     fixture: MaterializedProductionCompositionFixture, command: str
 ) -> list[str]:
@@ -175,7 +169,6 @@ def _cli_command(
         str(fixture.composition_ref_path),
         *_secret_arguments(fixture),
     ]
-
 
 
 def _assert_no_authority_leak(
@@ -205,77 +198,6 @@ class _PolicyServer(ThreadingHTTPServer):
     allow_reuse_address = False
 
 
-@contextlib.contextmanager
-def _policy_https_server(
-    fixture: MaterializedProductionCompositionFixture,
-) -> Iterator[tuple[str, int, list[dict[str, Any]]]]:
-    requests: list[dict[str, Any]] = []
-    expected_authorization = f"Bearer {fixture.policy_callback_secret}"
-    completion_payload = _CONDUCTOR_COMPLETION_PAYLOAD
-    completion_bytes = json.dumps(
-        completion_payload, sort_keys=True, separators=(",", ":")
-    ).encode()
-    responses = (
-        dict(fixture.policy_response_body),
-        {
-            "response_digest": "sha256:"
-            + hashlib.sha256(completion_bytes).hexdigest(),
-            "response_payload": completion_payload,
-        },
-    )
-
-    class Handler(BaseHTTPRequestHandler):
-        protocol_version = _POLICY_HTTP_VERSION
-        def do_POST(self) -> None:  # noqa: N802
-            length = int(self.headers.get("Content-Length", "0"))
-            body = self.rfile.read(length)
-            requests.append(
-                {
-                    "path": self.path,
-                    "authorization": self.headers.get("Authorization"),
-                    "body": json.loads(body),
-                }
-            )
-            if self.headers.get("Authorization") != expected_authorization:
-                self.send_response(401)
-                self.send_header("Connection", "close")
-                self.send_header("Content-Length", "0")
-                self.close_connection = True
-                self.end_headers()
-                return
-            selected = responses[min(len(requests) - 1, len(responses) - 1)]
-            response = json.dumps(
-                selected, sort_keys=True, separators=(",", ":")
-            ).encode()
-            self.send_response(200)
-            self.send_header("Connection", "close")
-            self.close_connection = True
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(response)))
-            self.end_headers()
-            self.wfile.write(response)
-
-        def log_message(self, format: str, *args: object) -> None:
-            return
-
-    server = _PolicyServer(
-        (fixture.policy_server_host, fixture.policy_server_port), Handler
-    )
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(
-        fixture.tls_server_certificate_path, fixture.tls_server_key_path
-    )
-    server.socket = context.wrap_socket(server.socket, server_side=True)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        host, port = server.server_address
-        yield str(host), int(port), requests
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-        assert not thread.is_alive()
 
 
 def test_policy_callback_completion_is_exact_conductor_wire() -> None:
@@ -455,7 +377,7 @@ def test_public_loader_app_restart_reconcile_and_double_close(tmp_path: Path) ->
     fixture = materialize_production_composition_fixture(
         tmp_path, policy_server_port=_reserve_loopback_port()
     )
-    with _policy_https_server(fixture) as (_, _, policy_requests):
+    with qualification_policy_server(fixture) as (_, _, policy_requests):
         episode_id, first_closed = _exercise_episode(fixture)
         composition = load_production_composition(
             str(fixture.composition_ref_path), fixture.secret_files
@@ -573,7 +495,9 @@ def test_public_loader_staged_bootstrap_failures_release_everything(
     else:
         executable = fixture.expected_executable_identity.path
         executable.chmod(0o700)
-        executable.write_bytes(executable.read_bytes() + b"\n# changed after admission\n")
+        executable.write_bytes(
+            executable.read_bytes() + b"\n# changed after admission\n"
+        )
         executable.chmod(0o500)
     with pytest.raises((OSError, ValueError)) as caught:
         load_production_composition(
@@ -624,9 +548,10 @@ def test_cli_inspect_is_cwd_env_independent_canonical_and_secret_free(
     assert first.stdout == second.stdout
     assert first.stderr == second.stderr == b""
     document = json.loads(first.stdout)
-    assert first.stdout == json.dumps(
-        document, sort_keys=True, separators=(",", ":")
-    ).encode() + b"\n"
+    assert (
+        first.stdout
+        == json.dumps(document, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+    )
     assert document["schema_version"] == "bb.rl.harness-composed.v1"
     _assert_no_authority_leak(fixture, document)
 
@@ -658,7 +583,7 @@ def test_cli_serve_sigterm_leaves_no_socket_child_lease_or_secret_residue(
         fixture.policy_server_host,
         fixture.policy_server_port,
     )
-    with _policy_https_server(fixture):
+    with qualification_policy_server(fixture):
         process = subprocess.Popen(
             _cli_command(fixture, "serve"),
             cwd=Path.cwd(),
@@ -748,9 +673,7 @@ def test_cli_serve_sigterm_leaves_no_socket_child_lease_or_secret_residue(
             assert recovered_payload["state"] == "closed"
             assert recovered_payload["primary_disposition"] == "cancelled"
             assert recovered_payload["cleanup_disposition"] == "released"
-            coordinator = (
-                restarted.app.state.episode_service._coordinators[episode_id]
-            )
+            coordinator = restarted.app.state.episode_service._coordinators[episode_id]
             assert coordinator.last_event.cancel_reason == "service shutdown"
             assert coordinator.last_event.primary_fact is None
             closed_envelope = client.get(
@@ -791,5 +714,8 @@ def test_cli_serve_sigterm_leaves_no_socket_child_lease_or_secret_residue(
     assert not _port_accepts(host, port)
     _assert_no_authority_leak(
         fixture,
-        {"stdout": stdout.decode(errors="replace"), "stderr": stderr.decode(errors="replace")},
+        {
+            "stdout": stdout.decode(errors="replace"),
+            "stderr": stderr.decode(errors="replace"),
+        },
     )

@@ -5,7 +5,7 @@ import os
 import stat
 from pathlib import Path
 
-from tests.rl.harness.production_composition_fixture import (
+from breadboard.rl.harness.qualification import (
     FIXTURE_ROOT,
     STORE_NAMES,
     install_runtime_paths,
@@ -15,7 +15,9 @@ from tests.rl.harness.production_composition_fixture import (
 UNKNOWN_CANDIDATE_NAME = "fixture-candidate-canonical-7d4a6f"
 
 
-def test_runtime_fixture_installs_exact_distinct_secret_and_root_authorities(tmp_path: Path) -> None:
+def test_runtime_fixture_installs_exact_distinct_secret_and_root_authorities(
+    tmp_path: Path,
+) -> None:
     installed = install_runtime_paths(tmp_path / "installed")
 
     assert tuple(installed.stores) == STORE_NAMES
@@ -45,7 +47,9 @@ def test_runtime_fixture_installs_exact_distinct_secret_and_root_authorities(tmp
     assert set(second.launch_seeds.values()).isdisjoint(installed.launch_seeds.values())
 
 
-def test_https_runtime_uses_a_dedicated_0600_copy_of_checked_in_server_key(tmp_path: Path) -> None:
+def test_https_runtime_uses_a_dedicated_0600_copy_of_checked_in_server_key(
+    tmp_path: Path,
+) -> None:
     installed = install_runtime_paths(tmp_path / "installed")
     source = FIXTURE_ROOT / "tls" / "server.key.pem"
     copied = installed.tls_server_key
@@ -53,8 +57,14 @@ def test_https_runtime_uses_a_dedicated_0600_copy_of_checked_in_server_key(tmp_p
     assert copied != source.resolve()
     assert copied.read_bytes() == source.read_bytes()
     assert stat.S_IMODE(copied.stat(follow_symlinks=False).st_mode) == 0o600
-    assert copied.stat(follow_symlinks=False).st_ino != source.stat(follow_symlinks=False).st_ino
-    assert hashlib.sha256(copied.read_bytes()).digest() == hashlib.sha256(source.read_bytes()).digest()
+    assert (
+        copied.stat(follow_symlinks=False).st_ino
+        != source.stat(follow_symlinks=False).st_ino
+    )
+    assert (
+        hashlib.sha256(copied.read_bytes()).digest()
+        == hashlib.sha256(source.read_bytes()).digest()
+    )
 
 
 def test_generated_unknown_candidate_name_is_absent_from_production_source() -> None:

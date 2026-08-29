@@ -16,6 +16,19 @@ from scripts.rl_phase5 import f1_container_entry as entry
 ATTEMPT = "f1-12345678"
 
 
+def test_deterministic_fixture_tokens_include_generated_candidate() -> None:
+    seed = bytes(range(32))
+    derived = entry.derive_secrets(seed)
+    values = entry.deterministic_token_hex_values(seed, derived)
+    assert len(values) == 4
+    assert values[:3] == tuple(
+        derived[handle].split(b"-", 2)[-1].decode()
+        for handle in ("api-auth", "policy-callback", "receipt-signing")
+    )
+    assert len(values[3]) == 24
+    assert values == entry.deterministic_token_hex_values(seed, derived)
+
+
 def _marker_lines(**change: object) -> bytes:
     markers = []
     for sequence, (kind, path) in enumerate(f1.TARGET_ARTIFACTS.items()):
