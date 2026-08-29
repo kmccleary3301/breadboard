@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Protocol, Sequence
 
-
 CONTAINER_WORKSPACE_ROOT = "/testbed"
 _WORKSPACE_OUTPUT_LIMIT_FAILURE = 124
 _WORKSPACE_AUTHORITY_FAILURE = 125
@@ -36,6 +35,7 @@ _WORKSPACE_PYTHON = """\
 import base64
 import errno
 import json
+import hashlib
 import os
 import secrets
 import stat
@@ -249,6 +249,26 @@ def list_files(logical_path, depth, max_entries):
         os.close(parent)
 
 
+def read_stdin_payload(expected_bytes, expected_digest):
+    if expected_bytes < 0 or len(expected_digest) != 64:
+        raise RuntimeError("workspace write envelope is malformed")
+    chunks = []
+    remaining = expected_bytes + 1
+    while remaining:
+        chunk = sys.stdin.buffer.read(remaining)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    payload = b"".join(chunks)
+    if (
+        len(payload) != expected_bytes
+        or hashlib.sha256(payload).hexdigest() != expected_digest
+    ):
+        raise RuntimeError("workspace write envelope is inconsistent")
+    return payload
+
+
 def main():
     if len(sys.argv) < 3:
         raise RuntimeError("workspace helper arguments are malformed")
@@ -257,7 +277,10 @@ def main():
     if mode == "read":
         read_file(logical_path, int(sys.argv[3]), int(sys.argv[4]))
     elif mode == "write":
-        write_file(logical_path, base64.b64decode(sys.argv[3], validate=True))
+        write_file(
+            logical_path,
+            read_stdin_payload(int(sys.argv[3]), sys.argv[4]),
+        )
     elif mode == "list":
         list_files(logical_path, int(sys.argv[3]), int(sys.argv[4]))
     else:
@@ -355,6 +378,7 @@ class DockerCliExecutor(Protocol):
         timeout_ms: int,
         output_limit: int,
         environment: tuple[tuple[str, str], ...],
+        input_bytes: bytes = b"",
     ) -> DockerCommandResult: ...
 
 
@@ -367,6 +391,7 @@ class SubprocessDockerCliExecutor:
         timeout_ms: int,
         output_limit: int,
         environment: tuple[tuple[str, str], ...],
+        input_bytes: bytes = b"",
     ) -> DockerCommandResult:
         logical_argv = (executable.argv0, *tuple(argv_tail))
         process = await asyncio.create_subprocess_exec(
@@ -375,6 +400,11 @@ class SubprocessDockerCliExecutor:
             pass_fds=(executable.executable_fd,),
             env=dict(environment),
             start_new_session=True,
+            stdin=(
+                asyncio.subprocess.PIPE
+                if input_bytes
+                else asyncio.subprocess.DEVNULL
+            ),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -390,10 +420,26 @@ class SubprocessDockerCliExecutor:
                 if len(chunk) > max(remaining, 0):
                     limited = True
 
+        async def feed_input() -> None:
+            if process.stdin is None:
+                return
+            try:
+                process.stdin.write(input_bytes)
+                await process.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                process.stdin.close()
+                try:
+                    await process.stdin.wait_closed()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
         readers = (
             asyncio.create_task(drain(process.stdout, captured[0])),
             asyncio.create_task(drain(process.stderr, captured[1])),
         )
+        writer = asyncio.create_task(feed_input())
         timed_out = False
         try:
             async with asyncio.timeout(timeout_ms / 1000):
@@ -427,7 +473,7 @@ class SubprocessDockerCliExecutor:
                 await asyncio.shield(process.wait())
             raise
         finally:
-            await asyncio.gather(*readers)
+            await asyncio.gather(*readers, writer)
         return DockerCommandResult(
             logical_argv, process.returncode, bytes(captured[0]), bytes(captured[1]),
             timed_out=timed_out, output_limited=limited,
@@ -1498,7 +1544,15 @@ class DockerRuntimeAdapter:
         self._invocation = None
         pinned.close()
 
-    async def _raw(self, argv: Sequence[str], *, timeout_ms: int, output_limit: int, plan: Any | None = None) -> DockerCommandResult:
+    async def _raw(
+        self,
+        argv: Sequence[str],
+        *,
+        timeout_ms: int,
+        output_limit: int,
+        plan: Any | None = None,
+        input_bytes: bytes = b"",
+    ) -> DockerCommandResult:
         invocation = self._invocation if plan is None else self._pin(plan)
         if invocation is None:
             raise DockerAdapterError("runtime_preflight_failed", "Docker CLI invocation is not pinned")
@@ -1512,6 +1566,15 @@ class DockerRuntimeAdapter:
                 "--host",
                 "unix://" + self._daemon_binding.socket_path,
                 *tail,
+            )
+        if input_bytes:
+            return await self._executor.execute(
+                invocation,
+                tail,
+                timeout_ms=timeout_ms,
+                output_limit=output_limit,
+                environment=self._environment,
+                input_bytes=input_bytes,
             )
         return await self._executor.execute(
             invocation,
@@ -1795,18 +1858,39 @@ class DockerRuntimeAdapter:
                 primary.details["cleanup"] = cleanup
             raise
 
-    async def exec(self, plan: Any, container_id: str, argv: Sequence[str], *, timeout_ms: int) -> Mapping[str, Any]:
+    async def exec(
+        self,
+        plan: Any,
+        container_id: str,
+        argv: Sequence[str],
+        *,
+        timeout_ms: int,
+        output_limit: int | None = None,
+        input_bytes: bytes = b"",
+    ) -> Mapping[str, Any]:
         self._pin(plan)
         workspace_helper = (
             len(argv) >= 3
             and tuple(argv[:3]) == ("python3", "-c", _WORKSPACE_PYTHON)
         )
-        raw_argv = (plan.runtime.executable_path, "exec", container_id, *argv)
+        captured_output_limit = (
+            plan.limits.observation_bytes
+            if output_limit is None
+            else output_limit
+        )
+        raw_argv = (
+            plan.runtime.executable_path,
+            "exec",
+            *(("-i",) if input_bytes else ()),
+            container_id,
+            *argv,
+        )
         if workspace_helper:
             result = await self._raw(
                 raw_argv,
                 timeout_ms=timeout_ms,
-                output_limit=plan.limits.observation_bytes,
+                output_limit=captured_output_limit,
+                input_bytes=input_bytes,
             )
             if result.output_limited:
                 raise DockerAdapterError(
@@ -1821,7 +1905,7 @@ class DockerRuntimeAdapter:
             result = await self._execute(
                 raw_argv,
                 timeout_ms=timeout_ms,
-                output_limit=plan.limits.observation_bytes,
+                output_limit=captured_output_limit,
                 code="runtime_launch_failed",
             )
         return {
@@ -1997,12 +2081,24 @@ class DockerRuntimeHandle:
             while self._held_fds:
                 os.close(self._held_fds.pop())
 
-    async def _run(self, argv: Sequence[str], *, timeout_ms: int) -> Mapping[str, Any]:
+    async def _run(
+        self,
+        argv: Sequence[str],
+        *,
+        timeout_ms: int,
+        output_limit: int | None = None,
+        input_bytes: bytes = b"",
+    ) -> Mapping[str, Any]:
         if self._closed or self._fenced:
             raise DockerAdapterError("lease_not_active", "container lease is closed")
         try:
             return await self.adapter.exec(
-                self.plan, self.container_id, tuple(argv), timeout_ms=timeout_ms
+                self.plan,
+                self.container_id,
+                tuple(argv),
+                timeout_ms=timeout_ms,
+                output_limit=output_limit,
+                input_bytes=input_bytes,
             )
         except BaseException as exc:
             indeterminate = not isinstance(exc, DockerAdapterError) or (
@@ -2016,11 +2112,22 @@ class DockerRuntimeHandle:
                     exc.details["cleanup"] = cleanup
             raise
 
-    async def run_shell(self, command: str, *, timeout_ms: int, output_limit: int) -> Mapping[str, Any]:
-        return await self._run(("sh", "-lc", command), timeout_ms=timeout_ms)
+    async def run_shell(
+        self, command: str, *, timeout_ms: int, output_limit: int
+    ) -> Mapping[str, Any]:
+        return await self._run(
+            ("sh", "-lc", command),
+            timeout_ms=timeout_ms,
+            output_limit=output_limit,
+        )
 
-    async def run_argv(self, argv: Sequence[str], *, timeout_ms: int, output_limit: int) -> Mapping[str, Any]:
-        return await self._run(tuple(argv), timeout_ms=timeout_ms)
+    async def run_argv(
+        self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
+    ) -> Mapping[str, Any]:
+        return await self._run(
+            tuple(argv), timeout_ms=timeout_ms, output_limit=output_limit
+        )
+
     async def read_text(
         self, path: str, *, offset: int = 0, limit: int | None = None
     ) -> Mapping[str, Any]:
@@ -2030,9 +2137,14 @@ class DockerRuntimeHandle:
         if limit is not None and (type(limit) is not int or limit < 0 or limit > ceiling):
             raise DockerAdapterError("output_limit_exceeded", "read limit exceeds admitted ceiling")
         selected_limit = ceiling if limit is None else limit
+        helper_read_limit = ceiling + 1 if limit is None else selected_limit
+        protocol_output_limit = 4 * ((helper_read_limit + 2) // 3) + 128
         result = await self._run(
-            _workspace_python_argv("read", path, str(offset), str(selected_limit)),
+            _workspace_python_argv(
+                "read", path, str(offset), str(helper_read_limit)
+            ),
             timeout_ms=self.plan.limits.action_timeout_ms,
+            output_limit=protocol_output_limit,
         )
         _require_workspace_command_success(result, operation="read")
         raw_output = result.get("stdout", "")
@@ -2074,10 +2186,15 @@ class DockerRuntimeHandle:
         payload = content.encode("utf-8")
         if len(payload) > self.plan.limits.artifact_bytes_each:
             raise DockerAdapterError("output_limit_exceeded", "write exceeds admitted ceiling")
-        encoded = base64.b64encode(payload).decode("ascii")
         result = await self._run(
-            _workspace_python_argv("write", path, encoded),
+            _workspace_python_argv(
+                "write",
+                path,
+                str(len(payload)),
+                hashlib.sha256(payload).hexdigest(),
+            ),
             timeout_ms=self.plan.limits.action_timeout_ms,
+            input_bytes=payload,
         )
         _require_workspace_command_success(result, operation="write")
         return {"path": path, "bytes": len(payload)}
@@ -2367,44 +2484,64 @@ class DockerSandboxBackend:
             )
             for entry in plan.materialization_plan.entries
         )
-    async def launch(self, plan: Any, workspace: Path, *, context: Any) -> tuple[DockerRuntimeHandle, Any]:
-        from .sandbox import IsolationDisposition, RuntimePreparedIdentity, SandboxMeasurement
-
-        self._validate_context(plan, context)
-        _validate_lsm_policy(plan.security_policy)
-        workspace_fd = context.workspace_fd
-        workspace_identity = context.workspace_identity
-        if workspace_fd is None or workspace_identity is None:
-            raise DockerAdapterError(
-                "workspace_descriptor_required",
-                "pinned workspace descriptor required before Docker daemon access",
-            )
-        if sys.platform != "linux":
-            os.close(workspace_fd)
-            raise DockerAdapterError(
-                "runtime_unsupported",
-                "Linux descriptor-derived Docker mounts are required",
-                details={"platform": sys.platform},
-            )
-        if self.mount_stager is None:
-            os.close(workspace_fd)
-            raise DockerAdapterError(
-                "runtime_unsupported",
-                "private descriptor mount staging authority is required",
-                details={"reason": "descriptor_mount_staging_unavailable"},
-            )
-        held_fds = [workspace_fd]
-        container_id: str | None = None
-        container_name = _container_name(role=context.role, workspace_id=context.workspace_id)
-        labels = _identity_labels(
-            plan, lease_id=context.lease_id, workspace_id=context.workspace_id,
-            epoch=context.epoch, role=context.role,
+    async def launch(
+        self, plan: Any, workspace: Path, *, context: Any
+    ) -> tuple[DockerRuntimeHandle, Any]:
+        from .sandbox import (
+            IsolationDisposition,
+            RuntimePreparedIdentity,
+            SandboxMeasurement,
         )
+
+        workspace_fd = getattr(context, "workspace_fd", None)
+        workspace_identity = getattr(context, "workspace_identity", None)
+        held_fds = (
+            [workspace_fd]
+            if type(workspace_fd) is int and workspace_fd >= 0
+            else []
+        )
+        container_id: str | None = None
+        container_name = ""
+        labels: dict[str, str] = {}
         cleanup: tuple[tuple[str, str, str], ...] = ()
         staged_mounts: list[StagedDockerDescriptorMount] = []
         try:
+            self._validate_context(plan, context)
+            _validate_lsm_policy(plan.security_policy)
+            if (
+                type(workspace_fd) is not int
+                or workspace_fd < 0
+                or workspace_identity is None
+            ):
+                raise DockerAdapterError(
+                    "workspace_descriptor_required",
+                    "pinned workspace descriptor required before Docker daemon access",
+                )
+            if sys.platform != "linux":
+                raise DockerAdapterError(
+                    "runtime_unsupported",
+                    "Linux descriptor-derived Docker mounts are required",
+                    details={"platform": sys.platform},
+                )
+            if self.mount_stager is None:
+                raise DockerAdapterError(
+                    "runtime_unsupported",
+                    "private descriptor mount staging authority is required",
+                    details={"reason": "descriptor_mount_staging_unavailable"},
+                )
+            container_name = _container_name(
+                role=context.role, workspace_id=context.workspace_id
+            )
+            labels = _identity_labels(
+                plan,
+                lease_id=context.lease_id,
+                workspace_id=context.workspace_id,
+                epoch=context.epoch,
+                role=context.role,
+            )
             workspace_metadata = _validate_mount_descriptor(
-                workspace_fd, workspace_device=workspace_identity[0],
+                workspace_fd,
+                workspace_device=workspace_identity[0],
                 expected_identity=workspace_identity,
             )
             admitted_mounts: list[tuple[int, str, bool, os.stat_result]] = []
@@ -2427,9 +2564,9 @@ class DockerSandboxBackend:
                 lease_id=context.lease_id,
                 destination=CONTAINER_WORKSPACE_ROOT,
             )
+            staged_mounts.append(workspace_stage)
             workspace_stage.validate_descriptor(workspace_fd)
             await self.mount_stager.validate(workspace_stage, workspace_fd)
-            staged_mounts.append(workspace_stage)
             workspace_source = Path(workspace_stage.source_path)
             descriptor_mounts: list[tuple[Path, str, bool]] = []
             for child_fd, destination, readonly, child_metadata in admitted_mounts:
@@ -2441,9 +2578,9 @@ class DockerSandboxBackend:
                     lease_id=context.lease_id,
                     destination=destination,
                 )
+                staged_mounts.append(staged)
                 staged.validate_descriptor(child_fd)
                 await self.mount_stager.validate(staged, child_fd)
-                staged_mounts.append(staged)
                 descriptor_mounts.append(
                     (Path(staged.source_path), destination, readonly)
                 )
@@ -2467,9 +2604,9 @@ class DockerSandboxBackend:
                 lease_id=context.lease_id,
                 destination="/.breadboard/seccomp",
             )
+            staged_mounts.append(profile_stage)
             profile_stage.validate_descriptor(profile_fd)
             await self.mount_stager.validate(profile_stage, profile_fd)
-            staged_mounts.append(profile_stage)
             profile_source = Path(profile_stage.source_path)
             for staged, descriptor in zip(
                 staged_mounts,
@@ -2583,13 +2720,22 @@ class DockerSandboxBackend:
                 held_fds = []
             release_stages = container_id is None or absence
             if release_stages:
-                try:
-                    while staged_mounts:
-                        await self.mount_stager.release(staged_mounts[-1])
-                        staged_mounts.pop()
-                except BaseException:
+                release_failures: list[tuple[str, str]] = []
+                while staged_mounts:
+                    staged = staged_mounts.pop()
+                    try:
+                        await self.mount_stager.release(staged)
+                    except BaseException as release_error:
+                        release_failures.append(
+                            (staged.source_path, type(release_error).__name__)
+                        )
+                if release_failures:
                     self._quarantined_fds.extend(held_fds)
                     held_fds = []
+                    if isinstance(primary, DockerAdapterError):
+                        primary.details["staged_mount_cleanup"] = tuple(
+                            release_failures
+                        )
             raise
         finally:
             while held_fds:

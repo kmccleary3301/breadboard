@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import inspect
 import json
-import platform
 import os
-import sys
+import platform
 import shutil
-import subprocess
 import stat
+import subprocess
+import sys
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -36,15 +38,15 @@ from breadboard.rl.harness.sandbox_docker import (
     DockerAdapterError,
     DockerCommandResult,
     DockerRuntimeAdapter,
-    DockerSandboxBackend,
     DockerRuntimeHandle,
+    DockerSandboxBackend,
     ExecutableInvocation,
-    SubprocessDockerCliExecutor,
     PrivateDockerDaemonBinding,
+    SubprocessDockerCliExecutor,
     build_create_argv,
     decode_docker_inspect,
-    observe_binary_digest,
     measurement_mismatches,
+    observe_binary_digest,
     requested_measurement,
 )
 from tests.rl.harness.wp7_fixtures import (
@@ -68,6 +70,7 @@ class ScriptedDockerExecutor:
         self.trace = trace
         self.invocations: list[ExecutableInvocation] = []
         self.calls: list[tuple[tuple[str, ...], int, int, tuple[tuple[str, str], ...]]] = []
+        self.inputs: list[bytes] = []
 
     async def execute(
         self,
@@ -77,10 +80,12 @@ class ScriptedDockerExecutor:
         timeout_ms: int,
         output_limit: int,
         environment: tuple[tuple[str, str], ...],
+        input_bytes: bytes = b"",
     ) -> DockerCommandResult:
         normalized = (executable.argv0, *argv_tail)
         self.invocations.append(executable)
         self.calls.append((normalized, timeout_ms, output_limit, environment))
+        self.inputs.append(input_bytes)
         if self.trace is not None:
             self.trace.append(normalized[1])
         if not self.results:
@@ -102,11 +107,13 @@ class CancellableExecDockerExecutor(ScriptedDockerExecutor):
         timeout_ms: int,
         output_limit: int,
         environment: tuple[tuple[str, str], ...],
+        input_bytes: bytes = b"",
     ) -> DockerCommandResult:
         normalized = (executable.argv0, *argv_tail)
         if len(normalized) > 1 and normalized[1] == "exec":
             self.invocations.append(executable)
             self.calls.append((normalized, timeout_ms, output_limit, environment))
+            self.inputs.append(input_bytes)
             self.exec_started.set()
             await asyncio.wait_for(asyncio.Event().wait(), 1)
             raise AssertionError("cancelled Docker exec unexpectedly resumed")
@@ -116,6 +123,7 @@ class CancellableExecDockerExecutor(ScriptedDockerExecutor):
             timeout_ms=timeout_ms,
             output_limit=output_limit,
             environment=environment,
+            input_bytes=input_bytes,
         )
 
 
@@ -580,14 +588,21 @@ async def test_runtime_handle_exposes_persistent_testbed_file_and_diff_operation
         docker_module._WORKSPACE_PYTHON,
     )
     assert calls[0][5:] == ("read", "src/main.py", "0", "5")
-    assert calls[1][:5] == (
+    assert calls[1][:6] == (
         "exec",
+        "-i",
         CONTAINER_ID,
         "python3",
         "-c",
         docker_module._WORKSPACE_PYTHON,
     )
-    assert calls[1][5:] == ("write", "src/main.py", "aGVsbG8=")
+    assert calls[1][6:] == (
+        "write",
+        "src/main.py",
+        "5",
+        hashlib.sha256(b"hello").hexdigest(),
+    )
+    assert executor.inputs[1] == b"hello"
     assert calls[2][:5] == (
         "exec",
         CONTAINER_ID,
@@ -606,6 +621,51 @@ async def test_runtime_handle_exposes_persistent_testbed_file_and_diff_operation
         "--no-ext-diff",
         "--binary",
     )
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_reads_exact_observation_limit_through_json_protocol(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    content = b"x" * plan.limits.observation_bytes
+    encoded = json.dumps(
+        {
+            "bytes": len(content),
+            "content_base64": base64.b64encode(content).decode("ascii"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    executor.results.append(_result(stdout=encoded))
+
+    result = await handle.read_text("at-limit.txt")
+
+    assert result["content"].encode("utf-8") == content
+    assert result["bytes"] == plan.limits.observation_bytes
+    assert executor.calls[0][2] == (
+        4 * ((plan.limits.observation_bytes + 3) // 3) + 128
+    )
+    assert executor.calls[0][2] > len(encoded)
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_zero_byte_read_is_a_nonfencing_success(
+    tmp_path: Path,
+) -> None:
+    _, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.extend(
+        [
+            _result(stdout=b'{"bytes":0,"content_base64":""}'),
+            _result(stdout=b'{"bytes":0,"content_base64":""}'),
+        ]
+    )
+
+    first = await handle.read_text("nonempty.txt", limit=0)
+    second = await handle.read_text("still-active.txt", limit=0)
+
+    assert first["content"] == second["content"] == ""
+    assert all(call[0][-2:] == ("0", "0") for call in executor.calls)
 
 
 @pytest.mark.asyncio
@@ -641,7 +701,12 @@ async def test_runtime_handle_rejects_read_symlink_before_read_effect(
         "-c",
         docker_module._WORKSPACE_PYTHON,
     )
-    assert argv[6:] == ("read", "link", "0", str(plan.limits.observation_bytes))
+    assert argv[6:] == (
+        "read",
+        "link",
+        "0",
+        str(plan.limits.observation_bytes + 1),
+    )
 
 
 @pytest.mark.asyncio
@@ -658,14 +723,21 @@ async def test_runtime_handle_rejects_write_symlink_before_write_effect(
 
     assert captured.value.code == "workspace_escape"
     argv = executor.calls[0][0]
-    assert argv[1:6] == (
+    assert argv[1:7] == (
         "exec",
+        "-i",
         CONTAINER_ID,
         "python3",
         "-c",
         docker_module._WORKSPACE_PYTHON,
     )
-    assert argv[6:] == ("write", "link", "c2VjcmV0")
+    assert argv[7:] == (
+        "write",
+        "link",
+        "6",
+        hashlib.sha256(b"secret").hexdigest(),
+    )
+    assert executor.inputs == [b"secret"]
 
 
 @pytest.mark.asyncio
@@ -682,14 +754,21 @@ async def test_runtime_handle_rejects_write_missing_leaf_under_symlink_parent(
 
     assert captured.value.code == "workspace_escape"
     argv = executor.calls[0][0]
-    assert argv[1:6] == (
+    assert argv[1:7] == (
         "exec",
+        "-i",
         CONTAINER_ID,
         "python3",
         "-c",
         docker_module._WORKSPACE_PYTHON,
     )
-    assert argv[6:] == ("write", "link/new.txt", "c2VjcmV0")
+    assert argv[7:] == (
+        "write",
+        "link/new.txt",
+        "6",
+        hashlib.sha256(b"secret").hexdigest(),
+    )
+    assert executor.inputs == [b"secret"]
 
 
 @pytest.mark.asyncio
@@ -721,7 +800,11 @@ async def test_runtime_handle_rejects_list_entry_overflow_before_returning_evide
     assert len(executor.calls) == 1
 
 
-def _run_workspace_helper(root: Path, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+def _run_workspace_helper(
+    root: Path,
+    *arguments: str,
+    input_bytes: bytes = b"",
+) -> subprocess.CompletedProcess[bytes]:
     script = docker_module._WORKSPACE_PYTHON.replace(
         'ROOT = "/testbed"',
         f"ROOT = {str(root)!r}",
@@ -729,6 +812,7 @@ def _run_workspace_helper(root: Path, *arguments: str) -> subprocess.CompletedPr
     )
     return subprocess.run(
         [sys.executable, "-c", script, *arguments],
+        input=input_bytes,
         capture_output=True,
         check=False,
     )
@@ -743,11 +827,14 @@ def test_workspace_helper_performs_descriptor_bound_read_write_and_list(
     target = source / "main.py"
     target.write_text("old", encoding="utf-8")
 
+    payload = b"hello"
     write_result = _run_workspace_helper(
         root,
         "write",
         "src/main.py",
-        "aGVsbG8=",
+        str(len(payload)),
+        hashlib.sha256(payload).hexdigest(),
+        input_bytes=payload,
     )
     assert write_result.returncode == 0
     assert target.read_text(encoding="utf-8") == "hello"
@@ -778,11 +865,21 @@ def test_workspace_helper_rejects_symlinks_hardlinks_and_inode_overflow(
 
     for arguments in (
         ("read", "src/link", "0", "8"),
-        ("write", "src/link", "c2VjcmV0"),
-        ("write", "src/hardlink", "c2VjcmV0"),
         ("list", "src", "0", "8"),
     ):
         result = _run_workspace_helper(root, *arguments)
+        assert result.returncode == 125
+        assert result.stderr == b"bb-workspace-helper:authority\n"
+    payload = b"secret"
+    for logical_path in ("src/link", "src/hardlink"):
+        result = _run_workspace_helper(
+            root,
+            "write",
+            logical_path,
+            str(len(payload)),
+            hashlib.sha256(payload).hexdigest(),
+            input_bytes=payload,
+        )
         assert result.returncode == 125
         assert result.stderr == b"bb-workspace-helper:authority\n"
     assert outside.read_text(encoding="utf-8") == "outside"
@@ -1278,17 +1375,24 @@ async def test_reserved_lsm_disabling_values_reject_before_any_docker_command(
         security_profile_root=security_root,
     )
 
+    workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+    metadata = os.fstat(workspace_fd)
+    context = replace(
+        _launch_context(plan),
+        workspace_fd=workspace_fd,
+        workspace_identity=(metadata.st_dev, metadata.st_ino),
+    )
+
     with pytest.raises(DockerAdapterError) as captured:
-        await backend.launch(
-            plan,
-            workspace,
-            context=_launch_context(plan),
-        )
+        await backend.launch(plan, workspace, context=context)
 
     assert captured.value.code == "runtime_preflight_failed"
     assert str(captured.value) == expected_message
     assert executor.calls == []
     assert provider.calls == []
+    with pytest.raises(OSError):
+        os.fstat(workspace_fd)
+    backend.close()
 
 
 @pytest.mark.parametrize(("uid", "gid"), [(0, 65534), (65534, 0), (0, 0)])
@@ -1570,6 +1674,36 @@ async def test_linux_concrete_executor_observes_sealed_old_cli_bytes(
     assert result.stdout == b"old-cli-bytes"
     assert result.stderr == b""
     assert result.argv == (plan.runtime.executable_path,)
+
+
+async def test_subprocess_executor_streams_payload_above_exec_argument_budget() -> (
+    None
+):
+    executable = Path("/bin/cat")
+    descriptor = os.open(executable, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable),
+        executable_fd=descriptor,
+        executable_descriptor_path=str(executable),
+        digest=observe_binary_digest(executable),
+    )
+    payload = b"x" * (512 * 1024)
+    try:
+        result = await SubprocessDockerCliExecutor().execute(
+            invocation,
+            (),
+            timeout_ms=1_000,
+            output_limit=len(payload) + 1,
+            environment=(("PATH", "/usr/bin:/bin"),),
+            input_bytes=payload,
+        )
+    finally:
+        os.close(descriptor)
+
+    assert result.returncode == 0
+    assert result.stdout == payload
+    assert result.stderr == b""
+    assert result.output_limited is False
 
 
 async def test_oci_runtime_symlink_is_rejected_before_image_or_create(
@@ -2298,6 +2432,90 @@ async def test_linux_without_private_mount_stager_fails_before_daemon_effect(
         "reason": "descriptor_mount_staging_unavailable"
     }
     assert executor.calls == []
+    with pytest.raises(OSError):
+        os.fstat(workspace_fd)
+
+
+async def test_launch_releases_every_staged_mount_and_reports_residual_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan, skeleton, _, _ = _docker_plan(tmp_path)
+    workspace, _ = _primary_workspace(plan, tmp_path)
+    security_root = tmp_path / "security-stage-release"
+    security_root.mkdir()
+    released: list[str] = []
+
+    class Adapter:
+        async def preflight(self, _: Any) -> None:
+            return None
+
+    class Stager:
+        def __init__(self) -> None:
+            self.validations = 0
+
+        async def stage(self, descriptor: int, **kwargs: Any) -> Any:
+            metadata = os.fstat(descriptor)
+            return docker_module.StagedDockerDescriptorMount(
+                source_path=f"/staged/{descriptor}",
+                source_device=metadata.st_dev,
+                source_inode=metadata.st_ino,
+                source_mode=stat.S_IFMT(metadata.st_mode),
+                descriptor_device=metadata.st_dev,
+                descriptor_inode=metadata.st_ino,
+            )
+
+        async def validate(self, staged: Any, descriptor: int) -> None:
+            self.validations += 1
+            if self.validations == 2:
+                raise DockerAdapterError(
+                    "runtime_preflight_failed", "staged validation failed"
+                )
+
+        async def release(self, staged: Any) -> None:
+            released.append(staged.source_path)
+            if len(released) == 1:
+                raise RuntimeError("first release failed")
+
+    def open_beneath(
+        directory_fd: int,
+        relative_path: str,
+        *,
+        readable_regular: bool = False,
+    ) -> int:
+        return os.open(relative_path, os.O_RDONLY, dir_fd=directory_fd)
+
+    monkeypatch.setattr(docker_module.sys, "platform", "linux")
+    monkeypatch.setattr(docker_module, "_openat2_beneath", open_beneath)
+    monkeypatch.setattr(
+        docker_module,
+        "_require_daemon_runtime_binding",
+        lambda observation, admitted_plan: None,
+    )
+    backend = DockerSandboxBackend(
+        adapter=Adapter(),
+        measurement_provider=RecordingMeasurementProvider({}),
+        skeleton_path=skeleton,
+        security_profile_root=security_root,
+        mount_stager=Stager(),
+    )
+    workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+    metadata = os.fstat(workspace_fd)
+    context = replace(
+        _launch_context(plan),
+        workspace_fd=workspace_fd,
+        workspace_identity=(metadata.st_dev, metadata.st_ino),
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await backend.launch(plan, workspace, context=context)
+
+    assert captured.value.code == "runtime_preflight_failed"
+    assert len(released) == 2
+    assert captured.value.details["staged_mount_cleanup"] == (
+        (released[0], "RuntimeError"),
+    )
+    assert os.fstat(workspace_fd)
+    backend.close()
     with pytest.raises(OSError):
         os.fstat(workspace_fd)
 

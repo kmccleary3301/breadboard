@@ -10,15 +10,15 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 import pytest
-from breadboard.rl.harness import sandbox as sandbox_module
-from breadboard.rl.harness import materialization as materialization_module
-from breadboard.rl.harness import contracts as c
 
+from breadboard.rl.harness import contracts as c
+from breadboard.rl.harness import materialization as materialization_module
+from breadboard.rl.harness import sandbox as sandbox_module
 from breadboard.rl.harness.materialization import (
     CleanupState,
     CleanupStepReceipt,
-    SandboxCleanupReceipt,
     IsolationDisposition,
+    SandboxCleanupReceipt,
     WorkspaceLeaseState,
 )
 from breadboard.rl.harness.sandbox import (
@@ -1173,6 +1173,12 @@ async def test_verifier_close_retains_dependents_until_runtime_absence_is_proven
     assert record_path.exists()
     assert handle.terminate_calls == 1
 
+    with pytest.raises(WorkspaceStateError) as captured:
+        await verifier.execute()
+
+    assert captured.value.code == "lease_not_active"
+    assert handle.terminate_calls == 1
+
     second = await verifier.close()
     assert second.steps == (
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
@@ -1265,6 +1271,34 @@ async def test_verifier_close_preempts_active_execution_and_cleans_resources(
         await execution
     assert handle.cancelled is True
     assert child.state is CleanupState.RELEASED
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+
+
+async def test_verifier_cleanup_survives_close_caller_cancellation(
+    tmp_path: Path,
+) -> None:
+    harness, primary, snapshot = await _opened_snapshot(tmp_path)
+    verifier = await harness.manager.open_verifier(primary, snapshot)
+    handle = harness.backend.handles[1]
+    handle.terminate_entered = asyncio.Event()
+    handle.release_terminate = asyncio.Event()
+
+    first = asyncio.create_task(verifier.close())
+    await asyncio.wait_for(handle.terminate_entered.wait(), 1)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(first, 1)
+
+    follower = asyncio.create_task(verifier.close())
+    await asyncio.sleep(0)
+    assert follower.done() is False
+    handle.release_terminate.set()
+    receipt = await asyncio.wait_for(follower, 1)
+
+    assert receipt.state is CleanupState.RELEASED
+    assert handle.terminate_calls == 1
+    assert verifier._closed is True
     assert (await primary.close()).state is CleanupState.RELEASED
     assert list(harness.workspace_root.iterdir()) == []
 

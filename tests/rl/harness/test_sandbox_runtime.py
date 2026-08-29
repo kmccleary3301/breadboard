@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-import threading
 import stat
+import threading
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -27,28 +27,28 @@ from breadboard.rl.harness.runners.base import RunnerToolBinding
 from breadboard.rl.harness.sandbox import (
     InstalledSandboxAuthoritySet,
     SandboxAttestationError,
+    SandboxFault,
     SandboxLaunchError,
     SandboxMeasurement,
     SandboxPlanError,
-    SandboxFault,
     SandboxRuntimeManager,
     SandboxSecurityPolicy,
-    build_sandbox_execution_plan,
     TrustedProcessBackend,
     WorkspaceStateError,
+    build_sandbox_execution_plan,
 )
 from tests.rl.harness.wp7_fixtures import (
     DeterministicRandom,
     FrozenClock,
     MemorySourceReader,
     RuntimeFixture,
+    _registry_snapshot,
     digest,
     make_effective_plan,
     make_runtime_fixture,
     make_store_roots,
     plan_tool_bindings,
     replace_plan_capabilities,
-    _registry_snapshot,
 )
 
 
@@ -1363,6 +1363,36 @@ async def test_cancel_preempts_active_operation_before_cleanup(tmp_path: Path) -
 
     with pytest.raises(asyncio.CancelledError):
         await operation
+    assert receipt.state is CleanupState.RELEASED
+    assert handle.terminate_calls == 1
+    assert lease.state is WorkspaceLeaseState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
+@pytest.mark.parametrize("method_name", ["close", "cancel"])
+async def test_direct_lease_cleanup_survives_caller_cancellation(
+    tmp_path: Path, method_name: str
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    handle = harness.backend.handles[0]
+    handle.terminate_entered = asyncio.Event()
+    handle.release_terminate = asyncio.Event()
+
+    first = asyncio.create_task(getattr(lease, method_name)())
+    await asyncio.wait_for(handle.terminate_entered.wait(), 1)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(first, 1)
+
+    follower = asyncio.create_task(lease.close())
+    await asyncio.sleep(0)
+    assert follower.done() is False
+    handle.release_terminate.set()
+    receipt = await asyncio.wait_for(follower, 1)
+
     assert receipt.state is CleanupState.RELEASED
     assert handle.terminate_calls == 1
     assert lease.state is WorkspaceLeaseState.RELEASED

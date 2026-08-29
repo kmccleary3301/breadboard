@@ -9,10 +9,10 @@ import stat
 import subprocess
 import sys
 import uuid
-from importlib.resources import files
-from pathlib import Path
 from dataclasses import dataclass, replace
 from datetime import datetime
+from importlib.resources import files
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Awaitable, Callable, Literal, Mapping, Protocol, Sequence
 
@@ -28,12 +28,12 @@ from .contracts import (
 )
 from .materialization import (
     CleanupState,
+    CleanupStepReceipt,
     FilesystemMaterializationStore,
     IsolationDisposition,
     MaterializationEntry,
     MaterializedWorkspace,
     SandboxCleanupReceipt,
-    CleanupStepReceipt,
     VerifierSnapshotReceipt,
     WorkspaceLeaseState,
     WorkspaceMaterializationPlan,
@@ -44,6 +44,7 @@ from .runners.base import (
     RunnerToolBinding,
     freeze_json_object,
 )
+
 VERIFIER_REQUEST_RELATIVE_PATH = "input/verifier-request.json"
 VERIFIER_REQUEST_SCHEMA_VERSION = "bb.rl.verifier-request.v1"
 SANDBOX_CAPABILITY_MATRIX_RESOURCE = "SANDBOX_CAPABILITY_MATRIX.json"
@@ -1665,6 +1666,8 @@ class SandboxWorkspaceLease:
         self._active_operation_tasks: dict[asyncio.Task[Any], int] = {}
         self._io_lock = asyncio.Lock()
         self._cleanup = None
+        self._close_task_lock = asyncio.Lock()
+        self._close_task: asyncio.Task[SandboxCleanupReceipt] | None = None
         self.runner_workspace = LeaseBackedRunnerWorkspace(self, plan.effective_plan_digest, plan.tool_bindings)
         self._verifier_children: list[VerifierWorkspaceLease] = []
     @property
@@ -1722,6 +1725,9 @@ class SandboxWorkspaceLease:
             await self._end_operation()
 
     async def cancel(self) -> SandboxCleanupReceipt:
+        return await self._close_shared(preempt=True)
+
+    async def _preempt_and_close(self) -> SandboxCleanupReceipt:
         current = asyncio.current_task()
         async with self._lock:
             if self._cleanup is not None:
@@ -1735,6 +1741,43 @@ class SandboxWorkspaceLease:
         for task in active_tasks:
             task.cancel()
         return await self._manager._close_lease(self)
+
+    async def _preempt_operations(self) -> None:
+        current = asyncio.current_task()
+        async with self._lock:
+            self._state = WorkspaceLeaseState.RELEASING
+            active_tasks = tuple(
+                task
+                for task in self._active_operation_tasks
+                if task is not current and not task.done()
+            )
+        for task in active_tasks:
+            task.cancel()
+
+    async def _close_shared(self, *, preempt: bool = False) -> SandboxCleanupReceipt:
+        preempt_task: asyncio.Task[None] | None = None
+        async with self._close_task_lock:
+            if self._cleanup is not None:
+                return self._cleanup
+            close_task = self._close_task
+            if close_task is None:
+                close_task = asyncio.create_task(
+                    self._preempt_and_close()
+                    if preempt
+                    else self._manager._close_lease(self)
+                )
+                self._close_task = close_task
+            elif preempt:
+                preempt_task = asyncio.create_task(self._preempt_operations())
+        if preempt_task is not None:
+            await asyncio.shield(preempt_task)
+        try:
+            return await asyncio.shield(close_task)
+        finally:
+            if close_task.done() and self._cleanup is None:
+                async with self._close_task_lock:
+                    if self._close_task is close_task:
+                        self._close_task = None
 
     async def destroy(self) -> SandboxCleanupReceipt:
         return await self.close()
@@ -1829,7 +1872,7 @@ class SandboxWorkspaceLease:
                 raise VerifierSnapshotError("verifier snapshot failed", code=str(exc), lease_id=self.lease_id) from exc
 
     async def close(self) -> SandboxCleanupReceipt:
-        return await self._manager._close_lease(self)
+        return await self._close_shared()
 
 class VerifierWorkspaceLease:
     def __init__(self, *, manager: SandboxRuntimeManager, primary: SandboxWorkspaceLease,
@@ -1840,12 +1883,14 @@ class VerifierWorkspaceLease:
         self._runtime = runtime; self.measurement = measurement
         self._closed = False
         self._closing = False
+        self._fenced = False
         self._lock = asyncio.Lock()
         self._close_lock = asyncio.Lock()
         self._operations_drained = asyncio.Condition(self._lock)
         self._active_operation_tasks: dict[asyncio.Task[Any], int] = {}
         self._cleanup: SandboxCleanupReceipt | None = None
 
+        self._close_task: asyncio.Task[SandboxCleanupReceipt] | None = None
     async def execute(self) -> Mapping[str, Any]:
         task = asyncio.current_task()
         if task is None:
@@ -1855,7 +1900,7 @@ class VerifierWorkspaceLease:
                 lease_id=self.lease_id,
             )
         async with self._lock:
-            if self._closed or self._closing:
+            if self._closed or self._closing or self._fenced:
                 raise WorkspaceStateError(
                     "verifier lease is not active",
                     code="lease_not_active",
@@ -1941,11 +1986,19 @@ class VerifierWorkspaceLease:
 
     async def close(self) -> SandboxCleanupReceipt:
         async with self._close_lock:
-            try:
-                return await self._close_attempt()
-            finally:
-                async with self._lock:
-                    self._closing = False
+            if self._cleanup is not None:
+                return self._cleanup
+            close_task = self._close_task
+            if close_task is None:
+                close_task = asyncio.create_task(self._close_attempt())
+                self._close_task = close_task
+        try:
+            return await asyncio.shield(close_task)
+        finally:
+            if close_task.done() and self._cleanup is None:
+                async with self._close_lock:
+                    if self._close_task is close_task:
+                        self._close_task = None
 
     async def _close_attempt(self) -> SandboxCleanupReceipt:
         current = asyncio.current_task()
@@ -1953,6 +2006,7 @@ class VerifierWorkspaceLease:
             if self._cleanup is not None:
                 return self._cleanup
             self._closing = True
+            self._fenced = True
             active_tasks = tuple(
                 task
                 for task in self._active_operation_tasks
@@ -3111,7 +3165,7 @@ class SandboxRuntimeManager:
                 self._closed = True
                 leases = tuple(self._leases.values())
                 close_task = asyncio.ensure_future(
-                    asyncio.gather(*(self._close_lease(lease) for lease in leases))
+                    asyncio.gather(*(lease.close() for lease in leases))
                 )
                 self._close_task = close_task
         result = tuple(await asyncio.shield(close_task))

@@ -9,11 +9,10 @@ from pathlib import Path
 import pytest
 
 import breadboard.rl.harness.sandbox as sandbox_module
-
 from breadboard.rl.harness.sandbox import (
     SANDBOX_CAPABILITY_MATRIX_RESOURCE,
-    SANDBOX_CAPABILITY_MATRIX_SHA256,
     SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION,
+    SANDBOX_CAPABILITY_MATRIX_SHA256,
     load_sandbox_capability_matrix,
 )
 
