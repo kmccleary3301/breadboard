@@ -1186,9 +1186,13 @@ def _normalize_value(value: Any, kind: str, temporary_root: str | None) -> str:
 def _normalize_temporary_path(value: Any, root: str) -> str:
     if type(value) is not str:
         raise E4ParityError("temporary path must be text")
-    normalized_value = value.replace("\\", "/").rstrip("/")
-    normalized_root = root.replace("\\", "/").rstrip("/")
     _validate_absolute_path(value, "temporary path")
+    normalized_value = (
+        value if value.startswith("/") else value.replace("\\", "/")
+    ).rstrip("/")
+    normalized_root = (
+        root if root.startswith("/") else root.replace("\\", "/")
+    ).rstrip("/")
     if normalized_value == normalized_root:
         return "<tmp>"
     prefix = normalized_root + "/"
@@ -1208,8 +1212,11 @@ def _validate_absolute_path(value: str, field_name: str) -> None:
     normalized = value.replace("\\", "/")
     if value.startswith("\\") and not value.startswith("\\\\"):
         raise E4ParityError(f"{field_name} cannot be Windows root-relative")
+    if value.startswith("/") and "\\" in value:
+        raise E4ParityError(f"{field_name} cannot mix path separators")
     if normalized.startswith(("//?/", "//./")):
         raise E4ParityError(f"{field_name} cannot use a device namespace")
+    trimmed = normalized.rstrip("/")
     is_unc = normalized.startswith("//")
     is_posix = normalized.startswith("/") and not is_unc
     is_windows = is_unc or _WINDOWS_ABSOLUTE_RE.match(normalized) is not None
@@ -1218,13 +1225,13 @@ def _validate_absolute_path(value: str, field_name: str) -> None:
     if normalized == "/" or re.fullmatch(r"[A-Za-z]:/?", normalized):
         raise E4ParityError(f"{field_name} cannot be a filesystem root")
     if is_unc:
-        components = normalized[2:].split("/")
+        components = trimmed[2:].split("/")
         if len(components) < 3:
             raise E4ParityError(f"{field_name} cannot be a filesystem root")
     elif is_posix:
-        components = normalized[1:].split("/")
+        components = trimmed[1:].split("/")
     else:
-        components = normalized[3:].split("/")
+        components = trimmed[3:].split("/")
     if any(
         part in {"", ".", ".."}
         or not part.isprintable()

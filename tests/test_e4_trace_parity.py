@@ -192,6 +192,23 @@ def test_normalization_policy_fails_closed() -> None:
     assert not root_relative.matches
     assert "Windows root-relative" in root_relative.mismatches[0].reason
 
+    mixed_separators = compare_e4_traces(
+        {"path": "/tmp/reference/session"},
+        {"path": r"/tmp/clone\session"},
+        rules=(NormalizationRule("/path", "temporary_path"),),
+        temporary_roots=TemporaryPathRoots("/tmp/reference", "/tmp/clone"),
+    )
+    assert not mixed_separators.matches
+    assert "mix path separators" in mixed_separators.mismatches[0].reason
+
+    trailing_separators = compare_e4_traces(
+        {"path": "/tmp/reference/session/"},
+        {"path": "/tmp/clone/session/"},
+        rules=(NormalizationRule("/path", "temporary_path"),),
+        temporary_roots=TemporaryPathRoots("/tmp/reference", "/tmp/clone"),
+    )
+    assert trailing_separators.matches
+
     type_mismatch = compare_e4_traces(
         {"timestamp": "2026-08-29T06:00:00Z"},
         {"timestamp": 1},
@@ -276,8 +293,8 @@ def test_normalization_policy_fails_closed() -> None:
     with pytest.raises(E4ParityError, match="printable text"):
         TemporaryPathRoots("/tmp/reference\u0000root", "/tmp/clone")
     unc_comparison = compare_e4_traces(
-        {"path": r"\\server\share\reference\session\result.json"},
-        {"path": r"\\server\share\clone\session\result.json"},
+        {"path": r"\\server\share\reference\session\result.json" + "\\"},
+        {"path": r"\\server\share\clone\session\result.json" + "\\"},
         rules=(NormalizationRule("/path", "temporary_path"),),
         temporary_roots=TemporaryPathRoots(
             r"\\server\share\reference",
