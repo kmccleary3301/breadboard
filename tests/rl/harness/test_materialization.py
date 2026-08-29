@@ -1305,6 +1305,49 @@ def test_snapshot_exact_depth_file_inode_and_byte_boundaries_are_inclusive(
     workspace.close()
 
 
+def test_snapshot_references_coordinate_across_store_instances(
+    tmp_path: Path,
+) -> None:
+    store, workspace, cache_root, workspace_root = _empty_materialized_workspace(
+        tmp_path
+    )
+    (workspace.workspace_path / "answer.txt").write_bytes(b"shared")
+    second_store = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=store.source_reader,
+        clock=store.clock,
+        lease_ttl=store.lease_ttl,
+        storage_backend=directory_storage(),
+        random_bytes=DeterministicRandom(90_000),
+    )
+    limits = {
+        "max_depth": 0,
+        "max_files": 1,
+        "max_inodes": 1,
+        "max_bytes": 6,
+    }
+
+    first_receipt, object_path = _seal_snapshot(store, workspace, **limits)
+    second_receipt, second_path = _seal_snapshot(
+        second_store,
+        workspace,
+        **limits,
+    )
+
+    assert first_receipt.root_digest == second_receipt.root_digest
+    assert first_receipt.snapshot_id != second_receipt.snapshot_id
+    assert object_path == second_path
+    assert store.release_snapshot(first_receipt, object_path)
+    assert object_path.is_dir()
+    second_store.verify_snapshot(second_receipt, second_path, **limits)
+    assert second_store.release_snapshot(second_receipt, second_path)
+    assert not object_path.exists()
+    workspace.close()
+    second_store.close()
+    store.close()
+
+
 @pytest.mark.parametrize(
     ("limit_name", "limits"),
     [
@@ -1782,6 +1825,7 @@ def test_descriptor_roots_keep_constructor_mutations_on_admitted_inodes(
             "leases",
             "objects",
             "quarantine",
+            "snapshot-references",
             "staging",
         }
         assert list(cache_root.iterdir()) == []

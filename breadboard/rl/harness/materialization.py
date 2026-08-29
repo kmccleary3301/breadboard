@@ -1,6 +1,7 @@
 from __future__ import annotations
 from builtins import BaseExceptionGroup
 
+from contextlib import contextmanager
 import ctypes
 import errno
 import hashlib
@@ -16,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Callable, Iterator, Mapping, Protocol
 
 from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
 
@@ -1421,12 +1422,17 @@ class FilesystemMaterializationStore:
         self._lock = threading.RLock()
         self._released: dict[str, CacheLeaseReceipt] = {}
         self._active_workspaces: dict[str, MaterializedWorkspace] = {}
-        self._snapshot_reference_counts: dict[str, int] = {}
         try:
             hook = type(self)._authority_admitted_hook
             if hook is not None:
                 hook()
-            for name in ("objects", "leases", "staging", "quarantine"):
+            for name in (
+                "objects",
+                "leases",
+                "staging",
+                "quarantine",
+                "snapshot-references",
+            ):
                 try:
                     os.mkdir(name, mode=0o700, dir_fd=self._cache_root_fd)
                 except FileExistsError:
@@ -2458,6 +2464,30 @@ class FilesystemMaterializationStore:
         entries.sort(key=lambda item: item.logical_path)
         return tuple(entries), file_count, len(inode_ids), total_bytes
 
+    @contextmanager
+    def _snapshot_lock(self, suffix: str) -> Iterator[None]:
+        import fcntl
+
+        if len(suffix) != 64 or any(character not in "0123456789abcdef" for character in suffix):
+            raise RuntimeError("snapshot_tampered")
+        lock_fd = self._cache.open_file(
+            "leases/snapshot-" + suffix + ".lock",
+            os.O_RDWR | os.O_CREAT,
+            0o600,
+        )
+        try:
+            metadata = os.fstat(lock_fd)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                raise RuntimeError("snapshot_lock_invalid")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
+
+
     def verify_snapshot(
         self,
         receipt: VerifierSnapshotReceipt,
@@ -2523,16 +2553,42 @@ class FilesystemMaterializationStore:
             or Path(os.path.abspath(path)) != expected_path
         ):
             raise RuntimeError("snapshot_tampered")
-        with self._lock:
-            references = self._snapshot_reference_counts.get(relative, 0)
-            if references > 1:
-                self._snapshot_reference_counts[relative] = references - 1
+        marker_payload = canonical_json_bytes(
+            {
+                "root_digest": receipt.root_digest,
+                "snapshot_id": receipt.snapshot_id,
+            }
+        )
+        reference_directory = "snapshot-references/" + expected_suffix
+        reference_relative = reference_directory + "/" + receipt.snapshot_id
+        with self._lock, self._snapshot_lock(expected_suffix):
+            try:
+                marker_fd = self._cache.open_file(reference_relative, os.O_RDONLY)
+            except FileNotFoundError:
                 return True
+            try:
+                metadata = os.fstat(marker_fd)
+                observed = os.read(marker_fd, len(marker_payload) + 1)
+                if (
+                    not stat.S_ISREG(metadata.st_mode)
+                    or metadata.st_nlink != 1
+                    or observed != marker_payload
+                ):
+                    raise RuntimeError("snapshot_tampered")
+            finally:
+                os.close(marker_fd)
+            reference_fd = self._cache.open_dir(reference_directory)
+            try:
+                os.unlink(receipt.snapshot_id, dir_fd=reference_fd)
+                os.fsync(reference_fd)
+                references_remain = bool(os.listdir(reference_fd))
+            finally:
+                os.close(reference_fd)
+            if references_remain:
+                return True
+            self._cache.remove_tree(reference_directory)
             self._cache.remove_tree(relative, missing_ok=True)
-            absent = not self._cache.exists(relative)
-            if absent:
-                self._snapshot_reference_counts.pop(relative, None)
-            return absent
+            return not self._cache.exists(relative)
 
     def copy_snapshot(
         self,
@@ -2685,7 +2741,15 @@ class FilesystemMaterializationStore:
                 byte_count,
                 "snapshot-object-" + suffix,
             )
-            with self._lock:
+            marker_payload = canonical_json_bytes(
+                {
+                    "root_digest": receipt.root_digest,
+                    "snapshot_id": receipt.snapshot_id,
+                }
+            )
+            reference_directory = "snapshot-references/" + suffix
+            reference_relative = reference_directory + "/" + snapshot_id
+            with self._lock, self._snapshot_lock(suffix):
                 if self._cache.exists(immutable_relative):
                     self.verify_snapshot(
                         receipt,
@@ -2706,9 +2770,26 @@ class FilesystemMaterializationStore:
                         max_inodes=max_inodes,
                         max_bytes=max_bytes,
                     )
-                self._snapshot_reference_counts[immutable_relative] = (
-                    self._snapshot_reference_counts.get(immutable_relative, 0) + 1
+                try:
+                    self._cache.mkdir(reference_directory)
+                except FileExistsError:
+                    reference_fd = self._cache.open_dir(reference_directory)
+                    os.close(reference_fd)
+                marker_fd = self._cache.open_file(
+                    reference_relative,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o600,
                 )
+                try:
+                    _write_all(
+                        marker_fd,
+                        marker_payload,
+                        failure="snapshot_tampered",
+                    )
+                    os.fsync(marker_fd)
+                finally:
+                    os.close(marker_fd)
+                self._cache.fsync_dir(reference_directory)
             return receipt, immutable
         except BaseException:
             self._cache.remove_tree(staging, missing_ok=True)
