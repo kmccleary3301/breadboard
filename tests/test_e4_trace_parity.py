@@ -15,6 +15,7 @@ from breadboard_engine.e4_trace_parity import (
     compare_e4_traces,
     json_sha256,
     validate_e4_trace,
+    validate_workspace_snapshot,
     workspace_snapshot,
 )
 
@@ -230,6 +231,19 @@ def test_trace_comparison_bounds_mismatch_evidence() -> None:
     assert not comparison.matches
     assert len(comparison.mismatches) == 10_001
     assert comparison.mismatches[-1].reason == "mismatch count exceeds 10000"
+
+
+def test_workspace_entry_limit_is_reachable_before_json_node_limit() -> None:
+    snapshot = {
+        "schema_version": "bb.e4.workspace_snapshot.v1",
+        "entries": [
+            {"path": f"f{index:05}", "kind": "directory", "mode": 0o755}
+            for index in range(16_001)
+        ],
+    }
+
+    with pytest.raises(E4ParityError, match="entry count exceeds 16000"):
+        validate_workspace_snapshot(snapshot)
 
 
 def test_workspace_snapshot_captures_bytes_modes_and_links(tmp_path: Path) -> None:
