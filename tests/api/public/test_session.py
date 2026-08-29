@@ -1427,3 +1427,73 @@ def test_concurrent_durable_create_has_one_winner(tmp_path: Path) -> None:
     assert sum(isinstance(outcome, ValueError) for outcome in outcomes) == 1
     assert not list(tmp_path.rglob("*.tmp"))
     assert not list(tmp_path.rglob("*.intent.json"))
+
+
+def test_abandoned_prepare_without_projection_evidence_is_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session_id = "retry-abandoned-prepare"
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "d" * 64})
+    prepare = session_store._prepare_projection_authority
+    interrupt = True
+
+    def interrupt_after_authority(*args, **kwargs):
+        nonlocal interrupt
+        authority = prepare(*args, **kwargs)
+        if interrupt:
+            interrupt = False
+            raise OSError("injected interruption after authority prepare")
+        return authority
+
+    monkeypatch.setattr(
+        session_store,
+        "_prepare_projection_authority",
+        interrupt_after_authority,
+    )
+    with pytest.raises(OSError, match="after authority prepare"):
+        session_store.create_session(
+            tmp_path,
+            Session.start(lock, "first attempt", session_id=session_id),
+        )
+    assert not session_store.session_event_path(tmp_path, session_id).exists()
+    assert not session_store.session_metadata_path(tmp_path, session_id).exists()
+
+    session_store.create_session(
+        tmp_path,
+        Session.start(lock, "retry attempt", session_id=session_id),
+    )
+    restored, _ = session_store.load_session(tmp_path, session_id)
+    assert restored.read_model.session_id == session_id
+
+
+def test_concurrent_case_variant_session_ids_share_one_identity(
+    tmp_path: Path,
+) -> None:
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "e" * 64})
+    sessions = [
+        Session.start(lock, "case collision", session_id=session_id)
+        for session_id in ("Case-Collision", "case-collision")
+    ]
+    barrier = Barrier(2)
+    outcomes: list[object] = []
+
+    def worker(session: Session) -> None:
+        barrier.wait(timeout=5)
+        try:
+            outcomes.append(session_store.create_session(tmp_path, session))
+        except BaseException as error:
+            outcomes.append(error)
+
+    threads = [Thread(target=worker, args=(session,)) for session in sessions]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert sum(isinstance(outcome, tuple) for outcome in outcomes) == 1
+    assert sum(isinstance(outcome, ValueError) for outcome in outcomes) == 1
+    assert [name.casefold() for name in session_store.session_names(tmp_path)] == [
+        "case-collision"
+    ]

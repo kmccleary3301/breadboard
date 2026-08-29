@@ -96,12 +96,18 @@ def validate_session_id(session_id: str) -> None:
         raise ValueError("session_id must be a portable identifier")
 
 
+def _session_identity_key(session_id: str) -> str:
+    return session_id.casefold()
+
+
 def _workspace_root(workspace: str | Path) -> Path:
     return Path(workspace).expanduser().resolve()
 
 
 def _session_lock_path(workspace: Path, session_id: str) -> Path:
-    identity = f"{_workspace_identity(workspace)}\0{session_id}".encode("utf-8")
+    identity = (
+        f"{_workspace_identity(workspace)}\0{_session_identity_key(session_id)}"
+    ).encode("utf-8")
     digest = hashlib.sha256(identity).hexdigest()
     locks = _authority_root(workspace, create=True) / "locks"
     locks.mkdir(mode=0o700, exist_ok=True)
@@ -126,7 +132,7 @@ def _local_session_guard(
 ) -> Iterator[Path]:
     root = _workspace_root(workspace)
     validate_session_id(session_id)
-    key = (os.path.normcase(str(root)), session_id)
+    key = (os.path.normcase(str(root)), _session_identity_key(session_id))
     with _LOCAL_SESSION_LOCKS_GUARD:
         local_lock = _LOCAL_SESSION_LOCKS.setdefault(key, threading.RLock())
     with local_lock:
@@ -273,7 +279,9 @@ def _authority_root(workspace: Path, *, create: bool) -> Path:
 
 
 def _authority_name(workspace: Path, session_id: str) -> str:
-    identity = f"{_workspace_identity(workspace)}\0{session_id}".encode("utf-8")
+    identity = (
+        f"{_workspace_identity(workspace)}\0{_session_identity_key(session_id)}"
+    ).encode("utf-8")
     return hashlib.sha256(identity).hexdigest() + ".json"
 
 
@@ -460,14 +468,102 @@ def _committed_authority(
     }
 
 
+def _projection_transaction_evidence_exists(
+    workspace: Path,
+    session_id: str,
+) -> bool:
+    nested_names = (
+        _intent_name(session_id, legacy=False),
+        *_stage_names("session_events.jsonl", "session.json"),
+        "session_events.jsonl",
+        "session.json",
+    )
+    legacy_event_name = f"{session_id}.events.jsonl"
+    legacy_metadata_name = f"{session_id}.json"
+    legacy_names = (
+        _intent_name(session_id, legacy=True),
+        *_stage_names(legacy_event_name, legacy_metadata_name),
+        legacy_event_name,
+        legacy_metadata_name,
+    )
+
+    if os.name == "nt":
+        root = session_directory(workspace)
+        for path in (
+            *(root / name for name in legacy_names),
+            *(root / session_id / name for name in nested_names),
+        ):
+            try:
+                descriptor = AnchoredStorage.windows_file_descriptor(
+                    path,
+                    create=False,
+                )
+            except FileNotFoundError:
+                continue
+            else:
+                os.close(descriptor)
+                return True
+        return False
+
+    descriptors = [
+        os.open(
+            workspace,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+    ]
+    try:
+        for component in (".breadboard", "sessions"):
+            descriptors.append(
+                AnchoredStorage.open_directory(
+                    descriptors[-1],
+                    component,
+                    create=False,
+                )
+            )
+        parent = descriptors[-1]
+        for name in legacy_names:
+            try:
+                metadata = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(metadata.st_mode):
+                raise OSError(f"unsafe session target: {name}")
+            return True
+        try:
+            nested = AnchoredStorage.open_directory(
+                parent,
+                session_id,
+                create=False,
+            )
+        except FileNotFoundError:
+            return False
+        descriptors.append(nested)
+        for name in nested_names:
+            try:
+                metadata = os.stat(name, dir_fd=nested, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(metadata.st_mode):
+                raise OSError(f"unsafe session target: {name}")
+            return True
+        return False
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
 def _prepare_projection_authority(
     workspace: Path,
     session_id: str,
     target: Mapping[str, Any],
 ) -> dict[str, Any]:
     previous = _read_projection_authority(workspace, session_id)
-    if previous is not None and previous["state"] != "committed":
-        raise ValueError("session projection authority is not committed")
+    previous_target: dict[str, Any] | None = None
+    if previous is not None:
+        if previous["state"] == "committed":
+            previous_target = dict(previous["target"])
+        elif _projection_transaction_evidence_exists(workspace, session_id):
+            raise ValueError("session projection authority is not committed")
     record = {
         "schema_version": _PROJECTION_AUTHORITY_SCHEMA,
         "workspace_id": _workspace_identity(workspace),
@@ -475,7 +571,7 @@ def _prepare_projection_authority(
         "generation": 1 if previous is None else previous["generation"] + 1,
         "state": "preparing",
         "target": dict(target),
-        "previous": None if previous is None else dict(previous["target"]),
+        "previous": previous_target,
         "manifests": [] if previous is None else list(previous["manifests"]),
     }
     return _write_projection_authority(workspace, session_id, record)
@@ -1265,6 +1361,17 @@ def create_session(
     validate_session_id(session_id)
     with _session_guard(workspace, session_id, create=True) as root:
         _recover_pending_intents(root, session_id)
+        collision = next(
+            (
+                existing
+                for existing in session_names(root)
+                if _session_identity_key(existing) == _session_identity_key(session_id)
+                and existing != session_id
+            ),
+            None,
+        )
+        if collision is not None:
+            raise ValueError(f"session id collides with existing session: {collision}")
         try:
             _load_anchored(root, session_id)
         except FileNotFoundError:
