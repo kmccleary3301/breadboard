@@ -682,7 +682,7 @@ class ProviderBroker:
                 "status": "failed",
                 "problem": self._problem("not_found", "login session not found"),
             }
-        if str(login.get("status") or "") != "pending":
+        if str(login.get("status") or "") not in {"pending", "completing"}:
             return self._public_login(login)
         flow = login.get("flow") if isinstance(login.get("flow"), Mapping) else {}
         adapter = self._oauth_adapter(
@@ -701,14 +701,20 @@ class ProviderBroker:
                 "problem": problem,
             }
 
+        claim_id = uuid.uuid4().hex
         with self.store.atomic():
-            if not self.store.claim_pending_login(str(login_id)):
+            if not self.store.claim_pending_login(
+                str(login_id),
+                claim_id=claim_id,
+            ):
                 current = self.store.get_login(str(login_id)) or login
                 return self._public_login(current)
 
         def login_is_terminal() -> bool:
-            current = self.store.get_login(str(login_id))
-            return current is None or str(current.get("status") or "") != "completing"
+            return not self.store.login_claim_is_active(
+                str(login_id),
+                claim_id=claim_id,
+            )
 
         try:
             material = adapter.complete(
@@ -729,6 +735,7 @@ class ProviderBroker:
                         if not self.store.finish_claimed_login(
                             str(login_id),
                             "completed",
+                            claim_id=claim_id,
                         ):
                             current = self.store.get_login(str(login_id)) or login
                             return self._public_login(current)
@@ -827,7 +834,10 @@ class ProviderBroker:
             )
             with self.store.atomic():
                 changed = self.store.finish_claimed_login(
-                    str(login_id), "failed", problem
+                    str(login_id),
+                    "failed",
+                    problem,
+                    claim_id=claim_id,
                 )
                 if changed:
                     self._emit(
@@ -855,6 +865,7 @@ class ProviderBroker:
                     str(login_id),
                     "failed",
                     problem,
+                    claim_id=claim_id,
                 )
             if changed:
                 try:

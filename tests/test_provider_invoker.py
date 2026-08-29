@@ -537,6 +537,37 @@ def test_provider_invoker_classifies_and_terminalizes_arbitrary_fallback_error(
     assert secret not in json.dumps(exchange, sort_keys=True)
 
 
+def test_provider_invoker_accepts_canonical_tool_use_finish_reason():
+    result = _provider_result()
+    result.messages[0].finish_reason = "toolUse"
+    runtime = _mk_runtime(result)
+    invoker = _make_invoker(Mock(return_value=None))
+    invoker.route_health.is_circuit_open.return_value = False
+    session_state = _session_state()
+
+    returned, used_fallback = invoker.invoke(
+        runtime=runtime,
+        client=object(),
+        model="cli_mock/dev",
+        send_messages=[],
+        tools_schema=None,
+        stream_responses=False,
+        runtime_context=ProviderRuntimeContext(
+            session_state=session_state,
+            agent_config={},
+        ),
+        session_state=session_state,
+        markdown_logger=_markdown_logger(),
+        turn_index=1,
+        route_id="cli_mock/dev",
+    )
+
+    assert returned is result
+    assert used_fallback is False
+    exchange = session_state.get_provider_metadata("last_provider_exchange")
+    assert exchange["terminal"]["finish_reason"] == "toolUse"
+
+
 def test_provider_invoker_rejects_unknown_finish_with_error_terminal():
     result = _provider_result()
     result.messages[0].finish_reason = "unknown_finish"

@@ -1849,7 +1849,10 @@ def test_finish_claimed_login_rejects_completion_past_expiry(
         "pending",
         flow={"pkce_verifier": "expiry-flow"},
     )
-    assert store.claim_pending_login(login["login_session_id"]) is True
+    assert store.claim_pending_login(
+        login["login_session_id"],
+        claim_id="expiry-owner",
+    )
 
     monkeypatch.setattr(
         store_module,
@@ -1857,13 +1860,60 @@ def test_finish_claimed_login_rejects_completion_past_expiry(
         lambda: started_at_ms + store_module._LOGIN_EXPIRY_MS,
     )
     assert (
-        store.finish_claimed_login(login["login_session_id"], "completed")
+        store.finish_claimed_login(
+            login["login_session_id"],
+            "completed",
+            claim_id="expiry-owner",
+        )
         is False
     )
     expired = store.get_login(login["login_session_id"], include_flow=True)
     assert expired["status"] == "expired"
     assert expired["problem"]["code"] == "oauth_login_expired"
     assert expired["flow"] == {}
+
+
+def test_abandoned_login_completion_claim_is_reclaimed_with_owner_fencing(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.store as store_module
+
+    started_at_ms = 1_800_000_000_000
+    monkeypatch.setattr(store_module, "now_ms", lambda: started_at_ms)
+    store = SQLiteCredentialStore(tmp_path / "reclaimed-login.sqlite3")
+    login = store.create_login(
+        "openai",
+        "pending",
+        flow={"pkce_verifier": "reclaim-flow"},
+    )
+    assert store.claim_pending_login(
+        login["login_session_id"],
+        claim_id="abandoned-owner",
+    )
+
+    monkeypatch.setattr(
+        store_module,
+        "now_ms",
+        lambda: started_at_ms + store_module._LOGIN_COMPLETION_LEASE_MS + 1,
+    )
+    assert store.claim_pending_login(
+        login["login_session_id"],
+        claim_id="recovery-owner",
+    )
+    assert (
+        store.finish_claimed_login(
+            login["login_session_id"],
+            "completed",
+            claim_id="abandoned-owner",
+        )
+        is False
+    )
+    assert store.finish_claimed_login(
+        login["login_session_id"],
+        "completed",
+        claim_id="recovery-owner",
+    )
 
 
 def test_audit_events_are_durable_and_use_fixed_secret_free_fields(

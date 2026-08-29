@@ -776,6 +776,51 @@ def test_refresh_completion_scrubs_new_material_from_metadata(tmp_path) -> None:
     assert material["refresh_token"] not in serialized
 
 
+
+def test_refresh_rejects_new_material_colliding_with_persisted_identity(
+    tmp_path,
+) -> None:
+    store = SQLiteCredentialStore(tmp_path / "refresh-identity.sqlite3")
+    now = int(time.time() * 1000)
+    credential = store.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="future-access-token",
+        material={
+            "access_token": "old-access-token",
+            "refresh_token": "old-refresh-token",
+        },
+        expires_at_ms=now + 10_000,
+    )
+    assert (
+        store.claim_oauth_refresh(
+            account_id=credential["account_id"],
+            expected_secret_version=1,
+            owner_id="identity-owner",
+            lease_duration_ms=10_000,
+        )["status"]
+        == "acquired"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="credential identity fields cannot contain credential material",
+    ):
+        store.complete_oauth_refresh(
+            account_id=credential["account_id"],
+            expected_secret_version=1,
+            owner_id="identity-owner",
+            material={
+                "access_token": "future-access-token",
+                "refresh_token": "new-refresh-token",
+            },
+            expires_at_ms=now + 20_000,
+        )
+
+    [unchanged] = store.list_accounts("anthropic")
+    assert unchanged["secret_version"] == 1
+    assert unchanged["label"] == "future-access-token"
+
 def test_refresh_terminal_operations_preserve_concurrent_rotation(
     tmp_path,
 ):
