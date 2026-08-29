@@ -2298,27 +2298,50 @@ class DockerRuntimeHandle:
                 states <= {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                 and self._staged_mounts
             ):
-                try:
-                    if self._mount_stager is None:
-                        raise RuntimeError("descriptor mount stager is unavailable")
-                    while self._staged_mounts:
-                        staged = self._staged_mounts[-1]
-                        await self._mount_stager.release(staged)
-                        self._staged_mounts.pop()
-                except BaseException as exc:
-                    receipts += (
-                        CleanupStepReceipt(
-                            "descriptor_staging",
-                            CleanupState.QUARANTINED,
-                            type(exc).__name__,
-                        ),
-                    )
+                release_failures: list[tuple[int, int, str]] = []
+                failed_stages: list[StagedDockerDescriptorMount] = []
+                if self._mount_stager is None:
+                    failed_stages = list(reversed(self._staged_mounts))
+                    release_failures = [
+                        (
+                            staged.source_device,
+                            staged.source_inode,
+                            "mount_stager_unavailable",
+                        )
+                        for staged in failed_stages
+                    ]
                 else:
-                    receipts += (
-                        CleanupStepReceipt(
-                            "descriptor_staging", CleanupState.RELEASED
+                    for staged in reversed(self._staged_mounts):
+                        try:
+                            await self._mount_stager.release(staged)
+                        except BaseException as exc:
+                            failed_stages.append(staged)
+                            release_failures.append(
+                                (
+                                    staged.source_device,
+                                    staged.source_inode,
+                                    type(exc).__name__,
+                                )
+                            )
+                self._staged_mounts = list(reversed(failed_stages))
+                receipts += (
+                    CleanupStepReceipt(
+                        "descriptor_staging",
+                        (
+                            CleanupState.QUARANTINED
+                            if release_failures
+                            else CleanupState.RELEASED
                         ),
-                    )
+                        (
+                            json.dumps(
+                                release_failures,
+                                separators=(",", ":"),
+                            )
+                            if release_failures
+                            else ""
+                        ),
+                    ),
+                )
             self._record_terminal_cleanup(receipts)
             return receipts
 
@@ -2348,13 +2371,66 @@ class DockerSandboxBackend:
         flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
         self._security_root_fd = os.open(self.security_profile_root, flags)
         self._quarantined_fds: list[int] = []
+        self._quarantined_handles: list[DockerRuntimeHandle] = []
+        self._quarantined_stages: list[StagedDockerDescriptorMount] = []
 
     def close(self) -> None:
+        if self._quarantined_handles or self._quarantined_stages:
+            raise RuntimeError("Docker backend has quarantined runtime resources")
         while self._quarantined_fds:
             os.close(self._quarantined_fds.pop())
         if self._security_root_fd >= 0:
             os.close(self._security_root_fd)
             self._security_root_fd = -1
+
+    async def _reconcile_quarantined(self) -> tuple[tuple[str, str], ...]:
+        failures: list[tuple[str, str]] = []
+        retained_handles: list[DockerRuntimeHandle] = []
+        for handle in self._quarantined_handles:
+            receipts = await handle.terminate()
+            if not handle._closed:
+                retained_handles.append(handle)
+                failures.extend(
+                    (receipt.resource, receipt.state.value)
+                    for receipt in receipts
+                    if receipt.state.value not in {"released", "already_released"}
+                )
+        self._quarantined_handles = retained_handles
+        failed_stages: list[StagedDockerDescriptorMount] = []
+        if self._quarantined_stages:
+            if self.mount_stager is None:
+                failed_stages = list(self._quarantined_stages)
+                failures.extend(
+                    ("descriptor_staging", "mount_stager_unavailable")
+                    for _ in failed_stages
+                )
+            else:
+                for staged in reversed(self._quarantined_stages):
+                    try:
+                        await self.mount_stager.release(staged)
+                    except BaseException as exc:
+                        failed_stages.append(staged)
+                        failures.append(
+                            (
+                                f"descriptor_staging:{staged.source_device}:{staged.source_inode}",
+                                type(exc).__name__,
+                            )
+                        )
+        self._quarantined_stages = list(reversed(failed_stages))
+        if not self._quarantined_stages:
+            while self._quarantined_fds:
+                os.close(self._quarantined_fds.pop())
+        return tuple(failures)
+
+    async def close_runtime(self) -> None:
+        failures = await self._reconcile_quarantined()
+        if failures:
+            raise DockerAdapterError(
+                "runtime_cleanup_pending",
+                "Docker backend cleanup remains quarantined",
+                details={"residuals": failures},
+            )
+        self.close()
 
     def _security_profile(self, plan: Any) -> Path:
         name = plan.security_policy.seccomp_digest.removeprefix("sha256:") + ".json"
@@ -2506,6 +2582,13 @@ class DockerSandboxBackend:
         cleanup: tuple[tuple[str, str, str], ...] = ()
         staged_mounts: list[StagedDockerDescriptorMount] = []
         try:
+            residuals = await self._reconcile_quarantined()
+            if residuals:
+                raise DockerAdapterError(
+                    "runtime_cleanup_pending",
+                    "prior Docker cleanup remains quarantined",
+                    details={"residuals": residuals},
+                )
             self._validate_context(plan, context)
             _validate_lsm_policy(plan.security_policy)
             if (
@@ -2716,20 +2799,40 @@ class DockerSandboxBackend:
                 for name, state, _ in cleanup
             )
             if container_id is not None and not absence:
-                self._quarantined_fds.extend(held_fds)
+                self._quarantined_handles.append(
+                    DockerRuntimeHandle(
+                        adapter=self.adapter,
+                        plan=plan,
+                        container_id=container_id,
+                        container_name=container_name,
+                        labels=labels,
+                        held_fds=held_fds,
+                        mount_stager=self.mount_stager,
+                        staged_mounts=staged_mounts,
+                    )
+                )
                 held_fds = []
-            release_stages = container_id is None or absence
-            if release_stages:
-                release_failures: list[tuple[str, str]] = []
+                staged_mounts = []
+                if isinstance(primary, DockerAdapterError):
+                    primary.details["pending_runtime_cleanup"] = container_id
+            else:
+                release_failures: list[tuple[int, int, str]] = []
+                failed_stages: list[StagedDockerDescriptorMount] = []
                 while staged_mounts:
                     staged = staged_mounts.pop()
                     try:
                         await self.mount_stager.release(staged)
                     except BaseException as release_error:
+                        failed_stages.append(staged)
                         release_failures.append(
-                            (staged.source_path, type(release_error).__name__)
+                            (
+                                staged.source_device,
+                                staged.source_inode,
+                                type(release_error).__name__,
+                            )
                         )
-                if release_failures:
+                if failed_stages:
+                    self._quarantined_stages.extend(reversed(failed_stages))
                     self._quarantined_fds.extend(held_fds)
                     held_fds = []
                     if isinstance(primary, DockerAdapterError):

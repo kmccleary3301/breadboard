@@ -669,6 +669,77 @@ async def test_runtime_handle_zero_byte_read_is_a_nonfencing_success(
 
 
 @pytest.mark.asyncio
+async def test_runtime_handle_retries_only_failed_stages_after_releasing_all_others(
+    tmp_path: Path,
+) -> None:
+    _, _, handle = await _launch_docker_handle(tmp_path)
+    descriptors: list[int] = []
+    stages: list[docker_module.StagedDockerDescriptorMount] = []
+    for index in range(3):
+        path = tmp_path / f"stage-{index}"
+        path.write_text(str(index), encoding="utf-8")
+        descriptor = os.open(path, os.O_RDONLY)
+        descriptors.append(descriptor)
+        metadata = os.fstat(descriptor)
+        stages.append(
+            docker_module.StagedDockerDescriptorMount(
+                source_path=f"/staged/{index}",
+                source_device=metadata.st_dev,
+                source_inode=metadata.st_ino,
+                source_mode=stat.S_IFMT(metadata.st_mode),
+                descriptor_device=metadata.st_dev,
+                descriptor_inode=metadata.st_ino,
+            )
+        )
+    failing_path = stages[-1].source_path
+
+    class Stager:
+        fail = True
+
+        def __init__(self) -> None:
+            self.releases: list[str] = []
+
+        async def release(self, staged: Any) -> None:
+            self.releases.append(staged.source_path)
+            if self.fail and staged.source_path == failing_path:
+                raise RuntimeError("permanent stage failure")
+
+    stager = Stager()
+
+    async def released_runtime() -> tuple[CleanupStepReceipt, ...]:
+        return (CleanupStepReceipt("runtime", CleanupState.RELEASED),)
+
+    handle._held_fds = list(descriptors)
+    handle._staged_mounts = list(stages)
+    handle._mount_stager = stager
+    handle._terminate_bound = released_runtime
+
+    first = await handle.terminate()
+    second = await handle.terminate()
+
+    assert first[-1].state is CleanupState.QUARANTINED
+    assert second[-1].state is CleanupState.QUARANTINED
+    assert handle._staged_mounts == [stages[-1]]
+    assert stager.releases == [
+        stages[2].source_path,
+        stages[1].source_path,
+        stages[0].source_path,
+        stages[2].source_path,
+    ]
+    assert all(os.fstat(descriptor) for descriptor in descriptors)
+
+    stager.fail = False
+    final = await handle.terminate()
+
+    assert final[-1].state is CleanupState.RELEASED
+    assert stager.releases[-1] == stages[2].source_path
+    assert handle._staged_mounts == []
+    for descriptor in descriptors:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+
+
+@pytest.mark.asyncio
 async def test_runtime_handle_rejects_workspace_escape_before_docker_exec(
     tmp_path: Path,
 ) -> None:
@@ -2511,11 +2582,22 @@ async def test_launch_releases_every_staged_mount_and_reports_residual_failure(
 
     assert captured.value.code == "runtime_preflight_failed"
     assert len(released) == 2
+    residual = backend._quarantined_stages[0]
     assert captured.value.details["staged_mount_cleanup"] == (
-        (released[0], "RuntimeError"),
+        (
+            residual.source_device,
+            residual.source_inode,
+            "RuntimeError",
+        ),
     )
     assert os.fstat(workspace_fd)
-    backend.close()
+    with pytest.raises(RuntimeError, match="quarantined"):
+        backend.close()
+
+    await backend.close_runtime()
+
+    assert len(released) == 3
+    assert backend._quarantined_stages == []
     with pytest.raises(OSError):
         os.fstat(workspace_fd)
 

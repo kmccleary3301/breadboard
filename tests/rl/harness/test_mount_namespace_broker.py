@@ -1,14 +1,14 @@
 from __future__ import annotations
-from builtins import BaseExceptionGroup
 
+import asyncio
 import base64
 import hashlib
-import asyncio
 import os
-import socket
 import signal
+import socket
 import stat
 import sys
+from builtins import BaseExceptionGroup
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,15 +16,113 @@ import pytest
 
 import breadboard.rl.harness.mount_namespace_broker as broker_module
 from breadboard.rl.harness.mount_namespace_broker import (
+    _MAX_MESSAGE,
     MountNamespaceBroker,
     MountNamespaceBrokerError,
-    _MAX_MESSAGE,
     _canonical,
     _decode,
     _receive,
     _send,
 )
-from breadboard.rl.harness.sandbox_docker import DockerAdapterError
+from breadboard.rl.harness.sandbox_docker import (
+    DockerAdapterError,
+    ExecutableInvocation,
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not hasattr(os, "memfd_create"),
+    reason="sealed memfd transport requires Linux",
+)
+async def test_broker_executor_transports_stdin_by_sealed_descriptor(
+    tmp_path: Path,
+) -> None:
+    executable_path = tmp_path / "docker"
+    executable_path.write_bytes(b"docker")
+    executable_fd = os.open(executable_path, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable_path),
+        executable_fd=executable_fd,
+        executable_descriptor_path=f"/proc/self/fd/{executable_fd}",
+        digest="sha256:" + hashlib.sha256(b"docker").hexdigest(),
+    )
+    payload = b"x" * (512 * 1024)
+    observed: dict[str, object] = {}
+
+    class Broker:
+        def _call(self, operation, request, descriptors):
+            observed["operation"] = operation
+            observed["request"] = request
+            observed["descriptors"] = descriptors
+            payload_fd = descriptors[1]
+            observed["payload"] = os.pread(payload_fd, len(payload) + 1, 0)
+            observed["seals"] = broker_module.fcntl.fcntl(
+                payload_fd, broker_module.fcntl.F_GET_SEALS
+            )
+            return {
+                "returncode": 0,
+                "stdout": "",
+                "stderr": "",
+                "timed_out": False,
+                "output_limited": False,
+            }
+
+    try:
+        result = await broker_module.BrokerDockerCliExecutor(Broker()).execute(
+            invocation,
+            ("exec", "-i", "container", "cat"),
+            timeout_ms=1_000,
+            output_limit=128,
+            environment=(),
+            input_bytes=payload,
+        )
+    finally:
+        os.close(executable_fd)
+
+    request = observed["request"]
+    assert observed["operation"] == "execute"
+    assert observed["payload"] == payload
+    assert request["input_size"] == len(payload)
+    assert request["input_digest"] == (
+        "sha256:" + hashlib.sha256(payload).hexdigest()
+    )
+    required = (
+        broker_module.fcntl.F_SEAL_SEAL
+        | broker_module.fcntl.F_SEAL_SHRINK
+        | broker_module.fcntl.F_SEAL_GROW
+        | broker_module.fcntl.F_SEAL_WRITE
+    )
+    assert observed["seals"] & required == required
+    assert result.returncode == 0
+
+
+@pytest.mark.skipif(
+    not Path("/proc/self/fd").is_dir() or not hasattr(os, "memfd_create"),
+    reason="descriptor execution transport requires Linux procfs",
+)
+def test_broker_bounded_executor_reads_sealed_stdin_descriptor() -> None:
+    payload = b"y" * (512 * 1024)
+    executable_fd = os.open("/bin/cat", os.O_RDONLY)
+    input_fd = broker_module._sealed_payload_fd(payload)
+    try:
+        result = broker_module._execute_bounded(
+            ("/bin/cat",),
+            executable_fd=executable_fd,
+            timeout_ms=1_000,
+            output_limit=len(payload) + 1,
+            input_fd=input_fd,
+        )
+    finally:
+        os.close(input_fd)
+        os.close(executable_fd)
+
+    returncode, stdout, stderr, timed_out, output_limited = result
+    assert returncode == 0
+    assert stdout == payload
+    assert stderr == b""
+    assert timed_out is False
+    assert output_limited is False
 
 
 def test_exception_projection_retains_all_daemon_cleanup_leaves_without_secrets() -> None:

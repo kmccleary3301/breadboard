@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import hashlib
 import base64
+import hashlib
 import json
 import os
 import signal
@@ -20,6 +20,7 @@ from .sandbox_docker import (
     PrivateDockerDaemonBinding,
     SubprocessDockerCliExecutor,
 )
+
 _SHA256_PREFIX = "sha256:"
 _BUFFER_SIZE = 1024 * 1024
 _COMMAND_OUTPUT_LIMIT = 4 * 1024 * 1024
@@ -468,6 +469,7 @@ class _OwnerDockerCliExecutor:
         timeout_ms: int,
         output_limit: int,
         environment: tuple[tuple[str, str], ...],
+        input_bytes: bytes = b"",
     ) -> DockerCommandResult:
         self._owner._assert_docker_cli()
         expected = self._owner.docker_invocation
@@ -481,6 +483,7 @@ class _OwnerDockerCliExecutor:
             timeout_ms=timeout_ms,
             output_limit=output_limit,
             environment=environment,
+            input_bytes=input_bytes,
         )
 
 

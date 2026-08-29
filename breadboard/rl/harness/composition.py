@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from builtins import ExceptionGroup
 import base64
 import hashlib
 import hmac
@@ -9,17 +8,18 @@ import ipaddress
 import json
 import os
 import re
-import stat
 import socket
+import stat
 import subprocess
+from builtins import ExceptionGroup
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from secrets import token_bytes
 from types import MappingProxyType
 from typing import Any, Literal, Mapping, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
+from agentic_coder_prototype.compilation.bundle import build_dependency_closure
 from agentic_coder_prototype.compilation.contracts import (
     ClosureMember,
     CompiledConfig,
@@ -27,16 +27,17 @@ from agentic_coder_prototype.compilation.contracts import (
     ConfigBundleManifest,
     DependencyEdge,
 )
-from agentic_coder_prototype.compilation.bundle import build_dependency_closure
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
 from breadboard.rl.state.cas import ArtifactConflictError, FilesystemCAS
-from secrets import token_bytes
 
 from . import contracts as c
-from .config_runtime import CompilerSemanticView, ConfigRuntime
-from .evidence import EvidenceRoleBindingV2, EvidenceRoleSourceV2
 from .api import create_app
+from .config_runtime import CompilerSemanticView, ConfigRuntime
 from .evidence import (
     EpisodeEvidenceRepository,
+    EvidenceRoleBindingV2,
+    EvidenceRoleSourceV2,
     FilesystemEpisodeLocatorStore,
     V2EvidenceAuthority,
 )
@@ -46,21 +47,21 @@ from .materialization import (
     SealedSourceManifest,
     SourceManifestEntry,
 )
+from .mount_namespace_broker import MountNamespaceBroker
 from .policy_http import (
     PolicySecretAuthority,
     PolicyTlsTrustAuthority,
     RouteBoundPolicyHttpResolver,
     RouteNetworkAuthority,
 )
-from .runners.base import RunnerAdapterRegistry
+from .private_docker_daemon import (
+    OfflineImageAuthority,
+    PinnedFileAuthority,
+    PrivateDockerDaemonAuthority,
+)
+from .runners.base import RunnerAdapterDescriptor, RunnerAdapterRegistry
 from .runners.conductor import CONDUCTOR_ADAPTER_ID, ConductorAdapter
 from .runners.terminal import TERMINAL_ADAPTER_ID, TerminalResponsesAdapter
-from .service import (
-    BreadBoardV2EpisodeService,
-    V2FaultInjectionAuthority,
-    V2LifecycleDependencies,
-)
-from .runners.base import RunnerAdapterDescriptor
 from .sandbox import (
     InstalledImage,
     InstalledRuntime,
@@ -71,16 +72,15 @@ from .sandbox import (
     SandboxSecurityPolicy,
     TrustedProcessBackend,
 )
-from .mount_namespace_broker import MountNamespaceBroker
 from .sandbox_docker import (
     DockerRuntimeAdapter,
     DockerSandboxBackend,
     InspectDockerMeasurementProvider,
 )
-from .private_docker_daemon import (
-    OfflineImageAuthority,
-    PinnedFileAuthority,
-    PrivateDockerDaemonAuthority,
+from .service import (
+    BreadBoardV2EpisodeService,
+    V2FaultInjectionAuthority,
+    V2LifecycleDependencies,
 )
 
 COMPOSITION_REF_MEDIA_TYPE = (
@@ -3967,7 +3967,11 @@ def _build_runtime_graph(
             *(() if private_daemon_owner is None else (private_daemon_owner.close,)),
             *(() if bridge_lifecycle is None else (bridge_lifecycle.close,)),
             *(() if docker_adapter is None else (docker_adapter.close,)),
-            *(() if docker_backend is None else (docker_backend.close,)),
+            *(
+                ()
+                if docker_backend is None
+                else (docker_backend.close_runtime,)
+            ),
             service.close,
         ),
         bridge_lifecycle,

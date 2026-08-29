@@ -1,21 +1,22 @@
 from __future__ import annotations
-from builtins import BaseExceptionGroup
 
 import array
 import base64
 import ctypes
 import errno
+import fcntl
 import hashlib
 import json
 import os
 import secrets
+import selectors
 import signal
 import socket
 import stat
 import subprocess
-import selectors
-import time
 import threading
+import time
+from builtins import BaseExceptionGroup
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -482,6 +483,40 @@ def _retry_write(fd: int, payload: bytes) -> int:
             continue
 
 
+def _sealed_payload_fd(payload: bytes) -> int:
+    if not payload or not hasattr(os, "memfd_create"):
+        raise MountNamespaceBrokerError(
+            "runtime_unsupported",
+            "sealed Docker stdin descriptor is unavailable",
+        )
+    descriptor = os.memfd_create(
+        "breadboard-docker-stdin",
+        os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING,
+    )
+    try:
+        written = 0
+        while written < len(payload):
+            count = _retry_write(descriptor, payload[written:])
+            if count <= 0:
+                raise OSError("Docker stdin descriptor write made no progress")
+            written += count
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        required_seals = (
+            fcntl.F_SEAL_SEAL
+            | fcntl.F_SEAL_SHRINK
+            | fcntl.F_SEAL_GROW
+            | fcntl.F_SEAL_WRITE
+        )
+        fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, required_seals)
+        metadata = os.fstat(descriptor)
+        if metadata.st_size != len(payload):
+            raise OSError("Docker stdin descriptor size changed")
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
 def _copy_runtime_authority(source_fd: int, target: str, size: int, mode: int) -> None:
     if (
         size <= 0
@@ -798,13 +833,14 @@ def _execute_bounded(
     executable_fd: int,
     timeout_ms: int,
     output_limit: int,
+    input_fd: int | None = None,
 ) -> tuple[int, bytes, bytes, bool, bool]:
     process = subprocess.Popen(
         tuple(argv),
         executable=f"/proc/self/fd/{executable_fd}",
         pass_fds=(executable_fd,),
         env={},
-        stdin=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL if input_fd is None else input_fd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         close_fds=True,
@@ -1434,7 +1470,13 @@ def _child_loop(
                     del stages[stage_id]
                     result = {"absent": not os.path.lexists(stage.receipt.source_path)}
                 elif operation == "execute":
-                    if len(fds) != 1 or request.get("environment") != []:
+                    input_size = request.get("input_size")
+                    input_digest = request.get("input_digest")
+                    has_input = input_size is not None or input_digest is not None
+                    if (
+                        len(fds) != (2 if has_input else 1)
+                        or request.get("environment") != []
+                    ):
                         raise ValueError("execute authority is invalid")
                     if daemon_owner is not None:
                         _ = daemon_owner.binding
@@ -1473,6 +1515,33 @@ def _child_loop(
                     digest = _digest_fd_exact(executable_fd)
                     if digest != request.get("digest"):
                         raise OSError("executable digest mismatch")
+                    input_fd: int | None = None
+                    if has_input:
+                        if (
+                            type(input_size) is not int
+                            or not 1 <= input_size <= (1 << 53) - 1
+                            or type(input_digest) is not str
+                            or len(input_digest) != 71
+                            or not input_digest.startswith("sha256:")
+                        ):
+                            raise ValueError("execute input authority is invalid")
+                        input_fd = fds[1]
+                        input_metadata = os.fstat(input_fd)
+                        required_seals = (
+                            fcntl.F_SEAL_SEAL
+                            | fcntl.F_SEAL_SHRINK
+                            | fcntl.F_SEAL_GROW
+                            | fcntl.F_SEAL_WRITE
+                        )
+                        if (
+                            not stat.S_ISREG(input_metadata.st_mode)
+                            or input_metadata.st_size != input_size
+                            or fcntl.fcntl(input_fd, fcntl.F_GET_SEALS)
+                            & required_seals
+                            != required_seals
+                            or _digest_fd_exact(input_fd) != input_digest
+                        ):
+                            raise OSError("execute input descriptor changed")
                     argv = request.get("argv")
                     timeout_ms = request.get("timeout_ms")
                     output_limit = request.get("output_limit")
@@ -1504,6 +1573,7 @@ def _child_loop(
                         executable_fd=executable_fd,
                         timeout_ms=timeout_ms,
                         output_limit=output_limit,
+                        input_fd=input_fd,
                     )
                     if runtime_path is not None:
                         _validate_runtime_copy(
@@ -2717,22 +2787,37 @@ class BrokerDockerCliExecutor:
         timeout_ms: int,
         output_limit: int,
         environment: tuple[tuple[str, str], ...],
+        input_bytes: bytes = b"",
     ) -> DockerCommandResult:
         if environment:
             raise MountNamespaceBrokerError(
                 "runtime_unsupported", "ambient Docker environment is forbidden"
             )
-        result = self._broker._call(
-            "execute",
-            {
-                "argv": [executable.argv0, *argv_tail],
-                "digest": executable.digest,
-                "environment": [],
-                "timeout_ms": timeout_ms,
-                "output_limit": output_limit,
-            },
-            (executable.executable_fd,),
-        )
+        request = {
+            "argv": [executable.argv0, *argv_tail],
+            "digest": executable.digest,
+            "environment": [],
+            "timeout_ms": timeout_ms,
+            "output_limit": output_limit,
+        }
+        payload_fd = -1
+        descriptors = [executable.executable_fd]
+        try:
+            if input_bytes:
+                payload_fd = _sealed_payload_fd(input_bytes)
+                request["input_size"] = len(input_bytes)
+                request["input_digest"] = (
+                    "sha256:" + hashlib.sha256(input_bytes).hexdigest()
+                )
+                descriptors.append(payload_fd)
+            result = self._broker._call(
+                "execute",
+                request,
+                tuple(descriptors),
+            )
+        finally:
+            if payload_fd >= 0:
+                os.close(payload_fd)
         return DockerCommandResult(
             (executable.argv0, *tuple(argv_tail)),
             result["returncode"],
