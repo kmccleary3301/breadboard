@@ -85,6 +85,9 @@ def _require_bounded_text(
         raise E4ParityError(f"{field_name} exceeds {max_bytes} UTF-8 bytes")
     return value
 
+def _has_exact_keys(value: dict[str, Any], expected: frozenset[str] | set[str]) -> bool:
+    return len(value) == len(expected) and all(key in value for key in expected)
+
 
 @dataclass(frozen=True, slots=True)
 class _PointerEvidence:
@@ -961,7 +964,7 @@ def workspace_snapshot(root: Path) -> dict[str, Any]:
 def validate_workspace_snapshot(snapshot: dict[str, Any]) -> None:
     if (
         type(snapshot) is not dict
-        or set(snapshot) != {"schema_version", "entries"}
+        or not _has_exact_keys(snapshot, {"schema_version", "entries"})
         or snapshot.get("schema_version") != "bb.e4.workspace_snapshot.v1"
         or type(snapshot.get("entries")) is not list
     ):
@@ -1042,7 +1045,7 @@ def validate_workspace_snapshot(snapshot: dict[str, Any]) -> None:
             )
         else:
             raise E4ParityError(f"{context} kind is unsupported")
-        if set(entry) != expected_keys:
+        if not _has_exact_keys(entry, expected_keys):
             raise E4ParityError(f"{context} must contain exact {kind} fields")
         paths.append(path)
     _validate_closed_json(snapshot)
@@ -1062,7 +1065,7 @@ def validate_workspace_snapshot(snapshot: dict[str, Any]) -> None:
 def validate_e4_trace(trace: dict[str, Any]) -> None:
     if type(trace) is not dict:
         raise TypeError("trace must be an exact dict")
-    if set(trace) != _TRACE_KEYS:
+    if not _has_exact_keys(trace, _TRACE_KEYS):
         raise E4ParityError("trace must contain the exact execution-trace fields")
     if trace["schema_version"] != "bb.e4.execution_trace.v1":
         raise E4ParityError("trace schema_version must be bb.e4.execution_trace.v1")
@@ -1078,7 +1081,7 @@ def validate_e4_trace(trace: dict[str, Any]) -> None:
     if not trace["events"]:
         raise E4ParityError("trace events must not be empty")
     process = trace["process"]
-    if type(process) is not dict or set(process) != _PROCESS_KEYS:
+    if type(process) is not dict or not _has_exact_keys(process, _PROCESS_KEYS):
         raise E4ParityError("trace process must contain the exact process fields")
     for field_name in ("stdout_base64", "stderr_base64"):
         value = process[field_name]
@@ -1111,7 +1114,9 @@ def validate_e4_trace(trace: dict[str, Any]) -> None:
     workspace = trace["workspace"]
     validate_workspace_snapshot(workspace)
     terminal = trace["terminal"]
-    if type(terminal) is not dict or set(terminal) != {"reason", "result", "error"}:
+    if type(terminal) is not dict or not _has_exact_keys(
+        terminal, {"reason", "result", "error"}
+    ):
         raise E4ParityError("trace terminal must contain exact terminal fields")
     reason = _require_bounded_text(
         terminal["reason"], "trace terminal.reason", max_bytes=256

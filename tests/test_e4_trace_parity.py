@@ -386,6 +386,12 @@ def test_text_limits_precede_printability_and_encoding(
     with pytest.raises(E4ParityError, match="path exceeds 4096 UTF-8 bytes"):
         validate_workspace_snapshot(snapshot)
 
+    oversized_schema = {f"unexpected_{index}": None for index in range(100_001)}
+    with pytest.raises(E4ParityError, match="exact execution-trace fields"):
+        validate_e4_trace(oversized_schema)
+    with pytest.raises(E4ParityError, match="exact schema and entries"):
+        validate_workspace_snapshot(oversized_schema)
+
 
 def test_trace_values_must_be_closed_json() -> None:
     with pytest.raises(E4ParityError, match="non-JSON tuple"):
