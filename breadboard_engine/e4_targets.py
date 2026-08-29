@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 
 _DISTRIBUTION_NAME = "breadboard-harness-cli"
@@ -62,10 +64,45 @@ def _resource_root() -> Traversable:
         candidate = distribution.locate_file(_LOADER_PATH)
         if _location_key(candidate) == loader_location:
             return distribution.locate_file(_RESOURCE_DIRECTORY)
+        editable_root = _editable_source_root(distribution)
+        if editable_root is not None and (
+            _location_key(editable_root / _LOADER_PATH) == loader_location
+        ):
+            return editable_root / _RESOURCE_DIRECTORY
     raise E4TargetError(
         f"could not locate {_RESOURCE_DIRECTORY!r} in the distribution "
         f"that owns {loader_location!r}"
     )
+
+
+def _editable_source_root(distribution: metadata.Distribution) -> Path | None:
+    raw = distribution.read_text("direct_url.json")
+    if raw is None:
+        return None
+    try:
+        direct_url = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(direct_url, dict):
+        return None
+    directory_info = direct_url.get("dir_info")
+    url = direct_url.get("url")
+    if (
+        not isinstance(directory_info, dict)
+        or directory_info.get("editable") is not True
+        or not isinstance(url, str)
+    ):
+        return None
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "file"
+        or parsed.netloc not in {"", "localhost"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None
+    source_root = Path(url2pathname(parsed.path))
+    return source_root if source_root.is_absolute() else None
 
 
 def _location_key(location: object) -> str:

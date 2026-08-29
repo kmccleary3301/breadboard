@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -11,6 +12,7 @@ import yaml
 from breadboard_engine.e4_targets import (
     E4TargetError,
     _load_e4_target_from_root,
+    _editable_source_root,
     _location_key,
     _resource_root,
     list_e4_target_ids,
@@ -24,6 +26,41 @@ TARGET_ROOT = ROOT / "config" / "e4_targets"
 
 def test_target_resources_bind_to_loader_distribution_root() -> None:
     assert _resource_root() == TARGET_ROOT
+
+
+def test_target_resources_load_outside_editable_checkout_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    assert _resource_root() == TARGET_ROOT
+    assert list_e4_target_ids() == ("oh-my-pi@16.2.13", "pi@0.57.1")
+
+
+def test_editable_source_root_accepts_only_absolute_local_file_urls(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source root"
+    valid = SimpleNamespace(
+        read_text=lambda _: json.dumps(
+            {"url": source_root.as_uri(), "dir_info": {"editable": True}}
+        )
+    )
+    assert _editable_source_root(valid) == source_root
+
+    for url in (
+        "https://example.invalid/source",
+        "file:relative/source",
+        "file:///tmp/source?unexpected=query",
+        "file://remote.invalid/source",
+    ):
+        invalid = SimpleNamespace(
+            read_text=lambda _, url=url: json.dumps(
+                {"url": url, "dir_info": {"editable": True}}
+            )
+        )
+        assert _editable_source_root(invalid) is None
 
 
 def test_distribution_owner_match_does_not_resolve_symlink_aliases(
