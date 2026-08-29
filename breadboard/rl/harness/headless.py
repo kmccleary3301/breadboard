@@ -128,7 +128,6 @@ class HeadlessRunRequest(BaseModel):
     schema_version: Literal["bb.rl.headless-run-request.v1"] = (
         "bb.rl.headless-run-request.v1"
     )
-    composition_ref_path: str
     target_id: str
     target_overlay_id: str
     target_dynamic_fields: Mapping[str, str]
@@ -145,7 +144,6 @@ class HeadlessRunRequest(BaseModel):
     event_log_path: str
 
     @field_validator(
-        "composition_ref_path",
         "result_path",
         "event_log_path",
     )
@@ -221,6 +219,7 @@ def load_headless_request(path: str) -> HeadlessRunRequest:
 async def run_headless_request(
     request: HeadlessRunRequest,
     *,
+    composition_ref_path: str,
     secret_files: Mapping[str, str],
     provider_credentials: Mapping[str, str],
 ) -> dict[str, Any]:
@@ -268,7 +267,7 @@ async def run_headless_request(
             )
 
         composition = load_production_composition(
-            request.composition_ref_path,
+            composition_ref_path,
             composition_secrets,
             policy_client_resolver_factory=resolver_factory,
         )
@@ -299,6 +298,7 @@ async def run_headless_request(
                 )
         result = _preflight_failure_result(
             request,
+            composition_ref_path=composition_ref_path,
             target=target,
             profile=profile,
             failure=failure,
@@ -437,11 +437,13 @@ async def run_headless_request(
 async def run_headless_request_file(
     path: str,
     *,
+    composition_ref_path: str,
     secret_files: Mapping[str, str],
     provider_credentials: Mapping[str, str],
 ) -> dict[str, Any]:
     return await run_headless_request(
         load_headless_request(path),
+        composition_ref_path=composition_ref_path,
         secret_files=secret_files,
         provider_credentials=provider_credentials,
     )
@@ -612,6 +614,7 @@ def _cas_bytes(
 def _preflight_failure_result(
     request: HeadlessRunRequest,
     *,
+    composition_ref_path: str,
     target: E4TargetPolicyProjection | None,
     profile: OpenAICompletionsProviderProfile | None,
     failure: BaseException,
@@ -623,7 +626,7 @@ def _preflight_failure_result(
     config_identity = {
         "schema_version": "bb.rl.headless-preflight-identity.v1",
         "composition_ref_digest": _optional_regular_file_digest(
-            request.composition_ref_path,
+            composition_ref_path,
             max_bytes=_MAX_REQUEST_BYTES,
         ),
         "target": (

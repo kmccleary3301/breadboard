@@ -181,7 +181,6 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
     result_path = tmp_path / "result.json"
     event_path = tmp_path / "events.json"
     request = HeadlessRunRequest(
-        composition_ref_path=str(fixture.composition_ref_path),
         target_id=target.target_id,
         target_overlay_id=target.overlay_id,
         target_dynamic_fields={"fixture": "value"},
@@ -222,9 +221,11 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
     assert all(
         path not in request.model_dump_json() for path in fixture.secret_files.values()
     )
+    assert str(fixture.composition_ref_path) not in request.model_dump_json()
 
     result = await run_headless_request(
         request,
+        composition_ref_path=str(fixture.composition_ref_path),
         secret_files=fixture.secret_files,
         provider_credentials={"episode-provider": str(credential)},
     )

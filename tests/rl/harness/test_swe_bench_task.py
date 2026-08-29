@@ -121,8 +121,11 @@ def test_reward_requires_consistent_official_reports(
 ) -> None:
     aggregate = {
         "schema_version": 2,
+        "total_instances": 1,
         "submitted_instances": 1,
         "completed_instances": 1,
+        "resolved_instances": int(resolved),
+        "unresolved_instances": int(not resolved),
         "submitted_ids": [INSTANCE_ID],
         "completed_ids": [INSTANCE_ID],
         "resolved_ids": [INSTANCE_ID] if resolved else [],
@@ -146,6 +149,13 @@ def test_reward_requires_consistent_official_reports(
         )
         == expected_reward
     )
+    aggregate["resolved_instances"] = int(not resolved)
+    with pytest.raises(SweBenchTaskError, match="disagree on resolution"):
+        score_official_reports(
+            aggregate_report=aggregate,
+            instance_report=instance,
+        )
+    aggregate["resolved_instances"] = int(resolved)
 
     instance["infra_failure"] = True
     with pytest.raises(SweBenchTaskError, match="infrastructure failure"):

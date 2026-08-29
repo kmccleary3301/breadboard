@@ -21,8 +21,11 @@ def _secret_file(value: str) -> tuple[str, str]:
         raise argparse.ArgumentTypeError("secret file must be HANDLE=/absolute/path")
     handle, path = value.split("=", 1)
     if not handle or not path.startswith("/"):
-        raise argparse.ArgumentTypeError("secret file must use a non-empty handle and absolute path")
+        raise argparse.ArgumentTypeError(
+            "secret file must use a non-empty handle and absolute path"
+        )
     return handle, path
+
 
 def _service_fd(value: str) -> tuple[str, int]:
     if value.count("=") != 1:
@@ -38,17 +41,44 @@ def _service_fd(value: str) -> tuple[str, int]:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m breadboard.rl.harness", allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        prog="python -m breadboard.rl.harness", allow_abbrev=False
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("inspect", "serve"):
         command = commands.add_parser(name, allow_abbrev=False)
         command.add_argument("--composition-ref", required=True)
-        command.add_argument("--secret-file", action="append", type=_secret_file, default=[], metavar="HANDLE=/absolute/path")
-        command.add_argument("--prebound-service-fd", action="append", type=_service_fd, default=[], metavar="ROLE=FD")
+        command.add_argument(
+            "--secret-file",
+            action="append",
+            type=_secret_file,
+            default=[],
+            metavar="HANDLE=/absolute/path",
+        )
+        command.add_argument(
+            "--prebound-service-fd",
+            action="append",
+            type=_service_fd,
+            default=[],
+            metavar="ROLE=FD",
+        )
     run = commands.add_parser("run", allow_abbrev=False)
     run.add_argument("--request", required=True)
-    run.add_argument("--secret-file", action="append", type=_secret_file, default=[], metavar="HANDLE=/absolute/path")
-    run.add_argument("--provider-credential-file", action="append", type=_secret_file, default=[], metavar="HANDLE=/absolute/path")
+    run.add_argument("--composition-ref", required=True)
+    run.add_argument(
+        "--secret-file",
+        action="append",
+        type=_secret_file,
+        default=[],
+        metavar="HANDLE=/absolute/path",
+    )
+    run.add_argument(
+        "--provider-credential-file",
+        action="append",
+        type=_secret_file,
+        default=[],
+        metavar="HANDLE=/absolute/path",
+    )
     return parser
 
 
@@ -60,6 +90,7 @@ def _bindings(values: Sequence[tuple[str, str]]) -> dict[str, str]:
         result[handle] = path
     return result
 
+
 def _socket_bindings(values: Sequence[tuple[str, int]]) -> dict[str, int]:
     result: dict[str, int] = {}
     for role, fd in values:
@@ -69,7 +100,9 @@ def _socket_bindings(values: Sequence[tuple[str, int]]) -> dict[str, int]:
     return result
 
 
-async def _inspect(ref: str, bindings: dict[str, str], socket_fds: dict[str, int]) -> int:
+async def _inspect(
+    ref: str, bindings: dict[str, str], socket_fds: dict[str, int]
+) -> int:
     composition = load_production_composition(
         ref, bindings, prebound_service_socket_fds=socket_fds
     )
@@ -153,9 +186,7 @@ class _LifecycleServer(uvicorn.Server):
                 watcher.cancel()
             if self._service_shutdown_task is not None:
                 try:
-                    await _await_owned_shutdown(
-                        self._service_shutdown_task
-                    )
+                    await _await_owned_shutdown(self._service_shutdown_task)
                 except BaseException as exc:
                     failure = exc
             await asyncio.gather(watcher, return_exceptions=True)
@@ -172,12 +203,14 @@ class _LifecycleServer(uvicorn.Server):
 
 async def _run_headless(
     path: str,
+    composition_ref_path: str,
     secret_files: dict[str, str],
     provider_credentials: dict[str, str],
 ) -> int:
     try:
         result = await run_headless_request_file(
             path,
+            composition_ref_path=composition_ref_path,
             secret_files=secret_files,
             provider_credentials=provider_credentials,
         )
@@ -219,6 +252,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return asyncio.run(
                 _run_headless(
                     args.request,
+                    args.composition_ref,
                     _bindings(args.secret_file),
                     _bindings(args.provider_credential_file),
                 )

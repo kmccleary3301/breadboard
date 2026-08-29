@@ -236,11 +236,9 @@ def score_official_reports(
 ) -> float:
     if aggregate_report.get("schema_version") != 2:
         raise SweBenchTaskError("official SWE-bench aggregate report schema mismatch")
-    if any(
-        aggregate_report.get(name) != 1
-        for name in ("submitted_instances", "completed_instances")
-    ):
-        raise SweBenchTaskError("official SWE-bench report is incomplete")
+    for name in ("total_instances", "submitted_instances", "completed_instances"):
+        if type(aggregate_report.get(name)) is not int or aggregate_report[name] != 1:
+            raise SweBenchTaskError("official SWE-bench report is incomplete")
     if aggregate_report.get("submitted_ids") != [INSTANCE_ID] or aggregate_report.get(
         "completed_ids"
     ) != [INSTANCE_ID]:
@@ -266,6 +264,15 @@ def score_official_reports(
     resolved = instance_report.get("resolved")
     if type(resolved) is not bool:
         raise SweBenchTaskError("official SWE-bench resolution is not boolean")
+    for name, expected in (
+        ("resolved_instances", int(resolved)),
+        ("unresolved_instances", int(not resolved)),
+    ):
+        if (
+            type(aggregate_report.get(name)) is not int
+            or aggregate_report[name] != expected
+        ):
+            raise SweBenchTaskError("official SWE-bench reports disagree on resolution")
     resolved_ids = aggregate_report.get("resolved_ids")
     unresolved_ids = aggregate_report.get("unresolved_ids")
     expected_resolved = [INSTANCE_ID] if resolved else []
