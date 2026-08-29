@@ -1086,6 +1086,7 @@ class TrustedProcessHandle:
         self._workspace_fd = workspace_fd
         self._workspace_identity = workspace_identity
         self._groups: dict[int, Mapping[str, Any]] = {}
+        self._group_guard_fds: dict[int, int] = {}
         self._launch_lock = asyncio.Lock()
         self._closing = False
         self._closed = False
@@ -1137,24 +1138,99 @@ class TrustedProcessHandle:
             }
         )
 
-    @classmethod
+    def _group_guard_matches(self, process_group: int) -> bool:
+        guard_fd = self._group_guard_fds.get(process_group)
+        if guard_fd is None:
+            return False
+        try:
+            guard = os.fstat(guard_fd)
+        except OSError:
+            return False
+        try:
+            proc_fd = os.open(
+                "/proc",
+                os.O_RDONLY
+                | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_CLOEXEC", 0),
+            )
+        except OSError:
+            return False
+        try:
+            for name in os.listdir(proc_fd):
+                if not name.isdecimal():
+                    continue
+                pid = int(name)
+                try:
+                    fields = self._proc_fields(pid)
+                    if (
+                        len(fields) <= 2
+                        or int(fields[2]) != process_group
+                        or self._cgroup_identity(pid)
+                        != self._groups[process_group].get(
+                            "process_cgroup_identity"
+                        )
+                    ):
+                        continue
+                    descriptors = os.open(
+                        name + "/fd",
+                        os.O_RDONLY
+                        | getattr(os, "O_DIRECTORY", 0)
+                        | getattr(os, "O_CLOEXEC", 0),
+                        dir_fd=proc_fd,
+                    )
+                except (OSError, ValueError, IndexError, KeyError):
+                    continue
+                try:
+                    for descriptor_name in os.listdir(descriptors):
+                        try:
+                            candidate = os.stat(
+                                descriptor_name,
+                                dir_fd=descriptors,
+                                follow_symlinks=True,
+                            )
+                        except OSError:
+                            continue
+                        if (
+                            candidate.st_dev,
+                            candidate.st_ino,
+                        ) == (
+                            guard.st_dev,
+                            guard.st_ino,
+                        ):
+                            return True
+                finally:
+                    os.close(descriptors)
+        finally:
+            os.close(proc_fd)
+        return False
+
     def _group_identity_matches(
-        cls,
+        self,
         process_group: int,
         identity: Mapping[str, Any],
     ) -> bool:
+        if (
+            identity.get("process_pid") != process_group
+            or identity.get("process_group_id") != process_group
+        ):
+            return False
         try:
             return (
-                identity.get("process_pid") == process_group
-                and identity.get("process_group_id") == process_group
-                and os.getpgid(process_group) == process_group
-                and cls._start_identity(process_group)
+                os.getpgid(process_group) == process_group
+                and self._start_identity(process_group)
                 == identity.get("process_start_identity")
-                and cls._cgroup_identity(process_group)
+                and self._cgroup_identity(process_group)
                 == identity.get("process_cgroup_identity")
             )
+        except (ProcessLookupError, FileNotFoundError):
+            return self._group_guard_matches(process_group)
         except (OSError, subprocess.SubprocessError, ValueError, IndexError):
             return False
+
+    def _close_group_guard(self, process_group: int) -> None:
+        guard_fd = self._group_guard_fds.pop(process_group, None)
+        if guard_fd is not None:
+            os.close(guard_fd)
 
 
     async def _drain_group(
@@ -1207,6 +1283,7 @@ class TrustedProcessHandle:
             absent = False
         if absent:
             self._groups.pop(process.pid, None)
+            self._close_group_guard(process.pid)
             if clear_identity:
                 recorder = getattr(self, "_identity_recorder", None)
                 if recorder is not None:
@@ -1327,6 +1404,8 @@ class TrustedProcessHandle:
                 identity = self._observe_group_identity(process.pid)
                 process_group = int(identity["process_group_id"])
                 self._groups[process_group] = identity
+                self._group_guard_fds[process_group] = read_fd
+                read_fd = -1
                 recorder = getattr(self, "_identity_recorder", None)
                 if recorder is None:
                     raise RuntimeError(
@@ -1459,6 +1538,7 @@ class TrustedProcessHandle:
                 failed = True
             else:
                 self._groups.pop(process_group, None)
+                self._close_group_guard(process_group)
                 recorder = getattr(self, "_identity_recorder", None)
                 if recorder is not None:
                     recorder(f"process-group-{process_group}", None)

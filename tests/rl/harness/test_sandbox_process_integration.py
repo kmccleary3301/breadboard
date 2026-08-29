@@ -639,6 +639,49 @@ async def test_real_process_plan_runs_through_wp5_port_seals_snapshot_and_cleans
     assert list(harness.lease_root.iterdir()) == []
 
 
+
+@requires_sealed_execution
+async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    descendant_command = (
+        "printf '%s' \"$$\" > work/.descendant.tmp && "
+        "mv work/.descendant.tmp work/descendant.pid; "
+        "exec 1>&- 2>&-; "
+        "sleep 10"
+    )
+    command = (
+        f"/bin/sh -c {shlex.quote(descendant_command)} & "
+        "while [ ! -f work/descendant.pid ]; do :; done"
+    )
+    descendant_pid: int | None = None
+    try:
+        await primary.runner_workspace.run_shell(command, timeout=2)
+        descendant = await primary.runner_workspace.read_text(
+            "work/descendant.pid"
+        )
+        descendant_pid = int(descendant["content"])
+        async with asyncio.timeout(1):
+            while True:
+                try:
+                    os.kill(descendant_pid, 0)
+                except ProcessLookupError:
+                    break
+                await asyncio.sleep(0.01)
+        receipt = await primary.close()
+        assert receipt.state is CleanupState.RELEASED
+        assert await harness.manager.close() == ()
+    finally:
+        if descendant_pid is not None:
+            try:
+                os.kill(descendant_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
 @requires_sealed_execution
 @pytest.mark.parametrize("mode", ["timeout", "cancel"])
 async def test_real_process_closed_stream_timeout_or_cancellation_kills_descendant(
