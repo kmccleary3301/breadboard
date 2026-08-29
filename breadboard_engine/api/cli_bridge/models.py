@@ -756,6 +756,19 @@ class AuthProviderView(BaseModel):
     compatible_protocol: Optional[str] = None
     base_url: Optional[str] = None
 
+
+class AuthCredentialRefreshState(BaseModel):
+    status: str
+    expected_secret_version: Optional[int] = None
+    lease_acquired_at_ms: Optional[int] = None
+    lease_expires_at_ms: Optional[int] = None
+    last_failure_class: Optional[str] = None
+    last_failure_code: Optional[str] = None
+    last_failure_at_ms: Optional[int] = None
+    retry_not_before_ms: Optional[int] = None
+    updated_at_ms: Optional[int] = None
+
+
 class AuthCredentialView(BaseModel):
     account_id: str
     credential_id: str
@@ -772,7 +785,9 @@ class AuthCredentialView(BaseModel):
     expires_at_ms: Optional[int] = None
     has_api_key: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    refresh_state: Dict[str, Any] = Field(default_factory=dict)
+    refresh_state: AuthCredentialRefreshState = Field(
+        default_factory=lambda: AuthCredentialRefreshState(status="idle")
+    )
 
 
 class AuthLoginSession(BaseModel):

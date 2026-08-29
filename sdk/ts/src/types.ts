@@ -308,6 +308,17 @@ export interface ProviderAuthDetachResponse { readonly ok?: boolean }
 export interface ProviderAuthStatusItem { readonly provider_id: string; readonly alias?: string | null; readonly base_url?: string | null; readonly expires_at_ms?: number | null; readonly expires_in_ms?: number | null; readonly has_api_key?: boolean; readonly header_keys?: ReadonlyArray<string>; readonly is_subscription_plan?: boolean; readonly issued_at_ms?: number | null; readonly required_profile?: Record<string, unknown> | null; readonly routing_keys?: ReadonlyArray<string> }
 export interface ProviderAuthStatusResponse { readonly attached?: ReadonlyArray<ProviderAuthStatusItem> }
 export interface AuthProviderView { readonly provider_id: string; readonly aliases: ReadonlyArray<string>; readonly display_name: string; readonly support_tier: "core"; readonly auth_owner: "broker" | "provider"; readonly auth_schemes: ReadonlyArray<string>; readonly available: boolean; readonly availability_reason?: "provider_managed" | "missing_auth" | null; readonly login_available?: boolean; readonly oauth_flows?: ReadonlyArray<string>; readonly model_discovery: "configured_only"; readonly runtime_id?: string | null; readonly compatible_protocol?: string | null; readonly base_url?: string | null }
+export interface AuthCredentialRefreshState {
+  readonly status: string
+  readonly expected_secret_version?: number | null
+  readonly lease_acquired_at_ms?: number | null
+  readonly lease_expires_at_ms?: number | null
+  readonly last_failure_class?: string | null
+  readonly last_failure_code?: string | null
+  readonly last_failure_at_ms?: number | null
+  readonly retry_not_before_ms?: number | null
+  readonly updated_at_ms?: number | null
+}
 export interface AuthCredentialView {
   readonly account_id: string
   readonly credential_id: string
@@ -324,6 +335,7 @@ export interface AuthCredentialView {
   readonly expires_at_ms?: number | null
   readonly has_api_key?: boolean
   readonly metadata?: Record<string, unknown>
+  readonly refresh_state?: AuthCredentialRefreshState
 }
 export interface AuthLoginSession {
   readonly login_session_id: string

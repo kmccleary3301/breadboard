@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextvars
+
 import pytest
 
 from breadboard_engine.security import redaction
@@ -21,6 +23,7 @@ class TestSecretKeyRegistry:
         assert redaction.is_secret_key("X-Api-Key")
         assert redaction.is_secret_key("Authorization")
         assert redaction.is_secret_key("Set-Cookie")
+        assert redaction.is_secret_key("X-Authorization")
         assert redaction.is_secret_key("access_token")
 
     def test_suffix_rule(self):
@@ -63,9 +66,276 @@ class TestRegisteredValues:
             assert redaction.iter_registered_secret_values() == (secret,)
         assert redaction.iter_registered_secret_values() == ()
 
+    def test_scoped_value_detected_in_nested_mapping_key(self):
+        secret = "mapping-key-canary-value"
+        payload = {"outer": [{f"prefix-{secret}-suffix": "description"}]}
+        with redaction.secret_value_scope(secret):
+            assert redaction.contains_registered_secret_mapping_key(payload)
+            assert not redaction.contains_registered_secret_mapping_key(
+                {"outer": [{"description": secret}]}
+            )
+            assert redaction.contains_registered_secret_text(f"prefix-{secret}-suffix")
+            assert not redaction.contains_registered_secret_text("description")
+        assert redaction.iter_registered_secret_values() == ()
+        assert not redaction.contains_registered_secret_mapping_key(payload)
+        assert not redaction.contains_registered_secret_text(f"prefix-{secret}-suffix")
+
+    def test_registered_secret_scrubs_mapping_key_and_problem_path(self):
+        secret = "mapping-key-canary-value"
+        with redaction.secret_value_scope(secret):
+            scrubbed, problems = redaction.scrub_structure(
+                {"outer": [{f"prefix-{secret}-suffix": "description"}]}
+            )
+        safe_key = f"prefix-{redaction.REDACTED}-suffix"
+        assert scrubbed == {"outer": [{safe_key: "description"}]}
+        assert problems == [
+            redaction.RedactionProblem(
+                "secret_value",
+                f"$.outer[0].{safe_key}",
+                "secret value scrubbed from mapping key",
+            )
+        ]
+        assert secret not in repr(problems)
+        assert redaction.iter_registered_secret_values() == ()
+
+    def test_registered_numeric_secret_scrubs_json_scalar(self):
+        secret = "4827"
+        with redaction.secret_value_scope(secret):
+            scrubbed, problems = redaction.scrub_structure({"nested": [int(secret)]})
+        assert scrubbed == {"nested": [redaction.REDACTED]}
+        assert problems == [
+            redaction.RedactionProblem(
+                "secret_value",
+                "$.nested[0]",
+                "secret value scrubbed from scalar",
+            )
+        ]
+        assert redaction.iter_registered_secret_values() == ()
+
+    def test_short_numeric_secret_is_exact_for_scalars_and_fail_closed_for_text(self):
+        with redaction.secret_value_scope("42", allow_short=True):
+            scrubbed, _ = redaction.scrub_structure({"credential": 42, "status": 429})
+            assert scrubbed == {
+                "credential": redaction.REDACTED,
+                "status": 429,
+            }
+            assert (
+                redaction.scrub_text("request failed with status 429")
+                == redaction.REDACTED
+            )
+
+    def test_credential_material_extracts_nested_and_encoded_secrets(self):
+        assert redaction.credential_secret_values(
+            {
+                "api_key": "primary-secret",
+                "headers": {
+                    "Authorization": "Bearer authorization-secret",
+                    "x-api-key": "header-secret",
+                    "Cookie": "sid=cookie-secret",
+                    "Content-Type": "application/json",
+                },
+                "base_url": (
+                    "https://url-user:url-password@example.test/v1?api_key=query-secret"
+                ),
+                "routing": {
+                    "nested": {"refresh_token": "routing-secret"},
+                    "region": "us-east",
+                },
+            }
+        ) == (
+            "primary-secret",
+            "Bearer authorization-secret",
+            "authorization-secret",
+            "header-secret",
+            "sid=cookie-secret",
+            "cookie-secret",
+            "application/json",
+            "url-user",
+            "url-password",
+            "query-secret",
+            "routing-secret",
+        )
+        assert redaction.credential_secret_values(
+            {"headers": {"x-api-key": "abc"}}
+        ) == ("abc",)
+        assert redaction.credential_secret_values(
+            {"headers": {"X-Custom": "custom-header-secret"}}
+        ) == ("custom-header-secret",)
+
+    def test_credential_material_decodes_header_and_numeric_components(self):
+        basic_credential = "YmFzaWMtdXNlcjpiYXNpYy1wYXNzd29yZA=="
+        assert redaction.credential_secret_values(
+            {
+                "headers": {
+                    "X-Authorization": "Bearer prefixed-secret",
+                    "XAuthorization": "Bearer compact-secret",
+                    "Proxy-Authentication": f"Basic {basic_credential}",
+                    "Cookie": 'sid="cookie%2Dencoded"',
+                    "Set-Cookie": ('session_token="set%2Dcookie"; Path=/; HttpOnly'),
+                    "Content-Type": "application/json",
+                },
+                "routing": {
+                    "access_token": 4827,
+                    "session_token": True,
+                },
+            }
+        ) == (
+            "Bearer prefixed-secret",
+            "prefixed-secret",
+            "Bearer compact-secret",
+            "compact-secret",
+            f"Basic {basic_credential}",
+            basic_credential,
+            "basic-user:basic-password",
+            "basic-user",
+            "basic-password",
+            'sid="cookie%2Dencoded"',
+            "cookie%2Dencoded",
+            "cookie-encoded",
+            'session_token="set%2Dcookie"; Path=/; HttpOnly',
+            "set%2Dcookie",
+            "set-cookie",
+            "application/json",
+            "4827",
+            "4827.0",
+        )
+        assert redaction.credential_secret_values(
+            {"routing": {"access_token": 123}}
+        ) == ("123", "123.0")
+
+    def test_credential_material_keeps_raw_and_decoded_url_credentials(self):
+        assert redaction.credential_secret_values(
+            {
+                "base_url": (
+                    "https://url%2Duser:url%2Dpassword@example.test/v1"
+                    "?api_key=query%2Dsecret"
+                )
+            }
+        ) == (
+            "url%2Duser",
+            "url-user",
+            "url%2Dpassword",
+            "url-password",
+            "query%2Dsecret",
+            "query-secret",
+        )
+
     def test_short_and_non_string_values_ignored(self):
         with redaction.secret_value_scope("abc", None, 12345):
             assert redaction.iter_registered_secret_values() == ()
+        assert redaction.iter_registered_secret_values() == ()
+
+    def test_credential_scope_registers_short_values(self):
+        with redaction.secret_value_scope("abc", allow_short=True):
+            assert redaction.iter_registered_secret_values() == ("abc",)
+            assert redaction.scrub_text("echo abc") == (f"echo {redaction.REDACTED}")
+        assert redaction.iter_registered_secret_values() == ()
+
+    def test_short_secret_redacts_text_and_preserves_identity_substrings(self):
+        with redaction.secret_value_scope("a", allow_short=True):
+            assert (
+                redaction.contains_registered_secret_text("provider call failed a")
+                is True
+            )
+            assert (
+                redaction.scrub_text("provider call failed a")
+                == redaction.REDACTED
+            )
+            scrubbed, _ = redaction.scrub_structure(
+                {"label": "a", "message": "provider call failed a"},
+                identity_mapping_keys=True,
+            )
+            assert scrubbed == {
+                "label": redaction.REDACTED,
+                "message": redaction.REDACTED,
+            }
+
+        with redaction.secret_value_scope("ant", allow_short=True):
+            assert redaction.contains_registered_secret_identity("anthropic") is False
+            assert redaction.contains_registered_secret_text("anthropic") is True
+
+    def test_exception_scrubbing_fails_closed_for_embedded_short_secret(self):
+        error = RuntimeError("provider call failed a")
+        error.details = {"message": "nested provider failure a"}
+        error.add_note("provider note a")
+
+        with redaction.secret_value_scope("a", allow_short=True):
+            redaction.scrub_exception_in_place(error)
+
+        assert str(error) == redaction.REDACTED
+        assert error.details == {"message": redaction.REDACTED}
+        assert error.__notes__ == [redaction.REDACTED]
+
+
+    def test_exception_control_fields_cannot_restore_embedded_short_secret(self):
+        error = RuntimeError("provider call failed")
+        error.details = {
+            "classification": "a-rate-limited",
+            "status_code": 429,
+        }
+
+        with redaction.secret_value_scope("a", allow_short=True):
+            redaction.scrub_exception_in_place(error)
+
+        assert error.details == {
+            "classification": redaction.REDACTED,
+            "status_code": 429,
+        }
+
+    def test_exception_rate_limit_classification_cannot_restore_exact_secret(self):
+        error = RuntimeError("provider call failed")
+        error.details = {
+            "classification": "rate_limited",
+            "status_code": 429,
+        }
+
+        with redaction.secret_value_scope("rate_limited"):
+            redaction.scrub_exception_in_place(error)
+
+        assert error.details == {
+            "classification": redaction.REDACTED,
+            "status_code": 429,
+        }
+        assert redaction.exception_is_rate_limited_429(error) is True
+
+    def test_rate_limit_control_does_not_restore_embedded_three_byte_secret(self):
+        error = RuntimeError("provider call failed")
+        error.details = {
+            "classification": "rate_limited",
+            "status_code": 429,
+        }
+
+        with redaction.secret_value_scope("rat", allow_short=True):
+            redaction.scrub_exception_in_place(error)
+
+        assert "rat" not in repr(error.details)
+        assert redaction.exception_is_rate_limited_429(error) is True
+
+    def test_exception_scrubbing_traverses_cause_and_context(self):
+        secret = "provider-chain-secret-canary"
+        cause = RuntimeError(f"cause echoed {secret}")
+        context = RuntimeError(f"context echoed {secret}")
+        outer = RuntimeError("provider request failed")
+        outer.__cause__ = cause
+        outer.__context__ = context
+        with redaction.secret_value_scope(secret):
+            redaction.scrub_exception_in_place(outer)
+
+        assert secret not in str(cause)
+        assert secret not in str(context)
+
+    def test_scopes_are_isolated_between_operation_contexts(self):
+        outer_secret = "outer-operation-secret"
+        inner_secret = "inner-operation-secret"
+
+        def isolated_operation():
+            assert redaction.iter_registered_secret_values() == ()
+            with redaction.secret_value_scope(inner_secret):
+                return redaction.iter_registered_secret_values()
+
+        with redaction.secret_value_scope(outer_secret):
+            assert contextvars.Context().run(isolated_operation) == (inner_secret,)
+            assert redaction.iter_registered_secret_values() == (outer_secret,)
         assert redaction.iter_registered_secret_values() == ()
 
     def test_overlapping_scopes_are_reference_counted(self):
@@ -74,6 +344,14 @@ class TestRegisteredValues:
             with redaction.secret_value_scope(secret):
                 assert redaction.iter_registered_secret_values() == (secret,)
             assert redaction.iter_registered_secret_values() == (secret,)
+        assert redaction.iter_registered_secret_values() == ()
+
+    def test_overlapping_secret_values_scrub_longest_first(self):
+        shorter = "overlap-secret"
+        longer = "overlap-secret-suffix"
+        with redaction.secret_value_scope(shorter, longer):
+            assert redaction.iter_registered_secret_values() == (longer, shorter)
+            assert redaction.scrub_text(longer) == redaction.REDACTED
         assert redaction.iter_registered_secret_values() == ()
 
     def test_exception_fields_are_scrubbed_before_scope_release(self):

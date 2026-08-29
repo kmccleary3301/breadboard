@@ -65,6 +65,77 @@ def test_openai_environment_key_is_broker_resolved_and_scoped(
     assert redaction.iter_registered_secret_values() == ()
 
 
+def test_stored_alternate_credentials_are_scoped_through_provider_errors(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+    from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialStore
+    from breadboard_engine.security import redaction
+
+    redaction.clear_registered_secret_values()
+    header_secret = "prefixed-header-secret"
+    short_header_secret = "a"
+    encoded_url_secret = "url%2Dsecret"
+    decoded_url_secret = "url-secret"
+    numeric_secret = "48273195"
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    broker.putApiKey(
+        {
+            "provider_id": "openai",
+            "account_label": "alternate",
+            "api_key": "primary-secret-material",
+            "headers": {
+                "X-Authorization": f"Bearer {header_secret}",
+                "X-Custom": short_header_secret,
+            },
+            "base_url": (f"https://url-user:{encoded_url_secret}@example.test/v1"),
+            "routing": {"access_token": int(numeric_secret)},
+        }
+    )
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    router = ProviderRouter()
+
+    with pytest.raises(RuntimeError) as error:
+        with router.execution_client_config("openai/gpt-5.4-mini"):
+            assert {
+                header_secret,
+                short_header_secret,
+                encoded_url_secret,
+                decoded_url_secret,
+                numeric_secret,
+            } <= set(redaction.iter_registered_secret_values())
+            failure = RuntimeError(
+                (
+                    f"provider call failed {short_header_secret} "
+                    f"{header_secret} {encoded_url_secret} "
+                    f"{decoded_url_secret} {numeric_secret}"
+                )
+            )
+            failure.details = {
+                "classification": "rate_limited",
+                "status_code": 429,
+                "retry_after": 300,
+            }
+            raise failure
+
+    for secret in (
+        header_secret,
+        short_header_secret,
+        encoded_url_secret,
+        decoded_url_secret,
+        numeric_secret,
+    ):
+        assert secret not in str(error.value)
+    assert error.value.details == {
+        "classification": redaction.REDACTED,
+        "status_code": 429,
+        "retry_after": 300,
+    }
+    assert redaction.exception_is_rate_limited_429(error.value) is True
+    assert redaction.iter_registered_secret_values() == ()
+
+
 def test_config_override_wins_and_applies_endpoint_metadata(
     tmp_path,
     monkeypatch,

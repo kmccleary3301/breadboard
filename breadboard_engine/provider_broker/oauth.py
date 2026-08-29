@@ -12,8 +12,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
+from breadboard_engine.security.redaction import MIN_REGISTERED_SECRET_LENGTH
 from .catalog import OAuthFlowSpec
 
 DEFAULT_OAUTH_HTTP_TIMEOUT_SECONDS = 30
@@ -132,6 +133,13 @@ def _jwt_claim(token: str, path: tuple[str, ...]) -> str | None:
         return None
 
 
+def _is_valid_oauth_token(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value.strip()) >= MIN_REGISTERED_SECRET_LENGTH
+    )
+
+
 class OAuthFlowAdapter:
     def __init__(self, spec: OAuthFlowSpec, *, transport: OAuthTransport | None = None) -> None:
         self.spec = spec
@@ -220,10 +228,17 @@ class OAuthFlowAdapter:
             internal=internal,
         )
 
-    def complete(self, flow: Mapping[str, Any], *, code: str | None = None, state: str | None = None) -> dict[str, Any]:
+    def complete(
+        self,
+        flow: Mapping[str, Any],
+        *,
+        code: str | None = None,
+        state: str | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
         flow_kind = str(flow.get("flow_kind") or "browser")
         if flow_kind == "device":
-            return self._complete_device(flow)
+            return self._complete_device(flow, is_cancelled=is_cancelled)
         expected_state = str(flow.get("state") or "")
         if not code or not state or not secrets.compare_digest(expected_state, str(state)):
             raise OAuthFlowError("oauth_state_mismatch", "OAuth callback state did not match")
@@ -243,20 +258,40 @@ class OAuthFlowAdapter:
             raise OAuthFlowError("oauth_token_exchange_failed", "OAuth token exchange failed", status=status)
         return self._token_material(_json_body(status, raw))
 
-    def _complete_device(self, flow: Mapping[str, Any]) -> dict[str, Any]:
+    def _complete_device(
+        self,
+        flow: Mapping[str, Any],
+        *,
+        is_cancelled: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
         if not self.spec.device_token_url:
             raise OAuthFlowError("flow_unavailable", "Device token endpoint is not established")
         interval = max(1.0, float(flow.get("interval") or 5))
         deadline = time.time() + float(flow.get("expires_in") or 600)
+        def wait_for_next_poll(seconds: float) -> None:
+            wait_deadline = time.time() + seconds
+            while True:
+                remaining = wait_deadline - time.time()
+                if remaining <= 0:
+                    return
+                time.sleep(min(30.0, remaining))
+                if is_cancelled is not None and is_cancelled():
+                    raise OAuthFlowError(
+                        "oauth_login_cancelled", "OAuth login was cancelled"
+                    )
         while time.time() < deadline:
+            if is_cancelled is not None and is_cancelled():
+                raise OAuthFlowError("oauth_login_cancelled", "OAuth login was cancelled")
             status, _headers, raw = self.transport(
                 self.spec.device_token_url,
                 method="POST",
                 headers={"Content-Type": "application/json"},
                 body=json.dumps({"device_auth_id": flow.get("device_auth_id"), "user_code": flow.get("user_code")}).encode(),
             )
+            if is_cancelled is not None and is_cancelled():
+                raise OAuthFlowError("oauth_login_cancelled", "OAuth login was cancelled")
             if status in {403, 404}:
-                time.sleep(min(interval, max(0.0, deadline - time.time())))
+                wait_for_next_poll(min(interval, max(0.0, deadline - time.time())))
                 continue
             if status < 200 or status >= 300:
                 raise OAuthFlowError("oauth_device_poll_failed", "Device token polling failed", status=status)
@@ -290,14 +325,13 @@ class OAuthFlowAdapter:
         except (TypeError, ValueError):
             expires_seconds = float("nan")
         malformed = (
-            not isinstance(access, str)
-            or not access
+            not _is_valid_oauth_token(access)
             or isinstance(expires, bool)
             or not math.isfinite(expires_seconds)
             or expires_seconds <= 0
             or expires_seconds > 31_536_000
-            or (require_refresh and (not isinstance(refresh, str) or not refresh))
-            or (refresh is not None and not isinstance(refresh, str))
+            or (require_refresh and refresh is None)
+            or (refresh is not None and not _is_valid_oauth_token(refresh))
         )
         if malformed:
             raise OAuthFlowError(

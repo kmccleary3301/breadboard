@@ -4,6 +4,7 @@ import json
 import time
 import threading
 import urllib.parse
+import pytest
 
 from breadboard_engine.provider_broker import (
     ProviderBroker,
@@ -63,8 +64,7 @@ def test_google_oauth_requires_a_deployment_owned_client_id(monkeypatch, tmp_pat
     assert unavailable["problem"]["code"] == "flow_unavailable"
     assert unavailable["problem"]["details"]["configuration_key"] == env_name
     assert not any(
-        item["provider_id"] == "google-gemini-cli"
-        for item in broker.listProviders()
+        item["provider_id"] == "google-gemini-cli" for item in broker.listProviders()
     )
     entry = get_provider_catalog_entry("google-gemini-cli")
     assert entry is not None
@@ -154,6 +154,182 @@ def test_codex_browser_login_and_exchange_use_exact_source_endpoints_without_lea
     assert material == {}
 
 
+def test_oauth_completion_terminalizes_claim_after_unexpected_transport_error(
+    tmp_path,
+) -> None:
+    def failing_transport(*_args, **_kwargs):
+        raise RuntimeError("transport unavailable")
+
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / "unexpected.sqlite3"),
+        oauth_transport=failing_transport,
+    )
+    started = broker.beginLogin({"provider_id": "codex"})
+    flow = broker.store.get_login(
+        started["login_session_id"],
+        include_flow=True,
+    )["flow"]
+
+    completed = broker.completeLogin(
+        {
+            "login_session_id": started["login_session_id"],
+            "authorization_code": "auth-code",
+            "state": flow["state"],
+        }
+    )
+
+    assert completed["status"] == "failed"
+    assert completed["problem"]["code"] == "oauth_completion_failed"
+    assert broker.getLogin(started["login_session_id"])["status"] == "failed"
+
+
+def test_oauth_completion_scrubs_token_aliases_from_public_metadata(tmp_path):
+    access = "oauth-access-alias-canary"
+    refresh = "oauth-refresh-alias-canary"
+    transport, _calls = _transport_factory(
+        [
+            (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "access_token": access,
+                        "refresh_token": refresh,
+                        "expires_in": 3600,
+                        "project_id": access,
+                        "token_type": refresh,
+                    }
+                ).encode(),
+            )
+        ]
+    )
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / "credentials.sqlite3"),
+        oauth_transport=transport,
+    )
+    started = broker.beginLogin({"provider_id": "codex"})
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
+
+    completed = broker.completeLogin(
+        {
+            "login_session_id": started["login_session_id"],
+            "authorization_code": "auth-code",
+            "state": flow["state"],
+        }
+    )
+
+    assert completed["status"] == "completed"
+    assert completed["credential"]["metadata"] == {
+        "project_id": redaction.REDACTED,
+        "token_type": redaction.REDACTED,
+    }
+    assert access not in json.dumps(completed)
+    assert refresh not in json.dumps(completed)
+    assert access not in json.dumps(broker.listCredentials())
+    assert refresh not in json.dumps(broker.listCredentials())
+    assert access not in json.dumps(broker.audit_events())
+    assert refresh not in json.dumps(broker.audit_events())
+    assert redaction.iter_registered_secret_values() == ()
+
+
+@pytest.mark.parametrize("identity_field", ["account_label", "alias"])
+def test_oauth_completion_rejects_token_aliases_in_public_identity_fields(
+    tmp_path,
+    identity_field,
+):
+    access = "oauth-identity-alias-canary"
+    refresh = "oauth-refresh-control-canary"
+    transport, _calls = _transport_factory(
+        [
+            (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "access_token": access,
+                        "refresh_token": refresh,
+                        "expires_in": 3600,
+                    }
+                ).encode(),
+            )
+        ]
+    )
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / f"{identity_field}.sqlite3"),
+        oauth_transport=transport,
+    )
+    started = broker.beginLogin({"provider_id": "codex"})
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
+    payload = {
+        "login_session_id": started["login_session_id"],
+        "authorization_code": "auth-code",
+        "state": flow["state"],
+        identity_field: access,
+    }
+
+    completed = broker.completeLogin(payload)
+
+    assert completed["status"] == "failed"
+    assert completed["problem"]["code"] == "oauth_invalid_response"
+    assert access not in json.dumps(completed)
+    assert refresh not in json.dumps(completed)
+    assert broker.listCredentials() == []
+    assert access not in json.dumps(broker.audit_events())
+    assert refresh not in json.dumps(broker.audit_events())
+    assert redaction.iter_registered_secret_values() == ()
+
+
+@pytest.mark.parametrize("short_field", ["access_token", "refresh_token"])
+def test_oauth_completion_rejects_tokens_below_exact_redaction_minimum(
+    tmp_path,
+    short_field,
+):
+    tokens = {
+        "access_token": "oauth-access-control-canary",
+        "refresh_token": "oauth-refresh-control-canary",
+    }
+    tokens[short_field] = "abc"
+    transport, _calls = _transport_factory(
+        [
+            (
+                200,
+                {},
+                json.dumps(
+                    {
+                        **tokens,
+                        "expires_in": 3600,
+                    }
+                ).encode(),
+            )
+        ]
+    )
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / f"{short_field}.sqlite3"),
+        oauth_transport=transport,
+    )
+    started = broker.beginLogin({"provider_id": "codex"})
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
+
+    completed = broker.completeLogin(
+        {
+            "login_session_id": started["login_session_id"],
+            "authorization_code": "auth-code",
+            "state": flow["state"],
+        }
+    )
+
+    assert completed["status"] == "failed"
+    assert completed["problem"]["code"] == "oauth_invalid_response"
+    assert broker.listCredentials() == []
+    assert redaction.iter_registered_secret_values() == ()
+
+
 def test_openai_api_key_has_typed_flow_unavailable_and_anthropic_refresh_is_single_refresher(
     tmp_path,
 ):
@@ -215,11 +391,81 @@ def test_openai_api_key_has_typed_flow_unavailable_and_anthropic_refresh_is_sing
     )
 
 
+def test_oauth_refresh_scrubs_legacy_token_aliases_from_metadata(tmp_path):
+    old_access = "oauth-legacy-metadata-canary"
+    old_refresh = "oauth-legacy-refresh-canary"
+    new_access = "oauth-refreshed-access-canary"
+    new_refresh = "oauth-refreshed-refresh-canary"
+    transport, _calls = _transport_factory(
+        [
+            (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "access_token": new_access,
+                        "refresh_token": new_refresh,
+                        "expires_in": 3600,
+                    }
+                ).encode(),
+            )
+        ]
+    )
+    broker = ProviderBroker(
+        SQLiteCredentialStore(tmp_path / "credentials.sqlite3"),
+        oauth_transport=transport,
+    )
+    expires_at = int(time.time() * 1000) + 1000
+    credential = broker.store.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="account",
+        material={
+            "access_token": old_access,
+            "refresh_token": old_refresh,
+            "project_id": old_access,
+            "token_type": old_refresh,
+            "expires_at_ms": expires_at,
+        },
+        expires_at_ms=expires_at,
+        metadata={"project_id": old_access, "token_type": old_refresh},
+    )
+
+    with broker.execution_material(
+        "anthropic",
+        account_selector={"account_id": credential["account_id"]},
+        minimum_validity_ms=5000,
+    ) as material:
+        assert material and material["api_key"] == new_access
+
+    assert broker.listCredentials()[0]["metadata"] == {
+        "project_id": redaction.REDACTED,
+        "token_type": redaction.REDACTED,
+    }
+    assert old_access not in json.dumps(broker.listCredentials())
+    assert old_refresh not in json.dumps(broker.listCredentials())
+    assert new_access not in json.dumps(broker.listCredentials())
+    assert new_refresh not in json.dumps(broker.listCredentials())
+    assert old_access not in json.dumps(broker.audit_events())
+    assert old_refresh not in json.dumps(broker.audit_events())
+    assert new_access not in json.dumps(broker.audit_events())
+    assert new_refresh not in json.dumps(broker.audit_events())
+    assert redaction.iter_registered_secret_values() == ()
+
+
 def test_codex_device_flow_uses_source_endpoints(tmp_path, monkeypatch):
+    import breadboard_engine.provider_broker.oauth as oauth_module
     import breadboard_engine.provider_broker.store as store_module
 
     started_at_ms = 1_800_000_000_000
-    monkeypatch.setattr(store_module, "now_ms", lambda: started_at_ms)
+    clock = _FakeClock(started_at_ms)
+    monkeypatch.setattr(store_module, "now_ms", lambda: clock.now_ms)
+    monkeypatch.setattr(oauth_module.time, "time", clock)
+    monkeypatch.setattr(
+        oauth_module.time,
+        "sleep",
+        lambda seconds: clock.advance_ms(int(seconds * 1000)),
+    )
     access = "device-access"
     responses = [
         (
@@ -229,11 +475,13 @@ def test_codex_device_flow_uses_source_endpoints(tmp_path, monkeypatch):
                 {
                     "device_auth_id": "device-1",
                     "user_code": "ABCD-EFGH",
-                    "interval": 1,
+                    "interval": 150,
                     "expires_in": 1200,
                 }
             ).encode(),
         ),
+        (403, {}, b"{}"),
+        (403, {}, b"{}"),
         (
             200,
             {},
@@ -260,6 +508,19 @@ def test_codex_device_flow_uses_source_endpoints(tmp_path, monkeypatch):
     broker = ProviderBroker(
         SQLiteCredentialStore(tmp_path / "device.sqlite3"), oauth_transport=transport
     )
+    renew_login_claim = broker.store.renew_login_claim
+    renewal_count = 0
+
+    def record_login_claim_renewal(*args, **kwargs):
+        nonlocal renewal_count
+        renewal_count += 1
+        return renew_login_claim(*args, **kwargs)
+
+    monkeypatch.setattr(
+        broker.store,
+        "renew_login_claim",
+        record_login_claim_renewal,
+    )
     started = broker.beginLogin({"provider_id": "codex", "flow": "device"})
     assert started["flow_kind"] == "device"
     assert started["user_code"] == "ABCD-EFGH"
@@ -270,8 +531,11 @@ def test_codex_device_flow_uses_source_endpoints(tmp_path, monkeypatch):
     assert "device-1" not in json.dumps(status_view)
     completed = broker.completeLogin({"login_session_id": started["login_session_id"]})
     assert completed["status"] == "completed"
+    assert renewal_count >= 14
     assert [call[0] for call in calls] == [
         "https://auth.openai.com/api/accounts/deviceauth/usercode",
+        "https://auth.openai.com/api/accounts/deviceauth/token",
+        "https://auth.openai.com/api/accounts/deviceauth/token",
         "https://auth.openai.com/api/accounts/deviceauth/token",
         "https://auth.openai.com/oauth/token",
     ]
@@ -396,6 +660,400 @@ def test_refresh_single_flight_is_durable_across_broker_instances(tmp_path):
             2,
         ),
     }
+
+
+def _stored_oauth_material(
+    store: SQLiteCredentialStore,
+    account_id: str,
+) -> dict[str, str]:
+    with store._transaction() as connection:
+        row = connection.execute(
+            "SELECT material FROM secrets WHERE account_id = ?",
+            (account_id,),
+        ).fetchone()
+    assert row is not None
+    return json.loads(row["material"])
+
+
+def test_refresh_terminal_operations_reject_owner_after_lease_takeover(
+    tmp_path,
+    monkeypatch,
+):
+    import breadboard_engine.provider_broker.store as store_module
+
+    base_ms = store_module.now_ms()
+    monkeypatch.setattr(store_module, "now_ms", lambda: base_ms)
+    db = tmp_path / "terminal-takeover.sqlite3"
+    stale = SQLiteCredentialStore(db)
+    current = SQLiteCredentialStore(db)
+    credential = stale.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="terminal-takeover",
+        material={
+            "access_token": "takeover-access-current",
+            "refresh_token": "takeover-refresh-current",
+        },
+        expires_at_ms=base_ms + 10_000,
+    )
+    account_id = credential["account_id"]
+    assert (
+        stale.claim_oauth_refresh(
+            account_id=account_id,
+            expected_secret_version=1,
+            owner_id="stale-owner",
+            lease_duration_ms=100,
+        )["status"]
+        == "acquired"
+    )
+
+    monkeypatch.setattr(store_module, "now_ms", lambda: base_ms + 101)
+    takeover = current.claim_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="current-owner",
+        lease_duration_ms=100,
+    )
+    assert takeover["status"] == "acquired"
+    assert takeover["recovered_stale_lease"] is True
+
+    completed = stale.complete_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="stale-owner",
+        material={
+            "access_token": "takeover-access-stale",
+            "refresh_token": "takeover-refresh-stale",
+        },
+        expires_at_ms=base_ms + 20_000,
+    )
+    failed = stale.fail_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="stale-owner",
+        failure_class="definitive",
+        failure_code="invalid_grant",
+    )
+
+    assert completed == {"status": "claim_lost"}
+    assert failed is False
+    assert _stored_oauth_material(current, account_id) == {
+        "access_token": "takeover-access-current",
+        "refresh_token": "takeover-refresh-current",
+    }
+    assert current.inspect_refresh_state(account_id)["status"] == "refreshing"
+
+
+def test_refresh_completion_scrubs_new_material_from_metadata(tmp_path) -> None:
+    store = SQLiteCredentialStore(tmp_path / "refresh-metadata.sqlite3")
+    now = int(time.time() * 1000)
+    credential = store.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="refresh-metadata",
+        material={
+            "access_token": "refresh-access-old",
+            "refresh_token": "refresh-token-old",
+        },
+        expires_at_ms=now + 10_000,
+        metadata={
+            "access_alias": "refresh-access-old",
+            "refresh_alias": "refresh-token-old",
+            "stable": "preserved",
+        },
+    )
+    account_id = credential["account_id"]
+    assert (
+        store.claim_oauth_refresh(
+            account_id=account_id,
+            expected_secret_version=1,
+            owner_id="refresh-owner",
+            lease_duration_ms=10_000,
+        )["status"]
+        == "acquired"
+    )
+    material = {
+        "access_token": "refresh-access-new",
+        "refresh_token": "refresh-token-new",
+    }
+
+    completed = store.complete_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="refresh-owner",
+        material=material,
+        expires_at_ms=now + 20_000,
+        metadata={
+            "access_alias": material["access_token"],
+            "refresh_alias": material["refresh_token"],
+        },
+    )
+
+    assert completed["status"] == "completed"
+    assert completed["credential"]["metadata"] == {
+        "access_alias": redaction.REDACTED,
+        "refresh_alias": redaction.REDACTED,
+        "stable": "preserved",
+    }
+    serialized = json.dumps(store.list_accounts())
+    assert material["access_token"] not in serialized
+    assert "refresh-access-old" not in serialized
+    assert "refresh-token-old" not in serialized
+    assert material["refresh_token"] not in serialized
+
+
+
+def test_refresh_rejects_new_material_colliding_with_persisted_identity(
+    tmp_path,
+) -> None:
+    store = SQLiteCredentialStore(tmp_path / "refresh-identity.sqlite3")
+    now = int(time.time() * 1000)
+    credential = store.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="future-access-token",
+        material={
+            "access_token": "old-access-token",
+            "refresh_token": "old-refresh-token",
+        },
+        expires_at_ms=now + 10_000,
+    )
+    assert (
+        store.claim_oauth_refresh(
+            account_id=credential["account_id"],
+            expected_secret_version=1,
+            owner_id="identity-owner",
+            lease_duration_ms=10_000,
+        )["status"]
+        == "acquired"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="credential identity fields cannot contain credential material",
+    ):
+        store.complete_oauth_refresh(
+            account_id=credential["account_id"],
+            expected_secret_version=1,
+            owner_id="identity-owner",
+            material={
+                "access_token": "future-access-token",
+                "refresh_token": "new-refresh-token",
+            },
+            expires_at_ms=now + 20_000,
+        )
+
+    [unchanged] = store.list_accounts("anthropic")
+    assert unchanged["secret_version"] == 1
+    assert unchanged["label"] == "future-access-token"
+
+def test_refresh_terminal_operations_preserve_concurrent_rotation(
+    tmp_path,
+):
+    db = tmp_path / "terminal-rotation.sqlite3"
+    stale = SQLiteCredentialStore(db)
+    current = SQLiteCredentialStore(db)
+    now = int(time.time() * 1000)
+    credential = stale.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="terminal-rotation",
+        material={
+            "access_token": "rotation-access-old",
+            "refresh_token": "rotation-refresh-old",
+        },
+        expires_at_ms=now + 10_000,
+    )
+    account_id = credential["account_id"]
+    assert (
+        stale.claim_oauth_refresh(
+            account_id=account_id,
+            expected_secret_version=1,
+            owner_id="stale-owner",
+            lease_duration_ms=10_000,
+        )["status"]
+        == "acquired"
+    )
+    rotated = current.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="terminal-rotation",
+        account_id=account_id,
+        material={
+            "access_token": "rotation-access-current",
+            "refresh_token": "rotation-refresh-current",
+        },
+        expires_at_ms=now + 20_000,
+    )
+
+    completed = stale.complete_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="stale-owner",
+        material={
+            "access_token": "rotation-access-stale",
+            "refresh_token": "rotation-refresh-stale",
+        },
+        expires_at_ms=now + 30_000,
+    )
+    failed = stale.fail_oauth_refresh(
+        account_id=account_id,
+        expected_secret_version=1,
+        owner_id="stale-owner",
+        failure_class="definitive",
+        failure_code="invalid_grant",
+    )
+
+    assert rotated["secret_version"] == 2
+    assert completed == {"status": "claim_lost"}
+    assert failed is False
+    assert _stored_oauth_material(current, account_id) == {
+        "access_token": "rotation-access-current",
+        "refresh_token": "rotation-refresh-current",
+    }
+    assert current.inspect_refresh_state(account_id) == {"status": "idle"}
+
+
+@pytest.mark.parametrize("terminal", ["complete", "definitive"])
+def test_refresh_terminal_transition_holds_write_ownership(
+    tmp_path,
+    monkeypatch,
+    terminal,
+):
+    import breadboard_engine.provider_broker.store as store_module
+
+    db = tmp_path / f"terminal-lock-{terminal}.sqlite3"
+    stale = SQLiteCredentialStore(db)
+    current = SQLiteCredentialStore(db)
+    now = store_module.now_ms()
+    credential = stale.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label=f"terminal-lock-{terminal}",
+        material={
+            "access_token": "terminal-lock-access-old",
+            "refresh_token": "terminal-lock-refresh-old",
+        },
+        expires_at_ms=now + 10_000,
+    )
+    account_id = credential["account_id"]
+    assert (
+        stale.claim_oauth_refresh(
+            account_id=account_id,
+            expected_secret_version=1,
+            owner_id="terminal-owner",
+            lease_duration_ms=10_000,
+        )["status"]
+        == "acquired"
+    )
+
+    terminal_entered = threading.Event()
+    release_terminal = threading.Event()
+    rotation_started = threading.Event()
+    rotation_done = threading.Event()
+    terminal_results = []
+    rotation_results = []
+    terminal_errors = []
+    rotation_errors = []
+    terminal_thread = None
+    original_now_ms = store_module.now_ms
+
+    def controlled_now_ms():
+        if threading.current_thread() is terminal_thread:
+            terminal_entered.set()
+            assert release_terminal.wait(2)
+        return original_now_ms()
+
+    monkeypatch.setattr(store_module, "now_ms", controlled_now_ms)
+
+    def apply_terminal():
+        try:
+            if terminal == "complete":
+                terminal_results.append(
+                    stale.complete_oauth_refresh(
+                        account_id=account_id,
+                        expected_secret_version=1,
+                        owner_id="terminal-owner",
+                        material={
+                            "access_token": "terminal-lock-access-refreshed",
+                            "refresh_token": "terminal-lock-refresh-refreshed",
+                        },
+                        expires_at_ms=now + 20_000,
+                    )
+                )
+            else:
+                terminal_results.append(
+                    stale.fail_oauth_refresh(
+                        account_id=account_id,
+                        expected_secret_version=1,
+                        owner_id="terminal-owner",
+                        failure_class="definitive",
+                        failure_code="invalid_grant",
+                    )
+                )
+        except BaseException as error:
+            terminal_errors.append(error)
+
+    def rotate():
+        rotation_started.set()
+        try:
+            with current.atomic():
+                rotation_results.append(
+                    current.put_oauth(
+                        provider_id="anthropic",
+                        auth_scheme_id="oauth2",
+                        label=f"terminal-lock-{terminal}",
+                        account_id=account_id,
+                        material={
+                            "access_token": "terminal-lock-access-current",
+                            "refresh_token": "terminal-lock-refresh-current",
+                        },
+                        expires_at_ms=now + 30_000,
+                    )
+                )
+        except BaseException as error:
+            rotation_errors.append(error)
+        finally:
+            rotation_done.set()
+
+    terminal_thread = threading.Thread(target=apply_terminal)
+    rotation_thread = threading.Thread(target=rotate)
+    terminal_thread.start()
+    assert terminal_entered.wait(2)
+    rotation_thread.start()
+    assert rotation_started.wait(2)
+    assert not rotation_done.wait(0.1)
+    release_terminal.set()
+    terminal_thread.join(2)
+    rotation_thread.join(2)
+
+    assert not terminal_errors
+    assert not terminal_thread.is_alive()
+    assert not rotation_thread.is_alive()
+    if terminal == "complete":
+        assert terminal_results[0]["status"] == "completed"
+        assert rotation_errors == []
+        assert rotation_results[0]["secret_version"] == 3
+        assert _stored_oauth_material(current, account_id) == {
+            "access_token": "terminal-lock-access-current",
+            "refresh_token": "terminal-lock-refresh-current",
+        }
+    else:
+        assert terminal_results == [True]
+        assert rotation_results == []
+        assert len(rotation_errors) == 1
+        assert isinstance(rotation_errors[0], ValueError)
+        with current._transaction() as connection:
+            account = connection.execute(
+                "SELECT status FROM accounts WHERE account_id = ?",
+                (account_id,),
+            ).fetchone()
+            secret_count = connection.execute(
+                "SELECT COUNT(*) FROM secrets WHERE account_id = ?",
+                (account_id,),
+            ).fetchone()[0]
+        assert account["status"] == "revoked"
+        assert secret_count == 0
 
 
 def test_stale_refresh_owner_is_recovered_after_restart(
@@ -605,10 +1263,7 @@ def test_expired_legacy_oauth_without_refresh_token_is_tombstoned(
     view = broker.listCredentials("anthropic")[0]
     assert view["status"] == "revoked"
     assert view["refresh_state"]["last_failure_class"] == "definitive"
-    assert (
-        view["refresh_state"]["last_failure_code"]
-        == "oauth_refresh_unavailable"
-    )
+    assert view["refresh_state"]["last_failure_code"] == "oauth_refresh_unavailable"
 
 
 def test_definitive_refresh_failure_tombstones_and_relogin_creates_new_account(
@@ -768,7 +1423,9 @@ def test_revoke_during_refresh_cannot_resurrect_tombstone(tmp_path):
     assert view["secret_version"] == 1
 
 
-def _login_storage_row(store, login_session_id: str) -> tuple[str, int, int, str | None]:
+def _login_storage_row(
+    store, login_session_id: str
+) -> tuple[str, int, int, str | None]:
     with store._transaction() as connection:
         row = connection.execute(
             """SELECT status, created_at_ms, updated_at_ms, flow_json
@@ -814,9 +1471,9 @@ def test_completed_oauth_login_clears_internal_flow_json(tmp_path, monkeypatch):
     assert status == "pending"
     assert flow_json
 
-    flow = broker.store.get_login(
-        started["login_session_id"], include_flow=True
-    )["flow"]
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
     completed = broker.completeLogin(
         {
             "login_session_id": started["login_session_id"],
@@ -831,6 +1488,10 @@ def test_completed_oauth_login_clears_internal_flow_json(tmp_path, monkeypatch):
     )
     assert status == "completed"
     assert flow_json is None
+    assert broker.cancelLogin(started["login_session_id"])["ok"] is False
+    assert (
+        _login_storage_row(broker.store, started["login_session_id"])[0] == "completed"
+    )
 
 
 def test_failed_oauth_login_clears_internal_flow_json(tmp_path):
@@ -842,9 +1503,9 @@ def test_failed_oauth_login_clears_internal_flow_json(tmp_path):
         oauth_transport=transport,
     )
     started = broker.beginLogin({"provider_id": "codex"})
-    flow = broker.store.get_login(
-        started["login_session_id"], include_flow=True
-    )["flow"]
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
 
     failed = broker.completeLogin(
         {
@@ -860,6 +1521,8 @@ def test_failed_oauth_login_clears_internal_flow_json(tmp_path):
     )
     assert status == "failed"
     assert flow_json is None
+    assert broker.cancelLogin(started["login_session_id"])["ok"] is False
+    assert _login_storage_row(broker.store, started["login_session_id"])[0] == "failed"
 
 
 def test_cancelled_oauth_login_clears_internal_flow_json(tmp_path):
@@ -876,6 +1539,254 @@ def test_cancelled_oauth_login_clears_internal_flow_json(tmp_path):
     )
     assert status == "cancelled"
     assert flow_json is None
+    assert broker.cancelLogin(started["login_session_id"])["ok"] is False
+
+
+def test_concurrent_oauth_completion_has_one_exchange_owner(tmp_path) -> None:
+    db = tmp_path / "completion-owner.sqlite3"
+    entered = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    def transport(url, *, method, headers, body=None):
+        _ = (method, headers, body)
+        calls.append(url)
+        entered.set()
+        assert release.wait(2)
+        return (
+            200,
+            {},
+            json.dumps(
+                {
+                    "access_token": "completion-owner-access",
+                    "refresh_token": "completion-owner-refresh",
+                    "expires_in": 3600,
+                }
+            ).encode(),
+        )
+
+    owner = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    contender = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    started = owner.beginLogin({"provider_id": "codex"})
+    flow = owner.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
+    payload = {
+        "login_session_id": started["login_session_id"],
+        "authorization_code": "one-time-code",
+        "state": flow["state"],
+    }
+    owner_results: list[dict] = []
+    thread = threading.Thread(
+        target=lambda: owner_results.append(owner.completeLogin(payload))
+    )
+
+    thread.start()
+    assert entered.wait(2)
+    contender_result = contender.completeLogin(payload)
+    assert contender_result["status"] == "pending"
+    release.set()
+    thread.join(2)
+
+    assert not thread.is_alive()
+    assert [result["status"] for result in owner_results] == ["completed"]
+    assert len(calls) == 1
+    assert len(contender.listCredentials("codex")) == 1
+
+
+def test_cancel_during_oauth_completion_wins_without_persisting_material(tmp_path):
+    db = tmp_path / "cancel-completion-race.sqlite3"
+    entered = threading.Event()
+    release = threading.Event()
+    access_canary = "cancel-race-access-canary"
+    refresh_canary = "cancel-race-refresh-canary"
+
+    def transport(_url, *, method, headers, body=None):
+        _ = (method, headers, body)
+        entered.set()
+        assert release.wait(2)
+        return (
+            200,
+            {},
+            json.dumps(
+                {
+                    "access_token": access_canary,
+                    "refresh_token": refresh_canary,
+                    "expires_in": 3600,
+                }
+            ).encode(),
+        )
+
+    completer = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    canceller = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    started = completer.beginLogin({"provider_id": "codex"})
+    flow = completer.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
+    results = []
+    errors = []
+
+    def complete():
+        try:
+            results.append(
+                completer.completeLogin(
+                    {
+                        "login_session_id": started["login_session_id"],
+                        "authorization_code": "cancel-race-code",
+                        "state": flow["state"],
+                    }
+                )
+            )
+        except BaseException as error:
+            errors.append(error)
+
+    thread = threading.Thread(target=complete)
+    thread.start()
+    assert entered.wait(2)
+    assert canceller.cancelLogin(started["login_session_id"])["ok"] is True
+    release.set()
+    thread.join(2)
+
+    assert not errors
+    assert not thread.is_alive()
+    assert [result["status"] for result in results] == ["cancelled"]
+    assert all("credential" not in result for result in results)
+    status, _created_at_ms, _updated_at_ms, flow_json = _login_storage_row(
+        canceller.store, started["login_session_id"]
+    )
+    assert status == "cancelled"
+    assert flow_json is None
+    assert canceller.listCredentials() == []
+    with canceller.store._transaction() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM secrets").fetchone()[0] == 0
+    audit = canceller.audit_events()
+    assert not any(event["event"] == "provider_login_completed" for event in audit)
+    visible = json.dumps(
+        {
+            "results": results,
+            "login": canceller.getLogin(started["login_session_id"]),
+            "credentials": canceller.listCredentials(),
+            "audit": audit,
+        }
+    )
+    database_bytes = b"".join(
+        path.read_bytes()
+        for path in (db, db.with_name(f"{db.name}-wal"))
+        if path.exists()
+    )
+    for canary in (access_canary, refresh_canary):
+        assert canary not in visible
+        assert canary.encode() not in database_bytes
+
+
+def test_cancel_during_device_poll_stops_before_token_exchange(tmp_path):
+    db = tmp_path / "cancel-device-poll.sqlite3"
+    poll_entered = threading.Event()
+    release_poll = threading.Event()
+    token_exchange = threading.Event()
+    authorization_canary = "cancel-device-authorization-canary"
+    verifier_canary = "cancel-device-verifier-canary"
+    calls = []
+
+    def transport(url, *, method, headers, body=None):
+        _ = (method, headers, body)
+        calls.append(url)
+        if url.endswith("/deviceauth/usercode"):
+            return (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "device_auth_id": "cancel-device-id",
+                        "user_code": "CANCEL-DEVICE",
+                        "interval": 1,
+                        "expires_in": 30,
+                    }
+                ).encode(),
+            )
+        if url.endswith("/deviceauth/token"):
+            poll_entered.set()
+            assert release_poll.wait(2)
+            return (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "authorization_code": authorization_canary,
+                        "code_verifier": verifier_canary,
+                    }
+                ).encode(),
+            )
+        if url.endswith("/oauth/token"):
+            token_exchange.set()
+            return (
+                200,
+                {},
+                json.dumps(
+                    {
+                        "access_token": "must-not-be-issued",
+                        "refresh_token": "must-not-be-issued",
+                        "expires_in": 3600,
+                    }
+                ).encode(),
+            )
+        raise AssertionError(f"unexpected OAuth endpoint: {url}")
+
+    completer = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    canceller = ProviderBroker(SQLiteCredentialStore(db), oauth_transport=transport)
+    started = completer.beginLogin({"provider_id": "codex", "flow": "device"})
+    assert started["flow_kind"] == "device"
+    results = []
+    errors = []
+
+    def complete():
+        try:
+            results.append(
+                completer.completeLogin(
+                    {"login_session_id": started["login_session_id"]}
+                )
+            )
+        except BaseException as error:
+            errors.append(error)
+
+    thread = threading.Thread(target=complete)
+    thread.start()
+    assert poll_entered.wait(2)
+    assert canceller.cancelLogin(started["login_session_id"])["ok"] is True
+    release_poll.set()
+    thread.join(2)
+
+    assert not errors
+    assert not thread.is_alive()
+    assert [result["status"] for result in results] == ["cancelled"]
+    assert token_exchange.is_set() is False
+    assert calls == [
+        "https://auth.openai.com/api/accounts/deviceauth/usercode",
+        "https://auth.openai.com/api/accounts/deviceauth/token",
+    ]
+    assert canceller.listCredentials() == []
+    audit = canceller.audit_events()
+    assert not any(
+        event["event"] in {"provider_login_completed", "provider_login_failed"}
+        for event in audit
+    )
+    visible = json.dumps(
+        {
+            "results": results,
+            "login": canceller.getLogin(started["login_session_id"]),
+            "credentials": canceller.listCredentials(),
+            "audit": audit,
+        }
+    )
+    database_bytes = b"".join(
+        path.read_bytes()
+        for path in (db, db.with_name(f"{db.name}-wal"))
+        if path.exists()
+    )
+    for canary in (authorization_canary, verifier_canary):
+        assert canary not in visible
+        assert canary.encode() not in database_bytes
 
 
 def test_pending_oauth_login_has_at_most_ten_minute_deadline(tmp_path, monkeypatch):
@@ -900,9 +1811,9 @@ def test_expired_oauth_login_is_rejected_without_transport(tmp_path, monkeypatch
         oauth_transport=transport,
     )
     started = broker.beginLogin({"provider_id": "codex"})
-    flow = broker.store.get_login(
-        started["login_session_id"], include_flow=True
-    )["flow"]
+    flow = broker.store.get_login(started["login_session_id"], include_flow=True)[
+        "flow"
+    ]
 
     clock.advance_ms(10 * 60 * 1000 + 1)
     expired = broker.completeLogin(

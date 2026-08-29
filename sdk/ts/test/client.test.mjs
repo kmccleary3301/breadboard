@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { createBreadboardClient } from "../dist/client.js"
+import { ApiError, createBreadboardClient } from "../dist/client.js"
 
 
 test("candidate product methods preserve canonical result envelopes and routes", async (t) => {
@@ -45,6 +45,47 @@ test("candidate product methods preserve canonical result envelopes and routes",
     ["GET", "/v1/sessions/session-1/artifacts"],
   ])
   assert.deepEqual(requests.filter((row) => row[2]).map((row) => row[2]), ["probe-key", "start-key", "input-key", "approval-key", "resume-key", "cancel-key"])
+})
+
+test("configured fetch transport handles JSON and attachment requests", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  globalThis.fetch = async () => { throw new Error("global fetch used") }
+  const requests = []
+  const configuredFetch = async (input, init) => {
+    const path = new URL(String(input)).pathname
+    requests.push({ path, init })
+    const payload = path.endsWith("/attachments")
+      ? { attachments: [] }
+      : { session_id: "session-configured" }
+    return new Response(JSON.stringify(payload), {
+      headers: { "content-type": "application/json" },
+    })
+  }
+  const client = createBreadboardClient({
+    baseUrl: "http://breadboard.test:9099",
+    fetch: configuredFetch,
+  })
+
+  assert.deepEqual(await client.createSession({}), {
+    session_id: "session-configured",
+  })
+  assert.deepEqual(
+    await client.uploadAttachments("session-configured", [{
+      base64: btoa("configured"),
+      filename: "configured.txt",
+      mime: "text/plain",
+    }]),
+    [],
+  )
+  assert.deepEqual(
+    requests.map(({ path, init }) => [path, init?.method]),
+    [
+      ["/v1/sessions", "POST"],
+      ["/v1/sessions/session-configured/attachments", "POST"],
+    ],
+  )
+  assert.ok(requests[1].init?.body instanceof FormData)
 })
 
 test("session readers unwrap the canonical public result", async (t) => {
@@ -99,4 +140,135 @@ test("broker and model-role methods use canonical typed routes", async (t) => {
     ["POST", "/v1/auth/credentials/bbcred_test/revoke"], ["POST", "/v1/model-roles/resolve"],
   ])
   assert.equal(requests[6][2].api_key, "sk-sdk-canary")
+})
+
+test("DELETE actions preserve JSON response bodies", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const response = { ok: false, detail: { code: "already_terminal" } }
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify(response), { headers: { "content-type": "application/json" } })
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+
+  assert.deepEqual(await client.cancelLogin("bblogin_test"), response)
+  assert.deepEqual(await client.logout("bbacct_test"), response)
+})
+
+test("FastAPI detail produces an actionable API error", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ detail: "credential action forbidden" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    })
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+
+  await assert.rejects(
+    () => client.logout("bbacct_test"),
+    (error) => {
+      assert.ok(error instanceof ApiError)
+      assert.equal(error.status, 403)
+      assert.equal(error.message, "credential action forbidden")
+      assert.deepEqual(error.body, { detail: "credential action forbidden" })
+      return true
+    },
+  )
+})
+
+test("structured error envelope detail remains actionable", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const response = {
+    error: "model_role_conflict",
+    detail: { role: "planner", effective_role: "builder" },
+  }
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify(response), {
+      status: 409,
+      headers: { "content-type": "application/json" },
+    })
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+
+  await assert.rejects(
+    () => client.resolveModelRoles({ model_roles: { schema_version: "bb.model_roles.v1" } }),
+    (error) => {
+      assert.ok(error instanceof ApiError)
+      assert.equal(
+        error.message,
+        'model_role_conflict: {"role":"planner","effective_role":"builder"}',
+      )
+      assert.deepEqual(error.body, response)
+      return true
+    },
+  )
+})
+
+test("structured FastAPI problem detail preserves its code and message", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const problem = {
+    schema_version: "bb.problem.v1",
+    error_code: "model_role_conflict",
+    message: "requested model role conflicts with the effective lock",
+    path: "$.model_roles",
+    details: { role: "planner" },
+  }
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ detail: problem }), {
+      status: 409,
+      headers: { "content-type": "application/json" },
+    })
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+
+  await assert.rejects(
+    () => client.resolveModelRoles({ model_roles: { schema_version: "bb.model_roles.v1" } }),
+    (error) => {
+      assert.ok(error instanceof ApiError)
+      assert.equal(error.status, 409)
+      assert.equal(
+        error.message,
+        "model_role_conflict: requested model role conflicts with the effective lock",
+      )
+      assert.deepEqual(error.body, { detail: problem })
+      return true
+    },
+  )
+})
+
+test("canonical public result problem remains actionable", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const problem = {
+    schema_version: "bb.problem.v1",
+    error_code: "invalid_state",
+    message: "session is already terminal",
+    path: null,
+    details: null,
+  }
+  const response = {
+    ok: false,
+    command: ["session", "cancel"],
+    data: null,
+    error: problem,
+    hashes: {},
+    metadata: {},
+  }
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify(response), {
+      status: 409,
+      headers: { "content-type": "application/json" },
+    })
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+
+  await assert.rejects(
+    () => client.cancelSession("terminal-session"),
+    (error) => {
+      assert.ok(error instanceof ApiError)
+      assert.equal(error.status, 409)
+      assert.equal(error.message, "invalid_state: session is already terminal")
+      assert.deepEqual(error.body, response)
+      return true
+    },
+  )
 })

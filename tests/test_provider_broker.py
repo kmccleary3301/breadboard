@@ -50,7 +50,11 @@ def _e4_precedence_broker(
         ),
     )
     if "runtime" in enabled_sources:
-        broker.set_runtime_api_key("openai", _E4_SOURCE_KEYS["runtime"])
+        broker.set_runtime_api_key(
+            "openai",
+            _E4_SOURCE_KEYS["runtime"],
+            session_id="e4-precedence-session",
+        )
     if "config" in enabled_sources:
         broker.set_config_api_key("openai", _E4_SOURCE_KEYS["config"])
     if "oauth" in enabled_sources:
@@ -144,11 +148,46 @@ def test_broker_nine_method_surface_and_plain_data(tmp_path):
         ]["code"]
         == "flow_unavailable"
     )
-    assert broker.cancelLogin(login["login_session_id"])["ok"] is True
+    assert broker.cancelLogin(login["login_session_id"])["ok"] is False
+    assert broker.getLogin(login["login_session_id"])["status"] == "unavailable"
 
     assert broker.logout({"account_id": credential["account_id"]})["ok"] is True
     assert broker.revoke({"account_id": credential["account_id"]})["ok"] is True
     assert broker.listCredentials("openai")[0]["status"] == "revoked"
+
+
+def test_broker_rejects_secret_bearing_account_id(tmp_path):
+    secret = "credential-account-id-canary-8p4ws"
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+
+    with pytest.raises(
+        ValueError,
+        match="credential identity fields cannot contain credential material",
+    ):
+        broker.putApiKey(
+            {
+                "provider_id": "openai",
+                "account_label": "main",
+                "account_id": secret,
+                "api_key": secret,
+            }
+        )
+
+    assert broker.listCredentials() == []
+    assert broker.audit_events() == []
+    assert secret not in redaction.iter_registered_secret_values()
+
+
+def test_public_identity_view_preserves_pattern_redaction() -> None:
+    with pytest.raises(
+        ValueError,
+        match="public identity fields cannot contain credential material",
+    ):
+        ProviderBroker._scrub_public_identity_view(
+            {"label": "sk-abcdef123456789"},
+            path="$.credential",
+            identity_fields=("label",),
+        )
 
 
 def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
@@ -176,6 +215,137 @@ def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
     assert broker.store.release_lease(lease_id) is False
 
 
+@pytest.mark.parametrize(
+    ("header_value", "expected_error"),
+    (
+        ("a", redaction.REDACTED),
+        ("ant", f"provider call failed {redaction.REDACTED}"),
+    ),
+)
+def test_put_api_key_accepts_short_custom_header_value(
+    tmp_path,
+    header_value,
+    expected_error,
+):
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+
+    view = broker.putApiKey(
+        {
+            "provider_id": "anthropic",
+            "account_label": "main",
+            "api_key": "anthropic-primary-secret",
+            "headers": {"X-Custom": header_value},
+            "metadata": {
+                "name": "account",
+                "echo": f"credential={header_value}",
+            },
+        }
+    )
+
+    assert view["provider_id"] == "anthropic"
+    assert view["label"] == "main"
+    expected_name = redaction.REDACTED if header_value == "a" else "account"
+    assert view["metadata"]["name"] == expected_name
+    expected_echo = (
+        redaction.REDACTED
+        if header_value == "a"
+        else f"credential={redaction.REDACTED}"
+    )
+    assert view["metadata"]["echo"] == expected_echo
+    with broker.execution_material("anthropic") as material:
+        assert material["headers"] == {"X-Custom": header_value}
+        scrubbed, _ = redaction.scrub_structure(material["headers"])
+        assert scrubbed == {"X-Custom": redaction.REDACTED}
+        assert (
+            redaction.scrub_text(f"provider call failed {header_value}")
+            == expected_error
+        )
+
+
+def test_routing_secret_property_names_do_not_collide_with_identity(tmp_path):
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    view = broker.putApiKey(
+        {
+            "provider_id": "openai",
+            "account_label": "routing",
+            "api_key": "routing-primary-secret",
+            "routing": {"api_key": "routing-value-secret"},
+        }
+    )
+    assert view["label"] == "routing"
+    assert "api_key" not in redaction.credential_secret_values(
+        {"routing": {"api_key": "routing-value-secret"}}
+    )
+    with broker.execution_material("openai") as material:
+        assert material["routing"]["api_key"] == "routing-value-secret"
+
+
+def test_identity_is_normalized_and_rotation_rejects_retained_secret_fields(tmp_path):
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    view = broker.putApiKey(
+        {
+            "provider_id": " OpenAI ",
+            "auth_scheme_id": " Custom-Scheme ",
+            "account_label": "  Work  ",
+            "alias": "  Team  ",
+            "api_key": "normalized-primary-secret",
+        }
+    )
+    assert view["provider_id"] == "openai"
+    assert view["auth_scheme_id"] == "custom-scheme"
+    assert view["label"] == "Work"
+    assert view["alias"] == "Team"
+
+    original = broker.putApiKey(
+        {
+            "provider_id": "openai",
+            "account_label": "rotation-label",
+            "alias": "rotation-alias",
+            "auth_scheme_id": "rotation-scheme",
+            "api_key": "rotation-old-secret",
+        }
+    )
+    for secret in (
+        "rotation-label",
+        "rotation-alias",
+        "rotation-scheme",
+        "openai",
+    ):
+        with pytest.raises(
+            ValueError,
+            match="credential identity fields cannot contain credential material",
+        ):
+            broker.putApiKey(
+                {
+                    "provider_id": "openai",
+                    "account_id": original["account_id"],
+                    "api_key": secret,
+                }
+            )
+    listed = json.dumps(broker.listCredentials())
+    assert "rotation-old-secret" not in listed
+    assert all(value in listed for value in ("rotation-label", "rotation-alias"))
+
+
+def test_spaced_runtime_session_uses_one_canonical_override_key(tmp_path):
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    broker.set_runtime_api_key(
+        "openai",
+        "runtime-spaced-session-secret",
+        session_id="  spaced-session  ",
+    )
+    broker.set_config_api_key("openai", "config-spaced-session-secret")
+    assert broker.get_credential_origin("openai", session_id="spaced-session") == {
+        "kind": "runtime"
+    }
+    with broker.execution_material("openai", session_id=" spaced-session ") as material:
+        assert material["api_key"] == "runtime-spaced-session-secret"
+    broker.remove_runtime_api_key("openai", session_id=" spaced-session ")
+    assert broker.get_credential_origin("openai", session_id="spaced-session") == {
+        "kind": "config"
+    }
+
+
 def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
     db = tmp_path / "credentials.sqlite3"
     original = ProviderBroker(SQLiteCredentialStore(db))
@@ -184,7 +354,18 @@ def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
             "provider_id": "anthropic",
             "account_label": "restart",
             "api_key": "anthropic-restart-secret",
-            "headers": {"X-Custom-Auth": "custom-header-secret"},
+            "headers": {
+                "X-Custom": "custom-header-secret",
+                "X-Authorization": "Bearer prefixed-header-secret",
+                "Key": "abc",
+            },
+            "base_url": (
+                "https://url-user:url-password@example.test/v1?api_key=query-secret"
+            ),
+            "routing": {
+                "refresh_token": "routing-secret",
+                "access_token": 48273195,
+            },
         }
     )
     redaction.clear_registered_secret_values()
@@ -192,9 +373,18 @@ def test_restarted_broker_scopes_leased_secrets_for_redaction(tmp_path):
     restarted = ProviderBroker(SQLiteCredentialStore(db))
     with restarted.execution_material("anthropic") as material:
         assert material is not None
-        assert {"anthropic-restart-secret", "custom-header-secret"} <= set(
-            redaction.iter_registered_secret_values()
-        )
+        assert {
+            "anthropic-restart-secret",
+            "custom-header-secret",
+            "Bearer prefixed-header-secret",
+            "prefixed-header-secret",
+            "abc",
+            "url-user",
+            "url-password",
+            "query-secret",
+            "routing-secret",
+            "48273195",
+        } <= set(redaction.iter_registered_secret_values())
 
     assert material == {}
     assert redaction.iter_registered_secret_values() == ()
@@ -381,8 +571,10 @@ def test_auth_source_precedence_covers_every_pairwise_conflict(tmp_path) -> None
             set(pair),
         )
         expected = pair[0]
+        session_id = "e4-precedence-session" if "runtime" in pair else ""
         origin = broker.get_credential_origin(
             "openai",
+            session_id=session_id,
             environment_key="OPENAI_API_KEY",
             environment=environment,
         )
@@ -401,6 +593,7 @@ def test_auth_source_precedence_covers_every_pairwise_conflict(tmp_path) -> None
 
         with broker.execution_material(
             "openai",
+            session_id=session_id,
             environment_key="OPENAI_API_KEY",
             environment=environment,
         ) as material:
@@ -453,18 +646,122 @@ def test_override_removal_re_resolves_lower_sources(tmp_path) -> None:
     def resolve():
         return broker.get_credential_origin(
             "openai",
+            session_id="e4-precedence-session",
             environment_key="OPENAI_API_KEY",
             environment=environment,
         )
 
     assert resolve() == {"kind": "runtime"}
-    broker.remove_runtime_api_key("openai")
+    broker.remove_runtime_api_key("openai", session_id="e4-precedence-session")
     assert resolve() == {"kind": "config"}
     broker.clear_config_api_keys()
     assert resolve() == {
         "kind": "env",
         "env_var": "OPENAI_API_KEY",
     }
+
+
+def test_runtime_override_is_invisible_to_other_and_unscoped_sessions(tmp_path) -> None:
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    broker.set_runtime_api_key(
+        "openai",
+        "runtime-session-a-canary",
+        session_id="session-a",
+    )
+
+    assert broker.get_credential_origin("openai", session_id="session-a") == {
+        "kind": "runtime"
+    }
+    assert broker.get_credential_origin("openai", session_id="session-b") is None
+    assert broker.get_credential_origin("openai") is None
+
+    with broker.execution_material("openai", session_id="session-a") as material:
+        assert material is not None
+        assert material["api_key"] == "runtime-session-a-canary"
+    assert material == {}
+
+    with broker.execution_material("openai", session_id="session-b") as material:
+        assert material is None
+    with broker.execution_material("openai") as material:
+        assert material is None
+
+
+def test_runtime_overrides_are_independent_and_remove_is_session_local(
+    tmp_path,
+) -> None:
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    broker.set_runtime_api_key(
+        "openai",
+        "runtime-session-a-canary",
+        session_id="session-a",
+    )
+    broker.set_runtime_api_key(
+        "openai",
+        "runtime-session-b-canary",
+        session_id="session-b",
+    )
+
+    for session_id, expected in (
+        ("session-a", "runtime-session-a-canary"),
+        ("session-b", "runtime-session-b-canary"),
+    ):
+        with broker.execution_material("openai", session_id=session_id) as material:
+            assert material is not None
+            assert material["api_key"] == expected
+        assert material == {}
+
+    broker.remove_runtime_api_key("openai", session_id="session-a")
+    assert broker.get_credential_origin("openai", session_id="session-a") is None
+    assert broker.get_credential_origin("openai", session_id="session-b") == {
+        "kind": "runtime"
+    }
+    with broker.execution_material("openai", session_id="session-b") as material:
+        assert material is not None
+        assert material["api_key"] == "runtime-session-b-canary"
+    assert material == {}
+
+    broker.remove_runtime_api_key("openai", session_id="session-b")
+    assert broker.get_credential_origin("openai", session_id="session-b") is None
+
+
+@pytest.mark.parametrize("invalid_session_id", (None, "", "   ", 123))
+def test_runtime_override_requires_nonempty_keyword_session_id(
+    tmp_path,
+    invalid_session_id,
+) -> None:
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    with pytest.raises(ValueError, match="session_id is required"):
+        broker.set_runtime_api_key(
+            "openai",
+            "runtime-invalid-session-canary",
+            session_id=invalid_session_id,
+        )
+    with pytest.raises(ValueError, match="session_id is required"):
+        broker.remove_runtime_api_key("openai", session_id=invalid_session_id)
+    with pytest.raises(TypeError):
+        broker.set_runtime_api_key("openai", "runtime-positional-canary", "session-a")
+
+
+def test_default_broker_does_not_read_codex_auth_from_home(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    secret = "default-codex-home-canary"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    auth_path = tmp_path / ".codex" / "auth.json"
+    auth_path.parent.mkdir()
+    auth_path.write_text(
+        json.dumps({"tokens": {"access_token": secret}}),
+        encoding="utf-8",
+    )
+
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+
+    assert broker._codex_auth_path is None
+    assert broker.get_credential_origin("codex", environment={}) is None
+    with broker.execution_material("codex", environment={}) as material:
+        assert material is None
+    assert secret not in json.dumps(broker.audit_events())
 
 
 def test_missing_auth_has_no_origin_or_execution_material(tmp_path) -> None:
@@ -497,6 +794,7 @@ def test_codex_auth_file_never_substitutes_openai_credentials(
     )
     store = SQLiteCredentialStore(tmp_path / "credentials.sqlite3")
     broker = ProviderBroker(store, codex_auth_path=auth_path)
+    assert broker._codex_auth_path == auth_path.resolve()
 
     assert broker.get_credential_origin("openai", environment={}) is None
     origin = broker.get_credential_origin("codex", environment={})
@@ -598,7 +896,6 @@ def test_explicit_account_selectors_persist_user_binding_and_override_implicit_s
             "api_key": "e5-second-account-canary",
         }
     )
-    broker.set_runtime_api_key("openai", "e5-runtime-override-canary")
     selectors = (
         {"account_id": selected["account_id"]},
         {"credential_id": selected["credential_id"]},
@@ -608,6 +905,11 @@ def test_explicit_account_selectors_persist_user_binding_and_override_implicit_s
 
     for index, selector in enumerate(selectors):
         session_id = f"e5-explicit-{index}"
+        broker.set_runtime_api_key(
+            "openai",
+            "e5-runtime-override-canary",
+            session_id=session_id,
+        )
         with broker.execution_material(
             "openai",
             session_id=session_id,
@@ -815,6 +1117,7 @@ def test_rate_limit_rotates_default_binding_but_not_user_binding(tmp_path) -> No
         replacement_account_id,
     }
 
+
     user = ProviderBroker(SQLiteCredentialStore(tmp_path / "user.sqlite3"))
     selected = user.putApiKey(
         {
@@ -860,6 +1163,49 @@ def test_rate_limit_rotates_default_binding_but_not_user_binding(tmp_path) -> No
     assert rebound["account_id"] == replacement["account_id"]
     with user.execution_material("openai", session_id="e5-rate-user") as material:
         assert material["api_key"] == "e5-rate-user-replacement-canary"
+
+
+def test_rate_limit_accounting_survives_exact_secret_redaction(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.broker as broker_module
+    from breadboard_engine.provider.contracts import ProviderRuntimeError
+    from breadboard_engine.provider.routing import ProviderRouter
+    from breadboard_engine.security import redaction
+
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+    account = broker.putApiKey(
+        {
+            "provider_id": "openai",
+            "account_label": "classification-collision",
+            "api_key": "rate_limited",
+        }
+    )
+    monkeypatch.setattr(broker_module, "_default_broker", broker)
+    router = ProviderRouter()
+
+    with pytest.raises(ProviderRuntimeError) as captured:
+        with router.execution_client_config(
+            "openai/gpt-5.4-mini",
+            session_id="classification-collision",
+        ):
+            raise ProviderRuntimeError(
+                "rate limited",
+                details={
+                    "classification": "rate_limited",
+                    "status_code": 429,
+                    "retry_after": 300,
+                },
+            )
+
+    assert captured.value.details["classification"] == redaction.REDACTED
+    binding = broker.get_session_account_binding(
+        "classification-collision",
+        "openai",
+    )
+    assert binding["account_id"] == account["account_id"]
+    assert binding["availability"] == "rate_limited"
 
 
 @pytest.mark.parametrize(
@@ -1307,6 +1653,35 @@ def test_logout_is_reversible_but_revoke_tombstone_cannot_be_reactivated(
     assert {item["status"] for item in views} == {"active", "revoked"}
 
 
+def test_direct_oauth_store_scrubs_metadata_and_rejects_secret_identity_keys(
+    tmp_path,
+):
+    store = SQLiteCredentialStore(tmp_path / "oauth-metadata.sqlite3")
+    material = {
+        "access_token": "direct-oauth-access-secret",
+        "refresh_token": "direct-oauth-refresh-secret",
+    }
+
+    view = store.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="direct",
+        material=material,
+        metadata={"email": material["access_token"]},
+    )
+    assert view["metadata"] == {"email": redaction.REDACTED}
+
+    with pytest.raises(ValueError, match="metadata keys cannot contain"):
+        store.put_oauth(
+            provider_id="anthropic",
+            auth_scheme_id="oauth2",
+            label="rejected",
+            material=material,
+            metadata={material["refresh_token"]: "identity-key"},
+        )
+    assert [item["label"] for item in store.list_accounts()] == ["direct"]
+
+
 def test_api_key_and_oauth_rotation_delete_superseded_secret_rows(tmp_path):
     store = SQLiteCredentialStore(tmp_path / "rotation-cleanup.sqlite3")
     broker = ProviderBroker(store)
@@ -1514,6 +1889,135 @@ def test_initialization_clears_legacy_oauth_flows_and_expires_stale_pending(
             ).fetchall()
         )
     assert canary not in serialized_rows
+
+
+def test_finish_claimed_login_rejects_completion_past_expiry(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.store as store_module
+
+    started_at_ms = 1_800_000_000_000
+    monkeypatch.setattr(store_module, "now_ms", lambda: started_at_ms)
+    store = SQLiteCredentialStore(tmp_path / "expired-login.sqlite3")
+    login = store.create_login(
+        "openai",
+        "pending",
+        flow={"pkce_verifier": "expiry-flow"},
+    )
+    assert store.claim_pending_login(
+        login["login_session_id"],
+        claim_id="expiry-owner",
+    )
+
+    monkeypatch.setattr(
+        store_module,
+        "now_ms",
+        lambda: started_at_ms + store_module._LOGIN_EXPIRY_MS,
+    )
+    assert (
+        store.finish_claimed_login(
+            login["login_session_id"],
+            "completed",
+            claim_id="expiry-owner",
+        )
+        is False
+    )
+    expired = store.get_login(login["login_session_id"], include_flow=True)
+    assert expired["status"] == "expired"
+    assert expired["problem"]["code"] == "oauth_login_expired"
+    assert expired["flow"] == {}
+
+
+def test_abandoned_login_completion_claim_is_reclaimed_with_owner_fencing(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.store as store_module
+
+    started_at_ms = 1_800_000_000_000
+    monkeypatch.setattr(store_module, "now_ms", lambda: started_at_ms)
+    store = SQLiteCredentialStore(tmp_path / "reclaimed-login.sqlite3")
+    login = store.create_login(
+        "openai",
+        "pending",
+        flow={"pkce_verifier": "reclaim-flow"},
+    )
+    assert store.claim_pending_login(
+        login["login_session_id"],
+        claim_id="abandoned-owner",
+    )
+
+    monkeypatch.setattr(
+        store_module,
+        "now_ms",
+        lambda: started_at_ms + store_module._LOGIN_COMPLETION_LEASE_MS + 1,
+    )
+    assert store.claim_pending_login(
+        login["login_session_id"],
+        claim_id="recovery-owner",
+    )
+    assert (
+        store.finish_claimed_login(
+            login["login_session_id"],
+            "completed",
+            claim_id="abandoned-owner",
+        )
+        is False
+    )
+    assert store.finish_claimed_login(
+        login["login_session_id"],
+        "completed",
+        claim_id="recovery-owner",
+    )
+
+
+def test_login_completion_claim_renewal_extends_owner_lease(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.store as store_module
+
+    started_at_ms = 1_800_000_000_000
+    current_ms = [started_at_ms]
+    monkeypatch.setattr(store_module, "now_ms", lambda: current_ms[0])
+    store = SQLiteCredentialStore(tmp_path / "renewed-login.sqlite3")
+    login = store.create_login(
+        "openai",
+        "pending",
+        flow={"pkce_verifier": "renew-flow"},
+    )
+    assert store.claim_pending_login(
+        login["login_session_id"],
+        claim_id="poll-owner",
+    )
+
+    current_ms[0] += store_module._LOGIN_COMPLETION_LEASE_MS - 1
+    assert store.renew_login_claim(
+        login["login_session_id"],
+        claim_id="poll-owner",
+    )
+    current_ms[0] = started_at_ms + store_module._LOGIN_COMPLETION_LEASE_MS + 1
+    assert (
+        store.claim_pending_login(
+            login["login_session_id"],
+            claim_id="early-recovery-owner",
+        )
+        is False
+    )
+
+    current_ms[0] = started_at_ms + 2 * store_module._LOGIN_COMPLETION_LEASE_MS
+    assert store.claim_pending_login(
+        login["login_session_id"],
+        claim_id="recovery-owner",
+    )
+    assert (
+        store.renew_login_claim(
+            login["login_session_id"],
+            claim_id="poll-owner",
+        )
+        is False
+    )
 
 
 def test_audit_events_are_durable_and_use_fixed_secret_free_fields(

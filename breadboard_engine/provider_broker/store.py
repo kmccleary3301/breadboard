@@ -18,6 +18,7 @@ from breadboard_engine.security import redaction
 
 _ACTIVE_STATUSES = ("active",)
 _LOGIN_EXPIRY_MS = 10 * 60 * 1000
+_LOGIN_COMPLETION_LEASE_MS = 2 * 60 * 1000
 _LOGIN_TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "expired"})
 
 
@@ -333,9 +334,11 @@ class SQLiteCredentialStore:
         return connection
 
     @contextmanager
-    def _transaction(self) -> Iterator[sqlite3.Connection]:
+    def _transaction(self, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
         nested = getattr(self._transaction_local, "connection", None)
         if nested is not None:
+            if immediate and not nested.in_transaction:
+                nested.execute("BEGIN IMMEDIATE")
             yield nested
             return
         callbacks: list[Callable[[], None]] = []
@@ -346,6 +349,8 @@ class SQLiteCredentialStore:
             self._transaction_local.connection = connection
             self._transaction_local.after_commit = callbacks
             try:
+                if immediate:
+                    connection.execute("BEGIN IMMEDIATE")
                 yield connection
                 # SQLite owns commit/rollback; hardening only removes unsafe
                 # mode bits and never attempts a raw-copy or restore.
@@ -367,7 +372,7 @@ class SQLiteCredentialStore:
     @contextmanager
     def atomic(self) -> Iterator[None]:
         """Group a state change and its durable audit event in one commit."""
-        with self._transaction():
+        with self._transaction(immediate=True):
             yield
 
     def after_commit(self, callback: Callable[[], None]) -> None:
@@ -467,7 +472,9 @@ class SQLiteCredentialStore:
                     updated_at_ms INTEGER NOT NULL,
                     expires_at_ms INTEGER,
                     problem_json TEXT,
-                    flow_json TEXT
+                    flow_json TEXT,
+                    completion_claim_id TEXT,
+                    completion_claim_expires_at_ms INTEGER
                 );
                 CREATE TABLE IF NOT EXISTS audit_events (
                     event_id TEXT PRIMARY KEY,
@@ -496,6 +503,25 @@ class SQLiteCredentialStore:
                 connection.execute(
                     "ALTER TABLE login_sessions ADD COLUMN expires_at_ms INTEGER"
                 )
+            if "completion_claim_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE login_sessions ADD COLUMN completion_claim_id TEXT"
+                )
+            if "completion_claim_expires_at_ms" not in columns:
+                connection.execute(
+                    "ALTER TABLE login_sessions "
+                    "ADD COLUMN completion_claim_expires_at_ms INTEGER"
+                )
+            connection.execute(
+                """UPDATE login_sessions
+                   SET status = 'pending', completion_claim_id = NULL,
+                       completion_claim_expires_at_ms = NULL
+                   WHERE status = 'completing'
+                     AND (
+                         completion_claim_id IS NULL
+                         OR completion_claim_expires_at_ms IS NULL
+                     )"""
+            )
             connection.execute(
                 """UPDATE login_sessions
                    SET expires_at_ms = created_at_ms + ?
@@ -509,14 +535,21 @@ class SQLiteCredentialStore:
             migration_timestamp = now_ms()
             connection.execute(
                 """UPDATE login_sessions
-                   SET flow_json = NULL
+                   SET flow_json = NULL, completion_claim_id = NULL,
+                       completion_claim_expires_at_ms = NULL
                    WHERE status IN ('completed', 'failed', 'cancelled', 'expired')
-                     AND flow_json IS NOT NULL"""
+                     AND (
+                         flow_json IS NOT NULL
+                         OR completion_claim_id IS NOT NULL
+                         OR completion_claim_expires_at_ms IS NOT NULL
+                     )"""
             )
             connection.execute(
                 """UPDATE login_sessions
                    SET status = 'expired', updated_at_ms = ?,
-                       problem_json = ?, flow_json = NULL
+                       problem_json = ?, flow_json = NULL,
+                       completion_claim_id = NULL,
+                       completion_claim_expires_at_ms = NULL
                    WHERE status = 'pending'
                      AND expires_at_ms IS NOT NULL
                      AND expires_at_ms <= ?""",
@@ -587,8 +620,7 @@ class SQLiteCredentialStore:
         """Read the durable audit stream in occurrence order."""
         with self._transaction() as connection:
             query = (
-                "SELECT payload_json FROM audit_events "
-                "ORDER BY occurred_at_ms, rowid"
+                "SELECT payload_json FROM audit_events ORDER BY occurred_at_ms, rowid"
             )
             params: tuple[Any, ...] = ()
             if limit is not None:
@@ -616,6 +648,53 @@ class SQLiteCredentialStore:
             "expires_at_ms": row["expires_at_ms"],
             "metadata": SQLiteCredentialStore._decode_json(row["metadata_json"]),
         }
+
+    @staticmethod
+    def _validate_credential_identity(
+        view: Mapping[str, Any],
+        material: Mapping[str, Any],
+    ) -> None:
+        secret_values = redaction.credential_secret_values(material)
+        with redaction.secret_value_scope(*secret_values, allow_short=True):
+            if any(
+                redaction.contains_registered_secret_identity(
+                    str(view[field]) if view.get(field) is not None else ""
+                )
+                for field in (
+                    "provider_id",
+                    "auth_scheme_id",
+                    "label",
+                    "alias",
+                    "account_id",
+                    "credential_id",
+                    "credential_kind",
+                    "source",
+                    "secret_version",
+                    "created_at_ms",
+                    "updated_at_ms",
+                    "expires_at_ms",
+                )
+            ):
+                raise ValueError(
+                    "credential identity fields cannot contain credential material"
+                )
+
+    @staticmethod
+    def _safe_metadata(
+        metadata: Mapping[str, Any] | None,
+        material: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        value = dict(metadata) if isinstance(metadata, Mapping) else {}
+        secret_values = redaction.credential_secret_values(material)
+        with redaction.secret_value_scope(*secret_values, allow_short=True):
+            if redaction.contains_registered_secret_mapping_key(value):
+                raise ValueError("metadata keys cannot contain credential material")
+            scrubbed, _problems = redaction.scrub_structure(
+                value,
+                path="$.metadata",
+                identity_mapping_keys=True,
+            )
+        return scrubbed if isinstance(scrubbed, Mapping) else {}
 
     @staticmethod
     def _refresh_state_view(
@@ -675,9 +754,9 @@ class SQLiteCredentialStore:
             raise ValueError("provider_id and label are required")
         if not isinstance(material, Mapping) or not material.get("api_key"):
             raise ValueError("api_key material is required")
-        timestamp = now_ms()
-        encoded_metadata = self._json(metadata)
         material_copy = dict(material)
+        timestamp = now_ms()
+        encoded_metadata = self._json(self._safe_metadata(metadata, material_copy))
         with self._transaction() as connection:
             row = None
             if account_id:
@@ -696,6 +775,11 @@ class SQLiteCredentialStore:
                        ORDER BY updated_at_ms DESC LIMIT 1""",
                     (provider_id, label, alias),
                 ).fetchone()
+            if row is not None:
+                self._validate_credential_identity(
+                    self._account_view(row),
+                    material_copy,
+                )
             if row is None:
                 account_id = _id("bbacct")
                 credential_id = _id("bbcred")
@@ -754,11 +838,13 @@ class SQLiteCredentialStore:
                    VALUES (?, ?, ?, ?, ?)""",
                 (secret_id, account_id, self._json(material_copy), version, timestamp),
             )
-            return self._account_view(
+            view = self._account_view(
                 connection.execute(
                     "SELECT * FROM accounts WHERE account_id = ?", (account_id,)
                 ).fetchone()
             )
+            self._validate_credential_identity(view, material_copy)
+            return view
 
     def put_oauth(
         self,
@@ -786,6 +872,8 @@ class SQLiteCredentialStore:
             raise ValueError(
                 "provider_id, label, access_token, and refresh_token are required"
             )
+        material_copy = dict(material)
+        encoded_metadata = self._json(self._safe_metadata(metadata, material_copy))
         timestamp = now_ms()
         with self._transaction() as connection:
             row = None
@@ -803,6 +891,11 @@ class SQLiteCredentialStore:
                        AND status != 'revoked' ORDER BY updated_at_ms DESC LIMIT 1""",
                     (provider_id, label, alias),
                 ).fetchone()
+            if row is not None:
+                self._validate_credential_identity(
+                    self._account_view(row),
+                    material_copy,
+                )
             if row is None:
                 account_id = _id("bbacct")
                 credential_id = _id("bbcred")
@@ -825,7 +918,7 @@ class SQLiteCredentialStore:
                         timestamp,
                         timestamp,
                         expires_at_ms,
-                        self._json(metadata),
+                        encoded_metadata,
                     ),
                 )
             else:
@@ -842,7 +935,7 @@ class SQLiteCredentialStore:
                         version,
                         timestamp,
                         expires_at_ms,
-                        self._json(metadata),
+                        encoded_metadata,
                         account_id,
                     ),
                 )
@@ -857,13 +950,21 @@ class SQLiteCredentialStore:
             connection.execute(
                 """INSERT INTO secrets (secret_id, account_id, material, secret_version, created_at_ms)
                    VALUES (?, ?, ?, ?, ?)""",
-                (_id("bbsecret"), account_id, self._json(material), version, timestamp),
+                (
+                    _id("bbsecret"),
+                    account_id,
+                    self._json(material_copy),
+                    version,
+                    timestamp,
+                ),
             )
-            return self._account_view(
+            view = self._account_view(
                 connection.execute(
                     "SELECT * FROM accounts WHERE account_id = ?", (account_id,)
                 ).fetchone()
             )
+            self._validate_credential_identity(view, material_copy)
+            return view
 
     def list_accounts(self, provider_id: str | None = None) -> list[dict[str, Any]]:
         with self._transaction() as connection:
@@ -1412,6 +1513,17 @@ class SQLiteCredentialStore:
             ).fetchone()
             if (
                 previous is not None
+                and previous["owner_id"]
+                and str(previous["owner_id"]) != owner_ref
+                and previous["lease_expires_at_ms"] is not None
+                and int(previous["lease_expires_at_ms"]) > timestamp
+            ):
+                return {
+                    "status": "busy",
+                    "lease_expires_at_ms": int(previous["lease_expires_at_ms"]),
+                }
+            if (
+                previous is not None
                 and not previous["owner_id"]
                 and previous["retry_not_before_ms"] is not None
                 and int(previous["retry_not_before_ms"]) > timestamp
@@ -1525,8 +1637,8 @@ class SQLiteCredentialStore:
         if not material.get("access_token") or not material.get("refresh_token"):
             raise ValueError("refreshed OAuth material is incomplete")
         account_ref = str(account_id)
-        timestamp = now_ms()
-        with self._transaction() as connection:
+        with self._transaction(immediate=True) as connection:
+            timestamp = now_ms()
             account = connection.execute(
                 "SELECT * FROM accounts WHERE account_id = ?",
                 (account_ref,),
@@ -1538,6 +1650,8 @@ class SQLiteCredentialStore:
             if (
                 state is None
                 or str(state["owner_id"] or "") != str(owner_id)
+                or int(state["expected_secret_version"] or 0)
+                != int(expected_secret_version)
                 or state["lease_expires_at_ms"] is None
                 or int(state["lease_expires_at_ms"]) <= timestamp
             ):
@@ -1551,18 +1665,50 @@ class SQLiteCredentialStore:
                        SET owner_id = NULL, expected_secret_version = NULL,
                            lease_acquired_at_ms = NULL, lease_expires_at_ms = NULL,
                            updated_at_ms = ?
-                       WHERE account_id = ? AND owner_id = ?""",
-                    (timestamp, account_ref, str(owner_id)),
+                       WHERE account_id = ? AND owner_id = ?
+                         AND expected_secret_version = ?""",
+                    (
+                        timestamp,
+                        account_ref,
+                        str(owner_id),
+                        int(expected_secret_version),
+                    ),
                 )
                 return {
                     "status": "superseded",
                     "secret_version": current_version,
                 }
+            previous_secret = connection.execute(
+                """SELECT material FROM secrets
+                   WHERE account_id = ? AND secret_version = ?
+                     AND revoked_at_ms IS NULL
+                   ORDER BY created_at_ms DESC LIMIT 1""",
+                (account_ref, current_version),
+            ).fetchone()
+            previous_material = (
+                self._decode_json(previous_secret["material"])
+                if previous_secret is not None
+                else {}
+            )
             next_version = current_version + 1
             merged_metadata = self._decode_json(account["metadata_json"])
             if isinstance(metadata, Mapping):
                 merged_metadata.update(dict(metadata))
-            connection.execute(
+            merged_metadata = dict(
+                self._safe_metadata(merged_metadata, previous_material)
+            )
+            merged_metadata = dict(self._safe_metadata(merged_metadata, material))
+            prospective_view = self._account_view(account)
+            prospective_view.update(
+                {
+                    "secret_version": next_version,
+                    "updated_at_ms": timestamp,
+                    "expires_at_ms": int(expires_at_ms),
+                    "metadata": merged_metadata,
+                }
+            )
+            self._validate_credential_identity(prospective_view, material)
+            account_update = connection.execute(
                 """UPDATE accounts
                    SET status = 'active', secret_version = ?, updated_at_ms = ?,
                        expires_at_ms = ?, metadata_json = ?
@@ -1577,6 +1723,8 @@ class SQLiteCredentialStore:
                     current_version,
                 ),
             )
+            if account_update.rowcount != 1:
+                raise RuntimeError("credential refresh account CAS failed")
             connection.execute(
                 "DELETE FROM secrets WHERE account_id = ?",
                 (account_ref,),
@@ -1593,16 +1741,26 @@ class SQLiteCredentialStore:
                     timestamp,
                 ),
             )
-            connection.execute(
+            state_update = connection.execute(
                 """UPDATE credential_refresh_state
                    SET owner_id = NULL, expected_secret_version = NULL,
                        lease_acquired_at_ms = NULL, lease_expires_at_ms = NULL,
                        last_failure_class = NULL, last_failure_code = NULL,
                        last_failure_at_ms = NULL, retry_not_before_ms = NULL,
                        updated_at_ms = ?
-                   WHERE account_id = ? AND owner_id = ?""",
-                (timestamp, account_ref, str(owner_id)),
+                   WHERE account_id = ? AND owner_id = ?
+                     AND expected_secret_version = ?
+                     AND lease_expires_at_ms > ?""",
+                (
+                    timestamp,
+                    account_ref,
+                    str(owner_id),
+                    int(expected_secret_version),
+                    timestamp,
+                ),
             )
+            if state_update.rowcount != 1:
+                raise RuntimeError("credential refresh claim CAS failed")
             updated = connection.execute(
                 "SELECT * FROM accounts WHERE account_id = ?",
                 (account_ref,),
@@ -1628,8 +1786,8 @@ class SQLiteCredentialStore:
             raise ValueError("failure_class must be transient or definitive")
         account_ref = str(account_id)
         owner_ref = str(owner_id)
-        timestamp = now_ms()
-        with self._transaction() as connection:
+        with self._transaction(immediate=True) as connection:
+            timestamp = now_ms()
             state = connection.execute(
                 "SELECT * FROM credential_refresh_state WHERE account_id = ?",
                 (account_ref,),
@@ -1641,6 +1799,8 @@ class SQLiteCredentialStore:
             if (
                 state is None
                 or str(state["owner_id"] or "") != owner_ref
+                or int(state["expected_secret_version"] or 0)
+                != int(expected_secret_version)
                 or state["lease_expires_at_ms"] is None
                 or int(state["lease_expires_at_ms"]) <= timestamp
                 or account is None
@@ -1654,12 +1814,14 @@ class SQLiteCredentialStore:
                 else None
             )
             if classification == "definitive":
-                connection.execute(
+                account_update = connection.execute(
                     """UPDATE accounts SET status = 'revoked', updated_at_ms = ?
                        WHERE account_id = ? AND status = 'active'
                          AND secret_version = ?""",
                     (timestamp, account_ref, int(expected_secret_version)),
                 )
+                if account_update.rowcount != 1:
+                    raise RuntimeError("credential refresh failure CAS failed")
                 connection.execute(
                     "DELETE FROM secrets WHERE account_id = ?",
                     (account_ref,),
@@ -1669,14 +1831,16 @@ class SQLiteCredentialStore:
                        WHERE account_id = ? AND released_at_ms IS NULL""",
                     (timestamp, account_ref),
                 )
-            connection.execute(
+            state_update = connection.execute(
                 """UPDATE credential_refresh_state
                    SET owner_id = NULL, expected_secret_version = NULL,
                        lease_acquired_at_ms = NULL, lease_expires_at_ms = NULL,
                        last_failure_class = ?, last_failure_code = ?,
                        last_failure_at_ms = ?, retry_not_before_ms = ?,
                        updated_at_ms = ?
-                   WHERE account_id = ? AND owner_id = ?""",
+                   WHERE account_id = ? AND owner_id = ?
+                     AND expected_secret_version = ?
+                     AND lease_expires_at_ms > ?""",
                 (
                     classification,
                     str(failure_code)[:128],
@@ -1685,8 +1849,12 @@ class SQLiteCredentialStore:
                     timestamp,
                     account_ref,
                     owner_ref,
+                    int(expected_secret_version),
+                    timestamp,
                 ),
             )
+            if state_update.rowcount != 1:
+                raise RuntimeError("credential refresh claim CAS failed")
             return True
 
     def acquire_lease(
@@ -1904,8 +2072,11 @@ class SQLiteCredentialStore:
         connection.execute(
             """UPDATE login_sessions
                SET status = 'expired', updated_at_ms = ?,
-                   problem_json = ?, flow_json = NULL
-               WHERE login_session_id = ? AND status = 'pending'
+                   problem_json = ?, flow_json = NULL,
+                   completion_claim_id = NULL,
+                   completion_claim_expires_at_ms = NULL
+               WHERE login_session_id = ?
+                 AND status IN ('pending', 'completing')
                  AND expires_at_ms IS NOT NULL AND expires_at_ms <= ?""",
             (
                 timestamp,
@@ -1997,27 +2168,116 @@ class SQLiteCredentialStore:
                 )
             return result
 
-    def finish_login(
+    def claim_pending_login(
+        self,
+        login_session_id: str,
+        *,
+        claim_id: str,
+        lease_duration_ms: int = _LOGIN_COMPLETION_LEASE_MS,
+    ) -> bool:
+        claim_ref = str(claim_id)
+        duration_ms = int(lease_duration_ms)
+        if not claim_ref or duration_ms <= 0:
+            raise ValueError("login completion claim is invalid")
+        with self._transaction() as connection:
+            timestamp = now_ms()
+            self._expire_stale_login(connection, str(login_session_id), timestamp)
+            claim_expires_at_ms = timestamp + duration_ms
+            result = connection.execute(
+                """UPDATE login_sessions
+                   SET status = 'completing', updated_at_ms = ?,
+                       completion_claim_id = ?,
+                       completion_claim_expires_at_ms = ?
+                   WHERE login_session_id = ?
+                     AND (
+                         status = 'pending'
+                         OR (
+                             status = 'completing'
+                             AND (
+                                 completion_claim_expires_at_ms IS NULL
+                                 OR completion_claim_expires_at_ms <= ?
+                             )
+                         )
+                     )""",
+                (
+                    timestamp,
+                    claim_ref,
+                    claim_expires_at_ms,
+                    str(login_session_id),
+                    timestamp,
+                ),
+            )
+            return result.rowcount > 0
+
+    def renew_login_claim(
+        self,
+        login_session_id: str,
+        *,
+        claim_id: str,
+        lease_duration_ms: int = _LOGIN_COMPLETION_LEASE_MS,
+    ) -> bool:
+        claim_ref = str(claim_id)
+        duration_ms = int(lease_duration_ms)
+        if not claim_ref or duration_ms <= 0:
+            raise ValueError("login completion claim is invalid")
+        with self._transaction() as connection:
+            timestamp = now_ms()
+            self._expire_stale_login(connection, str(login_session_id), timestamp)
+            result = connection.execute(
+                """UPDATE login_sessions
+                   SET updated_at_ms = ?,
+                       completion_claim_expires_at_ms = ?
+                   WHERE login_session_id = ? AND status = 'completing'
+                     AND completion_claim_id = ?
+                     AND completion_claim_expires_at_ms > ?""",
+                (
+                    timestamp,
+                    timestamp + duration_ms,
+                    str(login_session_id),
+                    claim_ref,
+                    timestamp,
+                ),
+            )
+            return result.rowcount > 0
+
+
+
+
+    def finish_claimed_login(
         self,
         login_session_id: str,
         status: str,
         problem: Mapping[str, Any] | None = None,
+        *,
+        claim_id: str,
     ) -> bool:
         normalized_status = str(status)
+        timestamp = now_ms()
         with self._transaction() as connection:
+            self._expire_stale_login(
+                connection,
+                str(login_session_id),
+                timestamp,
+            )
             result = connection.execute(
                 """UPDATE login_sessions
                    SET status = ?, updated_at_ms = ?, problem_json = ?,
                        flow_json = CASE
                            WHEN ? IN ('completed', 'failed', 'cancelled', 'expired')
-                           THEN NULL ELSE flow_json END
-                   WHERE login_session_id = ?""",
+                           THEN NULL ELSE flow_json END,
+                       completion_claim_id = NULL,
+                       completion_claim_expires_at_ms = NULL
+                   WHERE login_session_id = ? AND status = 'completing'
+                     AND completion_claim_id = ?
+                     AND completion_claim_expires_at_ms > ?""",
                 (
                     normalized_status,
-                    now_ms(),
+                    timestamp,
                     self._json(problem),
                     normalized_status,
                     str(login_session_id),
+                    str(claim_id),
+                    timestamp,
                 ),
             )
             return result.rowcount > 0
@@ -2028,9 +2288,11 @@ class SQLiteCredentialStore:
             self._expire_stale_login(connection, str(login_session_id), timestamp)
             result = connection.execute(
                 """UPDATE login_sessions
-                   SET status = 'cancelled', updated_at_ms = ?, flow_json = NULL
+                   SET status = 'cancelled', updated_at_ms = ?, flow_json = NULL,
+                       completion_claim_id = NULL,
+                       completion_claim_expires_at_ms = NULL
                    WHERE login_session_id = ?
-                     AND status NOT IN ('cancelled', 'completed', 'expired')""",
+                     AND status IN ('pending', 'completing')""",
                 (timestamp, str(login_session_id)),
             )
             return result.rowcount > 0
