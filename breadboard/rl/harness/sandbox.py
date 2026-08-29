@@ -1603,6 +1603,23 @@ class TrustedProcessBackend:
     ) -> tuple[CleanupStepReceipt, ...]:
         raw_identities = record.get("process_identities")
         if raw_identities is None:
+            if any(
+                key in record
+                for key in (
+                    "process_pid",
+                    "process_group_id",
+                    "process_session_id",
+                    "process_start_identity",
+                    "process_cgroup_identity",
+                )
+            ):
+                return (
+                    CleanupStepReceipt(
+                        "runtime",
+                        CleanupState.QUARANTINED,
+                        "stale_identity_uncertain",
+                    ),
+                )
             raw_identities = ()
         if type(raw_identities) not in {list, tuple}:
             return (
