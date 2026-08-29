@@ -482,7 +482,9 @@ def _docker_plan(tmp_path: Path, *, gvisor: bool = False) -> tuple[Any, Path, Pa
         c.RuntimeClass.HARDENED_GVISOR if gvisor else c.RuntimeClass.HARDENED_DOCKER
     )
     fixture = make_runtime_fixture(
-        runtime_class=runtime_class, with_writable_mount=True
+        runtime_class=runtime_class,
+        with_writable_mount=True,
+        repository_mount=True,
     )
     plan = build_sandbox_execution_plan(
         fixture.request, fixture.registries, fixture.authorities
@@ -660,7 +662,7 @@ async def test_runtime_handle_exposes_persistent_testbed_file_and_diff_operation
         "-c",
         docker_module._WORKSPACE_PYTHON,
     )
-    assert calls[0][5:] == ("read", "src/main.py", "0", "5")
+    assert calls[0][5:] == ("read", "src/main.py", "0", "5", "0")
     assert calls[1][:6] == (
         "exec",
         "-i",
@@ -689,7 +691,7 @@ async def test_runtime_handle_exposes_persistent_testbed_file_and_diff_operation
         CONTAINER_ID,
         "git",
         "-C",
-        "/testbed",
+        "/testbed/work",
         "diff",
         "--no-ext-diff",
         "--binary",
@@ -849,8 +851,25 @@ async def test_runtime_handle_rejects_read_symlink_before_read_effect(
         "read",
         "link",
         "0",
-        str(plan.limits.observation_bytes + 1),
+        str(plan.limits.observation_bytes),
+        "1",
     )
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_reports_missing_image_workspace_helper_as_unavailable(
+    tmp_path: Path,
+) -> None:
+    _, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.append(
+        _result(returncode=127, stderr=b"exec: python3: not found\n")
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.read_text("src/main.py", limit=1)
+
+    assert captured.value.code == "runtime_unsupported"
+    assert handle._fenced is False
 
 
 @pytest.mark.asyncio
@@ -971,7 +990,7 @@ def test_workspace_helper_performs_descriptor_bound_read_write_and_list(
     target = source / "main.py"
     target.write_text("old", encoding="utf-8")
 
-    payload = b"hello"
+    payload = b"hello!"
     write_result = _run_workspace_helper(
         root,
         "write",
@@ -981,10 +1000,12 @@ def test_workspace_helper_performs_descriptor_bound_read_write_and_list(
         input_bytes=payload,
     )
     assert write_result.returncode == 0
-    assert target.read_text(encoding="utf-8") == "hello"
+    assert target.read_text(encoding="utf-8") == "hello!"
     assert not tuple(source.glob(".breadboard-*"))
 
-    read_result = _run_workspace_helper(root, "read", "src/main.py", "1", "4")
+    read_result = _run_workspace_helper(
+        root, "read", "src/main.py", "1", "4", "0"
+    )
     assert read_result.returncode == 0
     assert json.loads(read_result.stdout) == {
         "bytes": 4,
@@ -1008,7 +1029,7 @@ def test_workspace_helper_rejects_symlinks_hardlinks_and_inode_overflow(
     os.link(outside, source / "hardlink")
 
     for arguments in (
-        ("read", "src/link", "0", "8"),
+        ("read", "src/link", "0", "8", "0"),
         ("list", "src", "0", "8"),
     ):
         result = _run_workspace_helper(root, *arguments)

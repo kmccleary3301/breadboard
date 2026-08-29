@@ -102,7 +102,9 @@ def regular(metadata):
     return stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
 
 
-def read_file(logical_path, offset, limit):
+def read_file(logical_path, offset, limit, probe_extra):
+    if offset < 0 or limit < 0 or probe_extra not in (0, 1):
+        raise RuntimeError("workspace read envelope is malformed")
     parts = workspace_parts(logical_path)
     parent, name = open_parent(parts)
     descriptor = -1
@@ -113,7 +115,7 @@ def read_file(logical_path, offset, limit):
             fail()
         os.lseek(descriptor, offset, os.SEEK_SET)
         chunks = []
-        remaining = limit + 1
+        remaining = limit + probe_extra
         while remaining:
             chunk = os.read(descriptor, remaining)
             if not chunk:
@@ -275,7 +277,12 @@ def main():
     mode = sys.argv[1]
     logical_path = sys.argv[2]
     if mode == "read":
-        read_file(logical_path, int(sys.argv[3]), int(sys.argv[4]))
+        read_file(
+            logical_path,
+            int(sys.argv[3]),
+            int(sys.argv[4]),
+            int(sys.argv[5]),
+        )
     elif mode == "write":
         write_file(
             logical_path,
@@ -336,7 +343,9 @@ def _require_workspace_command_success(
             _WORKSPACE_AUTHORITY_FAILURE: "bb-workspace-helper:authority\n",
             126: "bb-workspace-helper:protocol\n",
         }
-        if type(stderr) is not str or stderr != expected.get(returncode):
+        if returncode == 127:
+            code = "runtime_unsupported"
+        elif type(stderr) is not str or stderr != expected.get(returncode):
             code = "runtime_protocol_error"
         elif returncode == _WORKSPACE_OUTPUT_LIMIT_FAILURE:
             code = "output_limit_exceeded"
@@ -2195,11 +2204,17 @@ class DockerRuntimeHandle:
         if limit is not None and (type(limit) is not int or limit < 0 or limit > ceiling):
             raise DockerAdapterError("output_limit_exceeded", "read limit exceeds admitted ceiling")
         selected_limit = ceiling if limit is None else limit
-        helper_read_limit = ceiling + 1 if limit is None else selected_limit
-        protocol_output_limit = 4 * ((helper_read_limit + 2) // 3) + 128
+        probe_extra = limit is None
+        helper_read_limit = selected_limit
+        wire_bytes = helper_read_limit + int(probe_extra)
+        protocol_output_limit = 4 * ((wire_bytes + 2) // 3) + 128
         result = await self._run(
             _workspace_python_argv(
-                "read", path, str(offset), str(helper_read_limit)
+                "read",
+                path,
+                str(offset),
+                str(helper_read_limit),
+                str(int(probe_extra)),
             ),
             timeout_ms=self.plan.limits.action_timeout_ms,
             output_limit=protocol_output_limit,
@@ -2311,8 +2326,21 @@ class DockerRuntimeHandle:
         return {"path": path, "files": values}
 
     async def workspace_diff(self) -> Mapping[str, Any]:
+        repositories = tuple(
+            entry
+            for entry in self.plan.materialization_plan.entries
+            if entry.role == "repository"
+        )
+        if len(repositories) != 1:
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "workspace diff requires exactly one repository mount",
+            )
+        repository_root = _container_workspace_path(
+            repositories[0].target_logical_path
+        )
         return await self._run(
-            ("git", "-C", CONTAINER_WORKSPACE_ROOT, "diff", "--no-ext-diff", "--binary"),
+            ("git", "-C", repository_root, "diff", "--no-ext-diff", "--binary"),
             timeout_ms=self.plan.limits.action_timeout_ms,
         )
 

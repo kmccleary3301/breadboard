@@ -27,8 +27,14 @@ def test_installed_sandbox_capability_matrix_is_closed_and_truthful() -> None:
     assert adapters["docker"]["status"] == "experimental"
     assert adapters["docker"]["capabilities"]["isolated"] is True
     assert adapters["docker"]["capabilities"]["persistent_workspace"] is True
+    assert adapters["docker"]["required_image_capabilities"] == (
+        "python3-workspace-helper",
+    )
     assert adapters["gvisor"]["status"] == "experimental"
     assert adapters["firecracker"]["status"] == "unsupported"
+    assert adapters["gvisor"]["required_image_capabilities"] == (
+        "python3-workspace-helper",
+    )
     assert adapters["process"]["status"] == "development_only"
     assert adapters["process"]["capabilities"]["isolated"] is False
     with pytest.raises(TypeError):

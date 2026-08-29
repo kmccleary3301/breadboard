@@ -1269,6 +1269,7 @@ async def test_unproven_runtime_cleanup_quarantines_dependents_until_safe_retry(
         ),
     )
     assert lease.state is WorkspaceLeaseState.QUARANTINED
+    assert lease.cleanup_receipt is first
     assert handle.terminate_calls == 1
     assert lease._materialized.workspace_path.exists()
     assert (harness.lease_root / f"{lease.lease_id}.json").exists()
@@ -1285,12 +1286,31 @@ async def test_unproven_runtime_cleanup_quarantines_dependents_until_safe_retry(
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
     assert lease.state is WorkspaceLeaseState.RELEASED
+    assert lease.cleanup_receipt is second
     assert handle.terminate_calls == 2
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
     assert await lease.close() == second
     assert handle.terminate_calls == 2
 
+
+
+@pytest.mark.asyncio
+async def test_execute_rejects_malformed_argv_without_fencing_active_lease(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    handle = harness.backend.handles[0]
+
+    for argv in ((), ("",), ("bad\x00argument",), (object(),)):
+        with pytest.raises(WorkspaceStateError) as captured:
+            await lease.execute(argv)
+        assert captured.value.code == "runtime_preflight_failed"
+
+    assert lease.state is WorkspaceLeaseState.ACTIVE
+    assert handle.argv_actions == []
 
 @pytest.mark.parametrize("completion", ["finish", "cancel"])
 async def test_close_fences_new_operations_and_drains_an_active_operation(

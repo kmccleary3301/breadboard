@@ -26,6 +26,9 @@
         "cgroups",
         "private-descriptor-mount-staging"
       ],
+      "required_image_capabilities": [
+        "python3-workspace-helper"
+      ],
       "unavailable_code": "runtime_unsupported",
       "evidence_contracts": [
         "tests/rl/harness/test_sandbox_docker.py",
@@ -55,6 +58,7 @@
         "networking",
         "image-authority"
       ],
+      "required_image_capabilities": [],
       "unavailable_code": "runtime_unsupported",
       "evidence_contracts": []
     },
@@ -80,6 +84,9 @@
         "pinned-runsc-binary",
         "private-descriptor-mount-staging"
       ],
+      "required_image_capabilities": [
+        "python3-workspace-helper"
+      ],
       "unavailable_code": "runtime_unsupported",
       "evidence_contracts": [
         "tests/rl/harness/test_sandbox_docker.py"
@@ -101,6 +108,7 @@
         "isolated": false
       },
       "required_host_capabilities": [],
+      "required_image_capabilities": [],
       "unavailable_code": "runtime_unsupported",
       "evidence_contracts": [
         "tests/rl/harness/test_sandbox_process_integration.py",
