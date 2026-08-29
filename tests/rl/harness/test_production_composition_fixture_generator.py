@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import stat
 import subprocess
 from pathlib import Path
@@ -43,9 +44,13 @@ def test_qualification_resource_requires_pinned_digest(tmp_path: Path) -> None:
     resource.write_bytes(b'{"value":1}')
     digest = hashlib.sha256(resource.read_bytes()).hexdigest()
     assert _read_resource(resource, expected_sha256=digest) == b'{"value":1}'
+    hardlink = tmp_path / "installed-hardlink.json"
+    os.link(resource, hardlink)
+    assert _read_resource(resource, expected_sha256=digest) == b'{"value":1}'
     resource.write_bytes(b'{"value":2}')
     with pytest.raises(RuntimeError, match="digest mismatch"):
         _read_resource(resource, expected_sha256=digest)
+
 PRODUCTION_SOURCE_EXTENSIONS = {
     ".cfg",
     ".ini",

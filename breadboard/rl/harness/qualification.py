@@ -78,7 +78,6 @@ def _read_resource(
         identity = os.fstat(descriptor)
         if (
             not stat.S_ISREG(identity.st_mode)
-            or identity.st_nlink != 1
             or identity.st_size > max_bytes
         ):
             raise RuntimeError("qualification resource identity is invalid")
