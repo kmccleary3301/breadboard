@@ -856,6 +856,9 @@ class RuntimeLaunchContext:
     workspace_fd: int | None = None
     workspace_identity: tuple[int, int] | None = None
     owner_token: str | None = None
+    record_process_identity: (
+        Callable[[str, Mapping[str, Any] | None], None] | None
+    ) = None
 
     def __post_init__(self) -> None:
         if (
@@ -866,6 +869,10 @@ class RuntimeLaunchContext:
             or self.epoch <= 0
             or type(self.storage) is not WorkspaceStorageIdentity
             or not callable(self.publish_prepared_identity)
+            or (
+                self.record_process_identity is not None
+                and not callable(self.record_process_identity)
+            )
             or (self.workspace_fd is None) != (self.workspace_identity is None)
             or (
                 self.workspace_fd is not None
@@ -1889,6 +1896,13 @@ class TrustedProcessBackend:
                 plan, workspace, lease_id, executable, git_executable,
                 context.workspace_fd, context.workspace_identity,
             )
+            if context.record_process_identity is None:
+                raise SandboxLaunchError(
+                    "trusted process identity recorder is unavailable",
+                    code="runtime_preflight_failed",
+                    lease_id=lease_id,
+                )
+            handle.bind_identity_recorder(context.record_process_identity)
             repository_base_commit = await handle.measure_repository_base_commit()
             requested = {
                 "runtime": plan.runtime.runtime_id,
@@ -2853,6 +2867,8 @@ class SandboxRuntimeManager:
             result_relative_path=None if role == "primary" else "result",
             publish_prepared_identity=lambda identity, lease_id=lease_id:
                 self._publish_runtime_identity(lease_id, identity),
+            record_process_identity=lambda resource_id, identity, lease_id=lease_id:
+                self._record_process_identity(lease_id, resource_id, identity),
             workspace_fd=workspace_fd,
             workspace_identity=workspace_identity,
             owner_token=owner_token,
@@ -3218,11 +3234,6 @@ class SandboxRuntimeManager:
                 runtime, measurement = await backend.launch(
                     plan, materialized.workspace_path, context=context
                 )
-                if isinstance(runtime, TrustedProcessHandle):
-                    runtime.bind_identity_recorder(
-                        lambda resource_id, identity, lease_id=lease_id:
-                            self._record_process_identity(lease_id, resource_id, identity)
-                    )
                 if measurement.mismatch:
                     raise SandboxAttestationError("runtime measurement mismatch", code="runtime_measurement_mismatch",
                                                   lease_id=lease_id)

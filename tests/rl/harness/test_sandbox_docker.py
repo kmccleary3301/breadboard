@@ -804,6 +804,40 @@ async def test_runtime_handle_zero_byte_read_is_a_nonfencing_success(
 
 
 @pytest.mark.asyncio
+async def test_launch_measurement_error_leaves_cleanup_with_backend_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, _, handle = await _launch_docker_handle(tmp_path)
+    original_exec = handle.adapter.exec
+    original_cleanup = handle._retry_cleanup
+    cleanup_calls = 0
+
+    async def fail_measurement(*args: Any, **kwargs: Any) -> Any:
+        raise DockerAdapterError(
+            "output_limit_exceeded", "measurement output exceeded limit"
+        )
+
+    async def track_cleanup() -> tuple[Any, ...]:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        return await original_cleanup()
+
+    monkeypatch.setattr(handle.adapter, "exec", fail_measurement)
+    monkeypatch.setattr(handle, "_retry_cleanup", track_cleanup)
+    handle._launching = True
+
+    with pytest.raises(DockerAdapterError, match="measurement output"):
+        await handle.measure_repository_base_commit()
+
+    assert cleanup_calls == 0
+    assert handle._closed is False
+    monkeypatch.setattr(handle.adapter, "exec", original_exec)
+    monkeypatch.setattr(handle, "_retry_cleanup", original_cleanup)
+    handle.complete_launch()
+    await handle.terminate()
+
+
+@pytest.mark.asyncio
 async def test_runtime_handle_retries_only_failed_stages_after_releasing_all_others(
     tmp_path: Path,
 ) -> None:
