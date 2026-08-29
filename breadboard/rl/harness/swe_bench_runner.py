@@ -597,7 +597,8 @@ def _require_root_owned_immutable_directory(path: str) -> None:
             or identity.st_mode & 0o222
         ):
             raise SweBenchRunnerError(
-                "evaluator authority directory is not root-owned and immutable"
+                "evaluator authority directory is not root-owned and immutable: "
+                + current
             )
         parent = os.path.dirname(current)
         if parent == current:
