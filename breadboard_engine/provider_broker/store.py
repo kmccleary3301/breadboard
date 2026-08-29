@@ -18,6 +18,7 @@ from breadboard_engine.security import redaction
 
 _ACTIVE_STATUSES = ("active",)
 _LOGIN_EXPIRY_MS = 10 * 60 * 1000
+_LOGIN_COMPLETION_LEASE_MS = 2 * 60 * 1000
 _LOGIN_TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "expired"})
 
 
@@ -471,7 +472,9 @@ class SQLiteCredentialStore:
                     updated_at_ms INTEGER NOT NULL,
                     expires_at_ms INTEGER,
                     problem_json TEXT,
-                    flow_json TEXT
+                    flow_json TEXT,
+                    completion_claim_id TEXT,
+                    completion_claim_expires_at_ms INTEGER
                 );
                 CREATE TABLE IF NOT EXISTS audit_events (
                     event_id TEXT PRIMARY KEY,
@@ -500,6 +503,25 @@ class SQLiteCredentialStore:
                 connection.execute(
                     "ALTER TABLE login_sessions ADD COLUMN expires_at_ms INTEGER"
                 )
+            if "completion_claim_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE login_sessions ADD COLUMN completion_claim_id TEXT"
+                )
+            if "completion_claim_expires_at_ms" not in columns:
+                connection.execute(
+                    "ALTER TABLE login_sessions "
+                    "ADD COLUMN completion_claim_expires_at_ms INTEGER"
+                )
+            connection.execute(
+                """UPDATE login_sessions
+                   SET status = 'pending', completion_claim_id = NULL,
+                       completion_claim_expires_at_ms = NULL
+                   WHERE status = 'completing'
+                     AND (
+                         completion_claim_id IS NULL
+                         OR completion_claim_expires_at_ms IS NULL
+                     )"""
+            )
             connection.execute(
                 """UPDATE login_sessions
                    SET expires_at_ms = created_at_ms + ?
@@ -513,14 +535,21 @@ class SQLiteCredentialStore:
             migration_timestamp = now_ms()
             connection.execute(
                 """UPDATE login_sessions
-                   SET flow_json = NULL
+                   SET flow_json = NULL, completion_claim_id = NULL,
+                       completion_claim_expires_at_ms = NULL
                    WHERE status IN ('completed', 'failed', 'cancelled', 'expired')
-                     AND flow_json IS NOT NULL"""
+                     AND (
+                         flow_json IS NOT NULL
+                         OR completion_claim_id IS NOT NULL
+                         OR completion_claim_expires_at_ms IS NOT NULL
+                     )"""
             )
             connection.execute(
                 """UPDATE login_sessions
                    SET status = 'expired', updated_at_ms = ?,
-                       problem_json = ?, flow_json = NULL
+                       problem_json = ?, flow_json = NULL,
+                       completion_claim_id = NULL,
+                       completion_claim_expires_at_ms = NULL
                    WHERE status = 'pending'
                      AND expires_at_ms IS NOT NULL
                      AND expires_at_ms <= ?""",
@@ -1669,6 +1698,16 @@ class SQLiteCredentialStore:
                 self._safe_metadata(merged_metadata, previous_material)
             )
             merged_metadata = dict(self._safe_metadata(merged_metadata, material))
+            prospective_view = self._account_view(account)
+            prospective_view.update(
+                {
+                    "secret_version": next_version,
+                    "updated_at_ms": timestamp,
+                    "expires_at_ms": int(expires_at_ms),
+                    "metadata": merged_metadata,
+                }
+            )
+            self._validate_credential_identity(prospective_view, material)
             account_update = connection.execute(
                 """UPDATE accounts
                    SET status = 'active', secret_version = ?, updated_at_ms = ?,
@@ -2033,7 +2072,9 @@ class SQLiteCredentialStore:
         connection.execute(
             """UPDATE login_sessions
                SET status = 'expired', updated_at_ms = ?,
-                   problem_json = ?, flow_json = NULL
+                   problem_json = ?, flow_json = NULL,
+                   completion_claim_id = NULL,
+                   completion_claim_expires_at_ms = NULL
                WHERE login_session_id = ?
                  AND status IN ('pending', 'completing')
                  AND expires_at_ms IS NOT NULL AND expires_at_ms <= ?""",
@@ -2127,17 +2168,64 @@ class SQLiteCredentialStore:
                 )
             return result
 
-    def claim_pending_login(self, login_session_id: str) -> bool:
+    def claim_pending_login(
+        self,
+        login_session_id: str,
+        *,
+        claim_id: str,
+        lease_duration_ms: int = _LOGIN_COMPLETION_LEASE_MS,
+    ) -> bool:
+        claim_ref = str(claim_id)
+        duration_ms = int(lease_duration_ms)
+        if not claim_ref or duration_ms <= 0:
+            raise ValueError("login completion claim is invalid")
         with self._transaction() as connection:
             timestamp = now_ms()
             self._expire_stale_login(connection, str(login_session_id), timestamp)
+            claim_expires_at_ms = timestamp + duration_ms
             result = connection.execute(
                 """UPDATE login_sessions
-                   SET status = 'completing', updated_at_ms = ?
-                   WHERE login_session_id = ? AND status = 'pending'""",
-                (timestamp, str(login_session_id)),
+                   SET status = 'completing', updated_at_ms = ?,
+                       completion_claim_id = ?,
+                       completion_claim_expires_at_ms = ?
+                   WHERE login_session_id = ?
+                     AND (
+                         status = 'pending'
+                         OR (
+                             status = 'completing'
+                             AND (
+                                 completion_claim_expires_at_ms IS NULL
+                                 OR completion_claim_expires_at_ms <= ?
+                             )
+                         )
+                     )""",
+                (
+                    timestamp,
+                    claim_ref,
+                    claim_expires_at_ms,
+                    str(login_session_id),
+                    timestamp,
+                ),
             )
             return result.rowcount > 0
+
+    def login_claim_is_active(
+        self,
+        login_session_id: str,
+        *,
+        claim_id: str,
+    ) -> bool:
+        with self._transaction() as connection:
+            timestamp = now_ms()
+            self._expire_stale_login(connection, str(login_session_id), timestamp)
+            row = connection.execute(
+                """SELECT 1 FROM login_sessions
+                   WHERE login_session_id = ? AND status = 'completing'
+                     AND completion_claim_id = ?
+                     AND completion_claim_expires_at_ms > ?""",
+                (str(login_session_id), str(claim_id), timestamp),
+            ).fetchone()
+            return row is not None
 
 
     def finish_claimed_login(
@@ -2145,6 +2233,8 @@ class SQLiteCredentialStore:
         login_session_id: str,
         status: str,
         problem: Mapping[str, Any] | None = None,
+        *,
+        claim_id: str,
     ) -> bool:
         normalized_status = str(status)
         timestamp = now_ms()
@@ -2159,14 +2249,20 @@ class SQLiteCredentialStore:
                    SET status = ?, updated_at_ms = ?, problem_json = ?,
                        flow_json = CASE
                            WHEN ? IN ('completed', 'failed', 'cancelled', 'expired')
-                           THEN NULL ELSE flow_json END
-                   WHERE login_session_id = ? AND status = 'completing'""",
+                           THEN NULL ELSE flow_json END,
+                       completion_claim_id = NULL,
+                       completion_claim_expires_at_ms = NULL
+                   WHERE login_session_id = ? AND status = 'completing'
+                     AND completion_claim_id = ?
+                     AND completion_claim_expires_at_ms > ?""",
                 (
                     normalized_status,
                     timestamp,
                     self._json(problem),
                     normalized_status,
                     str(login_session_id),
+                    str(claim_id),
+                    timestamp,
                 ),
             )
             return result.rowcount > 0
@@ -2177,7 +2273,9 @@ class SQLiteCredentialStore:
             self._expire_stale_login(connection, str(login_session_id), timestamp)
             result = connection.execute(
                 """UPDATE login_sessions
-                   SET status = 'cancelled', updated_at_ms = ?, flow_json = NULL
+                   SET status = 'cancelled', updated_at_ms = ?, flow_json = NULL,
+                       completion_claim_id = NULL,
+                       completion_claim_expires_at_ms = NULL
                    WHERE login_session_id = ?
                      AND status IN ('pending', 'completing')""",
                 (timestamp, str(login_session_id)),
