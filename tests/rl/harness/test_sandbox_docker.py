@@ -1063,6 +1063,18 @@ def test_workspace_helper_performs_descriptor_bound_read_write_and_list(
     assert target.read_text(encoding="utf-8") == "hello!"
     assert not tuple(source.glob(".breadboard-*"))
 
+    nested_payload = b"nested"
+    nested_write = _run_workspace_helper(
+        root,
+        "write",
+        "new/deep/result.txt",
+        str(len(nested_payload)),
+        hashlib.sha256(nested_payload).hexdigest(),
+        input_bytes=nested_payload,
+    )
+    assert nested_write.returncode == 0
+    assert (root / "new/deep/result.txt").read_bytes() == nested_payload
+
     read_result = _run_workspace_helper(
         root, "read", "src/main.py", "1", "4", "0"
     )
@@ -3541,15 +3553,17 @@ async def test_definite_exec_nonzero_does_not_fence_or_trigger_cleanup(
     )
     calls_before_fault = len(executor.calls)
 
-    with pytest.raises(DockerAdapterError) as captured:
-        await handle.run_argv(
-            ("false",),
-            timeout_ms=plan.limits.action_timeout_ms,
-            output_limit=plan.limits.observation_bytes,
-        )
+    failed = await handle.run_argv(
+        ("false",),
+        timeout_ms=plan.limits.action_timeout_ms,
+        output_limit=plan.limits.observation_bytes,
+    )
 
-    assert captured.value.code == "runtime_launch_failed"
-    assert captured.value.details == {"returncode": 7}
+    assert failed == {
+        "returncode": 7,
+        "stdout": "",
+        "stderr": "command rejected",
+    }
     assert [call[0][1] for call in executor.calls[calls_before_fault:]] == ["exec"]
     result = await handle.run_argv(
         ("printf", "still-active"),

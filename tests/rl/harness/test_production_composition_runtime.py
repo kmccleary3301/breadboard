@@ -16,6 +16,7 @@ from breadboard.rl.harness.composition import (
     _CASMaterializationSourceReader,
     _DirectoryIdentityGuard,
     _measure_installed_runtime,
+    _ProductionCleanupProbe,
     _PinnedDirectoryStorageBackend,
 )
 from breadboard.rl.harness.contracts import RuntimeClass
@@ -25,6 +26,33 @@ from breadboard.rl.state.cas import FilesystemCAS
 
 def _digest(payload: bytes) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def test_cleanup_probe_excludes_only_authenticated_supervisor_journal(
+    tmp_path,
+) -> None:
+    journal = tmp_path / "supervisor-journal"
+    journal.mkdir()
+    active_lease = tmp_path / "episode-lease"
+    active_lease.mkdir()
+    metadata = journal.stat()
+    identity = (metadata.st_dev, metadata.st_ino)
+    errors: list[str] = []
+
+    assert _ProductionCleanupProbe._lease_inventory_paths(
+        (active_lease, journal),
+        identity,
+        errors,
+    ) == (active_lease,)
+    assert errors == []
+
+    journal.rename(tmp_path / "displaced-journal")
+    journal.mkdir()
+    assert _ProductionCleanupProbe._lease_inventory_paths(
+        (active_lease, journal),
+        identity,
+        errors,
+    ) == (active_lease, journal)
 
 
 @pytest.mark.asyncio

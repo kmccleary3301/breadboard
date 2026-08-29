@@ -74,7 +74,7 @@ def workspace_parts(logical_path):
     return logical_path.split("/")
 
 
-def open_parent(parts):
+def open_parent(parts, create=False):
     if not DIRECTORY_FLAGS & getattr(os, "O_DIRECTORY", 0) or not getattr(os, "O_NOFOLLOW", 0):
         raise RuntimeError("required no-follow directory flags are unavailable")
     descriptor = os.open(ROOT, DIRECTORY_FLAGS)
@@ -83,7 +83,16 @@ def open_parent(parts):
         if not stat.S_ISDIR(metadata.st_mode):
             fail()
         for component in parts[:-1]:
-            child = os.open(component, DIRECTORY_FLAGS, dir_fd=descriptor)
+            try:
+                child = os.open(component, DIRECTORY_FLAGS, dir_fd=descriptor)
+            except FileNotFoundError:
+                if not create:
+                    raise
+                try:
+                    os.mkdir(component, mode=0o700, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+                child = os.open(component, DIRECTORY_FLAGS, dir_fd=descriptor)
             try:
                 metadata = os.fstat(child)
                 if not stat.S_ISDIR(metadata.st_mode):
@@ -141,7 +150,7 @@ def read_file(logical_path, offset, limit, probe_extra):
 
 def write_file(logical_path, payload):
     parts = workspace_parts(logical_path)
-    parent, name = open_parent(parts)
+    parent, name = open_parent(parts, create=True)
     descriptor = -1
     temporary_name = None
     try:
@@ -1928,10 +1937,6 @@ class DockerRuntimeAdapter:
         input_bytes: bytes = b"",
     ) -> Mapping[str, Any]:
         self._pin(plan)
-        workspace_helper = (
-            len(argv) >= 3
-            and tuple(argv[:3]) == ("python3", "-c", _WORKSPACE_PYTHON)
-        )
         captured_output_limit = (
             plan.limits.observation_bytes
             if output_limit is None
@@ -1944,28 +1949,20 @@ class DockerRuntimeAdapter:
             container_id,
             *argv,
         )
-        if workspace_helper:
-            result = await self._raw(
-                raw_argv,
-                timeout_ms=timeout_ms,
-                output_limit=captured_output_limit,
-                input_bytes=input_bytes,
+        result = await self._raw(
+            raw_argv,
+            timeout_ms=timeout_ms,
+            output_limit=captured_output_limit,
+            input_bytes=input_bytes,
+        )
+        if result.output_limited:
+            raise DockerAdapterError(
+                "output_limit_exceeded",
+                "Docker CLI output exceeded the admitted limit",
             )
-            if result.output_limited:
-                raise DockerAdapterError(
-                    "output_limit_exceeded",
-                    "Docker CLI output exceeded the admitted limit",
-                )
-            if result.timed_out:
-                raise DockerAdapterError(
-                    "runtime_launch_failed", "Docker CLI operation timed out"
-                )
-        else:
-            result = await self._execute(
-                raw_argv,
-                timeout_ms=timeout_ms,
-                output_limit=captured_output_limit,
-                code="runtime_launch_failed",
+        if result.timed_out:
+            raise DockerAdapterError(
+                "runtime_launch_failed", "Docker CLI operation timed out"
             )
         return {
             "returncode": result.returncode,
@@ -2377,21 +2374,16 @@ class DockerRuntimeHandle:
         repository_root = _container_workspace_path(
             repositories[0].target_logical_path
         )
-        try:
-            return await self._run(
-                ("git", "-C", repository_root, "diff", "--no-ext-diff", "--binary"),
-                timeout_ms=self.plan.limits.action_timeout_ms,
+        result = await self._run(
+            ("git", "-C", repository_root, "diff", "--no-ext-diff", "--binary"),
+            timeout_ms=self.plan.limits.action_timeout_ms,
+        )
+        if result.get("returncode") == 127:
+            raise DockerAdapterError(
+                "runtime_unsupported",
+                "workspace diff requires git in the admitted image",
             )
-        except DockerAdapterError as exc:
-            if (
-                exc.code == "runtime_launch_failed"
-                and exc.details.get("returncode") == 127
-            ):
-                raise DockerAdapterError(
-                    "runtime_unsupported",
-                    "workspace diff requires git in the admitted image",
-                ) from exc
-            raise
+        return result
 
     async def _terminate_bound(self) -> tuple[Any, ...]:
         from .materialization import CleanupState, CleanupStepReceipt
