@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import platform
 import re
 import subprocess
@@ -12,9 +13,13 @@ from urllib.parse import urlsplit
 
 from setuptools import setup
 from setuptools.command.build_py import build_py as _build_py
+from setuptools.command.sdist import sdist as _sdist
 
 _ROOT = Path(__file__).resolve().parent
 _PROVENANCE_FILENAME = "engine-build-provenance.v1.json"
+_SOURCE_IDENTITY_FILENAME = "engine-source-identity.v1.json"
+_SOURCE_IDENTITY_SCHEMA = "bb.engine_source_identity.v1"
+_MAX_SOURCE_IDENTITY_BYTES = 4096
 _HEX40 = re.compile(r"[0-9a-f]{40}")
 _WHEEL_INPUT_PATHS = (
     "adaptive_iter.py",
@@ -77,6 +82,46 @@ def _canonical_repository(value: str) -> str:
     return raw
 
 
+def _embedded_source_identity() -> tuple[str, str, str] | None:
+    path = _ROOT / "breadboard_engine" / _SOURCE_IDENTITY_FILENAME
+    try:
+        metadata = path.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) & 0o022
+            or metadata.st_size <= 0
+            or metadata.st_size > _MAX_SOURCE_IDENTITY_BYTES
+        ):
+            return None
+        payload = json.loads(path.read_text(encoding="ascii"))
+    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or set(payload) != {
+        "schemaVersion",
+        "sourceRepository",
+        "sourceCommit",
+        "sourceTree",
+    }:
+        return None
+    repository = payload["sourceRepository"]
+    commit = payload["sourceCommit"]
+    tree = payload["sourceTree"]
+    if (
+        payload["schemaVersion"] != _SOURCE_IDENTITY_SCHEMA
+        or not isinstance(repository, str)
+        or not isinstance(commit, str)
+        or not isinstance(tree, str)
+        or _HEX40.fullmatch(commit) is None
+        or _HEX40.fullmatch(tree) is None
+    ):
+        return None
+    try:
+        repository = _canonical_repository(repository)
+    except RuntimeError:
+        return None
+    return repository, commit, tree
+
+
 def _git(*arguments: str) -> str:
     completed = subprocess.run(
         ("git", *arguments),
@@ -90,9 +135,7 @@ def _git(*arguments: str) -> str:
 
 
 def _source_identity() -> tuple[str, str, str]:
-    raw_repository_override = os.environ.get(
-        "BREADBOARD_BUILD_SOURCE_REPOSITORY"
-    )
+    raw_repository_override = os.environ.get("BREADBOARD_BUILD_SOURCE_REPOSITORY")
     overrides = (
         (
             _canonical_repository(raw_repository_override)
@@ -135,9 +178,13 @@ def _source_identity() -> tuple[str, str, str]:
     elif all(value is not None for value in overrides):
         repository, commit, tree = overrides
     else:
-        raise RuntimeError(
-            "wheel provenance requires a Git checkout or complete source overrides"
-        )
+        embedded = _embedded_source_identity()
+        if embedded is None:
+            raise RuntimeError(
+                "wheel provenance requires a Git checkout, complete source overrides, "
+                "or embedded sdist source identity"
+            )
+        repository, commit, tree = embedded
 
     assert repository is not None
     assert commit is not None
@@ -201,6 +248,30 @@ def _target() -> dict[str, str]:
     return {"platform": target_platform, "architecture": target_architecture}
 
 
+class SdistWithSourceIdentity(_sdist):
+    def make_release_tree(self, base_dir: str, files: list[str]) -> None:
+        repository, commit, tree = _source_identity()
+        super().make_release_tree(base_dir, files)
+        path = Path(base_dir) / "breadboard_engine" / _SOURCE_IDENTITY_FILENAME
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": _SOURCE_IDENTITY_SCHEMA,
+                    "sourceRepository": repository,
+                    "sourceCommit": commit,
+                    "sourceTree": tree,
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n",
+            encoding="ascii",
+        )
+        path.chmod(0o644)
+
+
 class BuildPyWithProvenance(_build_py):
     def _provenance_path(self) -> Path:
         return Path(self.build_lib) / "breadboard_engine" / _PROVENANCE_FILENAME
@@ -246,4 +317,9 @@ class BuildPyWithProvenance(_build_py):
         return outputs
 
 
-setup(cmdclass={"build_py": BuildPyWithProvenance})
+setup(
+    cmdclass={
+        "build_py": BuildPyWithProvenance,
+        "sdist": SdistWithSourceIdentity,
+    }
+)

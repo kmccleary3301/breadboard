@@ -98,6 +98,23 @@ test("internal event decoder accepts explicit session-scoped control and gap eve
   assert.equal(control.kind, "session_control_observed")
   assert.equal(gap.inputId, null)
   assert.equal(control.turnId, null)
+  assert.equal(internal.projectEventEvidence(gap).eventKind, "stream_gap_observed")
+
+  const cancelled = internal.decodeLoggedSessionEvent({
+    stable_cursor: true,
+    id: "event-3",
+    seq: 3,
+    session_id: "session-1",
+    input_id: "input-1",
+    turn_id: "turn-1",
+    timestamp_ms: 3,
+    type: "turn_cancelled",
+    payload: { reason: "stop_requested" },
+  })
+  assert.deepEqual(internal.projectEventEvidence(cancelled).display, {
+    kind: "cancellation-status",
+    reason: "stop_requested",
+  })
 })
 
 test("internal event decoder rejects unsafe runtime error codes", async () => {
