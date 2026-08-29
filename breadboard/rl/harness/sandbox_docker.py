@@ -24,9 +24,8 @@ def _container_workspace_path(logical_path: str) -> str:
     if type(logical_path) is not str or not logical_path or "\x00" in logical_path:
         raise DockerAdapterError("workspace_escape", "workspace path is invalid")
     path = PurePosixPath(logical_path)
-    if (
-        path.is_absolute()
-        or any(part in {"", ".", ".."} for part in logical_path.split("/"))
+    if path.is_absolute() or any(
+        part in {"", ".", ".."} for part in logical_path.split("/")
     ):
         raise DockerAdapterError("workspace_escape", "workspace path is invalid")
     return f"{CONTAINER_WORKSPACE_ROOT}/{path.as_posix()}"
@@ -421,9 +420,7 @@ class SubprocessDockerCliExecutor:
             env=dict(environment),
             start_new_session=True,
             stdin=(
-                asyncio.subprocess.PIPE
-                if input_bytes
-                else asyncio.subprocess.DEVNULL
+                asyncio.subprocess.PIPE if input_bytes else asyncio.subprocess.DEVNULL
             ),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -478,8 +475,7 @@ class SubprocessDockerCliExecutor:
                     raise
             deadline = asyncio.get_running_loop().time() + 0.25
             while (
-                process_group_exists()
-                and asyncio.get_running_loop().time() < deadline
+                process_group_exists() and asyncio.get_running_loop().time() < deadline
             ):
                 await asyncio.sleep(0.01)
             if process_group_exists():
@@ -492,8 +488,7 @@ class SubprocessDockerCliExecutor:
                         raise
             deadline = asyncio.get_running_loop().time() + 0.75
             while (
-                process_group_exists()
-                and asyncio.get_running_loop().time() < deadline
+                process_group_exists() and asyncio.get_running_loop().time() < deadline
             ):
                 await asyncio.sleep(0.01)
             if process_group_exists():
@@ -540,13 +535,19 @@ class SubprocessDockerCliExecutor:
                         task.cancel()
                     await asyncio.gather(*io_tasks, return_exceptions=True)
         return DockerCommandResult(
-            logical_argv, process.returncode, bytes(captured[0]), bytes(captured[1]),
-            timed_out=timed_out, output_limited=limited,
+            logical_argv,
+            process.returncode,
+            bytes(captured[0]),
+            bytes(captured[1]),
+            timed_out=timed_out,
+            output_limited=limited,
         )
 
 
 class DockerAdapterError(RuntimeError):
-    def __init__(self, code: str, message: str, *, details: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self, code: str, message: str, *, details: Mapping[str, Any] | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.details = dict(details or {})
@@ -559,16 +560,14 @@ def observe_binary_digest(path: str | Path) -> str:
             hasher.update(chunk)
     return "sha256:" + hasher.hexdigest()
 
+
 _O_PATH = getattr(os, "O_PATH", 0o10000000)
 _RESOLVE_NO_XDEV = 0x01
 _RESOLVE_NO_MAGICLINKS = 0x02
 _RESOLVE_NO_SYMLINKS = 0x04
 _RESOLVE_BENEATH = 0x08
 _OPENAT2_RESOLVE = (
-    _RESOLVE_BENEATH
-    | _RESOLVE_NO_SYMLINKS
-    | _RESOLVE_NO_MAGICLINKS
-    | _RESOLVE_NO_XDEV
+    _RESOLVE_BENEATH | _RESOLVE_NO_SYMLINKS | _RESOLVE_NO_MAGICLINKS | _RESOLVE_NO_XDEV
 )
 
 
@@ -626,8 +625,6 @@ def _openat2_beneath(
     return int(result)
 
 
-
-
 def _validate_mount_descriptor(
     descriptor: int,
     *,
@@ -652,7 +649,13 @@ def _validate_mount_descriptor(
 
 
 _CONTAINER_ID = re.compile(r"[0-9a-f]{64}")
-_IDENTITY_LABELS = ("bb.lease_id", "bb.plan_digest", "bb.epoch", "bb.workspace_id", "bb.role")
+_IDENTITY_LABELS = (
+    "bb.lease_id",
+    "bb.plan_digest",
+    "bb.epoch",
+    "bb.workspace_id",
+    "bb.role",
+)
 
 
 def _regular_file_metadata_identity(metadata: os.stat_result) -> tuple[int, ...]:
@@ -719,11 +722,9 @@ def _bounded_regular_file_descriptor_bytes(
             "runtime_preflight_failed",
             "security profile descriptor changed while reading",
         ) from exc
-    if (
-        extra
-        or _regular_file_metadata_identity(after)
-        != _regular_file_metadata_identity(before)
-    ):
+    if extra or _regular_file_metadata_identity(
+        after
+    ) != _regular_file_metadata_identity(before):
         raise DockerAdapterError(
             "runtime_preflight_failed",
             "security profile descriptor metadata changed while reading",
@@ -759,6 +760,7 @@ def _mount_argument(source: str, destination: str, *, readonly: bool) -> str:
     value = f"type=bind,src={source},dst={destination}"
     return value + (",readonly" if readonly else "")
 
+
 def _tmpfs_argument(destination: str, options: str) -> str:
     if (
         type(destination) is not str
@@ -766,7 +768,9 @@ def _tmpfs_argument(destination: str, options: str) -> str:
         or any(character in destination for character in ("\x00", "\\", ",", ":"))
         or any(part in {"", ".", ".."} for part in destination.split("/")[1:])
     ):
-        raise DockerAdapterError("runtime_preflight_failed", "invalid tmpfs destination")
+        raise DockerAdapterError(
+            "runtime_preflight_failed", "invalid tmpfs destination"
+        )
     tokens = options.split(",") if type(options) is str else []
     if not tokens or len(tokens) != len(set(tokens)):
         raise DockerAdapterError("runtime_preflight_failed", "invalid tmpfs options")
@@ -775,10 +779,20 @@ def _tmpfs_argument(destination: str, options: str) -> str:
     flags = {token for token in tokens if "=" not in token}
     assignments = [token for token in tokens if "=" in token]
     if flags < required_flags or not flags <= allowed_flags or len(assignments) != 1:
-        raise DockerAdapterError("runtime_preflight_failed", "tmpfs options are not closed and bounded")
+        raise DockerAdapterError(
+            "runtime_preflight_failed", "tmpfs options are not closed and bounded"
+        )
     key, separator, value = assignments[0].partition("=")
-    if key != "size" or separator != "=" or not value.isascii() or not value.isdigit() or int(value) <= 0:
-        raise DockerAdapterError("runtime_preflight_failed", "tmpfs size must be a positive byte count")
+    if (
+        key != "size"
+        or separator != "="
+        or not value.isascii()
+        or not value.isdigit()
+        or int(value) <= 0
+    ):
+        raise DockerAdapterError(
+            "runtime_preflight_failed", "tmpfs size must be a positive byte count"
+        )
     return f"{destination}:{options}"
 
 
@@ -820,7 +834,9 @@ def _validate_mount_authority(
             raise DockerAdapterError(
                 "runtime_preflight_failed", "duplicate Docker mount destination"
             )
-        pending = [child for key, child in node.items() if key and isinstance(child, dict)]
+        pending = [
+            child for key, child in node.items() if key and isinstance(child, dict)
+        ]
         descendants: list[tuple[bool, str]] = []
         while pending and not descendants:
             child = pending.pop()
@@ -856,7 +872,8 @@ def _validate_lsm_policy(security: Any) -> None:
             or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", apparmor) is None
         ):
             raise DockerAdapterError(
-                "runtime_preflight_failed", "AppArmor authority is disabling or malformed"
+                "runtime_preflight_failed",
+                "AppArmor authority is disabling or malformed",
             )
     elif selinux is not None:
         if (
@@ -866,15 +883,26 @@ def _validate_lsm_policy(security: Any) -> None:
             or re.fullmatch(r"[A-Za-z0-9_.:-]{3,255}", selinux) is None
         ):
             raise DockerAdapterError(
-                "runtime_preflight_failed", "SELinux authority is disabling or malformed"
+                "runtime_preflight_failed",
+                "SELinux authority is disabling or malformed",
             )
     else:
-        raise DockerAdapterError("runtime_preflight_failed", "an exact LSM authority is mandatory")
+        raise DockerAdapterError(
+            "runtime_preflight_failed", "an exact LSM authority is mandatory"
+        )
 
 
-def build_create_argv(plan: Any, *, lease_id: str, workspace_id: str, epoch: int,
-                      role: str, skeleton_path: Path,
-                      mounts: Sequence[tuple[Path, str, bool]], security_profile_path: Path) -> tuple[str, ...]:
+def build_create_argv(
+    plan: Any,
+    *,
+    lease_id: str,
+    workspace_id: str,
+    epoch: int,
+    role: str,
+    skeleton_path: Path,
+    mounts: Sequence[tuple[Path, str, bool]],
+    security_profile_path: Path,
+) -> tuple[str, ...]:
     runtime = plan.runtime
     security = plan.security_policy
     network = plan.network_policy
@@ -887,16 +915,26 @@ def build_create_argv(plan: Any, *, lease_id: str, workspace_id: str, epoch: int
         or not network.default_deny
         or network.egress_route_ids
     ):
-        raise DockerAdapterError("runtime_unsupported", "only Docker network none is supported")
+        raise DockerAdapterError(
+            "runtime_unsupported", "only Docker network none is supported"
+        )
     if (
         type(security.uid) is not int
         or type(security.gid) is not int
         or security.uid <= 0
         or security.gid <= 0
     ):
-        raise DockerAdapterError("runtime_preflight_failed", "numeric non-root identity is mandatory")
-    if not security.read_only_root or not security.drop_all_capabilities or not security.no_new_privileges:
-        raise DockerAdapterError("runtime_preflight_failed", "hardened security flags are mandatory")
+        raise DockerAdapterError(
+            "runtime_preflight_failed", "numeric non-root identity is mandatory"
+        )
+    if (
+        not security.read_only_root
+        or not security.drop_all_capabilities
+        or not security.no_new_privileges
+    ):
+        raise DockerAdapterError(
+            "runtime_preflight_failed", "hardened security flags are mandatory"
+        )
     if security.namespace_flags:
         raise DockerAdapterError(
             "runtime_preflight_failed",
@@ -916,38 +954,60 @@ def build_create_argv(plan: Any, *, lease_id: str, workspace_id: str, epoch: int
     for key in _IDENTITY_LABELS:
         argv += ["--label", f"{key}={labels[key]}"]
     argv += [
-        "--runtime", runtime.oci_runtime_name,
-        "--network", "none",
-        "--cgroupns", "private",
-        "--ipc", "private",
-        "--user", f"{security.uid}:{security.gid}",
+        "--runtime",
+        runtime.oci_runtime_name,
+        "--network",
+        "none",
+        "--cgroupns",
+        "private",
+        "--ipc",
+        "private",
+        "--user",
+        f"{security.uid}:{security.gid}",
         "--read-only",
-        "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges",
-        "--security-opt", f"seccomp={security_profile_path}",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--security-opt",
+        f"seccomp={security_profile_path}",
     ]
     if security.apparmor_profile is not None:
         argv += ["--security-opt", f"apparmor={security.apparmor_profile}"]
     elif security.selinux_label is not None:
         argv += ["--security-opt", f"label={security.selinux_label}"]
     argv += [
-        "--pids-limit", str(resources.pids),
-        "--memory", str(resources.memory_bytes),
-        "--memory-swap", str(resources.memory_bytes),
-        "--cpu-period", "100000",
-        "--cpu-quota", str(resources.cpu_millis * 100),
-        "--ulimit", f"nofile={resources.open_files}:{resources.open_files}",
-        "--mount", _mount_argument(str(skeleton_path), CONTAINER_WORKSPACE_ROOT, readonly=True),
+        "--pids-limit",
+        str(resources.pids),
+        "--memory",
+        str(resources.memory_bytes),
+        "--memory-swap",
+        str(resources.memory_bytes),
+        "--cpu-period",
+        "100000",
+        "--cpu-quota",
+        str(resources.cpu_millis * 100),
+        "--ulimit",
+        f"nofile={resources.open_files}:{resources.open_files}",
+        "--mount",
+        _mount_argument(str(skeleton_path), CONTAINER_WORKSPACE_ROOT, readonly=True),
     ]
     destinations: set[str] = {CONTAINER_WORKSPACE_ROOT}
     for source, destination, readonly in sorted(mounts, key=lambda item: item[1]):
         if destination in destinations:
-            raise DockerAdapterError("runtime_preflight_failed", "duplicate Docker mount destination")
+            raise DockerAdapterError(
+                "runtime_preflight_failed", "duplicate Docker mount destination"
+            )
         destinations.add(destination)
-        argv += ["--mount", _mount_argument(str(source), destination, readonly=readonly)]
+        argv += [
+            "--mount",
+            _mount_argument(str(source), destination, readonly=readonly),
+        ]
     for destination, options in security.tmpfs_mounts:
         if destination in destinations:
-            raise DockerAdapterError("runtime_preflight_failed", "duplicate Docker mount destination")
+            raise DockerAdapterError(
+                "runtime_preflight_failed", "duplicate Docker mount destination"
+            )
         destinations.add(destination)
         argv += ["--tmpfs", _tmpfs_argument(destination, options)]
     argv += ["--workdir", CONTAINER_WORKSPACE_ROOT]
@@ -955,7 +1015,9 @@ def build_create_argv(plan: Any, *, lease_id: str, workspace_id: str, epoch: int
         argv += ["--env", f"{key}={value}"]
     argv += ["--pull", "never", plan.image.image_digest, *runtime.idle_argv]
     if any("docker.sock" in value for value in argv):
-        raise DockerAdapterError("runtime_preflight_failed", "forbidden Docker authority")
+        raise DockerAdapterError(
+            "runtime_preflight_failed", "forbidden Docker authority"
+        )
     return tuple(argv)
 
 
@@ -963,18 +1025,26 @@ def _json_object(payload: bytes, *, label: str) -> dict[str, Any]:
     try:
         value = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise DockerAdapterError("runtime_preflight_failed", f"Docker {label} output is malformed") from exc
+        raise DockerAdapterError(
+            "runtime_preflight_failed", f"Docker {label} output is malformed"
+        ) from exc
     if type(value) is not dict:
-        raise DockerAdapterError("runtime_preflight_failed", f"Docker {label} output has an unexpected schema")
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            f"Docker {label} output has an unexpected schema",
+        )
     return value
 
 
-def _registered_runtime(info: Mapping[str, Any], runtime_name: str) -> Mapping[str, Any] | None:
+def _registered_runtime(
+    info: Mapping[str, Any], runtime_name: str
+) -> Mapping[str, Any] | None:
     if "Error" in info:
         return None
     runtimes = info.get("Runtimes")
     if type(runtimes) is not dict or any(
-        type(key) is not str or type(value) is not dict for key, value in runtimes.items()
+        type(key) is not str or type(value) is not dict
+        for key, value in runtimes.items()
     ):
         return None
     return runtimes.get(runtime_name)
@@ -984,10 +1054,15 @@ def _image_identity_matches(payload: bytes, expected_digest: str) -> bool:
     try:
         value = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise DockerAdapterError("runtime_preflight_failed", "Docker image output is malformed") from exc
+        raise DockerAdapterError(
+            "runtime_preflight_failed", "Docker image output is malformed"
+        ) from exc
     if type(value) is list:
         if len(value) != 1 or type(value[0]) is not dict:
-            raise DockerAdapterError("runtime_preflight_failed", "Docker image output has an unexpected schema")
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "Docker image output has an unexpected schema",
+            )
         value = value[0]
     if type(value) is not dict or "Error" in value:
         return False
@@ -1002,7 +1077,8 @@ def _image_identity_matches(payload: bytes, expected_digest: str) -> bool:
         return False
     id_matches = type(image_id) is str and image_id == expected_digest
     refs_match = type(repo_digests) is list and any(
-        reference.rpartition("@")[1] == "@" and reference.rpartition("@")[2] == expected_digest
+        reference.rpartition("@")[1] == "@"
+        and reference.rpartition("@")[2] == expected_digest
         for reference in repo_digests
     )
     return id_matches or refs_match
@@ -1011,14 +1087,20 @@ def _image_identity_matches(payload: bytes, expected_digest: str) -> bool:
 def _platform_version(payload: Mapping[str, Any]) -> str:
     server = payload.get("Server")
     if type(server) is not dict:
-        raise DockerAdapterError("runtime_unsupported", "Docker server version is unavailable")
+        raise DockerAdapterError(
+            "runtime_unsupported", "Docker server version is unavailable"
+        )
     platform = server.get("Platform")
     if type(platform) is not dict:
-        raise DockerAdapterError("runtime_unsupported", "Docker server platform is unavailable")
+        raise DockerAdapterError(
+            "runtime_unsupported", "Docker server platform is unavailable"
+        )
     name = platform.get("Name")
     version = server.get("Version")
     if type(name) is not str or not name or type(version) is not str or not version:
-        raise DockerAdapterError("runtime_unsupported", "Docker server platform version is malformed")
+        raise DockerAdapterError(
+            "runtime_unsupported", "Docker server platform version is malformed"
+        )
     return f"{name}/{version}"
 
 
@@ -1031,7 +1113,8 @@ def _inspect_object(payload: bytes) -> dict[str, Any]:
         ) from exc
     if type(decoded) is not list or len(decoded) != 1 or type(decoded[0]) is not dict:
         raise DockerAdapterError(
-            "runtime_measurement_mismatch", "Docker inspect output has an unexpected schema"
+            "runtime_measurement_mismatch",
+            "Docker inspect output has an unexpected schema",
         )
     return decoded[0]
 
@@ -1057,7 +1140,10 @@ def _observed_identity(payload: bytes) -> tuple[str, str, Mapping[str, str]]:
         or type(name) is not str
         or not name.startswith("/")
         or type(labels) is not dict
-        or any(type(key) is not str or type(value) is not str for key, value in labels.items())
+        or any(
+            type(key) is not str or type(value) is not str
+            for key, value in labels.items()
+        )
     ):
         raise DockerAdapterError(
             "runtime_measurement_mismatch", "Docker inspect identity is malformed"
@@ -1073,14 +1159,17 @@ def _validate_identity(
     expected_labels: Mapping[str, str],
 ) -> str:
     container_id, name, labels = _observed_identity(payload)
-    observed_binding = {key: value for key, value in labels.items() if key.startswith("bb.")}
+    observed_binding = {
+        key: value for key, value in labels.items() if key.startswith("bb.")
+    }
     if (
         (expected_id is not None and container_id != expected_id)
         or name != expected_name
         or observed_binding != dict(expected_labels)
     ):
         raise DockerAdapterError(
-            "stale_identity_uncertain", "Docker container identity does not match its binding"
+            "stale_identity_uncertain",
+            "Docker container identity does not match its binding",
         )
     return container_id
 
@@ -1134,7 +1223,8 @@ def decode_docker_inspect(
         or host.get("Tmpfs") != expected_tmpfs
     ):
         raise DockerAdapterError(
-            "runtime_measurement_mismatch", "Docker inspect security schema is not closed"
+            "runtime_measurement_mismatch",
+            "Docker inspect security schema is not closed",
         )
     expected_security = {
         "no-new-privileges",
@@ -1147,11 +1237,15 @@ def decode_docker_inspect(
         expected_security.add(f"label={plan.security_policy.selinux_label}")
     if set(security_options) != expected_security:
         raise DockerAdapterError(
-            "runtime_measurement_mismatch", "Docker inspect security options contradict the plan"
+            "runtime_measurement_mismatch",
+            "Docker inspect security options contradict the plan",
         )
     expected_mounts = [
         (str(skeleton_path), CONTAINER_WORKSPACE_ROOT, False),
-        *[(str(source), destination, not readonly) for source, destination, readonly in mounts],
+        *[
+            (str(source), destination, not readonly)
+            for source, destination, readonly in mounts
+        ],
     ]
     observed_mounts: list[tuple[str, str, bool]] = []
     for record in mount_records:
@@ -1169,7 +1263,8 @@ def decode_docker_inspect(
             or type(writable) is not bool
         ):
             raise DockerAdapterError(
-                "runtime_measurement_mismatch", "Docker inspect mount is not a typed bind"
+                "runtime_measurement_mismatch",
+                "Docker inspect mount is not a typed bind",
             )
         observed_mounts.append((source, destination, writable))
     if sorted(observed_mounts, key=lambda value: value[1]) != sorted(
@@ -1179,7 +1274,8 @@ def decode_docker_inspect(
             "runtime_measurement_mismatch", "Docker inspect mounts contradict the plan"
         )
     nofile = [
-        value for value in ulimits
+        value
+        for value in ulimits
         if type(value) is dict and value.get("Name") == "nofile"
     ]
     if len(nofile) != 1:
@@ -1201,7 +1297,9 @@ def decode_docker_inspect(
         ),
         "mount_sources": tuple(
             (str(source), destination, readonly)
-            for source, destination, readonly in sorted(mounts, key=lambda value: value[1])
+            for source, destination, readonly in sorted(
+                mounts, key=lambda value: value[1]
+            )
         ),
         "workspace_root": str(skeleton_path),
         "tmpfs": tuple(sorted(plan.security_policy.tmpfs_mounts)),
@@ -1242,7 +1340,8 @@ def decode_docker_inspect(
         or host.get("UTSMode") != ""
     ):
         raise DockerAdapterError(
-            "runtime_measurement_mismatch", "Docker inspect image or privilege state contradicts the plan"
+            "runtime_measurement_mismatch",
+            "Docker inspect image or privilege state contradicts the plan",
         )
     return values
 
@@ -1384,7 +1483,8 @@ class PrivateDockerDaemonBinding:
                 self.daemon_executable_size,
                 self.config_size,
                 self.runtime_size,
-            ) <= 0
+            )
+            <= 0
             or type(self.daemon_pid) is not int
             or self.daemon_pid <= 0
             or type(self.daemon_starttime) is not str
@@ -1558,7 +1658,14 @@ def _require_daemon_runtime_binding(
 
 
 class DockerRuntimeAdapter:
-    def __init__(self, *, executor: DockerCliExecutor, cli_environment: tuple[tuple[str, str], ...], mechanics_invocation: ExecutableInvocation | None = None, daemon_binding: PrivateDockerDaemonBinding | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        executor: DockerCliExecutor,
+        cli_environment: tuple[tuple[str, str], ...],
+        mechanics_invocation: ExecutableInvocation | None = None,
+        daemon_binding: PrivateDockerDaemonBinding | None = None,
+    ) -> None:
         if cli_environment:
             raise ValueError(
                 "Docker CLI mechanics environment must be empty; container environment is projected at create"
@@ -1573,18 +1680,26 @@ class DockerRuntimeAdapter:
             or mechanics_invocation.executable_fd < 0
             or not mechanics_invocation.executable_descriptor_path
         ):
-            raise ValueError("mechanics invocation must identify an inherited executable descriptor")
+            raise ValueError(
+                "mechanics invocation must identify an inherited executable descriptor"
+            )
         self._pinned: Any | None = None
         self._invocation: ExecutableInvocation | None = mechanics_invocation
 
     def _pin(self, plan: Any) -> ExecutableInvocation:
         current = self._invocation
         if current is not None:
-            if (current.argv0 != plan.runtime.executable_path
-                    or current.digest != plan.runtime.measured_binary_digest):
-                raise DockerAdapterError("runtime_preflight_failed", "Docker CLI authority changed during adapter lifetime")
+            if (
+                current.argv0 != plan.runtime.executable_path
+                or current.digest != plan.runtime.measured_binary_digest
+            ):
+                raise DockerAdapterError(
+                    "runtime_preflight_failed",
+                    "Docker CLI authority changed during adapter lifetime",
+                )
             return current
         from .sandbox import SandboxLaunchError, _snapshot_installed_executable
+
         try:
             pinned = _snapshot_installed_executable(
                 plan.runtime.executable_path, plan.runtime.measured_binary_digest
@@ -1620,10 +1735,15 @@ class DockerRuntimeAdapter:
     ) -> DockerCommandResult:
         invocation = self._invocation if plan is None else self._pin(plan)
         if invocation is None:
-            raise DockerAdapterError("runtime_preflight_failed", "Docker CLI invocation is not pinned")
+            raise DockerAdapterError(
+                "runtime_preflight_failed", "Docker CLI invocation is not pinned"
+            )
         logical = tuple(argv)
         if not logical or logical[0] != invocation.argv0:
-            raise DockerAdapterError("runtime_preflight_failed", "Docker CLI argv0 contradicts pinned authority")
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "Docker CLI argv0 contradicts pinned authority",
+            )
         tail = logical[1:]
         if self._daemon_binding is not None:
             self._daemon_binding.validate_live()
@@ -1649,16 +1769,27 @@ class DockerRuntimeAdapter:
             environment=self._environment,
         )
 
-    async def _execute(self, argv: Sequence[str], *, timeout_ms: int, output_limit: int,
-                       code: str = "runtime_preflight_failed") -> DockerCommandResult:
+    async def _execute(
+        self,
+        argv: Sequence[str],
+        *,
+        timeout_ms: int,
+        output_limit: int,
+        code: str = "runtime_preflight_failed",
+    ) -> DockerCommandResult:
         result = await self._raw(argv, timeout_ms=timeout_ms, output_limit=output_limit)
         if result.output_limited:
-            raise DockerAdapterError("output_limit_exceeded", "Docker CLI output exceeded the admitted limit")
+            raise DockerAdapterError(
+                "output_limit_exceeded", "Docker CLI output exceeded the admitted limit"
+            )
         if result.timed_out:
             raise DockerAdapterError(code, "Docker CLI operation timed out")
         if result.returncode:
-            raise DockerAdapterError(code, "Docker CLI operation failed",
-                                     details={"returncode": result.returncode})
+            raise DockerAdapterError(
+                code,
+                "Docker CLI operation failed",
+                details={"returncode": result.returncode},
+            )
         return result
 
     async def preflight(self, plan: Any) -> DockerPreflightObservation:
@@ -1667,20 +1798,30 @@ class DockerRuntimeAdapter:
         output_limit = plan.limits.observation_bytes
         version = await self._execute(
             (invocation.argv0, "version", "--format", "{{json .}}"),
-            timeout_ms=plan.limits.action_timeout_ms, output_limit=output_limit,
+            timeout_ms=plan.limits.action_timeout_ms,
+            output_limit=output_limit,
         )
         version_payload = _json_object(version.stdout, label="version")
         platform_version = _platform_version(version_payload)
-        if not runtime.supported_platform_versions or platform_version not in runtime.supported_platform_versions:
-            raise DockerAdapterError("runtime_unsupported", "Docker server platform version is not installed authority")
+        if (
+            not runtime.supported_platform_versions
+            or platform_version not in runtime.supported_platform_versions
+        ):
+            raise DockerAdapterError(
+                "runtime_unsupported",
+                "Docker server platform version is not installed authority",
+            )
         info = await self._execute(
             (invocation.argv0, "info", "--format", "{{json .}}"),
-            timeout_ms=plan.limits.action_timeout_ms, output_limit=output_limit,
+            timeout_ms=plan.limits.action_timeout_ms,
+            output_limit=output_limit,
         )
         info_payload = _json_object(info.stdout, label="info")
         registration = _registered_runtime(info_payload, runtime.oci_runtime_name)
         if registration is None:
-            raise DockerAdapterError("runtime_unsupported", "requested OCI runtime is not registered")
+            raise DockerAdapterError(
+                "runtime_unsupported", "requested OCI runtime is not registered"
+            )
         advertised = registration.get("path")
         arguments = registration.get("runtimeArgs", [])
         authority_path = runtime.oci_runtime_binary_path
@@ -1706,6 +1847,7 @@ class DockerRuntimeAdapter:
                     "OCI runtime registration is not installed authority",
                 )
             from .sandbox import _open_installed_regular
+
             descriptor = -1
             try:
                 descriptor = _open_installed_regular(authority_path)
@@ -1735,24 +1877,37 @@ class DockerRuntimeAdapter:
                 )
             observed_digest = binding.runtime_digest
         if observed_digest != authority_digest:
-            raise DockerAdapterError("runtime_preflight_failed", "registered OCI runtime binary identity mismatch")
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "registered OCI runtime binary identity mismatch",
+            )
         if runtime.runtime_class.value == "hardened_gvisor" and (
             runtime.runsc_binary_path != authority_path
             or runtime.runsc_binary_digest != observed_digest
         ):
-            raise DockerAdapterError("runtime_unsupported", "runsc authority is contradictory")
+            raise DockerAdapterError(
+                "runtime_unsupported", "runsc authority is contradictory"
+            )
         image = await self._execute(
             (invocation.argv0, "image", "inspect", plan.image.image_digest),
-            timeout_ms=plan.limits.action_timeout_ms, output_limit=output_limit,
+            timeout_ms=plan.limits.action_timeout_ms,
+            output_limit=output_limit,
         )
         if not _image_identity_matches(image.stdout, plan.image.image_digest):
-            raise DockerAdapterError("runtime_preflight_failed", "immutable image identity mismatch")
+            raise DockerAdapterError(
+                "runtime_preflight_failed", "immutable image identity mismatch"
+            )
         return DockerPreflightObservation(
-            docker_cli_digest=invocation.digest, platform_version=platform_version,
-            runtime_name=runtime.oci_runtime_name, advertised_path=advertised,
-            observed_oci_digest=observed_digest, observed_oci_device=metadata.st_dev,
-            observed_oci_inode=metadata.st_ino, version_payload=version.stdout,
-            info_payload=info.stdout, image_payload=image.stdout,
+            docker_cli_digest=invocation.digest,
+            platform_version=platform_version,
+            runtime_name=runtime.oci_runtime_name,
+            advertised_path=advertised,
+            observed_oci_digest=observed_digest,
+            observed_oci_device=metadata.st_dev,
+            observed_oci_inode=metadata.st_ino,
+            version_payload=version.stdout,
+            info_payload=info.stdout,
+            image_payload=image.stdout,
             daemon_binding=binding,
         )
 
@@ -1765,7 +1920,12 @@ class DockerRuntimeAdapter:
 
     @staticmethod
     def _is_not_found(result: DockerCommandResult, reference: str) -> bool:
-        if result.timed_out or result.output_limited or result.returncode == 0 or result.stdout.strip():
+        if (
+            result.timed_out
+            or result.output_limited
+            or result.returncode == 0
+            or result.stdout.strip()
+        ):
             return False
         stderr = result.stderr.strip()
         return stderr in {
@@ -1797,12 +1957,20 @@ class DockerRuntimeAdapter:
         except DockerAdapterError:
             return None, "stale_identity_uncertain"
 
-    async def prepare(self, plan: Any, *, lease_id: str, workspace_id: str, epoch: int,
-                      role: str, skeleton_path: Path,
-                      mounts: Sequence[tuple[Path, str, bool]],
-                      security_profile_path: Path,
-                      security_profile_descriptor: int,
-                      security_profile_metadata: os.stat_result) -> tuple[str, str, tuple[str, ...]]:
+    async def prepare(
+        self,
+        plan: Any,
+        *,
+        lease_id: str,
+        workspace_id: str,
+        epoch: int,
+        role: str,
+        skeleton_path: Path,
+        mounts: Sequence[tuple[Path, str, bool]],
+        security_profile_path: Path,
+        security_profile_descriptor: int,
+        security_profile_metadata: os.stat_result,
+    ) -> tuple[str, str, tuple[str, ...]]:
         self._pin(plan)
         profile = _bounded_regular_file_descriptor_bytes(
             security_profile_descriptor,
@@ -1814,7 +1982,9 @@ class DockerRuntimeAdapter:
             or "sha256:" + hashlib.sha256(profile).hexdigest()
             != plan.security_policy.seccomp_digest
         ):
-            raise DockerAdapterError("runtime_preflight_failed", "seccomp profile identity mismatch")
+            raise DockerAdapterError(
+                "runtime_preflight_failed", "seccomp profile identity mismatch"
+            )
         argv = build_create_argv(
             plan,
             lease_id=lease_id,
@@ -1895,12 +2065,20 @@ class DockerRuntimeAdapter:
             code="runtime_launch_failed",
         )
 
-    async def create_start(self, plan: Any, *, lease_id: str, workspace_id: str, epoch: int,
-                           role: str, skeleton_path: Path,
-                           mounts: Sequence[tuple[Path, str, bool]],
-                           security_profile_path: Path,
-                           security_profile_descriptor: int,
-                           security_profile_metadata: os.stat_result) -> tuple[str, str, tuple[str, ...]]:
+    async def create_start(
+        self,
+        plan: Any,
+        *,
+        lease_id: str,
+        workspace_id: str,
+        epoch: int,
+        role: str,
+        skeleton_path: Path,
+        mounts: Sequence[tuple[Path, str, bool]],
+        security_profile_path: Path,
+        security_profile_descriptor: int,
+        security_profile_metadata: os.stat_result,
+    ) -> tuple[str, str, tuple[str, ...]]:
         prepared = await self.prepare(
             plan,
             lease_id=lease_id,
@@ -1949,9 +2127,7 @@ class DockerRuntimeAdapter:
     ) -> Mapping[str, Any]:
         self._pin(plan)
         captured_output_limit = (
-            plan.limits.observation_bytes
-            if output_limit is None
-            else output_limit
+            plan.limits.observation_bytes if output_limit is None else output_limit
         )
         raw_argv = (
             plan.runtime.executable_path,
@@ -2020,17 +2196,25 @@ class DockerRuntimeAdapter:
             return (identity,)
         attempted: list[tuple[str, DockerCommandResult]] = []
         for resource, argv in (
-            ("runtime_stop", (plan.runtime.executable_path, "stop", "--time", "5", bound_id)),
-            ("runtime_remove", (plan.runtime.executable_path, "rm", "--force", bound_id)),
+            (
+                "runtime_stop",
+                (plan.runtime.executable_path, "stop", "--time", "5", bound_id),
+            ),
+            (
+                "runtime_remove",
+                (plan.runtime.executable_path, "rm", "--force", bound_id),
+            ),
         ):
-            attempted.append((
-                resource,
-                await self._raw(
-                    argv,
-                    timeout_ms=plan.limits.action_timeout_ms,
-                    output_limit=plan.limits.observation_bytes,
-                ),
-            ))
+            attempted.append(
+                (
+                    resource,
+                    await self._raw(
+                        argv,
+                        timeout_ms=plan.limits.action_timeout_ms,
+                        output_limit=plan.limits.observation_bytes,
+                    ),
+                )
+            )
         final = await self._inspect_raw(plan, bound_id)
         if not self._is_not_found(final, bound_id):
             reason = (
@@ -2038,12 +2222,16 @@ class DockerRuntimeAdapter:
                 if not final.timed_out and not final.output_limited
                 else "stale_identity_uncertain"
             )
-            return tuple(
-                (resource, "failed", reason) for resource, _ in attempted
-            ) + (("runtime_absence", "failed", reason),)
+            return tuple((resource, "failed", reason) for resource, _ in attempted) + (
+                ("runtime_absence", "failed", reason),
+            )
         normalized: list[tuple[str, str, str]] = []
         for resource, result in attempted:
-            if not result.timed_out and not result.output_limited and result.returncode == 0:
+            if (
+                not result.timed_out
+                and not result.output_limited
+                and result.returncode == 0
+            ):
                 normalized.append((resource, "released", ""))
             elif self._is_not_found(result, bound_id):
                 normalized.append((resource, "already_released", ""))
@@ -2053,9 +2241,10 @@ class DockerRuntimeAdapter:
         return tuple(normalized)
 
 
-
 class DockerMeasurementProvider(Protocol):
-    async def measure(self, plan: Any, container_name: str, inspect_payload: bytes) -> Mapping[str, Any]: ...
+    async def measure(
+        self, plan: Any, container_name: str, inspect_payload: bytes
+    ) -> Mapping[str, Any]: ...
 
 
 def requested_measurement(
@@ -2072,7 +2261,8 @@ def requested_measurement(
         "capabilities": "drop_all",
         "no_new_privileges": plan.security_policy.no_new_privileges,
         "seccomp": plan.security_policy.seccomp_digest,
-        "lsm": plan.security_policy.apparmor_profile or plan.security_policy.selinux_label,
+        "lsm": plan.security_policy.apparmor_profile
+        or plan.security_policy.selinux_label,
         "read_only_root": plan.security_policy.read_only_root,
         "mounts": tuple(
             (destination, readonly)
@@ -2080,7 +2270,9 @@ def requested_measurement(
         ),
         "mount_sources": tuple(
             (str(source), destination, readonly)
-            for source, destination, readonly in sorted(mounts, key=lambda item: item[1])
+            for source, destination, readonly in sorted(
+                mounts, key=lambda item: item[1]
+            )
         ),
         "tmpfs": tuple(sorted(plan.security_policy.tmpfs_mounts)),
         "network": "none",
@@ -2090,7 +2282,9 @@ def requested_measurement(
         "memory_swap": plan.resources.memory_bytes,
         "pids": plan.resources.pids,
         "nofile": plan.resources.open_files,
-        "storage": plan.resources.storage_bytes if storage_bytes is None else storage_bytes,
+        "storage": plan.resources.storage_bytes
+        if storage_bytes is None
+        else storage_bytes,
         "output_limit": plan.limits.observation_bytes,
         "cgroups": ("", "private"),
         "namespaces": (
@@ -2106,8 +2300,12 @@ def requested_measurement(
     return measured
 
 
-def measurement_mismatches(requested: Mapping[str, Any], measured: Mapping[str, Any]) -> tuple[str, ...]:
-    return tuple(sorted(key for key, value in requested.items() if measured.get(key) != value))
+def measurement_mismatches(
+    requested: Mapping[str, Any], measured: Mapping[str, Any]
+) -> tuple[str, ...]:
+    return tuple(
+        sorted(key for key, value in requested.items() if measured.get(key) != value)
+    )
 
 
 class InspectDockerMeasurementProvider:
@@ -2147,9 +2345,12 @@ class DockerRuntimeHandle:
         self._mount_stager = mount_stager
         self._staged_mounts = list(staged_mounts)
         self._lease_id = lease_id
+        self.repository_base_commit: str | None = None
+        self.repository_relative_path: str | None = None
 
     def _record_terminal_cleanup(self, receipts: tuple[Any, ...]) -> None:
         from .materialization import CleanupState
+
         states = {item.state for item in receipts}
         if states <= {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}:
             self._closed = True
@@ -2179,7 +2380,10 @@ class DockerRuntimeHandle:
         except BaseException as exc:
             indeterminate = not isinstance(exc, DockerAdapterError) or (
                 exc.code == "output_limit_exceeded"
-                or (exc.code == "runtime_launch_failed" and "returncode" not in exc.details)
+                or (
+                    exc.code == "runtime_launch_failed"
+                    and "returncode" not in exc.details
+                )
             )
             if indeterminate:
                 self._fenced = True
@@ -2240,7 +2444,9 @@ class DockerRuntimeHandle:
         ceiling: int,
     ) -> Mapping[str, Any]:
         if type(offset) is not int or offset < 0:
-            raise DockerAdapterError("runtime_preflight_failed", "read offset is invalid")
+            raise DockerAdapterError(
+                "runtime_preflight_failed", "read offset is invalid"
+            )
         if limit is not None and (
             type(limit) is not int or limit < 0 or limit > ceiling
         ):
@@ -2301,10 +2507,14 @@ class DockerRuntimeHandle:
 
     async def write_text(self, path: str, content: str) -> Mapping[str, Any]:
         if type(content) is not str:
-            raise DockerAdapterError("runtime_preflight_failed", "write content is invalid")
+            raise DockerAdapterError(
+                "runtime_preflight_failed", "write content is invalid"
+            )
         payload = content.encode("utf-8")
         if len(payload) > self.plan.limits.artifact_bytes_each:
-            raise DockerAdapterError("output_limit_exceeded", "write exceeds admitted ceiling")
+            raise DockerAdapterError(
+                "output_limit_exceeded", "write exceeds admitted ceiling"
+            )
         result = await self._run(
             _workspace_python_argv(
                 "write",
@@ -2319,8 +2529,14 @@ class DockerRuntimeHandle:
         return {"path": path, "bytes": len(payload)}
 
     async def list_files(self, path: str, *, depth: int) -> Mapping[str, Any]:
-        if type(depth) is not int or depth < 0 or depth > self.plan.security_policy.snapshot_max_depth:
-            raise DockerAdapterError("output_limit_exceeded", "list depth exceeds admitted ceiling")
+        if (
+            type(depth) is not int
+            or depth < 0
+            or depth > self.plan.security_policy.snapshot_max_depth
+        ):
+            raise DockerAdapterError(
+                "output_limit_exceeded", "list depth exceeds admitted ceiling"
+            )
         result = await self._run(
             _workspace_python_argv(
                 "list",
@@ -2371,6 +2587,46 @@ class DockerRuntimeHandle:
             )
         return {"path": path, "files": values}
 
+    async def measure_repository_base_commit(self) -> str | None:
+        if not callable(getattr(self.adapter, "exec", None)):
+            return None
+        repositories = tuple(
+            entry
+            for entry in self.plan.materialization_plan.entries
+            if entry.role == "repository"
+        )
+        if len(repositories) > 1:
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "workspace base measurement requires at most one repository mount",
+            )
+        relative_path = repositories[0].target_logical_path if repositories else "."
+        repository_root = (
+            _container_workspace_path(relative_path)
+            if repositories
+            else CONTAINER_WORKSPACE_ROOT
+        )
+        result = await self._run(
+            ("git", "-C", repository_root, "rev-parse", "--verify", "HEAD^{commit}"),
+            timeout_ms=self.plan.limits.action_timeout_ms,
+            output_limit=256,
+        )
+        commit = result.get("stdout", "").strip()
+        if result.get("returncode") != 0:
+            return None
+        if (
+            len(commit) != 40
+            or commit != commit.lower()
+            or any(character not in "0123456789abcdef" for character in commit)
+        ):
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "workspace base commit measurement failed",
+            )
+        self.repository_base_commit = commit
+        self.repository_relative_path = relative_path
+        return commit
+
     async def workspace_diff(self) -> Mapping[str, Any]:
         repositories = tuple(
             entry
@@ -2382,9 +2638,7 @@ class DockerRuntimeHandle:
                 "runtime_preflight_failed",
                 "workspace diff requires exactly one repository mount",
             )
-        repository_root = _container_workspace_path(
-            repositories[0].target_logical_path
-        )
+        repository_root = _container_workspace_path(repositories[0].target_logical_path)
         result = await self._run(
             ("git", "-C", repository_root, "diff", "--no-ext-diff", "--binary"),
             timeout_ms=self.plan.limits.action_timeout_ms,
@@ -2398,6 +2652,7 @@ class DockerRuntimeHandle:
 
     async def _terminate_bound(self) -> tuple[Any, ...]:
         from .materialization import CleanupState, CleanupStepReceipt
+
         try:
             reference = self.container_id or self.container_name
             raw = await self.adapter.cleanup(
@@ -2422,7 +2677,8 @@ class DockerRuntimeHandle:
             "quarantined": CleanupState.QUARANTINED,
         }
         return tuple(
-            CleanupStepReceipt(name, states[state], detail) for name, state, detail in raw
+            CleanupStepReceipt(name, states[state], detail)
+            for name, state, detail in raw
         )
 
     async def _retry_cleanup(self) -> tuple[Any, ...]:
@@ -2518,6 +2774,7 @@ class DockerRuntimeHandle:
 
     async def terminate(self) -> tuple[Any, ...]:
         from .materialization import CleanupState, CleanupStepReceipt
+
         if self._terminal_cleanup is not None:
             return self._terminal_cleanup
         if self._closed:
@@ -2526,20 +2783,31 @@ class DockerRuntimeHandle:
 
 
 class DockerSandboxBackend:
-    def __init__(self, *, adapter: DockerRuntimeAdapter, measurement_provider: DockerMeasurementProvider,
-                 security_profile_root: str | Path,
-                 mount_stager: DockerDescriptorMountStager | None = None,
-                 skeleton_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        adapter: DockerRuntimeAdapter,
+        measurement_provider: DockerMeasurementProvider,
+        security_profile_root: str | Path,
+        mount_stager: DockerDescriptorMountStager | None = None,
+        skeleton_path: str | Path | None = None,
+    ) -> None:
         self.adapter = adapter
         self.measurement_provider = measurement_provider
         self.mount_stager = mount_stager
         self.security_profile_root = Path(security_profile_root)
-        if (
-            not self.security_profile_root.is_absolute()
-            or os.path.normpath(self.security_profile_root) != str(self.security_profile_root)
-        ):
-            raise ValueError("Docker security profile root must be absolute and normalized")
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        if not self.security_profile_root.is_absolute() or os.path.normpath(
+            self.security_profile_root
+        ) != str(self.security_profile_root):
+            raise ValueError(
+                "Docker security profile root must be absolute and normalized"
+            )
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
         self._security_root_fd = os.open(self.security_profile_root, flags)
         self._quarantined_fds: list[int] = []
         self._quarantined_handles: list[DockerRuntimeHandle] = []
@@ -2548,7 +2816,6 @@ class DockerSandboxBackend:
     @property
     def cleanup_pending(self) -> bool:
         return bool(self._quarantined_handles or self._quarantined_stages)
-
 
     def close(self) -> None:
         if self._quarantined_handles or self._quarantined_stages:
@@ -2618,7 +2885,9 @@ class DockerSandboxBackend:
         def read_installed() -> bytes:
             descriptor = os.open(
                 name,
-                os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
+                os.O_RDONLY
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
                 dir_fd=self._security_root_fd,
             )
             try:
@@ -2665,9 +2934,7 @@ class DockerSandboxBackend:
                 os.fsync(descriptor)
                 os.close(descriptor)
                 descriptor = -1
-                os.replace(
-                    temporary, name, src_dir_fd=directory, dst_dir_fd=directory
-                )
+                os.replace(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
                 os.fsync(directory)
             finally:
                 if descriptor >= 0:
@@ -2687,14 +2954,22 @@ class DockerSandboxBackend:
             or "sha256:" + hashlib.sha256(current).hexdigest()
             != plan.security_policy.seccomp_digest
         ):
-            raise DockerAdapterError("runtime_preflight_failed", "installed seccomp profile is tampered")
+            raise DockerAdapterError(
+                "runtime_preflight_failed", "installed seccomp profile is tampered"
+            )
         return Path(name)
 
     @staticmethod
     def _validate_context(plan: Any, context: Any) -> None:
         from .sandbox import RuntimeLaunchContext, WorkspaceStorageIdentity
-        if type(context) is not RuntimeLaunchContext or type(context.storage) is not WorkspaceStorageIdentity:
-            raise DockerAdapterError("runtime_preflight_failed", "exact runtime launch context required")
+
+        if (
+            type(context) is not RuntimeLaunchContext
+            or type(context.storage) is not WorkspaceStorageIdentity
+        ):
+            raise DockerAdapterError(
+                "runtime_preflight_failed", "exact runtime launch context required"
+            )
         storage = context.storage
         if (
             type(storage.authority_id) is not str
@@ -2705,7 +2980,9 @@ class DockerSandboxBackend:
             or type(storage.owner_uid) is not int
             or type(storage.owner_gid) is not int
         ):
-            raise DockerAdapterError("runtime_preflight_failed", "workspace quota authority is not enforced")
+            raise DockerAdapterError(
+                "runtime_preflight_failed", "workspace quota authority is not enforced"
+            )
         if context.role == "primary":
             valid = (
                 context.snapshot_relative_path is None
@@ -2722,14 +2999,24 @@ class DockerSandboxBackend:
         else:
             valid = False
         if not valid:
-            raise DockerAdapterError("runtime_preflight_failed", "runtime launch context is contradictory")
+            raise DockerAdapterError(
+                "runtime_preflight_failed", "runtime launch context is contradictory"
+            )
 
     @staticmethod
     def _mount_specs(plan: Any, context: Any) -> tuple[tuple[str, str, bool], ...]:
         if context.role == "verifier":
             return (
-                (context.snapshot_relative_path, f"{CONTAINER_WORKSPACE_ROOT}/snapshot", True),
-                (context.result_relative_path, f"{CONTAINER_WORKSPACE_ROOT}/result", False),
+                (
+                    context.snapshot_relative_path,
+                    f"{CONTAINER_WORKSPACE_ROOT}/snapshot",
+                    True,
+                ),
+                (
+                    context.result_relative_path,
+                    f"{CONTAINER_WORKSPACE_ROOT}/result",
+                    False,
+                ),
             )
         return tuple(
             (
@@ -2739,6 +3026,7 @@ class DockerSandboxBackend:
             )
             for entry in plan.materialization_plan.entries
         )
+
     async def launch(
         self, plan: Any, workspace: Path, *, context: Any
     ) -> tuple[DockerRuntimeHandle, Any]:
@@ -2751,9 +3039,7 @@ class DockerSandboxBackend:
         workspace_fd = getattr(context, "workspace_fd", None)
         workspace_identity = getattr(context, "workspace_identity", None)
         held_fds = (
-            [workspace_fd]
-            if type(workspace_fd) is int and workspace_fd >= 0
-            else []
+            [workspace_fd] if type(workspace_fd) is int and workspace_fd >= 0 else []
         )
         creation_attempted = False
         container_id: str | None = None
@@ -2825,7 +3111,9 @@ class DockerSandboxBackend:
                 expected_identity=workspace_identity,
             )
             admitted_mounts: list[tuple[int, str, bool, os.stat_result]] = []
-            for relative_path, destination, readonly in self._mount_specs(plan, context):
+            for relative_path, destination, readonly in self._mount_specs(
+                plan, context
+            ):
                 child_fd = _openat2_beneath(workspace_fd, relative_path)
                 held_fds.append(child_fd)
                 child_metadata = _validate_mount_descriptor(
@@ -2872,9 +3160,13 @@ class DockerSandboxBackend:
             )
             held_fds.append(profile_fd)
             profile_metadata = os.fstat(profile_fd)
-            if not stat.S_ISREG(profile_metadata.st_mode) or profile_metadata.st_nlink != 1:
+            if (
+                not stat.S_ISREG(profile_metadata.st_mode)
+                or profile_metadata.st_nlink != 1
+            ):
                 raise DockerAdapterError(
-                    "runtime_preflight_failed", "seccomp profile descriptor is not immutable authority"
+                    "runtime_preflight_failed",
+                    "seccomp profile descriptor is not immutable authority",
                 )
             profile_stage = await self.mount_stager.stage(
                 profile_fd,
@@ -2897,9 +3189,14 @@ class DockerSandboxBackend:
                 await self.mount_stager.validate(staged, descriptor)
             creation_attempted = True
             container_id, container_name, _ = await self.adapter.prepare(
-                plan, lease_id=context.lease_id, workspace_id=context.workspace_id,
-                epoch=context.epoch, role=context.role, skeleton_path=workspace_source,
-                mounts=tuple(descriptor_mounts), security_profile_path=profile_source,
+                plan,
+                lease_id=context.lease_id,
+                workspace_id=context.workspace_id,
+                epoch=context.epoch,
+                role=context.role,
+                skeleton_path=workspace_source,
+                mounts=tuple(descriptor_mounts),
+                security_profile_path=profile_source,
                 security_profile_descriptor=profile_fd,
                 security_profile_metadata=profile_metadata,
             )
@@ -2927,16 +3224,22 @@ class DockerSandboxBackend:
                 staged.validate_descriptor(descriptor)
                 await self.mount_stager.validate(staged, descriptor)
             measured = decode_docker_inspect(
-                inspect_payload, plan, container_id=container_id,
-                container_name=container_name, labels=labels,
-                skeleton_path=workspace_source, mounts=tuple(descriptor_mounts),
+                inspect_payload,
+                plan,
+                container_id=container_id,
+                container_name=container_name,
+                labels=labels,
+                skeleton_path=workspace_source,
+                mounts=tuple(descriptor_mounts),
                 security_profile_path=profile_source,
                 storage_bytes=context.storage.quota_bytes,
             )
             effective = dict(measured)
-            external = dict(await self.measurement_provider.measure(
-                plan, container_name, inspect_payload
-            ))
+            external = dict(
+                await self.measurement_provider.measure(
+                    plan, container_name, inspect_payload
+                )
+            )
             unknown = set(external) - set(measured)
             if unknown:
                 raise DockerAdapterError(
@@ -2947,8 +3250,10 @@ class DockerSandboxBackend:
             measured.update(external)
             identity = (container_id, container_name, identity_labels)
             requested = requested_measurement(
-                plan, tuple(descriptor_mounts),
-                storage_bytes=context.storage.quota_bytes, identity=identity,
+                plan,
+                tuple(descriptor_mounts),
+                storage_bytes=context.storage.quota_bytes,
+                identity=identity,
             )
             storage_identity = (
                 context.storage.authority_id,
@@ -2961,34 +3266,53 @@ class DockerSandboxBackend:
             requested["storage_identity"] = storage_identity
             measured["storage_identity"] = storage_identity
             effective["storage_identity"] = storage_identity
-            mismatch = tuple(sorted({
-                *measurement_mismatches(requested, effective),
-                *measurement_mismatches(requested, measured),
-            }))
+            handle = DockerRuntimeHandle(
+                adapter=self.adapter,
+                plan=plan,
+                container_id=container_id,
+                container_name=container_name,
+                labels=labels,
+                held_fds=held_fds,
+                mount_stager=self.mount_stager,
+                staged_mounts=staged_mounts,
+                lease_id=context.lease_id,
+            )
+            repository_base_commit = await handle.measure_repository_base_commit()
+            if repository_base_commit is not None:
+                requested["workspace_base_commit"] = repository_base_commit
+                effective["workspace_base_commit"] = repository_base_commit
+                measured["workspace_base_commit"] = repository_base_commit
+            mismatch = tuple(
+                sorted(
+                    {
+                        *measurement_mismatches(requested, effective),
+                        *measurement_mismatches(requested, measured),
+                    }
+                )
+            )
             if mismatch:
                 raise DockerAdapterError(
                     "runtime_measurement_mismatch",
                     "effective Docker controls contradict requested controls",
                     details={"mismatch": mismatch},
                 )
-            handle = DockerRuntimeHandle(
-                adapter=self.adapter, plan=plan, container_id=container_id,
-                container_name=container_name, labels=labels, held_fds=held_fds,
-                mount_stager=self.mount_stager, staged_mounts=staged_mounts,
-                lease_id=context.lease_id,
-            )
             held_fds = []
             return handle, SandboxMeasurement(
                 effective_plan_digest=plan.effective_plan_digest,
-                lease_id=context.lease_id, workspace_id=context.workspace_id,
+                lease_id=context.lease_id,
+                workspace_id=context.workspace_id,
                 runtime_id=plan.runtime.runtime_id,
                 runtime_class=plan.runtime.runtime_class.value,
                 driver_binary_digest=plan.runtime.measured_binary_digest,
-                image_digest=plan.image.image_digest, requested=requested,
-                effective=effective, measured=measured,
-                runtime_resource_id=container_id, mismatch=(),
+                image_digest=plan.image.image_digest,
+                requested=requested,
+                effective=effective,
+                measured=measured,
+                runtime_resource_id=container_id,
+                mismatch=(),
                 isolation_disposition=IsolationDisposition.ISOLATED,
-                isolated=True, reward_eligible=True,
+                isolated=True,
+                reward_eligible=True,
             )
         except BaseException as primary:
             if isinstance(primary, DockerAdapterError):
@@ -2999,31 +3323,34 @@ class DockerSandboxBackend:
                 ):
                     container_id = candidate
                 reported_cleanup = primary.details.get("cleanup")
-                if (
-                    type(reported_cleanup) in {list, tuple}
-                    and all(
-                        type(item) in {list, tuple}
-                        and len(item) == 3
-                        and all(type(value) is str for value in item)
-                        for item in reported_cleanup
-                    )
+                if type(reported_cleanup) in {list, tuple} and all(
+                    type(item) in {list, tuple}
+                    and len(item) == 3
+                    and all(type(value) is str for value in item)
+                    for item in reported_cleanup
                 ):
                     cleanup = tuple(tuple(item) for item in reported_cleanup)
             if container_id is not None:
                 try:
                     cleanup = await self.adapter.cleanup(
-                        plan, container_id, expected_id=container_id,
-                        expected_name=container_name, labels=labels,
+                        plan,
+                        container_id,
+                        expected_id=container_id,
+                        expected_name=container_name,
+                        labels=labels,
                     )
                 except BaseException as cleanup_error:
                     cleanup = (
-                        ("runtime_identity", "quarantined", type(cleanup_error).__name__),
+                        (
+                            "runtime_identity",
+                            "quarantined",
+                            type(cleanup_error).__name__,
+                        ),
                     )
                 if isinstance(primary, DockerAdapterError):
                     primary.details["cleanup"] = cleanup
             absence = any(
-                name == "runtime_absence"
-                and state in {"released", "already_released"}
+                name == "runtime_absence" and state in {"released", "already_released"}
                 for name, state, _ in cleanup
             )
             runtime_cleanup_pending = creation_attempted and not absence
@@ -3109,9 +3436,9 @@ class DockerSandboxBackend:
             while held_fds:
                 os.close(held_fds.pop())
 
-
     async def reconcile(self, record: Mapping[str, Any]) -> tuple[Any, ...]:
         from .materialization import CleanupState, CleanupStepReceipt
+
         # Legacy records contain only pathname/digest observations.  They do not
         # carry a durable daemon binding proving which OCI executable dockerd
         # consumed, so executing any CLI command could invoke unadmitted code.
@@ -3124,11 +3451,24 @@ class DockerSandboxBackend:
         )
 
 
-__all__ = ["DockerAdapterError", "DockerCliExecutor", "SubprocessDockerCliExecutor", "DockerCommandResult", "ExecutableInvocation",
-           "DockerPreflightObservation", "PrivateDockerDaemonBinding",
-           "StagedDockerDescriptorMount", "DockerDescriptorMountStager",
-           "DockerRuntimeAdapter",
-           "DockerMeasurementProvider", "InspectDockerMeasurementProvider",
-           "DockerRuntimeHandle", "DockerSandboxBackend",
-           "build_create_argv", "decode_docker_inspect", "observe_binary_digest",
-           "measurement_mismatches", "requested_measurement"]
+__all__ = [
+    "DockerAdapterError",
+    "DockerCliExecutor",
+    "SubprocessDockerCliExecutor",
+    "DockerCommandResult",
+    "ExecutableInvocation",
+    "DockerPreflightObservation",
+    "PrivateDockerDaemonBinding",
+    "StagedDockerDescriptorMount",
+    "DockerDescriptorMountStager",
+    "DockerRuntimeAdapter",
+    "DockerMeasurementProvider",
+    "InspectDockerMeasurementProvider",
+    "DockerRuntimeHandle",
+    "DockerSandboxBackend",
+    "build_create_argv",
+    "decode_docker_inspect",
+    "observe_binary_digest",
+    "measurement_mismatches",
+    "requested_measurement",
+]

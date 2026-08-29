@@ -43,6 +43,7 @@ The RL harness needs one production sandbox contract and one installed headless 
 - Docker may be marked ready only after the Linux official SWE image canary proves `/testbed`, base commit, diff, cancellation, and resource absence.
 - Installed fake-policy validation must bind both E4 targets, an exact loopback route/model authority, one sampled request with retries disabled, semantic replay, result/event/patch digests, canonical patch bytes published through a distinct atomic destination, and terminal cleanup.
 - Trusted-process Linux integration covers leader exit, closed inherited descriptors, exact process-group/session/cgroup continuity, PID-reuse rejection, and descendant termination; detached sessions remain outside this explicitly non-isolating development adapter.
+- Canonical patch evidence is generated inside the verifier-seal boundary: terminate the primary runtime, use a sealed host-Git executable and private index bound to the launcher-measured base commit, include ignored and untracked files, then snapshot the same quiesced workspace and bind the patch digest to that snapshot root.
 - Exact-head correctness, security, automated review, danger-zone ACR guard, and full CI are required before merge.
 
 ## 6) Rollout Plan

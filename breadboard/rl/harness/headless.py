@@ -1030,18 +1030,39 @@ def _project_headless_run(
         run.evidence_manifest_ref,
     )
     workspace_diff = run.workspace_diff
+    if workspace_diff is None:
+        result["workspace_evidence"] = evidence_projection
+        return event_bytes, None
+    expected_keys = {
+        "returncode",
+        "stdout",
+        "stderr",
+        "base_commit",
+        "git_executable_digest",
+        "patch_digest",
+        "snapshot_root_digest",
+    }
     if (
         not isinstance(workspace_diff, Mapping)
-        or set(workspace_diff) != {"returncode", "stdout", "stderr"}
+        or set(workspace_diff) != expected_keys
         or workspace_diff.get("returncode") != 0
         or type(workspace_diff.get("stdout")) is not str
         or workspace_diff.get("stderr") != ""
+        or type(workspace_diff.get("base_commit")) is not str
+        or type(workspace_diff.get("git_executable_digest")) is not str
+        or type(workspace_diff.get("patch_digest")) is not str
+        or type(workspace_diff.get("snapshot_root_digest")) is not str
     ):
         raise ValueError("canonical workspace diff is unavailable")
     patch_bytes = workspace_diff["stdout"].encode("utf-8")
+    if workspace_diff["patch_digest"] != _digest_bytes(patch_bytes):
+        raise ValueError("canonical workspace patch digest mismatch")
     result["workspace_evidence"] = {
         **evidence_projection,
-        "patch_digest": _digest_bytes(patch_bytes),
+        "patch_digest": workspace_diff["patch_digest"],
+        "patch_base_commit": workspace_diff["base_commit"],
+        "patch_git_executable_digest": workspace_diff["git_executable_digest"],
+        "patch_snapshot_root_digest": workspace_diff["snapshot_root_digest"],
     }
     return event_bytes, patch_bytes
 

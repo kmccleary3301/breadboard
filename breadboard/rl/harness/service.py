@@ -1897,24 +1897,38 @@ class BreadBoardV2EpisodeService:
         verifier: VerifierWorkspaceLease | None = None
         verification_error: BaseException | None = None
         try:
-            raw_workspace_diff = await coordinator.lease.workspace_diff()
-            if (
-                set(raw_workspace_diff) != {"returncode", "stdout", "stderr"}
-                or type(raw_workspace_diff["returncode"]) is not int
-                or type(raw_workspace_diff["stdout"]) is not str
-                or type(raw_workspace_diff["stderr"]) is not str
-                or raw_workspace_diff["returncode"] != 0
-            ):
-                raise RuntimeError("canonical workspace diff failed")
-            coordinator.workspace_diff = MappingProxyType(
-                {
-                    "returncode": raw_workspace_diff["returncode"],
-                    "stdout": raw_workspace_diff["stdout"],
-                    "stderr": raw_workspace_diff["stderr"],
-                }
-            )
             snapshot = await coordinator.lease.seal_for_verifier()
             coordinator.verifier_snapshot = snapshot
+            raw_workspace_diff = coordinator.lease.sealed_workspace_diff()
+            if raw_workspace_diff is not None:
+                expected_keys = {
+                    "returncode",
+                    "stdout",
+                    "stderr",
+                    "base_commit",
+                    "git_executable_digest",
+                    "patch_digest",
+                    "snapshot_root_digest",
+                }
+                patch_bytes = raw_workspace_diff.get("stdout", "").encode("utf-8")
+                if (
+                    set(raw_workspace_diff) != expected_keys
+                    or type(raw_workspace_diff["returncode"]) is not int
+                    or type(raw_workspace_diff["stdout"]) is not str
+                    or type(raw_workspace_diff["stderr"]) is not str
+                    or type(raw_workspace_diff["base_commit"]) is not str
+                    or type(raw_workspace_diff["git_executable_digest"]) is not str
+                    or type(raw_workspace_diff["patch_digest"]) is not str
+                    or type(raw_workspace_diff["snapshot_root_digest"]) is not str
+                    or raw_workspace_diff["returncode"] != 0
+                    or raw_workspace_diff["stderr"] != ""
+                    or raw_workspace_diff["snapshot_root_digest"]
+                    != snapshot.root_digest
+                    or raw_workspace_diff["patch_digest"]
+                    != "sha256:" + hashlib.sha256(patch_bytes).hexdigest()
+                ):
+                    raise RuntimeError("canonical sealed workspace diff failed")
+                coordinator.workspace_diff = MappingProxyType(dict(raw_workspace_diff))
             probe.raise_if_cancelled("before_verifier_open")
             verifier = await self._dependencies.sandbox_runtime.open_verifier(
                 coordinator.lease, snapshot
