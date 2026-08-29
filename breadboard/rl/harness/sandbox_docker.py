@@ -2339,10 +2339,21 @@ class DockerRuntimeHandle:
         repository_root = _container_workspace_path(
             repositories[0].target_logical_path
         )
-        return await self._run(
-            ("git", "-C", repository_root, "diff", "--no-ext-diff", "--binary"),
-            timeout_ms=self.plan.limits.action_timeout_ms,
-        )
+        try:
+            return await self._run(
+                ("git", "-C", repository_root, "diff", "--no-ext-diff", "--binary"),
+                timeout_ms=self.plan.limits.action_timeout_ms,
+            )
+        except DockerAdapterError as exc:
+            if (
+                exc.code == "runtime_launch_failed"
+                and exc.details.get("returncode") == 127
+            ):
+                raise DockerAdapterError(
+                    "runtime_unsupported",
+                    "workspace diff requires git in the admitted image",
+                ) from exc
+            raise
 
     async def _terminate_bound(self) -> tuple[Any, ...]:
         from .materialization import CleanupState, CleanupStepReceipt
