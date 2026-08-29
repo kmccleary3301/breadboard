@@ -1835,6 +1835,37 @@ def test_initialization_clears_legacy_oauth_flows_and_expires_stale_pending(
     assert canary not in serialized_rows
 
 
+def test_finish_claimed_login_rejects_completion_past_expiry(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import breadboard_engine.provider_broker.store as store_module
+
+    started_at_ms = 1_800_000_000_000
+    monkeypatch.setattr(store_module, "now_ms", lambda: started_at_ms)
+    store = SQLiteCredentialStore(tmp_path / "expired-login.sqlite3")
+    login = store.create_login(
+        "openai",
+        "pending",
+        flow={"pkce_verifier": "expiry-flow"},
+    )
+    assert store.claim_pending_login(login["login_session_id"]) is True
+
+    monkeypatch.setattr(
+        store_module,
+        "now_ms",
+        lambda: started_at_ms + store_module._LOGIN_EXPIRY_MS,
+    )
+    assert (
+        store.finish_claimed_login(login["login_session_id"], "completed")
+        is False
+    )
+    expired = store.get_login(login["login_session_id"], include_flow=True)
+    assert expired["status"] == "expired"
+    assert expired["problem"]["code"] == "oauth_login_expired"
+    assert expired["flow"] == {}
+
+
 def test_audit_events_are_durable_and_use_fixed_secret_free_fields(
     tmp_path, monkeypatch
 ):
