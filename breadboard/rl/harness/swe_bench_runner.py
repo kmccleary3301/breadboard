@@ -575,7 +575,7 @@ def _measure_file(path: str, *, max_bytes: int) -> str:
             os.close(descriptor)
 
 
-OFFICIAL_EVALUATOR_ENVIRONMENT_DIGEST = "sha256:6632a5e5321e257264c676af9ad1e72149280757447a93f7aa0a7ff72fa40713"
+OFFICIAL_EVALUATOR_ENVIRONMENT_DIGEST = "sha256:8eb0209270d79ad8550324c7b62dda2303855b70e8348c84876a91edf84ed7d9"
 OFFICIAL_EVALUATOR_PYTHON_DIGEST = "sha256:a15ccdaf07655a8667a3687b13171486c9a265d92273ba3ad820fbb64d2cfecc"
 OFFICIAL_EVALUATOR_DOCKER_DIGEST = "sha256:6435ff9214bf8e0931078fb0980809728cac0a54a526d4f28a26d3e48132b58d"
 _MAX_ENVIRONMENT_FILES = 50_000
@@ -1453,7 +1453,7 @@ class InstalledHeadlessInvocation:
 
 @dataclass(frozen=True, slots=True)
 class InstalledSweBenchRequest:
-    """One installed-package journey; repository source checkout is intentionally absent."""
+    """One installed-package journey with a sealed task repository snapshot."""
 
     profile: E4ProfileIdentity
     headless_request: HeadlessRunRequest
@@ -1500,9 +1500,17 @@ class InstalledSweBenchRequest:
             raise SweBenchRunnerError(
                 "headless workspace image is not the pinned SWE-bench image"
             )
-        if workspace.repository_snapshot_digest is not None:
+        snapshot_digest = workspace.repository_snapshot_digest
+        if snapshot_digest is None:
             raise SweBenchRunnerError(
-                "installed SWE-bench journey must not use a source checkout"
+                "installed SWE-bench journey requires a sealed task repository"
+            )
+        if (
+            self.headless_invocation.repository_base_commits.get(snapshot_digest)
+            != self.task_binding.task.base_commit
+        ):
+            raise SweBenchRunnerError(
+                "task repository snapshot lacks the pinned base authority"
             )
         if workspace.base_commit != self.task_binding.task.base_commit:
             raise SweBenchRunnerError(

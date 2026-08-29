@@ -52,6 +52,7 @@ from breadboard.rl.harness.swe_bench_task import (
 
 
 _HEX = "a" * 64
+_SNAPSHOT = f"sha256:{'b' * 64}"
 
 
 def _reports(resolved: bool) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -130,7 +131,7 @@ def _invocation(tmp_path: Path) -> InstalledHeadlessInvocation:
         secret_files={"composition-secret": str(tmp_path / "composition.secret")},
         provider_credentials={"policy-callback": str(tmp_path / "provider.secret")},
         provider_routes={"policy-callback": route},
-        repository_base_commits={IMAGE_LEAF_DIGEST: BASE_COMMIT},
+        repository_base_commits={_SNAPSHOT: BASE_COMMIT},
     )
 
 
@@ -151,7 +152,7 @@ def _headless_request(tmp_path: Path) -> HeadlessRunRequest:
         provider=provider,
         workspace=HeadlessWorkspaceInput(
             task_image_digest=IMAGE_LEAF_DIGEST,
-            repository_snapshot_digest=None,
+            repository_snapshot_digest=_SNAPSHOT,
             base_commit=BASE_COMMIT,
         ),
         prompt=PINNED_SWE_BENCH_TASK.model_visible_task()["problem_statement"],
@@ -424,6 +425,22 @@ def test_request_requires_real_base_and_launcher_binding(tmp_path: Path) -> None
         InstalledSweBenchRequest(
             profile=request.profile,
             headless_request=broken_headless,
+            headless_invocation=request.headless_invocation,
+            dataset_path=request.dataset_path,
+            run_id=request.run_id,
+        )
+
+    missing_snapshot = request.headless_request.model_copy(
+        update={
+            "workspace": request.headless_request.workspace.model_copy(
+                update={"repository_snapshot_digest": None}
+            )
+        }
+    )
+    with pytest.raises(SweBenchRunnerError, match="sealed task repository"):
+        InstalledSweBenchRequest(
+            profile=request.profile,
+            headless_request=missing_snapshot,
             headless_invocation=request.headless_invocation,
             dataset_path=request.dataset_path,
             run_id=request.run_id,
