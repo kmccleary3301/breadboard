@@ -70,7 +70,11 @@ def _bind_episode_provider_profile(
         raise ProviderContractError(
             "episode provider profile does not match the selected route"
         )
-    return runtime.create_client_from_profile(profile), True, profile
+    profile_client = getattr(episode, "_episode_provider_client", None)
+    if profile_client is None:
+        profile_client = runtime.create_client_from_profile(profile)
+        episode._episode_provider_client = profile_client
+    return profile_client, True, profile
 
 
 def _provider_wire_evidence(

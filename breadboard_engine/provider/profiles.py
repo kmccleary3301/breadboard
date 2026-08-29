@@ -291,14 +291,14 @@ class OpenAICompletionsProviderProfile:
     """Immutable, episode-scoped authority for one Chat Completions route."""
 
     model: str
-    scoped_credential: str
+    scoped_credential: str = field(repr=False)
     base_url: str
     context_window: int
     max_output_tokens: int
     sampling: OpenAICompletionsSampling | Mapping[str, Any] = field(
         default_factory=OpenAICompletionsSampling
     )
-    caller_headers: Mapping[str, str] = field(default_factory=dict)
+    caller_headers: Mapping[str, str] = field(default_factory=dict, repr=False)
     capabilities: OpenAICompletionsCapabilities | Mapping[str, Any] = field(
         default_factory=OpenAICompletionsCapabilities
     )

@@ -6465,6 +6465,27 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             except Exception:
                 pass
         finally:
+            profile_client = getattr(session_state, "_episode_provider_client", None)
+            if profile_client is not None:
+                try:
+                    profile_client.close()
+                except Exception as exc:
+                    cleanup_error = public_error_projection(
+                        exc,
+                        default_code="profile_client_cleanup_failed",
+                    )
+                    try:
+                        session_state.set_provider_metadata(
+                            "profile_client_cleanup_error",
+                            {
+                                "type": cleanup_error["error_type"],
+                                "message": cleanup_error["error"],
+                            },
+                        )
+                    except Exception:
+                        pass
+                finally:
+                    session_state._episode_provider_client = None
             self._persist_final_workspace()
             try:
                 self._persist_multi_agent_log()

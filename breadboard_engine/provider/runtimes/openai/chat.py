@@ -25,6 +25,10 @@ from .chat_stream_decoder import OpenAIChatStreamDecoder
 class _ProfileClient:
     transport: Any
     profile: OpenAICompletionsProviderProfile
+    def close(self) -> None:
+        close = getattr(self.transport, "close", None)
+        if callable(close):
+            close()
 
 
 class OpenAIChatRuntime(OpenAIBaseRuntime):

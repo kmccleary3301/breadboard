@@ -128,6 +128,7 @@ class SessionState:
         self.image = image
         self.config = config or {}
         self._episode_provider_profile = episode_provider_profile
+        self._episode_provider_client: Optional[Any] = None
         self.messages: List[Dict[str, Any]] = []
         self.provider_messages: List[Dict[str, Any]] = []
         self.transcript: List[Dict[str, Any]] = []

@@ -222,16 +222,39 @@ def test_profile_client_sets_sdk_retries_to_zero(monkeypatch):
 
 
 def test_profile_binds_production_runtime_client(monkeypatch):
-    transport = object()
+    created = []
+
+    class FakeTransport:
+        def __init__(self):
+            self.close_calls = 0
+
+        def close(self):
+            self.close_calls += 1
+
+    transport = FakeTransport()
+
+    def create_transport(**_kwargs):
+        created.append(transport)
+        return transport
+
     monkeypatch.setattr(
         sdk_bindings.provider_sdk_bindings,
         "openai",
-        lambda **_kwargs: transport,
+        create_transport,
     )
     profile = _profile()
+    episode = types.SimpleNamespace(_episode_provider_profile=profile)
+    runtime = _runtime()
     client, stream, bound_profile = _bind_episode_provider_profile(
-        types.SimpleNamespace(_episode_provider_profile=profile),
-        _runtime(),
+        episode,
+        runtime,
+        object(),
+        MODEL,
+        False,
+    )
+    rebound_client, _, _ = _bind_episode_provider_profile(
+        episode,
+        runtime,
         object(),
         MODEL,
         False,
@@ -239,8 +262,12 @@ def test_profile_binds_production_runtime_client(monkeypatch):
 
     assert stream is True
     assert bound_profile is profile
+    assert client is rebound_client
     assert client.transport is transport
     assert client.profile is profile
+    assert created == [transport]
+    client.close()
+    assert transport.close_calls == 1
 
 
 def test_profile_binding_is_scoped_to_each_episode(monkeypatch):
@@ -328,6 +355,8 @@ def test_profile_is_pickle_safe_for_ray_actor_admission():
     assert restored == profile
     assert dict(restored.caller_headers) == {"X-Request-ID": "episode-one"}
     assert restored.scoped_credential == "episode-secret"
+    assert "episode-secret" not in repr(restored)
+    assert "episode-one" not in repr(restored)
 
 
 def test_profile_response_is_sanitized_inside_secret_scope(monkeypatch):
