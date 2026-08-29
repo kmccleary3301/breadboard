@@ -10,7 +10,7 @@ import stat
 import tarfile
 from pathlib import Path, PurePosixPath
 
-BREADBOARD_MEMBERS=("breadboard/rl","agentic_coder_prototype/compilation","tests/compilation/test_server_compiler.py","tests/rl/harness/production_composition_fixture.py","tests/rl/harness/test_production_composition_public_lifecycle.py","tests/rl/harness/test_config_admission.py","tests/rl/harness/test_config_selection.py","tests/rl/harness/test_policy_capability_registry.py","tests/rl/harness/v2_service_fixtures.py","tests/fixtures/rl/harness/production_composition","tests/fixtures/rl/config_runtime")
+BREADBOARD_MEMBERS=("breadboard/rl","agentic_coder_prototype/compilation","tests/compilation/test_server_compiler.py","tests/rl/harness/test_production_composition_public_lifecycle.py","tests/rl/harness/test_config_admission.py","tests/rl/harness/test_config_selection.py","tests/rl/harness/test_policy_capability_registry.py","tests/rl/harness/v2_service_fixtures.py","tests/fixtures/rl/harness/production_composition","tests/fixtures/rl/config_runtime")
 WRAPPER_MEMBERS=("responses_api_agents/breadboard_agent","recipe/nemo_async/envs","recipe/nemo_common","third_party/nemo-gym/nemo_gym")
 SCRIPT_MEMBERS=("scripts/rl_phase5/f1_container_entry.py","scripts/rl_phase5/run_f1_target_command.py","scripts/rl_phase5/f1_requirements.lock")
 

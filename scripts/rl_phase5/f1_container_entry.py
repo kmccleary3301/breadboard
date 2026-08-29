@@ -253,7 +253,7 @@ def main() -> int:
     from nemo_gym.config_types import BaseServerConfig
     from nemo_gym.server_utils import ServerClient
     from responses_api_agents.breadboard_agent.app import BreadBoardAgentConfig, BreadBoardAgent, BreadBoardContractError, BreadBoardLifecycleError, BreadBoardRunRequest, BreadBoardTransportError
-    from tests.rl.harness.production_composition_fixture import materialize_production_composition_fixture
+    from breadboard.rl.harness.qualification import materialize_production_composition_fixture
     from recipe.nemo_async.envs.catalog import resolve_env
     from tests.rl.harness.test_production_composition_public_lifecycle import _policy_https_server
 
