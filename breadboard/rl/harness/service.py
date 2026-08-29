@@ -1897,9 +1897,7 @@ class BreadBoardV2EpisodeService:
         verifier: VerifierWorkspaceLease | None = None
         verification_error: BaseException | None = None
         try:
-            raw_workspace_diff = (
-                await coordinator.lease.runner_workspace.workspace_diff()
-            )
+            raw_workspace_diff = await coordinator.lease.workspace_diff()
             if (
                 set(raw_workspace_diff) != {"returncode", "stdout", "stderr"}
                 or type(raw_workspace_diff["returncode"]) is not int
