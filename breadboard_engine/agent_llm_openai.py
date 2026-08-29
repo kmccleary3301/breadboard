@@ -365,7 +365,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         local_mode: bool = False,
         prompt_base_dirs: Optional[List[Path]] = None,
         protected_paths: Optional[Sequence[str]] = None,
-        provider_profile: Optional[OpenAICompletionsProviderProfile] = None,
     ) -> None:
         """Initialize conductor with workspace, image, and configuration."""
         captured_protected_paths = tuple(
@@ -391,11 +390,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             zero_tool_abort_message=ZERO_TOOL_ABORT_MESSAGE,
             completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
         )
-        if provider_profile is not None and not isinstance(
-            provider_profile, OpenAICompletionsProviderProfile
-        ):
-            raise ProviderContractError("provider_profile is invalid")
-        self._provider_profile = provider_profile
         self._model_role_lock = (
             dict(self.config.get("model_role_lock"))
             if isinstance(self.config, dict) and isinstance(self.config.get("model_role_lock"), dict)
@@ -5540,10 +5534,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         context: Optional[Dict[str, Any]] = None,
         kernel_emitter_run_dir: Optional[str] = None,
         kernel_emitter_mode: Optional[str] = None,
+        provider_profile: Optional[OpenAICompletionsProviderProfile] = None,
     ) -> Dict[str, Any]:
         # Clear any prior stop request from earlier runs (Esc in the TUI should only
         # interrupt the current in-flight run, not permanently disable the session).
         self._stop_requested = False
+        if provider_profile is not None and not isinstance(
+            provider_profile, OpenAICompletionsProviderProfile
+        ):
+            raise ProviderContractError("provider_profile is invalid")
         # Initialize components
         emitter = event_emitter
         if emitter is None and event_queue is not None:
@@ -5567,7 +5566,13 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 kernel_emitter = JsonlKernelEmitter(_Path(kernel_emitter_run_dir), mode=mode)  # type: ignore[arg-type]
             except Exception:
                 kernel_emitter = None
-        session_state = SessionState(self.workspace, self.image, self.config, event_emitter=emitter, kernel_emitter=kernel_emitter,
+        session_state = SessionState(
+            self.workspace,
+            self.image,
+            self.config,
+            event_emitter=emitter,
+            kernel_emitter=kernel_emitter,
+            episode_provider_profile=provider_profile,
         )
         self._active_session_state = session_state
         if not isinstance(context, dict):

@@ -12,6 +12,7 @@ from ...contracts import (
     ProviderResult,
     ProviderRuntimeContext,
     ProviderRuntimeError,
+    sanitize_provider_result,
 )
 from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
@@ -129,13 +130,15 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             *profile.caller_headers.values(),
             allow_short=True,
         ):
-            return self._invoke(
-                client=client,
-                model=model,
-                messages=messages,
-                tools=tools,
-                stream=stream,
-                context=context,
+            return sanitize_provider_result(
+                self._invoke(
+                    client=client,
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    stream=stream,
+                    context=context,
+                )
             )
 
     def _invoke(

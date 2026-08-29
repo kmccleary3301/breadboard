@@ -52,13 +52,13 @@ def _record_raw_provider_response(
         pass
 
 def _bind_episode_provider_profile(
-    conductor: Any,
+    episode: Any,
     runtime: Any,
     client: Any,
     model: str,
     stream: bool,
 ) -> Tuple[Any, bool, Any]:
-    profile = getattr(conductor, "_provider_profile", None)
+    profile = getattr(episode, "_episode_provider_profile", None)
     if profile is None:
         return client, stream, None
     if (
@@ -300,7 +300,7 @@ def get_model_response(
     )
     client, effective_stream_responses, provider_profile = (
         _bind_episode_provider_profile(
-            conductor,
+            session_state,
             runtime,
             client,
             model,

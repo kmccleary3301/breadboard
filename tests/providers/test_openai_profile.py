@@ -11,6 +11,8 @@ from breadboard_engine.provider.contracts import (
     OpenAICompletionsCapabilities,
     OpenAICompletionsProviderProfile,
     ProviderContractError,
+    ProviderMessage,
+    ProviderResult,
     ProviderRuntimeContext,
     ProviderRuntimeError,
 )
@@ -224,7 +226,7 @@ def test_profile_binds_production_runtime_client(monkeypatch):
     )
     profile = _profile()
     client, stream, bound_profile = _bind_episode_provider_profile(
-        types.SimpleNamespace(_provider_profile=profile),
+        types.SimpleNamespace(_episode_provider_profile=profile),
         _runtime(),
         object(),
         MODEL,
@@ -235,6 +237,37 @@ def test_profile_binds_production_runtime_client(monkeypatch):
     assert bound_profile is profile
     assert client.transport is transport
     assert client.profile is profile
+
+
+def test_profile_binding_is_scoped_to_each_episode(monkeypatch):
+    monkeypatch.setattr(
+        sdk_bindings.provider_sdk_bindings,
+        "openai",
+        lambda **_kwargs: object(),
+    )
+    runtime = _runtime()
+    first = _profile(scoped_credential="first-secret")
+    second = _profile(scoped_credential="second-secret")
+
+    first_client, _, first_bound = _bind_episode_provider_profile(
+        types.SimpleNamespace(_episode_provider_profile=first),
+        runtime,
+        object(),
+        MODEL,
+        False,
+    )
+    second_client, _, second_bound = _bind_episode_provider_profile(
+        types.SimpleNamespace(_episode_provider_profile=second),
+        runtime,
+        object(),
+        MODEL,
+        False,
+    )
+
+    assert first_bound is first
+    assert first_client.profile is first
+    assert second_bound is second
+    assert second_client.profile is second
 
 
 def test_profile_client_is_bound_to_one_episode(monkeypatch):
@@ -291,3 +324,39 @@ def test_profile_is_pickle_safe_for_ray_actor_admission():
     assert restored == profile
     assert dict(restored.caller_headers) == {"X-Request-ID": "episode-one"}
     assert restored.scoped_credential == "episode-secret"
+
+
+def test_profile_response_is_sanitized_inside_secret_scope(monkeypatch):
+    profile = _profile(caller_headers={"X-Request-ID": "caller-secret"})
+    runtime = _runtime()
+    monkeypatch.setattr(
+        runtime,
+        "_invoke",
+        lambda **_kwargs: ProviderResult(
+            messages=[
+                ProviderMessage(
+                    role="assistant",
+                    content="episode-secret caller-secret",
+                )
+            ],
+            raw_response={"echo": "episode-secret caller-secret"},
+        ),
+    )
+
+    result = runtime.invoke(
+        client=object(),
+        model=MODEL,
+        messages=[],
+        tools=None,
+        stream=True,
+        context=ProviderRuntimeContext(
+            None,
+            {},
+            stream=True,
+            provider_profile=profile,
+        ),
+    )
+
+    rendered = repr(result)
+    assert "episode-secret" not in rendered
+    assert "caller-secret" not in rendered

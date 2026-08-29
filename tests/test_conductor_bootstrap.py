@@ -15,7 +15,6 @@ from pathlib import Path
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.conductor_context import ConductorContext
-from breadboard_engine.provider.contracts import OpenAICompletionsProviderProfile
 
 ConductorClass = OpenAIConductor.__ray_metadata__.modified_class
 
@@ -48,23 +47,6 @@ def test_conductor_initialization_basic(ray_cluster, tmp_path):
     assert conductor.local_mode is True
 
 
-def test_conductor_admits_episode_provider_profile(ray_cluster, tmp_path):
-    profile = OpenAICompletionsProviderProfile(
-        model="Qwen/Qwen3.5-35B-A3B",
-        scoped_credential="episode-secret",
-        base_url="http://127.0.0.1:8111/v1",
-        context_window=131_072,
-        max_output_tokens=32_000,
-    )
-    conductor = ConductorClass(
-        workspace=str(tmp_path / "profile_workspace"),
-        image="python-dev:latest",
-        config={},
-        local_mode=True,
-        provider_profile=profile,
-    )
-
-    assert conductor._provider_profile is profile
 
 
 def test_conductor_initialization_with_config(ray_cluster, tmp_path):

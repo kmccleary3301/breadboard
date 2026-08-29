@@ -122,10 +122,12 @@ class SessionState:
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
         kernel_emitter: Optional[Any] = None,
         clock: Optional[Callable[[], str]] = None,
+        episode_provider_profile: Optional[Any] = None,
     ):
         self.workspace = workspace
         self.image = image
         self.config = config or {}
+        self._episode_provider_profile = episode_provider_profile
         self.messages: List[Dict[str, Any]] = []
         self.provider_messages: List[Dict[str, Any]] = []
         self.transcript: List[Dict[str, Any]] = []
