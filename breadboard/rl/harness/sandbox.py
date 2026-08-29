@@ -3455,7 +3455,10 @@ class SandboxRuntimeManager:
             name for name in names if name.endswith(".owner.lock")
         ):
             lease_id = lock_name.removesuffix(".owner.lock")
-            if lease_id + ".json" in record_names:
+            if (
+                lease_id + ".json" in record_names
+                or lease_id in self._lease_owner_locks
+            ):
                 continue
             try:
                 owner_claimed = self._claim_lease_owner_lock(lease_id)

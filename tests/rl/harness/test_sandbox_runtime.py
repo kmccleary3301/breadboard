@@ -1977,6 +1977,9 @@ async def test_restart_reclaims_orphan_verifier_owner_lock_without_blocking_prim
         docker_backend=None,
         random_bytes=DeterministicRandom(27_000),
     )
+    active_lease_id = "verifier-lease-" + ("b" * 32)
+    assert recovery._claim_lease_owner_lock(active_lease_id)
+    active_lock = original.lease_root / f"{active_lease_id}.owner.lock"
 
     receipts = await recovery.reconcile_stale()
 
@@ -1993,6 +1996,12 @@ async def test_restart_reclaims_orphan_verifier_owner_lock_without_blocking_prim
     assert not orphan_lock.exists()
     assert not workspace.exists()
     assert not (original.lease_root / f"{lease.lease_id}.json").exists()
+    assert active_lock.exists()
+    assert active_lease_id in recovery._lease_owner_locks
+    assert all(
+        receipt.lease_id != active_lease_id for receipt in receipts
+    )
+    recovery._release_lease_owner_lock(active_lease_id, unlink=True)
 
 @pytest.mark.parametrize("identity_field", ["uid", "gid"])
 async def test_hardened_root_identity_is_rejected_before_materialization_or_launch(
