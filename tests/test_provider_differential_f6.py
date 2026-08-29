@@ -251,6 +251,51 @@ def test_wheel_provenance_rejects_checkout_identity_overrides(
     with pytest.raises(RuntimeError, match="do not match the Git checkout"):
         namespace["_source_identity"]()
 
+
+@pytest.mark.parametrize(
+    "remote",
+    (
+        "git@github.com:kmccleary3301/breadboard.git",
+        "ssh://git@github.com/kmccleary3301/breadboard.git",
+    ),
+)
+def test_wheel_provenance_normalizes_ssh_repository_remote(
+    monkeypatch: pytest.MonkeyPatch,
+    remote: str,
+) -> None:
+    monkeypatch.setattr(setuptools, "setup", lambda **_kwargs: None)
+    namespace = runpy.run_path(str(ROOT / "setup.py"), run_name="bb_setup_test")
+
+    assert namespace["_canonical_repository"](remote) == (
+        "https://github.com/kmccleary3301/breadboard.git"
+    )
+
+
+def test_wheel_provenance_validates_before_populating_build_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(setuptools, "setup", lambda **_kwargs: None)
+    namespace = runpy.run_path(str(ROOT / "setup.py"), run_name="bb_setup_test")
+    build_calls: list[bool] = []
+    monkeypatch.setattr(
+        namespace["_build_py"],
+        "run",
+        lambda _command: build_calls.append(True),
+    )
+
+    def reject_dirty_source() -> tuple[str, str, str]:
+        raise RuntimeError("wheel provenance requires clean wheel build inputs")
+
+    namespace["BuildPyWithProvenance"].run.__globals__["_source_identity"] = (
+        reject_dirty_source
+    )
+    command = namespace["BuildPyWithProvenance"](setuptools.Distribution())
+
+    with pytest.raises(RuntimeError, match="clean wheel build inputs"):
+        command.run()
+    assert build_calls == []
+
+
 def test_wheel_provenance_rejects_dirty_non_engine_package(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
