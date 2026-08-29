@@ -6,6 +6,7 @@ import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...contracts import (
+    OpenAICompletionsProviderProfile,
     ProviderMessage,
     ProviderResult,
     ProviderRuntimeContext,
@@ -44,6 +45,24 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 pass
         return provider_sdk_bindings.openai(**kwargs)
 
+    def create_client_from_profile(
+        self, profile: OpenAICompletionsProviderProfile
+    ) -> Any:
+        """Create a zero-retry SDK client from one immutable episode profile."""
+        if not isinstance(profile, OpenAICompletionsProviderProfile):
+            raise ProviderRuntimeError(
+                "OpenAI Chat profile is invalid",
+                kind="configuration",
+                details={"code": "invalid_provider_profile"},
+            )
+        self._require_openai()
+        return provider_sdk_bindings.openai(
+            api_key=profile.scoped_credential,
+            base_url=profile.base_url,
+            default_headers=dict(profile.caller_headers),
+            max_retries=0,
+        )
+
     def _stream_chat_completion(
         self,
         client: Any,
@@ -76,25 +95,54 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         context: ProviderRuntimeContext,
     ) -> ProviderResult:
         context.raise_if_cancelled()
+        profile = context.provider_profile
         request_messages = self._convert_messages_to_chat(
             messages, context=context
         )
         request_tools = self._convert_tools_to_openai(tools)
-        extra_body: Optional[Dict[str, Any]] = None
-        if (
-            self.descriptor.provider_id == "openrouter"
-            and isinstance(model, str)
-            and model.startswith("openai/gpt-5")
-        ):
-            # Force provider routing away from Azure for GPT-5 OpenAI models on OpenRouter,
-            # since some upstreams reject tool outputs.
-            extra_body = {"provider": {"order": ["openai"], "allow_fallbacks": False}}
-        role_request, role_extra_body = openai_chat_role_options(
-            context,
-            provider_id=self.descriptor.provider_id,
-        )
-        if role_extra_body:
-            extra_body = {**(extra_body or {}), **role_extra_body}
+        if profile is not None:
+            if not stream:
+                raise ProviderRuntimeError(
+                    "OpenAI Completions profile requires streaming",
+                    kind="configuration",
+                    details={"code": "profile_requires_streaming"},
+                )
+            if model != profile.model:
+                raise ProviderRuntimeError(
+                    "OpenAI Completions profile model does not match invocation",
+                    kind="configuration",
+                    details={"code": "profile_model_mismatch"},
+                )
+            profile_request = profile.chat_request(request_messages, request_tools)
+            profile_request.pop("model")
+            profile_request.pop("messages")
+            profile_request.pop("stream")
+            request_tools = profile_request.pop("tools", None)
+            thinking_control = profile_request.pop("enable_thinking", None)
+            extra_body = (
+                {"enable_thinking": thinking_control}
+                if thinking_control is not None
+                else None
+            )
+            role_request = profile_request
+        else:
+            extra_body: Optional[Dict[str, Any]] = None
+            if (
+                self.descriptor.provider_id == "openrouter"
+                and isinstance(model, str)
+                and model.startswith("openai/gpt-5")
+            ):
+                # Force provider routing away from Azure for GPT-5 OpenAI models on OpenRouter,
+                # since some upstreams reject tool outputs.
+                extra_body = {
+                    "provider": {"order": ["openai"], "allow_fallbacks": False}
+                }
+            role_request, role_extra_body = openai_chat_role_options(
+                context,
+                provider_id=self.descriptor.provider_id,
+            )
+            if role_extra_body:
+                extra_body = {**(extra_body or {}), **role_extra_body}
 
         response: Any = None
         streamed_reasoning: Dict[int, Dict[str, Any]] = {}

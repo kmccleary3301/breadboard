@@ -1,0 +1,422 @@
+"""Episode-scoped provider profiles for exact OpenAI Chat Completions calls.
+
+Profiles are immutable request authority.  They carry the short-lived credential
+needed to construct one client, but their identity projection never contains
+credential material (or caller auth headers).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Any
+from urllib.parse import urlsplit
+
+from ..security import redaction
+from .contract_wire import ProviderContractError, canonical_json
+
+
+def _text(value: Any, field_name: str, *, max_length: int) -> str:
+    if not isinstance(value, str) or not value or len(value) > max_length:
+        raise ProviderContractError(f"{field_name} must be non-empty text")
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
+        raise ProviderContractError(f"{field_name} contains control characters")
+    return value
+
+
+def _bounded_int(value: Any, field_name: str, *, minimum: int, maximum: int) -> int:
+    if type(value) is not int or value < minimum or value > maximum:
+        raise ProviderContractError(f"{field_name} is outside its supported range")
+    return value
+
+
+def _bounded_float(
+    value: Any,
+    field_name: str,
+    *,
+    minimum: float,
+    maximum: float,
+) -> float:
+    if type(value) not in (int, float) or not minimum <= float(value) <= maximum:
+        raise ProviderContractError(f"{field_name} is outside its supported range")
+    return float(value)
+
+
+@dataclass(frozen=True)
+class OpenAICompletionsSampling:
+    """Sampling controls emitted in a Chat Completions request."""
+
+    temperature: float | None = None
+    top_p: float | None = None
+    seed: int | None = None
+    frequency_penalty: float | None = None
+    presence_penalty: float | None = None
+    n: int = 1
+
+    def __post_init__(self) -> None:
+        if self.temperature is not None:
+            object.__setattr__(
+                self,
+                "temperature",
+                _bounded_float(
+                    self.temperature,
+                    "sampling.temperature",
+                    minimum=0.0,
+                    maximum=2.0,
+                ),
+            )
+        if self.top_p is not None:
+            object.__setattr__(
+                self,
+                "top_p",
+                _bounded_float(self.top_p, "sampling.top_p", minimum=0.0, maximum=1.0),
+            )
+        if self.seed is not None:
+            object.__setattr__(
+                self,
+                "seed",
+                _bounded_int(self.seed, "sampling.seed", minimum=0, maximum=2**31 - 1),
+            )
+        for field_name in ("frequency_penalty", "presence_penalty"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(
+                    self,
+                    field_name,
+                    _bounded_float(
+                        value,
+                        f"sampling.{field_name}",
+                        minimum=-2.0,
+                        maximum=2.0,
+                    ),
+                )
+        _bounded_int(self.n, "sampling.n", minimum=1, maximum=1)
+
+    @classmethod
+    def from_value(
+        cls, value: OpenAICompletionsSampling | Mapping[str, Any]
+    ) -> OpenAICompletionsSampling:
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, Mapping):
+            raise ProviderContractError("sampling must be an object")
+        allowed = {
+            "temperature",
+            "top_p",
+            "seed",
+            "frequency_penalty",
+            "presence_penalty",
+            "n",
+        }
+        unknown = sorted(str(key) for key in value if key not in allowed)
+        if unknown:
+            raise ProviderContractError(
+                f"sampling contains unsupported fields: {', '.join(unknown)}"
+            )
+        return cls(**{str(key): item for key, item in value.items()})
+
+    def as_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"n": self.n}
+        for field_name in (
+            "temperature",
+            "top_p",
+            "seed",
+            "frequency_penalty",
+            "presence_penalty",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                result[field_name] = value
+        return result
+
+
+@dataclass(frozen=True)
+class OpenAICompletionsCapabilities:
+    """Explicit wire capabilities for one OpenAI-compatible endpoint."""
+
+    supports_tools: bool = True
+    supports_strict_tools: bool = True
+    supports_stream_options: bool = True
+    supports_thinking_control: bool = True
+    supports_store: bool = False
+    supports_n: bool = True
+    supports_max_tokens: bool = True
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "supports_tools",
+            "supports_strict_tools",
+            "supports_stream_options",
+            "supports_thinking_control",
+            "supports_store",
+            "supports_n",
+            "supports_max_tokens",
+        ):
+            if type(getattr(self, field_name)) is not bool:
+                raise ProviderContractError(
+                    f"capabilities.{field_name} must be boolean"
+                )
+
+    @classmethod
+    def from_value(
+        cls,
+        value: OpenAICompletionsCapabilities | Mapping[str, Any],
+    ) -> OpenAICompletionsCapabilities:
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, Mapping):
+            raise ProviderContractError("capabilities must be an object")
+        allowed = set(cls.__dataclass_fields__)
+        unknown = sorted(str(key) for key in value if key not in allowed)
+        if unknown:
+            raise ProviderContractError(
+                f"capabilities contains unsupported fields: {', '.join(unknown)}"
+            )
+        return cls(**{str(key): item for key, item in value.items()})
+
+    def as_dict(self) -> dict[str, bool]:
+        return {
+            field_name: bool(getattr(self, field_name))
+            for field_name in self.__dataclass_fields__
+        }
+
+
+@dataclass(frozen=True)
+class OpenAICompletionsCompatibility:
+    """Compatibility contract that prevents implicit SDK/runtime behavior."""
+
+    api_variant: str = "chat_completions"
+    sdk_max_retries: int = 0
+    transport_max_retries: int = 0
+    provider_fallback: bool = False
+
+    def __post_init__(self) -> None:
+        if self.api_variant != "chat_completions":
+            raise ProviderContractError(
+                "compatibility.api_variant must be chat_completions"
+            )
+        _bounded_int(
+            self.sdk_max_retries,
+            "compatibility.sdk_max_retries",
+            minimum=0,
+            maximum=0,
+        )
+        _bounded_int(
+            self.transport_max_retries,
+            "compatibility.transport_max_retries",
+            minimum=0,
+            maximum=0,
+        )
+        if type(self.provider_fallback) is not bool or self.provider_fallback:
+            raise ProviderContractError("compatibility.provider_fallback must be false")
+
+    @classmethod
+    def from_value(
+        cls,
+        value: OpenAICompletionsCompatibility | Mapping[str, Any],
+    ) -> OpenAICompletionsCompatibility:
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, Mapping):
+            raise ProviderContractError("compatibility must be an object")
+        allowed = set(cls.__dataclass_fields__)
+        unknown = sorted(str(key) for key in value if key not in allowed)
+        if unknown:
+            raise ProviderContractError(
+                f"compatibility contains unsupported fields: {', '.join(unknown)}"
+            )
+        return cls(**{str(key): item for key, item in value.items()})
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "api_variant": self.api_variant,
+            "sdk_max_retries": self.sdk_max_retries,
+            "transport_max_retries": self.transport_max_retries,
+            "provider_fallback": self.provider_fallback,
+        }
+
+
+@dataclass(frozen=True)
+class OpenAICompletionsProviderProfile:
+    """Immutable, episode-scoped authority for one Chat Completions route."""
+
+    model: str
+    scoped_credential: str
+    base_url: str
+    context_window: int
+    max_output_tokens: int
+    sampling: OpenAICompletionsSampling | Mapping[str, Any] = field(
+        default_factory=OpenAICompletionsSampling
+    )
+    caller_headers: Mapping[str, str] = field(default_factory=dict)
+    capabilities: OpenAICompletionsCapabilities | Mapping[str, Any] = field(
+        default_factory=OpenAICompletionsCapabilities
+    )
+    compatibility: OpenAICompletionsCompatibility | Mapping[str, Any] = field(
+        default_factory=OpenAICompletionsCompatibility
+    )
+    provider_id: str = "openai"
+    runtime_id: str = "openai_chat"
+
+    def __post_init__(self) -> None:
+        _text(self.model, "profile.model", max_length=256)
+
+        base_url = _text(self.base_url, "profile.base_url", max_length=2048)
+        parsed = urlsplit(base_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ProviderContractError("profile.base_url must be an HTTP(S) URL")
+        if parsed.username is not None or parsed.password is not None:
+            raise ProviderContractError("profile.base_url must not contain credentials")
+        if parsed.query or parsed.fragment:
+            raise ProviderContractError(
+                "profile.base_url must not contain a query or fragment"
+            )
+        _text(
+            self.scoped_credential,
+            "profile.scoped_credential",
+            max_length=8192,
+        )
+        _bounded_int(
+            self.context_window,
+            "profile.context_window",
+            minimum=1,
+            maximum=2**31 - 1,
+        )
+        _bounded_int(
+            self.max_output_tokens,
+            "profile.max_output_tokens",
+            minimum=1,
+            maximum=2**31 - 1,
+        )
+        if self.max_output_tokens > self.context_window:
+            raise ProviderContractError(
+                "profile.max_output_tokens cannot exceed context_window"
+            )
+        object.__setattr__(
+            self, "sampling", OpenAICompletionsSampling.from_value(self.sampling)
+        )
+        object.__setattr__(
+            self,
+            "capabilities",
+            OpenAICompletionsCapabilities.from_value(self.capabilities),
+        )
+        object.__setattr__(
+            self,
+            "compatibility",
+            OpenAICompletionsCompatibility.from_value(self.compatibility),
+        )
+        if not isinstance(self.caller_headers, Mapping):
+            raise ProviderContractError("profile.caller_headers must be an object")
+        if len(self.caller_headers) > 128:
+            raise ProviderContractError(
+                "profile.caller_headers cannot contain more than 128 entries"
+            )
+        headers: dict[str, str] = {}
+        for key, value in self.caller_headers.items():
+            header_name = _text(key, "profile.caller_headers key", max_length=256)
+            header_value = _text(
+                value,
+                f"profile.caller_headers[{header_name!r}]",
+                max_length=8192,
+            )
+            if header_name.lower() in {existing.lower() for existing in headers}:
+                raise ProviderContractError(
+                    "profile.caller_headers contains duplicate names"
+                )
+            headers[header_name] = header_value
+        object.__setattr__(self, "caller_headers", MappingProxyType(headers))
+        _text(self.provider_id, "profile.provider_id", max_length=128)
+        _text(self.runtime_id, "profile.runtime_id", max_length=128)
+        if self.provider_id != "openai":
+            raise ProviderContractError("profile.provider_id must be openai")
+        if self.runtime_id != "openai_chat":
+            raise ProviderContractError("profile.runtime_id must be openai_chat")
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return deterministic, secret-free profile identity data."""
+        return self.identity_dict()
+
+    def identity_dict(self) -> dict[str, Any]:
+        """Return deterministic, secret-free profile identity data."""
+        safe_headers = {
+            name: redaction.REDACTED
+            for name in sorted(self.caller_headers, key=str.casefold)
+        }
+        return {
+            "base_url": self.base_url,
+            "caller_headers": safe_headers,
+            "capabilities": self.capabilities.as_dict(),
+            "compatibility": self.compatibility.as_dict(),
+            "context_window": self.context_window,
+            "max_output_tokens": self.max_output_tokens,
+            "model": self.model,
+            "provider_id": self.provider_id,
+            "runtime_id": self.runtime_id,
+            "sampling": self.sampling.as_dict(),
+        }
+
+    def identity_json(self) -> str:
+        """Return canonical JSON identity with no credential material."""
+        return canonical_json(self.identity_dict())
+
+    def chat_request(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+    ) -> dict[str, Any]:
+        """Build the exact streamed Chat Completions payload for this profile."""
+        if not isinstance(messages, list):
+            raise ProviderContractError("profile messages must be an array")
+        copied_messages = [dict(message) for message in messages]
+        request: dict[str, Any] = {
+            "model": self.model,
+            "messages": copied_messages,
+        }
+        if tools:
+            if not self.capabilities.supports_tools:
+                raise ProviderContractError("profile does not support tools")
+            copied_tools: list[dict[str, Any]] = []
+            for tool in tools:
+                copied = dict(tool)
+                function = copied.get("function")
+                if self.capabilities.supports_strict_tools and isinstance(
+                    function, Mapping
+                ):
+                    function_copy = dict(function)
+                    function_copy["strict"] = False
+                    copied["function"] = function_copy
+                copied_tools.append(copied)
+            request["tools"] = copied_tools
+        request["stream"] = True
+        if self.capabilities.supports_stream_options:
+            request["stream_options"] = {"include_usage": True}
+        if self.capabilities.supports_max_tokens:
+            request["max_tokens"] = self.max_output_tokens
+        if self.capabilities.supports_n:
+            request["n"] = self.sampling.n
+        for field_name in (
+            "temperature",
+            "top_p",
+            "seed",
+            "frequency_penalty",
+            "presence_penalty",
+        ):
+            value = getattr(self.sampling, field_name)
+            if value is not None:
+                request[field_name] = value
+        # Qwen's OpenAI-compatible endpoint recognizes this explicit control;
+        # unsupported endpoints omit it rather than sending an invalid field.
+        if self.capabilities.supports_thinking_control:
+            request["enable_thinking"] = False
+        if self.capabilities.supports_store:
+            request["store"] = False
+        return request
+
+
+__all__ = [
+    "OpenAICompletionsCapabilities",
+    "OpenAICompletionsCompatibility",
+    "OpenAICompletionsProviderProfile",
+    "OpenAICompletionsSampling",
+]
