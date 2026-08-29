@@ -37,15 +37,42 @@ _MAX_JSON_BYTES = 64 * 1024 * 1024
 _MAX_JSON_STRING_BYTES = 8 * 1024 * 1024
 _MAX_MISMATCHES = 10_000
 _MAX_NORMALIZATION_RULES = 1024
+_MAX_METADATA_TEXT_BYTES = 1024
 _MAX_WORKSPACE_DEPTH = 128
 _MAX_WORKSPACE_ENTRIES = 100_000
 _MAX_WORKSPACE_BYTES = 4 * 1024 * 1024 * 1024
 _MAX_WORKSPACE_FILE_BYTES = 1024 * 1024 * 1024
+_MAX_WORKSPACE_PATH_BYTES = 4096
+_MAX_WORKSPACE_COMPONENT_BYTES = 255
 _PROCESS_KEYS = frozenset({"stdout_base64", "stderr_base64", "exit_code", "signal"})
 
 
 class E4ParityError(ValueError):
     """Raised when an E4 trace or comparison policy is invalid."""
+
+
+def _require_bounded_text(
+    value: Any,
+    field_name: str,
+    *,
+    max_bytes: int = _MAX_METADATA_TEXT_BYTES,
+) -> str:
+    if type(value) is not str or not value or not value.isprintable():
+        raise E4ParityError(f"{field_name} must be nonempty printable text")
+    try:
+        encoded_bytes = len(value.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise E4ParityError(f"{field_name} must be valid Unicode text") from exc
+    if encoded_bytes > max_bytes:
+        raise E4ParityError(f"{field_name} exceeds {max_bytes} UTF-8 bytes")
+    return value
+
+
+def _pointer_evidence(pointer: str) -> dict[str, Any]:
+    return {
+        "pointer_sha256": hashlib.sha256(pointer.encode("utf-8")).hexdigest(),
+        "pointer_depth": pointer.count("/"),
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,9 +81,12 @@ class NormalizationRule:
     kind: str
 
     def __post_init__(self) -> None:
-        if not self.pointer.startswith("/"):
+        if type(self.pointer) is not str or not self.pointer.startswith("/"):
             raise E4ParityError("normalization pointer must be a non-root JSON pointer")
-        if self.kind not in _NORMALIZATION_KINDS:
+        pointer = _require_bounded_text(self.pointer, "normalization pointer")
+        if re.search(r"~(?:[^01]|$)", pointer):
+            raise E4ParityError("normalization pointer contains an invalid escape")
+        if type(self.kind) is not str or self.kind not in _NORMALIZATION_KINDS:
             raise E4ParityError(
                 "normalization kind must be timestamp, pid, or temporary_path"
             )
@@ -71,7 +101,7 @@ class TraceMismatch:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "pointer": self.pointer,
+            **_pointer_evidence(self.pointer),
             "reason": self.reason,
             "reference_type": type(self.reference).__name__,
             "clone_type": type(self.clone).__name__,
@@ -88,7 +118,7 @@ class NormalizedField:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "pointer": self.pointer,
+            **_pointer_evidence(self.pointer),
             "kind": self.kind,
             "normalized": self.normalized,
         }
@@ -647,8 +677,15 @@ def validate_workspace_snapshot(snapshot: dict[str, Any]) -> None:
         ):
             raise E4ParityError(f"{context} path must be safe and relative")
         parts = path.split("/")
-        if len(parts) > _MAX_WORKSPACE_DEPTH or any(
-            part in {"", ".", ".."} or not part.isprintable() for part in parts
+        if (
+            len(path.encode("utf-8")) > _MAX_WORKSPACE_PATH_BYTES
+            or len(parts) > _MAX_WORKSPACE_DEPTH
+            or any(
+                part in {"", ".", ".."}
+                or not part.isprintable()
+                or len(part.encode("utf-8")) > _MAX_WORKSPACE_COMPONENT_BYTES
+                for part in parts
+            )
         ):
             raise E4ParityError(f"{context} path must be safe and relative")
         if type(mode) is not int or not 0 <= mode <= 0o7777:
@@ -673,7 +710,12 @@ def validate_workspace_snapshot(snapshot: dict[str, Any]) -> None:
         elif kind == "symlink":
             expected_keys = {"path", "kind", "mode", "target"}
             target = entry.get("target")
-            if type(target) is not str or not target or "\u0000" in target:
+            if (
+                type(target) is not str
+                or not target
+                or not target.isprintable()
+                or len(target.encode("utf-8")) > _MAX_WORKSPACE_PATH_BYTES
+            ):
                 raise E4ParityError(f"{context} symlink target must be valid text")
         else:
             raise E4ParityError(f"{context} kind is unsupported")
@@ -693,8 +735,10 @@ def validate_e4_trace(trace: dict[str, Any]) -> None:
     if trace["schema_version"] != "bb.e4.execution_trace.v1":
         raise E4ParityError("trace schema_version must be bb.e4.execution_trace.v1")
     for field_name in ("target_id", "fixture_id"):
-        value = trace[field_name]
-        if type(value) is not str or not value or value != value.strip():
+        value = _require_bounded_text(
+            trace[field_name], f"trace {field_name}", max_bytes=256
+        )
+        if value != value.strip():
             raise E4ParityError(f"trace {field_name} must be normalized text")
     for field_name in ("events", "provider_requests", "provider_responses"):
         if type(trace[field_name]) is not list:
@@ -733,9 +777,11 @@ def validate_e4_trace(trace: dict[str, Any]) -> None:
     terminal = trace["terminal"]
     if type(terminal) is not dict or set(terminal) != {"reason", "result", "error"}:
         raise E4ParityError("trace terminal must contain exact terminal fields")
-    reason = terminal["reason"]
-    if type(reason) is not str or not reason or reason != reason.strip():
-        raise E4ParityError("trace terminal.reason must be nonempty normalized text")
+    reason = _require_bounded_text(
+        terminal["reason"], "trace terminal.reason", max_bytes=256
+    )
+    if reason != reason.strip():
+        raise E4ParityError("trace terminal.reason must be normalized text")
     if terminal["result"] is not None and terminal["error"] is not None:
         raise E4ParityError("trace terminal cannot contain both result and error")
 
@@ -767,8 +813,9 @@ def build_e4_parity_report(
         ("target_id", target_id),
         ("fixture_id", fixture_id),
     ):
-        if type(value) is not str or not value or value != value.strip():
-            raise E4ParityError(f"{field_name} must be nonempty normalized text")
+        normalized = _require_bounded_text(value, field_name, max_bytes=256)
+        if normalized != normalized.strip():
+            raise E4ParityError(f"{field_name} must be normalized text")
     if type(engine_commit) is not str or _GIT_OID_RE.fullmatch(engine_commit) is None:
         raise E4ParityError("engine_commit must be a full lowercase Git object ID")
     if type(upstream_identity) is not dict:
@@ -778,7 +825,6 @@ def build_e4_parity_report(
     identity_bytes = canonical_json_bytes(upstream_identity)
     reference_bytes = canonical_json_bytes(reference_trace)
     clone_bytes = canonical_json_bytes(clone_trace)
-    identity_snapshot = json.loads(identity_bytes)
     reference_snapshot = json.loads(reference_bytes)
     clone_snapshot = json.loads(clone_bytes)
     validate_e4_trace(reference_snapshot)
@@ -805,7 +851,6 @@ def build_e4_parity_report(
         "target_id": target_id,
         "target_descriptor_sha256": target_descriptor_sha256,
         "target_config_sha256": target_config_sha256,
-        "upstream_identity": identity_snapshot,
         "upstream_identity_sha256": hashlib.sha256(identity_bytes).hexdigest(),
         "fixture_id": fixture_id,
         "fixture_sha256": fixture_sha256,
@@ -814,7 +859,11 @@ def build_e4_parity_report(
         "reference_trace_sha256": hashlib.sha256(reference_bytes).hexdigest(),
         "clone_trace_sha256": hashlib.sha256(clone_bytes).hexdigest(),
         "normalization_rules": [
-            {"pointer": rule.pointer, "kind": rule.kind} for rule in rules
+            {
+                **_pointer_evidence(rule.pointer),
+                "kind": rule.kind,
+            }
+            for rule in rules
         ],
         "status": "passed" if comparison.matches else "failed",
         "normalized_fields": [
@@ -872,14 +921,16 @@ def _normalize_temporary_path(value: Any, root: str) -> str:
     if not normalized_value.startswith(prefix):
         raise E4ParityError("temporary path is outside its admitted root")
     remainder = normalized_value[len(prefix) :]
-    if any(part in {"", ".", ".."} for part in remainder.split("/")):
+    if any(
+        part in {"", ".", ".."} or not part.isprintable()
+        for part in remainder.split("/")
+    ):
         raise E4ParityError("temporary path contains an unsafe component")
     return f"<tmp>/{remainder}"
 
 
 def _validate_absolute_path(value: str, field_name: str) -> None:
-    if type(value) is not str or not value:
-        raise E4ParityError(f"{field_name} must be nonempty text")
+    _require_bounded_text(value, field_name, max_bytes=_MAX_WORKSPACE_PATH_BYTES)
     normalized = value.replace("\\", "/")
     is_posix = normalized.startswith("/")
     is_windows = _WINDOWS_ABSOLUTE_RE.match(normalized) is not None
@@ -888,5 +939,10 @@ def _validate_absolute_path(value: str, field_name: str) -> None:
     if normalized == "/" or re.fullmatch(r"[A-Za-z]:/?", normalized):
         raise E4ParityError(f"{field_name} cannot be a filesystem root")
     components = normalized[1:].split("/") if is_posix else normalized[3:].split("/")
-    if any(part in {"", ".", ".."} or not part.isprintable() for part in components):
+    if any(
+        part in {"", ".", ".."}
+        or not part.isprintable()
+        or len(part.encode("utf-8")) > _MAX_WORKSPACE_COMPONENT_BYTES
+        for part in components
+    ):
         raise E4ParityError(f"{field_name} contains an unsafe component")

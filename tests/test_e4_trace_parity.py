@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import math
 from pathlib import Path
 
@@ -112,17 +113,20 @@ def test_only_named_timestamp_pid_and_temp_paths_can_be_normalized() -> None:
     assert comparison.matches
     assert [field.as_dict() for field in comparison.normalized_fields] == [
         {
-            "pointer": "/event/timestamp",
+            "pointer_sha256": hashlib.sha256(b"/event/timestamp").hexdigest(),
+            "pointer_depth": 2,
             "kind": "timestamp",
             "normalized": "<timestamp>",
         },
         {
-            "pointer": "/process/output",
+            "pointer_sha256": hashlib.sha256(b"/process/output").hexdigest(),
+            "pointer_depth": 2,
             "kind": "temporary_path",
             "normalized": "<tmp>/session/result.json",
         },
         {
-            "pointer": "/process/pid",
+            "pointer_sha256": hashlib.sha256(b"/process/pid").hexdigest(),
+            "pointer_depth": 2,
             "kind": "pid",
             "normalized": "<pid>",
         },
@@ -143,6 +147,10 @@ def test_normalization_policy_fails_closed() -> None:
                 NormalizationRule("/timestamp", "timestamp"),
             ),
         )
+    with pytest.raises(E4ParityError, match="invalid escape"):
+        NormalizationRule("/bad~2pointer", "timestamp")
+    with pytest.raises(E4ParityError, match="exceeds 1024 UTF-8 bytes"):
+        NormalizationRule("/" + ("a" * 1024), "timestamp")
     with pytest.raises(E4ParityError, match="did not match trace fields"):
         compare_e4_traces(
             {"events": []},
@@ -185,7 +193,7 @@ def test_normalization_policy_fails_closed() -> None:
         TemporaryPathRoots("/", "/tmp/clone")
     with pytest.raises(E4ParityError, match="unsafe component"):
         TemporaryPathRoots("/tmp/../reference", "/tmp/clone")
-    with pytest.raises(E4ParityError, match="unsafe component"):
+    with pytest.raises(E4ParityError, match="printable text"):
         TemporaryPathRoots("/tmp/reference\u0000root", "/tmp/clone")
     assert type_mismatch.mismatches[0].reason == "JSON types differ"
 
@@ -320,6 +328,11 @@ def test_execution_trace_schema_is_closed_and_canonical() -> None:
     with pytest.raises(E4ParityError, match="exactly one"):
         validate_e4_trace(ambiguous_process)
 
+    oversized_identity = _trace([{"kind": "test"}])
+    oversized_identity["target_id"] = "x" * 257
+    with pytest.raises(E4ParityError, match="exceeds 256 UTF-8 bytes"):
+        validate_e4_trace(oversized_identity)
+
 
 def test_parity_report_binds_every_required_identity() -> None:
     reference = _trace([{"kind": "done"}])
@@ -356,6 +369,13 @@ def test_parity_report_binds_every_required_identity() -> None:
     with pytest.raises(E4ParityError, match="exact terminal fields"):
         validate_e4_trace(invalid_terminal)
 
+    oversized_workspace_path = _trace([{"kind": "test"}])
+    oversized_workspace_path["workspace"]["entries"] = [
+        {"path": "x" * 256, "kind": "directory", "mode": 0o755}
+    ]
+    with pytest.raises(E4ParityError, match="safe and relative"):
+        validate_e4_trace(oversized_workspace_path)
+
     report = build_e4_parity_report(
         target_id="pi@0.57.1",
         target_descriptor_sha256="1" * 64,
@@ -374,7 +394,6 @@ def test_parity_report_binds_every_required_identity() -> None:
         "target_id": "pi@0.57.1",
         "target_descriptor_sha256": "1" * 64,
         "target_config_sha256": "2" * 64,
-        "upstream_identity": upstream_identity,
         "upstream_identity_sha256": json_sha256(upstream_identity),
         "fixture_id": "surface.catalog.v1",
         "fixture_sha256": "3" * 64,
@@ -389,9 +408,10 @@ def test_parity_report_binds_every_required_identity() -> None:
     }
     reference["events"][0]["kind"] = "mutated"
     assert report["reference_trace_sha256"] == reference_sha256
+    identity_sha256 = report["upstream_identity_sha256"]
     reference["events"][0]["kind"] = "done"
     upstream_identity["version"] = "mutated"
-    assert report["upstream_identity"]["version"] == "0.57.1"
+    assert report["upstream_identity_sha256"] == identity_sha256
     upstream_identity["version"] = "0.57.1"
 
     failed_report = build_e4_parity_report(
@@ -409,12 +429,36 @@ def test_parity_report_binds_every_required_identity() -> None:
     assert failed_report["status"] == "failed"
     assert failed_report["mismatches"] == [
         {
-            "pointer": "/events/0/kind",
+            "pointer_sha256": hashlib.sha256(b"/events/0/kind").hexdigest(),
+            "pointer_depth": 3,
             "reason": "values differ",
             "reference_type": "str",
             "clone_type": "str",
         }
     ]
+
+    secret_pointer = "/events/0/files/~1private~1tmp~1secret"
+    secret_reference = _trace([{"kind": "done", "files": {"/private/tmp/secret": "a"}}])
+    secret_clone = _trace([{"kind": "done", "files": {"/private/tmp/secret": "b"}}])
+    secret_report = build_e4_parity_report(
+        target_id="pi@0.57.1",
+        target_descriptor_sha256="1" * 64,
+        target_config_sha256="2" * 64,
+        upstream_identity=upstream_identity,
+        fixture_id="surface.catalog.v1",
+        fixture_sha256="3" * 64,
+        engine_commit=GIT_COMMIT,
+        built_package_sha256="4" * 64,
+        reference_trace=secret_reference,
+        clone_trace=secret_clone,
+    )
+    secret_report_bytes = canonical_json_bytes(secret_report)
+    assert b"/private/tmp/secret" not in secret_report_bytes
+    assert b"~1private~1tmp~1secret" not in secret_report_bytes
+    assert (
+        secret_report["mismatches"][0]["pointer_sha256"]
+        == hashlib.sha256(secret_pointer.encode("utf-8")).hexdigest()
+    )
 
     with pytest.raises(E4ParityError, match="lowercase SHA-256"):
         build_e4_parity_report(
