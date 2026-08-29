@@ -117,6 +117,95 @@ async def test_run_shell_delegates_pinned_descriptor_as_workload_argv() -> None:
     ]
 
 
+async def test_workspace_diff_uses_nested_repository_and_types_missing_git() -> None:
+    handle = object.__new__(TrustedProcessHandle)
+    handle._executable = type(
+        "ScriptedPinnedExecutable",
+        (),
+        {"proc_fd_path": "/proc/self/fd/71"},
+    )()
+    handle._git_executable = "/usr/bin/git"
+    handle.lease_id = "lease-workspace-diff"
+    handle.plan = type(
+        "ScriptedPlan",
+        (),
+        {
+            "materialization_plan": type(
+                "ScriptedMaterializationPlan",
+                (),
+                {
+                    "entries": (
+                        type(
+                            "ScriptedEntry",
+                            (),
+                            {
+                                "role": "repository",
+                                "target_logical_path": "nested/repository",
+                            },
+                        )(),
+                    )
+                },
+            )(),
+            "limits": type(
+                "ScriptedLimits",
+                (),
+                {"action_timeout_ms": 1_234, "observation_bytes": 5_678},
+            )(),
+        },
+    )()
+    calls: list[tuple[tuple[str, ...], int, int]] = []
+    results = [
+        {"returncode": 0, "stdout": "diff", "stderr": ""},
+        {"returncode": 127, "stdout": "", "stderr": "git: not found"},
+    ]
+
+    async def scripted_run_argv(
+        argv: tuple[str, ...], *, timeout_ms: int, output_limit: int
+    ) -> dict[str, object]:
+        calls.append((argv, timeout_ms, output_limit))
+        return results.pop(0)
+
+    handle.run_argv = scripted_run_argv  # type: ignore[method-assign]
+
+    assert (await handle.workspace_diff())["stdout"] == "diff"
+    assert calls[0] == (
+        (
+            "/proc/self/fd/71",
+            "-lc",
+            'exec "$2" -C "$1" diff --no-ext-diff --binary',
+            "breadboard-workspace-diff",
+            "nested/repository",
+            "/usr/bin/git",
+        ),
+        1_234,
+        5_678,
+    )
+    with pytest.raises(SandboxLaunchError) as captured:
+        await handle.workspace_diff()
+    assert captured.value.code == "runtime_unsupported"
+
+
+@requires_sealed_execution
+async def test_missing_host_git_refuses_before_trusted_process_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True,
+        runtime_install_root=tmp_path / "runtime",
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox.shutil.which",
+        lambda *_args, **_kwargs: None,
+    )
+
+    with pytest.raises(SandboxLaunchError) as captured:
+        await harness.manager.open(fixture.request)
+
+    assert captured.value.code == "runtime_unsupported"
+
+
 async def test_unsupported_host_refuses_before_subprocess_recorder_or_workload_effect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

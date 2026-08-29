@@ -699,6 +699,20 @@ async def test_runtime_handle_exposes_persistent_testbed_file_and_diff_operation
 
 
 @pytest.mark.asyncio
+async def test_workspace_diff_maps_missing_image_git_to_runtime_unsupported(
+    tmp_path: Path,
+) -> None:
+    _, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.append(_result(returncode=127, stderr=b"git: not found"))
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.workspace_diff()
+
+    assert captured.value.code == "runtime_unsupported"
+    assert handle._fenced is False
+
+
+@pytest.mark.asyncio
 async def test_runtime_handle_reads_exact_observation_limit_through_json_protocol(
     tmp_path: Path,
 ) -> None:

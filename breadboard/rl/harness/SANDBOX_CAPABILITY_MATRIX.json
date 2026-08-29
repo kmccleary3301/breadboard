@@ -27,6 +27,7 @@
         "private-descriptor-mount-staging"
       ],
       "required_image_capabilities": [
+        "git-workspace-diff",
         "python3-workspace-helper"
       ],
       "unavailable_code": "runtime_unsupported",
@@ -85,6 +86,7 @@
         "private-descriptor-mount-staging"
       ],
       "required_image_capabilities": [
+        "git-workspace-diff",
         "python3-workspace-helper"
       ],
       "unavailable_code": "runtime_unsupported",
@@ -107,7 +109,9 @@
         "persistent_workspace": true,
         "isolated": false
       },
-      "required_host_capabilities": [],
+      "required_host_capabilities": [
+        "git"
+      ],
       "required_image_capabilities": [],
       "unavailable_code": "runtime_unsupported",
       "evidence_contracts": [

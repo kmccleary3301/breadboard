@@ -5,6 +5,7 @@ import fcntl
 import hashlib
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -50,7 +51,7 @@ VERIFIER_REQUEST_SCHEMA_VERSION = "bb.rl.verifier-request.v1"
 SANDBOX_CAPABILITY_MATRIX_RESOURCE = "SANDBOX_CAPABILITY_MATRIX.json"
 SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION = "bb.rl.sandbox-capability-matrix.v1"
 SANDBOX_CAPABILITY_MATRIX_SHA256 = (
-    "37ad36cc3d4fe9f6435c6e4e800b452eb7a16430a75ad2fb92341b637501da76"
+    "55a22e6c8986e5c014ccbf2a4965c69bfab348ea7495240662a584100aa9ef19"
 )
 _MAX_SANDBOX_CAPABILITY_MATRIX_BYTES = 64 * 1024
 _SANDBOX_ADAPTER_STATUSES = {
@@ -1063,6 +1064,7 @@ class TrustedProcessHandle:
         workspace: Path,
         lease_id: str,
         executable: _PinnedExecutable,
+        git_executable: str,
         workspace_fd: int,
         workspace_identity: tuple[int, int],
     ) -> None:
@@ -1071,6 +1073,7 @@ class TrustedProcessHandle:
         self.lease_id = lease_id
         self.runtime_id = "process-group-" + lease_id
         self._executable = executable
+        self._git_executable = git_executable
         self._workspace_fd = workspace_fd
         self._workspace_identity = workspace_identity
         self._groups: set[int] = set()
@@ -1301,6 +1304,38 @@ class TrustedProcessHandle:
             "stderr": stderr.decode("utf-8", "replace"),
         }
 
+    async def workspace_diff(self) -> Mapping[str, Any]:
+        repositories = tuple(
+            entry
+            for entry in self.plan.materialization_plan.entries
+            if entry.role == "repository"
+        )
+        if len(repositories) != 1:
+            raise SandboxLaunchError(
+                "workspace diff requires exactly one repository mount",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        result = await self.run_argv(
+            (
+                self._executable.proc_fd_path,
+                "-lc",
+                'exec "$2" -C "$1" diff --no-ext-diff --binary',
+                "breadboard-workspace-diff",
+                repositories[0].target_logical_path,
+                self._git_executable,
+            ),
+            timeout_ms=self.plan.limits.action_timeout_ms,
+            output_limit=self.plan.limits.observation_bytes,
+        )
+        if result.get("returncode") == 127:
+            raise SandboxLaunchError(
+                "workspace diff requires installed host git",
+                code="runtime_unsupported",
+                lease_id=self.lease_id,
+            )
+        return result
+
     async def terminate(self) -> tuple[CleanupStepReceipt, ...]:
         async with self._launch_lock:
             if self._closed:
@@ -1342,6 +1377,17 @@ class TrustedProcessBackend:
                 code="workspace_authority_missing",
                 lease_id=lease_id,
             )
+        git_executable = shutil.which(
+            "git",
+            path=dict(plan.runtime.fixed_environment).get("PATH", os.defpath),
+        )
+        if git_executable is None:
+            os.close(context.workspace_fd)
+            raise SandboxLaunchError(
+                "trusted process workspace diff requires installed host git",
+                code="runtime_unsupported",
+                lease_id=lease_id,
+            )
         executable: _PinnedExecutable | None = None
         try:
             executable = _snapshot_installed_executable(
@@ -1349,7 +1395,7 @@ class TrustedProcessBackend:
                 plan.runtime.measured_binary_digest,
             )
             handle = TrustedProcessHandle(
-                plan, workspace, lease_id, executable,
+                plan, workspace, lease_id, executable, git_executable,
                 context.workspace_fd, context.workspace_identity,
             )
             requested = {
@@ -1365,6 +1411,7 @@ class TrustedProcessBackend:
                 "size": executable.size,
                 "execution": "linux-sealed-memfd",
             }
+            effective["workspace_diff_git_path"] = git_executable
             measured = dict(effective)
             measurement = SandboxMeasurement(
                 plan.effective_plan_digest,
@@ -1739,10 +1786,10 @@ class SandboxWorkspaceLease:
             remote_diff = getattr(self._runtime, "workspace_diff", None)
             if callable(remote_diff):
                 return await remote_diff()
-            return await self._runtime.run_shell(
-                "git diff --no-ext-diff --binary",
-                timeout_ms=self.plan.limits.action_timeout_ms,
-                output_limit=self.plan.limits.observation_bytes,
+            raise WorkspaceStateError(
+                "runtime does not implement workspace diff",
+                code="runtime_unsupported",
+                lease_id=self.lease_id,
             )
         finally:
             await self._end_operation()
