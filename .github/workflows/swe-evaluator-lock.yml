@@ -66,6 +66,8 @@ jobs:
           sudo chmod -R a-w /opt/breadboard/swebench-evaluator
           sudo chown root:root /opt/breadboard
           sudo chmod 755 /opt/breadboard
+          sudo chown root:root /opt
+          sudo chmod 755 /opt
       - name: Measure evaluator environment
         run: |
           uv run python -c "import json; from breadboard.rl.harness.swe_bench_runner import measure_official_evaluator_environment; value=measure_official_evaluator_environment('/opt/breadboard/swebench-evaluator'); open('/tmp/evaluator-measurement.json','x',encoding='utf-8').write(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n'); print(json.dumps(value,sort_keys=True))"
