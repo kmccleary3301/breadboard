@@ -850,6 +850,10 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
                             "sha256": digest.hexdigest(),
                         }
                     )
+                except OSError as exc:
+                    raise E4ParityError(
+                        f"could not read workspace file {relative_text}"
+                    ) from exc
                 finally:
                     os.close(file_fd)
                 continue
@@ -1193,13 +1197,21 @@ def _normalize_temporary_path(value: Any, root: str) -> str:
 def _validate_absolute_path(value: str, field_name: str) -> None:
     _require_bounded_text(value, field_name, max_bytes=_MAX_WORKSPACE_PATH_BYTES)
     normalized = value.replace("\\", "/")
-    is_posix = normalized.startswith("/")
-    is_windows = _WINDOWS_ABSOLUTE_RE.match(normalized) is not None
+    is_unc = normalized.startswith("//")
+    is_posix = normalized.startswith("/") and not is_unc
+    is_windows = is_unc or _WINDOWS_ABSOLUTE_RE.match(normalized) is not None
     if not is_posix and not is_windows:
         raise E4ParityError(f"{field_name} must be absolute")
     if normalized == "/" or re.fullmatch(r"[A-Za-z]:/?", normalized):
         raise E4ParityError(f"{field_name} cannot be a filesystem root")
-    components = normalized[1:].split("/") if is_posix else normalized[3:].split("/")
+    if is_unc:
+        components = normalized[2:].split("/")
+        if len(components) < 3:
+            raise E4ParityError(f"{field_name} cannot be a filesystem root")
+    elif is_posix:
+        components = normalized[1:].split("/")
+    else:
+        components = normalized[3:].split("/")
     if any(
         part in {"", ".", ".."}
         or not part.isprintable()

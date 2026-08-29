@@ -265,6 +265,21 @@ def test_normalization_policy_fails_closed() -> None:
         TemporaryPathRoots("/tmp/../reference", "/tmp/clone")
     with pytest.raises(E4ParityError, match="printable text"):
         TemporaryPathRoots("/tmp/reference\u0000root", "/tmp/clone")
+    unc_comparison = compare_e4_traces(
+        {"path": r"\\server\share\reference\session\result.json"},
+        {"path": r"\\server\share\clone\session\result.json"},
+        rules=(NormalizationRule("/path", "temporary_path"),),
+        temporary_roots=TemporaryPathRoots(
+            r"\\server\share\reference",
+            r"\\server\share\clone",
+        ),
+    )
+    assert unc_comparison.matches
+    with pytest.raises(E4ParityError, match="filesystem root"):
+        TemporaryPathRoots(
+            r"\\server\share",
+            r"\\server\share\clone",
+        )
     assert type_mismatch.mismatches[0].reason == "JSON types differ"
 
 
@@ -489,6 +504,22 @@ def test_workspace_snapshot_rejects_oversized_name_before_stat(
 
     with pytest.raises(E4ParityError, match="path exceeds admitted bounds"):
         workspace_snapshot(tmp_path)
+
+
+def test_workspace_snapshot_translates_file_read_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "source.py").write_text("pass\n", encoding="utf-8")
+
+    def fail_read(_fd: int, _size: int) -> bytes:
+        raise OSError("simulated EIO")
+
+    monkeypatch.setattr(os, "read", fail_read)
+
+    with pytest.raises(E4ParityError, match="could not read workspace file source.py"):
+        workspace_snapshot(workspace)
 
 
 def test_workspace_snapshot_captures_bytes_modes_and_links(tmp_path: Path) -> None:
