@@ -163,11 +163,21 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
             "returncode": 0,
             "stdout": patch.decode(),
             "stderr": "",
+            "base_commit": "0" * 40,
+            "git_executable_digest": "sha256:" + "4" * 64,
+            "patch_digest": "sha256:" + hashlib.sha256(patch).hexdigest(),
+            "snapshot_root_digest": "sha256:" + "5" * 64,
         },
     )
     result: dict[str, Any] = {}
 
-    event_bytes, patch_bytes = _project_headless_run(result, run, composition)
+    with pytest.raises(ValueError, match="base commit mismatch"):
+        _project_headless_run(
+            {}, run, composition, expected_base_commit="1" * 40
+        )
+    event_bytes, patch_bytes = _project_headless_run(
+        result, run, composition, expected_base_commit="0" * 40
+    )
 
     assert event_bytes == events
     assert patch_bytes == patch

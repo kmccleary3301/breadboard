@@ -444,27 +444,12 @@ class DeterministicVerifier:
         return self.close_receipt
 
 
-class DeterministicRunnerWorkspace:
-    tool_bindings: tuple[Any, ...] = ()
-
-    def __init__(self, calls: list[str]) -> None:
-        self.calls = calls
-
-    async def workspace_diff(self) -> dict[str, Any]:
-        self.calls.append("workspace.diff")
-        return {
-            "returncode": 0,
-            "stdout": "diff --git a/a.py b/a.py\n",
-            "stderr": "",
-        }
-
-
 class DeterministicLease:
     def __init__(self, calls: list[str], effective_plan_digest: str) -> None:
         self.calls = calls
         self.effective_plan_digest = effective_plan_digest
         self.lease_id = "lease-deterministic"
-        self.runner_workspace = DeterministicRunnerWorkspace(calls)
+        self.runner_workspace = SimpleNamespace(tool_bindings=())
         self.measurement = {"measurement": ref("primary-measurement").sha256}
         self._materialized = SimpleNamespace(
             receipt={"receipt": ref("materialized").sha256}
@@ -473,10 +458,12 @@ class DeterministicLease:
         self.close_error: BaseException | None = None
         self.close_entered = asyncio.Event()
         self.close_release: asyncio.Event | None = None
+        self._sealed_workspace_diff: dict[str, Any] | None = None
+
 
     async def seal_for_verifier(self) -> VerifierSnapshotReceipt:
         self.calls.append("lease.seal")
-        return VerifierSnapshotReceipt(
+        receipt = VerifierSnapshotReceipt(
             snapshot_id="snapshot-deterministic",
             source_workspace_id="workspace-deterministic",
             source_lease_id=self.lease_id,
@@ -490,6 +477,21 @@ class DeterministicLease:
             byte_count=0,
             immutable_storage_object_id="cas/snapshot-deterministic",
         )
+        patch = "diff --git a/a.py b/a.py\n"
+        self._sealed_workspace_diff = {
+            "returncode": 0,
+            "stdout": patch,
+            "stderr": "",
+            "base_commit": "0" * 40,
+            "git_executable_digest": ref("workspace-diff-git").sha256,
+            "patch_digest": "sha256:" + hashlib.sha256(patch.encode()).hexdigest(),
+            "snapshot_root_digest": receipt.root_digest,
+        }
+        return receipt
+
+    def sealed_workspace_diff(self) -> dict[str, Any] | None:
+        self.calls.append("workspace.diff")
+        return self._sealed_workspace_diff
 
     async def close(self) -> SandboxCleanupReceipt:
         self.calls.append("lease.close")

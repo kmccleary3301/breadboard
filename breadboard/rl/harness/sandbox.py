@@ -8,8 +8,11 @@ import os
 import shutil
 import signal
 import stat
+import selectors
 import subprocess
 import sys
+import tempfile
+import time
 import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -515,7 +518,9 @@ class _PinnedExecutable:
             self.closed = True
 
 
-def _snapshot_installed_executable(path: str, expected_digest: str) -> _PinnedExecutable:
+def _snapshot_installed_executable(
+    path: str, expected_digest: str | None
+) -> _PinnedExecutable:
     required_fcntl = (
         "F_ADD_SEALS",
         "F_GET_SEALS",
@@ -558,7 +563,7 @@ def _snapshot_installed_executable(path: str, expected_digest: str) -> _PinnedEx
                     raise OSError("short executable snapshot write")
                 view = view[written:]
         digest = "sha256:" + hasher.hexdigest()
-        if digest != expected_digest:
+        if expected_digest is not None and digest != expected_digest:
             raise SandboxLaunchError(
                 "trusted process executable identity mismatch",
                 code="runtime_preflight_failed",
@@ -1061,6 +1066,286 @@ class RuntimeHandle(Protocol):
 
     async def run_argv(self, argv: Sequence[str], *, timeout_ms: int, output_limit: int) -> Mapping[str, Any]: ...
 
+def _sealed_repository_diff(
+    *,
+    repository: Path,
+    base_commit: str,
+    plan: SandboxExecutionPlan,
+) -> Mapping[str, Any]:
+    if (
+        len(base_commit) != 40
+        or base_commit != base_commit.lower()
+        or any(character not in "0123456789abcdef" for character in base_commit)
+    ):
+        raise VerifierSnapshotError(
+            "workspace base commit is invalid", code="snapshot_tampered"
+        )
+    git_path = shutil.which(
+        "git", path=dict(plan.runtime.fixed_environment).get("PATH", os.defpath)
+    )
+    if git_path is None:
+        raise VerifierSnapshotError(
+            "sealed workspace diff requires installed host git",
+            code="runtime_unsupported",
+        )
+    pinned = _snapshot_installed_executable(git_path, None)
+    timeout_seconds = max(1, (plan.limits.action_timeout_ms + 999) // 1000)
+
+    def invoke(
+        arguments: tuple[str, ...],
+        *,
+        environment: Mapping[str, str],
+        stdout_limit: int,
+        cwd: Path = repository,
+    ) -> tuple[int, bytes, bytes]:
+        try:
+            process = subprocess.Popen(
+                (pinned.proc_fd_path, *arguments),
+                cwd=cwd,
+                env=dict(environment),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                pass_fds=(pinned.fd,),
+                start_new_session=True,
+            )
+        except OSError as exc:
+            raise VerifierSnapshotError(
+                "sealed workspace diff command failed", code="snapshot_tampered"
+            ) from exc
+        if process.stdout is None or process.stderr is None:
+            process.kill()
+            process.wait()
+            raise VerifierSnapshotError(
+                "sealed workspace diff pipes are unavailable", code="snapshot_tampered"
+            )
+        stdout = bytearray()
+        stderr = bytearray()
+        streams = {
+            process.stdout.fileno(): (stdout, stdout_limit),
+            process.stderr.fileno(): (stderr, 64 * 1024),
+        }
+        deadline = time.monotonic() + timeout_seconds
+        selector = selectors.DefaultSelector()
+
+        def kill_process_group() -> None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+
+        try:
+            for descriptor in streams:
+                os.set_blocking(descriptor, False)
+                selector.register(descriptor, selectors.EVENT_READ)
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    kill_process_group()
+                    raise VerifierSnapshotError(
+                        "sealed workspace diff command timed out",
+                        code="snapshot_tampered",
+                    )
+                events = selector.select(remaining)
+                if not events:
+                    continue
+                for key, _ in events:
+                    descriptor = key.fd
+                    buffer, limit = streams[descriptor]
+                    chunk = os.read(descriptor, min(65536, limit - len(buffer) + 1))
+                    if not chunk:
+                        selector.unregister(descriptor)
+                        continue
+                    buffer.extend(chunk)
+                    if len(buffer) > limit:
+                        kill_process_group()
+                        raise VerifierSnapshotError(
+                            "sealed workspace diff exceeded its output limit",
+                            code="output_limit_exceeded",
+                        )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                kill_process_group()
+                raise VerifierSnapshotError(
+                    "sealed workspace diff command timed out",
+                    code="snapshot_tampered",
+                )
+            try:
+                returncode = process.wait(timeout=remaining)
+            except subprocess.TimeoutExpired as exc:
+                kill_process_group()
+                raise VerifierSnapshotError(
+                    "sealed workspace diff command timed out",
+                    code="snapshot_tampered",
+                ) from exc
+            return returncode, bytes(stdout), bytes(stderr)
+        finally:
+            selector.close()
+            process.stdout.close()
+            process.stderr.close()
+            if process.poll() is None:
+                kill_process_group()
+
+    try:
+        identity = repository.stat(follow_symlinks=False)
+        source_git_directory = repository / ".git"
+        source_objects = source_git_directory / "objects"
+        if (
+            not stat.S_ISDIR(identity.st_mode)
+            or not source_git_directory.is_dir()
+            or not source_objects.is_dir()
+        ):
+            raise VerifierSnapshotError(
+                "sealed workspace repository layout is unsupported",
+                code="snapshot_tampered",
+            )
+        forbidden_object_authorities = (
+            source_objects / "info" / "alternates",
+            source_objects / "info" / "http-alternates",
+            source_git_directory / "info" / "grafts",
+            source_git_directory / "shallow",
+        )
+        if any(path.exists() for path in forbidden_object_authorities):
+            raise VerifierSnapshotError(
+                "sealed workspace contains external Git object authority",
+                code="snapshot_tampered",
+            )
+        for current, directories, files in os.walk(repository):
+            current_path = Path(current)
+            if current_path == repository:
+                directories.remove(".git")
+                continue
+            if ".git" in directories or ".git" in files:
+                raise VerifierSnapshotError(
+                    "sealed workspace contains an embedded Git repository",
+                    code="snapshot_tampered",
+                )
+        with tempfile.TemporaryDirectory(
+            prefix="breadboard-sealed-diff-"
+        ) as temporary_text:
+            temporary = Path(temporary_text)
+            private_git_directory = temporary / "git"
+            template_directory = temporary / "template"
+            template_directory.mkdir(mode=0o700)
+            base_environment = {
+                "GIT_ATTR_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_OPTIONAL_LOCKS": "0",
+                "GIT_TERMINAL_PROMPT": "0",
+                "HOME": temporary_text,
+                "LANG": "C",
+                "LC_ALL": "C",
+                "PATH": os.pathsep.join(
+                    (os.path.dirname(git_path), "/usr/local/bin", "/usr/bin", "/bin")
+                ),
+            }
+            returncode, _, stderr = invoke(
+                (
+                    "init",
+                    "--quiet",
+                    "--bare",
+                    f"--template={template_directory}",
+                    str(private_git_directory),
+                ),
+                environment=base_environment,
+                stdout_limit=64 * 1024,
+                cwd=temporary,
+            )
+            if returncode != 0:
+                raise VerifierSnapshotError(
+                    "sealed workspace diff repository initialization failed",
+                    code="snapshot_tampered",
+                    details={"stderr": stderr.decode("utf-8", "replace")[:4096]},
+                )
+            attributes_directory = private_git_directory / "info"
+            attributes_directory.mkdir(mode=0o700, exist_ok=True)
+            (attributes_directory / "attributes").write_text(
+                "* -text -filter -diff -working-tree-encoding -eol\n",
+                encoding="utf-8",
+            )
+            environment = {
+                **base_environment,
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(source_objects),
+                "GIT_DIR": str(private_git_directory),
+                "GIT_INDEX_FILE": str(temporary / "index"),
+                "GIT_NO_REPLACE_OBJECTS": "1",
+                "GIT_OBJECT_DIRECTORY": str(private_git_directory / "objects"),
+                "GIT_WORK_TREE": str(repository),
+            }
+            common = (
+                "-c",
+                "core.autocrlf=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "core.safecrlf=false",
+                "-c",
+                "diff.external=",
+            )
+            for command in (
+                (*common, "read-tree", base_commit),
+                (
+                    *common,
+                    "add",
+                    "--all",
+                    "--force",
+                    "--",
+                    ".",
+                    ":(top,exclude).git",
+                ),
+            ):
+                returncode, _, stderr = invoke(
+                    command, environment=environment, stdout_limit=64 * 1024
+                )
+                if returncode != 0:
+                    raise VerifierSnapshotError(
+                        "sealed workspace diff preparation failed",
+                        code="snapshot_tampered",
+                        details={"stderr": stderr.decode("utf-8", "replace")[:4096]},
+                    )
+            returncode, stdout, stderr = invoke(
+                (
+                    *common,
+                    "diff",
+                    "--cached",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--binary",
+                    "--full-index",
+                    "--no-renames",
+                    "--ignore-submodules=none",
+                    base_commit,
+                    "--",
+                    ".",
+                ),
+                environment=environment,
+                stdout_limit=plan.limits.artifact_bytes_each,
+            )
+            if returncode != 0:
+                raise VerifierSnapshotError(
+                    "sealed workspace diff failed",
+                    code="snapshot_tampered",
+                    details={"stderr": stderr.decode("utf-8", "replace")[:4096]},
+                )
+            return MappingProxyType(
+                {
+                    "returncode": 0,
+                    "stdout": stdout.decode("utf-8", "strict"),
+                    "stderr": stderr.decode("utf-8", "replace"),
+                    "base_commit": base_commit,
+                    "git_executable_digest": pinned.digest,
+                }
+            )
+    except UnicodeDecodeError as exc:
+        raise VerifierSnapshotError(
+            "sealed workspace diff is not UTF-8", code="snapshot_tampered"
+        ) from exc
+    finally:
+        pinned.close()
+
+
 class RuntimeBackend(Protocol):
     async def launch(self, plan: SandboxExecutionPlan, workspace: Path, *,
                      context: RuntimeLaunchContext) -> tuple[RuntimeHandle, SandboxMeasurement]: ...
@@ -1089,6 +1374,8 @@ class TrustedProcessHandle:
         self._launch_lock = asyncio.Lock()
         self._closing = False
         self._closed = False
+        self.repository_base_commit: str | None = None
+        self.repository_relative_path: str | None = None
 
     def bind_identity_recorder(self, recorder: Any) -> None:
         if getattr(self, "_identity_recorder", None) is not None or not callable(recorder):
@@ -1464,6 +1751,50 @@ class TrustedProcessHandle:
             "stderr": stderr.decode("utf-8", "replace"),
         }
 
+    async def measure_repository_base_commit(self) -> str | None:
+        repositories = tuple(
+            entry
+            for entry in self.plan.materialization_plan.entries
+            if entry.role == "repository"
+        )
+        if not repositories:
+            return None
+        if len(repositories) != 1:
+            raise SandboxLaunchError(
+                "workspace base measurement requires exactly one repository mount",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        relative_path = repositories[0].target_logical_path
+        result = await self._run_pinned_argv(
+            (
+                self._executable.proc_fd_path,
+                "-lc",
+                'exec "$2" -C "$1" rev-parse --verify "HEAD^{commit}"',
+                "breadboard-workspace-base",
+                relative_path,
+                self._git_executable,
+            ),
+            timeout_ms=self.plan.limits.action_timeout_ms,
+            output_limit=256,
+        )
+        commit = result.get("stdout", "").strip()
+        if result.get("returncode") != 0:
+            return None
+        if (
+            len(commit) != 40
+            or commit != commit.lower()
+            or any(character not in "0123456789abcdef" for character in commit)
+        ):
+            raise SandboxLaunchError(
+                "workspace base commit measurement failed",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        self.repository_base_commit = commit
+        self.repository_relative_path = relative_path
+        return commit
+
     async def workspace_diff(self) -> Mapping[str, Any]:
         repositories = tuple(
             entry
@@ -1558,6 +1889,7 @@ class TrustedProcessBackend:
                 plan, workspace, lease_id, executable, git_executable,
                 context.workspace_fd, context.workspace_identity,
             )
+            repository_base_commit = await handle.measure_repository_base_commit()
             requested = {
                 "runtime": plan.runtime.runtime_id,
                 "image": plan.image.image_digest,
@@ -1572,6 +1904,8 @@ class TrustedProcessBackend:
                 "execution": "linux-sealed-memfd",
             }
             effective["workspace_diff_git_path"] = git_executable
+            if repository_base_commit is not None:
+                effective["workspace_base_commit"] = repository_base_commit
             measured = dict(effective)
             measurement = SandboxMeasurement(
                 plan.effective_plan_digest,
@@ -1867,6 +2201,7 @@ class SandboxWorkspaceLease:
         self._close_task: asyncio.Task[SandboxCleanupReceipt] | None = None
         self.runner_workspace = LeaseBackedRunnerWorkspace(self, plan.effective_plan_digest, plan.tool_bindings)
         self._verifier_children: list[VerifierWorkspaceLease] = []
+        self._sealed_workspace_diff: Mapping[str, Any] | None = None
     @property
     def identity(self) -> SandboxMeasurement:
         return self.measurement
@@ -1927,6 +2262,9 @@ class SandboxWorkspaceLease:
             )
         finally:
             await self._end_operation()
+    def sealed_workspace_diff(self) -> Mapping[str, Any] | None:
+        return self._sealed_workspace_diff
+
 
     async def cancel(self) -> SandboxCleanupReceipt:
         return await self._close_shared(preempt=True)
@@ -2056,9 +2394,26 @@ class SandboxWorkspaceLease:
             self._assert_active()
             await self._fence_and_drain(WorkspaceLeaseState.QUIESCING)
             runtime_steps = await self._runtime.terminate()
-            if any(step.state not in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED} for step in runtime_steps):
+            if any(
+                step.state
+                not in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+                for step in runtime_steps
+            ):
                 self._state = WorkspaceLeaseState.QUARANTINED
-                raise VerifierSnapshotError("runtime did not quiesce", code="snapshot_not_quiescent", lease_id=self.lease_id)
+                raise VerifierSnapshotError(
+                    "runtime did not quiesce",
+                    code="snapshot_not_quiescent",
+                    lease_id=self.lease_id,
+                )
+            base_commit = getattr(self._runtime, "repository_base_commit", None)
+            relative_path = getattr(self._runtime, "repository_relative_path", None)
+            if (base_commit is None) != (relative_path is None):
+                self._state = WorkspaceLeaseState.QUARANTINED
+                raise VerifierSnapshotError(
+                    "workspace base authority is incomplete",
+                    code="snapshot_tampered",
+                    lease_id=self.lease_id,
+                )
             try:
                 seal_task = asyncio.create_task(
                     asyncio.to_thread(
@@ -2095,10 +2450,50 @@ class SandboxWorkspaceLease:
                         self._state = WorkspaceLeaseState.QUARANTINED
                     raise
                 self._manager._snapshots[receipt.snapshot_id] = (receipt, path)
+                if base_commit is not None:
+                    snapshot_repository = (
+                        path if relative_path == "." else path.joinpath(*_workspace_parts(relative_path))
+                    )
+                    diff_task = asyncio.create_task(
+                        asyncio.to_thread(
+                            _sealed_repository_diff,
+                            repository=snapshot_repository,
+                            base_commit=base_commit,
+                            plan=self.plan,
+                        )
+                    )
+                    try:
+                        sealed_diff = await asyncio.shield(diff_task)
+                    except BaseException:
+                        try:
+                            await diff_task
+                        except BaseException:
+                            pass
+                        snapshot_cleanup = await self._manager._release_snapshot(
+                            receipt.snapshot_id
+                        )
+                        if snapshot_cleanup.state not in {
+                            CleanupState.RELEASED,
+                            CleanupState.ALREADY_RELEASED,
+                        }:
+                            self._state = WorkspaceLeaseState.QUARANTINED
+                        raise
+                    patch_bytes = sealed_diff["stdout"].encode("utf-8")
+                    self._sealed_workspace_diff = MappingProxyType(
+                        {
+                            **sealed_diff,
+                            "patch_digest": (
+                                "sha256:" + hashlib.sha256(patch_bytes).hexdigest()
+                            ),
+                            "snapshot_root_digest": receipt.root_digest,
+                        }
+                    )
                 return receipt
             except Exception as exc:
                 self._state = WorkspaceLeaseState.QUARANTINED
-                raise VerifierSnapshotError("verifier snapshot failed", code=str(exc), lease_id=self.lease_id) from exc
+                raise VerifierSnapshotError(
+                    "verifier snapshot failed", code=str(exc), lease_id=self.lease_id
+                ) from exc
 
     async def close(self) -> SandboxCleanupReceipt:
         return await self._close_shared()

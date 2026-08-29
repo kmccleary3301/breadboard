@@ -2147,6 +2147,8 @@ class DockerRuntimeHandle:
         self._mount_stager = mount_stager
         self._staged_mounts = list(staged_mounts)
         self._lease_id = lease_id
+        self.repository_base_commit: str | None = None
+        self.repository_relative_path: str | None = None
 
     def _record_terminal_cleanup(self, receipts: tuple[Any, ...]) -> None:
         from .materialization import CleanupState
@@ -2370,6 +2372,46 @@ class DockerRuntimeHandle:
                 "output_limit_exceeded", "list exceeds admitted inode ceiling"
             )
         return {"path": path, "files": values}
+
+    async def measure_repository_base_commit(self) -> str | None:
+        if not callable(getattr(self.adapter, "exec", None)):
+            return None
+        repositories = tuple(
+            entry
+            for entry in self.plan.materialization_plan.entries
+            if entry.role == "repository"
+        )
+        if len(repositories) > 1:
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "workspace base measurement requires at most one repository mount",
+            )
+        relative_path = repositories[0].target_logical_path if repositories else "."
+        repository_root = (
+            _container_workspace_path(relative_path)
+            if repositories
+            else CONTAINER_WORKSPACE_ROOT
+        )
+        result = await self._run(
+            ("git", "-C", repository_root, "rev-parse", "--verify", "HEAD^{commit}"),
+            timeout_ms=self.plan.limits.action_timeout_ms,
+            output_limit=256,
+        )
+        commit = result.get("stdout", "").strip()
+        if result.get("returncode") != 0:
+            return None
+        if (
+            len(commit) != 40
+            or commit != commit.lower()
+            or any(character not in "0123456789abcdef" for character in commit)
+        ):
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "workspace base commit measurement failed",
+            )
+        self.repository_base_commit = commit
+        self.repository_relative_path = relative_path
+        return commit
 
     async def workspace_diff(self) -> Mapping[str, Any]:
         repositories = tuple(
@@ -2961,6 +3003,17 @@ class DockerSandboxBackend:
             requested["storage_identity"] = storage_identity
             measured["storage_identity"] = storage_identity
             effective["storage_identity"] = storage_identity
+            handle = DockerRuntimeHandle(
+                adapter=self.adapter, plan=plan, container_id=container_id,
+                container_name=container_name, labels=labels, held_fds=held_fds,
+                mount_stager=self.mount_stager, staged_mounts=staged_mounts,
+                lease_id=context.lease_id,
+            )
+            repository_base_commit = await handle.measure_repository_base_commit()
+            if repository_base_commit is not None:
+                requested["workspace_base_commit"] = repository_base_commit
+                effective["workspace_base_commit"] = repository_base_commit
+                measured["workspace_base_commit"] = repository_base_commit
             mismatch = tuple(sorted({
                 *measurement_mismatches(requested, effective),
                 *measurement_mismatches(requested, measured),
@@ -2971,12 +3024,6 @@ class DockerSandboxBackend:
                     "effective Docker controls contradict requested controls",
                     details={"mismatch": mismatch},
                 )
-            handle = DockerRuntimeHandle(
-                adapter=self.adapter, plan=plan, container_id=container_id,
-                container_name=container_name, labels=labels, held_fds=held_fds,
-                mount_stager=self.mount_stager, staged_mounts=staged_mounts,
-                lease_id=context.lease_id,
-            )
             held_fds = []
             return handle, SandboxMeasurement(
                 effective_plan_digest=plan.effective_plan_digest,

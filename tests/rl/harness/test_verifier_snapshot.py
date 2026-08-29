@@ -99,6 +99,46 @@ async def _opened_snapshot(tmp_path: Path) -> tuple[RuntimeHarness, Any, Any]:
     await primary.runner_workspace.write_text("work/candidate.txt", "candidate")
     snapshot = await primary.seal_for_verifier()
     return harness, primary, snapshot
+async def test_patch_uses_the_terminated_immutable_verifier_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    primary = await harness.manager.open(fixture.request)
+    handle = harness.backend.handles[0]
+    handle.repository_base_commit = "0" * 40
+    handle.repository_relative_path = "work"
+    order: list[str] = []
+    original_seal = harness.store.seal_snapshot
+
+    def sealed_diff(**kwargs: Any) -> Mapping[str, Any]:
+        assert handle.terminate_calls == 1
+        assert kwargs["repository"] != primary._materialized.workspace_path / "work"
+        order.append("patch")
+        return {
+            "returncode": 0,
+            "stdout": "diff --git a/a.py b/a.py\n",
+            "stderr": "",
+            "base_commit": kwargs["base_commit"],
+            "git_executable_digest": digest(b"git"),
+        }
+
+    def seal_snapshot(*args: Any, **kwargs: Any) -> Any:
+        order.append("snapshot")
+        return original_seal(*args, **kwargs)
+
+    monkeypatch.setattr(sandbox_module, "_sealed_repository_diff", sealed_diff)
+    monkeypatch.setattr(harness.store, "seal_snapshot", seal_snapshot)
+    snapshot = await primary.seal_for_verifier()
+    workspace_diff = primary.sealed_workspace_diff()
+    assert order == ["snapshot", "patch"]
+    assert workspace_diff is not None
+    assert workspace_diff["snapshot_root_digest"] == snapshot.root_digest
+    assert workspace_diff["patch_digest"] == digest(
+        workspace_diff["stdout"].encode()
+    )
+
+
 
 def _isolated_verifier_fixture(runtime_class: c.RuntimeClass) -> Any:
     fixture = make_runtime_fixture(
