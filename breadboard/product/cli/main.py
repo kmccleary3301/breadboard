@@ -3,7 +3,8 @@ import argparse,os
 from pathlib import Path
 from typing import Sequence
 from . import artifact,integration,session,system
-from .result import CliResult,emit,from_exception
+from breadboard.product.operations.model import from_exception
+from .result import emit
 def _w(a):return Path(getattr(a,"workspace",None) or Path.cwd()).expanduser().absolute()
 def _enabled(name):return os.environ.get(name,"").strip().lower() in {"1","true","yes","on"}
 def _harness_handler(name):
@@ -32,6 +33,8 @@ def _harness_lock(ns):
 def _session(ns):
     p=ns.add_parser("session",help="operate Sessions");_common(p);s=p.add_subparsers(dest="command",required=True);s.add_parser("list").set_defaults(handler=session.list_sessions)
     x=s.add_parser("get");x.add_argument("SESSION_ID");x.set_defaults(handler=lambda a:session.get(a,"get"))
+    if _enabled("BREADBOARD_ENABLE_LOCAL_MIGRATIONS"):
+        x=s.add_parser("bootstrap-local",help="trust one validated local pre-authority session");x.add_argument("SESSION_ID");x.set_defaults(handler=session.bootstrap_local)
     if _enabled("BREADBOARD_LEGACY_ROUTES"):
         x=s.add_parser("show");x.add_argument("SESSION_ID");x.set_defaults(handler=lambda a:session.get(a,"show"))
     for n in ("events","artifacts"):
@@ -54,8 +57,9 @@ def _artifact(ns):
     for n in names:
         x=s.add_parser(n);x.add_argument("REF");x.add_argument("--size",type=int);x.add_argument("--media-type");x.set_defaults(handler=artifact.delete if n=="delete" else (lambda a,n=n:artifact.get(a,n)) if n!="verify" else artifact.verify)
 def _system(ns):
-    p=ns.add_parser("system",help="inspect installed product");_common(p);s=p.add_subparsers(dest="command",required=True)
-    for n,fn in (("describe",system.describe),("health",system.health),("schemas",system.schemas)):s.add_parser(n).set_defaults(handler=lambda a,n=n,fn=fn:fn(["system",n],_w(a)))
+    p=ns.add_parser("system",help="inspect installed product"); _common(p);s=p.add_subparsers(dest="command",required=True)
+    s.add_parser("describe").set_defaults(handler=lambda a:system.describe(_w(a)))
+    for n,fn in (("health",system.health),("schemas",system.schemas)):s.add_parser(n).set_defaults(handler=lambda a,n=n,fn=fn:fn(["system",n],_w(a)))
 def build_parser():
     p=argparse.ArgumentParser(prog="breadboard",description="BreadBoard product system, harness, session, integration, and artifact CLI.");p.add_argument("--json",action="store_true",help="emit bb.cli.result.v1 JSON");p.add_argument("--quiet",action="store_true");ns=p.add_subparsers(dest="namespace",required=True);_system(ns);_harness(ns);_harness_lock(ns);_session(ns);_integration(ns);_artifact(ns)
     if _enabled("BREADBOARD_ENABLE_E4_API"):

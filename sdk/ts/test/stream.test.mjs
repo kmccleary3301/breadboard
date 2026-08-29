@@ -108,12 +108,17 @@ test("openEventStream resumes reconnects from the last delivered event", async (
   })
 
   const requestedUrls = []
+  const requestedHeaders = []
   let requestCount = 0
-  globalThis.fetch = async (input) => {
+  globalThis.fetch = async (input, init) => {
     requestedUrls.push(String(input))
+    requestedHeaders.push(new Headers(init?.headers))
     requestCount += 1
+    if (requestCount > 1 && requestedHeaders.at(-1).get("Last-Event-ID") !== String(requestCount - 1)) {
+      return new Response("", { status: 422 })
+    }
     const encoded = new TextEncoder().encode(
-      `id: wire-${requestCount}\ndata: {"type":"assistant.message.delta","payload":{"index":${requestCount}}}\n\n`,
+      `id: ${requestCount}\ndata: {"event_id":"session:session-resume:${requestCount}","type":"assistant.message.delta","seq":${requestCount},"payload":{"index":${requestCount}}}\n\n`,
     )
     return new Response(
       new ReadableStream({
@@ -150,8 +155,9 @@ test("openEventStream resumes reconnects from the last delivered event", async (
 
   assert.deepEqual(
     events.map((event) => event.id),
-    ["wire-1", "wire-2"],
+    ["session:session-resume:1", "session:session-resume:2"],
   )
-  assert.match(requestedUrls[1], /[?&]from_id=wire-1(?:&|$)/)
+  assert.equal(requestedHeaders[1].get("Last-Event-ID"), "1")
+  assert.match(requestedUrls[1], /[?&]from_id=1(?:&|$)/)
   assert.doesNotMatch(requestedUrls[1], /[?&]replay=true(?:&|$)/)
 })

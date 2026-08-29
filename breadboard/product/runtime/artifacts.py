@@ -4,9 +4,11 @@ import hashlib, json, os, stat, tempfile, threading
 from contextlib import contextmanager; from dataclasses import dataclass; from pathlib import Path; from typing import Any, Iterator
 _RESERVED_NAME_CHARACTERS, _UNSAFE_EDGE_CHARACTERS = frozenset('<>:"/\\|?*'), frozenset(". ")
 _WINDOWS_DEVICE_BASENAMES = frozenset({"aux", "clock$", "con", "conin$", "conout$", "nul", "prn", *(f"com{index}" for index in range(1, 10)), *(f"lpt{index}" for index in range(1, 10))})
-def _validate_artifact_name(name: object) -> None:
+def is_portable_basename(name: object) -> bool:
     invalid_edge = not isinstance(name, str) or not name or len(name) > 255 or name[0] in _UNSAFE_EDGE_CHARACTERS or name[-1] in _UNSAFE_EDGE_CHARACTERS
-    if invalid_edge or any(character in _RESERVED_NAME_CHARACTERS or not 32 <= ord(character) <= 126 for character in name) or name.partition(".")[0].lower() in _WINDOWS_DEVICE_BASENAMES: raise ValueError("artifact name must be a portable basename")
+    return not invalid_edge and not any(character in _RESERVED_NAME_CHARACTERS or not 32 <= ord(character) <= 126 for character in name) and name.partition(".")[0].lower() not in _WINDOWS_DEVICE_BASENAMES
+def _validate_artifact_name(name: object) -> None:
+    if not is_portable_basename(name): raise ValueError("artifact name must be a portable basename")
 def _validate_component(name: object) -> str:
     if not isinstance(name, str) or not name or len(name) > 255 or name in {".", ".."} or any(character in _RESERVED_NAME_CHARACTERS or ord(character) < 32 or ord(character) == 127 for character in name): raise ValueError("anchored storage name must be one portable relative path component")
     return name

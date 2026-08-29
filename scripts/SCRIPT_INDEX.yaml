@@ -142,7 +142,7 @@ entries:
   - path: scripts/breadboard_cli.py
     class: live-wired
     owner: kmccleary3301
-    callers: [pyproject.toml, scripts/SCRIPT_INDEX.yaml, scripts/quality/build_surface_inventory.py, tests/test_breadboard_cli_g2.py, tests/test_breadboard_cli_packaging.py]
+    callers: [pyproject.toml, scripts/SCRIPT_INDEX.yaml, scripts/quality/build_surface_inventory.py, tests/test_breadboard_cli_g2.py, tests/test_breadboard_cli_packaging.py, tests/test_public_binding_parity.py]
     expiry: none (durable tooling)
   - path: scripts/build_atp_hilbert_arm_audit_v1.py
     class: live-wired
@@ -1562,12 +1562,17 @@ entries:
   - path: scripts/quality/build_surface_inventory.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, tests/contracts/public/test_public_contracts.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/contracts/public/test_public_contracts.py, tests/test_public_binding_codegen.py]
     expiry: none (durable tooling)
   - path: scripts/quality/capture_f6_omp_oracle.ts
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/quality/run_provider_differential.py, scripts/quality/sync_provider_parity_claims.py, tests/test_provider_differential_f6.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/quality/run_provider_differential.py, scripts/quality/sync_provider_parity_claims.py, tests/test_provider_differential_f6.py]
+    expiry: none (durable tooling)
+  - path: scripts/quality/generate_public_bindings.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [.github/workflows/ci.yml, docs/reference/public/index.md, docs/reference/public/operations/artifact/get.md, docs/reference/public/operations/artifact/list.md, docs/reference/public/operations/artifact/verify.md, docs/reference/public/operations/harness-lock/get.md]
     expiry: none (durable tooling)
   - path: scripts/quality/run_axis_smoke.py
     class: live-wired
@@ -1577,22 +1582,17 @@ entries:
   - path: scripts/quality/run_provider_differential.py
     class: live-owned
     owner: kmccleary3301
-    callers: []  # operator-invoked; purpose documented by module docstring
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/quality/sync_provider_parity_claims.py
     class: live-wired
     owner: kmccleary3301
-    callers: [tests/test_provider_parity_claims_f7.py]
-    expiry: none (durable tooling)
-  - path: scripts/quality/sync_public_client_manifests.py
-    class: live-wired
-    owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml, tests/contracts/public/test_public_contracts.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/test_provider_parity_claims_f7.py]
     expiry: none (durable tooling)
   - path: scripts/quality/validate_public_contracts.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, tests/contracts/public/test_public_contracts.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/contracts/public/test_public_contracts.py, tests/test_public_binding_codegen.py]
     expiry: none (durable tooling)
   - path: scripts/rebuild_phase4_tier3_galleries.sh
     class: live-wired

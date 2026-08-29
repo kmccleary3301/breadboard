@@ -16,27 +16,34 @@ import uvicorn
 
 from breadboard_engine.api.cli_bridge import app as app_module
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+from breadboard_engine.api.cli_bridge.task_execution import TaskExecutionOwner
 from breadboard.product.runtime.artifacts import ArtifactStore
+from breadboard.product.runtime.session_store import (
+    authorize_session_artifact_manifest,
+)
 from breadboard_sdk import ApiError, BreadBoardClient
 
 
 def _hold_fixture_completion_until_input() -> tuple[object, object]:
-    original_execute = SessionRunner._execute_task
+    original_execute = TaskExecutionOwner.execute_task
     original_enqueue = SessionRunner.enqueue_input
 
     def is_smoke_session(session) -> bool:
         return str(getattr(session, "session_id", "")).endswith("smoke-session")
 
     def gated_execute(self, *args, **kwargs):
-        if not is_smoke_session(self.session):
+        runner = self._runner
+        if not is_smoke_session(runner.session):
             return original_execute(self, *args, **kwargs)
-        if not getattr(self, "_smoke_input_admitted", False):
-            gate = getattr(self, "_smoke_input_gate", None)
+        if not getattr(runner, "_smoke_input_admitted", False):
+            gate = getattr(runner, "_smoke_input_gate", None)
             if gate is None:
                 gate = threading.Event()
-                self._smoke_input_gate = gate
+                runner._smoke_input_gate = gate
             if not gate.wait(timeout=10):
-                raise RuntimeError("default smoke input was not admitted before completion")
+                raise RuntimeError(
+                    "default smoke input was not admitted before completion"
+                )
         return original_execute(self, *args, **kwargs)
 
     async def gated_enqueue(self, *args, **kwargs):
@@ -47,15 +54,17 @@ def _hold_fixture_completion_until_input() -> tuple[object, object]:
             gate.set()
         return result
 
-    SessionRunner._execute_task = gated_execute
+    TaskExecutionOwner.execute_task = gated_execute
     SessionRunner.enqueue_input = gated_enqueue
     return original_execute, original_enqueue
+
 
 @contextlib.contextmanager
 def _running_default_server(workspace_path: str | None = None) -> Iterator[str]:
     os.environ.pop("BREADBOARD_LEGACY_ROUTES", None)
     os.environ["RAY_SCE_LOCAL_MODE"] = "1"
     previous_workspace = os.environ.get("BREADBOARD_PUBLIC_WORKSPACE")
+    previous_e4_api = os.environ.get("BREADBOARD_ENABLE_E4_API")
     root_env_names = (
         "BREADBOARD_SESSION_STATE_ROOT",
         "BREADBOARD_RUNTIME_RECORD_ROOT",
@@ -65,9 +74,16 @@ def _running_default_server(workspace_path: str | None = None) -> Iterator[str]:
     owned_workspace = tempfile.TemporaryDirectory() if workspace_path is None else None
     active_workspace = Path(workspace_path or owned_workspace.name)
     os.environ["BREADBOARD_PUBLIC_WORKSPACE"] = str(active_workspace)
-    os.environ["BREADBOARD_SESSION_STATE_ROOT"] = str(active_workspace / ".breadboard/session_state")
-    os.environ["BREADBOARD_RUNTIME_RECORD_ROOT"] = str(active_workspace / ".breadboard/runtime_records")
-    os.environ["BREADBOARD_SESSION_EVENT_ROOT"] = str(active_workspace / ".breadboard/session_events")
+    os.environ["BREADBOARD_ENABLE_E4_API"] = "0"
+    os.environ["BREADBOARD_SESSION_STATE_ROOT"] = str(
+        active_workspace / ".breadboard/session_state"
+    )
+    os.environ["BREADBOARD_RUNTIME_RECORD_ROOT"] = str(
+        active_workspace / ".breadboard/runtime_records"
+    )
+    os.environ["BREADBOARD_SESSION_EVENT_ROOT"] = str(
+        active_workspace / ".breadboard/session_events"
+    )
     original_execute, original_enqueue = _hold_fixture_completion_until_input()
     app = app_module.create_app()
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -99,7 +115,7 @@ def _running_default_server(workspace_path: str | None = None) -> Iterator[str]:
         server.should_exit = True
         thread.join(timeout=10)
         listener.close()
-        SessionRunner._execute_task = original_execute
+        TaskExecutionOwner.execute_task = original_execute
         SessionRunner.enqueue_input = original_enqueue
         if thread.is_alive():
             raise RuntimeError("default create_app server did not stop")
@@ -107,6 +123,10 @@ def _running_default_server(workspace_path: str | None = None) -> Iterator[str]:
             os.environ.pop("BREADBOARD_PUBLIC_WORKSPACE", None)
         else:
             os.environ["BREADBOARD_PUBLIC_WORKSPACE"] = previous_workspace
+        if previous_e4_api is None:
+            os.environ.pop("BREADBOARD_ENABLE_E4_API", None)
+        else:
+            os.environ["BREADBOARD_ENABLE_E4_API"] = previous_e4_api
         for name, value in previous_roots.items():
             if value is None:
                 os.environ.pop(name, None)
@@ -121,6 +141,12 @@ def test_python_sdk_readme_flow_against_default_server() -> None:
         assert requests.get(f"{base_url}/sessions", timeout=5).status_code == 404
 
         client = BreadBoardClient(base_url=base_url, timeout_s=5)
+        expected_describe = json.loads(
+            (
+                Path(__file__).parent / "api/public/fixtures/system_describe.json"
+            ).read_text(encoding="utf-8")
+        )
+        assert client.describe_system() == expected_describe
         assert client.health_system()["ok"] is True
         created = client.create_harness()
         locked = client.lock_harness(created["data"]["path"])
@@ -176,9 +202,7 @@ def test_public_session_readback_survives_service_restart() -> None:
             )
             assert canceled["data"]["session"]["status"] == "canceled"
 
-        artifact_store = ArtifactStore(
-            Path(workspace) / ".breadboard" / "artifacts"
-        )
+        artifact_store = ArtifactStore(Path(workspace) / ".breadboard" / "artifacts")
         artifact_ref = artifact_store.put(
             b"durable artifact",
             media_type="text/plain",
@@ -186,13 +210,21 @@ def test_public_session_readback_survives_service_restart() -> None:
         manifest_ref = artifact_store.put_json(
             artifact_store.manifest(session_id, {attachment_id: artifact_ref})
         )
+        manifest_name = (
+            f"{session_id}.{manifest_ref.digest.removeprefix('sha256:')}.json"
+        )
         artifact_store.materialize(
             manifest_ref,
             Path(workspace)
             / ".breadboard"
             / "artifacts"
             / "manifests"
-            / f"{session_id}.{manifest_ref.digest.removeprefix('sha256:')}.json",
+            / manifest_name,
+        )
+        authorize_session_artifact_manifest(
+            workspace,
+            session_id,
+            manifest_name,
         )
 
         orphaned_session_id = "sdk-v1-orphaned-session"
@@ -227,12 +259,13 @@ def test_public_session_readback_survives_service_restart() -> None:
             except ApiError as error:
                 orphaned_status = error.status
             else:
-                raise AssertionError("orphaned running session was exposed as resumable")
+                raise AssertionError(
+                    "orphaned running session was exposed as resumable"
+                )
 
             assert recovered["data"]["session"]["status"] == "canceled"
             assert any(
-                row["session_id"] == session_id
-                for row in listed["data"]["sessions"]
+                row["session_id"] == session_id for row in listed["data"]["sessions"]
             )
             assert all(
                 row["session_id"] != orphaned_session_id
@@ -242,7 +275,9 @@ def test_public_session_readback_survives_service_restart() -> None:
             assert len(artifacts["data"]["artifacts"]) == 1
             artifact = artifacts["data"]["artifacts"][0]
             assert artifact["name"] == attachment_id
-            assert client.verify_artifact(artifact["digest"])["data"]["verified"] is True
+            assert (
+                client.verify_artifact(artifact["digest"])["data"]["verified"] is True
+            )
             assert orphaned_status == 409
 
 

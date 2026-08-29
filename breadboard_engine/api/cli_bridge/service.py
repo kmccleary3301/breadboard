@@ -20,8 +20,12 @@ from breadboard.product.runtime import (
     Session as ProductSession,
 )
 from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
+from breadboard.product.runtime.session_store import (
+    authorize_session_artifact_manifest,
+    session_event_path,
+)
 from fastapi import HTTPException, UploadFile, status
-from breadboard.product.cli.harness import (
+from breadboard.product.harness.default_profile import (
     DefaultProfileResolution,
     resolve_default_profile,
 )
@@ -408,7 +412,7 @@ class SessionService:
         _cleanup_incomplete_starts(state_paths=self._managed_state_paths)
 
     def _session_lock(self, session_id: str) -> asyncio.Lock:
-        return self._session_locks.setdefault(session_id, asyncio.Lock())
+        return self._session_locks.setdefault(session_id.casefold(), asyncio.Lock())
 
     @staticmethod
     def _runtime_lock(
@@ -700,6 +704,36 @@ class SessionService:
         runtime_root: Path | None = None,
         effective_lock: EffectiveHarnessLock | None = None,
     ) -> SessionCreateResponse:
+        selected_session_id = session_id or str(uuid.uuid4())
+        async with self._session_lock(selected_session_id):
+            collision = next(
+                (
+                    existing
+                    for existing in self.registry._records
+                    if existing.casefold() == selected_session_id.casefold()
+                ),
+                None,
+            )
+            if collision is not None:
+                raise ValueError(f"session already exists: {selected_session_id}")
+            return await self._create_session(
+                request,
+                session_id=selected_session_id,
+                event_root=event_root,
+                runtime_root=runtime_root,
+                effective_lock=effective_lock,
+            )
+
+
+    async def _create_session(
+        self,
+        request: SessionCreateRequest,
+        *,
+        session_id: str | None = None,
+        event_root: Path | None = None,
+        runtime_root: Path | None = None,
+        effective_lock: EffectiveHarnessLock | None = None,
+    ) -> SessionCreateResponse:
         if effective_lock is not None and not isinstance(
             effective_lock, EffectiveHarnessLock
         ):
@@ -708,6 +742,15 @@ class SessionService:
         session_id = session_id or str(uuid.uuid4())
         if await self.registry.get(session_id) is not None:
             raise ValueError(f"session already exists: {session_id}")
+        durable_product_workspace: Path | None = None
+        if request.workspace is not None and event_root is not None:
+            candidate_workspace = Path(request.workspace).expanduser().resolve()
+            requested_event_root = event_root.expanduser().resolve()
+            durable_event_root = (
+                session_event_path(candidate_workspace, session_id).parent.parent.resolve()
+            )
+            if requested_event_root == durable_event_root:
+                durable_product_workspace = candidate_workspace
         default_profile: DefaultProfileResolution | None = None
         if request.config_path is None:
             default_profile = resolve_default_profile()
@@ -898,6 +941,8 @@ class SessionService:
                 )
                 event_sink.path = event_dir / "session_events.jsonl"
                 self.registry._records[session_id] = record
+                if durable_product_workspace is not None:
+                    runner.bind_durable_product_session(durable_product_workspace)
             published = True
             await self._ensure_dispatcher(record)
             await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)
@@ -1894,6 +1939,17 @@ class SessionService:
                     os.close(open_descriptor)
             for handle in reversed(windows_handles):
                 AnchoredStorage.close_windows_handle(handle)
+        if manifest_name is None:
+            raise RuntimeError("attachment manifest was not published")
+        try:
+            authorize_session_artifact_manifest(
+                workspace_root,
+                session_id,
+                manifest_name,
+            )
+        except FileNotFoundError:
+            # Live bridge sessions have no durable product projection yet.
+            pass
         record.product_artifacts = artifact_refs
         (
             record.metadata["artifact_manifest"],

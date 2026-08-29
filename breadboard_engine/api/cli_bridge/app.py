@@ -34,6 +34,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
+from starlette._utils import get_route_path
 from ...security import build_child_environment, sanitized_process_environment
 
 try:
@@ -128,8 +129,11 @@ from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
 from breadboard_engine.api.public import mount_public_routes
 from breadboard_engine.api.public.models import (
+    PUBLIC_CAPABILITIES,
+    PublicPrincipal,
     is_public_operation_request,
     problem_response,
+    public_principal_scope,
 )
 
 logger = logging.getLogger(__name__)
@@ -144,6 +148,32 @@ def _is_loopback_host(host: str | None) -> bool:
         return False
     host = str(host).strip().lower()
     return host in {"127.0.0.1", "localhost", "::1"}
+
+
+def _is_public_runtime_setup_request(method: str, path: str) -> bool:
+    parts = path.split("/")
+    return (
+        method.upper() == "POST"
+        and len(parts) == 5
+        and parts[0] == ""
+        and parts[1:3] == ["v1", "sessions"]
+        and bool(parts[3])
+        and parts[4] in {"pause", "attachments"}
+    )
+
+
+def _public_request_principal(
+    request: Request,
+    required_token: str,
+) -> PublicPrincipal:
+    if required_token:
+        return PublicPrincipal("api-bearer", PUBLIC_CAPABILITIES)
+    client_host = request.client.host if request.client is not None else ""
+    if client_host == "testclient" or (
+        _is_loopback_host(request.url.hostname) and _is_loopback_host(client_host)
+    ):
+        return PublicPrincipal("local", PUBLIC_CAPABILITIES)
+    return PublicPrincipal("anonymous")
 
 
 def _load_chaos_config() -> Dict[str, float] | None:
@@ -371,8 +401,7 @@ def _compute_engine_provenance(
         return revision
 
     packaged = _decode_engine_build_provenance(
-        packaged_provenance_path
-        or package_root / ENGINE_BUILD_PROVENANCE_FILENAME,
+        packaged_provenance_path or package_root / ENGINE_BUILD_PROVENANCE_FILENAME,
         package_root,
     )
     if packaged is not None:
@@ -922,20 +951,45 @@ def create_app(
 
     @app.middleware("http")
     async def _auth_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
-        if not required_token:
-            return await call_next(request)
-        header = request.headers.get("authorization") or ""
-        token = ""
-        if header.lower().startswith("bearer "):
-            token = header[7:].strip()
-        if not token or token != required_token:
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content=ErrorEnvelope(
-                    error="unauthorized", detail="unauthorized", path=None
-                ).model_dump(),
+        if required_token:
+            header = request.headers.get("authorization") or ""
+            token = ""
+            if header.lower().startswith("bearer "):
+                token = header[7:].strip()
+            if not token or token != required_token:
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content=ErrorEnvelope(
+                        error="unauthorized", detail="unauthorized", path=None
+                    ).model_dump(),
+                )
+        principal = _public_request_principal(request, required_token)
+        if (
+            public_api_enabled
+            and not legacy_routes_enabled
+            and _is_public_runtime_setup_request(
+                request.method, get_route_path(request.scope)
             )
-        return await call_next(request)
+        ):
+            try:
+                _require_local_control_request(request)
+            except HTTPException as error:
+                return problem_response(
+                    "public.runtime_setup",
+                    error.status_code,
+                    "forbidden",
+                    str(error.detail),
+                )
+            required_capability = "public.session.execute"
+            if required_capability not in principal.capabilities:
+                return problem_response(
+                    "public.runtime_setup",
+                    status.HTTP_403_FORBIDDEN,
+                    "capability_required",
+                    f"Missing required capabilities: {required_capability}",
+                )
+        with public_principal_scope(principal):
+            return await call_next(request)
 
     @app.on_event("startup")
     async def _ensure_ray_initialized() -> None:

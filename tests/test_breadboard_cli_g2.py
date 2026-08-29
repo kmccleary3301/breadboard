@@ -9,7 +9,8 @@ import pytest
 import yaml
 
 from scripts import breadboard_cli
-from breadboard.product.cli import harness as harness_operations
+from breadboard.product.operations import harness as harness_operations
+from breadboard.product.harness import resolution as harness_resolution
 from breadboard.product.harness.lock import sha256_bytes
 from breadboard.product.evidence import load_lane
 from breadboard.product.runtime.artifacts import ArtifactStore
@@ -186,7 +187,7 @@ def test_resource_binding_uses_one_resolved_config_snapshot(
 ) -> None:
     harness_path, base_path, prompt_path = _extended_prompt_harness(tmp_path)
     original_prompt_bytes = prompt_path.read_bytes()
-    resolve_resources = harness_operations._prompt_resources
+    resolve_resources = harness_resolution._prompt_resources
 
     def mutate_extended_config(*args):
         resources = resolve_resources(*args)
@@ -201,11 +202,11 @@ def test_resource_binding_uses_one_resolved_config_snapshot(
         return resources
 
     monkeypatch.setattr(
-        harness_operations,
+        harness_resolution,
         "_prompt_resources",
         mutate_extended_config,
     )
-    compiled = harness_operations._compile(
+    compiled = harness_resolution.compile_harness_source(
         harness_path,
         tmp_path,
     )

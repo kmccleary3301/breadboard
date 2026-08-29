@@ -1,165 +1,288 @@
 from __future__ import annotations
 
-import hashlib
-import json
-import os
+import asyncio
 from pathlib import Path
+from typing import Any, Callable, Coroutine, TypeVar
 
-from breadboard.product.runtime.events import KernelEvent, Session, SessionView
-from breadboard.product.runtime.artifacts import AnchoredStorage
+from breadboard.product.operations import session as session_operations
+from breadboard.product.operations.model import (
+    OperationContext,
+    OperationResult,
+    from_exception,
+    portable_ref,
+)
+from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.product.runtime import session_store
+from breadboard.product.runtime.events import Session, SessionView
 
-from .result import CliResult, from_exception, portable_ref
+_MutationOutcome = TypeVar(
+    "_MutationOutcome",
+    session_operations.StartSessionOutcome,
+    session_operations.SendSessionInputOutcome,
+    session_operations.ApproveSessionOutcome,
+    session_operations.ResumeSessionOutcome,
+    session_operations.CancelSessionOutcome,
+)
 
 
-def _workspace(a=None,w=None):return w.expanduser().resolve() if w else Path(getattr(a,"workspace",None) or Path.cwd()).expanduser().resolve()
-def session_directory(w):return w/".breadboard"/"sessions"
-def session_event_path(w,s):return session_directory(w)/s/"session_events.jsonl"
-def session_metadata_path(w,s):return session_directory(w)/s/"session.json"
-def legacy_session_event_path(w,s):return session_directory(w)/f"{s}.events.jsonl"
-def legacy_session_metadata_path(w,s):return session_directory(w)/f"{s}.json"
-def event_from_record(x):return KernelEvent(session_id=str(x["session_id"]),sequence=int(x["sequence"]),kind=str(x["kind"]),occurred_at=str(x["occurred_at"]),payload=x.get("payload",{}),schema_version=str(x.get("schema_version","bb.session_event.v1")))
-def _view(v:SessionView):return v.as_dict()
-def _event_bytes(s):
-    return b"".join((json.dumps(event.as_dict(),sort_keys=True)+"\n").encode() for event in s.events)
-def _metadata_bytes(s):
-    return (json.dumps({"schema_version":"bb.session.v1",**s.read_model.as_dict()},sort_keys=True,indent=2)+"\n").encode()
-def _write_windows_file(path,content):
-    try:descriptor=AnchoredStorage.windows_file_descriptor(path,create=False)
-    except FileNotFoundError:descriptor=AnchoredStorage.windows_file_descriptor(path,create=True)
-    with os.fdopen(descriptor,"r+b",buffering=0) as stream:
-        stream.seek(0);stream.truncate();stream.write(content);stream.flush();os.fsync(stream.fileno())
-def persist_session(w,s,event_path=None):
-    legacy=event_path==legacy_session_event_path(w,s.read_model.session_id)
-    if os.name=="nt":
-        handles=[]
-        try:
-            for path in (w,w/".breadboard",session_directory(w)):handles.append(AnchoredStorage.windows_handle(path,directory=True,create=False))
-            parent=session_directory(w)
-            if not legacy:
-                parent=session_event_path(w,s.read_model.session_id).parent
-                handles.append(AnchoredStorage.windows_handle(parent,directory=True,create=False))
-            _write_windows_file(parent/(f"{s.read_model.session_id}.events.jsonl" if legacy else "session_events.jsonl"),_event_bytes(s))
-            _write_windows_file(parent/(f"{s.read_model.session_id}.json" if legacy else "session.json"),_metadata_bytes(s))
-        finally:
-            for handle in reversed(handles):AnchoredStorage.close_windows_handle(handle)
-        return
-    descriptors=[os.open(w,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))]
+def _workspace(arguments: object | None = None, workspace: Path | None = None) -> Path:
+    selected = workspace or Path(getattr(arguments, "workspace", None) or Path.cwd())
+    return selected.expanduser().resolve()
+
+
+def _context(arguments: object) -> OperationContext:
+    return OperationContext(
+        workspace=_workspace(arguments),
+        reference_root=Path.cwd().resolve(),
+    )
+
+
+def _run(operation: Coroutine[Any, Any, OperationResult]) -> OperationResult:
+    return asyncio.run(operation)
+
+
+def list_sessions(arguments: object) -> OperationResult:
+    return _run(
+        session_operations.list_sessions(
+            session_operations.ListSessionsRequest(),
+            _context(arguments),
+        )
+    )
+
+
+def get(arguments: object, command_name: str = "get") -> OperationResult:
+    return _run(
+        session_operations.get_session(
+            session_operations.GetSessionRequest(
+                session_id=arguments.SESSION_ID,
+                command_name=command_name,
+            ),
+            _context(arguments),
+        )
+    )
+
+def bootstrap_local(arguments: object) -> OperationResult:
+    """Create private authority for one explicitly selected local legacy session."""
+    context = _context(arguments)
+    command = ["session", "bootstrap-local"]
     try:
-        for name in (".breadboard","sessions"):descriptors.append(AnchoredStorage.open_directory(descriptors[-1],name,create=False))
-        parent=descriptors[-1]
-        if not legacy:
-            descriptors.append(AnchoredStorage.open_directory(parent,s.read_model.session_id,create=False));parent=descriptors[-1]
-        AnchoredStorage.write_at(parent,f"{s.read_model.session_id}.events.jsonl" if legacy else "session_events.jsonl",_event_bytes(s))
-        AnchoredStorage.write_at(parent,f"{s.read_model.session_id}.json" if legacy else "session.json",_metadata_bytes(s))
-    finally:
-        for descriptor in reversed(descriptors):os.close(descriptor)
-def _load_anchored(w,s):
-    if not s or s in {".",".."} or Path(s).name!=s:raise ValueError("session_id must be a portable identifier")
-    if os.name=="nt":
-        handles=[]; descriptor=None
-        try:
-            for path in (w,w/".breadboard",session_directory(w)):handles.append(AnchoredStorage.windows_handle(path,directory=True,create=False))
-            event_path=session_event_path(w,s)
-            try:handles.append(AnchoredStorage.windows_handle(event_path.parent,directory=True,create=False)); descriptor=AnchoredStorage.windows_file_descriptor(event_path,create=False)
-            except OSError:event_path=legacy_session_event_path(w,s); descriptor=AnchoredStorage.windows_file_descriptor(event_path,create=False)
-            with os.fdopen(descriptor,"rb") as stream:descriptor=None; body=stream.read()
-        finally:
-            if descriptor is not None:os.close(descriptor)
-            for handle in reversed(handles):AnchoredStorage.close_windows_handle(handle)
-    else:
-        descriptors=[os.open(w,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))]; session_descriptor=None
-        try:
-            for name in (".breadboard","sessions"):descriptors.append(AnchoredStorage.open_directory(descriptors[-1],name,create=False))
-            try:
-                session_descriptor=AnchoredStorage.open_directory(descriptors[-1],s,create=False)
-                body=AnchoredStorage.read_at(session_descriptor,"session_events.jsonl"); event_path=session_event_path(w,s)
-            except FileNotFoundError:
-                body=AnchoredStorage.read_at(descriptors[-1],f"{s}.events.jsonl"); event_path=legacy_session_event_path(w,s)
-        finally:
-            if session_descriptor is not None:os.close(session_descriptor)
-            for descriptor in reversed(descriptors):os.close(descriptor)
-    return Session.restore([event_from_record(json.loads(line)) for line in body.decode().splitlines() if line.strip()]),event_path
-def load_session(workspace,session_id):
-    try:return _load_anchored(_workspace(w=Path(workspace)),session_id)
-    except FileNotFoundError:raise
-    except OSError as error:raise FileNotFoundError(f"session not found: {session_id}") from error
-def _session_names(w):
-    if os.name=="nt":
-        handles=[]
-        try:
-            for path in (w,w/".breadboard",session_directory(w)):handles.append(AnchoredStorage.windows_handle(path,directory=True,create=False))
-            return os.listdir(session_directory(w))
-        finally:
-            for handle in reversed(handles):AnchoredStorage.close_windows_handle(handle)
-    descriptors=[os.open(w,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))]
-    try:
-        for name in (".breadboard","sessions"):descriptors.append(AnchoredStorage.open_directory(descriptors[-1],name,create=False))
-        return os.listdir(descriptors[-1])
-    finally:
-        for descriptor in reversed(descriptors):os.close(descriptor)
-def list_sessions(a):
-    w=_workspace(a)
-    try:
-        suffix=".events.jsonl";names=_session_names(w)
-        session_ids={name[:-len(suffix)] if name.endswith(suffix) else name for name in names}
-        rows=[];refs=[]
-        for session_id in sorted(session_ids):
-            try:
-                s,p=load_session(w,session_id);v=s.read_model
-                rows.append({"session_id":v.session_id,"status":v.status,"event_count":v.event_count});refs.append(portable_ref(p,w))
-            except Exception:pass
-        return CliResult.success(["session","list"],{"sessions":rows,"count":len(rows)},refs,stage="session.list")
-    except Exception as e:return from_exception(["session","list"],e,"session.list")
-def get(a,command_name="get"):
-    w=_workspace(a)
-    try:s,p=load_session(w,a.SESSION_ID); v=s.read_model; return CliResult.success(["session",command_name],{"session":_view(v)},[portable_ref(p,w)],{"lock":v.effective_lock_hash,"task":v.task_hash},stage=f"session.{command_name}")
-    except Exception as e:return from_exception(["session",command_name],e,f"session.{command_name}")
-def _mutate(a,name,fn):
-    w=_workspace(a)
-    try:s,p=load_session(w,a.SESSION_ID); v=fn(s); persist_session(w,s,p); return CliResult.success(["session",name],{"session":_view(v)},[portable_ref(p,w)],stage=f"session.{name}")
-    except Exception as e:return from_exception(["session",name],e,f"session.{name}")
-def send_input(a):return _mutate(a,"send-input",lambda s:s.input(a.content if getattr(a,"content",None) is not None else a.TEXT))
-def approve(a):return _mutate(a,"approve",lambda s:s.resolve_approval(a.request_id,a.decision))
-def resume(a):return _mutate(a,"resume",lambda s:s.resume())
-def cancel(a):return _mutate(a,"cancel",lambda s:s.cancel(getattr(a,"reason",None) or "operator request"))
-def events(a):
-    w=_workspace(a)
-    try:s,p=load_session(w,a.SESSION_ID); return CliResult.success(["session","events"],{"session_id":a.SESSION_ID,"events":[x.as_dict() for x in s.events]},[portable_ref(p,w)],stage="session.events")
-    except Exception as e:return from_exception(["session","events"],e,"session.events")
-def _artifact_rows(w,s):
-    rows={};prefix=f"{s}.";handles=[];descriptors=[]
-    try:
-        if os.name=="nt":
-            try:
-                for path in (w,w/".breadboard",w/".breadboard"/"artifacts",w/".breadboard"/"artifacts"/"manifests"):handles.append(AnchoredStorage.windows_handle(path,directory=True,create=False))
-            except FileNotFoundError:return []
-            root=w/".breadboard"/"artifacts"/"manifests";names=os.listdir(root)
-            def read(name):
-                descriptor=AnchoredStorage.windows_file_descriptor(root/name,create=False)
-                with os.fdopen(descriptor,"rb") as stream:return stream.read()
-        else:
-            descriptors=[os.open(w,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))]
-            try:
-                for name in (".breadboard","artifacts","manifests"):descriptors.append(AnchoredStorage.open_directory(descriptors[-1],name,create=False))
-            except FileNotFoundError:return []
-            names=os.listdir(descriptors[-1])
-            def read(name):return AnchoredStorage.read_at(descriptors[-1],name)
-        for name in sorted(names):
-            if not name.startswith(prefix) or not name.endswith(".json"):continue
-            digest=name[len(prefix):-5];body=read(name)
-            if len(digest)!=64 or any(c not in "0123456789abcdef" for c in digest) or hashlib.sha256(body).hexdigest()!=digest:raise ValueError("artifact manifest digest mismatch")
-            document=json.loads(body)
-            if document.get("schema_version")!="bb.artifact_manifest.v1" or document.get("session_id")!=s or not isinstance(document.get("artifacts"),list):raise ValueError("invalid artifact manifest")
-            for row in document["artifacts"]:
-                if not isinstance(row,dict) or not isinstance(row.get("name"),str):raise ValueError("invalid artifact manifest row")
-                previous=rows.setdefault(row["name"],row)
-                if previous!=row:raise ValueError("conflicting artifact manifest rows")
-        return [rows[name] for name in sorted(rows)]
-    finally:
-        for descriptor in reversed(descriptors):os.close(descriptor)
-        for handle in reversed(handles):AnchoredStorage.close_windows_handle(handle)
-def artifacts(a):
-    w=_workspace(a)
-    try:s,p=load_session(w,a.SESSION_ID); rows=_artifact_rows(w,a.SESSION_ID)
-    except Exception as e:return from_exception(["session","artifacts"],e,"session.artifacts")
-    return CliResult.success(["session","artifacts"],{"session_id":a.SESSION_ID,"artifacts":rows},[portable_ref(p,w)],stage="session.artifacts")
+        durable, event_path = session_store.bootstrap_local_session_authority(
+            context.workspace,
+            arguments.SESSION_ID,
+        )
+        return OperationResult.success(
+            command,
+            {
+                "session": durable.read_model.as_dict(),
+                "projection_authority": "committed",
+            },
+            (portable_ref(event_path, context.workspace),),
+            stage="session.bootstrap-local",
+        )
+    except Exception as error:
+        return from_exception(command, error, "session.bootstrap-local")
+
+
+class _DurableSessionMutationAdapter:
+    @staticmethod
+    def _outcome(
+        view: SessionView,
+        event_path: Path,
+        workspace: Path,
+        outcome_type: Callable[
+            [SessionView, tuple[str, ...]],
+            _MutationOutcome,
+        ],
+    ) -> _MutationOutcome:
+        return outcome_type(view, (portable_ref(event_path, workspace),))
+
+    @staticmethod
+    def _mutate(
+        workspace: Path,
+        session_id: str,
+        mutation: Callable[[Session], SessionView],
+        outcome_type: Callable[
+            [SessionView, tuple[str, ...]],
+            _MutationOutcome,
+        ],
+    ) -> _MutationOutcome:
+        view, event_path = session_store.mutate_session(
+            workspace,
+            session_id,
+            mutation,
+        )
+        return _DurableSessionMutationAdapter._outcome(
+            view,
+            event_path,
+            workspace,
+            outcome_type,
+        )
+
+    async def start(
+        self,
+        request: session_operations.StartSessionRequest,
+        context: OperationContext,
+        effective_lock: EffectiveHarnessLock,
+        _source_path: Path,
+    ) -> session_operations.StartSessionOutcome:
+        def create() -> session_operations.StartSessionOutcome:
+            session = Session.start(
+                effective_lock,
+                request.task,
+                session_id=request.session_id,
+            )
+            session, event_path = session_store.create_session(
+                context.workspace,
+                session,
+            )
+            return self._outcome(
+                session.read_model,
+                event_path,
+                context.workspace,
+                session_operations.StartSessionOutcome,
+            )
+
+        return await asyncio.to_thread(create)
+
+    async def send_input(
+        self,
+        request: session_operations.SendSessionInputRequest,
+        context: OperationContext,
+    ) -> session_operations.SendSessionInputOutcome:
+        return await asyncio.to_thread(
+            self._mutate,
+            context.workspace,
+            request.session_id,
+            lambda session: session.input(request.content),
+            session_operations.SendSessionInputOutcome,
+        )
+
+    async def approve(
+        self,
+        request: session_operations.ApproveSessionRequest,
+        context: OperationContext,
+    ) -> session_operations.ApproveSessionOutcome:
+        return await asyncio.to_thread(
+            self._mutate,
+            context.workspace,
+            request.session_id,
+            lambda session: session.resolve_approval(
+                request.request_id,
+                request.decision,
+            ),
+            session_operations.ApproveSessionOutcome,
+        )
+
+    async def resume(
+        self,
+        request: session_operations.ResumeSessionRequest,
+        context: OperationContext,
+    ) -> session_operations.ResumeSessionOutcome:
+        return await asyncio.to_thread(
+            self._mutate,
+            context.workspace,
+            request.session_id,
+            lambda session: session.resume(),
+            session_operations.ResumeSessionOutcome,
+        )
+
+    async def cancel(
+        self,
+        request: session_operations.CancelSessionRequest,
+        context: OperationContext,
+    ) -> session_operations.CancelSessionOutcome:
+        return await asyncio.to_thread(
+            self._mutate,
+            context.workspace,
+            request.session_id,
+            lambda session: session.cancel(request.reason),
+            session_operations.CancelSessionOutcome,
+        )
+
+
+def start(arguments: object) -> OperationResult:
+    request = session_operations.StartSessionRequest(
+        lock_id=str(
+            getattr(arguments, "lock_id", None) or getattr(arguments, "LOCK_ID")
+        ),
+        task=str(getattr(arguments, "task", None) or getattr(arguments, "TASK")),
+        session_id=getattr(arguments, "session_id", None),
+    )
+    return _run(
+        session_operations.start(
+            request,
+            _context(arguments),
+            _DurableSessionMutationAdapter(),
+        )
+    )
+
+
+def send_input(arguments: object) -> OperationResult:
+    content = (
+        arguments.content
+        if getattr(arguments, "content", None) is not None
+        else arguments.TEXT
+    )
+    return _run(
+        session_operations.send_input(
+            session_operations.SendSessionInputRequest(
+                session_id=arguments.SESSION_ID,
+                content=content,
+            ),
+            _context(arguments),
+            _DurableSessionMutationAdapter(),
+        )
+    )
+
+
+def approve(arguments: object) -> OperationResult:
+    return _run(
+        session_operations.approve(
+            session_operations.ApproveSessionRequest(
+                session_id=arguments.SESSION_ID,
+                request_id=arguments.request_id,
+                decision=arguments.decision,
+            ),
+            _context(arguments),
+            _DurableSessionMutationAdapter(),
+        )
+    )
+
+
+def resume(arguments: object) -> OperationResult:
+    return _run(
+        session_operations.resume(
+            session_operations.ResumeSessionRequest(arguments.SESSION_ID),
+            _context(arguments),
+            _DurableSessionMutationAdapter(),
+        )
+    )
+
+
+def cancel(arguments: object) -> OperationResult:
+    reason = getattr(arguments, "reason", None) or "operator request"
+    return _run(
+        session_operations.cancel(
+            session_operations.CancelSessionRequest(arguments.SESSION_ID, reason),
+            _context(arguments),
+            _DurableSessionMutationAdapter(),
+        )
+    )
+
+
+def events(arguments: object) -> OperationResult:
+    return _run(
+        session_operations.list_session_events(
+            session_operations.ListSessionEventsRequest(arguments.SESSION_ID),
+            _context(arguments),
+        )
+    )
+
+
+def artifacts(arguments: object) -> OperationResult:
+    return _run(
+        session_operations.list_session_artifacts(
+            session_operations.ListSessionArtifactsRequest(arguments.SESSION_ID),
+            _context(arguments),
+        )
+    )

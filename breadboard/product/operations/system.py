@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+import sysconfig
+from dataclasses import dataclass
+from typing import Any
+
+from breadboard.product.harness.default_profile import (
+    DefaultProfileResolutionError,
+    default_profile_identity,
+)
+from breadboard.product.operation_catalog import internal_evidence_operation_catalog
+from breadboard.product.operations.generated_bindings import (
+    PUBLIC_OPERATION_BINDINGS,
+)
+from breadboard.product.operations.model import (
+    OperationContext,
+    OperationResult,
+    from_exception,
+    portable_ref,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class DescribeSystemRequest:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class HealthSystemRequest:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class SchemasSystemRequest:
+    pass
+
+
+_DESCRIBE_COMMAND = ("system", "describe")
+_HEALTH_COMMAND = ("system", "health")
+_SCHEMAS_COMMAND = ("system", "schemas")
+
+
+def _operation_rows() -> list[dict[str, str]]:
+    rows = [
+        {
+            "operation_id": binding.operation_id,
+            "command": binding.cli_command,
+            "status": binding.status,
+        }
+        for binding in PUBLIC_OPERATION_BINDINGS
+    ]
+    return sorted(rows, key=lambda row: row["operation_id"])
+
+
+def _internal_extensions(
+    context: OperationContext,
+) -> list[dict[str, Any]]:
+    if "e4" not in context.enabled_extensions:
+        return []
+    catalog = internal_evidence_operation_catalog()
+    return [
+        {
+            "extension_id": "e4",
+            "catalog_id": catalog["contract_id"],
+            "operation_count": len(catalog["operations"]),
+        }
+    ]
+
+
+def health_system(
+    _request: HealthSystemRequest,
+    context: OperationContext,
+) -> OperationResult:
+    try:
+        root = context.workspace.expanduser().resolve()
+        if not root.exists():
+            return OperationResult.failure(
+                _HEALTH_COMMAND,
+                3,
+                "workspace_unavailable",
+                f"workspace does not exist: {portable_ref(root, root)}",
+                "system.health",
+            )
+        metadata = root / ".breadboard"
+        return OperationResult.success(
+            _HEALTH_COMMAND,
+            {
+                "workspace": ".",
+                "workspace_exists": True,
+                "metadata_dir": portable_ref(metadata, root),
+                "metadata_exists": metadata.is_dir(),
+                "python": sysconfig.get_platform(),
+            },
+            stage="system.health",
+        )
+    except Exception as error:
+        return from_exception(_HEALTH_COMMAND, error, "system.health")
+
+
+def schemas_system(
+    _request: SchemasSystemRequest,
+    context: OperationContext,
+) -> OperationResult:
+    try:
+        names = sorted(
+            path.name
+            for path in context.installed_resource("contracts/public/schemas").glob(
+                "*.schema.json"
+            )
+        )
+        return OperationResult.success(
+            _SCHEMAS_COMMAND,
+            {"schema_count": len(names), "schemas": names},
+            stage="system.schemas",
+        )
+    except Exception as error:
+        return from_exception(_SCHEMAS_COMMAND, error, "system.schemas")
+
+
+def describe_system(
+    _request: DescribeSystemRequest,
+    context: OperationContext,
+) -> OperationResult:
+    try:
+        profile = default_profile_identity()
+        operations = _operation_rows()
+        return OperationResult.success(
+            _DESCRIBE_COMMAND,
+            {
+                "system": "breadboard",
+                "operation_count": len(operations),
+                "operations": operations,
+                "default_profile": profile,
+                "internal_extensions": _internal_extensions(context),
+                "result_schema": "bb.cli.result.v1",
+                "workspace": ".",
+            },
+            hashes={"profile": str(profile["effective_lock_hash"])},
+            next_actions=["breadboard system health"],
+            stage="system.describe",
+        )
+    except DefaultProfileResolutionError as error:
+        return OperationResult.failure(
+            _DESCRIBE_COMMAND,
+            error.exit_code,
+            error.error_code,
+            str(error),
+            "system.describe",
+            hint=error.hint,
+        )
+    except Exception as error:
+        return from_exception(
+            _DESCRIBE_COMMAND,
+            error,
+            "system.describe",
+        )

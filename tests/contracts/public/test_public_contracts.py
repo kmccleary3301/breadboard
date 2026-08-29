@@ -5,7 +5,7 @@ import shutil
 from types import ModuleType
 import pytest
 from scripts.quality.build_surface_inventory import _binding_manifest, build_inventory
-from scripts.quality.sync_public_client_manifests import build_manifests
+from scripts.quality.generate_public_bindings import build_outputs
 import scripts.quality.run_axis_smoke as axis_runner
 from scripts.quality.run_axis_smoke import run_axis_smoke
 from scripts.quality.validate_public_contracts import (
@@ -181,19 +181,21 @@ def test_staged_inventory_uses_its_inventory_schema(tmp_path) -> None:
     with pytest.raises(ContractValidationError, match="invalid generated inventory"):
         build_inventory(root)
 def test_product_client_manifests_are_catalog_fixed_points() -> None:
-    for path, content in build_manifests().items():
+    for path, content in build_outputs().items():
         assert path.read_bytes() == content
 
 
-def test_inventory_is_a_checked_in_fixed_point_with_honest_gaps() -> None:
+def test_inventory_is_a_checked_in_fixed_point_without_surface_gaps() -> None:
     first = build_inventory()
     second = build_inventory()
     assert canonical_bytes(first) == canonical_bytes(second)
     assert canonical_bytes(first) == (PUBLIC_DIR / "surface_inventory.v1.json").read_bytes()
     assert first["parity_claimed"] is False
     assert first["candidate_status"] == "candidate"
-    assert any(summary["gaps"] > 0 for summary in first["summary"].values())
-    assert all(summary["detected"] + summary["gaps"] == 26 for summary in first["summary"].values())
+    assert all(
+        summary == {"detected": 26, "gaps": 0, "total": 26}
+        for summary in first["summary"].values()
+    )
 def test_generated_binding_manifest_ignores_source_text(tmp_path) -> None:
     manifest = tmp_path / "generated" / "public_surface_manifest.v1.json"
     (tmp_path / "client.test.ts").write_text("// system.health BreadBoardClient health", encoding="utf-8")

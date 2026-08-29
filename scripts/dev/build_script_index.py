@@ -18,6 +18,7 @@ Modes:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import argparse
 import re
 import subprocess
@@ -42,10 +43,24 @@ REFERENCE_ROOTS = [
 # Program prefixes whose root-level scripts are campaign artifacts by default
 # (archived by S-3 unless referenced from a live surface).
 CAMPAIGN_PATTERNS = (
-    "atp_", "darwin_", "build_darwin_", "phase4_", "phase5_", "phase12_",
-    "tmux_", "bless_", "aggregate_phase", "analyze_phase", "backfill_",
-    "build_atp_", "verify_phase", "validate_tmux", "capture_tmux",
-    "replay_phase", "run_tmux", "start_tmux",
+    "atp_",
+    "darwin_",
+    "build_darwin_",
+    "phase4_",
+    "phase5_",
+    "phase12_",
+    "tmux_",
+    "bless_",
+    "aggregate_phase",
+    "analyze_phase",
+    "backfill_",
+    "build_atp_",
+    "verify_phase",
+    "validate_tmux",
+    "capture_tmux",
+    "replay_phase",
+    "run_tmux",
+    "start_tmux",
 )
 
 
@@ -73,7 +88,10 @@ def reference_map(scripts: list[str]) -> dict[str, set[str]]:
         )
         for rel in out.stdout.splitlines():
             fp = REPO_ROOT / rel
-            if fp.suffix in {".png", ".zip", ".whl", ".pkl", ".pyc"} or not fp.is_file():
+            if (
+                fp.suffix in {".png", ".zip", ".whl", ".pkl", ".pyc"}
+                or not fp.is_file()
+            ):
                 continue
             try:
                 haystacks.append((rel, fp.read_text(encoding="utf-8", errors="ignore")))
@@ -103,7 +121,21 @@ def classify(path: str, refs: set[str]) -> str:
     if ci or tests or "pyproject.toml" in external:
         return "live-wired"
     rel = path.removeprefix("scripts/")
-    if rel.startswith(("dev/", "release/", "ops/", "migration/", "e4_parity/", "rl_phase3/", "rl_phase1/", "_inventory/", "quality/", "authoring/", "research/")):
+    if rel.startswith(
+        (
+            "dev/",
+            "release/",
+            "ops/",
+            "migration/",
+            "e4_parity/",
+            "rl_phase3/",
+            "rl_phase1/",
+            "_inventory/",
+            "quality/",
+            "authoring/",
+            "research/",
+        )
+    ):
         return "live-owned"
     if external:
         return "live-referenced"
@@ -129,12 +161,13 @@ def build_index() -> str:
         if cls != "campaign":
             live += 1
         expiry = (
-            "archive-when-campaign-closes" if cls == "campaign"
+            "archive-when-campaign-closes"
+            if cls == "campaign"
             else "none (durable tooling)"
         )
         lines.append(f"  - path: {p}")
         lines.append(f"    class: {cls}")
-        lines.append(f"    owner: kmccleary3301")
+        lines.append("    owner: kmccleary3301")
         if callers:
             lines.append(f"    callers: [{', '.join(callers)}]")
         else:
@@ -146,29 +179,50 @@ def build_index() -> str:
     return "\n".join(lines) + "\n"
 
 
-def main() -> int:
+def _indexed_paths(content: str) -> list[str]:
+    """Return index paths in source order."""
+    return re.findall(r"^  - path: (.+)$", content, re.M)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     content = build_index()
-    live = int(re.search(r"live_script_count: (\d+)", content).group(1))
+    live_match = re.search(r"^live_script_count: (\d+)$", content, re.M)
+    if live_match is None:
+        print("generated SCRIPT_INDEX is missing live_script_count", file=sys.stderr)
+        return 1
+    live = int(live_match.group(1))
+    generated_paths = _indexed_paths(content)
+    if len(generated_paths) != len(set(generated_paths)):
+        print("generated SCRIPT_INDEX contains duplicate paths", file=sys.stderr)
+        return 1
     if args.check:
         if not INDEX_PATH.is_file():
             print("SCRIPT_INDEX.yaml missing", file=sys.stderr)
             return 1
         committed = INDEX_PATH.read_text(encoding="utf-8")
-        committed_paths = set(re.findall(r"^  - path: (.+)$", committed, re.M))
-        current_paths = set(re.findall(r"^  - path: (.+)$", content, re.M))
-        missing_rows = current_paths - committed_paths
-        stale_rows = committed_paths - current_paths
-        if missing_rows or stale_rows:
+        committed_paths = _indexed_paths(committed)
+        if len(committed_paths) != len(set(committed_paths)):
+            print("SCRIPT_INDEX contains duplicate paths", file=sys.stderr)
+            return 1
+        if len(committed_paths) != len(generated_paths):
             print(
-                f"SCRIPT_INDEX drift: unindexed={sorted(missing_rows)[:10]} "
-                f"stale={sorted(stale_rows)[:10]}",
+                f"SCRIPT_INDEX count drift: committed={len(committed_paths)} "
+                f"generated={len(generated_paths)}",
                 file=sys.stderr,
             )
             return 1
-        print(f"script-index check: OK ({live} live scripts of {len(current_paths)} tracked)")
+        if committed != content:
+            print(
+                "SCRIPT_INDEX drift: committed content is not canonical",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            f"script-index check: OK ({live} live scripts of {len(generated_paths)} tracked)"
+        )
         return 0
     INDEX_PATH.write_text(content, encoding="utf-8")
     print(f"wrote {INDEX_PATH} ({live} live)")
