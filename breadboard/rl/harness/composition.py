@@ -2657,6 +2657,14 @@ class _ProductionCleanupProbe:
             remember("broker:daemon-root", getattr(broker, "_daemon_root_fd", None))
             for name, descriptor in broker._authority_fds.items():
                 remember(f"broker:{name}", descriptor)
+        journal_identity = (
+            None
+            if broker is None
+            else self._fd_identity(getattr(broker, "_journal_root_fd", -1))
+        )
+        self._supervisor_journal_identity = (
+            None if journal_identity is None else journal_identity[1:]
+        )
         self._descriptors = descriptors
 
         process_identities: dict[int, str] = {}
@@ -2819,9 +2827,42 @@ class _ProductionCleanupProbe:
             errors.append(f"{label}:{type(exc).__name__}")
             return ()
 
+    @staticmethod
+    def _lease_inventory_paths(
+        paths: tuple[Path, ...],
+        journal_identity: tuple[int, int] | None,
+        errors: list[str],
+    ) -> tuple[Path, ...]:
+        if journal_identity is None:
+            return paths
+        inventory_paths: list[Path] = []
+        for path in paths:
+            if path.name != "supervisor-journal":
+                inventory_paths.append(path)
+                continue
+            try:
+                metadata = os.stat(path, follow_symlinks=False)
+            except OSError as exc:
+                errors.append(
+                    f"supervisor_journal_inventory:{type(exc).__name__}"
+                )
+                inventory_paths.append(path)
+                continue
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or (metadata.st_dev, metadata.st_ino) != journal_identity
+            ):
+                inventory_paths.append(path)
+        return tuple(inventory_paths)
+
     def observe(self) -> ProductionCleanupInventory:
         errors: list[str] = []
         lease_paths = self._children(self._lease_root, errors, "lease_inventory")
+        lease_paths = self._lease_inventory_paths(
+            lease_paths,
+            self._supervisor_journal_identity,
+            errors,
+        )
         root_workspace_paths = self._children(
             self._workspace_root, errors, "workspace_inventory"
         )

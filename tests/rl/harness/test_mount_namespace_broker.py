@@ -134,6 +134,7 @@ async def test_broker_executor_does_not_block_event_loop_during_rpc(
     )
     started = threading.Event()
     release = threading.Event()
+    cancelled = threading.Event()
 
     class Broker:
         def _call(
@@ -144,9 +145,18 @@ async def test_broker_executor_does_not_block_event_loop_during_rpc(
             *,
             expected_return_fds,
         ):
-            del operation, request, descriptors, expected_return_fds
+            del operation, expected_return_fds
+            assert request["cancellation_descriptor"] is True
             started.set()
-            release.wait(timeout=2)
+            while not release.is_set():
+                try:
+                    signal_byte = os.read(descriptors[-1], 1)
+                except BlockingIOError:
+                    time.sleep(0.005)
+                    continue
+                if signal_byte in {b"", b"\x01"}:
+                    cancelled.set()
+                    break
             return (
                 {
                     "returncode": 0,
@@ -179,14 +189,51 @@ async def test_broker_executor_does_not_block_event_loop_during_rpc(
             await asyncio.sleep(0)
         await asyncio.sleep(0)
         assert time.monotonic() - started_at < 0.2
+
+
         task.cancel()
+        cancelled_at = time.monotonic()
         with pytest.raises(asyncio.CancelledError):
             await task
+        assert time.monotonic() - cancelled_at < 0.2
+        assert cancelled.is_set()
     finally:
         release.set()
         timer.cancel()
         os.close(executable_fd)
     await asyncio.sleep(0.05)
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not os.path.isdir("/proc/self/fd"),
+    reason="descriptor execution requires Linux procfs",
+)
+async def test_bounded_execution_interrupts_process_group_from_cancellation_pipe() -> None:
+    executable_fd = os.open("/bin/sh", os.O_RDONLY)
+    cancellation_read_fd, cancellation_write_fd = os.pipe()
+    os.set_blocking(cancellation_read_fd, False)
+    try:
+        started_at = time.monotonic()
+        execution = asyncio.create_task(
+            asyncio.to_thread(
+                broker_module._execute_bounded_descriptors,
+                ("/bin/sh", "-c", "sleep 30"),
+                executable_fd=executable_fd,
+                timeout_ms=30_000,
+                output_limit=4_096,
+                cancellation_fd=cancellation_read_fd,
+            )
+        )
+        await asyncio.sleep(0.1)
+        os.write(cancellation_write_fd, b"\x01")
+        result = await asyncio.wait_for(execution, 2)
+        assert time.monotonic() - started_at < 2
+        assert result[0] != 0
+        for descriptor in result[1]:
+            os.close(descriptor)
+    finally:
+        os.close(cancellation_read_fd)
+        os.close(cancellation_write_fd)
+        os.close(executable_fd)
 
 
 def test_broker_wire_budget_covers_encoded_maximum_observation() -> None:
@@ -227,7 +274,10 @@ def test_direct_docker_execution_reads_sealed_output_descriptors(
     ) -> tuple[dict[str, object], tuple[int, int]]:
         assert operation == "execute"
         assert request["output_limit"] == 1024
-        assert descriptors == (executable_fd,)
+        assert request["cancellation_descriptor"] is True
+        assert descriptors[0] == executable_fd
+        assert len(descriptors) == 2
+        assert stat.S_ISFIFO(os.fstat(descriptors[1]).st_mode)
         assert expected_return_fds == 2
         stdout_fd = broker_module._sealed_payload_fd(output_payload)
         stderr_fd = broker_module._sealed_payload_fd(b"")

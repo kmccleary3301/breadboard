@@ -898,6 +898,7 @@ def _execute_bounded_descriptors(
     timeout_ms: int,
     output_limit: int,
     input_fd: int | None = None,
+    cancellation_fd: int | None = None,
 ) -> tuple[
     int,
     tuple[int, int],
@@ -908,6 +909,10 @@ def _execute_bounded_descriptors(
 ]:
     if type(output_limit) is not int or not 1 <= output_limit <= _MAX_OUTPUT:
         raise ValueError("Docker output limit is outside the fixed global bound")
+    if cancellation_fd is not None:
+        cancellation_metadata = os.fstat(cancellation_fd)
+        if not stat.S_ISFIFO(cancellation_metadata.st_mode):
+            raise ValueError("Docker cancellation descriptor is not a pipe")
     output_fds = (-1, -1)
     try:
         output_fds = (_new_output_descriptor(), _new_output_descriptor())
@@ -934,9 +939,12 @@ def _execute_bounded_descriptors(
         for index, stream in enumerate(streams):
             os.set_blocking(stream.fileno(), False)
             selector.register(stream, selectors.EVENT_READ, index)
+        if cancellation_fd is not None:
+            selector.register(cancellation_fd, selectors.EVENT_READ, None)
         deadline = time.monotonic() + timeout_ms / 1000
         timed_out = False
         output_limited = False
+        cancelled = False
         try:
             while selector.get_map():
                 remaining_time = deadline - time.monotonic()
@@ -951,6 +959,14 @@ def _execute_bounded_descriptors(
                         _stop_process_group(process, process_group)
                         break
                 for key, _ in events:
+                    if key.data is None:
+                        try:
+                            os.read(key.fileobj, 1)
+                        except BlockingIOError:
+                            continue
+                        cancelled = True
+                        _stop_process_group(process, process_group)
+                        break
                     try:
                         chunk = os.read(key.fileobj.fileno(), 64 * 1024)
                     except BlockingIOError:
@@ -980,7 +996,7 @@ def _execute_bounded_descriptors(
                     if output_limited:
                         _stop_process_group(process, process_group)
                         break
-                if output_limited:
+                if output_limited or cancelled:
                     break
             if process.poll() is None:
                 remaining_time = max(0.0, deadline - time.monotonic())
@@ -2382,8 +2398,9 @@ def _child_loop(
                     input_digest = request.get("input_digest")
                     has_input = input_size is not None or input_digest is not None
                     if (
-                        len(fds) != (2 if has_input else 1)
+                        len(fds) != (3 if has_input else 2)
                         or request.get("environment") != []
+                        or request.get("cancellation_descriptor") is not True
                     ):
                         raise ValueError("execute authority is invalid")
                     if daemon_owner is not None:
@@ -2449,6 +2466,7 @@ def _child_loop(
                             or _digest_fd_exact(input_fd) != input_digest
                         ):
                             raise OSError("execute input descriptor changed")
+                    cancellation_fd = fds[-1]
                     argv = request.get("argv")
                     timeout_ms = request.get("timeout_ms")
                     output_limit = request.get("output_limit")
@@ -2482,6 +2500,7 @@ def _child_loop(
                         timeout_ms=timeout_ms,
                         output_limit=output_limit,
                         input_fd=input_fd,
+                        cancellation_fd=cancellation_fd,
                     )
                     if runtime_path is not None:
                         _validate_runtime_copy(
@@ -3592,7 +3611,13 @@ class MountNamespaceBroker:
         host_prefix = ("--host", "unix://" + binding.socket_path)
         argv = (executable.argv0, *host_prefix, *tuple(argv_tail))
         returned_fds: tuple[int, ...] = ()
+        cancellation_read_fd = cancellation_write_fd = -1
         try:
+            cancellation_read_fd, cancellation_write_fd = os.pipe()
+            os.set_inheritable(cancellation_read_fd, False)
+            os.set_inheritable(cancellation_write_fd, False)
+            os.set_blocking(cancellation_read_fd, False)
+            os.set_blocking(cancellation_write_fd, False)
             result, returned_fds = self._call(
                 "execute",
                 {
@@ -3601,8 +3626,9 @@ class MountNamespaceBroker:
                     "environment": [],
                     "timeout_ms": timeout_ms,
                     "output_limit": output_limit,
+                    "cancellation_descriptor": True,
                 },
-                (executable.executable_fd,),
+                (executable.executable_fd, cancellation_read_fd),
                 expected_return_fds=2,
             )
             stdout_size = result.get("stdout_size")
@@ -3631,6 +3657,10 @@ class MountNamespaceBroker:
                 limit=output_limit - stdout_size,
             )
         finally:
+            if cancellation_read_fd >= 0:
+                os.close(cancellation_read_fd)
+            if cancellation_write_fd >= 0:
+                os.close(cancellation_write_fd)
             for returned_fd in returned_fds:
                 os.close(returned_fd)
         return DockerCommandResult(
@@ -4193,11 +4223,18 @@ class BrokerDockerCliExecutor:
             "environment": [],
             "timeout_ms": timeout_ms,
             "output_limit": output_limit,
+            "cancellation_descriptor": True,
         }
         payload_fd = -1
         returned_fds: tuple[int, ...] = ()
-        descriptors = [executable.executable_fd]
+        cancellation_read_fd = cancellation_write_fd = -1
         try:
+            cancellation_read_fd, cancellation_write_fd = os.pipe()
+            os.set_inheritable(cancellation_read_fd, False)
+            os.set_inheritable(cancellation_write_fd, False)
+            os.set_blocking(cancellation_read_fd, False)
+            os.set_blocking(cancellation_write_fd, False)
+            descriptors = [executable.executable_fd]
             if input_bytes:
                 payload_fd = _sealed_payload_fd(input_bytes)
                 request["input_size"] = len(input_bytes)
@@ -4205,6 +4242,7 @@ class BrokerDockerCliExecutor:
                     "sha256:" + hashlib.sha256(input_bytes).hexdigest()
                 )
                 descriptors.append(payload_fd)
+            descriptors.append(cancellation_read_fd)
             duplicated: list[int] = []
             try:
                 for descriptor in descriptors:
@@ -4239,7 +4277,19 @@ class BrokerDockerCliExecutor:
                     for descriptor in abandoned_fds:
                         os.close(descriptor)
 
-                call_task.add_done_callback(close_abandoned_result)
+                try:
+                    os.write(cancellation_write_fd, b"\x01")
+                except OSError:
+                    pass
+                try:
+                    _result, abandoned_fds = await asyncio.shield(call_task)
+                except asyncio.CancelledError:
+                    call_task.add_done_callback(close_abandoned_result)
+                except BaseException:
+                    pass
+                else:
+                    for descriptor in abandoned_fds:
+                        os.close(descriptor)
                 raise
             stdout_size = result.get("stdout_size")
             stderr_size = result.get("stderr_size")
@@ -4269,6 +4319,10 @@ class BrokerDockerCliExecutor:
         finally:
             if payload_fd >= 0:
                 os.close(payload_fd)
+            if cancellation_read_fd >= 0:
+                os.close(cancellation_read_fd)
+            if cancellation_write_fd >= 0:
+                os.close(cancellation_write_fd)
             for returned_fd in returned_fds:
                 os.close(returned_fd)
         return DockerCommandResult(
