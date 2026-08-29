@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+from builtins import ExceptionGroup
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+
+import httpx
 
 from ...contracts import (
     OpenAICompletionsProviderProfile,
@@ -25,10 +28,22 @@ from .chat_stream_decoder import OpenAIChatStreamDecoder
 class _ProfileClient:
     transport: Any
     profile: OpenAICompletionsProviderProfile
+    http_client: httpx.Client
+
     def close(self) -> None:
+        failures: list[Exception] = []
         close = getattr(self.transport, "close", None)
         if callable(close):
-            close()
+            try:
+                close()
+            except Exception as exc:
+                failures.append(exc)
+        try:
+            self.http_client.close()
+        except Exception as exc:
+            failures.append(exc)
+        if failures:
+            raise ExceptionGroup("profile transport cleanup failed", failures)
 
 
 class OpenAIChatRuntime(OpenAIBaseRuntime):
@@ -80,28 +95,41 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 details={"code": "invalid_provider_timeout"},
             )
         self._require_openai()
+        http_client: httpx.Client | None = None
         with redaction.secret_value_scope(
             profile.scoped_credential,
             *profile.caller_headers.values(),
             allow_short=True,
         ):
             try:
+                effective_timeout = (
+                    600.0 if timeout_seconds is None else float(timeout_seconds)
+                )
+                http_client = httpx.Client(
+                    timeout=effective_timeout,
+                    trust_env=False,
+                    follow_redirects=False,
+                )
                 kwargs: Dict[str, Any] = {
                     "api_key": profile.scoped_credential,
                     "base_url": profile.base_url,
                     "default_headers": dict(profile.caller_headers),
+                    "http_client": http_client,
                     "max_retries": 0,
+                    "timeout": effective_timeout,
                 }
-                if timeout_seconds is not None:
-                    kwargs["timeout"] = float(timeout_seconds)
                 transport = provider_sdk_bindings.openai(**kwargs)
             except Exception as exc:
+                if http_client is not None:
+                    http_client.close()
                 raise ProviderRuntimeError(
                     redaction.safe_exception_message(exc),
                     kind="configuration",
                     details={"code": "profile_client_creation_failed"},
                 ) from None
-        return _ProfileClient(transport, profile)
+        if http_client is None:
+            raise AssertionError("profile HTTP client was not created")
+        return _ProfileClient(transport, profile, http_client)
 
     def _stream_chat_completion(
         self,

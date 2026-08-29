@@ -12,6 +12,7 @@ from breadboard_engine.conductor.modes import (
     _provider_wire_evidence,
 )
 from breadboard_engine.provider import sdk_bindings
+from breadboard_engine.provider.runtimes.openai import chat as chat_module
 from breadboard_engine.provider.contracts import (
     OpenAICompletionsCapabilities,
     OpenAICompletionsProviderProfile,
@@ -208,18 +209,33 @@ def test_profile_rejects_nonzero_retry_and_unsupported_tools():
 
 def test_profile_client_sets_sdk_retries_to_zero(monkeypatch):
     captured = {}
+    http_options = {}
 
     class FakeOpenAI:
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
+    class FakeHttpClient:
+        def __init__(self, **kwargs):
+            http_options.update(kwargs)
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
     monkeypatch.setattr(sdk_bindings.provider_sdk_bindings, "openai", FakeOpenAI)
+    monkeypatch.setattr(chat_module.httpx, "Client", FakeHttpClient)
     runtime = _runtime()
-    runtime.create_client_from_profile(_profile())
+    client = runtime.create_client_from_profile(_profile())
     assert captured["api_key"] == "episode-secret"
     assert captured["base_url"] == "http://127.0.0.1:8111/v1"
     assert captured["max_retries"] == 0
+    assert captured["http_client"] is client.http_client
+    assert http_options["trust_env"] is False
+    assert http_options["follow_redirects"] is False
     assert "Authorization" not in captured["default_headers"]
+    client.close()
+    assert client.http_client.closed
 
 
 def test_profile_client_applies_explicit_bounded_transport_timeout(monkeypatch):
@@ -232,12 +248,13 @@ def test_profile_client_applies_explicit_bounded_transport_timeout(monkeypatch):
     )
     runtime = _runtime()
 
-    runtime.create_client_from_profile(_profile(), timeout_seconds=30)
+    client = runtime.create_client_from_profile(_profile(), timeout_seconds=30)
 
     assert captured["timeout"] == 30.0
     with pytest.raises(ProviderRuntimeError) as raised:
         runtime.create_client_from_profile(_profile(), timeout_seconds=0)
     assert raised.value.details["code"] == "invalid_provider_timeout"
+    client.close()
 
 
 def test_profile_binds_production_runtime_client(monkeypatch):

@@ -676,6 +676,20 @@ def _responses_request_to_chat(
             projected_content = content["prompt"]
         elif isinstance(content, str):
             projected_content = content
+        elif role == "assistant" and type(content) is list:
+            parts: list[str] = []
+            for block in content:
+                if (
+                    type(block) is not dict
+                    or set(block) != {"type", "text"}
+                    or block["type"] != "output_text"
+                    or type(block["text"]) is not str
+                ):
+                    raise ProviderContractError(
+                        "policy assistant message content is malformed"
+                    )
+                parts.append(block["text"])
+            projected_content = "".join(parts)
         elif content is None or isinstance(content, (bool, int, float, list, dict)):
             projected_content = json.dumps(
                 content,

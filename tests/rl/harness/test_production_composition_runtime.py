@@ -309,7 +309,14 @@ def test_cli_run_emits_only_secret_free_result_identity(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    async def run(_path: str) -> dict[str, object]:
+    async def run(
+        _path: str,
+        *,
+        secret_files: dict[str, str],
+        provider_credentials: dict[str, str],
+    ) -> dict[str, object]:
+        assert secret_files == {"composition": "/secrets/composition"}
+        assert provider_credentials == {"provider": "/secrets/provider"}
         return {
             "schema_version": "bb.rl.headless-result.v1",
             "episode_id": "episode-one",
@@ -319,7 +326,17 @@ def test_cli_run_emits_only_secret_free_result_identity(
 
     monkeypatch.setattr(harness_main, "run_headless_request_file", run)
 
-    result = harness_main.main(["run", "--request", "/request.json"])
+    result = harness_main.main(
+        [
+            "run",
+            "--request",
+            "/request.json",
+            "--secret-file",
+            "composition=/secrets/composition",
+            "--provider-credential-file",
+            "provider=/secrets/provider",
+        ]
+    )
 
     captured = capsys.readouterr()
     assert result == 0

@@ -182,7 +182,6 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
     event_path = tmp_path / "events.json"
     request = HeadlessRunRequest(
         composition_ref_path=str(fixture.composition_ref_path),
-        secret_files=fixture.secret_files,
         target_id=target.target_id,
         target_overlay_id=target.overlay_id,
         target_dynamic_fields={"fixture": "value"},
@@ -201,7 +200,7 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         provider=HeadlessProviderInput(
             model="Qwen/Qwen3.5-35B-A3B",
             base_url="http://127.0.0.1:8000/v1",
-            credential_file=str(credential),
+            credential_handle="episode-provider",
             context_window=131_072,
             max_output_tokens=32_000,
             timeout_seconds=30,
@@ -219,8 +218,16 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         result_path=str(result_path),
         event_log_path=str(event_path),
     )
+    assert str(credential) not in request.model_dump_json()
+    assert all(
+        path not in request.model_dump_json() for path in fixture.secret_files.values()
+    )
 
-    result = await run_headless_request(request)
+    result = await run_headless_request(
+        request,
+        secret_files=fixture.secret_files,
+        provider_credentials={"episode-provider": str(credential)},
+    )
 
     assert result["terminal"]["status"] == "succeeded"
     assert result["terminal"]["reason"] == "assistant_complete"

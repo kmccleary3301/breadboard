@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from builtins import BaseExceptionGroup
 from dataclasses import asdict
 import ipaddress
 import hashlib
@@ -50,7 +51,7 @@ class HeadlessProviderInput(BaseModel):
 
     model: str
     base_url: str
-    credential_file: str
+    credential_handle: str = Field(min_length=1, max_length=256)
     context_window: int
     max_output_tokens: int
     timeout_seconds: float = Field(gt=0, le=3_600)
@@ -66,9 +67,7 @@ class HeadlessProviderInput(BaseModel):
             parsed = urlsplit(value)
             port = parsed.port
             address = parsed.hostname
-            literal = (
-                None if address == "localhost" else ipaddress.ip_address(address or "")
-            )
+            literal = ipaddress.ip_address(address or "")
         except ValueError:
             raise ValueError(
                 "provider base_url must use an explicit loopback port"
@@ -81,24 +80,15 @@ class HeadlessProviderInput(BaseModel):
             or parsed.fragment
             or port is None
             or address is None
-            or (literal is not None and not literal.is_loopback)
+            or not literal.is_loopback
         ):
             raise ValueError("provider base_url must use an explicit loopback port")
         return value
 
-    @field_validator("credential_file")
-    @classmethod
-    def _credential_file_is_absolute(cls, value: str) -> str:
-        if not os.path.isabs(value) or os.path.normpath(value) != value:
-            raise ValueError(
-                "provider credential_file must be a normalized absolute path"
-            )
-        return value
-
-    def load_profile(self) -> OpenAICompletionsProviderProfile:
+    def load_profile(self, credential: str) -> OpenAICompletionsProviderProfile:
         return OpenAICompletionsProviderProfile(
             model=self.model,
-            scoped_credential=_read_secret_text(self.credential_file),
+            scoped_credential=credential,
             base_url=self.base_url,
             context_window=self.context_window,
             max_output_tokens=self.max_output_tokens,
@@ -139,7 +129,6 @@ class HeadlessRunRequest(BaseModel):
         "bb.rl.headless-run-request.v1"
     )
     composition_ref_path: str
-    secret_files: Mapping[str, str]
     target_id: str
     target_overlay_id: str
     target_dynamic_fields: Mapping[str, str]
@@ -164,22 +153,6 @@ class HeadlessRunRequest(BaseModel):
     def _path_is_absolute(cls, value: str) -> str:
         if not os.path.isabs(value) or os.path.normpath(value) != value:
             raise ValueError("headless paths must be normalized absolute paths")
-        return value
-
-    @field_validator("secret_files")
-    @classmethod
-    def _secret_files_are_absolute(cls, value: Mapping[str, str]) -> Mapping[str, str]:
-        if not value:
-            raise ValueError("headless composition secret_files cannot be empty")
-        for handle, path in value.items():
-            if (
-                type(handle) is not str
-                or not handle
-                or type(path) is not str
-                or not os.path.isabs(path)
-                or os.path.normpath(path) != path
-            ):
-                raise ValueError("headless composition secret_files are invalid")
         return value
 
     @model_validator(mode="after")
@@ -245,12 +218,30 @@ def load_headless_request(path: str) -> HeadlessRunRequest:
     return HeadlessRunRequest.model_validate_json(payload, strict=True)
 
 
-async def run_headless_request(request: HeadlessRunRequest) -> dict[str, Any]:
+async def run_headless_request(
+    request: HeadlessRunRequest,
+    *,
+    secret_files: Mapping[str, str],
+    provider_credentials: Mapping[str, str],
+) -> dict[str, Any]:
     if type(request) is not HeadlessRunRequest:
         raise TypeError("request must be an exact HeadlessRunRequest")
     target: E4TargetPolicyProjection | None = None
     profile: OpenAICompletionsProviderProfile | None = None
+    composition: ProductionComposition | None = None
     try:
+        composition_secrets = _secret_file_bindings(
+            secret_files,
+            field_name="composition secret files",
+        )
+        provider_secrets = _secret_file_bindings(
+            provider_credentials,
+            field_name="provider credentials",
+        )
+        if set(provider_secrets) != {request.provider.credential_handle}:
+            raise ValueError(
+                "provider credential handles do not match the headless request"
+            )
         target = E4TargetPolicyProjection.load(
             request.target_id,
             request.target_dynamic_fields,
@@ -263,7 +254,9 @@ async def run_headless_request(request: HeadlessRunRequest) -> dict[str, Any]:
             raise ValueError(
                 "requested tool allowlist does not match the selected target"
             )
-        profile = request.provider.load_profile()
+        profile = request.provider.load_profile(
+            _read_secret_text(provider_secrets[request.provider.credential_handle])
+        )
         episode_id = request.resolve_request.episode_id
 
         def resolver_factory(authority: Any) -> EpisodeOpenAICompletionsPolicyResolver:
@@ -276,9 +269,10 @@ async def run_headless_request(request: HeadlessRunRequest) -> dict[str, Any]:
 
         composition = load_production_composition(
             request.composition_ref_path,
-            request.secret_files,
+            composition_secrets,
             policy_client_resolver_factory=resolver_factory,
         )
+        await composition.service.start()
         config_identity = request.identity_dict(
             composition_manifest_ref=composition.manifest_ref,
             target=target,
@@ -293,18 +287,28 @@ async def run_headless_request(request: HeadlessRunRequest) -> dict[str, Any]:
             profile=profile,
             composition=composition,
         )
-    except Exception as exc:
+    except BaseException as exc:
+        failure: BaseException = exc
+        if composition is not None:
+            try:
+                await composition.close()
+            except BaseException as cleanup_exc:
+                failure = BaseExceptionGroup(
+                    "headless preflight and cleanup failed",
+                    [exc, cleanup_exc],
+                )
         result = _preflight_failure_result(
             request,
             target=target,
             profile=profile,
-            failure=exc,
+            failure=failure,
         )
         _atomic_write(request.result_path, _canonical_bytes(result))
         raise HeadlessRunFailed(result) from None
     primary_failure: BaseException | None = None
     cleanup_failure: BaseException | None = None
     created = False
+    terminal_unsuccessful = False
     event_bytes: bytes | None = None
     try:
         create_operation = await composition.service.create(request.resolve_request)
@@ -364,8 +368,7 @@ async def run_headless_request(request: HeadlessRunRequest) -> dict[str, Any]:
             ),
             "closed_envelope_digest": closed.digest,
         }
-        if run.primary_disposition.value != "succeeded":
-            raise HeadlessRunFailed(result)
+        terminal_unsuccessful = run.primary_disposition.value != "succeeded"
     except BaseException as exc:
         primary_failure = exc
     finally:
@@ -422,13 +425,26 @@ async def run_headless_request(request: HeadlessRunRequest) -> dict[str, Any]:
         _atomic_write(request.event_log_path, event_bytes)
     result_bytes = _canonical_bytes(result)
     _atomic_write(request.result_path, result_bytes)
-    if primary_failure is not None or cleanup_failure is not None:
+    if (
+        primary_failure is not None
+        or cleanup_failure is not None
+        or terminal_unsuccessful
+    ):
         raise HeadlessRunFailed(result)
     return result
 
 
-async def run_headless_request_file(path: str) -> dict[str, Any]:
-    return await run_headless_request(load_headless_request(path))
+async def run_headless_request_file(
+    path: str,
+    *,
+    secret_files: Mapping[str, str],
+    provider_credentials: Mapping[str, str],
+) -> dict[str, Any]:
+    return await run_headless_request(
+        load_headless_request(path),
+        secret_files=secret_files,
+        provider_credentials=provider_credentials,
+    )
 
 
 def _validate_effective_plan(
@@ -779,6 +795,28 @@ def _safe_failure_projection(exc: BaseException) -> dict[str, str]:
     if type(category) is not str or not category or len(category) > 128:
         category = type(exc).__name__
     return {"code": code, "category": category}
+
+
+def _secret_file_bindings(
+    bindings: Mapping[str, str],
+    *,
+    field_name: str,
+) -> dict[str, str]:
+    if not isinstance(bindings, Mapping) or not bindings:
+        raise ValueError(f"{field_name} must contain launcher-supplied bindings")
+    copied: dict[str, str] = {}
+    for handle, path in bindings.items():
+        if (
+            type(handle) is not str
+            or not handle
+            or len(handle) > 256
+            or type(path) is not str
+            or not os.path.isabs(path)
+            or os.path.normpath(path) != path
+        ):
+            raise ValueError(f"{field_name} contains an invalid binding")
+        copied[handle] = path
+    return copied
 
 
 def _read_secret_text(path: str) -> str:

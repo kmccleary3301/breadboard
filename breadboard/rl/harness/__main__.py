@@ -47,6 +47,8 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--prebound-service-fd", action="append", type=_service_fd, default=[], metavar="ROLE=FD")
     run = commands.add_parser("run", allow_abbrev=False)
     run.add_argument("--request", required=True)
+    run.add_argument("--secret-file", action="append", type=_secret_file, default=[], metavar="HANDLE=/absolute/path")
+    run.add_argument("--provider-credential-file", action="append", type=_secret_file, default=[], metavar="HANDLE=/absolute/path")
     return parser
 
 
@@ -168,9 +170,17 @@ class _LifecycleServer(uvicorn.Server):
             raise failure
 
 
-async def _run_headless(path: str) -> int:
+async def _run_headless(
+    path: str,
+    secret_files: dict[str, str],
+    provider_credentials: dict[str, str],
+) -> int:
     try:
-        result = await run_headless_request_file(path)
+        result = await run_headless_request_file(
+            path,
+            secret_files=secret_files,
+            provider_credentials=provider_credentials,
+        )
     except HeadlessRunFailed as exc:
         terminal = exc.result.get("terminal", {})
         print(
@@ -206,7 +216,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         if args.command == "run":
-            return asyncio.run(_run_headless(args.request))
+            return asyncio.run(
+                _run_headless(
+                    args.request,
+                    _bindings(args.secret_file),
+                    _bindings(args.provider_credential_file),
+                )
+            )
         bindings = _bindings(args.secret_file)
         socket_fds = _socket_bindings(args.prebound_service_fd)
         if args.command == "inspect":

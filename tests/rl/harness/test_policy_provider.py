@@ -225,6 +225,11 @@ async def test_profile_client_projects_multi_turn_tool_history_and_completion(
         [
             {"role": "user", "content": {"task": "inspect"}},
             {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "checking"}],
+            },
+            {
                 "type": "function_call",
                 "name": "read",
                 "call_id": "call-one",
@@ -252,6 +257,10 @@ async def test_profile_client_projects_multi_turn_tool_history_and_completion(
         {"role": "system", "content": "system prompt"},
         {"role": "user", "content": '{"task":"inspect"}'},
     ]
+    assert captured[1][0][2] == {
+        "role": "assistant",
+        "content": "checking",
+    }
     assert captured[1][0][-2:] == [
         {
             "role": "assistant",
