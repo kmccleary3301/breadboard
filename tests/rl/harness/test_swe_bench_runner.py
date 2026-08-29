@@ -4,11 +4,11 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Mapping
 
 import pytest
 
+from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.headless import (
     HeadlessProviderInput,
     HeadlessProviderRouteAuthority,
@@ -16,6 +16,9 @@ from breadboard.rl.harness.headless import (
     HeadlessWorkspaceInput,
 )
 from breadboard.rl.harness.policy_provider import E4TargetPolicyProjection
+from breadboard.rl.harness.qualification import (
+    materialize_production_composition_fixture,
+)
 from breadboard.rl.harness.swe_bench_runner import (
     E4ProfileIdentity,
     E4_PROFILE_IDS,
@@ -35,6 +38,7 @@ from breadboard.rl.harness.swe_bench_runner import (
     _canonical_digest,
     _controller_identity,
     _controller_model_name,
+    _require_root_private_work_directory,
     _copy_verified_dataset,
     _validate_headless_result,
     _write_digest_bound_dataset,
@@ -86,7 +90,7 @@ def _reports(resolved: bool) -> tuple[dict[str, Any], dict[str, Any]]:
         "resolved": resolved,
         "infra_failure": False,
     }
-    return aggregate, instance
+    return aggregate, {INSTANCE_ID: instance}
 
 
 def _command(
@@ -144,11 +148,16 @@ def _headless_request(tmp_path: Path) -> HeadlessRunRequest:
         max_output_tokens=1024,
         timeout_seconds=30,
     )
-    return HeadlessRunRequest.model_construct(
+    schema_fixture = materialize_production_composition_fixture(
+        tmp_path / "headless-schema-fixture"
+    )
+    resolution_payload = dict(schema_fixture.create_body["resolution"])
+    resolution_payload["episode_id"] = "episode-1"
+    return HeadlessRunRequest(
         target_id="fixture@1.0.0",
         target_overlay_id="fixture-headless.v1",
         target_dynamic_fields={"fixture": "value"},
-        resolve_request=SimpleNamespace(episode_id="episode-1"),
+        resolve_request=c.ResolveEpisodeRequest.model_validate(resolution_payload),
         provider=provider,
         workspace=HeadlessWorkspaceInput(
             task_image_digest=IMAGE_LEAF_DIGEST,
@@ -156,6 +165,39 @@ def _headless_request(tmp_path: Path) -> HeadlessRunRequest:
             base_commit=BASE_COMMIT,
         ),
         prompt=PINNED_SWE_BENCH_TASK.model_visible_task()["problem_statement"],
+        tool_allowlist=("shell",),
+        expected_resources=c.ResourceLimits(
+            cpu_millis=1_000,
+            memory_bytes=1_000_000,
+            pids=32,
+            storage_bytes=1_000_000,
+            open_files=128,
+            wall_time_ms=60_000,
+        ),
+        expected_limits=c.ExecutionLimits(
+            max_turns=4,
+            action_timeout_ms=9_000,
+            observation_bytes=20_000,
+            response_bytes=100_000,
+            artifact_bytes_each=10_000,
+            artifact_bytes_total=20_000,
+            transcript_bytes=100_000,
+            setup_timeout_ms=5_000,
+            verifier_timeout_ms=17_000,
+        ),
+        expected_sandbox=c.SandboxGrant(
+            runtime_id="sandbox",
+            runtime_class=c.RuntimeClass.HARDENED_DOCKER,
+            driver_implementation_digest=f"sha256:{'1' * 64}",
+            runtime_binary_digest=f"sha256:{'2' * 64}",
+            security_policy_digest=f"sha256:{'3' * 64}",
+            image_digest=IMAGE_LEAF_DIGEST,
+            network_policy_digest=f"sha256:{'4' * 64}",
+            egress_route_ids=(),
+            mounts=(),
+        ),
+        result_path=str(tmp_path / "result.json"),
+        event_log_path=str(tmp_path / "events.jsonl"),
         patch_path=str(tmp_path / "workspace.patch"),
     )
 
@@ -260,6 +302,10 @@ def _evaluator(
         "breadboard.rl.harness.swe_bench_runner.measure_official_evaluator_environment",
         lambda _root: measurement,
     )
+    monkeypatch.setattr(
+        "breadboard.rl.harness.swe_bench_runner._require_root_private_work_directory",
+        lambda _path: None,
+    )
     work = tmp_path / "evaluator-work"
     work.mkdir(mode=0o700)
     return SubprocessOfficialEvaluator(
@@ -287,6 +333,22 @@ def test_pins_profile_identity_command_and_controller_are_generic(
         profile.profile_id = "Pi"  # type: ignore[misc]
 
 
+def test_evaluator_requires_root_owned_work_custody(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    work = tmp_path / "evaluator-work"
+    work.mkdir(mode=0o700)
+    monkeypatch.setattr(
+        "breadboard.rl.harness.swe_bench_runner.os.geteuid",
+        lambda: 501,
+    )
+    with pytest.raises(SweBenchRunnerError, match="root-owned"):
+        _require_root_private_work_directory(str(work))
+
+
+
+
 def test_evaluator_result_binds_command_reports_and_reward_without_raw_reports(
     tmp_path: Path,
 ) -> None:
@@ -300,6 +362,13 @@ def test_evaluator_result_binds_command_reports_and_reward_without_raw_reports(
     assert result.reward == 1.0
     assert result.report_digest.startswith("sha256:")
     assert result.reward_digest.startswith("sha256:")
+    flat_instance = instance[INSTANCE_ID]
+    with pytest.raises(SweBenchRunnerError, match="envelope"):
+        SweBenchEvaluatorResult.from_reports(
+            command,
+            aggregate_report=aggregate,
+            instance_report=flat_instance,
+        )
     assert "model_patch" not in result.public_projection()
     assert "test_patch" not in result.public_projection()
     with pytest.raises(SweBenchRunnerError, match="official report validation"):
@@ -461,7 +530,14 @@ def test_request_requires_real_base_and_launcher_binding(tmp_path: Path) -> None
             profile=request.profile,
             headless_request=request.headless_request.model_copy(
                 update={
-                    "resolve_request": SimpleNamespace(episode_id="episode.1")
+                    "resolve_request": c.ResolveEpisodeRequest.model_validate(
+                        {
+                            **request.headless_request.resolve_request.model_dump(
+                                mode="json"
+                            ),
+                            "episode_id": "episode.1",
+                        }
+                    )
                 }
             ),
             headless_invocation=request.headless_invocation,

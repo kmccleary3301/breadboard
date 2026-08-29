@@ -434,18 +434,34 @@ class SweBenchEvaluatorResult:
         if type(command) is not TrustedEvaluatorCommand:
             raise TypeError("command must be an exact TrustedEvaluatorCommand")
         aggregate = _frozen_projection(aggregate_report, field_name="aggregate report")
-        instance = _frozen_projection(instance_report, field_name="instance report")
+        instance_envelope = _frozen_projection(
+            instance_report, field_name="instance report"
+        )
+        thawed_instance_envelope = cast(
+            Mapping[str, Any], thaw_json(instance_envelope)
+        )
+        if set(thawed_instance_envelope) != {INSTANCE_ID}:
+            raise SweBenchRunnerError(
+                "official instance report envelope does not bind the pinned task"
+            )
+        inner_instance = thawed_instance_envelope[INSTANCE_ID]
+        if not isinstance(inner_instance, Mapping):
+            raise SweBenchRunnerError(
+                "official instance report envelope is malformed"
+            )
         try:
             reward = score_official_reports(
                 aggregate_report=cast(Mapping[str, Any], thaw_json(aggregate)),
-                instance_report=cast(Mapping[str, Any], thaw_json(instance)),
+                instance_report=inner_instance,
             )
         except SweBenchTaskError as exc:
             raise SweBenchRunnerError(str(exc)) from exc
         return cls(
             command=command,
             aggregate_report_digest=_canonical_digest(thaw_json(aggregate)),
-            instance_report_digest=_canonical_digest(thaw_json(instance)),
+            instance_report_digest=_canonical_digest(
+                thaw_json(instance_envelope)
+            ),
             reward=reward,
             _validation_token=_RESULT_VALIDATION_TOKEN,
         )
@@ -580,6 +596,14 @@ OFFICIAL_EVALUATOR_PYTHON_DIGEST = "sha256:a15ccdaf07655a8667a3687b13171486c9a26
 OFFICIAL_EVALUATOR_DOCKER_DIGEST = "sha256:6435ff9214bf8e0931078fb0980809728cac0a54a526d4f28a26d3e48132b58d"
 _MAX_ENVIRONMENT_FILES = 50_000
 _MAX_ENVIRONMENT_BYTES = 4 * 1024 * 1024 * 1024
+_EVALUATOR_ENVIRONMENT_ASSERTION = (
+    "root=os.path.realpath(sys.argv.pop(1));"
+    "import swebench;"
+    "valid=os.path.realpath(sys.prefix)==root and "
+    "os.path.commonpath((os.path.realpath(swebench.__file__),root))==root;"
+    "valid or sys.exit(86);"
+)
+
 
 
 def _require_root_owned_immutable_directory(path: str) -> None:
@@ -604,6 +628,27 @@ def _require_root_owned_immutable_directory(path: str) -> None:
         if parent == current:
             return
         current = parent
+
+def _require_root_private_work_directory(path: str) -> None:
+    if os.geteuid() != 0:
+        raise SweBenchRunnerError(
+            "official evaluator requires the root-owned host custody boundary"
+        )
+    try:
+        identity = os.stat(path, follow_symlinks=False)
+    except OSError as exc:
+        raise SweBenchRunnerError(
+            "official evaluator work directory is unavailable"
+        ) from exc
+    if (
+        not stat.S_ISDIR(identity.st_mode)
+        or stat.S_IMODE(identity.st_mode) != 0o700
+        or identity.st_uid != 0
+    ):
+        raise SweBenchRunnerError(
+            "official evaluator work directory is not root-owned and private"
+        )
+
 
 
 def _measure_immutable_tree(
@@ -746,12 +791,38 @@ def measure_official_evaluator_environment(root: str) -> dict[str, Any]:
         or f"Version: {EVALUATOR_VERSION}\n".encode() not in distribution_metadata
     ):
         raise SweBenchRunnerError("evaluator distribution metadata is not pinned")
-    python_path = os.path.realpath(os.path.join(root, "bin", "python"))
+    python_path = os.path.join(root, "bin", "python")
+    try:
+        python_launcher = os.lstat(python_path)
+        python_target = os.readlink(python_path)
+    except OSError as exc:
+        raise SweBenchRunnerError(
+            "official evaluator Python launcher is unavailable"
+        ) from exc
+    if (
+        not stat.S_ISLNK(python_launcher.st_mode)
+        or python_launcher.st_uid != 0
+        or python_target != "../runtime/bin/python3.11"
+    ):
+        raise SweBenchRunnerError(
+            "official evaluator Python launcher is not pinned"
+        )
+    resolved_python_path = os.path.realpath(python_path)
+    expected_python_path = os.path.join(root, "runtime", "bin", "python3.11")
+    if resolved_python_path != expected_python_path:
+        raise SweBenchRunnerError(
+            "official evaluator Python launcher target is not pinned"
+        )
+    pyvenv_path = os.path.join(root, "pyvenv.cfg")
+    pyvenv_digest = _measure_file(
+        pyvenv_path,
+        max_bytes=_MAX_REPORT_BYTES,
+    )
     docker_path = os.path.realpath("/usr/bin/docker")
-    _require_root_owned_immutable_directory(os.path.dirname(python_path))
+    _require_root_owned_immutable_directory(os.path.dirname(resolved_python_path))
     _require_root_owned_immutable_directory(os.path.dirname(docker_path))
     python_digest = _measure_file(
-        python_path,
+        resolved_python_path,
         max_bytes=_MAX_EVALUATOR_BYTES,
     )
     docker_digest = _measure_file(
@@ -762,6 +833,11 @@ def measure_official_evaluator_environment(root: str) -> dict[str, Any]:
         "schema_version": "bb.rl.swe-bench-evaluator-environment.v1",
         "platform": "linux/amd64",
         "python_abi": "cp311",
+        "python_launcher": {
+            "path": "bin/python",
+            "target": python_target,
+            "pyvenv_cfg_digest": pyvenv_digest,
+        },
         "evaluator_commit": EVALUATOR_COMMIT,
         "evaluator_tree": EVALUATOR_TREE,
         "files": sorted(entries, key=lambda item: item["path"]),
@@ -1023,15 +1099,7 @@ class SubprocessOfficialEvaluator:
             raise SweBenchRunnerError("official evaluator Python digest mismatch")
         if measurement["docker_digest"] != OFFICIAL_EVALUATOR_DOCKER_DIGEST:
             raise SweBenchRunnerError("official evaluator Docker client digest mismatch")
-        work = os.stat(self.work_directory, follow_symlinks=False)
-        if (
-            not stat.S_ISDIR(work.st_mode)
-            or stat.S_IMODE(work.st_mode) != 0o700
-            or work.st_uid != os.geteuid()
-        ):
-            raise SweBenchRunnerError(
-                "official evaluator work directory is not private"
-            )
+        _require_root_private_work_directory(self.work_directory)
         object.__setattr__(
             self,
             "environment_digest",
@@ -1082,7 +1150,8 @@ class SubprocessOfficialEvaluator:
         observation_path = os.path.join(run_root, "image-observation.json")
         observation_script = (
             "import json,os,sys;"
-            "from swebench.harness.run_evaluation import _docker_client;"
+            + _EVALUATOR_ENVIRONMENT_ASSERTION
+            + "from swebench.harness.run_evaluation import _docker_client;"
             "image=_docker_client().images.get(sys.argv[1]);"
             "payload={'requested_reference':sys.argv[1],'image_id':image.id,"
             "'repo_digests':sorted(image.attrs.get('RepoDigests') or [])};"
@@ -1096,6 +1165,7 @@ class SubprocessOfficialEvaluator:
                 "-I",
                 "-c",
                 observation_script,
+                self.environment_root,
                 _IMMUTABLE_IMAGE_REFERENCE,
                 observation_path,
             ),
@@ -1135,7 +1205,8 @@ class SubprocessOfficialEvaluator:
         cleanup_path = os.path.join(run_root, "container-cleanup.json")
         cleanup_script = (
             "import json, os, sys\n"
-            "from swebench.harness.run_evaluation import _docker_client\n"
+            + _EVALUATOR_ENVIRONMENT_ASSERTION
+            + "\nfrom swebench.harness.run_evaluation import _docker_client\n"
             "prefix = f'sweb.eval.{sys.argv[1].lower()}.{sys.argv[2]}'\n"
             "client = _docker_client()\n"
             "targets = sorted(\n"
@@ -1164,6 +1235,7 @@ class SubprocessOfficialEvaluator:
                 "-I",
                 "-c",
                 cleanup_script,
+                self.environment_root,
                 INSTANCE_ID,
                 run_id,
                 cleanup_path,
@@ -1181,8 +1253,9 @@ class SubprocessOfficialEvaluator:
             raise SweBenchRunnerError("official evaluator container cleanup failed")
         inventory_path = os.path.join(run_root, "container-inventory.json")
         inventory_script = (
-            "import json,sys;"
-            "from swebench.harness.run_evaluation import _docker_client;"
+            "import json,os,sys;"
+            + _EVALUATOR_ENVIRONMENT_ASSERTION
+            + "from swebench.harness.run_evaluation import _docker_client;"
             "prefix=f'sweb.eval.{sys.argv[1].lower()}.{sys.argv[2]}';"
             "names=sorted(c.name for c in _docker_client().containers.list(all=True) "
             "if c.name==prefix or c.name.startswith(prefix+'.'));"
@@ -1195,6 +1268,7 @@ class SubprocessOfficialEvaluator:
                 "-I",
                 "-c",
                 inventory_script,
+                self.environment_root,
                 INSTANCE_ID,
                 run_id,
                 inventory_path,
@@ -1241,6 +1315,7 @@ class SubprocessOfficialEvaluator:
         evaluation_dataset = os.path.join(run_root, "evaluation-dataset.parquet")
         predictions_path = os.path.join(run_root, "predictions.jsonl")
         report_directory = os.path.join(run_root, "reports")
+        _require_root_private_work_directory(run_root)
         environment = self._environment(run_root)
         evaluation: SweBenchEvaluatorResult | None = None
         cleanup_projection: dict[str, Any] | None = None
@@ -1270,8 +1345,9 @@ class SubprocessOfficialEvaluator:
                 patch_digest=patch_digest,
             )
             evaluator_script = (
-                "import sys;"
-                "from swebench.cli.cli import main;"
+                "import os,sys;"
+                + _EVALUATOR_ENVIRONMENT_ASSERTION
+                + "from swebench.cli.cli import main;"
                 "sys.exit(main())"
             )
             _run_evaluator_process(
@@ -1280,6 +1356,7 @@ class SubprocessOfficialEvaluator:
                     "-I",
                     "-c",
                     evaluator_script,
+                    self.environment_root,
                     *command.argv[1:],
                 ),
                 cwd=run_root,

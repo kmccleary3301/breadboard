@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.11.16"
       - uses: astral-sh/setup-uv@v6
       - name: Install exact evaluator environment
         run: |
@@ -68,6 +68,11 @@ jobs:
           sudo chmod 755 /opt/breadboard
           sudo chown root:root /opt
           sudo chmod 755 /opt
+      - name: Verify evaluator virtual-environment custody
+        run: |
+          sudo env PYTHONDONTWRITEBYTECODE=1 \
+            /opt/breadboard/swebench-evaluator/bin/python -I -c \
+            "import os,sys,swebench; root='/opt/breadboard/swebench-evaluator'; assert os.path.realpath(sys.prefix)==root; assert os.path.commonpath((os.path.realpath(swebench.__file__),root))==root"
       - name: Measure evaluator environment
         run: |
           uv run python -c "import json; from breadboard.rl.harness.swe_bench_runner import measure_official_evaluator_environment; value=measure_official_evaluator_environment('/opt/breadboard/swebench-evaluator'); open('/tmp/evaluator-measurement.json','x',encoding='utf-8').write(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n'); print(json.dumps(value,sort_keys=True))"

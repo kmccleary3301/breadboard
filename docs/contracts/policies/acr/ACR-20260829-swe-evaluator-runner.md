@@ -15,10 +15,10 @@ The E4 RL harness needs a production path from a completed headless workspace pa
 - Canonical `breadboard.rl.harness.swe_bench_runner` request and receipt contracts.
 - Exact controller, target, dataset row, image, base commit, patch, evaluator, report, reward, and cleanup binding.
 - Official SWE-bench evaluator invocation pinned to release `5.0.1` commit `87ab1f6ced28f75ba73ca899dc759b019310944a`.
-- One new evaluator working directory per run and exact report-path validation.
-- Bounded evaluator stdout, stderr, report, and patch input handling.
+- One new root-owned `0700` evaluator working directory per run and exact report-path validation.
+- Bounded evaluator process groups, report files, patch input, and cleanup inventory.
 - Danger-zone: yes.
-- Outside scope: mutable evaluator installation, networked dependency resolution during a scored run, multi-row aggregation, and promotion of Docker readiness without the separate live canary.
+- Outside scope: networked dependency resolution during a scored run, multi-row aggregation, and promotion of Docker readiness without the separate live canary.
 
 ## 3) Coupling and Generalization Impact
 
@@ -37,10 +37,11 @@ The E4 RL harness needs a production path from a completed headless workspace pa
 
 - Reject task, prompt, target, image, base, patch, evaluator, report, reward, and cleanup identity mismatches.
 - Reject symbolic-link, non-regular, oversized, mutable, or non-canonical patch input.
-- Hash the complete locked evaluator package tree, exact official commit, self-contained Python runtime, and Docker client; require root-owned authority paths with no group/world writes or executable bytecode caches and remeasure immediately before evaluation.
+- Hash the complete locked evaluator package tree, exact official commit, self-contained Python runtime, virtual-environment launcher and configuration, and Docker client; require root-owned authority paths with no group/world writes or executable bytecode caches and remeasure immediately before evaluation.
+- Reset and clean the sealed Git repository to the measured pinned base before any model action, then require an empty status and bind that state into sandbox measurement.
 - Transform only the verified private dataset copy from the pinned mutable image tag to the pinned platform digest, then bind the transformed artifact and live Docker image observation in the receipt.
-- Create an empty evaluator directory for every invocation so a stale report cannot satisfy a later run.
-- Use a minimal subprocess environment, bounded output, exact run-scoped container cleanup, process-group termination, and exact return-code/report checks.
+- Admit evaluation only inside a root-owned private work directory; run every evaluator helper through the measured venv launcher and require its prefix and imported `swebench` package to remain inside the measured root.
+- Use a minimal subprocess environment, exact run-scoped container cleanup, process-group termination, and exact return-code/report checks.
 - Bind canonical prediction, evaluator input, image observation, report, reward, and cleanup digests in the final receipt.
 - Run the focused SWE runner, installed headless, V2 service, and verifier-snapshot suite.
 - Require exact-head correctness and security review, the danger-zone ACR guard, and full CI before merge.
