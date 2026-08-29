@@ -18,6 +18,9 @@ from breadboard_engine.api.cli_bridge import app as app_module
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.api.cli_bridge.task_execution import TaskExecutionOwner
 from breadboard.product.runtime.artifacts import ArtifactStore
+from breadboard.product.runtime.session_store import (
+    authorize_session_artifact_manifest,
+)
 from breadboard_sdk import ApiError, BreadBoardClient
 
 
@@ -207,13 +210,21 @@ def test_public_session_readback_survives_service_restart() -> None:
         manifest_ref = artifact_store.put_json(
             artifact_store.manifest(session_id, {attachment_id: artifact_ref})
         )
+        manifest_name = (
+            f"{session_id}.{manifest_ref.digest.removeprefix('sha256:')}.json"
+        )
         artifact_store.materialize(
             manifest_ref,
             Path(workspace)
             / ".breadboard"
             / "artifacts"
             / "manifests"
-            / f"{session_id}.{manifest_ref.digest.removeprefix('sha256:')}.json",
+            / manifest_name,
+        )
+        authorize_session_artifact_manifest(
+            workspace,
+            session_id,
+            manifest_name,
         )
 
         orphaned_session_id = "sdk-v1-orphaned-session"
