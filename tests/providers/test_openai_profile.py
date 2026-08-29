@@ -5,6 +5,7 @@ import types
 
 import pytest
 
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.conductor.modes import _bind_episode_provider_profile
 from breadboard_engine.provider import sdk_bindings
 from breadboard_engine.provider.contracts import (
@@ -360,3 +361,20 @@ def test_profile_response_is_sanitized_inside_secret_scope(monkeypatch):
     rendered = repr(result)
     assert "episode-secret" not in rendered
     assert "caller-secret" not in rendered
+
+
+def test_rejected_episode_does_not_retain_provider_profile():
+    conductor_class = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = object.__new__(conductor_class)
+    conductor._active_session_state = None
+
+    with pytest.raises(ProviderContractError, match="run context requires"):
+        conductor.run_agentic_loop(
+            "",
+            "",
+            MODEL,
+            context=None,
+            provider_profile=_profile(),
+        )
+
+    assert conductor._active_session_state is None

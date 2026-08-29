@@ -5566,15 +5566,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 kernel_emitter = JsonlKernelEmitter(_Path(kernel_emitter_run_dir), mode=mode)  # type: ignore[arg-type]
             except Exception:
                 kernel_emitter = None
-        session_state = SessionState(
-            self.workspace,
-            self.image,
-            self.config,
-            event_emitter=emitter,
-            kernel_emitter=kernel_emitter,
-            episode_provider_profile=provider_profile,
-        )
-        self._active_session_state = session_state
         if not isinstance(context, dict):
             raise ProviderContractError(
                 "run context requires admitted session/input/turn identifiers"
@@ -5612,6 +5603,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             raise ProviderContractError(
                 "run context input_media accepts only media blocks"
             )
+        session_state = SessionState(
+            self.workspace,
+            self.image,
+            self.config,
+            event_emitter=emitter,
+            kernel_emitter=kernel_emitter,
+            episode_provider_profile=provider_profile,
+        )
+        self._active_session_state = session_state
         session_state.set_provider_metadata("session_id", provider_session_id)
         session_state.set_turn_context(
             input_id=provider_input_id,
