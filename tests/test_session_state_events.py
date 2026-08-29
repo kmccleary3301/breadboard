@@ -2764,6 +2764,42 @@ async def test_interactive_failure_terminalizes_remaining_admitted_turns(
 
 
 @pytest.mark.asyncio
+async def test_dispatcher_persistence_failure_still_fails_session_lifecycle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-dispatcher-failure-lifecycle",
+        status=SessionStatus.STARTING,
+    )
+    runner, product_session = _lifecycle_runner_with_product_session(
+        registry,
+        record,
+        monkeypatch,
+        [False],
+    )
+    await registry.create(record)
+    await runner.prepare_start()
+    service = SessionService(registry=registry)
+    await service._ensure_dispatcher(record)
+
+    async def fail_event_persist(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("injected event persistence failure")
+
+    monkeypatch.setattr(registry, "persist", fail_event_persist)
+    runner.schedule_start()
+    runner.authorize_start()
+    assert runner._task is not None
+    await asyncio.wait_for(runner._task, timeout=2)
+
+    assert getattr(record, "_dispatcher_complete", False) is True
+    assert product_session.read_model.status == "failed"
+    assert record.status is SessionStatus.FAILED
+    assert runner._closed is True
+
+
+@pytest.mark.asyncio
 async def test_productless_interactive_failure_marks_session_failed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

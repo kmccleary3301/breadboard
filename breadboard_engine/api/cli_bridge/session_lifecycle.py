@@ -458,9 +458,15 @@ class SessionLifecycleOwner:
         logger.error(
             "Session %s failed with code=%s", host.session.session_id, error_code
         )
-        await self.terminalize_admitted_turns(
-            outcome="failed", reason=error_code, error_code=error_code
-        )
+        try:
+            await self.terminalize_admitted_turns(
+                outcome="failed", reason=error_code, error_code=error_code
+            )
+        except Exception:
+            logger.error(
+                "Session %s could not persist terminal turn events",
+                host.session.session_id,
+            )
         product_session = getattr(host.session, "product_session", None)
         if product_session is None:
             product_state = "failed"
@@ -473,15 +479,26 @@ class SessionLifecycleOwner:
                     "runtime failure",
                 )
                 product_state = product_session.read_model.status
-        await host.registry.update_status(
-            host.session.session_id,
-            {
-                "completed": SessionStatus.COMPLETED,
-                "failed": SessionStatus.FAILED,
-                "canceled": SessionStatus.STOPPED,
-            }.get(product_state, SessionStatus.FAILED),
-        )
-        await host._publish_session_failure(error_code)
+        final_status = {
+            "completed": SessionStatus.COMPLETED,
+            "failed": SessionStatus.FAILED,
+            "canceled": SessionStatus.STOPPED,
+        }.get(product_state, SessionStatus.FAILED)
+        try:
+            await host.registry.update_status(host.session.session_id, final_status)
+        except Exception:
+            host.session.status = final_status
+            logger.error(
+                "Session %s could not persist terminal session status",
+                host.session.session_id,
+            )
+        try:
+            await host._publish_session_failure(error_code)
+        except Exception:
+            logger.error(
+                "Session %s could not publish its terminal failure event",
+                host.session.session_id,
+            )
 
     async def terminalize_admitted_turns(
         self,
