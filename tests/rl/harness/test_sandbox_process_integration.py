@@ -649,6 +649,11 @@ async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority
     harness.manager.process_backend = TrustedProcessBackend()
     primary = await harness.manager.open(fixture.request)
     descendant_command = (
+        "for descriptor in /proc/self/fd/*; do "
+        "descriptor=${descriptor##*/}; "
+        "case \"$descriptor\" in 0|1|2) ;; "
+        "*) eval \"exec ${descriptor}>&-\" ;; esac; "
+        "done; "
         "printf '%s' \"$$\" > work/.descendant.tmp && "
         "mv work/.descendant.tmp work/descendant.pid; "
         "exec 1>&- 2>&-; "
@@ -875,7 +880,10 @@ async def test_trusted_process_handle_enforces_exact_500ms_deadline_and_cleans_d
 
 
 @requires_sealed_execution
-@pytest.mark.parametrize("identity_mutation", ["matching", "start", "pgid", "cgroup"])
+@pytest.mark.parametrize(
+    "identity_mutation",
+    ["matching", "start", "pgid", "session", "cgroup"],
+)
 async def test_real_process_restart_never_signals_from_stale_lease_record(
     tmp_path: Path, identity_mutation: str
 ) -> None:
@@ -923,6 +931,7 @@ async def test_real_process_restart_never_signals_from_stale_lease_record(
         process_group = identity["process_group_id"]
         assert identity["resource_id"] == f"process-group-{process_group}"
         assert process_pid == process_group == os.getpgid(process_pid)
+        assert identity["process_session_id"] == process_group
         assert identity["process_start_identity"].startswith("linux-proc-start:")
         assert identity["process_cgroup_identity"].startswith("sha256:")
         assert record["runtime_resource_id"] == f"process-group-{primary.lease_id}"
@@ -931,6 +940,8 @@ async def test_real_process_restart_never_signals_from_stale_lease_record(
             identity["process_start_identity"] = "linux-proc-start:forged"
         elif identity_mutation == "pgid":
             identity["process_group_id"] = process_group + 1
+        elif identity_mutation == "session":
+            identity["process_session_id"] = process_group + 1
         elif identity_mutation == "cgroup":
             identity["process_cgroup_identity"] = "sha256:" + "0" * 64
         record["process_identities"] = [identity]

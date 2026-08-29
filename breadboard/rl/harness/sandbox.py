@@ -1086,7 +1086,6 @@ class TrustedProcessHandle:
         self._workspace_fd = workspace_fd
         self._workspace_identity = workspace_identity
         self._groups: dict[int, Mapping[str, Any]] = {}
-        self._group_guard_fds: dict[int, int] = {}
         self._launch_lock = asyncio.Lock()
         self._closing = False
         self._closed = False
@@ -1127,25 +1126,24 @@ class TrustedProcessHandle:
     @classmethod
     def _observe_group_identity(cls, pid: int) -> Mapping[str, Any]:
         process_group = os.getpgid(pid)
-        if process_group != pid:
+        session_id = os.getsid(pid)
+        if process_group != pid or session_id != pid:
             raise RuntimeError("trusted process group identity mismatch")
         return MappingProxyType(
             {
                 "process_pid": pid,
                 "process_group_id": process_group,
+                "process_session_id": session_id,
                 "process_start_identity": cls._start_identity(pid),
                 "process_cgroup_identity": cls._cgroup_identity(pid),
             }
         )
 
-    def _group_guard_matches(self, process_group: int) -> bool:
-        guard_fd = self._group_guard_fds.get(process_group)
-        if guard_fd is None:
-            return False
-        try:
-            guard = os.fstat(guard_fd)
-        except OSError:
-            return False
+    def _orphaned_group_identity_matches(
+        self,
+        process_group: int,
+        identity: Mapping[str, Any],
+    ) -> bool:
         try:
             proc_fd = os.open(
                 "/proc",
@@ -1163,43 +1161,17 @@ class TrustedProcessHandle:
                 try:
                     fields = self._proc_fields(pid)
                     if (
-                        len(fields) <= 2
+                        len(fields) <= 3
                         or int(fields[2]) != process_group
+                        or int(fields[3])
+                        != identity.get("process_session_id")
                         or self._cgroup_identity(pid)
-                        != self._groups[process_group].get(
-                            "process_cgroup_identity"
-                        )
+                        != identity.get("process_cgroup_identity")
                     ):
                         continue
-                    descriptors = os.open(
-                        name + "/fd",
-                        os.O_RDONLY
-                        | getattr(os, "O_DIRECTORY", 0)
-                        | getattr(os, "O_CLOEXEC", 0),
-                        dir_fd=proc_fd,
-                    )
-                except (OSError, ValueError, IndexError, KeyError):
+                except (OSError, ValueError, IndexError):
                     continue
-                try:
-                    for descriptor_name in os.listdir(descriptors):
-                        try:
-                            candidate = os.stat(
-                                descriptor_name,
-                                dir_fd=descriptors,
-                                follow_symlinks=True,
-                            )
-                        except OSError:
-                            continue
-                        if (
-                            candidate.st_dev,
-                            candidate.st_ino,
-                        ) == (
-                            guard.st_dev,
-                            guard.st_ino,
-                        ):
-                            return True
-                finally:
-                    os.close(descriptors)
+                return True
         finally:
             os.close(proc_fd)
         return False
@@ -1212,6 +1184,7 @@ class TrustedProcessHandle:
         if (
             identity.get("process_pid") != process_group
             or identity.get("process_group_id") != process_group
+            or identity.get("process_session_id") != process_group
         ):
             return False
         try:
@@ -1223,14 +1196,13 @@ class TrustedProcessHandle:
                 == identity.get("process_cgroup_identity")
             )
         except (ProcessLookupError, FileNotFoundError):
-            return self._group_guard_matches(process_group)
+            return self._orphaned_group_identity_matches(
+                process_group,
+                identity,
+            )
         except (OSError, subprocess.SubprocessError, ValueError, IndexError):
             return False
 
-    def _close_group_guard(self, process_group: int) -> None:
-        guard_fd = self._group_guard_fds.pop(process_group, None)
-        if guard_fd is not None:
-            os.close(guard_fd)
 
 
     async def _drain_group(
@@ -1283,7 +1255,6 @@ class TrustedProcessHandle:
             absent = False
         if absent:
             self._groups.pop(process.pid, None)
-            self._close_group_guard(process.pid)
             if clear_identity:
                 recorder = getattr(self, "_identity_recorder", None)
                 if recorder is not None:
@@ -1404,8 +1375,6 @@ class TrustedProcessHandle:
                 identity = self._observe_group_identity(process.pid)
                 process_group = int(identity["process_group_id"])
                 self._groups[process_group] = identity
-                self._group_guard_fds[process_group] = read_fd
-                read_fd = -1
                 recorder = getattr(self, "_identity_recorder", None)
                 if recorder is None:
                     raise RuntimeError(
@@ -1538,7 +1507,6 @@ class TrustedProcessHandle:
                 failed = True
             else:
                 self._groups.pop(process_group, None)
-                self._close_group_guard(process_group)
                 recorder = getattr(self, "_identity_recorder", None)
                 if recorder is not None:
                     recorder(f"process-group-{process_group}", None)
@@ -2681,6 +2649,7 @@ class SandboxRuntimeManager:
             if (
                 type(identity.get("process_pid")) is not int
                 or type(identity.get("process_group_id")) is not int
+                or type(identity.get("process_session_id")) is not int
                 or type(identity.get("process_start_identity")) is not str
                 or type(identity.get("process_cgroup_identity")) is not str
                 or resource_id != f"process-group-{identity.get('process_group_id')}"
@@ -2699,8 +2668,8 @@ class SandboxRuntimeManager:
             identities[key] for key in sorted(identities)
         ]
         for key in (
-            "process_pid", "process_group_id", "process_start_identity",
-            "process_cgroup_identity",
+            "process_pid", "process_group_id", "process_session_id",
+            "process_start_identity", "process_cgroup_identity",
         ):
             record.pop(key, None)
         self._write_lease_record(lease_id, record)
