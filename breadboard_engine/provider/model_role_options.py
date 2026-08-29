@@ -121,6 +121,13 @@ def openai_responses_role_options(context: ProviderRuntimeContext) -> dict[str, 
         request["service_tier"] = binding["service_tier"]
     reasoning = _reasoning(binding)
     mode = reasoning.get("mode", "inherit")
+    if mode in {"disabled", "effort"} and any(
+        field in request for field in ("temperature", "top_p")
+    ):
+        _unsupported(
+            "OpenAI reasoning does not accept sampling overrides",
+            "unsupported_role_generation_sampling_with_reasoning",
+        )
     if mode == "budget":
         _unsupported(
             "OpenAI Responses does not accept a reasoning token budget",
@@ -139,7 +146,12 @@ def openai_responses_role_options(context: ProviderRuntimeContext) -> dict[str, 
     return request
 
 
-def anthropic_role_options(context: ProviderRuntimeContext) -> dict[str, Any]:
+def anthropic_role_options(
+    context: ProviderRuntimeContext,
+    *,
+    default_max_output_tokens: int | None = None,
+    base_sampling: bool = False,
+) -> dict[str, Any]:
     """Return exact Anthropic Messages options for the active role."""
 
     binding = _active_binding(context)
@@ -165,8 +177,9 @@ def anthropic_role_options(context: ProviderRuntimeContext) -> dict[str, Any]:
         )
     reasoning = _reasoning(binding)
     mode = reasoning.get("mode", "inherit")
-    if mode in {"budget", "effort"} and any(
-        field in request for field in ("temperature", "top_p")
+    if mode in {"budget", "effort"} and (
+        base_sampling
+        or any(field in request for field in ("temperature", "top_p"))
     ):
         _unsupported(
             "Anthropic thinking does not accept sampling overrides",
@@ -175,9 +188,21 @@ def anthropic_role_options(context: ProviderRuntimeContext) -> dict[str, Any]:
     if mode == "disabled":
         request["thinking"] = {"type": "disabled"}
     elif mode == "budget":
+        budget_tokens = reasoning.get("budget_tokens")
+        max_tokens = request.get("max_tokens", default_max_output_tokens)
+        if (
+            type(budget_tokens) is not int
+            or budget_tokens < 1024
+            or type(max_tokens) is not int
+            or budget_tokens >= max_tokens
+        ):
+            _unsupported(
+                "Anthropic thinking budget must be at least 1024 and below max_tokens",
+                "unsupported_role_reasoning_budget",
+            )
         request["thinking"] = {
             "type": "enabled",
-            "budget_tokens": reasoning.get("budget_tokens"),
+            "budget_tokens": budget_tokens,
         }
     elif mode == "effort":
         effort = reasoning.get("effort")

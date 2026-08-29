@@ -1188,7 +1188,13 @@ class AnthropicMessagesRuntime(ProviderRuntime):
 
         if temperature is not None:
             request["temperature"] = float(temperature)
-        request.update(anthropic_role_options(context))
+        request.update(
+            anthropic_role_options(
+                context,
+                default_max_output_tokens=request["max_tokens"],
+                base_sampling="temperature" in request or "top_p" in request,
+            )
+        )
 
         response_metadata: Dict[str, Any] = {"stream": bool(stream)}
         if resolved_tool_choice:
