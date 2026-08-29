@@ -76,7 +76,10 @@ def _resource_root() -> Traversable:
 
 
 def _editable_source_root(distribution: metadata.Distribution) -> Path | None:
-    raw = distribution.read_text("direct_url.json")
+    try:
+        raw = distribution.read_text("direct_url.json")
+    except (OSError, UnicodeError):
+        return None
     if raw is None:
         return None
     try:
@@ -93,7 +96,10 @@ def _editable_source_root(distribution: metadata.Distribution) -> Path | None:
         or not isinstance(url, str)
     ):
         return None
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
     if (
         parsed.scheme != "file"
         or parsed.netloc not in {"", "localhost"}

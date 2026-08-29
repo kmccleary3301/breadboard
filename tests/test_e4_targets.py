@@ -49,11 +49,19 @@ def test_editable_source_root_accepts_only_absolute_local_file_urls(
     )
     assert _editable_source_root(valid) == source_root
 
+    def unreadable_metadata(_: str) -> str:
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid byte")
+
+    assert (
+        _editable_source_root(SimpleNamespace(read_text=unreadable_metadata)) is None
+    )
+
     for url in (
         "https://example.invalid/source",
         "file:relative/source",
         "file:///tmp/source?unexpected=query",
         "file://remote.invalid/source",
+        "file://[",
     ):
         invalid = SimpleNamespace(
             read_text=lambda _, url=url: json.dumps(
