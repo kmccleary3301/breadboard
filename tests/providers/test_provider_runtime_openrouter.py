@@ -727,7 +727,14 @@ def test_openrouter_chat_stream_omits_absent_tools_and_uses_chat_finalizer():
     runtime = provider_registry.create_runtime(descriptor)
     captured = {}
     response = _chat_response(content="hello")
-    stream = _FakeChatStream([_chat_chunk(content="hello")], response)
+    stream = _FakeChatStream(
+        [
+            _chat_chunk(content="hello"),
+            types.SimpleNamespace(type="content.delta"),
+            types.SimpleNamespace(type="content.done"),
+        ],
+        response,
+    )
 
     def open_stream(**kwargs):
         captured.update(kwargs)

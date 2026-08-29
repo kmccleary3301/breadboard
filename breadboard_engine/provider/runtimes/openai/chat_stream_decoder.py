@@ -12,6 +12,22 @@ from ...contracts import (
 )
 from ....security import redaction
 
+_OPENAI_DERIVED_CHAT_EVENT_TYPES = frozenset(
+    {
+        "content.delta",
+        "content.done",
+        "tool_calls.function.arguments.delta",
+        "tool_calls.function.arguments.done",
+        "logprobs.content.delta",
+        "logprobs.content.done",
+        "logprobs.refusal.delta",
+        "logprobs.refusal.done",
+        "refusal.delta",
+        "refusal.done",
+    }
+)
+
+
 
 class _ChatStreamHost(Protocol):
     """OpenAIBaseRuntime operations needed by the decoder."""
@@ -351,6 +367,8 @@ class OpenAIChatStreamDecoder:
         state: _ChatStreamState,
     ) -> None:
         event_type = self._host._get_attr(event, "type")
+        if event_type in _OPENAI_DERIVED_CHAT_EVENT_TYPES:
+            return
         chunk = (
             self._host._get_attr(event, "chunk")
             if event_type == "chunk"

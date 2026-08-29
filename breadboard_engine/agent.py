@@ -44,6 +44,7 @@ def _get_ray():  # type: ignore[no-untyped-def]
 from .agent_llm_openai import OpenAIConductor
 from .compilation.v2_loader import _config_resolution_base_dirs, load_agent_config
 from .provider.routing import provider_router
+from .provider.contracts import OpenAICompletionsProviderProfile
 from .provider import provider_adapter_manager
 from .compilation.tool_yaml_loader import load_yaml_tools
 from .compilation.system_prompt_compiler import get_compiler
@@ -404,6 +405,7 @@ class AgenticCoder:
         context: Optional[Dict[str, Any]] = None,
         kernel_emitter_run_dir: Optional[str] = None,
         kernel_emitter_mode: Optional[str] = None,
+        provider_profile: Optional[OpenAICompletionsProviderProfile] = None,
     ) -> Dict[str, Any]:
         """Run a single task and return results."""
         if replay_session and self.agent is not None:
@@ -485,6 +487,7 @@ class AgenticCoder:
                 kernel_emitter_run_dir=kernel_emitter_run_dir,
                 kernel_emitter_mode=kernel_emitter_mode,
                 context=context,
+                provider_profile=provider_profile,
             )
 
         ref = self.agent.run_agentic_loop.remote(
@@ -503,6 +506,7 @@ class AgenticCoder:
             kernel_emitter_run_dir=kernel_emitter_run_dir,
             kernel_emitter_mode=kernel_emitter_mode,
             context=context,
+            provider_profile=provider_profile,
         )
         ray_mod = _get_ray()
         if ray_mod is None:

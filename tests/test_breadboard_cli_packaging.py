@@ -324,6 +324,7 @@ from breadboard_engine.e4_targets import (
     list_e4_target_ids,
     load_e4_target,
 )
+from breadboard_engine.e4_trace_parity import canonical_json_bytes
 
 source_root = Path({str(ROOT)!r}).resolve()
 distribution = importlib.metadata.distribution("breadboard-harness-cli")
@@ -386,6 +387,7 @@ assert omp_target.descriptor["upstream"]["source"]["commit"] == (
     "5356713eae60e67ee64d9b02e3b5e377d248ee7f"
 )
 assert "target_id: pi@0.57.1" in pi_target.read_asset_text("harness.yaml")
+assert canonical_json_bytes({{"b": 1, "a": 2}}) == b'{{"a":2,"b":1}}'
 assert distribution.version == "0.0.0"
 print(json.dumps({{
     "distribution": distribution.metadata["Name"],
