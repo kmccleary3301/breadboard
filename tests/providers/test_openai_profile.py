@@ -378,3 +378,28 @@ def test_rejected_episode_does_not_retain_provider_profile():
         )
 
     assert conductor._active_session_state is None
+
+
+def test_setup_failure_does_not_retain_provider_profile(tmp_path):
+    conductor_class = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = conductor_class(
+        workspace=str(tmp_path / "workspace"),
+        config={},
+        local_mode=True,
+    )
+
+    with pytest.raises(AttributeError):
+        conductor.run_agentic_loop(
+            "",
+            "",
+            MODEL,
+            completion_config="invalid",
+            context={
+                "session_id": "session",
+                "input_id": "input",
+                "turn_id": "turn",
+            },
+            provider_profile=_profile(),
+        )
+
+    assert conductor._active_session_state is None

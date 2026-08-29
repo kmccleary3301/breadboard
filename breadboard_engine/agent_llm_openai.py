@@ -5611,7 +5611,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             kernel_emitter=kernel_emitter,
             episode_provider_profile=provider_profile,
         )
-        self._active_session_state = session_state
         session_state.set_provider_metadata("session_id", provider_session_id)
         session_state.set_turn_context(
             input_id=provider_input_id,
@@ -6324,6 +6323,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         # Main agentic loop - significantly simplified
         run_result = None
         run_loop_error: Optional[Dict[str, Any]] = None
+        self._active_session_state = session_state
         try:
             if is_longrun_enabled(getattr(self, "config", None)):
                 work_queue = build_work_queue(
