@@ -55,7 +55,7 @@ class SessionLifecycleHost(Protocol):
 class _LifecycleRunState:
     session_started_at: float
     input_inflight: bool = False
-
+    terminal_status: Optional[SessionStatus] = None
 
 class SessionLifecycleOwner:
     """Owns the ordered phases that run one CLI bridge session."""
@@ -74,7 +74,7 @@ class SessionLifecycleOwner:
             await self._mark_running()
             await self._initialize()
             await self._process_inputs(state)
-            await self._finalize()
+            await self._finalize(state)
         except Exception as exc:  # noqa: BLE001
             await self._fail(state, exc)
         finally:
@@ -399,9 +399,15 @@ class SessionLifecycleOwner:
             host._input_queue.task_done()
             state.input_inflight = False
             if one_shot or not durable_success:
+                if host._stop_event.is_set() or turn_was_cancelled:
+                    state.terminal_status = SessionStatus.STOPPED
+                elif execution_completed:
+                    state.terminal_status = SessionStatus.COMPLETED
+                else:
+                    state.terminal_status = SessionStatus.FAILED
                 break
 
-    async def _finalize(self) -> None:
+    async def _finalize(self, state: _LifecycleRunState) -> None:
         host = self._host
         if host._stop_event.is_set():
             await self.terminalize_admitted_turns(
@@ -417,7 +423,7 @@ class SessionLifecycleOwner:
                 metadata.get("non_interactive_cli_session")
                 or metadata.get("cli_session_kind") == "oneshot"
             )
-            final_status = (
+            final_status = state.terminal_status or (
                 SessionStatus.STOPPED
                 if host._stop_event.is_set() and not legacy_one_shot
                 else SessionStatus.COMPLETED

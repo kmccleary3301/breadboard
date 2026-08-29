@@ -2689,6 +2689,38 @@ async def test_interactive_failure_terminalizes_remaining_admitted_turns(
 
 
 @pytest.mark.asyncio
+async def test_productless_interactive_failure_marks_session_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="session-productless-failure",
+        status=SessionStatus.RUNNING,
+    )
+    runner, _ = _lifecycle_runner_with_product_session(
+        registry,
+        record,
+        monkeypatch,
+        [False],
+    )
+    record.product_session = None
+    await registry.create(record)
+    await runner.prepare_start()
+    active = record.turns_by_id[record.active_turn_id or ""]
+    record.turn_admission = record.turn_admission.__class__.ACTIVE
+    await registry.persist(record)
+    runner.schedule_start()
+    runner.authorize_start()
+    assert runner._task is not None
+    await runner._task
+
+    assert active.terminal_outcome == "failed"
+    assert active.terminal_resolution_committed is True
+    assert record.status is SessionStatus.FAILED
+
+
+@pytest.mark.asyncio
 async def test_interactive_stop_cancels_remaining_admitted_turns(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
