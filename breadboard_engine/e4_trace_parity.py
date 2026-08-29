@@ -883,7 +883,10 @@ def _workspace_snapshot_once(root: Path) -> dict[str, Any]:
     except OSError as exc:
         raise E4ParityError("could not inspect workspace root") from exc
     finally:
-        os.close(root_fd)
+        try:
+            os.close(root_fd)
+        except OSError as exc:
+            raise E4ParityError("could not close workspace root") from exc
     entries.sort(key=lambda entry: entry["path"])
     snapshot = {
         "schema_version": "bb.e4.workspace_snapshot.v1",
@@ -1185,7 +1188,7 @@ def _normalize_temporary_path(value: Any, root: str) -> str:
         raise E4ParityError("temporary path must be text")
     normalized_value = value.replace("\\", "/").rstrip("/")
     normalized_root = root.replace("\\", "/").rstrip("/")
-    _validate_absolute_path(normalized_value, "temporary path")
+    _validate_absolute_path(value, "temporary path")
     if normalized_value == normalized_root:
         return "<tmp>"
     prefix = normalized_root + "/"

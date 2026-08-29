@@ -183,6 +183,15 @@ def test_normalization_policy_fails_closed() -> None:
     assert not comparison.matches
     assert "outside its admitted root" in comparison.mismatches[0].reason
 
+    root_relative = compare_e4_traces(
+        {"path": "/tmp/reference/session"},
+        {"path": r"\tmp\clone\session"},
+        rules=(NormalizationRule("/path", "temporary_path"),),
+        temporary_roots=TemporaryPathRoots("/tmp/reference", "/tmp/clone"),
+    )
+    assert not root_relative.matches
+    assert "Windows root-relative" in root_relative.mismatches[0].reason
+
     type_mismatch = compare_e4_traces(
         {"timestamp": "2026-08-29T06:00:00Z"},
         {"timestamp": 1},
@@ -569,6 +578,23 @@ def test_workspace_snapshot_translates_root_fstat_failure(
     monkeypatch.setattr(os, "fstat", fail_root)
 
     with pytest.raises(E4ParityError, match="could not inspect workspace root"):
+        workspace_snapshot(workspace)
+
+
+def test_workspace_snapshot_translates_root_close_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    real_close = os.close
+
+    def close_then_fail(fd: int) -> None:
+        real_close(fd)
+        raise OSError("simulated EIO")
+
+    monkeypatch.setattr(os, "close", close_then_fail)
+
+    with pytest.raises(E4ParityError, match="could not close workspace root"):
         workspace_snapshot(workspace)
 
 
