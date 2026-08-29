@@ -233,6 +233,33 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         if name.startswith("docs/")
     )
 
+    zip_probe = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            (
+                "import json, sys; "
+                f"sys.path.insert(0, {str(wheel)!r}); "
+                "from breadboard_engine.e4_targets import "
+                "list_e4_target_ids, load_e4_target; "
+                "targets = list_e4_target_ids(); "
+                "assert load_e4_target('pi@0.57.1').read_asset_text("
+                "'harness.yaml').startswith('schema_version:'); "
+                "print(json.dumps(targets))"
+            ),
+        ],
+        cwd=tmp_path,
+        env=_clean_environment(),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert json.loads(zip_probe.stdout) == [
+        "oh-my-pi@16.2.13",
+        "pi@0.57.1",
+    ]
+
 
 def test_built_wheel_clean_install_runs_public_surface_without_credentials(
     tmp_path: Path,

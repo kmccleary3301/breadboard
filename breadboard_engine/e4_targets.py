@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from importlib import metadata
+from importlib.resources.abc import Traversable
 import hashlib
 import json
 from pathlib import Path
@@ -9,7 +11,9 @@ from types import MappingProxyType
 from typing import Any
 
 
-_RESOURCE_DIRECTORY = Path("config/e4_targets")
+_DISTRIBUTION_NAME = "breadboard-harness-cli"
+_LOADER_PATH = "breadboard_engine/e4_targets.py"
+_RESOURCE_DIRECTORY = "config/e4_targets"
 _INDEX_FILE = "index.json"
 _INDEX_SCHEMA = "bb.e4.target_index.v1"
 _TARGET_SCHEMA = "bb.e4.target.v1"
@@ -23,7 +27,7 @@ class E4TargetError(ValueError):
 class E4TargetPackage:
     target_id: str
     descriptor: Mapping[str, Any]
-    _asset_root: Path
+    _asset_root: Traversable
     _asset_paths: frozenset[str]
 
     def read_asset_bytes(self, relative_path: str) -> bytes:
@@ -51,11 +55,27 @@ def load_e4_target(target_id: str) -> E4TargetPackage:
     return _load_e4_target_from_root(_resource_root(), target_id)
 
 
-def _resource_root() -> Path:
-    return Path(__file__).resolve().parents[1] / _RESOURCE_DIRECTORY
+def _resource_root() -> Traversable:
+    loader_location = _location_key(__file__)
+    for distribution in metadata.distributions(name=_DISTRIBUTION_NAME):
+        candidate = distribution.locate_file(_LOADER_PATH)
+        if _location_key(candidate) == loader_location:
+            return distribution.locate_file(_RESOURCE_DIRECTORY)
+    raise E4TargetError(
+        f"could not locate {_RESOURCE_DIRECTORY!r} in the distribution "
+        f"that owns {loader_location!r}"
+    )
 
 
-def _load_e4_target_from_root(root: Path, target_id: str) -> E4TargetPackage:
+def _location_key(location: object) -> str:
+    text = str(location)
+    path = Path(text)
+    return str(path.resolve()) if path.exists() else text
+
+
+def _load_e4_target_from_root(
+    root: Traversable | Path, target_id: str
+) -> E4TargetPackage:
     index = _load_index(root)
     targets = index["targets"]
     entry = targets.get(target_id)
@@ -135,7 +155,7 @@ def _load_e4_target_from_root(root: Path, target_id: str) -> E4TargetPackage:
     )
 
 
-def _load_index(root: Path) -> dict[str, Any]:
+def _load_index(root: Traversable | Path) -> dict[str, Any]:
     index = _decode_json_object(
         _read_bytes(root.joinpath(_INDEX_FILE), _INDEX_FILE), _INDEX_FILE
     )
@@ -159,12 +179,15 @@ def _freeze_json(value: Any) -> Any:
     return value
 
 
-def _join_safe(root: Path, relative_path: str) -> Path:
+def _join_safe(root: Traversable | Path, relative_path: str) -> Traversable | Path:
     return _join_parts(root, _validate_relative_path(relative_path))
 
 
-def _join_parts(root: Path, parts: tuple[str, ...]) -> Path:
-    return root.joinpath(*parts)
+def _join_parts(root: Traversable | Path, parts: tuple[str, ...]) -> Traversable | Path:
+    resource = root
+    for part in parts:
+        resource = resource.joinpath(part)
+    return resource
 
 
 def _validate_relative_path(relative_path: str) -> tuple[str, ...]:
@@ -178,7 +201,7 @@ def _validate_relative_path(relative_path: str) -> tuple[str, ...]:
     return parts
 
 
-def _read_bytes(resource: Path, label: str) -> bytes:
+def _read_bytes(resource: Traversable | Path, label: str) -> bytes:
     try:
         if not resource.is_file():
             raise E4TargetError(f"target resource {label!r} is missing or not a file")
