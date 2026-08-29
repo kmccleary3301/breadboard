@@ -38,6 +38,10 @@ _POLICY_PROVIDER_PATH = Path(__file__).with_name("policy_provider.py")
 _POLICY_PROVIDER_IDENTITY = measure_module_artifact(str(_POLICY_PROVIDER_PATH))
 
 
+def _episode_timeout(wall_time_ms: int) -> asyncio.Timeout:
+    return asyncio.timeout(wall_time_ms / 1_000)
+
+
 class HeadlessWorkspaceInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -60,6 +64,7 @@ class HeadlessProviderInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     model: str
+    authority_model_id: str = Field(min_length=1, max_length=256)
     base_url: str
     credential_handle: str = Field(min_length=1, max_length=256)
     context_window: int
@@ -135,6 +140,7 @@ class HeadlessProviderInput(BaseModel):
         header_names = [name for name, _value in header_items]
         return {
             "model": self.model,
+            "authority_model_id": self.authority_model_id,
             "base_url_sha256": hashlib.sha256(
                 self.base_url.encode("utf-8")
             ).hexdigest(),
@@ -303,7 +309,13 @@ async def run_headless_request(
             return EpisodeOpenAICompletionsPolicyResolver(
                 authority,
                 profiles={episode_id: profile},
+                credential_handle_ids={
+                    episode_id: request.provider.credential_handle
+                },
                 target_projections={episode_id: target},
+                authority_model_ids={
+                    episode_id: request.provider.authority_model_id
+                },
                 timeout_seconds={episode_id: request.provider.timeout_seconds},
             )
 
@@ -358,64 +370,69 @@ async def run_headless_request(
     terminal_unsuccessful = False
     event_bytes: bytes | None = None
     try:
-        create_operation = await composition.service.create(request.resolve_request)
-        create = create_operation.response
-        created = True
-        result["create"] = {
-            "create_fingerprint": create.create_fingerprint,
-            "effective_plan_digest": create.effective_plan_digest,
-            "effective_plan_ref": _artifact_ref_projection(create.effective_plan_ref),
-            "policy_binding_digest": create.policy_binding_digest,
-            "policy_observation_digest": create.policy_observation_digest,
-        }
-        result["sandbox_identity"] = asdict(create.sandbox_preflight)
-        effective_plan = _load_effective_plan(composition, create.effective_plan_ref)
-        _validate_effective_plan(request, target, effective_plan)
-        run_operation = await composition.service.run(
-            episode_id,
-            create_fingerprint=create.create_fingerprint,
-            task_input={"prompt": request.prompt},
-            context=request.context,
-        )
-        run = run_operation.response
-        result["terminal"] = {
-            "status": run.primary_disposition.value,
-            "reason": run.termination,
-            "turn_count": run.turn_count,
-            "response": None if run.response is None else dict(run.response),
-        }
-        result["evidence"] = {
-            "completed_envelope_ref": _optional_ref(run.completed_envelope_ref),
-            "closed_envelope_ref": _optional_ref(run.closed_envelope_ref),
-            "result_ref": _optional_ref(run.result_ref),
-            "evidence_manifest_ref": _optional_ref(run.evidence_manifest_ref),
-            "evidence_root": run.evidence_root,
-            "artifact_manifest_ref": _optional_ref(run.artifact_manifest_ref),
-            "primary_measurement_digest": run.primary_measurement_digest,
-            "verifier_measurement_digest": run.verifier_measurement_digest,
-            "verifier_result_digest": run.verifier_result_digest,
-            "reward": run.reward,
-            "reward_components": dict(run.reward_components),
-        }
-        if run.evidence_manifest_ref is not None:
-            evidence_projection, event_bytes = _load_evidence_projection(
-                composition,
-                run.evidence_manifest_ref,
+        async with _episode_timeout(request.expected_resources.wall_time_ms):
+            create_operation = await composition.service.create(request.resolve_request)
+            create = create_operation.response
+            created = True
+            result["create"] = {
+                "create_fingerprint": create.create_fingerprint,
+                "effective_plan_digest": create.effective_plan_digest,
+                "effective_plan_ref": _artifact_ref_projection(
+                    create.effective_plan_ref
+                ),
+                "policy_binding_digest": create.policy_binding_digest,
+                "policy_observation_digest": create.policy_observation_digest,
+            }
+            result["sandbox_identity"] = asdict(create.sandbox_preflight)
+            effective_plan = _load_effective_plan(
+                composition, create.effective_plan_ref
             )
-            result["workspace_evidence"] = evidence_projection
-        close_operation = await composition.service.close_episode(episode_id)
-        closed = await composition.service.get_closed_envelope(episode_id)
-        result["cleanup"] = {
-            "disposition": close_operation.response.cleanup_disposition.value,
-            "receipt_digest": closed.cleanup_receipt_digest,
-            "receipt": (
-                None
-                if closed.cleanup_receipt is None
-                else thaw_json(closed.cleanup_receipt)
-            ),
-            "closed_envelope_digest": closed.digest,
-        }
-        terminal_unsuccessful = run.primary_disposition.value != "succeeded"
+            _validate_effective_plan(request, target, effective_plan)
+            run_operation = await composition.service.run(
+                episode_id,
+                create_fingerprint=create.create_fingerprint,
+                task_input={"prompt": request.prompt},
+                context=request.context,
+            )
+            run = run_operation.response
+            result["terminal"] = {
+                "status": run.primary_disposition.value,
+                "reason": run.termination,
+                "turn_count": run.turn_count,
+                "response": None if run.response is None else dict(run.response),
+            }
+            result["evidence"] = {
+                "completed_envelope_ref": _optional_ref(run.completed_envelope_ref),
+                "closed_envelope_ref": _optional_ref(run.closed_envelope_ref),
+                "result_ref": _optional_ref(run.result_ref),
+                "evidence_manifest_ref": _optional_ref(run.evidence_manifest_ref),
+                "evidence_root": run.evidence_root,
+                "artifact_manifest_ref": _optional_ref(run.artifact_manifest_ref),
+                "primary_measurement_digest": run.primary_measurement_digest,
+                "verifier_measurement_digest": run.verifier_measurement_digest,
+                "verifier_result_digest": run.verifier_result_digest,
+                "reward": run.reward,
+                "reward_components": dict(run.reward_components),
+            }
+            if run.evidence_manifest_ref is not None:
+                evidence_projection, event_bytes = _load_evidence_projection(
+                    composition,
+                    run.evidence_manifest_ref,
+                )
+                result["workspace_evidence"] = evidence_projection
+            close_operation = await composition.service.close_episode(episode_id)
+            closed = await composition.service.get_closed_envelope(episode_id)
+            result["cleanup"] = {
+                "disposition": close_operation.response.cleanup_disposition.value,
+                "receipt_digest": closed.cleanup_receipt_digest,
+                "receipt": (
+                    None
+                    if closed.cleanup_receipt is None
+                    else thaw_json(closed.cleanup_receipt)
+                ),
+                "closed_envelope_digest": closed.digest,
+            }
+            terminal_unsuccessful = run.primary_disposition.value != "succeeded"
     except asyncio.CancelledError as exc:
         cancellation = exc
         primary_failure = exc
@@ -573,6 +590,60 @@ def _validate_effective_plan(
     _validate_target_semantics(target, plan.effective_semantics)
 
 
+def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any]:
+    model_name = definition.get("model_name")
+    description = definition.get("description")
+    parameters = definition.get("parameters")
+    routing = definition.get("provider_routing")
+    if (
+        type(model_name) is not str
+        or not model_name
+        or type(description) is not str
+        or not isinstance(parameters, tuple)
+        or not isinstance(routing, Mapping)
+    ):
+        raise ValueError("effective target tool definition is malformed")
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for parameter in parameters:
+        if (
+            not isinstance(parameter, Mapping)
+            or type(parameter.get("name")) is not str
+            or not parameter["name"]
+            or parameter["name"] in properties
+            or not isinstance(parameter.get("schema"), Mapping)
+            or not isinstance(parameter.get("validation_rules"), Mapping)
+        ):
+            raise ValueError("effective target tool parameter is malformed")
+        schema = thaw_json(parameter["schema"])
+        schema.update(thaw_json(parameter["validation_rules"]))
+        if parameter.get("has_default") is True:
+            schema["default"] = thaw_json(parameter.get("default_value"))
+        if parameter.get("description") is not None:
+            schema["description"] = parameter["description"]
+        properties[parameter["name"]] = schema
+        if parameter.get("required") is True:
+            required.append(parameter["name"])
+    additional_properties = any(
+        isinstance(policy, Mapping)
+        and policy.get("additionalProperties") is True
+        for policy in routing.values()
+    )
+    return {
+        "type": "function",
+        "function": {
+            "name": model_name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+                "additionalProperties": additional_properties,
+            },
+        },
+    }
+
+
 def _validate_target_semantics(
     target: E4TargetPolicyProjection,
     semantics: Mapping[str, Any],
@@ -631,15 +702,16 @@ def _validate_target_semantics(
             per_turn_text = _join_prompt_parts(per_turn_text, catalog_text)
         else:
             raise ValueError("effective target tool prompt mode is unsupported")
-        model_tool_names = tuple(
-            definitions_by_id[tool_id].get("model_name")
+        projected_tools = tuple(
+            _project_effective_chat_tool(definitions_by_id[tool_id])
             for tool_id in enabled_ids
             if tool_id in definitions_by_id
         )
+        target_tools = tuple(thaw_json(tool) for tool in target.chat_tools)
         if (
             system_text != target.system_prompt
             or per_turn_text != ""
-            or model_tool_names != target.ordered_tool_names
+            or projected_tools != target_tools
         ):
             raise ValueError("effective semantics do not match the selected E4 target")
 

@@ -506,19 +506,26 @@ async def test_pi_target_projection_drives_exact_prompt_user_and_tool_wire_shape
 
 
 class _AdmittedClient:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        observation: c.PolicyCapabilityObservation | None = None,
+    ) -> None:
         self.closed = False
+        self._observation = observation or _observation()
 
     def observe(self) -> c.PolicyCapabilityObservation:
-        return _observation()
+        return self._observation
 
     async def close(self) -> None:
         self.closed = True
 
 
 class _AuthorityResolver:
-    def __init__(self) -> None:
-        self.client = _AdmittedClient()
+    def __init__(
+        self,
+        observation: c.PolicyCapabilityObservation | None = None,
+    ) -> None:
+        self.client = _AdmittedClient(observation)
         self.closed = False
         self.aborted = False
 
@@ -545,6 +552,8 @@ async def test_profile_resolver_preserves_authoritative_observation_and_one_shot
     resolver = EpisodeOpenAICompletionsPolicyResolver(
         authority,
         {"episode-one": _profile()},
+        {"episode-one": "credential-one"},
+        {"episode-one": MODEL_ID},
     )
     binding = c.PolicyBindingRef(
         registry_revision_digest=_digest("registry"),
@@ -569,3 +578,51 @@ async def test_profile_resolver_preserves_authoritative_observation_and_one_shot
     await client.close()
     await resolver.close()
     assert authority.closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    (
+        ("provider_id", "other-provider"),
+        ("model_id", "other-model"),
+        ("credential_handle_id", "other-credential"),
+    ),
+)
+async def test_profile_resolver_rejects_observation_outside_owned_provider_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    field_name: str,
+    field_value: str,
+) -> None:
+    monkeypatch.setattr(
+        OpenAIChatRuntime,
+        "create_client_from_profile",
+        lambda _self, _profile, **_kwargs: _Transport(),
+    )
+    observation_payload = _observation().model_dump(mode="json")
+    observation_payload[field_name] = field_value
+    observation = c.PolicyCapabilityObservation.model_validate(observation_payload)
+    resolver = EpisodeOpenAICompletionsPolicyResolver(
+        _AuthorityResolver(observation),
+        {"episode-one": _profile()},
+        {"episode-one": "credential-one"},
+        {"episode-one": MODEL_ID},
+    )
+    binding = c.PolicyBindingRef(
+        registry_revision_digest=_digest("registry"),
+        route_id="policy-route",
+        attestation_digest=_digest("attestation"),
+    )
+
+    with pytest.raises(
+        RunnerPolicyBindingError,
+        match="does not match the admitted observation",
+    ) as error:
+        await resolver.resolve(
+            binding,
+            episode_id="episode-one",
+            effective_plan_digest=DIGEST,
+        )
+
+    assert error.value.code == "provider_profile_mismatch"
+    await resolver.close()

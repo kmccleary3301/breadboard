@@ -55,6 +55,35 @@ def _provider_descriptor() -> ProviderDescriptor:
     )
 
 
+def _validate_owned_profile_observation(
+    *,
+    profile: OpenAICompletionsProviderProfile,
+    observation: PolicyCapabilityObservation,
+    authority_model_id: str,
+    credential_handle_id: str,
+    episode_id: str,
+    effective_plan_digest: str,
+) -> None:
+    capabilities = observation.capabilities
+    if (
+        profile.provider_id != observation.provider_id
+        or profile.runtime_id != _provider_descriptor().runtime_id
+        or authority_model_id != observation.model_id
+        or credential_handle_id != observation.credential_handle_id
+        or profile.context_window != capabilities.max_context_tokens
+        or profile.max_output_tokens != capabilities.max_output_tokens
+        or profile.capabilities.supports_tools != capabilities.tool_calling
+        or not capabilities.cancellation
+        or "text" not in capabilities.modalities
+    ):
+        raise RunnerPolicyBindingError(
+            "episode provider profile does not match the admitted observation",
+            code="provider_profile_mismatch",
+            episode_id=episode_id,
+            effective_plan_digest=effective_plan_digest,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class E4TargetPolicyProjection:
     target_id: str
@@ -451,6 +480,8 @@ class EpisodeOpenAICompletionsPolicyResolver:
         self,
         authority_resolver: PolicyRuntimeClientResolver,
         profiles: Mapping[str, OpenAICompletionsProviderProfile],
+        credential_handle_ids: Mapping[str, str],
+        authority_model_ids: Mapping[str, str],
         target_projections: Mapping[str, E4TargetPolicyProjection] | None = None,
         timeout_seconds: Mapping[str, float] | None = None,
     ) -> None:
@@ -465,6 +496,22 @@ class EpisodeOpenAICompletionsPolicyResolver:
                     "provider profiles must be exact OpenAICompletionsProviderProfile values"
                 )
             copied[episode_id] = profile
+        if set(authority_model_ids) != set(copied) or any(
+            type(model_id) is not str or not model_id
+            for model_id in authority_model_ids.values()
+        ):
+            raise ValueError(
+                "authority model identities must exactly match provider profiles"
+            )
+        copied_model_ids = dict(authority_model_ids)
+        if set(credential_handle_ids) != set(copied) or any(
+            type(handle_id) is not str or not handle_id
+            for handle_id in credential_handle_ids.values()
+        ):
+            raise ValueError(
+                "credential handles must exactly match episode provider profiles"
+            )
+        copied_credential_handles = dict(credential_handle_ids)
         copied_projections: dict[str, E4TargetPolicyProjection] = {}
         for episode_id, projection in (target_projections or {}).items():
             if episode_id not in copied:
@@ -488,7 +535,9 @@ class EpisodeOpenAICompletionsPolicyResolver:
         self._authority_resolver = authority_resolver
         self._profiles = copied
         self._target_projections = copied_projections
+        self._credential_handle_ids = copied_credential_handles
         self._timeout_seconds = copied_timeouts
+        self._authority_model_ids = copied_model_ids
         self._clients: set[EpisodeOpenAICompletionsPolicyClient] = set()
         self._lock = asyncio.Lock()
         self._close_lock = asyncio.Lock()
@@ -501,7 +550,9 @@ class EpisodeOpenAICompletionsPolicyResolver:
         self._profiles.clear()
         self._timeout_seconds.clear()
         self._target_projections.clear()
+        self._credential_handle_ids.clear()
         abort = getattr(self._authority_resolver, "abort_bootstrap", None)
+        self._authority_model_ids.clear()
         if not callable(abort):
             raise TypeError("authority resolver has no bootstrap cleanup")
         abort()
@@ -524,6 +575,8 @@ class EpisodeOpenAICompletionsPolicyResolver:
             profile = self._profiles.get(episode_id)
             target_projection = self._target_projections.get(episode_id)
             timeout_seconds = self._timeout_seconds.get(episode_id, 600.0)
+            credential_handle_id = self._credential_handle_ids.get(episode_id)
+            authority_model_id = self._authority_model_ids.get(episode_id)
             if profile is None:
                 raise RunnerPolicyBindingError(
                     "episode has no provider profile",
@@ -540,6 +593,21 @@ class EpisodeOpenAICompletionsPolicyResolver:
                 observation = admitted.observe()
             finally:
                 await admitted.close()
+            if credential_handle_id is None or authority_model_id is None:
+                raise RunnerPolicyBindingError(
+                    "episode has no provider credential or model authority",
+                    code="provider_profile_missing",
+                    episode_id=episode_id,
+                    effective_plan_digest=effective_plan_digest,
+                )
+            _validate_owned_profile_observation(
+                profile=profile,
+                observation=observation,
+                authority_model_id=authority_model_id,
+                credential_handle_id=credential_handle_id,
+                episode_id=episode_id,
+                effective_plan_digest=effective_plan_digest,
+            )
             client = EpisodeOpenAICompletionsPolicyClient(
                 episode_id=episode_id,
                 effective_plan_digest=effective_plan_digest,
@@ -552,6 +620,8 @@ class EpisodeOpenAICompletionsPolicyResolver:
             self._profiles.pop(episode_id)
             self._target_projections.pop(episode_id, None)
             self._timeout_seconds.pop(episode_id, None)
+            self._credential_handle_ids.pop(episode_id)
+            self._authority_model_ids.pop(episode_id)
             self._clients.add(client)
             return client
 
@@ -569,6 +639,8 @@ class EpisodeOpenAICompletionsPolicyResolver:
                 self._profiles.clear()
                 self._target_projections.clear()
                 self._timeout_seconds.clear()
+                self._credential_handle_ids.clear()
+                self._authority_model_ids.clear()
             failures: list[BaseException] = []
             results = await asyncio.gather(
                 *(client.close() for client in clients),

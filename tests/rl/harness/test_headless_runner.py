@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 import sys
+import time
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -21,7 +22,7 @@ from breadboard.rl.harness.headless import (
     run_headless_request,
 )
 from breadboard.rl.harness.policy_provider import E4TargetPolicyProjection
-from breadboard.rl.harness.runners.base import freeze_json_object
+from breadboard.rl.harness.runners.base import freeze_json_object, thaw_json
 from breadboard_engine.provider.contracts import (
     ProviderMessage,
     ProviderResult,
@@ -75,13 +76,18 @@ def _target_projection(plan: c.EffectiveExecutionPlan) -> E4TargetPolicyProjecti
                     "type": "function",
                     "function": {
                         "name": tool_name,
-                        "description": "Run a shell command in the workspace.",
+                        "description": "Run a shell command in the admitted workspace.",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "command": {"type": "string", "minLength": 1}
+                                "command": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "description": "Shell command to execute.",
+                                }
                             },
                             "required": ["command"],
+                            "additionalProperties": False,
                         },
                     },
                 },
@@ -116,12 +122,56 @@ def test_provider_requires_usable_literal_loopback_authority(base_url: str) -> N
     with pytest.raises(ValueError, match="explicit loopback port"):
         HeadlessProviderInput(
             model="provider-model",
+            authority_model_id="provider-model",
             base_url=base_url,
             credential_handle="provider",
             context_window=4_096,
             max_output_tokens=1_024,
             timeout_seconds=30,
         )
+
+@pytest.mark.asyncio
+async def test_target_semantics_reject_changed_tool_parameter_schema(
+    tmp_path: Path,
+) -> None:
+    fixture = materialize_production_composition_fixture(tmp_path)
+    composition = load_production_composition(
+        str(fixture.composition_ref_path),
+        fixture.secret_files,
+    )
+    try:
+        resolution = c.ResolveEpisodeRequest.model_validate(
+            fixture.create_body["resolution"]
+        )
+        plan = composition.authority_graph.config_runtime.resolve_episode(
+            resolution
+        ).effective_plan
+        target = _target_projection(plan)
+        headless_module._validate_target_semantics(
+            target,
+            plan.effective_semantics,
+        )
+        semantics = thaw_json(plan.effective_semantics)
+        parameter_schema = semantics["tools"]["definitions"][0]["parameters"][0][
+            "schema"
+        ]
+        parameter_schema["minLength"] = parameter_schema["minLength"] + 1
+        changed_semantics = freeze_json_object(
+            semantics,
+            field_name="changed target semantics",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="do not match the selected E4 target",
+        ):
+            headless_module._validate_target_semantics(
+                target,
+                changed_semantics,
+            )
+    finally:
+        await composition.close()
+
 
 
 @pytest.mark.skipif(
@@ -133,7 +183,13 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    probe_fixture = materialize_production_composition_fixture(tmp_path / "probe")
+    probe_fixture = materialize_production_composition_fixture(
+        tmp_path / "probe",
+        policy_provider_id="openai",
+        policy_model_id="qwen3.5-35b-a3b",
+        policy_context_window=131_072,
+        policy_max_output_tokens=32_000,
+    )
     probe_resolution = c.ResolveEpisodeRequest.model_validate(
         probe_fixture.create_body["resolution"]
     )
@@ -149,11 +205,18 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         target = _target_projection(plan)
     finally:
         await probe.close()
-    fixture = materialize_production_composition_fixture(tmp_path / "fixture")
+    fixture = materialize_production_composition_fixture(
+        tmp_path / "fixture",
+        policy_provider_id="openai",
+        policy_model_id="qwen3.5-35b-a3b",
+        policy_context_window=131_072,
+        policy_max_output_tokens=32_000,
+    )
     resolution = c.ResolveEpisodeRequest.model_validate(
         fixture.create_body["resolution"]
     )
 
+    credential_handle = str(fixture.policy_observation["credential_handle_id"])
     monkeypatch.setattr(
         E4TargetPolicyProjection,
         "load",
@@ -227,8 +290,9 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         expected_sandbox=plan.sandbox,
         provider=HeadlessProviderInput(
             model="Qwen/Qwen3.5-35B-A3B",
+            authority_model_id="qwen3.5-35b-a3b",
             base_url="http://127.0.0.1:8000/v1",
-            credential_handle="episode-provider",
+            credential_handle=credential_handle,
             context_window=131_072,
             max_output_tokens=32_000,
             timeout_seconds=30,
@@ -288,7 +352,7 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
         request,
         composition_ref_path=str(fixture.composition_ref_path),
         secret_files=fixture.secret_files,
-        provider_credentials={"episode-provider": str(credential)},
+        provider_credentials={credential_handle: str(credential)},
         repository_base_commits={},
     )
 
@@ -335,13 +399,49 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
             publication_request,
             composition_ref_path=str(fixture.composition_ref_path),
             secret_files=fixture.secret_files,
-            provider_credentials={"episode-provider": str(credential)},
+            provider_credentials={credential_handle: str(credential)},
             repository_base_commits={},
         )
     published_failure = json.loads(publication_result_path.read_bytes())
     assert published_failure == publication.value.result
     assert published_failure["terminal"]["status"] == "failed"
     assert published_failure["terminal"]["publication_failure"]["code"] == "FileExistsError"
+
+    timeout_result_path = tmp_path / "timeout-result.json"
+    timeout_request = request.model_copy(
+        update={
+            "result_path": str(timeout_result_path),
+            "event_log_path": str(tmp_path / "timeout-events.json"),
+        }
+    )
+    original_episode_timeout = headless_module._episode_timeout
+
+    def slow_invoke(_self: Any, **_kwargs: Any) -> ProviderResult:
+        time.sleep(0.1)
+        return ProviderResult(
+            messages=[ProviderMessage(role="assistant", content="too late")],
+            raw_response={},
+        )
+
+    monkeypatch.setattr(OpenAIChatRuntime, "invoke", slow_invoke)
+    monkeypatch.setattr(
+        headless_module,
+        "_episode_timeout",
+        lambda _wall_time_ms: asyncio.timeout(0.01),
+    )
+    with pytest.raises(HeadlessRunFailed) as timed_out:
+        await run_headless_request(
+            timeout_request,
+            composition_ref_path=str(fixture.composition_ref_path),
+            secret_files=fixture.secret_files,
+            provider_credentials={credential_handle: str(credential)},
+            repository_base_commits={},
+        )
+    assert timed_out.value.result["terminal"]["status"] == "failed"
+    assert "TimeoutError" in json.dumps(timed_out.value.result["terminal"])
+    assert timed_out.value.result["cleanup_inventory"]["active_lease_ids"] == []
+    monkeypatch.setattr(headless_module, "_episode_timeout", original_episode_timeout)
+    monkeypatch.setattr(OpenAIChatRuntime, "invoke", invoke)
 
     original_loader = headless_module.load_production_composition
 
@@ -371,7 +471,7 @@ async def test_headless_runner_uses_production_lifecycle_and_writes_replay_artif
             cancelled_request,
             composition_ref_path=str(fixture.composition_ref_path),
             secret_files=fixture.secret_files,
-            provider_credentials={"episode-provider": str(credential)},
+            provider_credentials={credential_handle: str(credential)},
             repository_base_commits={},
         )
     cancelled_result = json.loads(cancelled_result_path.read_bytes())
