@@ -4,7 +4,7 @@
   "adapters": [
     {
       "adapter_id": "docker",
-      "status": "ready",
+      "status": "experimental",
       "capabilities": {
         "create": true,
         "execute": true,

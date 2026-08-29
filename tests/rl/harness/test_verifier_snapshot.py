@@ -22,7 +22,6 @@ from breadboard.rl.harness.materialization import (
     WorkspaceLeaseState,
 )
 from breadboard.rl.harness.sandbox import (
-    SandboxLaunchError,
     SandboxAttestationError,
     SandboxFault,
     SandboxRuntimeManager,
@@ -1244,6 +1243,29 @@ async def test_verifier_cancellation_then_close_leaves_no_child_or_primary_resou
     assert child.state is CleanupState.RELEASED
     parent = await primary.close()
     assert parent.state is CleanupState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+
+
+async def test_verifier_close_preempts_active_execution_and_cleans_resources(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    backend = BlockingVerifierBackend()
+    harness = RuntimeHarness(tmp_path, fixture, backend=backend)
+    primary = await harness.manager.open(fixture.request)
+    snapshot = await primary.seal_for_verifier()
+    verifier = await harness.manager.open_verifier(primary, snapshot)
+    handle = backend.handles[1]
+
+    execution = asyncio.create_task(verifier.execute())
+    await asyncio.wait_for(handle.entered.wait(), 1)
+    child = await asyncio.wait_for(verifier.close(), 1)
+
+    with pytest.raises(asyncio.CancelledError):
+        await execution
+    assert handle.cancelled is True
+    assert child.state is CleanupState.RELEASED
+    assert (await primary.close()).state is CleanupState.RELEASED
     assert list(harness.workspace_root.iterdir()) == []
 
 

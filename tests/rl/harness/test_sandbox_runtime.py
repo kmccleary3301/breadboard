@@ -25,10 +25,8 @@ from breadboard.rl.harness.materialization import (
 )
 from breadboard.rl.harness.runners.base import RunnerToolBinding
 from breadboard.rl.harness.sandbox import (
-    InstalledRuntime,
     InstalledSandboxAuthoritySet,
     SandboxAttestationError,
-    SandboxCleanupReceipt,
     SandboxLaunchError,
     SandboxMeasurement,
     SandboxPlanError,
@@ -36,6 +34,7 @@ from breadboard.rl.harness.sandbox import (
     SandboxRuntimeManager,
     SandboxSecurityPolicy,
     build_sandbox_execution_plan,
+    TrustedProcessBackend,
     WorkspaceStateError,
 )
 from tests.rl.harness.wp7_fixtures import (
@@ -1349,6 +1348,28 @@ async def test_close_fences_new_operations_and_drains_an_active_operation(
     assert list(harness.lease_root.iterdir()) == []
 
 
+async def test_cancel_preempts_active_operation_before_cleanup(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    port = lease.runner_workspace
+    handle = harness.backend.handles[0]
+    handle.run_entered = asyncio.Event()
+    handle.release_run = asyncio.Event()
+    operation = asyncio.create_task(port.run_shell("blocked", timeout=1))
+
+    await asyncio.wait_for(handle.run_entered.wait(), 1)
+    receipt = await asyncio.wait_for(lease.cancel(), 1)
+
+    with pytest.raises(asyncio.CancelledError):
+        await operation
+    assert receipt.state is CleanupState.RELEASED
+    assert handle.terminate_calls == 1
+    assert lease.state is WorkspaceLeaseState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
 @pytest.mark.parametrize(
     "first_state",
     [CleanupState.RELEASED, CleanupState.QUARANTINED],
@@ -2090,6 +2111,50 @@ async def test_lease_records_stay_on_admitted_inode_after_named_root_swap(
         os.fstat(owned_fd)
     await harness.manager.close()
     harness.store.close()
+
+
+@pytest.mark.asyncio
+async def test_process_preflight_failure_closes_workspace_descriptor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(runtime_install_root=tmp_path)
+    plan = build_sandbox_execution_plan(
+        fixture.request,
+        fixture.registries,
+        fixture.authorities,
+    )
+    workspace_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    identity = os.fstat(workspace_fd)
+    context = SimpleNamespace(
+        lease_id="lease-preflight",
+        workspace_id="workspace-preflight",
+        workspace_fd=workspace_fd,
+        workspace_identity=(identity.st_dev, identity.st_ino),
+    )
+
+    def fail_snapshot(*_args: object, **_kwargs: object) -> None:
+        raise SandboxLaunchError(
+            "injected executable preflight failure",
+            code="runtime_preflight_failed",
+        )
+
+    monkeypatch.setattr(
+        sandbox_module,
+        "_snapshot_installed_executable",
+        fail_snapshot,
+    )
+    with pytest.raises(
+        SandboxLaunchError,
+        match="injected executable preflight failure",
+    ):
+        await TrustedProcessBackend().launch(
+            plan,
+            tmp_path,
+            context=context,
+        )
+    with pytest.raises(OSError):
+        os.fstat(workspace_fd)
 
 
 def test_lease_constructor_closes_duplicate_when_identity_stat_fails(

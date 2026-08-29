@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 import re
-import shlex
 import stat
 import sys
 from dataclasses import dataclass
@@ -17,15 +16,316 @@ from typing import Any, Mapping, Protocol, Sequence
 
 
 CONTAINER_WORKSPACE_ROOT = "/testbed"
+_WORKSPACE_OUTPUT_LIMIT_FAILURE = 124
+_WORKSPACE_AUTHORITY_FAILURE = 125
 
 
 def _container_workspace_path(logical_path: str) -> str:
     if type(logical_path) is not str or not logical_path or "\x00" in logical_path:
         raise DockerAdapterError("workspace_escape", "workspace path is invalid")
     path = PurePosixPath(logical_path)
-    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+    if (
+        path.is_absolute()
+        or any(part in {"", ".", ".."} for part in logical_path.split("/"))
+    ):
         raise DockerAdapterError("workspace_escape", "workspace path is invalid")
     return f"{CONTAINER_WORKSPACE_ROOT}/{path.as_posix()}"
+
+
+_WORKSPACE_PYTHON = """\
+import base64
+import errno
+import json
+import os
+import secrets
+import stat
+import sys
+
+OUTPUT_LIMIT_FAILURE = 124
+AUTHORITY_FAILURE = 125
+PROTOCOL_FAILURE = 126
+ROOT = "/testbed"
+NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | NOFOLLOW
+LEAF_FLAGS = NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+
+def fail():
+    raise PermissionError(errno.EACCES, "workspace authority denied")
+
+
+def write_all(fd, payload):
+    view = memoryview(payload)
+    while view:
+        written = os.write(fd, view)
+        if written <= 0:
+            raise OSError("short workspace write")
+        view = view[written:]
+
+
+def workspace_parts(logical_path):
+    if (
+        not logical_path
+        or chr(0) in logical_path
+        or logical_path.startswith("/")
+        or any(part in {"", ".", ".."} for part in logical_path.split("/"))
+    ):
+        fail()
+    return logical_path.split("/")
+
+
+def open_parent(parts):
+    if not DIRECTORY_FLAGS & getattr(os, "O_DIRECTORY", 0) or not getattr(os, "O_NOFOLLOW", 0):
+        raise RuntimeError("required no-follow directory flags are unavailable")
+    descriptor = os.open(ROOT, DIRECTORY_FLAGS)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISDIR(metadata.st_mode):
+            fail()
+        for component in parts[:-1]:
+            child = os.open(component, DIRECTORY_FLAGS, dir_fd=descriptor)
+            try:
+                metadata = os.fstat(child)
+                if not stat.S_ISDIR(metadata.st_mode):
+                    fail()
+            except BaseException:
+                os.close(child)
+                raise
+            os.close(descriptor)
+            descriptor = child
+        return descriptor, parts[-1]
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def regular(metadata):
+    return stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
+
+
+def read_file(logical_path, offset, limit):
+    parts = workspace_parts(logical_path)
+    parent, name = open_parent(parts)
+    descriptor = -1
+    try:
+        descriptor = os.open(name, os.O_RDONLY | LEAF_FLAGS, dir_fd=parent)
+        metadata = os.fstat(descriptor)
+        if not regular(metadata):
+            fail()
+        os.lseek(descriptor, offset, os.SEEK_SET)
+        chunks = []
+        remaining = limit + 1
+        while remaining:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        json.dump(
+            {
+                "bytes": len(payload),
+                "content_base64": base64.b64encode(payload).decode("ascii"),
+            },
+            sys.stdout,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        os.close(parent)
+
+
+def write_file(logical_path, payload):
+    parts = workspace_parts(logical_path)
+    parent, name = open_parent(parts)
+    descriptor = -1
+    temporary_name = None
+    try:
+        try:
+            existing = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and not regular(existing):
+            fail()
+        for _ in range(16):
+            candidate = ".breadboard-" + str(os.getpid()) + "-" + secrets.token_hex(8)
+            try:
+                descriptor = os.open(
+                    candidate,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | LEAF_FLAGS,
+                    0o600,
+                    dir_fd=parent,
+                )
+            except FileExistsError:
+                continue
+            temporary_name = candidate
+            break
+        if temporary_name is None:
+            raise RuntimeError("could not reserve workspace temporary file")
+        before = os.fstat(descriptor)
+        if not regular(before):
+            fail()
+        write_all(descriptor, payload)
+        after = os.fstat(descriptor)
+        if (
+            not regular(after)
+            or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
+            or after.st_size != len(payload)
+        ):
+            fail()
+        os.replace(
+            temporary_name,
+            name,
+            src_dir_fd=parent,
+            dst_dir_fd=parent,
+        )
+        temporary_name = None
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary_name is not None:
+            try:
+                os.unlink(temporary_name, dir_fd=parent)
+            except FileNotFoundError:
+                pass
+        os.close(parent)
+
+
+def list_files(logical_path, depth, max_entries):
+    parts = workspace_parts(logical_path)
+    parent, name = open_parent(parts)
+    descriptor = -1
+    values = []
+    charged = 0
+
+    def walk(directory, prefix, level):
+        nonlocal charged
+        entries = []
+        with os.scandir(directory) as iterator:
+            for entry in iterator:
+                metadata = entry.stat(follow_symlinks=False)
+                charged += 1
+                if charged > max_entries:
+                    raise OverflowError("workspace listing exceeds inode ceiling")
+                if stat.S_ISDIR(metadata.st_mode):
+                    entries.append((entry.name, metadata, True))
+                elif regular(metadata):
+                    entries.append((entry.name, metadata, False))
+                else:
+                    fail()
+        for child_name, before, is_directory in sorted(entries):
+            relative = "/".join(prefix + (child_name,))
+            values.append(relative)
+            if not is_directory or level >= depth:
+                continue
+            child = os.open(child_name, DIRECTORY_FLAGS, dir_fd=directory)
+            try:
+                after = os.fstat(child)
+                if (
+                    before.st_dev,
+                    before.st_ino,
+                    before.st_mode,
+                ) != (
+                    after.st_dev,
+                    after.st_ino,
+                    after.st_mode,
+                ):
+                    fail()
+                walk(child, prefix + (child_name,), level + 1)
+            finally:
+                os.close(child)
+
+    try:
+        descriptor = os.open(name, DIRECTORY_FLAGS, dir_fd=parent)
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISDIR(metadata.st_mode):
+            fail()
+        walk(descriptor, tuple(parts), 0)
+        json.dump(sorted(values), sys.stdout, ensure_ascii=False, separators=(",", ":"))
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        os.close(parent)
+
+
+def main():
+    if len(sys.argv) < 3:
+        raise RuntimeError("workspace helper arguments are malformed")
+    mode = sys.argv[1]
+    logical_path = sys.argv[2]
+    if mode == "read":
+        read_file(logical_path, int(sys.argv[3]), int(sys.argv[4]))
+    elif mode == "write":
+        write_file(logical_path, base64.b64decode(sys.argv[3], validate=True))
+    elif mode == "list":
+        list_files(logical_path, int(sys.argv[3]), int(sys.argv[4]))
+    else:
+        raise RuntimeError("workspace helper operation is malformed")
+
+
+def exit_failure(code, label):
+    sys.stderr.write("bb-workspace-helper:" + label + chr(10))
+    sys.exit(code)
+
+
+try:
+    main()
+except OverflowError:
+    exit_failure(OUTPUT_LIMIT_FAILURE, "output-limit")
+except OSError as exc:
+    authority_errors = {
+        errno.EACCES,
+        errno.ELOOP,
+        errno.ENOENT,
+        errno.ENOTDIR,
+        errno.EPERM,
+        errno.EXDEV,
+    }
+    if exc.errno in authority_errors:
+        exit_failure(AUTHORITY_FAILURE, "authority")
+    exit_failure(PROTOCOL_FAILURE, "protocol")
+except Exception:
+    exit_failure(PROTOCOL_FAILURE, "protocol")
+"""
+
+
+def _workspace_python_argv(
+    mode: str, logical_path: str, *arguments: str
+) -> tuple[str, ...]:
+    _container_workspace_path(logical_path)
+    return ("python3", "-c", _WORKSPACE_PYTHON, mode, logical_path, *arguments)
+
+
+def _require_workspace_command_success(
+    result: Mapping[str, Any], *, operation: str
+) -> None:
+    returncode = result.get("returncode")
+    if type(returncode) is not int:
+        raise DockerAdapterError(
+            "runtime_protocol_error",
+            f"{operation} returned a malformed command status",
+        )
+    if returncode:
+        stderr = result.get("stderr")
+        expected = {
+            _WORKSPACE_OUTPUT_LIMIT_FAILURE: "bb-workspace-helper:output-limit\n",
+            _WORKSPACE_AUTHORITY_FAILURE: "bb-workspace-helper:authority\n",
+            126: "bb-workspace-helper:protocol\n",
+        }
+        if type(stderr) is not str or stderr != expected.get(returncode):
+            code = "runtime_protocol_error"
+        elif returncode == _WORKSPACE_OUTPUT_LIMIT_FAILURE:
+            code = "output_limit_exceeded"
+        elif returncode == _WORKSPACE_AUTHORITY_FAILURE:
+            code = "workspace_escape"
+        else:
+            code = "runtime_protocol_error"
+        raise DockerAdapterError(
+            code,
+            f"{operation} rejected by workspace authority",
+            details={"returncode": returncode},
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1497,12 +1797,33 @@ class DockerRuntimeAdapter:
 
     async def exec(self, plan: Any, container_id: str, argv: Sequence[str], *, timeout_ms: int) -> Mapping[str, Any]:
         self._pin(plan)
-        result = await self._execute(
-            (plan.runtime.executable_path, "exec", container_id, *argv),
-            timeout_ms=timeout_ms,
-            output_limit=plan.limits.observation_bytes,
-            code="runtime_launch_failed",
+        workspace_helper = (
+            len(argv) >= 3
+            and tuple(argv[:3]) == ("python3", "-c", _WORKSPACE_PYTHON)
         )
+        raw_argv = (plan.runtime.executable_path, "exec", container_id, *argv)
+        if workspace_helper:
+            result = await self._raw(
+                raw_argv,
+                timeout_ms=timeout_ms,
+                output_limit=plan.limits.observation_bytes,
+            )
+            if result.output_limited:
+                raise DockerAdapterError(
+                    "output_limit_exceeded",
+                    "Docker CLI output exceeded the admitted limit",
+                )
+            if result.timed_out:
+                raise DockerAdapterError(
+                    "runtime_launch_failed", "Docker CLI operation timed out"
+                )
+        else:
+            result = await self._execute(
+                raw_argv,
+                timeout_ms=timeout_ms,
+                output_limit=plan.limits.observation_bytes,
+                code="runtime_launch_failed",
+            )
         return {
             "returncode": result.returncode,
             "stdout": result.stdout.decode("utf-8", "replace"),
@@ -1709,43 +2030,109 @@ class DockerRuntimeHandle:
         if limit is not None and (type(limit) is not int or limit < 0 or limit > ceiling):
             raise DockerAdapterError("output_limit_exceeded", "read limit exceeds admitted ceiling")
         selected_limit = ceiling if limit is None else limit
-        target = _container_workspace_path(path)
-        command = (
-            f"tail -c +{offset + 1} {shlex.quote(target)} | "
-            f"head -c {selected_limit + 1}"
+        result = await self._run(
+            _workspace_python_argv("read", path, str(offset), str(selected_limit)),
+            timeout_ms=self.plan.limits.action_timeout_ms,
         )
-        result = await self._run(("sh", "-lc", command), timeout_ms=self.plan.limits.action_timeout_ms)
-        content = str(result.get("stdout", ""))
-        encoded = content.encode("utf-8")
-        if len(encoded) > selected_limit:
+        _require_workspace_command_success(result, operation="read")
+        raw_output = result.get("stdout", "")
+        if type(raw_output) is not str:
+            raise DockerAdapterError(
+                "runtime_protocol_error", "read returned malformed output"
+            )
+        try:
+            payload = json.loads(raw_output)
+            if type(payload) is not dict or set(payload) != {
+                "bytes",
+                "content_base64",
+            }:
+                raise ValueError("read payload fields are malformed")
+            declared_bytes = payload["bytes"]
+            encoded_content = payload["content_base64"]
+            if type(declared_bytes) is not int or type(encoded_content) is not str:
+                raise ValueError("read payload values are malformed")
+            decoded_content = base64.b64decode(encoded_content, validate=True)
+            if declared_bytes != len(decoded_content):
+                raise ValueError("read payload byte count is malformed")
+            content = decoded_content.decode("utf-8")
+        except (UnicodeError, ValueError, json.JSONDecodeError) as exc:
+            raise DockerAdapterError(
+                "runtime_protocol_error", "read returned malformed output"
+            ) from exc
+        if len(decoded_content) > selected_limit:
             raise DockerAdapterError("output_limit_exceeded", "read exceeds admitted ceiling")
-        return {"path": path, "content": content, "offset": offset, "bytes": len(encoded)}
+        return {
+            "path": path,
+            "content": content,
+            "offset": offset,
+            "bytes": len(decoded_content),
+        }
 
     async def write_text(self, path: str, content: str) -> Mapping[str, Any]:
         if type(content) is not str:
             raise DockerAdapterError("runtime_preflight_failed", "write content is invalid")
-        if len(content.encode("utf-8")) > self.plan.limits.artifact_bytes_each:
+        payload = content.encode("utf-8")
+        if len(payload) > self.plan.limits.artifact_bytes_each:
             raise DockerAdapterError("output_limit_exceeded", "write exceeds admitted ceiling")
-        target = _container_workspace_path(path)
-        encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
-        command = f"printf %s {shlex.quote(encoded)} | base64 -d > {shlex.quote(target)}"
-        await self._run(("sh", "-lc", command), timeout_ms=self.plan.limits.action_timeout_ms)
-        return {"path": path, "bytes": len(content.encode("utf-8"))}
+        encoded = base64.b64encode(payload).decode("ascii")
+        result = await self._run(
+            _workspace_python_argv("write", path, encoded),
+            timeout_ms=self.plan.limits.action_timeout_ms,
+        )
+        _require_workspace_command_success(result, operation="write")
+        return {"path": path, "bytes": len(payload)}
 
     async def list_files(self, path: str, *, depth: int) -> Mapping[str, Any]:
         if type(depth) is not int or depth < 0 or depth > self.plan.security_policy.snapshot_max_depth:
             raise DockerAdapterError("output_limit_exceeded", "list depth exceeds admitted ceiling")
-        target = _container_workspace_path(path)
         result = await self._run(
-            ("sh", "-lc", f"find {shlex.quote(target)} -mindepth 1 -maxdepth {depth + 1} -print"),
+            _workspace_python_argv(
+                "list",
+                path,
+                str(depth),
+                str(self.plan.security_policy.snapshot_max_inodes),
+            ),
             timeout_ms=self.plan.limits.action_timeout_ms,
         )
-        root = f"{CONTAINER_WORKSPACE_ROOT}/"
-        values = sorted(
-            line[len(root):]
-            for line in str(result.get("stdout", "")).splitlines()
-            if line.startswith(root) and line[len(root):]
-        )
+        _require_workspace_command_success(result, operation="list")
+        raw_output = result.get("stdout", "")
+        if type(raw_output) is not str:
+            raise DockerAdapterError(
+                "runtime_protocol_error", "list returned malformed output"
+            )
+        try:
+            decoded_values = json.loads(raw_output)
+        except json.JSONDecodeError as exc:
+            raise DockerAdapterError(
+                "runtime_protocol_error", "list returned malformed output"
+            ) from exc
+        if type(decoded_values) is not list or any(
+            type(value) is not str for value in decoded_values
+        ):
+            raise DockerAdapterError(
+                "runtime_protocol_error", "list returned malformed output"
+            )
+        values = sorted(decoded_values)
+        if values != decoded_values or len(values) != len(set(values)):
+            raise DockerAdapterError(
+                "runtime_protocol_error", "list returned malformed output"
+            )
+        for value in values:
+            try:
+                _container_workspace_path(value)
+            except DockerAdapterError as exc:
+                raise DockerAdapterError(
+                    "runtime_protocol_error", "list returned malformed paths"
+                ) from exc
+            if value == path or not value.startswith(f"{path}/"):
+                raise DockerAdapterError(
+                    "runtime_protocol_error",
+                    "list returned paths outside its authority",
+                )
+        if len(values) > self.plan.security_policy.snapshot_max_inodes:
+            raise DockerAdapterError(
+                "output_limit_exceeded", "list exceeds admitted inode ceiling"
+            )
         return {"path": path, "files": values}
 
     async def workspace_diff(self) -> Mapping[str, Any]:

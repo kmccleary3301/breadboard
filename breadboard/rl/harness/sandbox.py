@@ -2,18 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import fcntl
+import hashlib
 import json
 import os
-import shutil
 import stat
 import subprocess
 import sys
 import uuid
 from importlib.resources import files
 from pathlib import Path
-from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
-from enum import Enum
+from dataclasses import dataclass, replace
+from datetime import datetime
 from types import MappingProxyType
 from typing import Any, Awaitable, Callable, Literal, Mapping, Protocol, Sequence
 
@@ -28,7 +27,6 @@ from .contracts import (
     VerifierGrant,
 )
 from .materialization import (
-    CacheLeaseReceipt,
     CleanupState,
     FilesystemMaterializationStore,
     IsolationDisposition,
@@ -50,8 +48,11 @@ VERIFIER_REQUEST_RELATIVE_PATH = "input/verifier-request.json"
 VERIFIER_REQUEST_SCHEMA_VERSION = "bb.rl.verifier-request.v1"
 SANDBOX_CAPABILITY_MATRIX_RESOURCE = "SANDBOX_CAPABILITY_MATRIX.json"
 SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION = "bb.rl.sandbox-capability-matrix.v1"
+SANDBOX_CAPABILITY_MATRIX_SHA256 = (
+    "122065677cab2cf952b46a767ebb860d0f398a6b535946c857d059fac5b5baea"
+)
 _SANDBOX_ADAPTER_STATUSES = {
-    "docker": "ready",
+    "docker": "experimental",
     "firecracker": "unsupported",
     "gvisor": "experimental",
     "process": "development_only",
@@ -73,11 +74,17 @@ _SANDBOX_CAPABILITY_KEYS = {
 def load_sandbox_capability_matrix() -> Mapping[str, Any]:
     """Load and validate the installed canonical sandbox capability matrix."""
     try:
-        payload = json.loads(
+        encoded_matrix = (
             files(__package__)
             .joinpath(SANDBOX_CAPABILITY_MATRIX_RESOURCE)
-            .read_text(encoding="utf-8")
+            .read_bytes()
         )
+        if hashlib.sha256(encoded_matrix).hexdigest() != SANDBOX_CAPABILITY_MATRIX_SHA256:
+            raise SandboxRuntimeError(
+                "sandbox capability matrix digest is invalid",
+                code="capability_matrix_invalid",
+            )
+        payload = json.loads(encoded_matrix.decode("utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise SandboxRuntimeError(
             "sandbox capability matrix is unavailable",
@@ -1268,10 +1275,12 @@ class TrustedProcessBackend:
                 code="workspace_authority_missing",
                 lease_id=lease_id,
             )
-        executable = _snapshot_installed_executable(
-            plan.runtime.executable_path, plan.runtime.measured_binary_digest
-        )
+        executable: _PinnedExecutable | None = None
         try:
+            executable = _snapshot_installed_executable(
+                plan.runtime.executable_path,
+                plan.runtime.measured_binary_digest,
+            )
             handle = TrustedProcessHandle(
                 plan, workspace, lease_id, executable,
                 context.workspace_fd, context.workspace_identity,
@@ -1308,7 +1317,8 @@ class TrustedProcessBackend:
                 False,
             )
         except BaseException:
-            executable.close()
+            if executable is not None:
+                executable.close()
             os.close(context.workspace_fd)
             raise
         return handle, measurement
@@ -1601,6 +1611,7 @@ class SandboxWorkspaceLease:
         self._lock = asyncio.Lock()
         self._operations_drained = asyncio.Condition(self._lock)
         self._active_operations = 0
+        self._active_operation_tasks: dict[asyncio.Task[Any], int] = {}
         self._io_lock = asyncio.Lock()
         self._cleanup = None
         self.runner_workspace = LeaseBackedRunnerWorkspace(self, plan.effective_plan_digest, plan.tool_bindings)
@@ -1660,7 +1671,19 @@ class SandboxWorkspaceLease:
             await self._end_operation()
 
     async def cancel(self) -> SandboxCleanupReceipt:
-        return await self.close()
+        current = asyncio.current_task()
+        async with self._lock:
+            if self._cleanup is not None:
+                return self._cleanup
+            self._state = WorkspaceLeaseState.RELEASING
+            active_tasks = tuple(
+                task
+                for task in self._active_operation_tasks
+                if task is not current and not task.done()
+            )
+        for task in active_tasks:
+            task.cancel()
+        return await self._manager._close_lease(self)
 
     async def destroy(self) -> SandboxCleanupReceipt:
         return await self.close()
@@ -1675,13 +1698,30 @@ class SandboxWorkspaceLease:
                                       effective_plan_digest=self.plan.effective_plan_digest, lease_id=self.lease_id)
 
     async def _begin_operation(self) -> None:
+        task = asyncio.current_task()
+        if task is None:
+            raise WorkspaceStateError(
+                "workspace operation requires an asyncio task",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
         async with self._lock:
             self._assert_active()
             self._active_operations += 1
+            self._active_operation_tasks[task] = (
+                self._active_operation_tasks.get(task, 0) + 1
+            )
 
     async def _end_operation(self) -> None:
+        task = asyncio.current_task()
         async with self._lock:
             self._active_operations -= 1
+            if task is not None:
+                remaining = self._active_operation_tasks.get(task, 0) - 1
+                if remaining > 0:
+                    self._active_operation_tasks[task] = remaining
+                else:
+                    self._active_operation_tasks.pop(task, None)
             if self._active_operations == 0:
                 self._operations_drained.notify_all()
 
@@ -1747,19 +1787,64 @@ class VerifierWorkspaceLease:
         self._manager = manager; self._primary = primary; self.lease_id = lease_id
         self.plan = plan; self.snapshot = snapshot; self.workspace = workspace
         self._runtime = runtime; self.measurement = measurement
-        self._closed = False; self._lock = asyncio.Lock(); self._cleanup: SandboxCleanupReceipt | None = None
+        self._closed = False
+        self._closing = False
+        self._lock = asyncio.Lock()
+        self._close_lock = asyncio.Lock()
+        self._operations_drained = asyncio.Condition(self._lock)
+        self._active_operation_tasks: dict[asyncio.Task[Any], int] = {}
+        self._cleanup: SandboxCleanupReceipt | None = None
 
     async def execute(self) -> Mapping[str, Any]:
-        if self._closed:
-            raise WorkspaceStateError("verifier lease is not active", code="lease_not_active", lease_id=self.lease_id)
+        task = asyncio.current_task()
+        if task is None:
+            raise WorkspaceStateError(
+                "verifier operation requires an asyncio task",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        async with self._lock:
+            if self._closed or self._closing:
+                raise WorkspaceStateError(
+                    "verifier lease is not active",
+                    code="lease_not_active",
+                    lease_id=self.lease_id,
+                )
+            self._active_operation_tasks[task] = (
+                self._active_operation_tasks.get(task, 0) + 1
+            )
+        try:
+            return await self._execute_active()
+        finally:
+            await asyncio.shield(self._finish_operation(task))
+
+    async def _finish_operation(self, task: asyncio.Task[Any]) -> None:
+        async with self._lock:
+            remaining = self._active_operation_tasks.get(task, 0) - 1
+            if remaining > 0:
+                self._active_operation_tasks[task] = remaining
+            else:
+                self._active_operation_tasks.pop(task, None)
+            if not self._active_operation_tasks:
+                self._operations_drained.notify_all()
+
+    async def _execute_active(self) -> Mapping[str, Any]:
         result = await self._runtime.run_argv(
             self.plan.verifier.argv,
             timeout_ms=self.plan.limits.verifier_timeout_ms,
-            output_limit=self.plan.limits.observation_bytes)
+            output_limit=self.plan.limits.observation_bytes,
+        )
         if result.get("returncode") != 0:
-            raise VerifierExecutionError("verifier exited unsuccessfully", code="verifier_result_malformed", lease_id=self.lease_id)
+            raise VerifierExecutionError(
+                "verifier exited unsuccessfully",
+                code="verifier_result_malformed",
+                lease_id=self.lease_id,
+            )
         result_root = self.workspace / "result"
-        ceiling = min(self.plan.limits.artifact_bytes_each, self.plan.limits.artifact_bytes_total)
+        ceiling = min(
+            self.plan.limits.artifact_bytes_each,
+            self.plan.limits.artifact_bytes_total,
+        )
         try:
             remote_read = getattr(self._runtime, "read_text", None)
             if callable(remote_read):
@@ -1781,19 +1866,54 @@ class VerifierWorkspaceLease:
                 raise ValueError("result too large")
             payload = __import__("json").loads(raw)
         except Exception as exc:
-            raise VerifierExecutionError("verifier result is malformed", code="verifier_result_malformed", lease_id=self.lease_id) from exc
-        expected = {"episode_id": self.plan.episode_id,
-                    "effective_plan_digest": self.plan.effective_plan_digest,
-                    "task_digest": self.snapshot.task_digest,
-                    "snapshot_digest": self.snapshot.root_digest,
-                    "verifier_digest": self.plan.verifier.grant.implementation_digest}
-        if not isinstance(payload, dict) or any(payload.get(key) != value for key, value in expected.items()):
-            raise VerifierExecutionError("verifier result identity mismatch", code="verifier_result_identity_mismatch", lease_id=self.lease_id)
+            raise VerifierExecutionError(
+                "verifier result is malformed",
+                code="verifier_result_malformed",
+                lease_id=self.lease_id,
+            ) from exc
+        expected = {
+            "episode_id": self.plan.episode_id,
+            "effective_plan_digest": self.plan.effective_plan_digest,
+            "task_digest": self.snapshot.task_digest,
+            "snapshot_digest": self.snapshot.root_digest,
+            "verifier_digest": self.plan.verifier.grant.implementation_digest,
+        }
+        if not isinstance(payload, dict) or any(
+            payload.get(key) != value for key, value in expected.items()
+        ):
+            raise VerifierExecutionError(
+                "verifier result identity mismatch",
+                code="verifier_result_identity_mismatch",
+                lease_id=self.lease_id,
+            )
         return MappingProxyType(payload)
 
     async def close(self) -> SandboxCleanupReceipt:
+        async with self._close_lock:
+            try:
+                return await self._close_attempt()
+            finally:
+                async with self._lock:
+                    self._closing = False
+
+    async def _close_attempt(self) -> SandboxCleanupReceipt:
+        current = asyncio.current_task()
         async with self._lock:
-            if self._cleanup is not None: return self._cleanup
+            if self._cleanup is not None:
+                return self._cleanup
+            self._closing = True
+            active_tasks = tuple(
+                task
+                for task in self._active_operation_tasks
+                if task is not current and not task.done()
+            )
+        for task in active_tasks:
+            task.cancel()
+        async with self._lock:
+            if self._cleanup is not None:
+                return self._cleanup
+            while self._active_operation_tasks:
+                await self._operations_drained.wait()
             steps = list(await self._runtime.terminate())
             runtime_released = all(
                 step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
@@ -2959,6 +3079,7 @@ __all__ = [
     "SandboxPlanError", "SandboxRuntimeError", "SandboxRuntimeManager", "SandboxSecurityPolicy",
     "SandboxWorkspaceLease", "TrustedProcessBackend", "TrustedProcessHandle",
     "SANDBOX_CAPABILITY_MATRIX_RESOURCE", "SANDBOX_CAPABILITY_MATRIX_SCHEMA_VERSION",
+    "SANDBOX_CAPABILITY_MATRIX_SHA256",
     "VERIFIER_REQUEST_RELATIVE_PATH", "VERIFIER_REQUEST_SCHEMA_VERSION",
     "VerifierExecutionError", "VerifierSnapshotError", "VerifierWorkspaceLease",
     "WorkspaceStateError", "WorkspaceStorageIdentity", "build_sandbox_execution_plan",

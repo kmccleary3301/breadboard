@@ -547,9 +547,9 @@ async def test_runtime_handle_exposes_persistent_testbed_file_and_diff_operation
     plan, executor, handle = await _launch_docker_handle(tmp_path)
     executor.results.extend(
         [
-            _result(stdout=b"hello"),
+            _result(stdout=b'{"bytes":5,"content_base64":"aGVsbG8="}'),
             _result(),
-            _result(stdout=b"/testbed/src/main.py\n/testbed/src/lib\n"),
+            _result(stdout=b'["src/lib","src/main.py"]'),
             _result(stdout=b"diff --git a/src/main.py b/src/main.py\n"),
         ]
     )
@@ -571,39 +571,41 @@ async def test_runtime_handle_exposes_persistent_testbed_file_and_diff_operation
         "files": ["src/lib", "src/main.py"],
     }
     assert diff_result["stdout"].startswith("diff --git")
-    assert [call[0][1:] for call in executor.calls] == [
-        (
-            "exec",
-            CONTAINER_ID,
-            "sh",
-            "-lc",
-            "tail -c +1 /testbed/src/main.py | head -c 6",
-        ),
-        (
-            "exec",
-            CONTAINER_ID,
-            "sh",
-            "-lc",
-            "printf %s aGVsbG8= | base64 -d > /testbed/src/main.py",
-        ),
-        (
-            "exec",
-            CONTAINER_ID,
-            "sh",
-            "-lc",
-            "find /testbed/src -mindepth 1 -maxdepth 2 -print",
-        ),
-        (
-            "exec",
-            CONTAINER_ID,
-            "git",
-            "-C",
-            "/testbed",
-            "diff",
-            "--no-ext-diff",
-            "--binary",
-        ),
-    ]
+    calls = [call[0][1:] for call in executor.calls]
+    assert calls[0][:5] == (
+        "exec",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert calls[0][5:] == ("read", "src/main.py", "0", "5")
+    assert calls[1][:5] == (
+        "exec",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert calls[1][5:] == ("write", "src/main.py", "aGVsbG8=")
+    assert calls[2][:5] == (
+        "exec",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert calls[2][5:] == ("list", "src", "1", "128")
+    assert calls[3] == (
+        "exec",
+        CONTAINER_ID,
+        "git",
+        "-C",
+        "/testbed",
+        "diff",
+        "--no-ext-diff",
+        "--binary",
+    )
 
 
 @pytest.mark.asyncio
@@ -616,6 +618,182 @@ async def test_runtime_handle_rejects_workspace_escape_before_docker_exec(
         await handle.read_text("../host-secret")
 
     assert executor.calls == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_rejects_read_symlink_before_read_effect(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.append(
+        _result(returncode=125, stderr=b"bb-workspace-helper:authority\n")
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.read_text("link")
+
+    assert captured.value.code == "workspace_escape"
+    argv = executor.calls[0][0]
+    assert argv[1:6] == (
+        "exec",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert argv[6:] == ("read", "link", "0", str(plan.limits.observation_bytes))
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_rejects_write_symlink_before_write_effect(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.append(
+        _result(returncode=125, stderr=b"bb-workspace-helper:authority\n")
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.write_text("link", "secret")
+
+    assert captured.value.code == "workspace_escape"
+    argv = executor.calls[0][0]
+    assert argv[1:6] == (
+        "exec",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert argv[6:] == ("write", "link", "c2VjcmV0")
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_rejects_write_missing_leaf_under_symlink_parent(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    executor.results.append(
+        _result(returncode=125, stderr=b"bb-workspace-helper:authority\n")
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.write_text("link/new.txt", "secret")
+
+    assert captured.value.code == "workspace_escape"
+    argv = executor.calls[0][0]
+    assert argv[1:6] == (
+        "exec",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert argv[6:] == ("write", "link/new.txt", "c2VjcmV0")
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_rejects_list_entry_overflow_before_returning_evidence(
+    tmp_path: Path,
+) -> None:
+    plan, executor, handle = await _launch_docker_handle(tmp_path)
+    handle.plan = replace(
+        plan,
+        security_policy=replace(plan.security_policy, snapshot_max_inodes=1),
+    )
+    executor.results.append(
+        _result(returncode=124, stderr=b"bb-workspace-helper:output-limit\n")
+    )
+
+    with pytest.raises(DockerAdapterError) as captured:
+        await handle.list_files("src", depth=1)
+
+    assert captured.value.code == "output_limit_exceeded"
+    argv = executor.calls[0][0]
+    assert argv[1:6] == (
+        "exec",
+        CONTAINER_ID,
+        "python3",
+        "-c",
+        docker_module._WORKSPACE_PYTHON,
+    )
+    assert argv[6:] == ("list", "src", "1", "1")
+    assert len(executor.calls) == 1
+
+
+def _run_workspace_helper(root: Path, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    script = docker_module._WORKSPACE_PYTHON.replace(
+        'ROOT = "/testbed"',
+        f"ROOT = {str(root)!r}",
+        1,
+    )
+    return subprocess.run(
+        [sys.executable, "-c", script, *arguments],
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_workspace_helper_performs_descriptor_bound_read_write_and_list(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "testbed"
+    source = root / "src"
+    source.mkdir(parents=True)
+    target = source / "main.py"
+    target.write_text("old", encoding="utf-8")
+
+    write_result = _run_workspace_helper(
+        root,
+        "write",
+        "src/main.py",
+        "aGVsbG8=",
+    )
+    assert write_result.returncode == 0
+    assert target.read_text(encoding="utf-8") == "hello"
+    assert not tuple(source.glob(".breadboard-*"))
+
+    read_result = _run_workspace_helper(root, "read", "src/main.py", "1", "4")
+    assert read_result.returncode == 0
+    assert json.loads(read_result.stdout) == {
+        "bytes": 4,
+        "content_base64": "ZWxsbw==",
+    }
+
+    list_result = _run_workspace_helper(root, "list", "src", "0", "4")
+    assert list_result.returncode == 0
+    assert json.loads(list_result.stdout) == ["src/main.py"]
+
+
+def test_workspace_helper_rejects_symlinks_hardlinks_and_inode_overflow(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "testbed"
+    source = root / "src"
+    source.mkdir(parents=True)
+    outside = root / "outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+    (source / "link").symlink_to(outside)
+    os.link(outside, source / "hardlink")
+
+    for arguments in (
+        ("read", "src/link", "0", "8"),
+        ("write", "src/link", "c2VjcmV0"),
+        ("write", "src/hardlink", "c2VjcmV0"),
+        ("list", "src", "0", "8"),
+    ):
+        result = _run_workspace_helper(root, *arguments)
+        assert result.returncode == 125
+        assert result.stderr == b"bb-workspace-helper:authority\n"
+    assert outside.read_text(encoding="utf-8") == "outside"
+
+    (source / "link").unlink()
+    (source / "hardlink").unlink()
+    (source / "one").write_text("1", encoding="utf-8")
+    (source / "two").write_text("2", encoding="utf-8")
+    overflow = _run_workspace_helper(root, "list", "src", "0", "1")
+    assert overflow.returncode == 124
+    assert overflow.stderr == b"bb-workspace-helper:output-limit\n"
 
 
 async def _exercise_nonadmissible_prepare_publish_start(
