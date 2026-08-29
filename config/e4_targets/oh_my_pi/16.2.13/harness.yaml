@@ -4,13 +4,27 @@ prompt:
   renderer: oh-my-pi-handlebars-16.2.13
   asset: prompts/system-prompt.md
   dynamic_fields:
-    - skills
     - alwaysApplyRules
+    - eagerTasks
+    - eagerTasksAlways
+    - hasMCPDiscoveryServers
+    - hasMemoryRoot
+    - hasObsidian
+    - intentField
+    - intentTracing
+    - mcpDiscoveryMode
+    - mcpDiscoveryServerSummaries
+    - personality
+    - renderMermaid
     - rules
+    - secretsEnabled
+    - skills
+    - taskBatch
     - toolInfo
     - toolInventory
+    - toolListMode
     - toolRefs
-    - runtime_capabilities
+    - tools
 tools:
   surface_asset: tool-surface.json
   normalization:

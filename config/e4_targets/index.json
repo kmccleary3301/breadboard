@@ -3,11 +3,11 @@
   "targets": {
     "oh-my-pi@16.2.13": {
       "descriptor": "oh_my_pi/16.2.13/target.json",
-      "sha256": "e6ae4b5f3a504acde0c447b843b091ff9d0f7f8b6fc209f089427ed6132390f2"
+      "sha256": "537fb2659e6f8f619e0fd832d48d57c5f8c0da4b2356022b0ebecd6ccbb7a105"
     },
     "pi@0.57.1": {
       "descriptor": "pi/0.57.1/target.json",
-      "sha256": "8343980a59e5d30443cfb829bd988d4d9a7d556df2b0f194fb1bfbada6589c84"
+      "sha256": "0131e41b0ffbbd0800fd332b769de2603caf4716382989a50c9e47a8f8d2441c"
     }
   }
 }

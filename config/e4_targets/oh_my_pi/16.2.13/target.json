@@ -35,8 +35,8 @@
   "assets": [
     {
       "path": "harness.yaml",
-      "sha256": "50cf75d2eb6451c3d7136badbad0851a87c22654a8726244a610fb659c5d1e1b",
-      "bytes": 410
+      "sha256": "72f2ca775ae0ff805664831aec339384b7f5d66c3035b648a2e0fae0c60b3c09",
+      "bytes": 691
     },
     {
       "path": "prompts/system-prompt.md",

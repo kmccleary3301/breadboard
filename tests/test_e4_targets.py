@@ -95,6 +95,40 @@ def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> N
     assert "target_id: pi@0.57.1" in pi_config
     assert "max_retries: 0" in pi_config
 
+    pi_surface = json.loads(pi.read_asset_text("tool-surface.json"))
+    assert pi_surface["ordered_tools"] == [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "grep",
+        "find",
+        "ls",
+    ]
+    assert "breadboard_implementation_ids" not in pi_surface
+    assert pi_surface["dispatch"] == {
+        "kind": "target_adapter",
+        "adapter_id": "pi-0.57.1",
+        "binding_requirement": "RL-E4-2",
+    }
+    assert pi_surface["tools"]["edit"]["parameters"]["required"] == [
+        "path",
+        "oldText",
+        "newText",
+    ]
+    assert pi_surface["tools"]["write"]["parameters"]["required"] == [
+        "path",
+        "content",
+    ]
+    assert tuple(pi_surface["tools"]["grep"]["parameters"]["properties"]) == (
+        "pattern",
+        "path",
+        "glob",
+        "ignoreCase",
+        "literal",
+        "context",
+        "limit",
+    )
     omp = load_e4_target("oh-my-pi@16.2.13")
     assert omp.descriptor["upstream"]["source"] == {
         "commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
@@ -105,6 +139,30 @@ def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> N
         "archive_bytes": 42065260,
     }
     assert omp.descriptor["upstream"]["package"]["version"] == "16.2.13"
+    omp_config = yaml.safe_load(omp.read_asset_text("harness.yaml"))
+    assert omp_config["prompt"]["dynamic_fields"] == [
+        "alwaysApplyRules",
+        "eagerTasks",
+        "eagerTasksAlways",
+        "hasMCPDiscoveryServers",
+        "hasMemoryRoot",
+        "hasObsidian",
+        "intentField",
+        "intentTracing",
+        "mcpDiscoveryMode",
+        "mcpDiscoveryServerSummaries",
+        "personality",
+        "renderMermaid",
+        "rules",
+        "secretsEnabled",
+        "skills",
+        "taskBatch",
+        "toolInfo",
+        "toolInventory",
+        "toolListMode",
+        "toolRefs",
+        "tools",
+    ]
     omp_surface = json.loads(omp.read_asset_text("tool-surface.json"))
     assert omp_surface["ordered_tools"][:5] == [
         "read",
