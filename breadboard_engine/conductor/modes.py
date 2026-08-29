@@ -80,12 +80,14 @@ def _bind_episode_provider_profile(
 def _provider_wire_evidence(
     *,
     profile: Any,
+    runtime: Any,
     provider_id: str,
     model: str,
     messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]],
     stream: bool,
     client_config: Dict[str, Any],
+    context: ProviderRuntimeContext,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[str], Optional[Dict[str, Any]]]:
     if profile is not None:
         profile_identity = profile.identity_dict()
@@ -99,7 +101,12 @@ def _provider_wire_evidence(
         ]
         with redaction.secret_value_scope(*secret_values, allow_short=True):
             request_body, _redaction_problems = redaction.scrub_structure(
-                profile.chat_request(messages, tools),
+                runtime.profile_chat_request(
+                    profile,
+                    messages,
+                    tools,
+                    context=context,
+                ),
                 path="$.provider_request",
             )
         if not isinstance(request_body, dict):
@@ -369,45 +376,6 @@ def get_model_response(
             effective_stream_responses,
         )
     )
-    (
-        wire_request_body,
-        request_headers,
-        request_endpoint,
-        profile_identity,
-    ) = _provider_wire_evidence(
-        profile=provider_profile,
-        provider_id=provider_id,
-        model=model,
-        messages=send_messages,
-        tools=tools_schema,
-        stream=effective_stream_responses,
-        client_config=client_config,
-    )
-    try:
-        session_state.set_provider_metadata("current_stream_requested", stream_responses)
-        session_state.set_provider_metadata("current_stream_effective", effective_stream_responses)
-    except Exception:
-        pass
-
-    try:
-        provider_messages = getattr(session_state, "provider_messages", []) or []
-        if provider_messages:
-            last_message = provider_messages[-1]
-            if isinstance(last_message, dict) and last_message.get("tool_calls"):
-                for _ in last_message.get("tool_calls", []):
-                    conductor.loop_detector.observe_tool_call()
-    except Exception:
-        pass
-
-    try:
-        if conductor.logger_v2.include_raw:
-            conductor.api_recorder.save_request(
-                turn_index,
-                wire_request_body,
-            )
-    except Exception:
-        pass
-
     runtime_extra = {
         "turn_index": turn_index,
         "model": model,
@@ -437,6 +405,47 @@ def get_model_response(
         turn_id=session_state.get_provider_metadata("turn_id"),
         provider_profile=provider_profile,
     )
+    (
+        wire_request_body,
+        request_headers,
+        request_endpoint,
+        profile_identity,
+    ) = _provider_wire_evidence(
+        profile=provider_profile,
+        runtime=runtime,
+        provider_id=provider_id,
+        model=model,
+        messages=send_messages,
+        tools=tools_schema,
+        stream=effective_stream_responses,
+        client_config=client_config,
+        context=runtime_context,
+    )
+    try:
+        session_state.set_provider_metadata("current_stream_requested", stream_responses)
+        session_state.set_provider_metadata("current_stream_effective", effective_stream_responses)
+    except Exception:
+        pass
+
+    try:
+        provider_messages = getattr(session_state, "provider_messages", []) or []
+        if provider_messages:
+            last_message = provider_messages[-1]
+            if isinstance(last_message, dict) and last_message.get("tool_calls"):
+                for _ in last_message.get("tool_calls", []):
+                    conductor.loop_detector.observe_tool_call()
+    except Exception:
+        pass
+
+    try:
+        if conductor.logger_v2.include_raw:
+            conductor.api_recorder.save_request(
+                turn_index,
+                wire_request_body,
+            )
+    except Exception:
+        pass
+
 
 
     try:

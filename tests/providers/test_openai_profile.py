@@ -5,6 +5,7 @@ import types
 
 import pytest
 
+from breadboard.product.runtime.artifacts import ArtifactStore
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.conductor.modes import (
     _bind_episode_provider_profile,
@@ -436,9 +437,12 @@ def test_profile_wire_evidence_records_exact_authoritative_request():
             },
         }
     ]
+    runtime = _runtime()
+    context = ProviderRuntimeContext(None, {}, provider_profile=profile)
 
     body, headers, endpoint, identity = _provider_wire_evidence(
         profile=profile,
+        runtime=runtime,
         provider_id="openai",
         model=MODEL,
         messages=messages,
@@ -448,6 +452,7 @@ def test_profile_wire_evidence_records_exact_authoritative_request():
             "base_url": "https://wrong.example/v1",
             "default_headers": {"X-Wrong": "wrong"},
         },
+        context=context,
     )
 
     assert body == profile.chat_request(messages, tools)
@@ -486,8 +491,11 @@ def test_profile_wire_evidence_redacts_echoes_and_raw_endpoint(
         caller_headers={"X-Request-ID": header_value},
     )
 
+    runtime = _runtime()
+    context = ProviderRuntimeContext(None, {}, provider_profile=profile)
     evidence = _provider_wire_evidence(
         profile=profile,
+        runtime=runtime,
         provider_id="openai",
         model=MODEL,
         messages=[{"role": "user", "content": f"{credential} {header_value}"}],
@@ -503,12 +511,84 @@ def test_profile_wire_evidence_redacts_echoes_and_raw_endpoint(
         ],
         stream=True,
         client_config={},
+        context=context,
     )
 
     assert credential not in repr(evidence[0])
     assert header_value not in repr(evidence[0])
     assert profile.base_url not in repr(evidence)
     assert evidence[2] == f"sha256:{profile.identity_dict()['base_url_sha256']}"
+
+
+def test_profile_wire_evidence_matches_media_and_tool_result_projection(tmp_path):
+    workspace = tmp_path / "workspace"
+    artifact = ArtifactStore(workspace / ".breadboard" / "artifacts").put(
+        b"\x89PNG\r\n\x1a\nprofile-evidence",
+        media_type="image/png",
+    )
+    uri = f"attachment://{artifact.digest}"
+    metadata = {"attachment_capabilities": {uri: artifact.as_dict()}}
+    session_state = types.SimpleNamespace(
+        workspace=str(workspace),
+        get_provider_metadata=lambda key, default=None: metadata.get(key, default),
+    )
+    profile = _profile()
+    runtime = _runtime()
+    context = ProviderRuntimeContext(
+        session_state,
+        {},
+        provider_profile=profile,
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "thinking", "text": "inspect image"},
+                {
+                    "type": "media",
+                    "kind": "image",
+                    "uri": uri,
+                    "mime": "image/png",
+                },
+            ],
+        },
+        {
+            "role": "tool_result",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "call_id": "call_1",
+                    "content": {"status": "ok"},
+                }
+            ],
+        },
+    ]
+
+    body, _, _, _ = _provider_wire_evidence(
+        profile=profile,
+        runtime=runtime,
+        provider_id="openai",
+        model=MODEL,
+        messages=messages,
+        tools=None,
+        stream=True,
+        client_config={},
+        context=context,
+    )
+
+    assert body == runtime.profile_chat_request(
+        profile,
+        messages,
+        None,
+        context=context,
+    )
+    assert body["messages"][0]["content"][0]["type"] == "image_url"
+    assert body["messages"][0]["reasoning_content"] == "inspect image"
+    assert body["messages"][1] == {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "content": '{"status":"ok"}',
+    }
 
 
 def test_rejected_episode_does_not_retain_provider_profile():

@@ -145,6 +145,20 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 )
             )
 
+    def profile_chat_request(
+        self,
+        profile: OpenAICompletionsProviderProfile,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        *,
+        context: ProviderRuntimeContext,
+    ) -> Dict[str, Any]:
+        """Project the exact request used by a profile-bound invocation."""
+        return profile.chat_request(
+            self._convert_messages_to_chat(messages, context=context),
+            self._convert_tools_to_openai(tools),
+        )
+
     def _invoke(
         self,
         *,
@@ -157,10 +171,20 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
     ) -> ProviderResult:
         context.raise_if_cancelled()
         profile = context.provider_profile
-        request_messages = self._convert_messages_to_chat(
-            messages, context=context
-        )
-        request_tools = self._convert_tools_to_openai(tools)
+        if profile is not None:
+            profile_request = self.profile_chat_request(
+                profile,
+                messages,
+                tools,
+                context=context,
+            )
+            request_messages = profile_request["messages"]
+            request_tools = profile_request.get("tools")
+        else:
+            request_messages = self._convert_messages_to_chat(
+                messages, context=context
+            )
+            request_tools = self._convert_tools_to_openai(tools)
         if profile is not None:
             if not isinstance(client, _ProfileClient) or client.profile is not profile:
                 raise ProviderRuntimeError(
