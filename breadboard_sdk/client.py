@@ -4,7 +4,7 @@ import json
 import re
 import ipaddress
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List
 from urllib.parse import quote, urlencode, urljoin, urlsplit
 
@@ -70,13 +70,22 @@ def _required_rfc3339_timestamp(value: Any, field: str) -> str:
     text = _required_text(value, field)
     if _RFC3339_TIMESTAMP_RE.fullmatch(text) is None:
         raise ValueError(f"invalid session event {field}")
-    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    leap_second = text[17:19] == "60"
+    parseable = text[:17] + "59" + text[19:] if leap_second else text
+    normalized = parseable[:-1] + "+00:00" if parseable.endswith("Z") else parseable
     try:
         parsed = datetime.fromisoformat(normalized)
     except ValueError as exc:
         raise ValueError(f"invalid session event {field}") from exc
     if parsed.tzinfo is None:
         raise ValueError(f"invalid session event {field}")
+    if leap_second:
+        utc = parsed.astimezone(timezone.utc)
+        if (utc.month, utc.day, utc.hour, utc.minute) not in {
+            (6, 30, 23, 59),
+            (12, 31, 23, 59),
+        }:
+            raise ValueError(f"invalid session event {field}")
     return text
 
 

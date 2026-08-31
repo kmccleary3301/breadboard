@@ -74,6 +74,85 @@ test("streamSessionEvents uses the public endpoint and parses the SSE envelope",
   assert.deepEqual(events, [expected])
 })
 
+test("streamSessionEvents accepts RFC3339 leap seconds", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  const timestamps = [
+    "2016-12-31T23:59:60Z",
+    "2016-12-31T15:59:60-08:00",
+  ]
+  const encoded = new TextEncoder().encode(
+    timestamps.map((timestamp, index) => {
+      const sequence = index + 1
+      const event = eventEnvelope(
+        "session-leap-second",
+        sequence,
+        "assistant_message",
+        { metadata: { has_content: true } },
+      )
+      event.timestamp = timestamp
+      return `id: ${sequence}\ndata: ${JSON.stringify(event)}\n\n`
+    }).join(""),
+  )
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded)
+        controller.close()
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  )
+
+  const events = []
+  for await (const event of streamSessionEvents("session-leap-second", {
+    config: { baseUrl: "http://breadboard.test:9099" },
+  })) {
+    events.push(event)
+  }
+  assert.deepEqual(events.map((event) => event.timestamp), timestamps)
+})
+
+test("streamSessionEvents rejects impossible leap seconds", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  const forged = eventEnvelope(
+    "session-invalid-leap-second",
+    1,
+    "assistant_message",
+    { metadata: { has_content: true } },
+  )
+  forged.timestamp = "2016-11-30T23:59:60Z"
+  const encoded = new TextEncoder().encode(`id: 1\ndata: ${JSON.stringify(forged)}\n\n`)
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded)
+        controller.close()
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  )
+
+  await assert.rejects(
+    async () => {
+      for await (const _event of streamSessionEvents("session-invalid-leap-second", {
+        config: { baseUrl: "http://breadboard.test:9099" },
+      })) {
+        assert.fail("unexpected invalid leap-second event")
+      }
+    },
+    /Invalid session event timestamp/,
+  )
+})
+
+
 test("streamSessionEvents rejects a non-RFC3339 timestamp", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => {

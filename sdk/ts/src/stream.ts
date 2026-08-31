@@ -164,6 +164,21 @@ const isRfc3339DateTime = (value: string): boolean => {
     30,
     31,
   ]
+  const normalizedValue = second === 60
+    ? `${value.slice(0, 17)}59${value.slice(19)}`
+    : value
+  const parsedTime = Date.parse(normalizedValue)
+  const parsedDate = new Date(parsedTime)
+  const validLeapSecond = second !== 60
+    || (
+      Number.isFinite(parsedTime)
+      && (
+        (parsedDate.getUTCMonth() === 5 && parsedDate.getUTCDate() === 30)
+        || (parsedDate.getUTCMonth() === 11 && parsedDate.getUTCDate() === 31)
+      )
+      && parsedDate.getUTCHours() === 23
+      && parsedDate.getUTCMinutes() === 59
+    )
   return year >= 1
     && month >= 1
     && month <= 12
@@ -171,10 +186,11 @@ const isRfc3339DateTime = (value: string): boolean => {
     && day <= daysInMonth[month - 1]
     && hour <= 23
     && minute <= 59
-    && second <= 59
+    && second <= 60
     && offsetHour <= 23
     && offsetMinute <= 59
-    && Number.isFinite(Date.parse(value))
+    && Number.isFinite(parsedTime)
+    && validLeapSecond
 }
 
 const requiredRfc3339Timestamp = (value: unknown, field: string): string => {
