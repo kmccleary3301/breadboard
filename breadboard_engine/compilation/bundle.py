@@ -17,7 +17,7 @@ from typing import Any, BinaryIO, Protocol
 from breadboard.rl.state.cas import ArtifactStoreError, CASReader
 from breadboard.rl.state.state_ref import ArtifactRef
 
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     BundleEntry,
     BundleEntrypoint,
     BundleIntegrityError,
