@@ -194,7 +194,9 @@ def _remote_event_snapshot(
             )
         )
         if not page:
-            return events
+            raise ValueError(
+                "server event snapshot ended before its initial bound"
+            )
         for expected_sequence, event in enumerate(
             page,
             start=resume_token + 1,
@@ -207,12 +209,15 @@ def _remote_event_snapshot(
         events.extend(
             event for event in page if event["seq"] <= upper_sequence
         )
+        if next_resume_token >= upper_sequence:
+            return events
         if (
-            next_resume_token >= upper_sequence
-            or len(page) < page_limit
+            len(page) < page_limit
             or page[-1]["kind"] in _TERMINAL_EVENT_KINDS
         ):
-            return events
+            raise ValueError(
+                "server event snapshot ended before its initial bound"
+            )
         resume_token = next_resume_token
     return events
 

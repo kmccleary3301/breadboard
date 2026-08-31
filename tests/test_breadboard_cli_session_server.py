@@ -302,10 +302,18 @@ def test_session_cli_bounds_complete_remote_event_snapshot_to_initial_count(
     assert calls == [(None, 256, False), (256, 1, False)]
 
 
-def test_session_cli_rejects_gapped_remote_event_snapshot(
-    monkeypatch, tmp_path, capsys
+@pytest.mark.parametrize(
+    ("sequences", "expected_error"),
+    [
+        ([1, 3], "non-contiguous session event page"),
+        ([1], "event snapshot ended before its initial bound"),
+        ([], "event snapshot ended before its initial bound"),
+    ],
+)
+def test_session_cli_rejects_incomplete_remote_event_snapshot(
+    monkeypatch, tmp_path, capsys, sequences, expected_error
 ) -> None:
-    class GappedClient:
+    class IncompleteClient:
         def __init__(self, base_url: str, *, timeout_s: float) -> None:
             pass
 
@@ -323,10 +331,17 @@ def test_session_cli_rejects_gapped_remote_event_snapshot(
             limit: int = 256,
             follow: bool = True,
         ) -> Iterator[dict[str, Any]]:
-            yield {"seq": 1, "kind": "assistant_message"}
-            yield {"seq": 3, "kind": "session.completed"}
+            for sequence in sequences:
+                yield {
+                    "seq": sequence,
+                    "kind": (
+                        "session.completed"
+                        if sequence == 3
+                        else "assistant_message"
+                    ),
+                }
 
-    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", GappedClient)
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", IncompleteClient)
     exit_code = main(
         [
             "--json",
@@ -336,13 +351,13 @@ def test_session_cli_rejects_gapped_remote_event_snapshot(
             "--server",
             "http://breadboard.test",
             "events",
-            "gapped-session",
+            "incomplete-session",
         ]
     )
 
     output = json.loads(capsys.readouterr().out)
     assert exit_code != 0
-    assert "non-contiguous session event page" in output["error"]["message"]
+    assert expected_error in output["error"]["message"]
 
 
 @pytest.mark.parametrize(
