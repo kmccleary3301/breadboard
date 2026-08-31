@@ -297,6 +297,7 @@ async def run_headless_request(
     provider_credentials: Mapping[str, str],
     provider_routes: Mapping[str, HeadlessProviderRouteAuthority],
     repository_base_commits: Mapping[str, str],
+    composition_ref_data: bytes | None = None,
 ) -> dict[str, Any]:
     if type(request) is not HeadlessRunRequest:
         raise TypeError("request must be an exact HeadlessRunRequest")
@@ -375,6 +376,7 @@ async def run_headless_request(
         composition = load_production_composition(
             composition_ref_path,
             composition_secrets,
+            composition_ref_data=composition_ref_data,
             policy_client_resolver_factory=resolver_factory,
         )
         await composition.service.start()
@@ -410,6 +412,7 @@ async def run_headless_request(
         result = _preflight_failure_result(
             request,
             composition_ref_path=composition_ref_path,
+            composition_ref_data=composition_ref_data,
             target=target,
             profile=profile,
             route=route,
@@ -855,6 +858,7 @@ def _preflight_failure_result(
     request: HeadlessRunRequest,
     *,
     composition_ref_path: str,
+    composition_ref_data: bytes | None,
     target: E4TargetPolicyProjection | None,
     profile: OpenAICompletionsProviderProfile | None,
     route: HeadlessProviderRouteAuthority | None,
@@ -866,9 +870,13 @@ def _preflight_failure_result(
     }
     config_identity = {
         "schema_version": "bb.rl.headless-preflight-identity.v1",
-        "composition_ref_digest": _optional_regular_file_digest(
-            composition_ref_path,
-            max_bytes=_MAX_REQUEST_BYTES,
+        "composition_ref_digest": (
+            _digest_bytes(composition_ref_data)
+            if composition_ref_data is not None
+            else _optional_regular_file_digest(
+                composition_ref_path,
+                max_bytes=_MAX_REQUEST_BYTES,
+            )
         ),
         "target": (
             {

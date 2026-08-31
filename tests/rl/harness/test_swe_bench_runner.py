@@ -562,10 +562,12 @@ def test_request_requires_real_base_and_launcher_binding(tmp_path: Path) -> None
         )
 
 
-def test_invocation_binds_composition_contents_and_rejects_replacement(
+def test_invocation_binds_and_uses_admitted_composition_contents(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     invocation = _invocation(tmp_path)
+    admitted_data = invocation.composition_ref_data
     original_digest = invocation.identity_dict()["composition_ref_digest"]
     composition_path = Path(invocation.composition_ref_path)
     composition_path.write_bytes(b'{"schema_version":"replacement.v1"}')
@@ -573,10 +575,20 @@ def test_invocation_binds_composition_contents_and_rejects_replacement(
         tmp_path,
         composition=b'{"schema_version":"replacement.v1"}',
     )
+    captured: dict[str, Any] = {}
+
+    async def run_headless(_request: HeadlessRunRequest, **kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"status": "ok"}
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.swe_bench_runner.run_headless_request",
+        run_headless,
+    )
 
     assert replacement.identity_dict()["composition_ref_digest"] != original_digest
-    with pytest.raises(SweBenchRunnerError, match="changed after admission"):
-        asyncio.run(invocation.run(_headless_request(tmp_path)))
+    assert asyncio.run(invocation.run(_headless_request(tmp_path))) == {"status": "ok"}
+    assert captured["composition_ref_data"] == admitted_data
 
 
 def test_rejects_unpinned_image_and_evaluator_inputs(tmp_path: Path) -> None:
@@ -597,14 +609,14 @@ def test_rejects_unpinned_image_and_evaluator_inputs(tmp_path: Path) -> None:
         )
 
 
-def test_evaluator_cleans_resources_after_base_exception(
+def test_evaluator_cleans_run_root_when_custody_check_is_interrupted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     evaluator = _evaluator(tmp_path, monkeypatch)
     cleanup_calls: list[dict[str, Any]] = []
 
-    def interrupt_copy(_source: str, _destination: str) -> None:
+    def interrupt_custody(_path: str) -> None:
         raise KeyboardInterrupt
 
     def cleanup_containers(
@@ -615,8 +627,8 @@ def test_evaluator_cleans_resources_after_base_exception(
         return {"containers": []}
 
     monkeypatch.setattr(
-        "breadboard.rl.harness.swe_bench_runner._copy_verified_dataset",
-        interrupt_copy,
+        "breadboard.rl.harness.swe_bench_runner._require_root_private_work_directory",
+        interrupt_custody,
     )
     monkeypatch.setattr(
         SubprocessOfficialEvaluator,

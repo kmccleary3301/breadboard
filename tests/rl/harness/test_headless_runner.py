@@ -205,6 +205,20 @@ def test_provider_requires_usable_literal_loopback_authority(base_url: str) -> N
 
 
 @pytest.mark.asyncio
+async def test_composition_loader_uses_admitted_ref_bytes(tmp_path: Path) -> None:
+    fixture = materialize_production_composition_fixture(tmp_path)
+    admitted_data = fixture.composition_ref_path.read_bytes()
+    fixture.composition_ref_path.write_bytes(b'{"schema_version":"replaced"}')
+
+    composition = load_production_composition(
+        str(fixture.composition_ref_path),
+        fixture.secret_files,
+        composition_ref_data=admitted_data,
+    )
+    await composition.close()
+
+
+@pytest.mark.asyncio
 async def test_target_semantics_reject_changed_tool_parameter_schema(
     tmp_path: Path,
 ) -> None:

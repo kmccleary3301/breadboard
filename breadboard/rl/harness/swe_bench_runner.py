@@ -143,7 +143,12 @@ def _digest_bytes(value: bytes) -> str:
 def _canonical_digest(value: Any) -> str:
     return _digest_bytes(_canonical_bytes(value))
 
-def _regular_file_digest(path: str, *, field_name: str, max_bytes: int) -> str:
+def _read_regular_file_bytes(
+    path: str,
+    *,
+    field_name: str,
+    max_bytes: int,
+) -> bytes:
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     descriptor = -1
     try:
@@ -151,6 +156,7 @@ def _regular_file_digest(path: str, *, field_name: str, max_bytes: int) -> str:
         before = os.fstat(descriptor)
         if (
             not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.geteuid()
             or before.st_nlink != 1
             or before.st_size > max_bytes
         ):
@@ -183,7 +189,7 @@ def _regular_file_digest(path: str, *, field_name: str, max_bytes: int) -> str:
             )
         ):
             raise SweBenchRunnerError(f"{field_name} changed during measurement")
-        return _digest_bytes(bytes(payload))
+        return bytes(payload)
     except OSError as exc:
         raise SweBenchRunnerError(f"{field_name} is unavailable") from exc
     finally:
@@ -1383,7 +1389,6 @@ class SubprocessOfficialEvaluator:
         evaluation_dataset = os.path.join(run_root, "evaluation-dataset.parquet")
         predictions_path = os.path.join(run_root, "predictions.jsonl")
         report_directory = os.path.join(run_root, "reports")
-        _require_root_private_work_directory(run_root)
         environment = self._environment(run_root)
         evaluation: SweBenchEvaluatorResult | None = None
         cleanup_projection: dict[str, Any] | None = None
@@ -1391,6 +1396,7 @@ class SubprocessOfficialEvaluator:
         image_observation_digest: str | None = None
         failure: BaseException | None = None
         try:
+            _require_root_private_work_directory(run_root)
             _copy_verified_dataset(dataset_path, dataset_copy)
             task_binding.load_verified_row(dataset_copy)
             evaluation_dataset_digest = _write_digest_bound_dataset(
@@ -1524,17 +1530,24 @@ class InstalledHeadlessInvocation:
     provider_routes: Mapping[str, HeadlessProviderRouteAuthority]
     repository_base_commits: Mapping[str, str]
     composition_ref_digest: str = field(init=False)
+    composition_ref_data: bytes = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         _absolute_path(self.composition_ref_path, field_name="composition_ref_path")
+        composition_ref_data = _read_regular_file_bytes(
+            self.composition_ref_path,
+            field_name="composition_ref_path",
+            max_bytes=_MAX_COMPOSITION_REF_BYTES,
+        )
+        object.__setattr__(
+            self,
+            "composition_ref_data",
+            composition_ref_data,
+        )
         object.__setattr__(
             self,
             "composition_ref_digest",
-            _regular_file_digest(
-                self.composition_ref_path,
-                field_name="composition_ref_path",
-                max_bytes=_MAX_COMPOSITION_REF_BYTES,
-            ),
+            _digest_bytes(composition_ref_data),
         )
         object.__setattr__(
             self,
@@ -1598,17 +1611,6 @@ class InstalledHeadlessInvocation:
         }
 
     async def run(self, request: HeadlessRunRequest) -> Mapping[str, Any]:
-        if (
-            _regular_file_digest(
-                self.composition_ref_path,
-                field_name="composition_ref_path",
-                max_bytes=_MAX_COMPOSITION_REF_BYTES,
-            )
-            != self.composition_ref_digest
-        ):
-            raise SweBenchRunnerError(
-                "composition_ref_path changed after admission"
-            )
         return await run_headless_request(
             request,
             composition_ref_path=self.composition_ref_path,
@@ -1616,6 +1618,7 @@ class InstalledHeadlessInvocation:
             provider_credentials=self.provider_credentials,
             provider_routes=self.provider_routes,
             repository_base_commits=self.repository_base_commits,
+            composition_ref_data=self.composition_ref_data,
         )
 
 @dataclass(frozen=True, slots=True)
