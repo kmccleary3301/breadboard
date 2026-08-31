@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import uuid
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -60,6 +61,110 @@ _PUBLIC_RESULT_FIELDS = frozenset(
         "data",
     }
 )
+_PROBLEM_FIELDS = frozenset(
+    {
+        "schema_version",
+        "error_code",
+        "message",
+        "record_refs",
+        "failed_stage",
+        "hint",
+        "next_actions",
+    }
+)
+_STAGE_OUTCOME_FIELDS = frozenset(
+    {"stage", "status", "report_ref", "next_action"}
+)
+_ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]*$")
+_SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+_EXIT_CODES = frozenset({0, 2, 3, 4, 5, 6})
+_FAILURE_EXIT_CODES = _EXIT_CODES - {0}
+_STAGE_STATUSES = frozenset({"passed", "failed", "blocked", "stale"})
+
+
+def _is_string_list(value: object, *, nonempty: bool) -> bool:
+    return isinstance(value, list) and all(
+        isinstance(item, str) and (bool(item) or not nonempty)
+        for item in value
+    )
+
+
+def _is_optional_string(value: object) -> bool:
+    return value is None or isinstance(value, str)
+
+
+def _is_problem(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.keys() == _PROBLEM_FIELDS
+        and value["schema_version"] == "bb.problem.v1"
+        and isinstance(value["error_code"], str)
+        and _ERROR_CODE_PATTERN.fullmatch(value["error_code"]) is not None
+        and isinstance(value["message"], str)
+        and bool(value["message"])
+        and _is_string_list(value["record_refs"], nonempty=True)
+        and _is_optional_string(value["failed_stage"])
+        and _is_optional_string(value["hint"])
+        and _is_string_list(value["next_actions"], nonempty=True)
+    )
+
+
+def _is_stage_outcome(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.keys() == _STAGE_OUTCOME_FIELDS
+        and isinstance(value["stage"], str)
+        and bool(value["stage"])
+        and isinstance(value["status"], str)
+        and value["status"] in _STAGE_STATUSES
+        and _is_optional_string(value["report_ref"])
+        and _is_optional_string(value["next_action"])
+    )
+
+
+def _is_public_result(value: dict[str, Any]) -> bool:
+    ok = value["ok"]
+    status = value["status"]
+    exit_code = value["exit_code"]
+    stages = value["stage_outcomes"]
+    error = value["error"]
+    common_fields_valid = (
+        type(ok) is bool
+        and isinstance(status, str)
+        and status in {"ok", "error"}
+        and _is_string_list(value["command"], nonempty=False)
+        and bool(value["command"])
+        and _is_string_list(value["record_refs"], nonempty=True)
+        and isinstance(value["hashes"], dict)
+        and all(
+            isinstance(name, str)
+            and isinstance(digest, str)
+            and _SHA256_PATTERN.fullmatch(digest) is not None
+            for name, digest in value["hashes"].items()
+        )
+        and isinstance(stages, list)
+        and all(_is_stage_outcome(stage) for stage in stages)
+        and _is_string_list(value["warnings"], nonempty=True)
+        and _is_string_list(value["next_actions"], nonempty=True)
+        and type(exit_code) is int
+        and exit_code in _EXIT_CODES
+        and isinstance(value["data"], dict)
+    )
+    if not common_fields_valid:
+        return False
+    if ok:
+        return (
+            status == "ok"
+            and exit_code == 0
+            and error is None
+            and all(stage["status"] == "passed" for stage in stages)
+        )
+    return (
+        status == "error"
+        and exit_code in _FAILURE_EXIT_CODES
+        and _is_problem(error)
+        and any(stage["status"] != "passed" for stage in stages)
+    )
 
 
 def _remote_client(arguments: object) -> Any | None:
@@ -83,6 +188,8 @@ def _remote_result(value: object) -> OperationResult:
         raise ValueError("server returned an invalid public result")
     if value["schema_version"] != "bb.cli.result.v1":
         raise ValueError("server returned an unsupported public result")
+    if not _is_public_result(value):
+        raise ValueError("server returned an invalid public result")
     return OperationResult(
         command=value["command"],
         ok=value["ok"],

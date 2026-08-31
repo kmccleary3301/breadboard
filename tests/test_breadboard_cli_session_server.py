@@ -59,6 +59,7 @@ class _Client:
                 "stage": "session.get",
                 "status": "passed",
                 "report_ref": None,
+                "next_action": None,
             }
         ]
         return result
@@ -210,6 +211,63 @@ def test_session_cli_routes_every_public_operation_through_selected_server(
     assert clients == [
         ("client", "http://breadboard.test", "cli-auth-token", 120)
     ] * len(invocations)
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value"),
+    [
+        ("ok", 1),
+        ("status", []),
+        ("command", []),
+        ("record_refs", [""]),
+        ("hashes", {"lock": "not-a-sha256"}),
+        (
+            "stage_outcomes",
+            [
+                {
+                    "stage": "",
+                    "status": "unknown",
+                    "report_ref": None,
+                    "next_action": None,
+                }
+            ],
+        ),
+        ("warnings", [""]),
+        ("next_actions", [""]),
+        ("error", {}),
+        ("exit_code", True),
+        ("data", []),
+    ],
+)
+def test_session_cli_rejects_malformed_public_results(
+    monkeypatch, tmp_path, capsys, field, invalid_value
+) -> None:
+    class InvalidResultClient:
+        def __init__(self, base_url: str, *, timeout_s: float) -> None:
+            pass
+
+        @staticmethod
+        def list_session() -> dict[str, Any]:
+            result = _result(["session", "list"])
+            result[field] = invalid_value
+            return result
+
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", InvalidResultClient)
+    exit_code = main(
+        [
+            "--json",
+            "session",
+            "--workspace",
+            str(tmp_path),
+            "--server",
+            "http://breadboard.test",
+            "list",
+        ]
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert exit_code != 0
+    assert "invalid public result" in output["error"]["message"]
 
 
 def test_session_cli_rejects_remote_plaintext_bearer_before_sse_request(
