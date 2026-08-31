@@ -117,6 +117,79 @@ def test_candidate_python_sdk_preserves_public_result_and_idempotency(
     )
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://breadboard.test:9099",
+        "http://192.0.2.1:9099",
+    ],
+)
+def test_python_sdk_rejects_bearer_token_over_remote_plaintext_http(
+    monkeypatch: pytest.MonkeyPatch,
+    base_url: str,
+) -> None:
+    requests: list[dict[str, Any]] = []
+
+    def fake_request(**kwargs: Any) -> _JsonResponse:
+        requests.append(kwargs)
+        return _JsonResponse({})
+
+    monkeypatch.setattr(client_module.requests, "request", fake_request)
+    client = BreadBoardClient(base_url=base_url, auth_token="secret-token")
+
+    with pytest.raises(ValueError, match="HTTPS"):
+        client.list_session()
+
+    assert requests == []
+
+
+def test_python_sdk_rejects_bearer_token_over_remote_plaintext_sse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[dict[str, Any]] = []
+
+    def fake_request(**kwargs: Any) -> _JsonResponse:
+        requests.append(kwargs)
+        return _JsonResponse({})
+
+    monkeypatch.setattr(client_module.requests, "request", fake_request)
+    client = BreadBoardClient(
+        base_url="http://breadboard.test:9099",
+        auth_token="secret-token",
+    )
+
+    with pytest.raises(ValueError, match="HTTPS"):
+        next(client.events_session("session-id"))
+
+    assert requests == []
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://localhost:9099",
+        "http://127.0.0.2:9099",
+        "http://[::1]:9099",
+        "https://breadboard.test:9099",
+    ],
+)
+def test_python_sdk_allows_bearer_token_over_protected_origins(
+    monkeypatch: pytest.MonkeyPatch,
+    base_url: str,
+) -> None:
+    requests: list[dict[str, Any]] = []
+
+    def fake_request(**kwargs: Any) -> _JsonResponse:
+        requests.append(kwargs)
+        return _JsonResponse({"data": {"sessions": []}})
+
+    monkeypatch.setattr(client_module.requests, "request", fake_request)
+    client = BreadBoardClient(base_url=base_url, auth_token="secret-token")
+
+    assert client.list_session() == {"data": {"sessions": []}}
+    assert requests[0]["headers"]["Authorization"] == "Bearer secret-token"
+
+
 def test_python_sdk_authored_types_and_client_hints_match_public_contract() -> None:
     assert not hasattr(types_module, "NotRequired")
     assert ArtifactRefV1.__required_keys__ == {
@@ -229,7 +302,7 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expected: SessionEvent = {
-        "schema_version": "bb.kernel_event.v2",
+        "schema_version": "bb.public_session_event.v1",
         "event_id": "session:session id:1",
         "seq": 1,
         "timestamp": "2026-08-31T10:00:01Z",
@@ -245,25 +318,34 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
             "redaction_state": "none",
         },
         "kind": "session.started",
-        "payload": {},
-        "payload_schema_version": "bb.payload.session.started.v1",
+        "payload": {
+            "effective_lock_hash": "sha256:" + "a" * 64,
+            "task_hash": "sha256:" + "b" * 64,
+        },
+        "payload_schema_version": "bb.payload.product_session.lifecycle.v1",
     }
 
     class _StreamResponse:
         ok = True
         status_code = 200
         text = ""
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
 
         @staticmethod
         def iter_lines(*, decode_unicode: bool) -> list[str]:
             assert decode_unicode is True
             return ["id: 1", f"data: {json.dumps(expected)}", ""]
 
+    response = _StreamResponse()
+
     requests: list[dict[str, Any]] = []
 
     def fake_request(**kwargs: Any) -> _StreamResponse:
         requests.append(kwargs)
-        return _StreamResponse()
+        return response
 
     monkeypatch.setattr(client_module.requests, "request", fake_request)
     client = BreadBoardClient(base_url="https://breadboard.test/", auth_token="secret")
@@ -289,6 +371,10 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
             "timeout": 30.0,
         }
     ]
+    assert response.closed is True
+    forged = {**expected, "kind": "session.completed", "payload": {}}
+    with pytest.raises(ValueError, match="lifecycle payload fields"):
+        client_module._session_event(json.dumps(forged), "session id", "1")
 
 
 def test_compatibility_create_session_omits_only_an_absent_config_path(

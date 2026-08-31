@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import uuid
+from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import Any, Callable, Coroutine, TypeVar
+from typing import Any, TypeVar
 
+from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.operations import session as session_operations
 from breadboard.product.operations.model import (
     OperationContext,
@@ -11,7 +15,6 @@ from breadboard.product.operations.model import (
     from_exception,
     portable_ref,
 )
-from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import session_store
 from breadboard.product.runtime.events import Session, SessionView
 
@@ -41,7 +44,112 @@ def _run(operation: Coroutine[Any, Any, OperationResult]) -> OperationResult:
     return asyncio.run(operation)
 
 
+_PUBLIC_RESULT_FIELDS = frozenset(
+    {
+        "schema_version",
+        "ok",
+        "status",
+        "command",
+        "record_refs",
+        "hashes",
+        "stage_outcomes",
+        "warnings",
+        "next_actions",
+        "error",
+        "exit_code",
+        "data",
+    }
+)
+
+
+def _remote_client(arguments: object) -> Any | None:
+    server = getattr(arguments, "server", None)
+    if not server:
+        return None
+    from breadboard_sdk import BreadBoardClient
+
+    auth_token = os.environ.get("BREADBOARD_API_TOKEN")
+    if auth_token:
+        return BreadBoardClient(str(server), auth_token=auth_token, timeout_s=120)
+    return BreadBoardClient(str(server), timeout_s=120)
+
+
+def _idempotency_key(arguments: object) -> str:
+    return str(getattr(arguments, "idempotency_key", None) or uuid.uuid4().hex)
+
+
+def _remote_result(value: object) -> OperationResult:
+    if not isinstance(value, dict) or value.keys() != _PUBLIC_RESULT_FIELDS:
+        raise ValueError("server returned an invalid public result")
+    if value["schema_version"] != "bb.cli.result.v1":
+        raise ValueError("server returned an unsupported public result")
+    return OperationResult(
+        command=value["command"],
+        ok=value["ok"],
+        exit_code=value["exit_code"],
+        record_refs=value["record_refs"],
+        hashes=value["hashes"],
+        stage_outcomes=value["stage_outcomes"],
+        warnings=value["warnings"],
+        next_actions=value["next_actions"],
+        error=value["error"],
+        data=value["data"],
+    )
+
+
+def _remote_error(
+    command: list[str],
+    stage: str,
+    status: int,
+    body: object,
+) -> OperationResult:
+    if isinstance(body, dict) and body.keys() == _PUBLIC_RESULT_FIELDS:
+        return _remote_result(body)
+    error_code = "runtime_failure" if status >= 500 else "invalid_state"
+    message = f"remote server returned HTTP {status}"
+    if isinstance(body, dict):
+        if isinstance(body.get("error"), str):
+            error_code = body["error"]
+        elif isinstance(body.get("error_code"), str):
+            error_code = body["error_code"]
+        if isinstance(body.get("detail"), str):
+            message = body["detail"]
+        elif isinstance(body.get("message"), str):
+            message = body["message"]
+    exit_code = {401: 2, 404: 3, 409: 6, 422: 2}.get(
+        status,
+        4 if status >= 500 else 2,
+    )
+    return OperationResult.failure(
+        command,
+        exit_code,
+        error_code,
+        message,
+        stage,
+    )
+
+
+def _remote_operation(
+    command: list[str],
+    stage: str,
+    operation: Callable[[], OperationResult],
+) -> OperationResult:
+    from breadboard_sdk import ApiError
+
+    try:
+        return operation()
+    except ApiError as error:
+        return _remote_error(command, stage, error.status, error.body)
+
+
 def list_sessions(arguments: object) -> OperationResult:
+    client = _remote_client(arguments)
+    if client is not None:
+        return _remote_operation(
+            ["session", "list"],
+            "session.list",
+            lambda: _remote_result(client.list_session()),
+        )
     return _run(
         session_operations.list_sessions(
             session_operations.ListSessionsRequest(),
@@ -51,6 +159,13 @@ def list_sessions(arguments: object) -> OperationResult:
 
 
 def get(arguments: object, command_name: str = "get") -> OperationResult:
+    client = _remote_client(arguments)
+    if client is not None:
+        return _remote_operation(
+            ["session", command_name],
+            f"session.{command_name}",
+            lambda: _remote_result(client.get_session(arguments.SESSION_ID)),
+        )
     return _run(
         session_operations.get_session(
             session_operations.GetSessionRequest(
@@ -60,6 +175,7 @@ def get(arguments: object, command_name: str = "get") -> OperationResult:
             _context(arguments),
         )
     )
+
 
 def bootstrap_local(arguments: object) -> OperationResult:
     """Create private authority for one explicitly selected local legacy session."""
@@ -223,6 +339,19 @@ def send_input(arguments: object) -> OperationResult:
         if getattr(arguments, "content", None) is not None
         else arguments.TEXT
     )
+    client = _remote_client(arguments)
+    if client is not None:
+        return _remote_operation(
+            ["session", "send-input"],
+            "session.send-input",
+            lambda: _remote_result(
+                client.send_input_session(
+                    arguments.SESSION_ID,
+                    content,
+                    idempotency_key=_idempotency_key(arguments),
+                )
+            ),
+        )
     return _run(
         session_operations.send_input(
             session_operations.SendSessionInputRequest(
@@ -236,6 +365,20 @@ def send_input(arguments: object) -> OperationResult:
 
 
 def approve(arguments: object) -> OperationResult:
+    client = _remote_client(arguments)
+    if client is not None:
+        return _remote_operation(
+            ["session", "approve"],
+            "session.approve",
+            lambda: _remote_result(
+                client.approve_session(
+                    arguments.SESSION_ID,
+                    arguments.request_id,
+                    arguments.decision,
+                    idempotency_key=_idempotency_key(arguments),
+                )
+            ),
+        )
     return _run(
         session_operations.approve(
             session_operations.ApproveSessionRequest(
@@ -250,6 +393,18 @@ def approve(arguments: object) -> OperationResult:
 
 
 def resume(arguments: object) -> OperationResult:
+    client = _remote_client(arguments)
+    if client is not None:
+        return _remote_operation(
+            ["session", "resume"],
+            "session.resume",
+            lambda: _remote_result(
+                client.resume_session(
+                    arguments.SESSION_ID,
+                    idempotency_key=_idempotency_key(arguments),
+                )
+            ),
+        )
     return _run(
         session_operations.resume(
             session_operations.ResumeSessionRequest(arguments.SESSION_ID),
@@ -261,6 +416,19 @@ def resume(arguments: object) -> OperationResult:
 
 def cancel(arguments: object) -> OperationResult:
     reason = getattr(arguments, "reason", None) or "operator request"
+    client = _remote_client(arguments)
+    if client is not None:
+        return _remote_operation(
+            ["session", "cancel"],
+            "session.cancel",
+            lambda: _remote_result(
+                client.cancel_session(
+                    arguments.SESSION_ID,
+                    reason,
+                    idempotency_key=_idempotency_key(arguments),
+                )
+            ),
+        )
     return _run(
         session_operations.cancel(
             session_operations.CancelSessionRequest(arguments.SESSION_ID, reason),
@@ -271,6 +439,20 @@ def cancel(arguments: object) -> OperationResult:
 
 
 def events(arguments: object) -> OperationResult:
+    client = _remote_client(arguments)
+    if client is not None:
+        return _remote_operation(
+            ["session", "events"],
+            "session.events",
+            lambda: OperationResult.success(
+                ["session", "events"],
+                {
+                    "session_id": arguments.SESSION_ID,
+                    "events": list(client.events_session(arguments.SESSION_ID)),
+                },
+                stage="session.events",
+            ),
+        )
     return _run(
         session_operations.list_session_events(
             session_operations.ListSessionEventsRequest(arguments.SESSION_ID),
@@ -280,6 +462,13 @@ def events(arguments: object) -> OperationResult:
 
 
 def artifacts(arguments: object) -> OperationResult:
+    client = _remote_client(arguments)
+    if client is not None:
+        return _remote_operation(
+            ["session", "artifacts"],
+            "session.artifacts",
+            lambda: _remote_result(client.artifacts_session(arguments.SESSION_ID)),
+        )
     return _run(
         session_operations.list_session_artifacts(
             session_operations.ListSessionArtifactsRequest(arguments.SESSION_ID),

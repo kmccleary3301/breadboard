@@ -25,3 +25,12 @@ for await (const event of client.eventsSession(session.session_id)) {
 }
 ```
 
+Session streams use the strict `bb.public_session_event.v1` projection. The
+canonical kernel `bb.kernel_event.v2` envelope remains a separate internal
+contract.
+Each `payload_schema_version` resolves to the public lifecycle payload schema
+or the registered kernel observation payload schema.
+
+Legacy/runtime-only methods, including E4 inspection, are available only from
+`@breadboard/sdk/internal` through `createInternalBreadboardClient`.
+

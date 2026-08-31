@@ -1,5 +1,6 @@
 import { createParser, type EventSourceParseCallback, type ParsedEvent, type ReconnectInterval } from "eventsource-parser"
 import { ApiError, type BreadboardClientConfig } from "./client.js"
+import { assertProtectedBearerTransport } from "./transport-security.js"
 import type { SessionEvent } from "./types.js"
 import {
   PUBLIC_BINDINGS_BY_OPERATION_ID,
@@ -32,7 +33,7 @@ export interface StreamConfig extends BreadboardClientConfig {}
 
 export interface EventStreamOptions {
   readonly signal?: AbortSignal
-  readonly query?: Record<string, string | number | boolean>
+  readonly query?: Readonly<{ resume_token?: number; limit?: number }>
   readonly config: StreamConfig
   readonly lastEventId?: string
   readonly onOpen?: () => void
@@ -79,6 +80,46 @@ const SESSION_EVENT_VISIBILITY_FIELDS = new Set([
   "host_visible",
   "redaction_state",
 ])
+const LIFECYCLE_PAYLOAD_SCHEMA = "bb.payload.product_session.lifecycle.v1"
+const EVENT_PAYLOAD_SCHEMAS = {
+  "session.started": LIFECYCLE_PAYLOAD_SCHEMA,
+  "input.accepted": LIFECYCLE_PAYLOAD_SCHEMA,
+  "approval.requested": LIFECYCLE_PAYLOAD_SCHEMA,
+  "approval.resolved": LIFECYCLE_PAYLOAD_SCHEMA,
+  "session.reconfigured": LIFECYCLE_PAYLOAD_SCHEMA,
+  "session.paused": LIFECYCLE_PAYLOAD_SCHEMA,
+  "session.resumed": LIFECYCLE_PAYLOAD_SCHEMA,
+  "session.completed": LIFECYCLE_PAYLOAD_SCHEMA,
+  "session.failed": LIFECYCLE_PAYLOAD_SCHEMA,
+  "session.canceled": LIFECYCLE_PAYLOAD_SCHEMA,
+  assistant_message: "bb.payload.message.assistant.v1",
+  tool_call: "bb.payload.tool.called.v1",
+  tool_result: "bb.payload.tool.completed.v1",
+} as const satisfies Readonly<Record<string, string>>
+type EventKind = keyof typeof EVENT_PAYLOAD_SCHEMAS
+type EventPayloadSchema = (typeof EVENT_PAYLOAD_SCHEMAS)[EventKind]
+
+const eventKind = (value: string): value is EventKind =>
+  Object.hasOwn(EVENT_PAYLOAD_SCHEMAS, value)
+
+const LIFECYCLE_PAYLOAD_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
+  "session.started": new Set(["effective_lock_hash", "task_hash"]),
+  "input.accepted": new Set(["content_hash", "attachments"]),
+  "approval.requested": new Set(["request_id", "operation"]),
+  "approval.resolved": new Set(["request_id", "decision"]),
+  "session.reconfigured": new Set(["effective_lock_hash", "reason"]),
+  "session.paused": new Set(["reason"]),
+  "session.resumed": new Set(),
+  "session.completed": new Set(["outcome", "summary"]),
+  "session.failed": new Set(["outcome", "error", "detail"]),
+  "session.canceled": new Set(["outcome", "reason"]),
+}
+
+const KERNEL_PAYLOAD_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
+  assistant_message: new Set(["seq", "metadata", "message", "text", "source"]),
+  tool_call: new Set(["seq", "metadata", "call", "call_id", "tool", "tool_name", "state"]),
+  tool_result: new Set(["seq", "metadata", "message", "tool", "success", "status", "error", "call_id", "todo"]),
+}
 
 const hasExactFields = (
   value: Record<string, unknown>,
@@ -103,6 +144,120 @@ const requiredBoolean = (value: unknown, field: string): boolean => {
   if (typeof value !== "boolean") throw new Error(`Invalid session event ${field}`)
   return value
 }
+const sha256 = (value: unknown): boolean =>
+  typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value)
+
+const validateKernelPayload = (
+  kind: string,
+  payload: Record<string, unknown>,
+): void => {
+  const fields = KERNEL_PAYLOAD_FIELDS[kind]
+  if (!fields || !Object.keys(payload).every((field) => fields.has(field))) {
+    throw new Error("Invalid session event payload fields")
+  }
+  if (
+    "seq" in payload
+    && (typeof payload.seq !== "number"
+      || !Number.isSafeInteger(payload.seq)
+      || payload.seq < 0)
+  ) {
+    throw new Error("Invalid session event payload seq")
+  }
+  if ("metadata" in payload && !record(payload.metadata)) {
+    throw new Error("Invalid session event payload metadata")
+  }
+  const textFields = kind === "assistant_message"
+    ? ["text", "source"]
+    : kind === "tool_call"
+      ? ["call_id", "tool", "tool_name", "state"]
+      : ["tool", "status", "call_id"]
+  for (const field of textFields) {
+    if (field in payload && typeof payload[field] !== "string") {
+      throw new Error(`Invalid session event payload ${field}`)
+    }
+  }
+  if (kind === "tool_call" && "call" in payload && !record(payload.call)) {
+    throw new Error("Invalid session event payload call")
+  }
+  if (kind === "tool_result" && "success" in payload && typeof payload.success !== "boolean") {
+    throw new Error("Invalid session event payload success")
+  }
+}
+
+const validateAttachments = (value: unknown): boolean =>
+  Array.isArray(value) && value.every((attachment) =>
+    record(attachment)
+    && hasExactFields(attachment, new Set(["digest", "size_bytes", "media_type"]))
+    && sha256(attachment.digest)
+    && typeof attachment.size_bytes === "number"
+    && Number.isSafeInteger(attachment.size_bytes)
+    && attachment.size_bytes >= 0
+    && typeof attachment.media_type === "string"
+    && attachment.media_type.length > 0)
+
+const validateLifecyclePayload = (
+  kind: string,
+  payload: Record<string, unknown>,
+): void => {
+  const fields = LIFECYCLE_PAYLOAD_FIELDS[kind]
+  if (!fields || !hasExactFields(payload, fields)) {
+    throw new Error("Invalid session event lifecycle payload fields")
+  }
+  let valid = false
+  switch (kind) {
+    case "session.started":
+      valid = sha256(payload.effective_lock_hash) && sha256(payload.task_hash)
+      break
+    case "input.accepted":
+      valid = sha256(payload.content_hash) && validateAttachments(payload.attachments)
+      break
+    case "approval.requested":
+      valid = typeof payload.request_id === "string" && payload.request_id.length > 0
+        && typeof payload.operation === "string" && payload.operation.length > 0
+      break
+    case "approval.resolved":
+      valid = typeof payload.request_id === "string" && payload.request_id.length > 0
+        && typeof payload.decision === "string"
+        && ["allow", "deny", "once", "always", "reject"].includes(payload.decision)
+      break
+    case "session.reconfigured":
+      valid = sha256(payload.effective_lock_hash) && typeof payload.reason === "string"
+      break
+    case "session.paused":
+      valid = typeof payload.reason === "string"
+      break
+    case "session.resumed":
+      valid = true
+      break
+    case "session.completed":
+      valid = payload.outcome === "completed" && typeof payload.summary === "string"
+      break
+    case "session.failed":
+      valid = payload.outcome === "failed"
+        && typeof payload.error === "string" && payload.error.length > 0
+        && typeof payload.detail === "string" && payload.detail.length > 0
+      break
+    case "session.canceled":
+      valid = payload.outcome === "canceled" && typeof payload.reason === "string"
+      break
+  }
+  if (!valid) throw new Error("Invalid session event lifecycle payload")
+}
+
+const validateEventPayload = (
+  kind: string,
+  schemaVersion: string,
+  payload: Record<string, unknown>,
+): { kind: EventKind; schemaVersion: EventPayloadSchema } => {
+  if (!eventKind(kind)) throw new Error("Invalid session event kind")
+  const expectedSchema = EVENT_PAYLOAD_SCHEMAS[kind]
+  if (schemaVersion !== expectedSchema) {
+    throw new Error("Invalid session event payload_schema_version")
+  }
+  if (kind in LIFECYCLE_PAYLOAD_FIELDS) validateLifecyclePayload(kind, payload)
+  else validateKernelPayload(kind, payload)
+  return { kind, schemaVersion: expectedSchema }
+}
 
 const decodeSessionEvent = (
   raw: unknown,
@@ -111,7 +266,7 @@ const decodeSessionEvent = (
 ): SessionEvent => {
   if (!record(raw)) throw new Error("Invalid session event envelope")
   if (!hasExactFields(raw, SESSION_EVENT_FIELDS)) throw new Error("Invalid session event fields")
-  if (raw.schema_version !== "bb.kernel_event.v2") {
+  if (raw.schema_version !== "bb.public_session_event.v1") {
     throw new Error("Invalid session event schema_version")
   }
   const eventId = requiredString(raw.event_id, "event_id")
@@ -128,9 +283,19 @@ const decodeSessionEvent = (
     throw new Error("Invalid session event visibility fields")
   }
   if (!record(raw.payload)) throw new Error("Invalid session event payload")
+  const kind = requiredString(raw.kind, "kind")
+  const payloadSchemaVersion = requiredString(
+    raw.payload_schema_version,
+    "payload_schema_version",
+  )
+  const validatedPayload = validateEventPayload(kind, payloadSchemaVersion, raw.payload)
+  const redactionState = raw.visibility.redaction_state
+  if (redactionState !== "none" && redactionState !== "redacted") {
+    throw new Error("Invalid session event visibility.redaction_state")
+  }
 
   return {
-    schema_version: "bb.kernel_event.v2",
+    schema_version: "bb.public_session_event.v1",
     event_id: eventId,
     seq: sequence,
     timestamp: requiredString(raw.timestamp, "timestamp"),
@@ -143,11 +308,11 @@ const decodeSessionEvent = (
       model_visible: requiredBoolean(raw.visibility.model_visible, "visibility.model_visible"),
       provider_visible: requiredBoolean(raw.visibility.provider_visible, "visibility.provider_visible"),
       host_visible: requiredBoolean(raw.visibility.host_visible, "visibility.host_visible"),
-      redaction_state: requiredString(raw.visibility.redaction_state, "visibility.redaction_state"),
+      redaction_state: redactionState,
     },
-    kind: requiredString(raw.kind, "kind"),
+    kind: validatedPayload.kind,
     payload: raw.payload,
-    payload_schema_version: requiredString(raw.payload_schema_version, "payload_schema_version"),
+    payload_schema_version: validatedPayload.schemaVersion,
   }
 }
 
@@ -156,23 +321,23 @@ const sessionEventsBinding = PUBLIC_BINDINGS_BY_OPERATION_ID["session.events"]
 const streamUrl = (
   sessionId: string,
   config: StreamConfig,
-  query: Record<string, string | number | boolean>,
-  lastEventId?: string,
+  query: Readonly<{ resume_token?: number; limit?: number }>,
 ): URL => {
   const url = new URL(
     bindGeneratedRoute(sessionEventsBinding, { session_id: encodeURIComponent(sessionId) }).replace(/^\/+/, ""),
     config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`,
   )
-  if (!("schema" in query) && !("v" in query)) query.schema = config.streamSchema ?? 2
-  if (!("include_legacy" in query)) query.include_legacy = config.streamIncludeLegacy ?? false
-  if (!("replay" in query) && !lastEventId) query.replay = true
-  for (const [key, value] of Object.entries(query)) url.searchParams.set(key, String(value))
-  if (lastEventId) url.searchParams.set("from_id", lastEventId)
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined) url.searchParams.set(key, String(value))
+  }
   return url
 }
 
 const resolveToken = async (config: StreamConfig, signal?: AbortSignal): Promise<string | undefined> => {
   if (signal?.aborted) return undefined
+  if (typeof config.authToken === "function" || config.authToken) {
+    assertProtectedBearerTransport(config.baseUrl)
+  }
   const token = typeof config.authToken === "function" ? await config.authToken() : config.authToken
   return signal?.aborted ? undefined : token
 }
@@ -189,7 +354,7 @@ export const streamSessionEvents = async function* (
   try {
     const token = await resolveToken(options.config, options.signal)
     if (options.signal?.aborted) return
-    const response = await (options.config.fetch ?? globalThis.fetch)(streamUrl(sessionId, options.config, { ...(options.query ?? {}) }, options.lastEventId), {
+    const response = await (options.config.fetch ?? globalThis.fetch)(streamUrl(sessionId, options.config, options.query ?? {}), {
       method: sessionEventsBinding.httpMethod,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -198,10 +363,14 @@ export const streamSessionEvents = async function* (
       signal: controller.signal,
     })
     if (!response.ok) {
+      const contentType = response.headers.get("content-type") ?? ""
+      const body = contentType.includes("application/json")
+        ? await response.json().catch(() => undefined)
+        : await response.text().catch(() => undefined)
       throw new ApiError(
         `Streaming request failed with status ${response.status}`,
         response.status,
-        await response.text().catch(() => ""),
+        body,
       )
     }
     if (!response.body) throw new Error("Streaming response provided no body")
@@ -248,6 +417,15 @@ export const openEventStream = (
   let retry = options.initialRetryMs ?? 500
   const maxRetry = options.maxRetryMs ?? 10_000
   let lastEventId = options.lastEventId
+  let resumeToken = options.query?.resume_token
+  let terminal = false
+  const markClosed = (): void => {
+    closed = true
+    clearTimeout(timer)
+    timer = undefined
+    options.signal?.removeEventListener("abort", close)
+  }
+
 
   const scheduleReconnect = (): void => {
     if (closed || options.signal?.aborted) return
@@ -262,7 +440,10 @@ export const openEventStream = (
     try {
       for await (const event of streamSessionEvents(sessionId, {
         config: options.config,
-        query: options.query,
+        query: {
+          ...options.query,
+          ...(resumeToken === undefined ? {} : { resume_token: resumeToken }),
+        },
         lastEventId,
         signal: attemptController.signal,
         onOpen: () => {
@@ -271,26 +452,30 @@ export const openEventStream = (
         },
       })) {
         if (closed) return
-        lastEventId = resumeCursor(event) ?? lastEventId
+        lastEventId = resumeCursor(event)
+        resumeToken = event.seq
+        terminal =
+          event.kind === "session.completed"
+          || event.kind === "session.failed"
+          || event.kind === "session.canceled"
+        if (terminal) markClosed()
         handlers.onEvent(event)
+        if (terminal) return
       }
     } catch (error) {
-      if (!closed && !attemptController.signal.aborted) {
+      if ((!closed || terminal) && !attemptController.signal.aborted) {
         handlers.onError?.(error instanceof Error ? error : new Error("Event stream failed"))
       }
     } finally {
       if (controller === attemptController) controller = undefined
     }
-    scheduleReconnect()
+    if (!terminal) scheduleReconnect()
   }
 
   const close = (): void => {
-    closed = true
-    clearTimeout(timer)
-    timer = undefined
+    markClosed()
     controller?.abort()
     controller = undefined
-    options.signal?.removeEventListener("abort", close)
   }
 
   options.signal?.addEventListener("abort", close, { once: true })

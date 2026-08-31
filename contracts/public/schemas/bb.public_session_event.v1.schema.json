@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.public_session_event.v1.schema.json",
+  "title": "BreadBoard Public Session Event V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "seq",
+    "timestamp",
+    "work_item_id",
+    "parent_work_item_id",
+    "attempt_id",
+    "session_id",
+    "span_id",
+    "visibility",
+    "kind",
+    "payload",
+    "payload_schema_version"
+  ],
+  "properties": {
+    "schema_version": { "const": "bb.public_session_event.v1" },
+    "event_id": { "type": "string", "minLength": 1 },
+    "seq": { "type": "integer", "minimum": 0 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "work_item_id": { "type": ["string", "null"], "minLength": 1 },
+    "parent_work_item_id": { "type": ["string", "null"], "minLength": 1 },
+    "attempt_id": { "type": ["string", "null"], "minLength": 1 },
+    "session_id": { "type": "string", "minLength": 1 },
+    "span_id": { "type": ["string", "null"], "minLength": 1 },
+    "visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_visible",
+        "provider_visible",
+        "host_visible",
+        "redaction_state"
+      ],
+      "properties": {
+        "model_visible": { "type": "boolean" },
+        "provider_visible": { "type": "boolean" },
+        "host_visible": { "type": "boolean" },
+        "redaction_state": { "enum": ["none", "redacted"] }
+      }
+    },
+    "kind": {
+      "enum": [
+        "session.started",
+        "input.accepted",
+        "approval.requested",
+        "approval.resolved",
+        "session.reconfigured",
+        "session.paused",
+        "session.resumed",
+        "session.completed",
+        "session.failed",
+        "session.canceled",
+        "assistant_message",
+        "tool_call",
+        "tool_result"
+      ]
+    },
+    "payload": { "type": "object" },
+    "payload_schema_version": {
+      "enum": [
+        "bb.payload.product_session.lifecycle.v1",
+        "bb.payload.message.assistant.v1",
+        "bb.payload.tool.called.v1",
+        "bb.payload.tool.completed.v1"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "session.started",
+              "input.accepted",
+              "approval.requested",
+              "approval.resolved",
+              "session.reconfigured",
+              "session.paused",
+              "session.resumed",
+              "session.completed",
+              "session.failed",
+              "session.canceled"
+            ]
+          }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "payload_schema_version": {
+            "const": "bb.payload.product_session.lifecycle.v1"
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "kind": { "const": "session.started" },
+              "payload": {
+                "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/sessionStarted"
+              }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "input.accepted" },
+              "payload": {
+                "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/inputAccepted"
+              }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "approval.requested" },
+              "payload": {
+                "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/approvalRequested"
+              }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "approval.resolved" },
+              "payload": {
+                "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/approvalResolved"
+              }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "session.reconfigured" },
+              "payload": {
+                "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/sessionReconfigured"
+              }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "session.paused" },
+              "payload": {
+                "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/sessionPaused"
+              }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "session.resumed" },
+              "payload": {
+                "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/sessionResumed"
+              }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "session.completed" },
+              "payload": {
+                "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/sessionCompleted"
+              }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "session.failed" },
+              "payload": {
+                "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/sessionFailed"
+              }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "session.canceled" },
+              "payload": {
+                "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/sessionCanceled"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "assistant_message" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "payload_schema_version": {
+            "const": "bb.payload.message.assistant.v1"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "tool_call" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "payload_schema_version": {
+            "const": "bb.payload.tool.called.v1"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "tool_result" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "payload_schema_version": {
+            "const": "bb.payload.tool.completed.v1"
+          }
+        }
+      }
+    }
+  ]
+}

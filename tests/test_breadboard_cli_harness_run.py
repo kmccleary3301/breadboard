@@ -11,6 +11,7 @@ import pytest
 import requests
 
 import breadboard_sdk
+import breadboard_sdk.client as client_module
 from scripts import breadboard_cli
 from breadboard.product.cli import harness as harness_operations
 from breadboard_engine.api.local_server import local_server
@@ -56,11 +57,22 @@ def locked_harness(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
     return harness_path
 
 
+@pytest.fixture(autouse=True)
+def _isolated_api_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BREADBOARD_API_TOKEN", raising=False)
+
+
 class _RunClient:
     calls: list[tuple[Any, ...]] = []
 
-    def __init__(self, base_url: str, *, timeout_s: float) -> None:
-        self.calls.append(("connect", base_url, timeout_s))
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        auth_token: str | None = None,
+        timeout_s: float,
+    ) -> None:
+        self.calls.append(("connect", base_url, auth_token, timeout_s))
 
     def start_session(
         self, payload: dict[str, Any], *, idempotency_key: str
@@ -183,6 +195,7 @@ def test_harness_run_submits_task_once_and_reports_completed_session(
 ) -> None:
     _RunClient.calls = []
     monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _RunClient)
+    monkeypatch.setenv("BREADBOARD_API_TOKEN", "cli-auth-token")
 
     exit_code = breadboard_cli.main(
         [
@@ -207,7 +220,7 @@ def test_harness_run_submits_task_once_and_reports_completed_session(
         "event_count": 3,
     }
     assert _RunClient.calls == [
-        ("connect", "https://breadboard.test/api", 120),
+        ("connect", "https://breadboard.test/api", "cli-auth-token", 120),
         (
             "start",
             {
@@ -228,6 +241,38 @@ def test_harness_run_submits_task_once_and_reports_completed_session(
         ("events", "session-g3"),
         ("get", "session-g3"),
     ]
+
+
+def test_harness_run_rejects_remote_plaintext_bearer_before_request(
+    locked_harness: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    requests: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        client_module.requests,
+        "request",
+        lambda **kwargs: requests.append(kwargs),
+    )
+    monkeypatch.setenv("BREADBOARD_API_TOKEN", "cli-auth-token")
+
+    exit_code = breadboard_cli.main(
+        [
+            "--json",
+            "harness",
+            "run",
+            str(locked_harness),
+            "--server",
+            "http://breadboard.test",
+            "--task",
+            "repair the harness",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code != 0
+    assert "requires HTTPS" in payload["error"]["message"]
+    assert requests == []
 
 
 def test_harness_run_consumes_custom_lock(

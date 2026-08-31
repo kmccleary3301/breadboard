@@ -50,7 +50,17 @@ from .models import (
 router = APIRouter(tags=["public-session"])
 runtime_setup_router = APIRouter(tags=["runtime-setup"])
 
-_OBSERVATION_PAYLOAD_SCHEMAS = {
+_PUBLIC_PAYLOAD_SCHEMAS = {
+    "session.started": "bb.payload.product_session.lifecycle.v1",
+    "input.accepted": "bb.payload.product_session.lifecycle.v1",
+    "approval.requested": "bb.payload.product_session.lifecycle.v1",
+    "approval.resolved": "bb.payload.product_session.lifecycle.v1",
+    "session.reconfigured": "bb.payload.product_session.lifecycle.v1",
+    "session.paused": "bb.payload.product_session.lifecycle.v1",
+    "session.resumed": "bb.payload.product_session.lifecycle.v1",
+    "session.completed": "bb.payload.product_session.lifecycle.v1",
+    "session.failed": "bb.payload.product_session.lifecycle.v1",
+    "session.canceled": "bb.payload.product_session.lifecycle.v1",
     "assistant_message": "bb.payload.message.assistant.v1",
     "tool_call": "bb.payload.tool.called.v1",
     "tool_result": "bb.payload.tool.completed.v1",
@@ -318,7 +328,7 @@ class _LiveSessionMutationAdapter:
 def _kernel_event(event):
     session_id, sequence = str(event["session_id"]), int(event["sequence"])
     return {
-        "schema_version": "bb.kernel_event.v2",
+        "schema_version": "bb.public_session_event.v1",
         "event_id": f"session:{session_id}:{sequence}",
         "seq": sequence,
         "timestamp": event["occurred_at"],
@@ -335,10 +345,7 @@ def _kernel_event(event):
         },
         "kind": event["kind"],
         "payload": event["payload"],
-        "payload_schema_version": _OBSERVATION_PAYLOAD_SCHEMAS.get(
-            str(event["kind"]),
-            event["schema_version"],
-        ),
+        "payload_schema_version": _PUBLIC_PAYLOAD_SCHEMAS[str(event["kind"])],
     }
 
 
@@ -625,7 +632,10 @@ async def events(
                     "session.failed",
                     "session.canceled",
                 }
-                public_event = scrub_public(_kernel_event(event), workspace)
+                projected_event = _kernel_event(event)
+                public_event = scrub_public(projected_event, workspace)
+                if public_event != projected_event:
+                    public_event["visibility"]["redaction_state"] = "redacted"
                 cursor = int(event["sequence"])
                 yield (
                     f"id: {cursor}\n"

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
 from starlette.formparsers import MultiPartParser
 
 from breadboard_engine.api.cli_bridge.app import create_app
@@ -229,10 +230,48 @@ def test_session_lifecycle_and_resumable_event_stream(
     assert '"reason":"abc"' not in streamed.text
     sequences = [event["seq"] for event in first]
     assert len(sequences) >= 2 and sequences == list(range(1, len(sequences) + 1))
-    assert all(event["schema_version"] == "bb.kernel_event.v2" for event in first)
+    assert all(
+        event["schema_version"] == "bb.public_session_event.v1" for event in first
+    )
+    contract_root = Path(__file__).resolve().parents[3]
+    event_schema = json.loads(
+        (
+            contract_root
+            / "contracts/public/schemas/bb.public_session_event.v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    lifecycle_schema = json.loads(
+        (
+            contract_root
+            / "contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    event_registry = Registry().with_resource(
+        lifecycle_schema["$id"], Resource.from_contents(lifecycle_schema)
+    )
+    event_validator = Draft202012Validator(event_schema, registry=event_registry)
+    payload_roots = {
+        "bb.payload.product_session.lifecycle.v1": (
+            contract_root / "contracts/public/schemas"
+        ),
+    }
+    for event in first:
+        event_validator.validate(event)
+        schema_id = event["payload_schema_version"]
+        schema_root = payload_roots.get(
+            schema_id,
+            Path(__file__).resolve().parents[3] / "contracts/kernel/schemas/payloads",
+        )
+        payload_schema = json.loads(
+            (schema_root / f"{schema_id}.schema.json").read_text(encoding="utf-8")
+        )
+        Draft202012Validator(payload_schema).validate(event["payload"])
+    forged_terminal = {**first[-1], "kind": "session.completed", "payload": {}}
+    assert not event_validator.is_valid(forged_terminal)
     assert sum(event["kind"] == "input.accepted" for event in first) == 1
     assert first[-1]["kind"] == "session.canceled"
     assert first[-1]["payload"]["reason"] == "<redacted>"
+    assert first[-1]["visibility"]["redaction_state"] == "redacted"
     resumed = _stream_records(
         client.get(
             "/v1/sessions/session-fixture/events",

@@ -63,11 +63,11 @@ export interface SessionEventVisibility {
   readonly model_visible: boolean
   readonly provider_visible: boolean
   readonly host_visible: boolean
-  readonly redaction_state: string
+  readonly redaction_state: "none" | "redacted"
 }
 
 export interface SessionEvent<TPayload extends Record<string, unknown> = Record<string, unknown>> {
-  readonly schema_version: "bb.kernel_event.v2"
+  readonly schema_version: "bb.public_session_event.v1"
   readonly event_id: string
   readonly seq: number
   readonly timestamp: string
@@ -77,9 +77,26 @@ export interface SessionEvent<TPayload extends Record<string, unknown> = Record<
   readonly session_id: string
   readonly span_id: string | null
   readonly visibility: SessionEventVisibility
-  readonly kind: string
+  readonly kind:
+    | "session.started"
+    | "input.accepted"
+    | "approval.requested"
+    | "approval.resolved"
+    | "session.reconfigured"
+    | "session.paused"
+    | "session.resumed"
+    | "session.completed"
+    | "session.failed"
+    | "session.canceled"
+    | "assistant_message"
+    | "tool_call"
+    | "tool_result"
   readonly payload: TPayload
-  readonly payload_schema_version: string
+  readonly payload_schema_version:
+    | "bb.payload.product_session.lifecycle.v1"
+    | "bb.payload.message.assistant.v1"
+    | "bb.payload.tool.called.v1"
+    | "bb.payload.tool.completed.v1"
 }
 
 export interface AttachmentHandle {

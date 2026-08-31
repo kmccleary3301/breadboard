@@ -11,7 +11,7 @@ class SessionEventVisibility(TypedDict):
 
 
 class SessionEvent(TypedDict):
-    schema_version: Literal["bb.kernel_event.v2"]
+    schema_version: Literal["bb.public_session_event.v1"]
     event_id: str
     seq: int
     timestamp: str

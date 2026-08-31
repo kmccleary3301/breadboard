@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json",
+  "title": "BreadBoard Product Session Lifecycle Payload V1",
+  "oneOf": [
+    { "$ref": "#/$defs/sessionStarted" },
+    { "$ref": "#/$defs/inputAccepted" },
+    { "$ref": "#/$defs/approvalRequested" },
+    { "$ref": "#/$defs/approvalResolved" },
+    { "$ref": "#/$defs/sessionReconfigured" },
+    { "$ref": "#/$defs/sessionPaused" },
+    { "$ref": "#/$defs/sessionResumed" },
+    { "$ref": "#/$defs/sessionCompleted" },
+    { "$ref": "#/$defs/sessionFailed" },
+    { "$ref": "#/$defs/sessionCanceled" }
+  ],
+  "$defs": {
+    "sessionStarted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effective_lock_hash", "task_hash"],
+      "properties": {
+        "effective_lock_hash": { "$ref": "#/$defs/sha256" },
+        "task_hash": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "inputAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_hash", "attachments"],
+      "properties": {
+        "content_hash": { "$ref": "#/$defs/sha256" },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["digest", "size_bytes", "media_type"],
+            "properties": {
+              "digest": { "$ref": "#/$defs/sha256" },
+              "size_bytes": { "type": "integer", "minimum": 0 },
+              "media_type": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "approvalRequested": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "operation"],
+      "properties": {
+        "request_id": { "type": "string", "minLength": 1 },
+        "operation": { "type": "string", "minLength": 1 }
+      }
+    },
+    "approvalResolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "decision"],
+      "properties": {
+        "request_id": { "type": "string", "minLength": 1 },
+        "decision": { "enum": ["allow", "deny", "once", "always", "reject"] }
+      }
+    },
+    "sessionReconfigured": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effective_lock_hash", "reason"],
+      "properties": {
+        "effective_lock_hash": { "$ref": "#/$defs/sha256" },
+        "reason": { "type": "string" }
+      }
+    },
+    "sessionPaused": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "properties": { "reason": { "type": "string" } }
+    },
+    "sessionResumed": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "sessionCompleted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "summary"],
+      "properties": {
+        "outcome": { "const": "completed" },
+        "summary": { "type": "string" }
+      }
+    },
+    "sessionFailed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "error", "detail"],
+      "properties": {
+        "outcome": { "const": "failed" },
+        "error": { "type": "string", "minLength": 1 },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
+    "sessionCanceled": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "reason"],
+      "properties": {
+        "outcome": { "const": "canceled" },
+        "reason": { "type": "string" }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

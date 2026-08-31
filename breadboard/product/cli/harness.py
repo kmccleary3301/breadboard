@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import os
 import shlex
 from pathlib import Path
 
@@ -50,7 +51,6 @@ def _operation_context(a):
         workspace=workspace,
         reference_root=Path.cwd(),
     )
-
 
 
 def init(a):
@@ -147,7 +147,13 @@ def _server(a):
         import breadboard_sdk
 
         task = str(getattr(a, "task", None) or "List files")
-        c = breadboard_sdk.BreadBoardClient(a.server, timeout_s=120)
+        auth_token = os.environ.get("BREADBOARD_API_TOKEN")
+        if auth_token:
+            c = breadboard_sdk.BreadBoardClient(
+                a.server, auth_token=auth_token, timeout_s=120
+            )
+        else:
+            c = breadboard_sdk.BreadBoardClient(a.server, timeout_s=120)
         started = c.start_session(
             {"lock_id": a._lock_id, "task": task},
             idempotency_key=sha256_json({"lock_id": a._lock_id, "task": task}),

@@ -1,4 +1,5 @@
 import { bindGeneratedRoute, streamSessionEvents, type EventStreamOptions, type StreamConfig } from "./stream.js"
+import { assertProtectedBearerTransport } from "./transport-security.js"
 import type {
   AttachmentHandle, AttachmentUploadPayload, CTreeDiskArtifactsResponse, CTreeEventsResponse, CTreeSnapshotResponse,
   CTreeTreeResponse, E4CatalogBinding, E4CatalogPage, E4ClaimDetail, E4ClaimList, E4CoverageMatrix,
@@ -32,14 +33,17 @@ export interface BreadboardClientConfig {
   readonly fetch?: typeof fetch
   readonly authToken?: string | (() => Promise<string | undefined>)
   readonly requestTimeoutMs?: number
-  readonly streamSchema?: number | null
-  readonly streamIncludeLegacy?: boolean | null
 }
 
 
 type JsonMethod = HttpMethod | "DELETE"
 
-const valueToken = async (config: BreadboardClientConfig): Promise<string | undefined> => typeof config.authToken === "function" ? config.authToken() : config.authToken
+const valueToken = async (config: BreadboardClientConfig): Promise<string | undefined> => {
+  if (typeof config.authToken === "function" || config.authToken) {
+    assertProtectedBearerTransport(config.baseUrl)
+  }
+  return typeof config.authToken === "function" ? config.authToken() : config.authToken
+}
 const buildUrl = (baseUrl: string, route: string, query?: Record<string, string | number | boolean | undefined>): URL => {
   const url = new URL(route.replace(/^\/+/, ""), baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`)
   for (const [key, value] of Object.entries(query ?? {})) if (value !== undefined && value !== null) url.searchParams.set(key, String(value))

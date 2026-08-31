@@ -23,7 +23,7 @@ try {
   const inventory = JSON.parse(readFileSync(`${tarball}.installed-files.json`, "utf8"))
   assert.equal(inventory.package, "@breadboard/sdk")
   assert.equal(inventory.version, "0.3.0")
-  assert.equal(inventory.files.length, 24)
+  assert.equal(inventory.files.length, 26)
   assert.equal(readFileSync(`${tarball}.engine-api-range`, "utf8"), ">=0.1.0 <0.4.0\n")
   writeFileSync(join(temp, "package.json"), JSON.stringify({ type: "module", dependencies: { "@breadboard/sdk": `file:${tarball}` }, devDependencies: { typescript: "^5.5.4" }, scripts: { test: "node consumer.mjs" } }, null, 2))
   writeFileSync(join(temp, "consumer.ts"), `
@@ -31,7 +31,6 @@ import {
   ApiError,
   createBreadboardClient,
   streamSessionEvents,
-  type AuthCredentialView,
   type BreadboardClient,
   type Problem,
   type PublicHarnessCreateRequest,
@@ -43,15 +42,22 @@ import {
   type PublicSessionInputRequest,
   type PublicSessionStartRequest,
   type SessionEvent,
-  type SessionSummary,
   type StageOutcome,
 } from "@breadboard/sdk"
-import { AcquireOwnerInput } from "@breadboard/sdk/internal"
-
+import {
+  type AcquireOwnerInput,
+  type AuthCredentialView,
+  createInternalBreadboardClient,
+  type ReadSessionFileOptions,
+  type SessionSummary,
+} from "@breadboard/sdk/internal"
 const input: AcquireOwnerInput = { ownerCredential: "fixture", expectedOwnerGeneration: 1 }
 void input
+const readOptions: ReadSessionFileOptions = { mode: "snippet", headLines: 1 }
+void readOptions
 const client = createBreadboardClient({ baseUrl: "http://fixture.test" })
-void client.resolveModelRoles
+const internalClient = createInternalBreadboardClient({ baseUrl: "http://fixture.test" })
+void internalClient.resolveModelRoles
 void streamSessionEvents
 void ApiError
 const problem: Problem = { error_code: "fixture", message: "fixture" }
@@ -93,7 +99,7 @@ const approved: Promise<PublicResult> = client.approveSession("session", approva
 const canceled: Promise<PublicResult> = client.cancelSession("session", cancel.reason)
 const listed: Promise<PublicResult> = client.listArtifact()
 const read: Promise<PublicResult> = client.getSessionResult("session")
-const summary: Promise<SessionSummary> = client.getSession("session")
+const summary: Promise<SessionSummary> = internalClient.getSession("session")
 const events: AsyncGenerator<SessionEvent, void, void> = client.eventsSession("session")
 void create
 void catalog
@@ -123,7 +129,7 @@ const credential: AuthCredentialView = {
 const refreshStatus: string = credential.refresh_state?.status ?? "idle"
 void refreshStatus
 const event: SessionEvent = {
-  schema_version: "bb.kernel_event.v2",
+  schema_version: "bb.public_session_event.v1",
   event_id: "session:s:1",
   seq: 1,
   timestamp: "2026-08-31T10:00:01Z",
@@ -139,8 +145,8 @@ const event: SessionEvent = {
     redaction_state: "none",
   },
   kind: "session.completed",
-  payload: {},
-  payload_schema_version: "bb.payload.session.completed.v1",
+  payload: { outcome: "completed", summary: "consumer fixture" },
+  payload_schema_version: "bb.payload.product_session.lifecycle.v1",
 }
 void event
 `)
@@ -148,6 +154,7 @@ void event
   writeFileSync(join(temp, "consumer.mjs"), `
 import assert from "node:assert/strict"
 import { createBreadboardClient, streamSessionEvents } from "@breadboard/sdk"
+import { createInternalBreadboardClient } from "@breadboard/sdk/internal"
 
 let calls = []
 globalThis.fetch = async (input, init) => {
@@ -157,14 +164,18 @@ globalThis.fetch = async (input, init) => {
   })
 }
 const client = createBreadboardClient({
-  baseUrl: "http://fixture.test",
+  baseUrl: "https://fixture.test",
   authToken: "fixture-token",
 })
-await client.resolveModelRoles({ model_roles: { builder: "fixture" } })
+const internalClient = createInternalBreadboardClient({
+  baseUrl: "https://fixture.test",
+  authToken: "fixture-token",
+})
+await internalClient.resolveModelRoles({ model_roles: { builder: "fixture" } })
 assert.equal(calls[0][1].headers.Authorization, "Bearer fixture-token")
 
 const expected = {
-  schema_version: "bb.kernel_event.v2",
+  schema_version: "bb.public_session_event.v1",
   event_id: "session:s:1",
   seq: 1,
   timestamp: "2026-08-31T10:00:01Z",
@@ -180,8 +191,8 @@ const expected = {
     redaction_state: "none",
   },
   kind: "session.completed",
-  payload: {},
-  payload_schema_version: "bb.payload.session.completed.v1",
+  payload: { outcome: "completed", summary: "consumer fixture" },
+  payload_schema_version: "bb.payload.product_session.lifecycle.v1",
 }
 calls = []
 globalThis.fetch = async (_input, init) => {
@@ -195,7 +206,7 @@ globalThis.fetch = async (_input, init) => {
 }
 const events = []
 for await (const event of streamSessionEvents("s", {
-  config: { baseUrl: "http://fixture.test", authToken: "fixture-token" },
+  config: { baseUrl: "https://fixture.test", authToken: "fixture-token" },
 })) events.push(event)
 assert.deepEqual(events, [expected])
 console.log("clean consumer fixture passed")
