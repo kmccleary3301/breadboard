@@ -286,6 +286,42 @@ def test_session_lifecycle_and_resumable_event_stream(
     assert client.get("/v1/sessions/session-fixture/artifacts").json()["ok"] is True
 
 
+def test_public_session_events_snapshot_closes_without_live_follow(
+    client: TestClient,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    lock_id = _locked_harness(client)
+    started = client.post(
+        "/v1/sessions",
+        json={
+            "lock_id": lock_id,
+            "task": "snapshot public events",
+            "session_id": "snapshot-fixture",
+        },
+        headers={"Idempotency-Key": "start-snapshot"},
+    )
+    assert started.status_code == 202, started.text
+    assert started.json()["data"]["session"]["status"] == "running"
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            client.get,
+            "/v1/sessions/snapshot-fixture/events?follow=false",
+        )
+        streamed = future.result(timeout=2)
+    assert streamed.status_code == 200
+    records = _stream_records(streamed)
+    assert records
+    assert records[0]["kind"] == "session.started"
+    assert all(event["kind"] != "session.canceled" for event in records)
+    cancelled = client.post(
+        "/v1/sessions/snapshot-fixture/cancel",
+        json={},
+        headers={"Idempotency-Key": "cancel-snapshot"},
+    )
+    assert cancelled.status_code == 202
+
+
 def test_managed_state_terminal_public_session_survives_restart(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

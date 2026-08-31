@@ -5202,6 +5202,16 @@
             }
           },
           {
+            "in": "query",
+            "name": "follow",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Follow",
+              "type": "boolean"
+            }
+          },
+          {
             "in": "header",
             "name": "Last-Event-ID",
             "required": false,

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
 import ipaddress
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, Generator, List
 from urllib.parse import quote, urlencode, urljoin, urlsplit
 
@@ -56,6 +58,26 @@ def _required_text(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"invalid session event {field}")
     return value
+
+
+
+_RFC3339_TIMESTAMP_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$"
+)
+
+
+def _required_rfc3339_timestamp(value: Any, field: str) -> str:
+    text = _required_text(value, field)
+    if _RFC3339_TIMESTAMP_RE.fullmatch(text) is None:
+        raise ValueError(f"invalid session event {field}")
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"invalid session event {field}") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"invalid session event {field}")
+    return text
 
 
 def _nullable_text(value: Any, field: str) -> str | None:
@@ -289,7 +311,7 @@ def _session_event(
         "schema_version": "bb.public_session_event.v1",
         "event_id": _required_text(value.get("event_id"), "event_id"),
         "seq": sequence,
-        "timestamp": _required_text(value.get("timestamp"), "timestamp"),
+        "timestamp": _required_rfc3339_timestamp(value.get("timestamp"), "timestamp"),
         "work_item_id": _nullable_text(value.get("work_item_id"), "work_item_id"),
         "parent_work_item_id": _nullable_text(
             value.get("parent_work_item_id"), "parent_work_item_id"
@@ -574,8 +596,11 @@ class BreadBoardClient:
         resume_token: int | None = None,
         last_event_id: int | None = None,
         limit: int = 256,
+        follow: bool = True,
     ) -> Generator[SessionEvent, None, None]:
-        query = {"resume_token": resume_token, "limit": limit}
+        query: Dict[str, Any] = {"resume_token": resume_token, "limit": limit}
+        if not follow:
+            query["follow"] = "false"
         return self._stream_events(
             "session.events",
             {"session_id": quote(session_id, safe="")},

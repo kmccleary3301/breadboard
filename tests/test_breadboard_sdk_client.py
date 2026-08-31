@@ -372,9 +372,17 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
         }
     ]
     assert response.closed is True
+    snapshot = list(
+        client.events_session("session id", resume_token=3, limit=2, follow=False)
+    )
+    assert snapshot == [expected]
+    assert requests[-1]["url"].endswith("?resume_token=3&limit=2&follow=false")
     forged = {**expected, "kind": "session.completed", "payload": {}}
     with pytest.raises(ValueError, match="lifecycle payload fields"):
         client_module._session_event(json.dumps(forged), "session id", "1")
+    bad_timestamp = {**expected, "timestamp": "not-a-time"}
+    with pytest.raises(ValueError, match="timestamp"):
+        client_module._session_event(json.dumps(bad_timestamp), "session id", "1")
 
 
 def test_compatibility_create_session_omits_only_an_absent_config_path(

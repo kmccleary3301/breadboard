@@ -573,6 +573,7 @@ async def events(
         ge=0,
     ),
     limit: int = Query(default=256, ge=1, le=1000),
+    follow: bool = Query(default=True),
 ):
     granted = authorize_public_operation("session.events")
     if isinstance(granted, JSONResponse):
@@ -607,7 +608,8 @@ async def events(
         while emitted < limit:
             if not batch.events:
                 if (
-                    batch.source == "durable"
+                    not follow
+                    or batch.source == "durable"
                     or batch.terminal
                     or await request.is_disconnected()
                 ):

@@ -448,7 +448,7 @@ def events(arguments: object) -> OperationResult:
                 ["session", "events"],
                 {
                     "session_id": arguments.SESSION_ID,
-                    "events": list(client.events_session(arguments.SESSION_ID)),
+                    "events": list(client.events_session(arguments.SESSION_ID, follow=False)),
                 },
                 stage="session.events",
             ),

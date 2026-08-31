@@ -33,7 +33,7 @@ export interface StreamConfig extends BreadboardClientConfig {}
 
 export interface EventStreamOptions {
   readonly signal?: AbortSignal
-  readonly query?: Readonly<{ resume_token?: number; limit?: number }>
+  readonly query?: Readonly<{ resume_token?: number; limit?: number; follow?: boolean }>
   readonly config: StreamConfig
   readonly lastEventId?: string
   readonly onOpen?: () => void
@@ -133,6 +133,54 @@ const hasExactFields = (
 const requiredString = (value: unknown, field: string): string => {
   if (typeof value !== "string" || value.length === 0) throw new Error(`Invalid session event ${field}`)
   return value
+}
+
+const RFC3339_DATETIME_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-](\d{2}):(\d{2}))$/
+
+const isRfc3339DateTime = (value: string): boolean => {
+  const match = RFC3339_DATETIME_PATTERN.exec(value)
+  if (match === null) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const hour = Number(match[4])
+  const minute = Number(match[5])
+  const second = Number(match[6])
+  const offsetHour = match[7] === undefined ? 0 : Number(match[7])
+  const offsetMinute = match[8] === undefined ? 0 : Number(match[8])
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  const daysInMonth = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ]
+  return year >= 1
+    && month >= 1
+    && month <= 12
+    && day >= 1
+    && day <= daysInMonth[month - 1]
+    && hour <= 23
+    && minute <= 59
+    && second <= 59
+    && offsetHour <= 23
+    && offsetMinute <= 59
+    && Number.isFinite(Date.parse(value))
+}
+
+const requiredRfc3339Timestamp = (value: unknown, field: string): string => {
+  const text = requiredString(value, field)
+  if (!isRfc3339DateTime(text)) throw new Error(`Invalid session event ${field}`)
+  return text
 }
 
 const nullableString = (value: unknown, field: string): string | null => {
@@ -298,7 +346,7 @@ const decodeSessionEvent = (
     schema_version: "bb.public_session_event.v1",
     event_id: eventId,
     seq: sequence,
-    timestamp: requiredString(raw.timestamp, "timestamp"),
+    timestamp: requiredRfc3339Timestamp(raw.timestamp, "timestamp"),
     work_item_id: nullableString(raw.work_item_id, "work_item_id"),
     parent_work_item_id: nullableString(raw.parent_work_item_id, "parent_work_item_id"),
     attempt_id: nullableString(raw.attempt_id, "attempt_id"),
@@ -321,7 +369,7 @@ const sessionEventsBinding = PUBLIC_BINDINGS_BY_OPERATION_ID["session.events"]
 const streamUrl = (
   sessionId: string,
   config: StreamConfig,
-  query: Readonly<{ resume_token?: number; limit?: number }>,
+  query: Readonly<{ resume_token?: number; limit?: number; follow?: boolean }>,
 ): URL => {
   const url = new URL(
     bindGeneratedRoute(sessionEventsBinding, { session_id: encodeURIComponent(sessionId) }).replace(/^\/+/, ""),

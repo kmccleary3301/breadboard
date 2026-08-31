@@ -72,6 +72,82 @@ test("streamSessionEvents uses the public endpoint and parses the SSE envelope",
   )
   assert.deepEqual(events, [expected])
 })
+
+test("streamSessionEvents rejects a non-RFC3339 timestamp", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  const forged = eventEnvelope("session-timestamp", 1, "session.started", {
+    effective_lock_hash: "sha256:" + "a".repeat(64),
+    task_hash: "sha256:" + "b".repeat(64),
+  })
+  forged.timestamp = "not-a-time"
+  const encoded = new TextEncoder().encode(`id: 1\ndata: ${JSON.stringify(forged)}\n\n`)
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded)
+        controller.close()
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  )
+
+  await assert.rejects(
+    async () => {
+      for await (const _event of streamSessionEvents("session-timestamp", {
+        config: { baseUrl: "http://breadboard.test:9099" },
+      })) {
+        assert.fail("unexpected invalid timestamp event")
+      }
+    },
+    /Invalid session event timestamp/,
+  )
+})
+
+test("streamSessionEvents passes follow=false as a snapshot query", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  let requestedUrl
+  const expected = eventEnvelope(
+    "session-123",
+    1,
+    "assistant_message",
+    { metadata: { has_content: true } },
+  )
+  const encoded = new TextEncoder().encode(`id: 1\ndata: ${JSON.stringify(expected)}\n\n`)
+  globalThis.fetch = async (input) => {
+    requestedUrl = String(input)
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoded)
+          controller.close()
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    )
+  }
+
+  const events = []
+  for await (const event of streamSessionEvents("session-123", {
+    config: { baseUrl: "http://breadboard.test:9099" },
+    query: { limit: 1, follow: false },
+  })) {
+    events.push(event)
+  }
+
+  assert.equal(
+    requestedUrl,
+    "http://breadboard.test:9099/v1/sessions/session-123/events?limit=1&follow=false",
+  )
+  assert.deepEqual(events, [expected])
+})
 test("streamSessionEvents rejects lifecycle kinds with another lifecycle payload shape", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => {
