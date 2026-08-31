@@ -128,6 +128,26 @@ def test_compatibility_script_entrypoint_remains_executable(script: str) -> None
     assert "usage:" in completed.stdout
 
 
+def test_session_replay_script_entrypoint_remains_executable() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/replay_session_from_records.py"), "--help"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=60,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "usage:" in completed.stdout
+
+
+def test_lane_definition_compatibility_adapter_is_product_owner() -> None:
+    from breadboard.product.evidence.e4.adapters import lane_definition_build
+    from scripts.e4_parity.adapters import lane_definition_build as legacy
+
+    assert legacy is lane_definition_build
+
+
 def test_run_lane_adapter_owns_argument_and_json_projection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -246,12 +266,16 @@ def test_product_registry_adapters_import_without_script_modules(tmp_path: Path)
             sys.executable,
             "-c",
             (
-                "import importlib,json,sys; "
-                "from pathlib import Path; "
-                "import breadboard.product.cli.e4; "
-                "registry=json.loads(Path('contracts/kernel/registries/e4_adapters.v1.json').read_text()); "
-                "[importlib.import_module(entry['metadata']['impl'].split(':',1)[0]) "
-                "for entry in registry['entries'] if entry.get('id') in ('identity','lane_definition_build')]; "
+                "import importlib,json,sys\n"
+                "from pathlib import Path\n"
+                "import breadboard.product.cli.e4\n"
+                "registry=json.loads(Path('contracts/kernel/registries/e4_adapters.v1.json').read_text())\n"
+                "for entry in registry['entries']:\n"
+                "    if entry.get('status') != 'active':\n"
+                "        continue\n"
+                "    module_name,callable_name=entry['metadata']['impl'].split(':',1)\n"
+                "    module=importlib.import_module(module_name)\n"
+                "    getattr(module,callable_name)\n"
                 "print(json.dumps(sorted(name for name in sys.modules if name.startswith('scripts.e4_parity'))))"
             ),
         ],
@@ -266,26 +290,37 @@ def test_product_registry_adapters_import_without_script_modules(tmp_path: Path)
 
 
 def test_product_live_e4_modules_have_no_legacy_imports() -> None:
-    paths = (
-        ROOT / "breadboard/product/evidence/e4/lane_acceptance_artifacts.py",
-        *sorted((ROOT / "breadboard/product/evidence/e4/adapters").glob("*.py")),
-    )
     violations: dict[str, list[str]] = {}
-    for path in paths:
+    for path in sorted(E4_OWNER.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        modules: list[str] = []
+        refresh = next(
+            (
+                node
+                for node in tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "_refresh_promoted_bindings"
+            ),
+            None,
+        )
+        stale: list[str] = []
         for node in ast.walk(tree):
+            modules: list[str] = []
             if isinstance(node, ast.ImportFrom) and node.module is not None:
                 modules.append(node.module)
             elif isinstance(node, ast.Import):
                 modules.extend(alias.name for alias in node.names)
-        stale = sorted(
-            module
-            for module in modules
-            if module.startswith(("scripts.e4_parity", "scripts.replay_session_from_records"))
-        )
+            for module in modules:
+                approved_refresh = (
+                    refresh is not None
+                    and refresh.lineno <= node.lineno <= refresh.end_lineno
+                    and module.startswith("scripts.e4_parity")
+                )
+                if not approved_refresh and module.startswith(
+                    ("scripts.e4_parity", "scripts.replay_session_from_records")
+                ):
+                    stale.append(module)
         if stale:
-            violations[path.relative_to(ROOT).as_posix()] = stale
+            violations[path.relative_to(ROOT).as_posix()] = sorted(stale)
     assert not violations
 
 

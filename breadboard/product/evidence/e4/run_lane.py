@@ -473,6 +473,7 @@ def _capture_adapter_callable(lane_def: Mapping[str, Any]) -> Any | None:
         for entry in registry.get("entries", [])
         if isinstance(entry, Mapping)
         and entry.get("id") == adapter_id
+        and entry.get("status") == "active"
         and isinstance(entry.get("metadata"), Mapping)
         and entry["metadata"].get("kind") == "capture_adapter"
     ]

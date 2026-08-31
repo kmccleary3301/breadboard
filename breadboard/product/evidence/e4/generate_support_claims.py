@@ -21,7 +21,11 @@ from breadboard_engine.conformance.catalog_binding import (
     stable_entries_hash,
 )
 
-from breadboard.product.evidence.e4.path_refs import resolve_declared_reference, workspace_root_for_checkout
+from breadboard.product.evidence.e4.path_refs import (
+    ReferenceResolutionError,
+    resolve_declared_reference,
+    workspace_root_for_checkout,
+)
 
 ROOT = SOURCE_ROOT
 
@@ -71,7 +75,14 @@ def display(path: Path) -> str:
     try:
         return str(resolved.relative_to(ROOT))
     except ValueError:
-        return str(resolved.relative_to(workspace_root_for_checkout(ROOT)))
+        try:
+            workspace_root = workspace_root_for_checkout(ROOT)
+        except ReferenceResolutionError:
+            return str(resolved)
+        try:
+            return str(resolved.relative_to(workspace_root))
+        except ValueError:
+            return str(resolved)
 
 
 def resolve_ref(ref: str) -> Path:
