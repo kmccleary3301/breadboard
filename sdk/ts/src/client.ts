@@ -39,10 +39,9 @@ export interface BreadboardClientConfig {
 type JsonMethod = HttpMethod | "DELETE"
 
 const valueToken = async (config: BreadboardClientConfig): Promise<string | undefined> => {
-  if (typeof config.authToken === "function" || config.authToken) {
-    assertProtectedBearerTransport(config.baseUrl)
-  }
-  return typeof config.authToken === "function" ? config.authToken() : config.authToken
+  const token = typeof config.authToken === "function" ? await config.authToken() : config.authToken
+  if (token) assertProtectedBearerTransport(config.baseUrl)
+  return token
 }
 const buildUrl = (baseUrl: string, route: string, query?: Record<string, string | number | boolean | undefined>): URL => {
   const url = new URL(route.replace(/^\/+/, ""), baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`)

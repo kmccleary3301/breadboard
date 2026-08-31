@@ -142,6 +142,40 @@ def _remote_operation(
         return _remote_error(command, stage, error.status, error.body)
 
 
+
+_REMOTE_EVENT_PAGE_SIZE = 256
+_TERMINAL_EVENT_KINDS = frozenset(
+    {"session.completed", "session.failed", "session.canceled"}
+)
+
+
+def _remote_event_snapshot(client: Any, session_id: str) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    resume_token: int | None = None
+    while True:
+        page = list(
+            client.events_session(
+                session_id,
+                resume_token=resume_token,
+                limit=_REMOTE_EVENT_PAGE_SIZE,
+                follow=False,
+            )
+        )
+        events.extend(page)
+        if (
+            not page
+            or len(page) < _REMOTE_EVENT_PAGE_SIZE
+            or page[-1]["kind"] in _TERMINAL_EVENT_KINDS
+        ):
+            return events
+        next_resume_token = page[-1]["seq"]
+        if (
+            type(next_resume_token) is not int
+            or next_resume_token <= (resume_token or 0)
+        ):
+            raise ValueError("server returned a non-advancing session event page")
+        resume_token = next_resume_token
+
 def list_sessions(arguments: object) -> OperationResult:
     client = _remote_client(arguments)
     if client is not None:
@@ -448,7 +482,7 @@ def events(arguments: object) -> OperationResult:
                 ["session", "events"],
                 {
                     "session_id": arguments.SESSION_ID,
-                    "events": list(client.events_session(arguments.SESSION_ID, follow=False)),
+                    "events": _remote_event_snapshot(client, arguments.SESSION_ID),
                 },
                 stage="session.events",
             ),

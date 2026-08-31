@@ -101,6 +101,8 @@ class _Client:
         self,
         session_id: str,
         *,
+        resume_token: int | None = None,
+        limit: int = 256,
         follow: bool = True,
     ) -> Iterator[dict[str, Any]]:
         self.calls.append(("events", session_id, follow))
@@ -226,6 +228,52 @@ def test_session_cli_rejects_remote_plaintext_bearer_before_sse_request(
     assert requests == []
 
 
+def test_session_cli_pages_complete_remote_event_snapshot(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    calls: list[tuple[int | None, int, bool]] = []
+
+    class PagingClient:
+        def __init__(self, base_url: str, *, timeout_s: float) -> None:
+            pass
+
+        def events_session(
+            self,
+            session_id: str,
+            *,
+            resume_token: int | None = None,
+            limit: int = 256,
+            follow: bool = True,
+        ) -> Iterator[dict[str, Any]]:
+            calls.append((resume_token, limit, follow))
+            if resume_token is None:
+                for sequence in range(1, limit + 1):
+                    yield {"seq": sequence, "kind": "assistant_message"}
+                return
+            assert resume_token == limit
+            yield {"seq": limit + 1, "kind": "session.completed"}
+
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", PagingClient)
+    assert (
+        main(
+            [
+                "--json",
+                "session",
+                "--workspace",
+                str(tmp_path),
+                "--server",
+                "http://breadboard.test",
+                "events",
+                "completed-session",
+            ]
+        )
+        == 0
+    )
+    output = json.loads(capsys.readouterr().out)
+    assert len(output["data"]["events"]) == 257
+    assert calls == [(None, 256, False), (256, 256, False)]
+
+
 @pytest.mark.parametrize(
     ("status", "exit_code", "error_code"),
     [
@@ -308,6 +356,8 @@ def test_session_cli_preserves_event_stream_errors(
             self,
             session_id: str,
             *,
+            resume_token: int | None = None,
+            limit: int = 256,
             follow: bool = True,
         ) -> Iterator[dict[str, Any]]:
             assert follow is False

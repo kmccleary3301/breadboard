@@ -315,7 +315,7 @@ test("openEventStream reuses the authenticated fetch transport", async (t) => {
   assert.deepEqual(event.payload, { metadata: { has_content: true } })
 })
 
-test("authenticated event streams reject remote plaintext before resolving tokens", async () => {
+test("authenticated event streams reject remote plaintext after resolving tokens", async () => {
   let tokenResolutions = 0
   let fetches = 0
   const stream = streamSessionEvents("session-secured", {
@@ -333,9 +333,34 @@ test("authenticated event streams reject remote plaintext before resolving token
   })
 
   await assert.rejects(() => stream.next(), /requires HTTPS/)
-  assert.equal(tokenResolutions, 0)
+  assert.equal(tokenResolutions, 1)
   assert.equal(fetches, 0)
 })
+
+test("an async empty token allows an unauthenticated remote plaintext event stream", async () => {
+  let tokenResolutions = 0
+  let requestedHeaders
+  const stream = streamSessionEvents("session-public", {
+    config: {
+      baseUrl: "http://breadboard.test:9099",
+      authToken: async () => {
+        tokenResolutions += 1
+        return undefined
+      },
+      fetch: async (_input, init) => {
+        requestedHeaders = new Headers(init?.headers)
+        return new Response("", {
+          headers: { "content-type": "text/event-stream" },
+        })
+      },
+    },
+  })
+
+  assert.deepEqual(await stream.next(), { value: undefined, done: true })
+  assert.equal(tokenResolutions, 1)
+  assert.equal(requestedHeaders.get("Authorization"), null)
+})
+
 
 test("openEventStream resumes reconnects from the last delivered event", async (t) => {
   const originalFetch = globalThis.fetch

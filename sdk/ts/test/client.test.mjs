@@ -108,7 +108,7 @@ test("configured fetch transport handles JSON and attachment requests", async (t
   assert.ok(requests[1].init?.body instanceof FormData)
 })
 
-test("bearer tokens reject remote plaintext JSON and attachment requests", async () => {
+test("bearer tokens resolve before rejecting remote plaintext JSON and attachment requests", async () => {
   let tokenResolutions = 0
   let fetches = 0
   const client = createBreadboardClient({
@@ -132,9 +132,32 @@ test("bearer tokens reject remote plaintext JSON and attachment requests", async
     }]),
     /requires HTTPS/,
   )
-  assert.equal(tokenResolutions, 0)
+  assert.equal(tokenResolutions, 2)
   assert.equal(fetches, 0)
 })
+
+test("an async empty token allows unauthenticated remote plaintext requests", async () => {
+  let tokenResolutions = 0
+  let requestedHeaders
+  const client = createBreadboardClient({
+    baseUrl: "http://breadboard.test:9099",
+    authToken: async () => {
+      tokenResolutions += 1
+      return undefined
+    },
+    fetch: async (_input, init) => {
+      requestedHeaders = new Headers(init?.headers)
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+      })
+    },
+  })
+
+  assert.deepEqual(await client.listSession(), { ok: true })
+  assert.equal(tokenResolutions, 1)
+  assert.equal(requestedHeaders.get("Authorization"), null)
+})
+
 
 test("bearer tokens allow HTTPS and literal loopback HTTP", async () => {
   for (const baseUrl of [

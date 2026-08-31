@@ -383,10 +383,8 @@ const streamUrl = (
 
 const resolveToken = async (config: StreamConfig, signal?: AbortSignal): Promise<string | undefined> => {
   if (signal?.aborted) return undefined
-  if (typeof config.authToken === "function" || config.authToken) {
-    assertProtectedBearerTransport(config.baseUrl)
-  }
   const token = typeof config.authToken === "function" ? await config.authToken() : config.authToken
+  if (token) assertProtectedBearerTransport(config.baseUrl)
   return signal?.aborted ? undefined : token
 }
 
