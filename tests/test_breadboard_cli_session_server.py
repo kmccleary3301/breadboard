@@ -52,7 +52,9 @@ class _Client:
 
     def get_session(self, session_id: str) -> dict[str, Any]:
         self.calls.append(("get", session_id))
-        return _result(["session", "get"])
+        result = _result(["session", "get"])
+        result["data"] = {"session": {"event_count": 1}}
+        return result
 
     def send_input_session(
         self,
@@ -228,7 +230,7 @@ def test_session_cli_rejects_remote_plaintext_bearer_before_sse_request(
     assert requests == []
 
 
-def test_session_cli_pages_complete_remote_event_snapshot(
+def test_session_cli_bounds_complete_remote_event_snapshot_to_initial_count(
     monkeypatch, tmp_path, capsys
 ) -> None:
     calls: list[tuple[int | None, int, bool]] = []
@@ -236,6 +238,17 @@ def test_session_cli_pages_complete_remote_event_snapshot(
     class PagingClient:
         def __init__(self, base_url: str, *, timeout_s: float) -> None:
             pass
+
+        @staticmethod
+        def get_session(session_id: str) -> dict[str, Any]:
+            result = _result(["session", "get"])
+            result["data"] = {
+                "session": {
+                    "session_id": session_id,
+                    "event_count": 257,
+                }
+            }
+            return result
 
         def events_session(
             self,
@@ -250,8 +263,9 @@ def test_session_cli_pages_complete_remote_event_snapshot(
                 for sequence in range(1, limit + 1):
                     yield {"seq": sequence, "kind": "assistant_message"}
                 return
-            assert resume_token == limit
-            yield {"seq": limit + 1, "kind": "session.completed"}
+            assert resume_token == 256
+            assert limit == 1
+            yield {"seq": 257, "kind": "session.completed"}
 
     monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", PagingClient)
     assert (
@@ -271,7 +285,7 @@ def test_session_cli_pages_complete_remote_event_snapshot(
     )
     output = json.loads(capsys.readouterr().out)
     assert len(output["data"]["events"]) == 257
-    assert calls == [(None, 256, False), (256, 256, False)]
+    assert calls == [(None, 256, False), (256, 1, False)]
 
 
 @pytest.mark.parametrize(
@@ -351,6 +365,17 @@ def test_session_cli_preserves_event_stream_errors(
     class FailingClient:
         def __init__(self, base_url: str, *, timeout_s: float) -> None:
             pass
+
+        @staticmethod
+        def get_session(session_id: str) -> dict[str, Any]:
+            result = _result(["session", "get"])
+            result["data"] = {
+                "session": {
+                    "session_id": session_id,
+                    "event_count": 1,
+                }
+            }
+            return result
 
         def events_session(
             self,

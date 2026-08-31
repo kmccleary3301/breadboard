@@ -149,32 +149,69 @@ _TERMINAL_EVENT_KINDS = frozenset(
 )
 
 
-def _remote_event_snapshot(client: Any, session_id: str) -> list[dict[str, Any]]:
+def _remote_event_snapshot(
+    client: Any,
+    session_id: str,
+    upper_sequence: int,
+) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
-    resume_token: int | None = None
-    while True:
+    resume_token = 0
+    while resume_token < upper_sequence:
+        page_limit = min(
+            _REMOTE_EVENT_PAGE_SIZE,
+            upper_sequence - resume_token,
+        )
         page = list(
             client.events_session(
                 session_id,
-                resume_token=resume_token,
-                limit=_REMOTE_EVENT_PAGE_SIZE,
+                resume_token=resume_token or None,
+                limit=page_limit,
                 follow=False,
             )
         )
-        events.extend(page)
-        if (
-            not page
-            or len(page) < _REMOTE_EVENT_PAGE_SIZE
-            or page[-1]["kind"] in _TERMINAL_EVENT_KINDS
-        ):
+        if not page:
             return events
         next_resume_token = page[-1]["seq"]
         if (
             type(next_resume_token) is not int
-            or next_resume_token <= (resume_token or 0)
+            or next_resume_token <= resume_token
         ):
             raise ValueError("server returned a non-advancing session event page")
+        events.extend(
+            event for event in page if event["seq"] <= upper_sequence
+        )
+        if (
+            next_resume_token >= upper_sequence
+            or len(page) < page_limit
+            or page[-1]["kind"] in _TERMINAL_EVENT_KINDS
+        ):
+            return events
         resume_token = next_resume_token
+    return events
+
+
+def _remote_events_result(client: Any, session_id: str) -> OperationResult:
+    session_result = _remote_result(client.get_session(session_id))
+    if not session_result.ok:
+        return session_result
+    session = session_result.data.get("session")
+    if not isinstance(session, dict):
+        raise ValueError("server returned invalid session snapshot metadata")
+    upper_sequence = session.get("event_count")
+    if type(upper_sequence) is not int or upper_sequence < 1:
+        raise ValueError("server returned invalid session event count")
+    return OperationResult.success(
+        ["session", "events"],
+        {
+            "session_id": session_id,
+            "events": _remote_event_snapshot(
+                client,
+                session_id,
+                upper_sequence,
+            ),
+        },
+        stage="session.events",
+    )
 
 def list_sessions(arguments: object) -> OperationResult:
     client = _remote_client(arguments)
@@ -478,14 +515,7 @@ def events(arguments: object) -> OperationResult:
         return _remote_operation(
             ["session", "events"],
             "session.events",
-            lambda: OperationResult.success(
-                ["session", "events"],
-                {
-                    "session_id": arguments.SESSION_ID,
-                    "events": _remote_event_snapshot(client, arguments.SESSION_ID),
-                },
-                stage="session.events",
-            ),
+            lambda: _remote_events_result(client, arguments.SESSION_ID),
         )
     return _run(
         session_operations.list_session_events(
