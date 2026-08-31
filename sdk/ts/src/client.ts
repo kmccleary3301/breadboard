@@ -239,7 +239,18 @@ function action(
     case "public.session.approve": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") }, { body: { request_id: input.request_id, decision: input.decision }, headers: input.idempotency_key ? { "Idempotency-Key": String(input.idempotency_key) } : undefined })
     case "public.session.resume": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") }, { headers: input.idempotency_key ? { "Idempotency-Key": String(input.idempotency_key) } : undefined })
     case "public.session.cancel": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") }, { body: { reason: input.reason ?? "operator request" }, headers: input.idempotency_key ? { "Idempotency-Key": String(input.idempotency_key) } : undefined })
-    case "public.session.events": return Promise.resolve(streamSessionEvents(String(input.session_id ?? ""), { config: config as StreamConfig, query: { ...(typeof input.resume_token === "number" ? { resume_token: input.resume_token } : {}), ...(typeof input.limit === "number" ? { limit: input.limit } : {}) }, lastEventId: typeof input.last_event_id === "number" ? String(input.last_event_id) : undefined }))
+    case "public.session.events": {
+      const query = {
+        ...(typeof input.resume_token === "number" ? { resume_token: input.resume_token } : {}),
+        ...(typeof input.limit === "number" ? { limit: input.limit } : {}),
+        ...(typeof input.follow === "boolean" ? { follow: input.follow } : {}),
+      }
+      return Promise.resolve(streamSessionEvents(String(input.session_id ?? ""), {
+        config: config as StreamConfig,
+        query,
+        lastEventId: typeof input.last_event_id === "number" ? String(input.last_event_id) : undefined,
+      }))
+    }
     case "public.session.artifacts": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") })
   }
 }

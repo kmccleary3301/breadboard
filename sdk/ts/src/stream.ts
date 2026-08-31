@@ -517,7 +517,7 @@ export const openEventStream = (
     } finally {
       if (controller === attemptController) controller = undefined
     }
-    if (!terminal) scheduleReconnect()
+    if (!terminal && options.query?.follow !== false) scheduleReconnect()
   }
 
   const close = (): void => {

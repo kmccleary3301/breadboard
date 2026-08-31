@@ -47,6 +47,26 @@ test("candidate product methods preserve canonical result envelopes and routes",
   assert.deepEqual(requests.filter((row) => row[2]).map((row) => row[2]), ["probe-key", "start-key", "input-key", "approval-key", "resume-key", "cancel-key"])
 })
 
+test("invokePublicAction forwards the session event snapshot query", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  let requestedUrl
+  globalThis.fetch = async (input) => {
+    requestedUrl = String(input)
+    return new Response("", { headers: { "content-type": "text/event-stream" } })
+  }
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+  const events = await client.invokePublicAction("public.session.events", {
+    session_id: "session-snapshot",
+    follow: false,
+  })
+  for await (const _event of events) assert.fail("unexpected event")
+  assert.equal(
+    requestedUrl,
+    "http://breadboard.test:9099/v1/sessions/session-snapshot/events?follow=false",
+  )
+})
+
 test("configured fetch transport handles JSON and attachment requests", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => { globalThis.fetch = originalFetch })

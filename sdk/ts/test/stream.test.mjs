@@ -148,6 +148,43 @@ test("streamSessionEvents passes follow=false as a snapshot query", async (t) =>
   )
   assert.deepEqual(events, [expected])
 })
+
+test("openEventStream does not reconnect a follow=false snapshot", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  let requests = 0
+  globalThis.fetch = async () => {
+    requests += 1
+    return new Response("", { headers: { "content-type": "text/event-stream" } })
+  }
+
+  let handle
+  const opened = new Promise((resolve) => {
+    handle = openEventStream(
+      "session-snapshot",
+      {
+        onEvent() {
+          assert.fail("unexpected event")
+        },
+        onOpen: resolve,
+      },
+      {
+        config: { baseUrl: "http://breadboard.test:9099" },
+        query: { follow: false },
+        initialRetryMs: 1,
+        maxRetryMs: 1,
+      },
+    )
+  })
+  t.after(() => handle?.close())
+
+  await opened
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(requests, 1)
+})
 test("streamSessionEvents rejects lifecycle kinds with another lifecycle payload shape", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => {

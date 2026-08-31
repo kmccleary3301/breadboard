@@ -97,8 +97,13 @@ class _Client:
         self.calls.append(("artifacts", session_id))
         return _result(["session", "artifacts"])
 
-    def events_session(self, session_id: str) -> Iterator[dict[str, Any]]:
-        self.calls.append(("events", session_id))
+    def events_session(
+        self,
+        session_id: str,
+        *,
+        follow: bool = True,
+    ) -> Iterator[dict[str, Any]]:
+        self.calls.append(("events", session_id, follow))
         yield {
             "schema_version": "bb.public_session_event.v1",
             "event_id": "session:s:1",
@@ -161,7 +166,7 @@ def test_session_cli_routes_every_public_operation_through_selected_server(
             ("cancel", "s", "done", "cancel-key"),
         ),
         (["artifacts", "s"], ("artifacts", "s")),
-        (["events", "s"], ("events", "s")),
+        (["events", "s"], ("events", "s", False)),
     ]
 
     for arguments, expected_call in invocations:
@@ -299,7 +304,13 @@ def test_session_cli_preserves_event_stream_errors(
         def __init__(self, base_url: str, *, timeout_s: float) -> None:
             pass
 
-        def events_session(self, session_id: str) -> Iterator[dict[str, Any]]:
+        def events_session(
+            self,
+            session_id: str,
+            *,
+            follow: bool = True,
+        ) -> Iterator[dict[str, Any]]:
+            assert follow is False
             raise breadboard_sdk.ApiError("failed", 404, body)
 
     monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", FailingClient)
