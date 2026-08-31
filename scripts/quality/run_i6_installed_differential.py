@@ -133,15 +133,33 @@ def _server(
             raise RuntimeError("installed server did not become ready")
         yield base_url, process.pid
     finally:
-        process.terminate()
+        active_error = sys.exception()
         try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)
-        if process.returncode not in {0, -15}:
-            stderr = process.stderr.read() if process.stderr is not None else ""
-            raise RuntimeError(f"installed server cleanup failed: {stderr}")
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+            if process.returncode not in {0, -15}:
+                if active_error is not None:
+                    active_error.add_note(
+                        "installed server cleanup also failed with "
+                        f"exit status {process.returncode}"
+                    )
+                else:
+                    stderr = (
+                        process.stderr.read() if process.stderr is not None else ""
+                    )
+                    raise RuntimeError(
+                        f"installed server cleanup failed: {stderr}"
+                    )
+        except Exception as cleanup_error:
+            if active_error is None:
+                raise
+            active_error.add_note(
+                f"installed server cleanup also failed: {cleanup_error}"
+            )
 
 
 def _node_probe(

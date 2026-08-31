@@ -91,3 +91,64 @@ def test_installed_differential_cleans_up_server_on_readiness_timeout(
 
     assert process.terminated is True
     assert process.waits == [10]
+
+
+def test_installed_differential_preserves_early_exit_error_during_cleanup(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from scripts.quality import run_i6_installed_differential as differential
+
+    class FakeStderr:
+        read_count = 0
+
+        def read(self) -> str:
+            self.read_count += 1
+            return "startup failed"
+
+    class FakeProcess:
+        pid = 1234
+        stderr = FakeStderr()
+        returncode = 1
+        terminated = False
+        waits: list[int] = []
+
+        def poll(self) -> int:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def wait(self, *, timeout: int) -> int:
+            self.waits.append(timeout)
+            return self.returncode
+
+    process = FakeProcess()
+    monotonic_values = iter((0.0, 1.0))
+    monkeypatch.setattr(differential, "_free_port", lambda: 43210)
+    monkeypatch.setattr(
+        differential.subprocess,
+        "Popen",
+        lambda *args, **kwargs: process,
+    )
+    monkeypatch.setattr(
+        differential.time,
+        "monotonic",
+        lambda: next(monotonic_values),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="exited before readiness: startup failed",
+    ) as captured:
+        with differential._server(Path("/python"), tmp_path):
+            raise AssertionError("unreachable")
+
+    assert process.terminated is True
+    assert process.waits == [10]
+    assert process.stderr.read_count == 1
+    assert any(
+        "cleanup also failed" in note
+        for note in getattr(captured.value, "__notes__", ())
+    )
