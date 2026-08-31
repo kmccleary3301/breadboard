@@ -1389,7 +1389,7 @@ class SubprocessOfficialEvaluator:
         cleanup_projection: dict[str, Any] | None = None
         evaluation_dataset_digest: str | None = None
         image_observation_digest: str | None = None
-        failure: Exception | None = None
+        failure: BaseException | None = None
         try:
             _copy_verified_dataset(dataset_path, dataset_copy)
             task_binding.load_verified_row(dataset_copy)
@@ -1450,7 +1450,7 @@ class SubprocessOfficialEvaluator:
                 aggregate_report=_read_json_file(aggregate_path),
                 instance_report=_read_json_file(instance_path),
             )
-        except Exception as exc:
+        except BaseException as exc:
             failure = exc
         try:
             cleanup_projection = self._cleanup_containers(
@@ -1458,11 +1458,11 @@ class SubprocessOfficialEvaluator:
                 run_root=run_root,
                 environment=environment,
             )
-        except Exception as exc:
+        except BaseException as exc:
             failure = (
                 exc
                 if failure is None
-                else ExceptionGroup(
+                else BaseExceptionGroup(
                     "official evaluator execution and cleanup failed",
                     [failure, exc],
                 )
@@ -1473,17 +1473,19 @@ class SubprocessOfficialEvaluator:
                 raise SweBenchRunnerError(
                     "official evaluator run directory survived cleanup"
                 )
-        except Exception as exc:
+        except BaseException as exc:
             failure = (
                 exc
                 if failure is None
-                else ExceptionGroup(
+                else BaseExceptionGroup(
                     "official evaluator and workspace cleanup failed",
                     [failure, exc],
                 )
             )
-        if failure is not None:
+        if isinstance(failure, Exception):
             raise SweBenchRunnerError("official SWE-bench evaluator failed") from failure
+        if failure is not None:
+            raise failure
         if (
             evaluation is None
             or cleanup_projection is None

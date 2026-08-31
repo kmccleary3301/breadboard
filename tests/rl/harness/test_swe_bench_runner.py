@@ -597,6 +597,47 @@ def test_rejects_unpinned_image_and_evaluator_inputs(tmp_path: Path) -> None:
         )
 
 
+def test_evaluator_cleans_resources_after_base_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evaluator = _evaluator(tmp_path, monkeypatch)
+    cleanup_calls: list[dict[str, Any]] = []
+
+    def interrupt_copy(_source: str, _destination: str) -> None:
+        raise KeyboardInterrupt
+
+    def cleanup_containers(
+        _self: SubprocessOfficialEvaluator,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        cleanup_calls.append(kwargs)
+        return {"containers": []}
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.swe_bench_runner._copy_verified_dataset",
+        interrupt_copy,
+    )
+    monkeypatch.setattr(
+        SubprocessOfficialEvaluator,
+        "_cleanup_containers",
+        cleanup_containers,
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        evaluator.evaluate(
+            task_binding=PINNED_SWE_BENCH_TASK,
+            dataset_path=str(tmp_path / "dataset.parquet"),
+            prediction=b"{}",
+            run_id="episode-1",
+            model_name="controller",
+            patch_digest=f"sha256:{_HEX}",
+        )
+
+    assert len(cleanup_calls) == 1
+    assert not (Path(evaluator.work_directory) / "episode-1").exists()
+
+
 def test_installed_run_binds_canonical_headless_evaluator_and_both_cleanups(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
