@@ -414,7 +414,7 @@ print(json.dumps({{
         "distribution": "breadboard-harness-cli",
         "version": "0.0.0",
         "operation_count": 26,
-        "schema_count": 25,
+        "schema_count": 27,
         "generated_operation_count": 26,
         "profile_id": "daily_driver.v1",
         "profile_hash": (
