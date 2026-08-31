@@ -18,6 +18,7 @@ from starlette.formparsers import MultiPartParser
 from breadboard_engine.api.cli_bridge.app import create_app
 import breadboard_engine.api.cli_bridge.app as app_module
 from breadboard_engine.api.public import models as public_models
+from breadboard_engine.api.public import session as public_session_api
 import breadboard_engine.provider_broker as provider_broker
 from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
@@ -288,6 +289,7 @@ def test_session_lifecycle_and_resumable_event_stream(
 
 def test_public_session_events_snapshot_closes_without_live_follow(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from concurrent.futures import ThreadPoolExecutor
 
@@ -302,6 +304,23 @@ def test_public_session_events_snapshot_closes_without_live_follow(
         headers={"Idempotency-Key": "start-snapshot"},
     )
     assert started.status_code == 202, started.text
+    batch_reads = 0
+    original_read_batch = (
+        public_session_api.session_operations.read_session_event_batch
+    )
+
+    async def read_snapshot_batch(*args, **kwargs):
+        nonlocal batch_reads
+        batch_reads += 1
+        if batch_reads > 1:
+            raise AssertionError("follow=false reread the live event buffer")
+        return await original_read_batch(*args, **kwargs)
+
+    monkeypatch.setattr(
+        public_session_api.session_operations,
+        "read_session_event_batch",
+        read_snapshot_batch,
+    )
     assert started.json()["data"]["session"]["status"] == "running"
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(
@@ -314,6 +333,7 @@ def test_public_session_events_snapshot_closes_without_live_follow(
     assert records
     assert records[0]["kind"] == "session.started"
     assert all(event["kind"] != "session.canceled" for event in records)
+    assert batch_reads == 1
     cancelled = client.post(
         "/v1/sessions/snapshot-fixture/cancel",
         json={},

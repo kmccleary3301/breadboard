@@ -649,6 +649,8 @@ async def events(
                 emitted += 1
                 if terminal or emitted >= limit:
                     return
+            if not follow:
+                return
             batch = await session_operations.read_session_event_batch(
                 session_operations.ListSessionEventsRequest(
                     session_id=session_id,
