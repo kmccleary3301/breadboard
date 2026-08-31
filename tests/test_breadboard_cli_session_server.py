@@ -54,6 +54,13 @@ class _Client:
         self.calls.append(("get", session_id))
         result = _result(["session", "get"])
         result["data"] = {"session": {"event_count": 1}}
+        result["stage_outcomes"] = [
+            {
+                "stage": "session.get",
+                "status": "passed",
+                "report_ref": None,
+            }
+        ]
         return result
 
     def send_input_session(
@@ -136,9 +143,11 @@ def test_session_cli_routes_every_public_operation_through_selected_server(
     _Client.calls = []
     monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _Client)
     monkeypatch.setenv("BREADBOARD_API_TOKEN", "cli-auth-token")
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     invocations = [
         (["list"], ("list",)),
         (["get", "s"], ("get", "s")),
+        (["show", "s"], ("get", "s")),
         (
             ["send-input", "s", "continue", "--idempotency-key", "input-key"],
             ("send-input", "s", "continue", "input-key"),
@@ -192,6 +201,11 @@ def test_session_cli_routes_every_public_operation_through_selected_server(
         assert output["ok"] is True
         assert _Client.calls[-1] == expected_call
 
+        assert output["command"] == ["session", arguments[0]]
+        if arguments[0] in {"get", "show"}:
+            assert output["stage_outcomes"][0]["stage"] == (
+                f"session.{arguments[0]}"
+            )
     clients = [call for call in _Client.calls if call[0] == "client"]
     assert clients == [
         ("client", "http://breadboard.test", "cli-auth-token", 120)

@@ -97,6 +97,29 @@ def _remote_result(value: object) -> OperationResult:
     )
 
 
+def _retarget_remote_result(
+    result: OperationResult,
+    command: list[str],
+    stage: str,
+) -> OperationResult:
+    source_stage = ".".join(result.command)
+    if list(result.command) == command:
+        return result
+    result.command = command
+    result.stage_outcomes = [
+        {**outcome, "stage": stage}
+        if outcome.get("stage") == source_stage
+        else outcome
+        for outcome in result.stage_outcomes
+    ]
+    if (
+        result.error is not None
+        and result.error.get("failed_stage") == source_stage
+    ):
+        result.error = {**result.error, "failed_stage": stage}
+    return result
+
+
 def _remote_error(
     command: list[str],
     stage: str,
@@ -137,9 +160,10 @@ def _remote_operation(
     from breadboard_sdk import ApiError
 
     try:
-        return operation()
+        result = operation()
     except ApiError as error:
-        return _remote_error(command, stage, error.status, error.body)
+        result = _remote_error(command, stage, error.status, error.body)
+    return _retarget_remote_result(result, command, stage)
 
 
 
