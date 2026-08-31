@@ -303,15 +303,32 @@ def test_session_cli_bounds_complete_remote_event_snapshot_to_initial_count(
 
 
 @pytest.mark.parametrize(
-    ("sequences", "expected_error"),
+    ("event_count", "events", "expected_error"),
     [
-        ([1, 3], "non-contiguous session event page"),
-        ([1], "event snapshot ended before its initial bound"),
-        ([], "event snapshot ended before its initial bound"),
+        (
+            2,
+            [(1, "assistant_message"), (3, "session.completed")],
+            "non-contiguous session event page",
+        ),
+        (
+            2,
+            [(1, "assistant_message")],
+            "event snapshot ended before its initial bound",
+        ),
+        (2, [], "event snapshot ended before its initial bound"),
+        (
+            3,
+            [
+                (1, "assistant_message"),
+                (2, "session.completed"),
+                (3, "assistant_message"),
+            ],
+            "event snapshot terminated before its initial bound",
+        ),
     ],
 )
 def test_session_cli_rejects_incomplete_remote_event_snapshot(
-    monkeypatch, tmp_path, capsys, sequences, expected_error
+    monkeypatch, tmp_path, capsys, event_count, events, expected_error
 ) -> None:
     class IncompleteClient:
         def __init__(self, base_url: str, *, timeout_s: float) -> None:
@@ -320,7 +337,7 @@ def test_session_cli_rejects_incomplete_remote_event_snapshot(
         @staticmethod
         def get_session(session_id: str) -> dict[str, Any]:
             result = _result(["session", "get"])
-            result["data"] = {"session": {"event_count": 2}}
+            result["data"] = {"session": {"event_count": event_count}}
             return result
 
         @staticmethod
@@ -331,15 +348,8 @@ def test_session_cli_rejects_incomplete_remote_event_snapshot(
             limit: int = 256,
             follow: bool = True,
         ) -> Iterator[dict[str, Any]]:
-            for sequence in sequences:
-                yield {
-                    "seq": sequence,
-                    "kind": (
-                        "session.completed"
-                        if sequence == 3
-                        else "assistant_message"
-                    ),
-                }
+            for sequence, kind in events:
+                yield {"seq": sequence, "kind": kind}
 
     monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", IncompleteClient)
     exit_code = main(

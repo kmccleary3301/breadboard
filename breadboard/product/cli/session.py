@@ -197,6 +197,7 @@ def _remote_event_snapshot(
             raise ValueError(
                 "server event snapshot ended before its initial bound"
             )
+        terminal_sequence = None
         for expected_sequence, event in enumerate(
             page,
             start=resume_token + 1,
@@ -205,16 +206,21 @@ def _remote_event_snapshot(
                 raise ValueError(
                     "server returned a non-contiguous session event page"
                 )
+            if terminal_sequence is not None:
+                raise ValueError("server returned an event after termination")
+            if event["kind"] in _TERMINAL_EVENT_KINDS:
+                if expected_sequence != upper_sequence:
+                    raise ValueError(
+                        "server event snapshot terminated before its initial bound"
+                    )
+                terminal_sequence = expected_sequence
         next_resume_token = resume_token + len(page)
         events.extend(
             event for event in page if event["seq"] <= upper_sequence
         )
         if next_resume_token >= upper_sequence:
             return events
-        if (
-            len(page) < page_limit
-            or page[-1]["kind"] in _TERMINAL_EVENT_KINDS
-        ):
+        if len(page) < page_limit:
             raise ValueError(
                 "server event snapshot ended before its initial bound"
             )
@@ -226,6 +232,8 @@ def _remote_events_result(client: Any, session_id: str) -> OperationResult:
     session_result = _remote_result(client.get_session(session_id))
     if not session_result.ok:
         return session_result
+    if not isinstance(session_result.data, dict):
+        raise ValueError("server returned invalid session snapshot metadata")
     session = session_result.data.get("session")
     if not isinstance(session, dict):
         raise ValueError("server returned invalid session snapshot metadata")
