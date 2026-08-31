@@ -14,6 +14,7 @@ from breadboard.rl.harness.headless import (
     HeadlessProviderRouteAuthority,
     HeadlessRunRequest,
     HeadlessWorkspaceInput,
+    run_headless_request,
 )
 from breadboard.rl.harness.policy_provider import E4TargetPolicyProjection
 from breadboard.rl.harness.qualification import (
@@ -559,6 +560,41 @@ def test_request_requires_real_base_and_launcher_binding(tmp_path: Path) -> None
             headless_invocation=request.headless_invocation,
             dataset_path=request.dataset_path,
             run_id="episode.1",
+        )
+
+
+def test_headless_rejects_invalid_admitted_composition_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _headless_request(tmp_path)
+    kwargs = {
+        "composition_ref_path": str(tmp_path / "composition-ref.json"),
+        "secret_files": {},
+        "provider_credentials": {},
+        "provider_routes": {},
+        "repository_base_commits": {},
+    }
+    with pytest.raises(TypeError, match="exact bytes"):
+        asyncio.run(
+            run_headless_request(
+                request,
+                composition_ref_data=bytearray(b"{}"),  # type: ignore[arg-type]
+                **kwargs,
+            )
+        )
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.headless._MAX_REQUEST_BYTES",
+        1,
+    )
+    with pytest.raises(ValueError, match="size bound"):
+        asyncio.run(
+            run_headless_request(
+                request,
+                composition_ref_data=b"{}",
+                **kwargs,
+            )
         )
 
 

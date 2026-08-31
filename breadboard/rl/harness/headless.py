@@ -301,6 +301,11 @@ async def run_headless_request(
 ) -> dict[str, Any]:
     if type(request) is not HeadlessRunRequest:
         raise TypeError("request must be an exact HeadlessRunRequest")
+    if composition_ref_data is not None:
+        if type(composition_ref_data) is not bytes:
+            raise TypeError("composition_ref_data must be exact bytes")
+        if len(composition_ref_data) > _MAX_REQUEST_BYTES:
+            raise ValueError("composition_ref_data exceeds size bound")
     target: E4TargetPolicyProjection | None = None
     profile: OpenAICompletionsProviderProfile | None = None
     route: HeadlessProviderRouteAuthority | None = None
