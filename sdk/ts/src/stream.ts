@@ -473,6 +473,7 @@ export const openEventStream = (
   let resumeToken = options.query?.resume_token
   let terminal = false
   const markClosed = (): void => {
+    if (closed) return
     closed = true
     clearTimeout(timer)
     timer = undefined
@@ -521,6 +522,7 @@ export const openEventStream = (
       }
     } finally {
       if (controller === attemptController) controller = undefined
+      if (terminal || options.query?.follow === false) markClosed()
     }
     if (!terminal && options.query?.follow !== false) scheduleReconnect()
   }

@@ -157,6 +157,19 @@ test("openEventStream does not reconnect a follow=false snapshot", async (t) => 
   })
 
   let requests = 0
+  let addedAbortListeners = 0
+  let removedAbortListeners = 0
+  const signal = {
+    aborted: false,
+    addEventListener(type) {
+      assert.equal(type, "abort")
+      addedAbortListeners += 1
+    },
+    removeEventListener(type) {
+      assert.equal(type, "abort")
+      removedAbortListeners += 1
+    },
+  }
   globalThis.fetch = async () => {
     requests += 1
     return new Response("", { headers: { "content-type": "text/event-stream" } })
@@ -175,6 +188,7 @@ test("openEventStream does not reconnect a follow=false snapshot", async (t) => 
       {
         config: { baseUrl: "http://breadboard.test:9099" },
         query: { follow: false },
+        signal,
         initialRetryMs: 1,
         maxRetryMs: 1,
       },
@@ -185,7 +199,49 @@ test("openEventStream does not reconnect a follow=false snapshot", async (t) => 
   await opened
   await new Promise((resolve) => setTimeout(resolve, 20))
   assert.equal(requests, 1)
+  assert.equal(addedAbortListeners, 1)
+  assert.equal(removedAbortListeners, 1)
 })
+test("openEventStream closes a failed follow=false handle", async () => {
+  let addedAbortListeners = 0
+  let removedAbortListeners = 0
+  const signal = {
+    aborted: false,
+    addEventListener(type) {
+      assert.equal(type, "abort")
+      addedAbortListeners += 1
+    },
+    removeEventListener(type) {
+      assert.equal(type, "abort")
+      removedAbortListeners += 1
+    },
+  }
+
+  await new Promise((resolve) => {
+    openEventStream(
+      "session-snapshot",
+      {
+        onEvent() {
+          assert.fail("unexpected event")
+        },
+        onError: resolve,
+      },
+      {
+        config: {
+          baseUrl: "http://breadboard.test:9099",
+          fetch: async () => new Response("", { status: 500 }),
+        },
+        query: { follow: false },
+        signal,
+      },
+    )
+  })
+
+  assert.equal(addedAbortListeners, 1)
+  assert.equal(removedAbortListeners, 1)
+})
+
+
 test("streamSessionEvents rejects lifecycle kinds with another lifecycle payload shape", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => {
