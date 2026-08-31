@@ -44,6 +44,7 @@ test("streamSessionEvents uses the public endpoint and parses the SSE envelope",
     "assistant_message",
     { metadata: { has_content: true } },
   )
+  expected.timestamp = "2026-08-31T10:00:01.123456789Z"
   const encoded = new TextEncoder().encode(`id: 1\ndata: ${JSON.stringify(expected)}\n\n`)
   globalThis.fetch = async (input) => {
     requestedUrl = String(input)

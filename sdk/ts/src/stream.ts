@@ -136,7 +136,7 @@ const requiredString = (value: unknown, field: string): string => {
 }
 
 const RFC3339_DATETIME_PATTERN =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-](\d{2}):(\d{2}))$/
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/
 
 const isRfc3339DateTime = (value: string): boolean => {
   const match = RFC3339_DATETIME_PATTERN.exec(value)

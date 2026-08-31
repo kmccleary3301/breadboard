@@ -380,6 +380,18 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
     forged = {**expected, "kind": "session.completed", "payload": {}}
     with pytest.raises(ValueError, match="lifecycle payload fields"):
         client_module._session_event(json.dumps(forged), "session id", "1")
+    nanosecond_timestamp = {
+        **expected,
+        "timestamp": "2026-08-31T10:00:01.123456789Z",
+    }
+    assert (
+        client_module._session_event(
+            json.dumps(nanosecond_timestamp),
+            "session id",
+            "1",
+        )["timestamp"]
+        == nanosecond_timestamp["timestamp"]
+    )
     bad_timestamp = {**expected, "timestamp": "not-a-time"}
     with pytest.raises(ValueError, match="timestamp"):
         client_module._session_event(json.dumps(bad_timestamp), "session id", "1")
