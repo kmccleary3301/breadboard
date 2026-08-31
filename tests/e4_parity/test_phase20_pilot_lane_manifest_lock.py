@@ -22,9 +22,9 @@ from jsonschema import Draft202012Validator
 from scripts.authoring import validate_lane
 from scripts.e4_parity import compile_lane_lock
 from scripts.e4_parity import refresh_lane_descriptor_pins
-from scripts.e4_parity.lane_definitions import load_lane_def, load_manifest_lane_def
-from scripts.e4_parity.tree_digest import digest_directory
-from scripts.e4_parity.path_refs import (
+from breadboard.product.evidence.e4.lane_definitions import load_lane_def, load_manifest_lane_def
+from breadboard.product.evidence.e4.tree_digest import digest_directory
+from breadboard.product.evidence.e4.path_refs import (
     resolve_declared_reference,
     workspace_root_for_checkout,
 )

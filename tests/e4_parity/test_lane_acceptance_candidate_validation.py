@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 import yaml
 
-from scripts.e4_parity import lane_acceptance_artifacts as builder
+from breadboard.product.evidence.e4 import lane_acceptance_artifacts as builder
 
 ROOT = Path(__file__).resolve().parents[2]
 CHECKOUT_FREEZE_PROVENANCE = (

@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from breadboard_engine.compilation.primitive_records import sha256_ref
-from scripts.e4_parity import catalog_refs
+from breadboard.product.evidence.e4 import catalog_refs
 
 
 CATALOG_SHA = "sha256:" + "a" * 64

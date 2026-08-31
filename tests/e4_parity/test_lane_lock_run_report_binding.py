@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from scripts.e4_parity import lane_definitions, run_lane
-from scripts.e4_parity.lane_definitions import load_manifest_lane_def
+from breadboard.product.evidence.e4 import lane_definitions, run_lane
+from breadboard.product.evidence.e4.lane_definitions import load_manifest_lane_def
 
 
 ROOT = Path(__file__).resolve().parents[2]

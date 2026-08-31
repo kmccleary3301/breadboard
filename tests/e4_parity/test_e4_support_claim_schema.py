@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator, RefResolver
 from jsonschema.exceptions import ValidationError
-from scripts.e4_parity.validators.registries import schema_generation_default
+from breadboard.product.evidence.e4.validators.registries import schema_generation_default
 
 
 ROOT = Path(__file__).resolve().parents[2]

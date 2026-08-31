@@ -1,1 +1,1 @@
-"""Hash and validation helpers for E4 parity scripts."""
+"""Compatibility adapters for internal E4 validation helpers."""

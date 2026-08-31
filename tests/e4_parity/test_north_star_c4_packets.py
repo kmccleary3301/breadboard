@@ -9,9 +9,9 @@ import pytest
 import yaml
 
 from breadboard_engine.conformance import c4_chain
-from scripts.e4_parity import generate_support_claims, run_lane
-from scripts.e4_parity.lane_definitions import load_lane_defs
-from scripts.e4_parity.validators.registries import schema_generation_default
+from breadboard.product.evidence.e4 import generate_support_claims, run_lane
+from breadboard.product.evidence.e4.lane_definitions import load_lane_defs
+from breadboard.product.evidence.e4.validators.registries import schema_generation_default
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

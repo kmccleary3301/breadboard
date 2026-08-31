@@ -8,9 +8,9 @@ import pytest
 from breadboard.product.evidence.lane_lock import build_lane_lock
 from breadboard.product.evidence.lanes import MANIFEST_SCHEMA_VERSION
 from breadboard.product.evidence.workspace import BreadBoardWorkspace
-from scripts.e4_parity import run_lane
-from scripts.e4_parity.candidate_journey import reverify_candidate_claim
-from scripts.e4_parity.stage_contracts import check_stage_report
+from breadboard.product.evidence.e4 import run_lane
+from breadboard.product.evidence.e4.candidate_journey import reverify_candidate_claim
+from breadboard.product.evidence.e4.stage_contracts import check_stage_report
 
 
 def _write_json(path: Path, value: object) -> None:

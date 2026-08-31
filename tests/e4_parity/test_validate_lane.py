@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator, RefResolver
 
 from scripts.authoring import validate_lane as validator
 from scripts.e4_parity import lane_definitions
-from scripts.e4_parity.validators import registries
+from breadboard.product.evidence.e4.validators import registries
 from tests.test_e4_c4_chain_validation import _build_chain
 
 

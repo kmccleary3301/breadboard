@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from scripts.e4_parity import generate_ct_rows as ct_generator
-from scripts.e4_parity.lane_definitions import load_lane_defs
+from breadboard.product.evidence.e4 import generate_ct_rows as ct_generator
+from breadboard.product.evidence.e4.lane_definitions import load_lane_defs
 
 
 ROOT = Path(__file__).resolve().parents[2]

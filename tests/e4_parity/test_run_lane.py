@@ -9,8 +9,8 @@ from types import ModuleType
 
 import pytest
 
-from scripts.e4_parity import run_lane
-from scripts.e4_parity.tree_digest import digest_directory
+from breadboard.product.evidence.e4 import run_lane
+from breadboard.product.evidence.e4.tree_digest import digest_directory
 
 
 def _write_lane_def(

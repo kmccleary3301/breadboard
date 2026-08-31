@@ -7,10 +7,10 @@ from typing import Any, Mapping
 
 from breadboard_engine.conformance.catalog_binding import CATALOG_PATH, catalog_segment_hash
 from scripts.e4_parity import regenerate_evidence
-from scripts.e4_parity.lane_acceptance_artifacts import build_lane_from_definition
-from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
+from breadboard.product.evidence.e4.lane_acceptance_artifacts import build_lane_from_definition
+from breadboard.product.evidence.e4.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
 from scripts.replay_session_from_records import replay_session_from_records
-from scripts.e4_parity.validators.registries import schema_generation_default
+from breadboard.product.evidence.e4.validators.registries import schema_generation_default
 
 
 ROOT = Path(__file__).resolve().parents[2]
