@@ -65,6 +65,18 @@ _PUBLIC_PAYLOAD_SCHEMAS = {
     "tool_call": "bb.payload.tool.called.v1",
     "tool_result": "bb.payload.tool.completed.v1",
 }
+_REDACTED_SHA256 = "sha256:" + "0" * 64
+_PAYLOAD_SHA256_FIELDS = {
+    "session.started": ("effective_lock_hash", "task_hash"),
+    "input.accepted": ("content_hash",),
+    "session.reconfigured": ("effective_lock_hash",),
+}
+_PAYLOAD_LITERAL_FIELDS = {
+    "approval.resolved": ("decision",),
+    "session.completed": ("outcome",),
+    "session.failed": ("outcome",),
+    "session.canceled": ("outcome",),
+}
 
 
 class _ProductSessionUnavailable(RuntimeError):
@@ -347,6 +359,24 @@ def _kernel_event(event):
         "payload": event["payload"],
         "payload_schema_version": _PUBLIC_PAYLOAD_SCHEMAS[str(event["kind"])],
     }
+
+
+def _scrub_event_payload(kind, payload, workspace):
+    public_payload = scrub_public(payload, workspace)
+    for field in _PAYLOAD_SHA256_FIELDS.get(kind, ()):
+        if public_payload[field] != payload[field]:
+            public_payload[field] = _REDACTED_SHA256
+    for field in _PAYLOAD_LITERAL_FIELDS.get(kind, ()):
+        public_payload[field] = payload[field]
+    if kind == "input.accepted":
+        for source, public in zip(
+            payload["attachments"],
+            public_payload["attachments"],
+            strict=True,
+        ):
+            if public["digest"] != source["digest"]:
+                public["digest"] = _REDACTED_SHA256
+    return public_payload
 
 
 @router.post(
@@ -635,9 +665,21 @@ async def events(
                     "session.canceled",
                 }
                 projected_event = _kernel_event(event)
-                public_event = scrub_public(projected_event, workspace)
-                if public_event != projected_event:
-                    public_event["visibility"]["redaction_state"] = "redacted"
+                public_payload = _scrub_event_payload(
+                    event["kind"],
+                    projected_event["payload"],
+                    workspace,
+                )
+                public_event = projected_event
+                if public_payload != projected_event["payload"]:
+                    public_event = {
+                        **projected_event,
+                        "payload": public_payload,
+                        "visibility": {
+                            **projected_event["visibility"],
+                            "redaction_state": "redacted",
+                        },
+                    }
                 cursor = int(event["sequence"])
                 yield (
                     f"id: {cursor}\n"

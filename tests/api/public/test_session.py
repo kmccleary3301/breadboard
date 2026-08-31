@@ -342,6 +342,47 @@ def test_public_session_events_snapshot_closes_without_live_follow(
     assert cancelled.status_code == 202
 
 
+def test_public_session_event_redaction_preserves_structural_contract(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lock_id = _locked_harness(client)
+    session_id = "secret-session-fixture"
+    started = client.post(
+        "/v1/sessions",
+        json={
+            "lock_id": lock_id,
+            "task": "redaction contract",
+            "session_id": session_id,
+        },
+        headers={"Idempotency-Key": "redaction-contract"},
+    )
+    assert started.status_code == 202, started.text
+    baseline = _stream_records(
+        client.get(f"/v1/sessions/{session_id}/events?follow=false")
+    )
+    task_hash = baseline[0]["payload"]["task_hash"]
+    monkeypatch.setenv("SESSION_TOKEN", "secret")
+    monkeypatch.setenv("STRUCTURAL_TOKEN", task_hash[7:11])
+
+    streamed = client.get(f"/v1/sessions/{session_id}/events?follow=false")
+    records = _stream_records(streamed)
+
+    assert streamed.status_code == 200
+    assert records[0]["session_id"] == session_id
+    assert records[0]["kind"] == "session.started"
+    assert records[0]["payload"]["task_hash"] == "sha256:" + "0" * 64
+    assert records[0]["visibility"]["redaction_state"] == "redacted"
+    assert (
+        client.post(
+            f"/v1/sessions/{session_id}/cancel",
+            json={},
+            headers={"Idempotency-Key": "cancel-redaction-contract"},
+        ).status_code
+        == 202
+    )
+
+
 def test_managed_state_terminal_public_session_survives_restart(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
