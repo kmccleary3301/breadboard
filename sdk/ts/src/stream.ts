@@ -57,57 +57,97 @@ export interface EventStreamHandle {
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-const stringValue = (value: unknown): string | null =>
-  typeof value === "string" && value.trim() ? value : null
+const SESSION_EVENT_FIELDS = new Set([
+  "schema_version",
+  "event_id",
+  "seq",
+  "timestamp",
+  "work_item_id",
+  "parent_work_item_id",
+  "attempt_id",
+  "session_id",
+  "span_id",
+  "visibility",
+  "kind",
+  "payload",
+  "payload_schema_version",
+])
 
-const numberValue = (value: unknown): number | null =>
-  typeof value === "number" && Number.isFinite(value) ? value : null
+const SESSION_EVENT_VISIBILITY_FIELDS = new Set([
+  "model_visible",
+  "provider_visible",
+  "host_visible",
+  "redaction_state",
+])
 
-const normalize = (
+const hasExactFields = (
+  value: Record<string, unknown>,
+  fields: ReadonlySet<string>,
+): boolean => {
+  const keys = Object.keys(value)
+  return keys.length === fields.size && keys.every((key) => fields.has(key))
+}
+
+
+const requiredString = (value: unknown, field: string): string => {
+  if (typeof value !== "string" || value.length === 0) throw new Error(`Invalid session event ${field}`)
+  return value
+}
+
+const nullableString = (value: unknown, field: string): string | null => {
+  if (value === null) return null
+  return requiredString(value, field)
+}
+
+const requiredBoolean = (value: unknown, field: string): boolean => {
+  if (typeof value !== "boolean") throw new Error(`Invalid session event ${field}`)
+  return value
+}
+
+const decodeSessionEvent = (
   raw: unknown,
-  sessionId: string,
-  fallbackId: string | null,
-  nextId: () => string,
-): SessionEvent | null => {
-  if (!record(raw)) return null
-  const type = stringValue(raw.type) ?? stringValue(raw.event) ?? stringValue(raw.kind)
-  if (!type) return null
-  const timestamp = numberValue(raw.timestamp) ?? numberValue(raw.time) ?? numberValue(raw.ts) ?? Date.now()
-  const timestampMs =
-    numberValue(raw.timestamp_ms) ??
-    numberValue(raw.timestampMs) ??
-    numberValue(raw.ts_ms) ??
-    (timestamp > 10_000_000_000 ? timestamp : Math.round(timestamp * 1000))
+  expectedSessionId: string,
+  sseId: string | undefined,
+): SessionEvent => {
+  if (!record(raw)) throw new Error("Invalid session event envelope")
+  if (!hasExactFields(raw, SESSION_EVENT_FIELDS)) throw new Error("Invalid session event fields")
+  if (raw.schema_version !== "bb.kernel_event.v2") {
+    throw new Error("Invalid session event schema_version")
+  }
+  const eventId = requiredString(raw.event_id, "event_id")
+  const sequence = raw.seq
+  if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 0) {
+    throw new Error("Invalid session event seq")
+  }
+  if (sseId === undefined) throw new Error("Session event is missing an SSE id")
+  if (sseId !== String(sequence)) throw new Error("Session event SSE id does not match seq")
+  const sessionId = requiredString(raw.session_id, "session_id")
+  if (sessionId !== expectedSessionId) throw new Error("Session event belongs to another session")
+  if (!record(raw.visibility)) throw new Error("Invalid session event visibility")
+  if (!hasExactFields(raw.visibility, SESSION_EVENT_VISIBILITY_FIELDS)) {
+    throw new Error("Invalid session event visibility fields")
+  }
+  if (!record(raw.payload)) throw new Error("Invalid session event payload")
+
   return {
-    id:
-      stringValue(raw.id) ??
-      stringValue(raw.event_id) ??
-      stringValue(raw.eventId) ??
-      fallbackId ??
-      nextId(),
-    type: type as SessionEvent["type"],
-    session_id: stringValue(raw.session_id) ?? stringValue(raw.sessionId) ?? sessionId,
-    turn: numberValue(raw.turn) ?? numberValue(raw.turn_id) ?? numberValue(raw.turnId),
-    timestamp: timestampMs,
-    timestamp_ms: timestampMs,
-    seq: numberValue(raw.seq) ?? undefined,
-    v: numberValue(raw.v) ?? undefined,
-    schema_rev: stringValue(raw.schema_rev) ?? stringValue(raw.schemaRev),
-    run_id: stringValue(raw.run_id) ?? stringValue(raw.runId),
-    thread_id: stringValue(raw.thread_id) ?? stringValue(raw.threadId),
-    turn_id:
-      stringValue(raw.turn_id) ??
-      stringValue(raw.turnId) ??
-      (typeof raw.turn_id === "number" ? raw.turn_id : undefined) ??
-      (typeof raw.turnId === "number" ? raw.turnId : undefined),
-    span_id: stringValue(raw.span_id) ?? stringValue(raw.spanId),
-    parent_span_id: stringValue(raw.parent_span_id) ?? stringValue(raw.parentSpanId),
-    actor: record(raw.actor) ? raw.actor : null,
-    visibility: stringValue(raw.visibility),
-    tags: Array.isArray(raw.tags)
-      ? raw.tags.filter((tag): tag is string => typeof tag === "string")
-      : null,
-    payload: (raw.payload ?? raw.data ?? raw.message ?? raw.body ?? {}) as SessionEvent["payload"],
+    schema_version: "bb.kernel_event.v2",
+    event_id: eventId,
+    seq: sequence,
+    timestamp: requiredString(raw.timestamp, "timestamp"),
+    work_item_id: nullableString(raw.work_item_id, "work_item_id"),
+    parent_work_item_id: nullableString(raw.parent_work_item_id, "parent_work_item_id"),
+    attempt_id: nullableString(raw.attempt_id, "attempt_id"),
+    session_id: sessionId,
+    span_id: nullableString(raw.span_id, "span_id"),
+    visibility: {
+      model_visible: requiredBoolean(raw.visibility.model_visible, "visibility.model_visible"),
+      provider_visible: requiredBoolean(raw.visibility.provider_visible, "visibility.provider_visible"),
+      host_visible: requiredBoolean(raw.visibility.host_visible, "visibility.host_visible"),
+      redaction_state: requiredString(raw.visibility.redaction_state, "visibility.redaction_state"),
+    },
+    kind: requiredString(raw.kind, "kind"),
+    payload: raw.payload,
+    payload_schema_version: requiredString(raw.payload_schema_version, "payload_schema_version"),
   }
 }
 
@@ -170,20 +210,9 @@ export const streamSessionEvents = async function* (
     reader = response.body.getReader()
     const decoder = new TextDecoder()
     const buffer: SessionEvent[] = []
-    let counter = 0
     const parser = createParser(((event: ParsedEvent | ReconnectInterval) => {
       if (event.type !== "event" || !("data" in event) || !event.data) return
-      try {
-        const parsed = normalize(
-          JSON.parse(event.data),
-          sessionId,
-          event.id ?? null,
-          () => `synthetic-${counter++}`,
-        )
-        if (parsed) buffer.push(parsed)
-      } catch {
-        // Malformed events are ignored; the next canonical event remains usable.
-      }
+      buffer.push(decodeSessionEvent(JSON.parse(event.data), sessionId, event.id))
     }) as EventSourceParseCallback)
 
     while (!options.signal?.aborted) {
@@ -206,12 +235,7 @@ export const streamSessionEvents = async function* (
   }
 }
 
-const resumeCursor = (event: SessionEvent): string | undefined => {
-  if (event.seq !== undefined && Number.isSafeInteger(event.seq) && event.seq >= 0) {
-    return String(event.seq)
-  }
-  return /^\d+$/.test(event.id) ? event.id : undefined
-}
+const resumeCursor = (event: SessionEvent): string => String(event.seq)
 
 export const openEventStream = (
   sessionId: string,

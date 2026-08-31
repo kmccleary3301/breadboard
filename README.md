@@ -374,7 +374,7 @@ const started = await client.startSession({
 const sessionId = started.data.session.session_id
 
 for await (const event of client.eventsSession(sessionId)) {
-  console.log(event.type, event.payload)
+  console.log(event.kind, event.payload)
 }
 ```
 

@@ -21,7 +21,7 @@ const started = await client.startSession({
 const session = started.data.session as { session_id: string }
 
 for await (const event of client.eventsSession(session.session_id)) {
-  console.log(event.type, event.payload)
+  console.log(event.kind, event.payload)
 }
 ```
 

@@ -105,6 +105,6 @@ test(
 
     assert.ok((sent.data.session as { event_count: number }).event_count >= 2)
     assert.equal((canceled.data.session as { status: string }).status, "canceled")
-    assert.equal(events.at(-1)?.type, "session.canceled")
+    assert.equal(events.at(-1)?.kind, "session.canceled")
   },
 )

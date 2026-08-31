@@ -3,54 +3,27 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Literal, Optional, TypedDict
 
 
-EventType = Literal[
-    "turn_start",
-    "stream.gap",
-    "conversation.compaction.start",
-    "conversation.compaction.end",
-    "assistant.message.start",
-    "assistant.message.delta",
-    "assistant.message.end",
-    "assistant.reasoning.delta",
-    "assistant.thought_summary.delta",
-    "assistant_delta",
-    "assistant_message",
-    "user_message",
-    "tool_call",
-    "tool.result",
-    "tool_result",
-    "permission_request",
-    "permission_response",
-    "checkpoint_list",
-    "checkpoint_restored",
-    "skills_catalog",
-    "skills_selection",
-    "ctree_node",
-    "ctree_snapshot",
-    "task_event",
-    "reward_update",
-    "completion",
-    "log_link",
-    "error",
-    "run_finished",
-]
+class SessionEventVisibility(TypedDict):
+    model_visible: bool
+    provider_visible: bool
+    host_visible: bool
+    redaction_state: str
 
 
-class _SessionEventOptional(TypedDict, total=False):
-    timestamp_ms: int
+class SessionEvent(TypedDict):
+    schema_version: Literal["bb.kernel_event.v2"]
+    event_id: str
     seq: int
-    run_id: Optional[str]
-    thread_id: Optional[str]
-    turn_id: Optional[str | int]
-
-
-class SessionEvent(_SessionEventOptional):
-    id: str
-    type: EventType
+    timestamp: str
+    work_item_id: Optional[str]
+    parent_work_item_id: Optional[str]
+    attempt_id: Optional[str]
     session_id: str
-    turn: Optional[int]
-    timestamp: int
+    span_id: Optional[str]
+    visibility: SessionEventVisibility
+    kind: str
     payload: Dict[str, Any]
+    payload_schema_version: str
 
 
 class ArtifactRefPreview(TypedDict, total=False):

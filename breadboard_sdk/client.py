@@ -33,6 +33,103 @@ def _resource_path(value: str) -> str:
     return "/".join(quote(part, safe="") for part in parts)
 
 
+def _required_text(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"invalid session event {field}")
+    return value
+
+
+def _nullable_text(value: Any, field: str) -> str | None:
+    if value is None:
+        return None
+    return _required_text(value, field)
+
+
+_SESSION_EVENT_FIELDS = frozenset(
+    {
+        "schema_version",
+        "event_id",
+        "seq",
+        "timestamp",
+        "work_item_id",
+        "parent_work_item_id",
+        "attempt_id",
+        "session_id",
+        "span_id",
+        "visibility",
+        "kind",
+        "payload",
+        "payload_schema_version",
+    }
+)
+
+_SESSION_EVENT_VISIBILITY_FIELDS = frozenset(
+    {"model_visible", "provider_visible", "host_visible", "redaction_state"}
+)
+
+
+def _session_event(
+    payload: str, expected_session_id: str, sse_id: str | None
+) -> SessionEvent:
+    try:
+        value = json.loads(payload)
+    except json.JSONDecodeError as error:
+        raise ValueError("invalid session event JSON") from error
+    if not isinstance(value, dict):
+        raise ValueError("invalid session event envelope")
+    if value.keys() != _SESSION_EVENT_FIELDS:
+        raise ValueError("invalid session event fields")
+    if value.get("schema_version") != "bb.kernel_event.v2":
+        raise ValueError("invalid session event schema_version")
+    sequence = value.get("seq")
+    if type(sequence) is not int or sequence < 0:
+        raise ValueError("invalid session event seq")
+    if sse_id is None:
+        raise ValueError("session event is missing an SSE id")
+    if sse_id != str(sequence):
+        raise ValueError("session event SSE id does not match seq")
+    session_id = _required_text(value.get("session_id"), "session_id")
+    if session_id != expected_session_id:
+        raise ValueError("session event belongs to another session")
+    visibility = value.get("visibility")
+    if not isinstance(visibility, dict):
+        raise ValueError("invalid session event visibility")
+    if visibility.keys() != _SESSION_EVENT_VISIBILITY_FIELDS:
+        raise ValueError("invalid session event visibility fields")
+    for field in ("model_visible", "provider_visible", "host_visible"):
+        if type(visibility.get(field)) is not bool:
+            raise ValueError(f"invalid session event visibility.{field}")
+    event_payload = value.get("payload")
+    if not isinstance(event_payload, dict):
+        raise ValueError("invalid session event payload")
+    return {
+        "schema_version": "bb.kernel_event.v2",
+        "event_id": _required_text(value.get("event_id"), "event_id"),
+        "seq": sequence,
+        "timestamp": _required_text(value.get("timestamp"), "timestamp"),
+        "work_item_id": _nullable_text(value.get("work_item_id"), "work_item_id"),
+        "parent_work_item_id": _nullable_text(
+            value.get("parent_work_item_id"), "parent_work_item_id"
+        ),
+        "attempt_id": _nullable_text(value.get("attempt_id"), "attempt_id"),
+        "session_id": session_id,
+        "span_id": _nullable_text(value.get("span_id"), "span_id"),
+        "visibility": {
+            "model_visible": visibility["model_visible"],
+            "provider_visible": visibility["provider_visible"],
+            "host_visible": visibility["host_visible"],
+            "redaction_state": _required_text(
+                visibility.get("redaction_state"), "visibility.redaction_state"
+            ),
+        },
+        "kind": _required_text(value.get("kind"), "kind"),
+        "payload": event_payload,
+        "payload_schema_version": _required_text(
+            value.get("payload_schema_version"), "payload_schema_version"
+        ),
+    }
+
+
 class BreadBoardClient:
     """Python SDK for the BreadBoard CLI bridge API (HTTP + SSE)."""
 
@@ -340,6 +437,7 @@ class BreadBoardClient:
             raise ApiError("Event stream failed", resp.status_code, resp.text)
 
         data_lines: List[str] = []
+        sse_id: str | None = None
         for raw in resp.iter_lines(decode_unicode=True):
             if raw is None:
                 continue
@@ -348,17 +446,10 @@ class BreadBoardClient:
                 if data_lines:
                     payload = "\n".join(data_lines)
                     data_lines = []
-                    try:
-                        yield json.loads(payload)
-                    except Exception:
-                        yield {
-                            "id": "raw",
-                            "type": "error",
-                            "session_id": session_id,
-                            "turn": None,
-                            "timestamp": 0,
-                            "payload": {"raw": payload},
-                        }
+                    yield _session_event(payload, session_id, sse_id)
+                    sse_id = None
                 continue
-            if line.startswith("data:"):
+            if line.startswith("id:"):
+                sse_id = line[len("id:") :].lstrip()
+            elif line.startswith("data:"):
                 data_lines.append(line[len("data:") :].lstrip())

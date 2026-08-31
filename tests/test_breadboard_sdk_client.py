@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from typing import Any, get_type_hints
 
 import pytest
@@ -26,6 +28,7 @@ from breadboard_sdk.types import (
     PublicSessionDecision,
     PublicSessionInputRequest,
     PublicSessionStartRequest,
+    SessionEvent,
     StageOutcome,
 )
 
@@ -167,6 +170,22 @@ def test_python_sdk_authored_types_and_client_hints_match_public_contract() -> N
     assert PublicSessionApprovalRequest.__optional_keys__ == set()
     assert PublicSessionCancelRequest.__required_keys__ == set()
     assert PublicSessionCancelRequest.__optional_keys__ == {"reason"}
+    assert SessionEvent.__required_keys__ == {
+        "schema_version",
+        "event_id",
+        "seq",
+        "timestamp",
+        "work_item_id",
+        "parent_work_item_id",
+        "attempt_id",
+        "session_id",
+        "span_id",
+        "visibility",
+        "kind",
+        "payload",
+        "payload_schema_version",
+    }
+    assert SessionEvent.__optional_keys__ == set()
 
     json_methods = (
         "describe_system",
@@ -209,6 +228,27 @@ def test_python_sdk_authored_types_and_client_hints_match_public_contract() -> N
 def test_candidate_python_sdk_streams_generated_session_events_route(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    expected: SessionEvent = {
+        "schema_version": "bb.kernel_event.v2",
+        "event_id": "session:session id:1",
+        "seq": 1,
+        "timestamp": "2026-08-31T10:00:01Z",
+        "work_item_id": None,
+        "parent_work_item_id": None,
+        "attempt_id": None,
+        "session_id": "session id",
+        "span_id": None,
+        "visibility": {
+            "model_visible": True,
+            "provider_visible": True,
+            "host_visible": True,
+            "redaction_state": "none",
+        },
+        "kind": "session.started",
+        "payload": {},
+        "payload_schema_version": "bb.payload.session.started.v1",
+    }
+
     class _StreamResponse:
         ok = True
         status_code = 200
@@ -217,7 +257,7 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
         @staticmethod
         def iter_lines(*, decode_unicode: bool) -> list[str]:
             assert decode_unicode is True
-            return ['data: {"id": "evt-1", "type": "turn"}', ""]
+            return ["id: 1", f"data: {json.dumps(expected)}", ""]
 
     requests: list[dict[str, Any]] = []
 
@@ -232,7 +272,7 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
     )
 
     binding = PUBLIC_BINDINGS_BY_OPERATION_ID["session.events"]
-    assert events == [{"id": "evt-1", "type": "turn"}]
+    assert events == [expected]
     assert requests == [
         {
             "method": binding.http_method,
