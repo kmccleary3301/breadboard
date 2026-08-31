@@ -1,5 +1,6 @@
 {
   "schema_version": "bb.product_integration.i6_operation_matrix.v1",
+  "session_event_schema": "bb.public_session_event.v1",
   "operations": [
     {"operation_id":"artifact.get","http_method":"GET","path":"/v1/artifacts/{artifact_id}","python_method":"get_artifact","typescript_action":"public.artifact.get","cli":["artifact","get","{artifact_id}"],"setup":"artifact","success_status":200,"typed_error":{"fixture":"invalid_artifact","status":422,"error_code":"invalid_state"}},
     {"operation_id":"artifact.list","http_method":"GET","path":"/v1/artifacts","python_method":"list_artifact","typescript_action":"public.artifact.list","cli":["artifact","list"],"setup":"artifact","success_status":200,"typed_error":null},

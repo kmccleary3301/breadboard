@@ -305,9 +305,10 @@ def test_codegen_builds_exact_operation_docs_and_index(tmp_path: Path) -> None:
         assert "Output catalog ID (unpublished): `" in text
         assert "bb.problem.v1" in text
         if "Event: none" not in text:
-            assert "bb.kernel_event.v2" in text
+            assert "bb.public_session_event.v1" in text
         if metadata["operation-id"] == "session.events":
             assert "Response transport: SSE `text/event-stream`" in text
+            assert "- Event: [`bb.public_session_event.v1`]" in text
         else:
             assert (
                 "Response transport: JSON `PublicResult` (`bb.cli.result.v1`)" in text

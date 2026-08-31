@@ -28,7 +28,7 @@ from referencing import Registry, Resource
 from breadboard_sdk import ApiError, BreadBoardClient
 from breadboard_sdk.generated.public_bindings import PUBLIC_OPERATION_BINDINGS
 
-I6_MATRIX_SHA256 = "bb044516c0ca195c9ff81606995fb8abe8fb6668a9bc24b097d4b24855136fe1"
+I6_MATRIX_SHA256 = "af02abf6e66e5638be66f17dd4ad53d517f6347b8ad8ae65399d24b4bc7935f5"
 
 
 def _bytes(value: object) -> bytes:
@@ -1555,6 +1555,84 @@ def main() -> int:
                 f"I6 matrix CLI differs from installed binding: {operation_id}"
             )
 
+    public_event_schema_id = matrix.get("session_event_schema")
+    if public_event_schema_id != "bb.public_session_event.v1":
+        raise AssertionError("I6 matrix public event schema is invalid")
+    catalog_path = arguments.source_root / "contracts/public/operations.v2.json"
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    catalog_by_id = {row["operation_id"]: row for row in catalog.get("operations", ())}
+    public_event_operations = {
+        "session.approve",
+        "session.cancel",
+        "session.events",
+        "session.resume",
+        "session.send_input",
+        "session.start",
+    }
+    if set(catalog_by_id) != installed_ids or any(
+        row.get("event_schema")
+        != (public_event_schema_id if operation_id in public_event_operations else None)
+        for operation_id, row in catalog_by_id.items()
+    ):
+        raise AssertionError(
+            "public operation catalog event schema differs from the installed stream"
+        )
+    catalog_sha256 = _file_digest(catalog_path)
+    generated_check = subprocess.run(
+        [
+            str(arguments.python),
+            "-I",
+            str(arguments.source_root / "scripts/quality/generate_public_bindings.py"),
+            "--check",
+        ],
+        cwd=arguments.source_root,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=60,
+    )
+    expected_generated_check = "public binding codegen check: OK (34 files current)"
+    if (
+        generated_check.returncode != 0
+        or generated_check.stdout.strip() != expected_generated_check
+        or generated_check.stderr
+    ):
+        raise AssertionError(
+            f"generated public bindings are stale: "
+            f"{generated_check.stdout}{generated_check.stderr}"
+        )
+    generated_paths = [
+        arguments.source_root / relative
+        for relative in (
+            "breadboard/product/operations/generated_bindings.py",
+            "breadboard_sdk/generated/public_bindings.py",
+            "breadboard_sdk/generated/__init__.py",
+            "sdk/ts/src/generated/public-bindings.ts",
+            "breadboard_sdk/generated/public_surface_manifest.v1.json",
+            "sdk/ts/src/generated/public_surface_manifest.v1.json",
+            "tui_skeleton/src/generated/public_surface_manifest.v1.json",
+        )
+    ]
+    generated_paths.extend(
+        sorted((arguments.source_root / "docs/reference/public").rglob("*.md"))
+    )
+    if len(generated_paths) != 34 or any(
+        not path.is_file() or path.is_symlink() for path in generated_paths
+    ):
+        raise AssertionError("generated public output inventory is incomplete")
+    generated_outputs_sha256 = _digest(
+        [
+            (
+                path.relative_to(arguments.source_root).as_posix(),
+                _file_digest(path),
+            )
+            for path in generated_paths
+        ]
+    )
+    generated_docs_sha256 = _tree_digest(
+        arguments.source_root / "docs/reference/public"
+    )
+
     typed_error_rows = [row for row in rows if isinstance(row.get("typed_error"), dict)]
     typed_error_exemptions = sorted(
         row["operation_id"] for row in rows if row.get("typed_error") is None
@@ -1616,14 +1694,30 @@ def main() -> int:
         typescript_surface = surface_probe["result"]
 
         openapi = transport.get(f"{base_url}/openapi.json", timeout=30).json()
-        observed_ids = {
-            operation["operationId"]
-            for path_item in openapi["paths"].values()
-            for operation in path_item.values()
-            if isinstance(operation, dict) and "operationId" in operation
+        expected_openapi_routes = {
+            operation_id: {
+                "http_method": row["http_method"],
+                "path": row["path"],
+            }
+            for operation_id, row in by_id.items()
         }
-        if not installed_ids.issubset(observed_ids):
-            raise AssertionError("installed OpenAPI is missing catalog operations")
+        observed_openapi_routes: dict[str, dict[str, str]] = {}
+        for path, path_item in openapi["paths"].items():
+            for method, operation in path_item.items():
+                if not isinstance(operation, dict):
+                    continue
+                operation_id = operation.get("operationId")
+                if operation_id not in installed_ids:
+                    continue
+                if operation_id in observed_openapi_routes:
+                    raise AssertionError(f"installed OpenAPI duplicates {operation_id}")
+                observed_openapi_routes[operation_id] = {
+                    "http_method": method.upper(),
+                    "path": path,
+                }
+        if observed_openapi_routes != expected_openapi_routes:
+            raise AssertionError("installed OpenAPI differs from the public catalog")
+        openapi_product_sha256 = _digest(observed_openapi_routes)
 
         order = [
             "system.describe",
@@ -2501,6 +2595,15 @@ def main() -> int:
             "bbh_sha256": _file_digest(arguments.bbh),
             "matrix_sha256": _file_digest(arguments.matrix),
             "typescript_probe_sha256": _file_digest(arguments.ts_probe),
+        },
+        "public_contracts": {
+            "catalog_sha256": catalog_sha256,
+            "event_schema": public_event_schema_id,
+            "generated_binding_check": True,
+            "generated_file_count": len(generated_paths),
+            "generated_outputs_sha256": generated_outputs_sha256,
+            "generated_docs_sha256": generated_docs_sha256,
+            "openapi_product_sha256": openapi_product_sha256,
         },
         "workspace_before_sha256": workspace_before,
         "workspace_after_sha256": _tree_digest(arguments.workspace),

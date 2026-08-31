@@ -35,7 +35,7 @@ OPERATION_DOCUMENT_KIND: Final = "operation-reference"
 INDEX_DOCUMENT_KIND: Final = "operation-index"
 APPROVED_SCHEMA_LINK_TARGETS: Final = {
     "bb.problem.v1": "contracts/public/schemas/bb.problem.v1.schema.json",
-    "bb.kernel_event.v2": "contracts/kernel/schemas/bb.kernel_event.v2.schema.json",
+    "bb.public_session_event.v1": "contracts/public/schemas/bb.public_session_event.v1.schema.json",
 }
 _DOC_SLUG_SEGMENT = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _VALID_LIFECYCLES = frozenset({"sync", "async"})
