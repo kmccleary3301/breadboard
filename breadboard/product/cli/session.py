@@ -195,12 +195,15 @@ def _remote_event_snapshot(
         )
         if not page:
             return events
-        next_resume_token = page[-1]["seq"]
-        if (
-            type(next_resume_token) is not int
-            or next_resume_token <= resume_token
+        for expected_sequence, event in enumerate(
+            page,
+            start=resume_token + 1,
         ):
-            raise ValueError("server returned a non-advancing session event page")
+            if event["seq"] != expected_sequence:
+                raise ValueError(
+                    "server returned a non-contiguous session event page"
+                )
+        next_resume_token = resume_token + len(page)
         events.extend(
             event for event in page if event["seq"] <= upper_sequence
         )

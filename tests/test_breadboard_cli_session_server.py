@@ -302,6 +302,49 @@ def test_session_cli_bounds_complete_remote_event_snapshot_to_initial_count(
     assert calls == [(None, 256, False), (256, 1, False)]
 
 
+def test_session_cli_rejects_gapped_remote_event_snapshot(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    class GappedClient:
+        def __init__(self, base_url: str, *, timeout_s: float) -> None:
+            pass
+
+        @staticmethod
+        def get_session(session_id: str) -> dict[str, Any]:
+            result = _result(["session", "get"])
+            result["data"] = {"session": {"event_count": 2}}
+            return result
+
+        @staticmethod
+        def events_session(
+            session_id: str,
+            *,
+            resume_token: int | None = None,
+            limit: int = 256,
+            follow: bool = True,
+        ) -> Iterator[dict[str, Any]]:
+            yield {"seq": 1, "kind": "assistant_message"}
+            yield {"seq": 3, "kind": "session.completed"}
+
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", GappedClient)
+    exit_code = main(
+        [
+            "--json",
+            "session",
+            "--workspace",
+            str(tmp_path),
+            "--server",
+            "http://breadboard.test",
+            "events",
+            "gapped-session",
+        ]
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert exit_code != 0
+    assert "non-contiguous session event page" in output["error"]["message"]
+
+
 @pytest.mark.parametrize(
     ("status", "exit_code", "error_code"),
     [
