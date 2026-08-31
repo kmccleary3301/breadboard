@@ -4197,12 +4197,21 @@ def load_production_composition(
     composition_ref_path: str,
     secret_files: Mapping[str, str],
     *,
+    composition_ref_data: bytes | None = None,
     prebound_service_socket_fds: Mapping[str, int] | None = None,
     fault_injection_authority: V2FaultInjectionAuthority | None = None,
     policy_client_resolver_factory: PolicyClientResolverFactory | None = None,
 ) -> ProductionComposition:
-    ref_data, ref_fd = _secure_read(_absolute(composition_ref_path))
-    os.close(ref_fd)
+    composition_ref_path = _absolute(composition_ref_path)
+    if composition_ref_data is None:
+        ref_data, ref_fd = _secure_read(composition_ref_path)
+        os.close(ref_fd)
+    else:
+        if type(composition_ref_data) is not bytes:
+            raise TypeError("composition_ref_data must be exact bytes")
+        if len(composition_ref_data) > _MAX_AUTHORITY_BYTES:
+            raise ValueError("composition ref exceeds bound")
+        ref_data = composition_ref_data
     _load_json_exact(ref_data)
     ref_schema = json.loads(ref_data).get("schema_version")
     if ref_schema == "bb.rl.harness-composition-ref.v1":

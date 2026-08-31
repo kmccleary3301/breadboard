@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 437
+live_script_count: 438
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -2123,6 +2123,11 @@ entries:
     class: live-wired
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, tests/rl/phase5/test_run_phase5_do_target_command.py, tests/rl/phase5/test_scan_phase5_artifact_secrets.py]
+    expiry: none (durable tooling)
+  - path: scripts/rl_phase5/swe_bench_evaluator_requirements.lock
+    class: live-wired
+    owner: kmccleary3301
+    callers: [.github/workflows/swe-evaluator-lock.yml, scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/rl_phase5/validate_f1_preflight.py
     class: campaign

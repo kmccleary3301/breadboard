@@ -519,6 +519,7 @@ class SubprocessDockerCliExecutor:
                     await terminate_process_group()
                 else:
                     await process_wait
+                    await terminate_process_group()
                 await asyncio.gather(*io_tasks)
         except TimeoutError:
             timed_out = True
@@ -874,7 +875,8 @@ def _validate_lsm_policy(security: Any) -> None:
 
 def build_create_argv(plan: Any, *, lease_id: str, workspace_id: str, epoch: int,
                       role: str, skeleton_path: Path,
-                      mounts: Sequence[tuple[Path, str, bool]], security_profile_path: Path) -> tuple[str, ...]:
+                      mounts: Sequence[tuple[Path, str, bool]], security_profile_path: Path,
+                      skeleton_readonly: bool = True) -> tuple[str, ...]:
     runtime = plan.runtime
     security = plan.security_policy
     network = plan.network_policy
@@ -891,10 +893,13 @@ def build_create_argv(plan: Any, *, lease_id: str, workspace_id: str, epoch: int
     if (
         type(security.uid) is not int
         or type(security.gid) is not int
-        or security.uid <= 0
-        or security.gid <= 0
+        or security.uid < 0
+        or security.gid < 0
     ):
-        raise DockerAdapterError("runtime_preflight_failed", "numeric non-root identity is mandatory")
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            "numeric user and group identity is mandatory",
+        )
     if not security.read_only_root or not security.drop_all_capabilities or not security.no_new_privileges:
         raise DockerAdapterError("runtime_preflight_failed", "hardened security flags are mandatory")
     if security.namespace_flags:
@@ -937,7 +942,11 @@ def build_create_argv(plan: Any, *, lease_id: str, workspace_id: str, epoch: int
         "--cpu-period", "100000",
         "--cpu-quota", str(resources.cpu_millis * 100),
         "--ulimit", f"nofile={resources.open_files}:{resources.open_files}",
-        "--mount", _mount_argument(str(skeleton_path), CONTAINER_WORKSPACE_ROOT, readonly=True),
+        "--mount", _mount_argument(
+            str(skeleton_path),
+            CONTAINER_WORKSPACE_ROOT,
+            readonly=skeleton_readonly,
+        ),
     ]
     destinations: set[str] = {CONTAINER_WORKSPACE_ROOT}
     for source, destination, readonly in sorted(mounts, key=lambda item: item[1]):
@@ -1096,6 +1105,7 @@ def decode_docker_inspect(
     mounts: Sequence[tuple[Path, str, bool]],
     security_profile_path: Path,
     storage_bytes: int,
+    skeleton_readonly: bool = True,
 ) -> dict[str, Any]:
     inspected = _inspect_object(payload)
     _validate_identity(
@@ -1150,7 +1160,7 @@ def decode_docker_inspect(
             "runtime_measurement_mismatch", "Docker inspect security options contradict the plan"
         )
     expected_mounts = [
-        (str(skeleton_path), CONTAINER_WORKSPACE_ROOT, False),
+        (str(skeleton_path), CONTAINER_WORKSPACE_ROOT, not skeleton_readonly),
         *[(str(source), destination, not readonly) for source, destination, readonly in mounts],
     ]
     observed_mounts: list[tuple[str, str, bool]] = []
@@ -1204,6 +1214,7 @@ def decode_docker_inspect(
             for source, destination, readonly in sorted(mounts, key=lambda value: value[1])
         ),
         "workspace_root": str(skeleton_path),
+        "workspace_root_readonly": skeleton_readonly,
         "tmpfs": tuple(sorted(plan.security_policy.tmpfs_mounts)),
         "network": host.get("NetworkMode"),
         "cpu_period": host.get("CpuPeriod"),
@@ -1802,7 +1813,8 @@ class DockerRuntimeAdapter:
                       mounts: Sequence[tuple[Path, str, bool]],
                       security_profile_path: Path,
                       security_profile_descriptor: int,
-                      security_profile_metadata: os.stat_result) -> tuple[str, str, tuple[str, ...]]:
+                      security_profile_metadata: os.stat_result,
+                      skeleton_readonly: bool = True) -> tuple[str, str, tuple[str, ...]]:
         self._pin(plan)
         profile = _bounded_regular_file_descriptor_bytes(
             security_profile_descriptor,
@@ -1824,6 +1836,7 @@ class DockerRuntimeAdapter:
             skeleton_path=skeleton_path,
             mounts=mounts,
             security_profile_path=security_profile_path,
+            skeleton_readonly=skeleton_readonly,
         )
         name = _container_name(role=role, workspace_id=workspace_id)
         labels = _identity_labels(
@@ -1900,7 +1913,8 @@ class DockerRuntimeAdapter:
                            mounts: Sequence[tuple[Path, str, bool]],
                            security_profile_path: Path,
                            security_profile_descriptor: int,
-                           security_profile_metadata: os.stat_result) -> tuple[str, str, tuple[str, ...]]:
+                           security_profile_metadata: os.stat_result,
+                           skeleton_readonly: bool = True) -> tuple[str, str, tuple[str, ...]]:
         prepared = await self.prepare(
             plan,
             lease_id=lease_id,
@@ -1912,6 +1926,7 @@ class DockerRuntimeAdapter:
             security_profile_path=security_profile_path,
             security_profile_descriptor=security_profile_descriptor,
             security_profile_metadata=security_profile_metadata,
+            skeleton_readonly=skeleton_readonly,
         )
         container_id, name, _ = prepared
         labels = _identity_labels(
@@ -2133,7 +2148,10 @@ class DockerRuntimeHandle:
         staged_mounts: Sequence[StagedDockerDescriptorMount] = (),
         lease_id: str | None = None,
         launch_complete: bool = True,
+        repository_at_workspace_root: bool = False,
     ) -> None:
+        if type(repository_at_workspace_root) is not bool:
+            raise TypeError("repository_at_workspace_root must be exact")
         self.adapter = adapter
         self.plan = plan
         self.container_id = container_id
@@ -2149,6 +2167,7 @@ class DockerRuntimeHandle:
         self._staged_mounts = list(staged_mounts)
         self._lease_id = lease_id
         self._launching = not launch_complete
+        self._repository_at_workspace_root = repository_at_workspace_root
         self.repository_base_commit: str | None = None
         self.repository_relative_path: str | None = None
     def complete_launch(self) -> None:
@@ -2398,9 +2417,9 @@ class DockerRuntimeHandle:
             )
         relative_path = repositories[0].target_logical_path if repositories else "."
         repository_root = (
-            _container_workspace_path(relative_path)
-            if repositories
-            else CONTAINER_WORKSPACE_ROOT
+            CONTAINER_WORKSPACE_ROOT
+            if self._repository_at_workspace_root or not repositories
+            else _container_workspace_path(relative_path)
         )
         result = await self._run(
             ("git", "-C", repository_root, "rev-parse", "--verify", "HEAD^{commit}"),
@@ -2423,6 +2442,60 @@ class DockerRuntimeHandle:
         self.repository_relative_path = relative_path
         return commit
 
+
+    async def reset_repository_to_base(self) -> bool:
+        if self.repository_base_commit is None:
+            return False
+        repositories = tuple(
+            entry
+            for entry in self.plan.materialization_plan.entries
+            if entry.role == "repository"
+        )
+        if len(repositories) > 1:
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "workspace reset requires at most one repository mount",
+            )
+        repository_root = (
+            CONTAINER_WORKSPACE_ROOT
+            if self._repository_at_workspace_root or not repositories
+            else _container_workspace_path(repositories[0].target_logical_path)
+        )
+        common = (
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.fsmonitor=false",
+            "-C",
+            repository_root,
+        )
+        for arguments in (
+            ("reset", "--hard", self.repository_base_commit),
+            ("clean", "-ffdx"),
+        ):
+            result = await self._run(
+                (*common, *arguments),
+                timeout_ms=self.plan.limits.action_timeout_ms,
+                output_limit=self.plan.limits.observation_bytes,
+            )
+            if result.get("returncode") != 0:
+                raise DockerAdapterError(
+                    "runtime_preflight_failed",
+                    "workspace base reset failed",
+                )
+        status = await self._run(
+            (*common, "status", "--porcelain=v1", "--untracked-files=all"),
+            timeout_ms=self.plan.limits.action_timeout_ms,
+            output_limit=self.plan.limits.observation_bytes,
+        )
+        if status.get("returncode") != 0 or status.get("stdout") != "":
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "workspace is not clean at the measured base",
+            )
+        return True
+
     async def workspace_diff(self) -> Mapping[str, Any]:
         repositories = tuple(
             entry
@@ -2434,8 +2507,10 @@ class DockerRuntimeHandle:
                 "runtime_preflight_failed",
                 "workspace diff requires exactly one repository mount",
             )
-        repository_root = _container_workspace_path(
-            repositories[0].target_logical_path
+        repository_root = (
+            CONTAINER_WORKSPACE_ROOT
+            if self._repository_at_workspace_root
+            else _container_workspace_path(repositories[0].target_logical_path)
         )
         result = await self._run(
             ("git", "-C", repository_root, "diff", "--no-ext-diff", "--binary"),
@@ -2776,6 +2851,7 @@ class DockerSandboxBackend:
         if not valid:
             raise DockerAdapterError("runtime_preflight_failed", "runtime launch context is contradictory")
 
+
     @staticmethod
     def _mount_specs(plan: Any, context: Any) -> tuple[tuple[str, str, bool], ...]:
         if context.role == "verifier":
@@ -2876,6 +2952,10 @@ class DockerSandboxBackend:
                 workspace_device=workspace_identity[0],
                 expected_identity=workspace_identity,
             )
+            skeleton_readonly = True
+            repository_at_workspace_root = False
+            skeleton_fd = workspace_fd
+            skeleton_metadata = workspace_metadata
             admitted_mounts: list[tuple[int, str, bool, os.stat_result]] = []
             for relative_path, destination, readonly in self._mount_specs(plan, context):
                 child_fd = _openat2_beneath(workspace_fd, relative_path)
@@ -2889,16 +2969,16 @@ class DockerSandboxBackend:
             observation = await self.adapter.preflight(plan)
             _require_daemon_runtime_binding(observation, plan)
             workspace_stage = await self.mount_stager.stage(
-                workspace_fd,
-                expected_device=workspace_metadata.st_dev,
-                expected_inode=workspace_metadata.st_ino,
+                skeleton_fd,
+                expected_device=skeleton_metadata.st_dev,
+                expected_inode=skeleton_metadata.st_ino,
                 directory=True,
                 lease_id=context.lease_id,
                 destination=CONTAINER_WORKSPACE_ROOT,
             )
             staged_mounts.append(workspace_stage)
-            workspace_stage.validate_descriptor(workspace_fd)
-            await self.mount_stager.validate(workspace_stage, workspace_fd)
+            workspace_stage.validate_descriptor(skeleton_fd)
+            await self.mount_stager.validate(workspace_stage, skeleton_fd)
             workspace_source = Path(workspace_stage.source_path)
             descriptor_mounts: list[tuple[Path, str, bool]] = []
             for child_fd, destination, readonly, child_metadata in admitted_mounts:
@@ -2942,7 +3022,7 @@ class DockerSandboxBackend:
             profile_source = Path(profile_stage.source_path)
             for staged, descriptor in zip(
                 staged_mounts,
-                (workspace_fd, *(item[0] for item in admitted_mounts), profile_fd),
+                (skeleton_fd, *(item[0] for item in admitted_mounts), profile_fd),
                 strict=True,
             ):
                 staged.validate_descriptor(descriptor)
@@ -2954,6 +3034,7 @@ class DockerSandboxBackend:
                 mounts=tuple(descriptor_mounts), security_profile_path=profile_source,
                 security_profile_descriptor=profile_fd,
                 security_profile_metadata=profile_metadata,
+                skeleton_readonly=skeleton_readonly,
             )
             journal_container = getattr(
                 self.mount_stager, "record_container_identity", None
@@ -2973,7 +3054,7 @@ class DockerSandboxBackend:
             inspect_payload = await self.adapter.inspect(plan, container_id)
             for staged, descriptor in zip(
                 staged_mounts,
-                (workspace_fd, *(item[0] for item in admitted_mounts), profile_fd),
+                (skeleton_fd, *(item[0] for item in admitted_mounts), profile_fd),
                 strict=True,
             ):
                 staged.validate_descriptor(descriptor)
@@ -2984,6 +3065,7 @@ class DockerSandboxBackend:
                 skeleton_path=workspace_source, mounts=tuple(descriptor_mounts),
                 security_profile_path=profile_source,
                 storage_bytes=context.storage.quota_bytes,
+                skeleton_readonly=skeleton_readonly,
             )
             effective = dict(measured)
             external = dict(await self.measurement_provider.measure(
@@ -3010,6 +3092,7 @@ class DockerSandboxBackend:
                 context.storage.owner_gid,
             )
             requested["workspace_root"] = str(workspace_source)
+            requested["workspace_root_readonly"] = skeleton_readonly
             requested["storage_identity"] = storage_identity
             measured["storage_identity"] = storage_identity
             effective["storage_identity"] = storage_identity
@@ -3019,12 +3102,21 @@ class DockerSandboxBackend:
                 mount_stager=self.mount_stager, staged_mounts=staged_mounts,
                 lease_id=context.lease_id,
                 launch_complete=False,
+                repository_at_workspace_root=repository_at_workspace_root,
             )
             repository_base_commit = await handle.measure_repository_base_commit()
             if repository_base_commit is not None:
+                if await handle.reset_repository_to_base() is not True:
+                    raise DockerAdapterError(
+                        "runtime_preflight_failed",
+                        "workspace base reset was not proven",
+                    )
                 requested["workspace_base_commit"] = repository_base_commit
                 effective["workspace_base_commit"] = repository_base_commit
                 measured["workspace_base_commit"] = repository_base_commit
+                requested["workspace_clean_at_base"] = True
+                effective["workspace_clean_at_base"] = True
+                measured["workspace_clean_at_base"] = True
             mismatch = tuple(sorted({
                 *measurement_mismatches(requested, effective),
                 *measurement_mismatches(requested, measured),

@@ -7,6 +7,7 @@ import inspect
 import json
 import os
 import platform
+import shlex
 import shutil
 import stat
 import subprocess
@@ -397,6 +398,7 @@ def _docker_inspect_payload(
     *,
     role: str = "primary",
     workspace_id: str = "workspace-1",
+    skeleton_readonly: bool = True,
 ) -> dict[str, Any]:
     return {
         "Id": CONTAINER_ID,
@@ -450,7 +452,7 @@ def _docker_inspect_payload(
                 "Type": "bind",
                 "Source": str(skeleton),
                 "Destination": "/testbed",
-                "RW": False,
+                "RW": not skeleton_readonly,
             },
             *[
                 {
@@ -1667,7 +1669,7 @@ async def test_reserved_lsm_disabling_values_reject_before_any_docker_command(
 
 
 @pytest.mark.parametrize(("uid", "gid"), [(0, 65534), (65534, 0), (0, 0)])
-def test_root_container_identity_is_rejected_before_create_argv(
+def test_numeric_container_identity_supports_official_root_images(
     tmp_path: Path,
     uid: int,
     gid: int,
@@ -1678,19 +1680,83 @@ def test_root_container_identity_is_rejected_before_create_argv(
         security_policy=replace(plan.security_policy, uid=uid, gid=gid),
     )
 
-    with pytest.raises(DockerAdapterError) as captured:
-        build_create_argv(
-            plan,
-            lease_id="lease",
-            workspace_id="workspace",
-            epoch=1,
-            role="primary",
-            skeleton_path=skeleton,
-            mounts=mounts,
-            security_profile_path=profile,
-        )
+    argv = build_create_argv(
+        plan,
+        lease_id="lease",
+        workspace_id="workspace",
+        epoch=1,
+        role="primary",
+        skeleton_path=skeleton,
+        mounts=mounts,
+        security_profile_path=profile,
+    )
 
-    assert captured.value.code == "runtime_preflight_failed"
+    user_index = argv.index("--user")
+    assert argv[user_index + 1] == f"{uid}:{gid}"
+
+
+@pytest.mark.parametrize(("uid", "gid"), [(-1, 65534), (65534, -1)])
+def test_negative_container_identity_is_rejected_by_security_contract(
+    tmp_path: Path,
+    uid: int,
+    gid: int,
+) -> None:
+    plan, _, _, _ = _docker_plan(tmp_path)
+
+    with pytest.raises(ValueError, match="numeric value"):
+        replace(plan.security_policy, uid=uid, gid=gid)
+
+
+async def test_repository_root_is_reset_and_proven_clean_before_use(
+    tmp_path: Path,
+) -> None:
+    plan, _, _, _ = _docker_plan(tmp_path)
+    commands: list[tuple[str, ...]] = []
+
+    class Adapter:
+        dirty = False
+
+        async def exec(
+            self,
+            _plan: Any,
+            _container_id: str,
+            argv: Sequence[str],
+            **_kwargs: Any,
+        ) -> Mapping[str, Any]:
+            command = tuple(argv)
+            commands.append(command)
+            is_status = "status" in command
+            return {
+                "returncode": 0,
+                "stdout": " M sympy/core/symbol.py\n"
+                if is_status and self.dirty
+                else "",
+                "stderr": "",
+            }
+
+    adapter = Adapter()
+    handle = DockerRuntimeHandle(
+        adapter=adapter,
+        plan=plan,
+        container_id=CONTAINER_ID,
+        container_name="bb-primary-workspace",
+        labels={},
+        repository_at_workspace_root=True,
+    )
+    handle.repository_base_commit = "a" * 40
+
+    assert await handle.reset_repository_to_base() is True
+    assert [command[command.index("-C") + 1] for command in commands] == [
+        "/testbed",
+        "/testbed",
+        "/testbed",
+    ]
+    assert commands[0][-3:] == ("reset", "--hard", "a" * 40)
+    assert commands[1][-2:] == ("clean", "-ffdx")
+
+    adapter.dirty = True
+    with pytest.raises(DockerAdapterError, match="not clean"):
+        await handle.reset_repository_to_base()
 
 
 @pytest.mark.parametrize(
@@ -2002,6 +2068,40 @@ async def test_subprocess_executor_bounds_descendant_held_output_pipes() -> None
     assert result.timed_out is True
     assert result.output_limited is False
     assert elapsed < 1.5
+
+
+async def test_subprocess_executor_reaps_descendant_after_clean_leader_exit(
+    tmp_path: Path,
+) -> None:
+    executable = Path("/bin/sh")
+    descriptor = os.open(executable, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable),
+        executable_fd=descriptor,
+        executable_descriptor_path=str(executable),
+        digest=observe_binary_digest(executable),
+    )
+    child_pid_path = tmp_path / "child.pid"
+    command = (
+        f"(sleep 10) >/dev/null 2>&1 & "
+        f"echo $! > {shlex.quote(str(child_pid_path))}; exit 0"
+    )
+    try:
+        result = await SubprocessDockerCliExecutor().execute(
+            invocation,
+            ("-c", command),
+            timeout_ms=1_000,
+            output_limit=128,
+            environment=(("PATH", "/usr/bin:/bin"),),
+        )
+    finally:
+        os.close(descriptor)
+
+    child_pid = int(child_pid_path.read_text())
+    assert result.returncode == 0
+    assert result.timed_out is False
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
 
 
 async def test_subprocess_executor_stops_process_group_at_output_limit() -> None:
@@ -3018,6 +3118,11 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
 ) -> None:
     plan, skeleton, _, _ = _docker_plan(tmp_path)
     workspace, _ = _primary_workspace(plan, tmp_path)
+    repository = next(
+        entry
+        for entry in plan.materialization_plan.entries
+        if entry.role == "repository"
+    )
     security_root = tmp_path / "security-success"
     security_root.mkdir()
     trace: list[str] = []
@@ -3028,6 +3133,7 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
             self.mounts: tuple[tuple[Path, str, bool], ...] = ()
             self.skeleton = Path()
             self.profile = Path()
+            self.skeleton_readonly = True
 
         async def preflight(self, _: Any) -> None:
             trace.append("preflight")
@@ -3037,6 +3143,7 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
             self.mounts = tuple(kwargs["mounts"])
             self.skeleton = kwargs["skeleton_path"]
             self.profile = kwargs["security_profile_path"]
+            self.skeleton_readonly = kwargs["skeleton_readonly"]
             profile = docker_module._bounded_regular_file_descriptor_bytes(
                 kwargs["security_profile_descriptor"],
                 expected_metadata=kwargs["security_profile_metadata"],
@@ -3055,7 +3162,13 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
             assert container_id == CONTAINER_ID
             trace.append("inspect")
             return _docker_inspect_bytes(
-                _docker_inspect_payload(plan, self.skeleton, self.profile, self.mounts)
+                _docker_inspect_payload(
+                    plan,
+                    self.skeleton,
+                    self.profile,
+                    self.mounts,
+                    skeleton_readonly=self.skeleton_readonly,
+                )
             )
 
         async def cleanup(self, _: Any, reference: str, **kwargs: Any) -> tuple[tuple[str, str, str], ...]:
@@ -3124,11 +3237,22 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
     assert trace == ["preflight", "create", "persist", "start", "inspect"]
     assert open_modes[-1] is True
     assert all(mode is False for mode in open_modes[:-1])
-    assert adapter.skeleton == Path(f"/staged/{workspace_fd}")
+    skeleton_descriptor = int(adapter.skeleton.name)
+    skeleton_identity = os.fstat(skeleton_descriptor)
+    assert (skeleton_identity.st_dev, skeleton_identity.st_ino) == (
+        metadata.st_dev,
+        metadata.st_ino,
+    )
+    assert adapter.skeleton_readonly is True
     assert all(
         str(source).startswith("/staged/")
         and destination.startswith("/testbed/")
         for source, destination, _ in adapter.mounts
+    )
+    assert any(
+        destination == f"/testbed/{repository.target_logical_path}"
+        and readonly is False
+        for _source, destination, readonly in adapter.mounts
     )
     assert measurement.isolated is True
     assert measurement.reward_eligible is True
