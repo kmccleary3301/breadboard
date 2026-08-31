@@ -123,7 +123,7 @@ def _resolve_artifact_path(display_path: str) -> Path:
     if path.is_absolute():
         return path
 
-    if raw.startswith("docs_tmp/"):
+    if raw.startswith("docs_tmp/") or raw.startswith(f"{ROOT.name}/"):
         return resolve_declared_reference(
             raw,
             checkout_root=ROOT,
@@ -132,15 +132,7 @@ def _resolve_artifact_path(display_path: str) -> Path:
             must_exist=False,
         )
 
-    root_path = ROOT / path
-    if root_path.exists():
-        return root_path
-
-    checkout_path = ROOT.parent / path
-    if raw.startswith(f"{ROOT.name}/") and checkout_path.exists():
-        return checkout_path
-
-    return root_path
+    return ROOT / path
 
 
 def _find_row(value: Any, row_id: str) -> Any | None:

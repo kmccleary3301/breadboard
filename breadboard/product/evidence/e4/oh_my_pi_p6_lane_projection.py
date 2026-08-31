@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from breadboard.product.evidence.e4.paths import SOURCE_ROOT
+from breadboard.product.evidence.e4.path_refs import workspace_root_for_checkout
 from breadboard.product.evidence.e4.validators import hash_utils as _hash_utils
 import json
 import re
@@ -10,10 +11,21 @@ from typing import Any, Mapping, Sequence
 import yaml
 
 ROOT = SOURCE_ROOT
-WORKSPACE = ROOT.parent
+
+
+def _ledger_path() -> Path:
+    return workspace_root_for_checkout(ROOT) / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+
+
+def __getattr__(name: str) -> Any:
+    if name == "WORKSPACE":
+        return workspace_root_for_checkout(ROOT)
+    if name == "LEDGER_PATH":
+        return _ledger_path()
+    raise AttributeError(name)
+
 FREEZE_PATH = ROOT / "config/e4_target_freeze_manifest.yaml"
 CATALOG_PATH = ROOT / "docs/conformance/e4_artifact_catalog.json"
-LEDGER_PATH = WORKSPACE / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
 SOURCE_FREEZE_PATH = ROOT / "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json"
 
 _SECRET_PATTERNS = (
@@ -134,17 +146,20 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
 def _sha256(path: Path) -> str:
     return _hash_utils.sha256_file(path)
 
-
 def _logical_path(path: Path) -> str:
     resolved = path.resolve()
     try:
         return resolved.relative_to(ROOT.resolve()).as_posix()
     except ValueError:
-        return resolved.relative_to(WORKSPACE.resolve()).as_posix()
+        return resolved.relative_to(workspace_root_for_checkout(ROOT).resolve()).as_posix()
 
 
 def _source_path(logical: str) -> Path:
-    return (WORKSPACE if logical.startswith("docs_tmp/") else ROOT) / logical
+    if logical.startswith("docs_tmp/") or logical.startswith(f"{ROOT.name}/"):
+        return workspace_root_for_checkout(ROOT) / logical
+    return ROOT / logical
+
+
 
 
 def _output_path(logical: str, output_root: Path | None) -> Path:
@@ -591,7 +606,8 @@ def _row_hash(row_id: str, row: Mapping[str, Any]) -> str:
 def _ledger_ref(spec: Mapping[str, Any], family: str) -> str:
     from breadboard.product.evidence.e4.lane_acceptance_artifacts import row_hash
 
-    ledger = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
+    ledger_path = _ledger_path()
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
     matches = [
         row
         for row in ledger.get("rows", [])
@@ -675,7 +691,8 @@ def _manifest(level: int, profile: Mapping[str, Any], spec: Mapping[str, Any], p
         artifacts.extend([support_row, *trailing])
     else:
         artifacts.extend([*trailing, support_row])
-    artifacts.append({"bytes": LEDGER_PATH.stat().st_size, "exists": True, "path": _logical_path(LEDGER_PATH), "role": "atomic_feature_ledger", "sha256": _sha256(LEDGER_PATH)})
+    ledger_path = _ledger_path()
+    artifacts.append({"bytes": ledger_path.stat().st_size, "exists": True, "path": _logical_path(ledger_path), "role": "atomic_feature_ledger", "sha256": _sha256(ledger_path)})
     return {
         "schema_version": "bb.e4.evidence_manifest.v1",
         "artifacts": artifacts,
@@ -728,9 +745,10 @@ def build_p6_lane(spec: Mapping[str, Any], output_root: Path | None = None) -> d
         "node_gate": f"artifacts/conformance/node_gate/{spec['ct_id']}.json",
     }
     if output_root is not None:
-        ledger_output = _output_path(_logical_path(LEDGER_PATH), output_root)
+        ledger_path = _ledger_path()
+        ledger_output = _output_path(_logical_path(ledger_path), output_root)
         ledger_output.parent.mkdir(parents=True, exist_ok=True)
-        ledger_output.write_bytes(LEDGER_PATH.read_bytes())
+        ledger_output.write_bytes(ledger_path.read_bytes())
     packet_sources = _packet_sources(spec)
     probe_path = next(path for path in packet_sources if path.endswith("/target_probe_output.json"))
     setup_path = next(path for path in packet_sources if path.endswith("/target_setup_and_capture_report.json"))

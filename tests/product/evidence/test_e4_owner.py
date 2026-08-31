@@ -111,6 +111,8 @@ def test_compatibility_modules_delegate_to_internal_owners() -> None:
         "generate_support_claims.py",
         "promote_lane_payload_source.py",
         "run_lane.py",
+        "adapters/pi_p5_l1_capture.py",
+        "adapters/pi_p5_l2_capture.py",
     ),
 )
 def test_compatibility_script_entrypoint_remains_executable(script: str) -> None:
@@ -222,3 +224,118 @@ def test_product_lane_capture_returns_structured_owner_result(
     assert exit_code == 0
     result = json.loads(capsys.readouterr().out)
     assert result["data"]["capture"] == report
+
+
+def test_active_e4_adapter_registry_impls_use_product_owner() -> None:
+    registry = json.loads(
+        (ROOT / "contracts/kernel/registries/e4_adapters.v1.json").read_text(encoding="utf-8")
+    )
+    active = [entry for entry in registry["entries"] if entry.get("status") == "active"]
+    assert active
+    assert all(
+        str(entry["metadata"]["impl"]).startswith("breadboard.product.evidence.e4.adapters.")
+        for entry in active
+    )
+
+
+def test_product_registry_adapters_import_without_script_modules(tmp_path: Path) -> None:
+    environment = dict(os.environ)
+    environment["BB_WORKSPACE_ROOT"] = str(tmp_path)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import importlib,json,sys; "
+                "from pathlib import Path; "
+                "import breadboard.product.cli.e4; "
+                "registry=json.loads(Path('contracts/kernel/registries/e4_adapters.v1.json').read_text()); "
+                "[importlib.import_module(entry['metadata']['impl'].split(':',1)[0]) "
+                "for entry in registry['entries'] if entry.get('id') in ('identity','lane_definition_build')]; "
+                "print(json.dumps(sorted(name for name in sys.modules if name.startswith('scripts.e4_parity'))))"
+            ),
+        ],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=60,
+    )
+    assert json.loads(completed.stdout) == []
+
+
+def test_product_live_e4_modules_have_no_legacy_imports() -> None:
+    paths = (
+        ROOT / "breadboard/product/evidence/e4/lane_acceptance_artifacts.py",
+        *sorted((ROOT / "breadboard/product/evidence/e4/adapters").glob("*.py")),
+    )
+    violations: dict[str, list[str]] = {}
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        modules: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module is not None:
+                modules.append(node.module)
+            elif isinstance(node, ast.Import):
+                modules.extend(alias.name for alias in node.names)
+        stale = sorted(
+            module
+            for module in modules
+            if module.startswith(("scripts.e4_parity", "scripts.replay_session_from_records"))
+        )
+        if stale:
+            violations[path.relative_to(ROOT).as_posix()] = stale
+    assert not violations
+
+
+def test_lane_acceptance_workspace_resolution_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    from breadboard.product.evidence.e4 import lane_acceptance_artifacts
+    from breadboard.product.evidence.e4.path_refs import ReferenceResolutionError
+
+    monkeypatch.delenv("BB_WORKSPACE_ROOT", raising=False)
+    with pytest.raises(ReferenceResolutionError):
+        lane_acceptance_artifacts.resolve("docs_tmp/x")
+
+
+def test_lane_ledger_paths_use_explicit_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from breadboard.product.evidence.e4 import (
+        lane_acceptance_artifacts,
+        oh_my_pi_p6_lane_projection,
+    )
+
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
+    ledger_path = (
+        tmp_path / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+    )
+    lane_spec = {"target": "oh_my_pi", "semantic_key": "fixture"}
+    lane_feature_id = lane_acceptance_artifacts.feature_id(lane_spec)
+    ledger_path.parent.mkdir(parents=True)
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {"feature_id": lane_feature_id},
+                    {
+                        "e4_row_ref": "p6-fixture",
+                        "family": "omp",
+                        "feature_id": "p6-feature",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert lane_acceptance_artifacts.ledger_row_ref(lane_spec).startswith(
+        f"docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#{lane_feature_id}#"
+    )
+    assert oh_my_pi_p6_lane_projection._ledger_ref(
+        {"config_id": "p6-fixture"},
+        "omp",
+    ).startswith(
+        "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#p6-feature#"
+    )

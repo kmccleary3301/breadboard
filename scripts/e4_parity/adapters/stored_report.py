@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+import sys
 
-from conformance.comparators.stored_report import compare as _compare
+from breadboard.product.evidence.e4.adapters import stored_report as _owner
 
-
-def compare(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Delegate stored-report comparisons to the conformance comparator."""
-    return _compare(*args, **kwargs)
+sys.modules[__name__] = _owner

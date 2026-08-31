@@ -21,14 +21,25 @@ from breadboard_engine.conformance.catalog_binding import (
     catalog_segment_hash,
     reusable_catalog_revision,
 )
-from scripts.replay_session_from_records import replay_session_from_records
+from breadboard.product.evidence.e4.session_replay import replay_session_from_records
+from breadboard.product.evidence.e4.path_refs import resolve_declared_reference, workspace_root_for_checkout
 
 ROOT = SOURCE_ROOT
-WORKSPACE = ROOT.parent
+
+
+def _ledger_path() -> Path:
+    return workspace_root_for_checkout(ROOT) / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+
+
+def __getattr__(name: str) -> Any:
+    if name == "WORKSPACE":
+        return workspace_root_for_checkout(ROOT)
+    if name == "LEDGER_PATH":
+        return _ledger_path()
+    raise AttributeError(name)
 
 GENERATED_AT = "2026-07-07T03:00:00Z"
 FREEZE_MANIFEST_PATH = ROOT / "config/e4_target_freeze_manifest.yaml"
-LEDGER_PATH = WORKSPACE / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
 SUPPORT_DIR = ROOT / "docs/conformance/support_claims"
 NODE_GATE_DIR = ROOT / "artifacts/conformance/node_gate"
 CATALOG_PATH = ROOT / "docs/conformance/e4_artifact_catalog.json"
@@ -125,13 +136,17 @@ def display(path: Path | str) -> str:
     try:
         return str(resolved.relative_to(ROOT))
     except ValueError:
-        return str(resolved.relative_to(WORKSPACE))
+        return str(resolved.relative_to(workspace_root_for_checkout(ROOT)))
 
 
 def resolve(path: str) -> Path:
     raw = path.split("#", 1)[0]
-    base = WORKSPACE if raw.startswith("docs_tmp/") else ROOT
-    return (base / raw).resolve()
+    return resolve_declared_reference(
+        raw,
+        checkout_root=ROOT,
+        namespace="workspace_evidence",
+        must_exist=False,
+    )
 
 
 def sha256_path(path: Path) -> str:
@@ -156,7 +171,7 @@ def _materialized_path(path: Path, output_root: Path | None) -> Path:
         return output_root / resolved.relative_to(ROOT.resolve())
     except ValueError:
         try:
-            return output_root / resolved.relative_to(WORKSPACE.resolve())
+            return output_root / resolved.relative_to(workspace_root_for_checkout(ROOT).resolve())
         except ValueError:
             return path
 
@@ -268,11 +283,12 @@ def write_freeze(spec: Mapping[str, Any], evidence_paths: list[str]) -> str:
 
 
 def ledger_row_ref(spec: Mapping[str, Any]) -> str:
-    ledger = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
+    ledger_path = _ledger_path()
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
     wanted = feature_id(spec)
     for row in ledger.get("rows", []):
         if isinstance(row, dict) and row.get("feature_id") == wanted:
-            return f"{display(LEDGER_PATH)}#{wanted}#{row_hash(wanted, row)}"
+            return f"{display(ledger_path)}#{wanted}#{row_hash(wanted, row)}"
     raise KeyError(f"ledger row not found for {wanted}; run seed_atomic_feature_ledger after updating C4 specs")
 
 
@@ -305,7 +321,7 @@ def emit_self_runtime_records(
 
     from breadboard_engine.agent import AgenticCoder
     from breadboard_engine.compilation.primitive_records import finalize_record, get_spec
-    from scripts.replay_session_from_records import (
+    from breadboard.product.evidence.e4.session_replay import (
         _append_transcript_item,
         _iter_jsonl,
         _record_from_line,
@@ -660,7 +676,7 @@ def build_lane(spec: Mapping[str, Any], output_root: Path | None = None) -> dict
         {"path": display(parity_path), "role": "parity_results", "sha256": _sha256_output(parity_path, output_root), "derived_from": [_ref_output(comparator_path, output_root)]},
         {"path": display(secret_path), "role": "secret_scan_report", "sha256": _sha256_output(secret_path, output_root)},
         {"path": display(prevalidation_path), "role": "validator_output", "sha256": _sha256_output(prevalidation_path, output_root)},
-        {"path": display(LEDGER_PATH), "role": "atomic_feature_ledger", "sha256": sha256_path(LEDGER_PATH)},
+        {"path": display(_ledger_path()), "role": "atomic_feature_ledger", "sha256": sha256_path(_ledger_path())},
     ]
     for runtime_path, runtime_physical_path in zip(
         runtime_paths, runtime_physical_paths

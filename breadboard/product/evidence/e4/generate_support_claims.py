@@ -21,8 +21,16 @@ from breadboard_engine.conformance.catalog_binding import (
     stable_entries_hash,
 )
 
+from breadboard.product.evidence.e4.path_refs import resolve_declared_reference, workspace_root_for_checkout
+
 ROOT = SOURCE_ROOT
-WORKSPACE = ROOT.parent
+
+
+def __getattr__(name: str) -> Any:
+    if name == "WORKSPACE":
+        return workspace_root_for_checkout(ROOT)
+    raise AttributeError(name)
+
 INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 CATALOG_PATH = ROOT / "docs" / "conformance" / "e4_artifact_catalog.json"
 
@@ -63,10 +71,7 @@ def display(path: Path) -> str:
     try:
         return str(resolved.relative_to(ROOT))
     except ValueError:
-        try:
-            return str(resolved.relative_to(WORKSPACE))
-        except ValueError:
-            return str(resolved)
+        return str(resolved.relative_to(workspace_root_for_checkout(ROOT)))
 
 
 def resolve_ref(ref: str) -> Path:
@@ -74,9 +79,13 @@ def resolve_ref(ref: str) -> Path:
     path = Path(raw)
     if path.is_absolute():
         return path.resolve()
-    if raw.startswith("docs_tmp/") or raw.startswith(f"{ROOT.name}/"):
-        return (WORKSPACE / raw).resolve()
-    return (ROOT / raw).resolve()
+    namespace = "workspace_evidence" if path.parts and path.parts[0] in {"docs_tmp", ROOT.name} else "repo"
+    return resolve_declared_reference(
+        raw,
+        checkout_root=ROOT,
+        namespace=namespace,
+        must_exist=False,
+    )
 
 
 def ref(path: Path) -> str:

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+import sys
 
-from scripts.e4_parity.lane_acceptance_artifacts import build_lane_from_definition
+from breadboard.product.evidence.e4.adapters import package_capture as _owner
 
-
-def capture(*args: Any, **kwargs: Any) -> Any:
-    """Delegate lane-definition package capture to the accepted artifact builder."""
-    return build_lane_from_definition(*args, **kwargs)
+sys.modules[__name__] = _owner
