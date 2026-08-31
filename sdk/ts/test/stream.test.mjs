@@ -74,7 +74,7 @@ test("streamSessionEvents uses the public endpoint and parses the SSE envelope",
   assert.deepEqual(events, [expected])
 })
 
-test("streamSessionEvents accepts RFC3339 leap seconds", async (t) => {
+test("streamSessionEvents accepts RFC3339 case and leap-second variants", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => {
     globalThis.fetch = originalFetch
@@ -83,6 +83,7 @@ test("streamSessionEvents accepts RFC3339 leap seconds", async (t) => {
   const timestamps = [
     "2016-12-31T23:59:60Z",
     "2016-12-31T15:59:60-08:00",
+    "2026-08-31t10:00:01.123z",
   ]
   const encoded = new TextEncoder().encode(
     timestamps.map((timestamp, index) => {
@@ -187,7 +188,7 @@ test("streamSessionEvents rejects a non-RFC3339 timestamp", async (t) => {
   )
 })
 
-test("streamSessionEvents passes follow=false as a snapshot query", async (t) => {
+test("streamSessionEvents preserves snapshot and compatibility query keys", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => {
     globalThis.fetch = originalFetch
@@ -217,14 +218,20 @@ test("streamSessionEvents passes follow=false as a snapshot query", async (t) =>
   const events = []
   for await (const event of streamSessionEvents("session-123", {
     config: { baseUrl: "http://breadboard.test:9099" },
-    query: { limit: 1, follow: false },
+    query: {
+      limit: 1,
+      follow: false,
+      schema: "legacy",
+      include_legacy: true,
+      replay: 2,
+    },
   })) {
     events.push(event)
   }
 
   assert.equal(
     requestedUrl,
-    "http://breadboard.test:9099/v1/sessions/session-123/events?limit=1&follow=false",
+    "http://breadboard.test:9099/v1/sessions/session-123/events?limit=1&follow=false&schema=legacy&include_legacy=true&replay=2",
   )
   assert.deepEqual(events, [expected])
 })

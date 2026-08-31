@@ -62,7 +62,7 @@ def _required_text(value: Any, field: str) -> str:
 
 
 _RFC3339_TIMESTAMP_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
+    r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})$"
 )
 
 
@@ -72,7 +72,7 @@ def _required_rfc3339_timestamp(value: Any, field: str) -> str:
         raise ValueError(f"invalid session event {field}")
     leap_second = text[17:19] == "60"
     parseable = text[:17] + "59" + text[19:] if leap_second else text
-    normalized = parseable[:-1] + "+00:00" if parseable.endswith("Z") else parseable
+    normalized = parseable[:-1] + "+00:00" if parseable.endswith(("Z", "z")) else parseable
     try:
         parsed = datetime.fromisoformat(normalized)
     except ValueError as exc:
@@ -80,7 +80,10 @@ def _required_rfc3339_timestamp(value: Any, field: str) -> str:
     if parsed.tzinfo is None:
         raise ValueError(f"invalid session event {field}")
     if leap_second:
-        utc = parsed.astimezone(timezone.utc)
+        try:
+            utc = parsed.astimezone(timezone.utc)
+        except (OverflowError, ValueError) as exc:
+            raise ValueError(f"invalid session event {field}") from exc
         if (utc.month, utc.day, utc.hour, utc.minute) not in {
             (6, 30, 23, 59),
             (12, 31, 23, 59),

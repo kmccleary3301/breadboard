@@ -30,10 +30,14 @@ export const bindGeneratedRoute = (
   return route
 }
 export interface StreamConfig extends BreadboardClientConfig {}
+type EventStreamQuery = Readonly<
+  Record<string, string | number | boolean | undefined>
+  & { resume_token?: number; limit?: number; follow?: boolean }
+>
 
 export interface EventStreamOptions {
   readonly signal?: AbortSignal
-  readonly query?: Readonly<{ resume_token?: number; limit?: number; follow?: boolean }>
+  readonly query?: EventStreamQuery
   readonly config: StreamConfig
   readonly lastEventId?: string
   readonly onOpen?: () => void
@@ -136,7 +140,7 @@ const requiredString = (value: unknown, field: string): string => {
 }
 
 const RFC3339_DATETIME_PATTERN =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/
+  /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$/
 
 const isRfc3339DateTime = (value: string): boolean => {
   const match = RFC3339_DATETIME_PATTERN.exec(value)
@@ -385,7 +389,7 @@ const sessionEventsBinding = PUBLIC_BINDINGS_BY_OPERATION_ID["session.events"]
 const streamUrl = (
   sessionId: string,
   config: StreamConfig,
-  query: Readonly<{ resume_token?: number; limit?: number; follow?: boolean }>,
+  query: EventStreamQuery,
 ): URL => {
   const url = new URL(
     bindGeneratedRoute(sessionEventsBinding, { session_id: encodeURIComponent(sessionId) }).replace(/^\/+/, ""),

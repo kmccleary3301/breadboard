@@ -392,18 +392,19 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
         )["timestamp"]
         == nanosecond_timestamp["timestamp"]
     )
-    for leap_second in (
+    for valid_timestamp in (
         "2016-12-31T23:59:60Z",
         "2016-12-31T15:59:60-08:00",
+        "2026-08-31t10:00:01.123z",
     ):
-        leap_second_event = {**expected, "timestamp": leap_second}
+        valid_timestamp_event = {**expected, "timestamp": valid_timestamp}
         assert (
             client_module._session_event(
-                json.dumps(leap_second_event),
+                json.dumps(valid_timestamp_event),
                 "session id",
                 "1",
             )["timestamp"]
-            == leap_second
+            == valid_timestamp
         )
     invalid_leap_second = {
         **expected,
@@ -412,6 +413,16 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
     with pytest.raises(ValueError, match="timestamp"):
         client_module._session_event(
             json.dumps(invalid_leap_second),
+            "session id",
+            "1",
+        )
+    overflow_leap_second = {
+        **expected,
+        "timestamp": "0001-01-01T00:00:60+23:59",
+    }
+    with pytest.raises(ValueError, match="timestamp"):
+        client_module._session_event(
+            json.dumps(overflow_leap_second),
             "session id",
             "1",
         )
