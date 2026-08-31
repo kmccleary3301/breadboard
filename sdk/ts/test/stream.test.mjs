@@ -362,6 +362,59 @@ test("an async empty token allows an unauthenticated remote plaintext event stre
 })
 
 
+test("aborting pending token resolution ends the stream before transport policy", async () => {
+  let releaseToken
+  let fetches = 0
+  const controller = new AbortController()
+  const stream = streamSessionEvents("session-aborted", {
+    signal: controller.signal,
+    config: {
+      baseUrl: "http://breadboard.test:9099",
+      authToken: () => new Promise((resolve) => {
+        releaseToken = resolve
+      }),
+      fetch: async () => {
+        fetches += 1
+        throw new Error("fetch must not run")
+      },
+    },
+  })
+
+  const next = stream.next()
+  controller.abort()
+  releaseToken("fixture-token")
+
+  assert.deepEqual(await next, { value: undefined, done: true })
+  assert.equal(fetches, 0)
+})
+
+test("aborting pending token rejection suppresses the late provider error", async () => {
+  let rejectToken
+  let fetches = 0
+  const controller = new AbortController()
+  const stream = streamSessionEvents("session-aborted", {
+    signal: controller.signal,
+    config: {
+      baseUrl: "https://breadboard.test:9099",
+      authToken: () => new Promise((_resolve, reject) => {
+        rejectToken = reject
+      }),
+      fetch: async () => {
+        fetches += 1
+        throw new Error("fetch must not run")
+      },
+    },
+  })
+
+  const next = stream.next()
+  controller.abort()
+  rejectToken(new Error("late auth failure"))
+
+  assert.deepEqual(await next, { value: undefined, done: true })
+  assert.equal(fetches, 0)
+})
+
+
 test("openEventStream resumes reconnects from the last delivered event", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => {

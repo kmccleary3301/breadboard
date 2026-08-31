@@ -383,9 +383,16 @@ const streamUrl = (
 
 const resolveToken = async (config: StreamConfig, signal?: AbortSignal): Promise<string | undefined> => {
   if (signal?.aborted) return undefined
-  const token = typeof config.authToken === "function" ? await config.authToken() : config.authToken
+  let token: string | undefined
+  try {
+    token = typeof config.authToken === "function" ? await config.authToken() : config.authToken
+  } catch (error) {
+    if (signal?.aborted) return undefined
+    throw error
+  }
+  if (signal?.aborted) return undefined
   if (token) assertProtectedBearerTransport(config.baseUrl)
-  return signal?.aborted ? undefined : token
+  return token
 }
 
 export const streamSessionEvents = async function* (
