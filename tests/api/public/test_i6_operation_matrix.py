@@ -38,3 +38,56 @@ def test_i6_matrix_is_an_independent_exact_catalog_projection() -> None:
     assert all(
         operation["success_status"] in {200, 202} for operation in matrix["operations"]
     )
+
+
+def test_installed_differential_cleans_up_server_on_readiness_timeout(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from scripts.quality import run_i6_installed_differential as differential
+
+    class FakeStderr:
+        @staticmethod
+        def read() -> str:
+            return ""
+
+    class FakeProcess:
+        pid = 1234
+        stderr = FakeStderr()
+        returncode: int | None = None
+        terminated = False
+        waits: list[int] = []
+
+        @staticmethod
+        def poll() -> None:
+            return None
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = -15
+
+        def wait(self, *, timeout: int) -> int:
+            self.waits.append(timeout)
+            return self.returncode or 0
+
+    process = FakeProcess()
+    monotonic_values = iter((0.0, 21.0))
+    monkeypatch.setattr(differential, "_free_port", lambda: 43210)
+    monkeypatch.setattr(
+        differential.subprocess,
+        "Popen",
+        lambda *args, **kwargs: process,
+    )
+    monkeypatch.setattr(
+        differential.time,
+        "monotonic",
+        lambda: next(monotonic_values),
+    )
+
+    with pytest.raises(RuntimeError, match="did not become ready"):
+        with differential._server(Path("/python"), tmp_path):
+            raise AssertionError("unreachable")
+
+    assert process.terminated is True
+    assert process.waits == [10]

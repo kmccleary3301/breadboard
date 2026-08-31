@@ -112,23 +112,25 @@ def _server(
     )
     base_url = f"http://127.0.0.1:{port}"
     headers = {"Authorization": f"Bearer {token}"} if token is not None else {}
-    deadline = time.monotonic() + 20
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            stderr = process.stderr.read() if process.stderr is not None else ""
-            raise RuntimeError(f"installed server exited before readiness: {stderr}")
-        try:
-            response = requests.get(
-                f"{base_url}/v1/health", headers=headers, timeout=0.5
-            )
-            if response.status_code == 200:
-                break
-        except requests.RequestException:
-            pass
-        time.sleep(0.05)
-    else:
-        raise RuntimeError("installed server did not become ready")
     try:
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                stderr = process.stderr.read() if process.stderr is not None else ""
+                raise RuntimeError(
+                    f"installed server exited before readiness: {stderr}"
+                )
+            try:
+                response = requests.get(
+                    f"{base_url}/v1/health", headers=headers, timeout=0.5
+                )
+                if response.status_code == 200:
+                    break
+            except requests.RequestException:
+                pass
+            time.sleep(0.05)
+        else:
+            raise RuntimeError("installed server did not become ready")
         yield base_url, process.pid
     finally:
         process.terminate()
