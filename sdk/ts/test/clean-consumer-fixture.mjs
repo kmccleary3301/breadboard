@@ -23,7 +23,10 @@ try {
   const inventory = JSON.parse(readFileSync(`${tarball}.installed-files.json`, "utf8"))
   assert.equal(inventory.package, "@breadboard/sdk")
   assert.equal(inventory.version, "0.3.0")
-  assert.equal(inventory.files.length, 26)
+  const installedPaths = inventory.files.map((file) => file.path)
+  assert.equal(installedPaths.length, 28)
+  assert.ok(installedPaths.includes("dist/public-client.js"))
+  assert.ok(installedPaths.includes("dist/transport-security.js"))
   assert.equal(readFileSync(`${tarball}.engine-api-range`, "utf8"), ">=0.1.0 <0.4.0\n")
   writeFileSync(join(temp, "package.json"), JSON.stringify({ type: "module", dependencies: { "@breadboard/sdk": `file:${tarball}` }, devDependencies: { typescript: "^5.5.4" }, scripts: { test: "node consumer.mjs" } }, null, 2))
   writeFileSync(join(temp, "consumer.ts"), `

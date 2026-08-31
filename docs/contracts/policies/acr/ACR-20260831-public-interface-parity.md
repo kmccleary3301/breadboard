@@ -40,6 +40,7 @@ The accepted I6 public-interface work and J1 compiler-ownership cutover touch pr
 - Required evidence bundles to refresh: none beyond PR CI receipts.
 - Acceptance criteria:
   - TypeScript root exports match the named public surface with no `./types.js` wildcard.
+  - Canonical `@breadboard/sdk` tarball ships 28 installed files, including `dist/public-client.js` and `dist/transport-security.js`.
   - Installed-wheel public probe reports 26 operations and 27 schemas.
   - Canonical compiler production path does not import `scripts.e4_parity`.
   - Exact-head independent review accepts the published head before merge.
