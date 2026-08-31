@@ -7,6 +7,7 @@ import inspect
 import json
 import os
 import platform
+import shlex
 import shutil
 import stat
 import subprocess
@@ -2069,6 +2070,40 @@ async def test_subprocess_executor_bounds_descendant_held_output_pipes() -> None
     assert elapsed < 1.5
 
 
+async def test_subprocess_executor_reaps_descendant_after_clean_leader_exit(
+    tmp_path: Path,
+) -> None:
+    executable = Path("/bin/sh")
+    descriptor = os.open(executable, os.O_RDONLY)
+    invocation = ExecutableInvocation(
+        argv0=str(executable),
+        executable_fd=descriptor,
+        executable_descriptor_path=str(executable),
+        digest=observe_binary_digest(executable),
+    )
+    child_pid_path = tmp_path / "child.pid"
+    command = (
+        f"(sleep 10) >/dev/null 2>&1 & "
+        f"echo $! > {shlex.quote(str(child_pid_path))}; exit 0"
+    )
+    try:
+        result = await SubprocessDockerCliExecutor().execute(
+            invocation,
+            ("-c", command),
+            timeout_ms=1_000,
+            output_limit=128,
+            environment=(("PATH", "/usr/bin:/bin"),),
+        )
+    finally:
+        os.close(descriptor)
+
+    child_pid = int(child_pid_path.read_text())
+    assert result.returncode == 0
+    assert result.timed_out is False
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+
+
 async def test_subprocess_executor_stops_process_group_at_output_limit() -> None:
     executable = Path("/bin/sh")
     descriptor = os.open(executable, os.O_RDONLY)
@@ -3203,19 +3238,21 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
     assert open_modes[-1] is True
     assert all(mode is False for mode in open_modes[:-1])
     skeleton_descriptor = int(adapter.skeleton.name)
-    repository_identity = os.stat(workspace / repository.target_logical_path)
     skeleton_identity = os.fstat(skeleton_descriptor)
     assert (skeleton_identity.st_dev, skeleton_identity.st_ino) == (
-        repository_identity.st_dev,
-        repository_identity.st_ino,
+        metadata.st_dev,
+        metadata.st_ino,
     )
-    assert adapter.skeleton_readonly is False
+    assert adapter.skeleton_readonly is True
     assert all(
         str(source).startswith("/staged/")
         and destination.startswith("/testbed/")
-        and destination
-        != f"/testbed/{repository.target_logical_path}"
         for source, destination, _ in adapter.mounts
+    )
+    assert any(
+        destination == f"/testbed/{repository.target_logical_path}"
+        and readonly is False
+        for _source, destination, readonly in adapter.mounts
     )
     assert measurement.isolated is True
     assert measurement.reward_eligible is True

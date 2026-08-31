@@ -519,6 +519,7 @@ class SubprocessDockerCliExecutor:
                     await terminate_process_group()
                 else:
                     await process_wait
+                    await terminate_process_group()
                 await asyncio.gather(*io_tasks)
         except TimeoutError:
             timed_out = True
@@ -2850,26 +2851,6 @@ class DockerSandboxBackend:
         if not valid:
             raise DockerAdapterError("runtime_preflight_failed", "runtime launch context is contradictory")
 
-    @staticmethod
-    def _workspace_root_spec(
-        plan: Any,
-        context: Any,
-    ) -> tuple[str | None, bool, bool]:
-        if context.role != "primary":
-            return None, True, False
-        repositories = tuple(
-            entry
-            for entry in plan.materialization_plan.entries
-            if entry.role == "repository"
-        )
-        if len(repositories) > 1:
-            raise DockerAdapterError(
-                "runtime_preflight_failed",
-                "Docker workspace root requires at most one repository",
-            )
-        if not repositories or repositories[0].access.value != "rw":
-            return None, True, False
-        return repositories[0].target_logical_path, False, True
 
     @staticmethod
     def _mount_specs(plan: Any, context: Any) -> tuple[tuple[str, str, bool], ...]:
@@ -2878,10 +2859,6 @@ class DockerSandboxBackend:
                 (context.snapshot_relative_path, f"{CONTAINER_WORKSPACE_ROOT}/snapshot", True),
                 (context.result_relative_path, f"{CONTAINER_WORKSPACE_ROOT}/result", False),
             )
-        root_relative_path, _, _ = DockerSandboxBackend._workspace_root_spec(
-            plan,
-            context,
-        )
         return tuple(
             (
                 entry.target_logical_path,
@@ -2889,7 +2866,6 @@ class DockerSandboxBackend:
                 entry.access.value == "ro",
             )
             for entry in plan.materialization_plan.entries
-            if entry.target_logical_path != root_relative_path
         )
     async def launch(
         self, plan: Any, workspace: Path, *, context: Any
@@ -2976,20 +2952,10 @@ class DockerSandboxBackend:
                 workspace_device=workspace_identity[0],
                 expected_identity=workspace_identity,
             )
-            (
-                root_relative_path,
-                skeleton_readonly,
-                repository_at_workspace_root,
-            ) = self._workspace_root_spec(plan, context)
+            skeleton_readonly = True
+            repository_at_workspace_root = False
             skeleton_fd = workspace_fd
             skeleton_metadata = workspace_metadata
-            if root_relative_path is not None:
-                skeleton_fd = _openat2_beneath(workspace_fd, root_relative_path)
-                held_fds.append(skeleton_fd)
-                skeleton_metadata = _validate_mount_descriptor(
-                    skeleton_fd,
-                    workspace_device=workspace_metadata.st_dev,
-                )
             admitted_mounts: list[tuple[int, str, bool, os.stat_result]] = []
             for relative_path, destination, readonly in self._mount_specs(plan, context):
                 child_fd = _openat2_beneath(workspace_fd, relative_path)

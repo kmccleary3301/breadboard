@@ -109,9 +109,11 @@ def _command(
     )
 
 
-def _target() -> E4TargetPolicyProjection:
+def _target(
+    target_id: str = "mini-swe-agent@1.0.0",
+) -> E4TargetPolicyProjection:
     return E4TargetPolicyProjection(
-        target_id="fixture@1.0.0",
+        target_id=target_id,
         overlay_id="fixture-headless.v1",
         descriptor_digest=f"sha256:{'1' * 64}",
         execution_config_digest=f"sha256:{'2' * 64}",
@@ -123,7 +125,13 @@ def _target() -> E4TargetPolicyProjection:
     )
 
 
-def _invocation(tmp_path: Path) -> InstalledHeadlessInvocation:
+def _invocation(
+    tmp_path: Path,
+    *,
+    composition: bytes = b'{"schema_version":"fixture-composition.v1"}',
+) -> InstalledHeadlessInvocation:
+    composition_path = tmp_path / "composition-ref.json"
+    composition_path.write_bytes(composition)
     route = HeadlessProviderRouteAuthority(
         model="fixture-model",
         authority_model_id="fixture-authority",
@@ -131,7 +139,7 @@ def _invocation(tmp_path: Path) -> InstalledHeadlessInvocation:
         policy_observation_digest=f"sha256:{'5' * 64}",
     )
     return InstalledHeadlessInvocation(
-        composition_ref_path=str(tmp_path / "composition-ref.json"),
+        composition_ref_path=str(composition_path),
         secret_files={"composition-secret": str(tmp_path / "composition.secret")},
         provider_credentials={"policy-callback": str(tmp_path / "provider.secret")},
         provider_routes={"policy-callback": route},
@@ -154,7 +162,7 @@ def _headless_request(tmp_path: Path) -> HeadlessRunRequest:
     resolution_payload = dict(schema_fixture.create_body["resolution"])
     resolution_payload["episode_id"] = "episode-1"
     return HeadlessRunRequest(
-        target_id="fixture@1.0.0",
+        target_id="mini-swe-agent@1.0.0",
         target_overlay_id="fixture-headless.v1",
         target_dynamic_fields={"fixture": "value"},
         resolve_request=c.ResolveEpisodeRequest.model_validate(resolution_payload),
@@ -326,11 +334,13 @@ def test_pins_profile_identity_command_and_controller_are_generic(
     command = _command(tmp_path)
     assert command.argv[0:2] == ("swebench", "eval")
     assert command.evaluator == OFFICIAL_SWE_BENCH_EVALUATOR
-    controller = _controller_identity(profile, _target())
+    controller = _controller_identity(profile, _target("openhands@1.0.0"))
     assert _controller_model_name(controller).startswith("breadboard-e4-")
     assert "/" not in _controller_model_name(controller)
     with pytest.raises((AttributeError, TypeError)):
         profile.profile_id = "Pi"  # type: ignore[misc]
+    with pytest.raises(SweBenchRunnerError, match="does not match"):
+        _controller_identity(profile, _target("pi@0.57.1"))
 
 
 def test_evaluator_requires_root_owned_work_custody(
@@ -550,6 +560,23 @@ def test_request_requires_real_base_and_launcher_binding(tmp_path: Path) -> None
             dataset_path=request.dataset_path,
             run_id="episode.1",
         )
+
+
+def test_invocation_binds_composition_contents_and_rejects_replacement(
+    tmp_path: Path,
+) -> None:
+    invocation = _invocation(tmp_path)
+    original_digest = invocation.identity_dict()["composition_ref_digest"]
+    composition_path = Path(invocation.composition_ref_path)
+    composition_path.write_bytes(b'{"schema_version":"replacement.v1"}')
+    replacement = _invocation(
+        tmp_path,
+        composition=b'{"schema_version":"replacement.v1"}',
+    )
+
+    assert replacement.identity_dict()["composition_ref_digest"] != original_digest
+    with pytest.raises(SweBenchRunnerError, match="changed after admission"):
+        asyncio.run(invocation.run(_headless_request(tmp_path)))
 
 
 def test_rejects_unpinned_image_and_evaluator_inputs(tmp_path: Path) -> None:

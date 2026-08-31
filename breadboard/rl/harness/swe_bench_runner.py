@@ -69,6 +69,7 @@ _MAX_PATCH_BYTES = 4 * 1024 * 1024
 _MAX_REPORT_BYTES = 16 * 1024 * 1024
 _MAX_EVALUATOR_BYTES = 128 * 1024 * 1024
 _MAX_RESULT_BYTES = 16 * 1024 * 1024
+_MAX_COMPOSITION_REF_BYTES = 1024 * 1024
 _RESULT_VALIDATION_TOKEN = object()
 _CLEANUP_INVENTORY_FIELDS = (
     "active_lease_ids",
@@ -142,6 +143,53 @@ def _digest_bytes(value: bytes) -> str:
 def _canonical_digest(value: Any) -> str:
     return _digest_bytes(_canonical_bytes(value))
 
+def _regular_file_digest(path: str, *, field_name: str, max_bytes: int) -> str:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    try:
+        descriptor = os.open(path, flags)
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or before.st_size > max_bytes
+        ):
+            raise SweBenchRunnerError(f"{field_name} identity is invalid")
+        payload = bytearray()
+        while len(payload) <= max_bytes:
+            chunk = os.read(descriptor, min(64 * 1024, max_bytes + 1 - len(payload)))
+            if not chunk:
+                break
+            payload.extend(chunk)
+        after = os.fstat(descriptor)
+        if (
+            len(payload) > max_bytes
+            or len(payload) != before.st_size
+            or (
+                before.st_dev,
+                before.st_ino,
+                before.st_mode,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            )
+            != (
+                after.st_dev,
+                after.st_ino,
+                after.st_mode,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            )
+        ):
+            raise SweBenchRunnerError(f"{field_name} changed during measurement")
+        return _digest_bytes(bytes(payload))
+    except OSError as exc:
+        raise SweBenchRunnerError(f"{field_name} is unavailable") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
 
 def _frozen_projection(
     value: Mapping[str, Any], *, field_name: str
@@ -183,6 +231,22 @@ def _controller_identity(
     profile: E4ProfileIdentity,
     target: E4TargetPolicyProjection,
 ) -> dict[str, Any]:
+    target_family, separator, target_version = target.target_id.partition("@")
+    expected_profile = {
+        "pi": "Pi",
+        "oh-my-pi": "OMP",
+        "openhands": "OpenHands",
+        "mini-swe-agent": "mini-swe-agent",
+    }.get(target_family)
+    if (
+        separator != "@"
+        or not target_version
+        or expected_profile is None
+        or profile.profile_id != expected_profile
+    ):
+        raise SweBenchRunnerError(
+            "E4 controller profile does not match the packaged target"
+        )
     target_identity = target.identity_dict()
     return {
         "schema_version": "bb.rl.e4-controller-identity.v1",
@@ -1457,9 +1521,19 @@ class InstalledHeadlessInvocation:
     provider_credentials: Mapping[str, str]
     provider_routes: Mapping[str, HeadlessProviderRouteAuthority]
     repository_base_commits: Mapping[str, str]
+    composition_ref_digest: str = field(init=False)
 
     def __post_init__(self) -> None:
         _absolute_path(self.composition_ref_path, field_name="composition_ref_path")
+        object.__setattr__(
+            self,
+            "composition_ref_digest",
+            _regular_file_digest(
+                self.composition_ref_path,
+                field_name="composition_ref_path",
+                max_bytes=_MAX_COMPOSITION_REF_BYTES,
+            ),
+        )
         object.__setattr__(
             self,
             "secret_files",
@@ -1509,9 +1583,7 @@ class InstalledHeadlessInvocation:
     def identity_dict(self) -> dict[str, Any]:
         return {
             "schema_version": "bb.rl.installed-headless-invocation.v1",
-            "composition_ref_path_digest": _digest_bytes(
-                self.composition_ref_path.encode()
-            ),
+            "composition_ref_digest": self.composition_ref_digest,
             "secret_handle_ids": sorted(self.secret_files),
             "provider_credential_handle_ids": sorted(self.provider_credentials),
             "provider_routes": {
@@ -1524,6 +1596,17 @@ class InstalledHeadlessInvocation:
         }
 
     async def run(self, request: HeadlessRunRequest) -> Mapping[str, Any]:
+        if (
+            _regular_file_digest(
+                self.composition_ref_path,
+                field_name="composition_ref_path",
+                max_bytes=_MAX_COMPOSITION_REF_BYTES,
+            )
+            != self.composition_ref_digest
+        ):
+            raise SweBenchRunnerError(
+                "composition_ref_path changed after admission"
+            )
         return await run_headless_request(
             request,
             composition_ref_path=self.composition_ref_path,
