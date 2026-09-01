@@ -500,6 +500,46 @@ def test_session_cli_preserves_remote_typed_errors(
         assert output == body
 
 
+def test_session_cli_rejects_success_envelope_from_http_error(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    class ContradictoryClient:
+        def __init__(self, base_url: str, *, timeout_s: float) -> None:
+            pass
+
+        @staticmethod
+        def get_session(session_id: str) -> dict[str, Any]:
+            raise breadboard_sdk.ApiError(
+                "failed",
+                404,
+                _result(["session", "get"]),
+            )
+
+    monkeypatch.setattr(
+        breadboard_sdk,
+        "BreadBoardClient",
+        ContradictoryClient,
+    )
+    exit_code = main(
+        [
+            "--json",
+            "session",
+            "--workspace",
+            str(tmp_path),
+            "--server",
+            "http://breadboard.test",
+            "get",
+            "missing",
+        ]
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert exit_code == 3
+    assert output["ok"] is False
+    assert output["command"] == ["session", "get"]
+    assert output["error"]["message"] == "remote server returned HTTP 404"
+
+
 def test_session_cli_preserves_event_stream_errors(
     monkeypatch, tmp_path, capsys
 ) -> None:

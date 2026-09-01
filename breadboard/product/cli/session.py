@@ -233,8 +233,22 @@ def _remote_error(
     status: int,
     body: object,
 ) -> OperationResult:
+    expected_exit_codes = {
+        401: frozenset({2}),
+        404: frozenset({3}),
+        409: frozenset({5, 6}),
+        422: frozenset({2}),
+    }.get(
+        status,
+        frozenset({4 if status >= 500 else 2}),
+    )
     if isinstance(body, dict) and body.keys() == _PUBLIC_RESULT_FIELDS:
-        return _remote_result(body)
+        canonical_error = _remote_result(body)
+        if (
+            not canonical_error.ok
+            and canonical_error.exit_code in expected_exit_codes
+        ):
+            return canonical_error
     error_code = "runtime_failure" if status >= 500 else "invalid_state"
     message = f"remote server returned HTTP {status}"
     if isinstance(body, dict):
