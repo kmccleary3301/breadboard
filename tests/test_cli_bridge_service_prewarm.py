@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from breadboard.product.harness import default_profile as harness_operations
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import events as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
+from breadboard.product.runtime import session_store
 from breadboard_engine.api.cli_bridge.app import create_app
 from breadboard_engine.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
 from breadboard_engine.api.cli_bridge.events import EventType; from breadboard_engine.api.cli_bridge.service import SessionService
@@ -104,6 +105,158 @@ async def test_default_session_create_uses_exact_profile_authority(
     assert skill_payload["sources"]["config_path"] == identity["definition_ref"]
     assert str(resolution.source_path) not in json.dumps(skill_payload)
     await service.stop_session(response.session_id)
+    await _stop(record)
+
+@pytest.mark.asyncio
+async def test_default_event_root_preserves_internal_session_authority(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_EVENT_ROOT",
+        str(workspace / ".breadboard" / "sessions"),
+    )
+    monkeypatch.setenv(
+        "BREADBOARD_RUNTIME_RECORD_ROOT",
+        str(workspace / ".breadboard" / "service_records"),
+    )
+    service = SessionService()
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="durable internal session",
+            workspace=str(workspace),
+        )
+    )
+    record = await service.ensure_session(response.session_id)
+    await service.stop_session(response.session_id, reason="restart proof")
+
+    restored, _ = session_store.load_session(workspace, response.session_id)
+    assert restored.read_model.status == "canceled"
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_effective_config_workspace_preserves_internal_session_authority(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    workspace = tmp_path / "configured-workspace"
+    workspace.mkdir()
+    base_config = load_agent_config(CONFIG)
+    base_config["workspace"] = {
+        **dict(base_config.get("workspace") or {}),
+        "root": str(workspace),
+    }
+    monkeypatch.setattr(RUNNER + "_load_base_config", lambda _runner: base_config)
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_EVENT_ROOT",
+        str(workspace / ".breadboard" / "sessions"),
+    )
+    monkeypatch.setenv(
+        "BREADBOARD_RUNTIME_RECORD_ROOT",
+        str(workspace / ".breadboard" / "service_records"),
+    )
+    service = SessionService()
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="configured workspace durability",
+        )
+    )
+    record = await service.ensure_session(response.session_id)
+    assert record.runner.request.workspace == str(workspace.resolve())
+    await service.stop_session(response.session_id, reason="configured restart proof")
+
+    restored, _ = session_store.load_session(workspace, response.session_id)
+    assert restored.read_model.status == "canceled"
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_default_event_root_rejects_symlinked_session_directory(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    workspace = tmp_path / "workspace"
+    metadata_root = workspace / ".breadboard"
+    event_root = tmp_path / "configured-events"
+    metadata_root.mkdir(parents=True)
+    event_root.mkdir()
+    (metadata_root / "sessions").symlink_to(event_root, target_is_directory=True)
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(event_root))
+    monkeypatch.setenv(
+        "BREADBOARD_RUNTIME_RECORD_ROOT",
+        str(tmp_path / "records"),
+    )
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_AUTHORITY_ROOT",
+        str(tmp_path / "authority"),
+    )
+    service = SessionService()
+
+    with pytest.raises(OSError):
+        await service.create_session(
+            SessionCreateRequest(
+                config_path=CONFIG,
+                task="symlink rejection proof",
+                workspace=str(workspace),
+            )
+        )
+    record = next(iter(service.registry._records.values()))
+    assert record.status is SessionStatus.FAILED
+    assert not (tmp_path / "authority").exists()
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_terminal_authority_rejects_replaced_session_directory(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_root = workspace / ".breadboard" / "sessions"
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(session_root))
+    monkeypatch.setenv(
+        "BREADBOARD_RUNTIME_RECORD_ROOT",
+        str(workspace / ".breadboard" / "service_records"),
+    )
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_AUTHORITY_ROOT",
+        str(tmp_path / "authority"),
+    )
+    service = SessionService()
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="directory identity proof",
+            workspace=str(workspace),
+        )
+    )
+    record = await service.ensure_session(response.session_id)
+    original_root = tmp_path / "original-sessions"
+    session_root.rename(original_root)
+    session_root.mkdir()
+
+    with pytest.raises(OSError, match="directory identity changed"):
+        record.runner._commit_terminal_product_session_locked()
+    with pytest.raises(FileNotFoundError):
+        session_store.load_session(workspace, response.session_id)
+    assert not any(session_root.iterdir())
     await _stop(record)
 
 

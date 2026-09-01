@@ -22,6 +22,7 @@ from breadboard.product.runtime import (
 from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
 from breadboard.product.runtime.session_store import (
     authorize_session_artifact_manifest,
+    session_directory_identity,
     session_event_path,
 )
 from fastapi import HTTPException, UploadFile, status
@@ -745,14 +746,6 @@ class SessionService:
         if await self.registry.get(session_id) is not None:
             raise ValueError(f"session already exists: {session_id}")
         durable_product_workspace: Path | None = None
-        if request.workspace is not None and event_root is not None:
-            candidate_workspace = Path(request.workspace).expanduser().resolve()
-            requested_event_root = event_root.expanduser().resolve()
-            durable_event_root = (
-                session_event_path(candidate_workspace, session_id).parent.parent.resolve()
-            )
-            if requested_event_root == durable_event_root:
-                durable_product_workspace = candidate_workspace
         default_profile: DefaultProfileResolution | None = None
         if request.config_path is None:
             default_profile = resolve_default_profile()
@@ -827,6 +820,14 @@ class SessionService:
             metadata["workspace"] = str(
                 Path(runner.request.workspace).expanduser().resolve()
             )
+        if runner.request.workspace is not None:
+            candidate_workspace = Path(runner.request.workspace).expanduser().resolve()
+            requested_event_root = (event_root or _event_root()).expanduser().resolve()
+            durable_event_root = (
+                session_event_path(candidate_workspace, session_id).parent.parent.resolve()
+            )
+            if requested_event_root == durable_event_root:
+                durable_product_workspace = candidate_workspace
         runtime_providers = (
             runtime_config.get("providers")
             if isinstance(runtime_config, dict)
@@ -957,7 +958,13 @@ class SessionService:
                 event_sink.path = event_dir / "session_events.jsonl"
                 self.registry._records[session_id] = record
                 if durable_product_workspace is not None:
-                    runner.bind_durable_product_session(durable_product_workspace)
+                    runner.bind_durable_product_session(
+                        durable_product_workspace,
+                        session_directory_identity(
+                            durable_product_workspace,
+                            create=True,
+                        ),
+                    )
             published = True
             await self._ensure_dispatcher(record)
             await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)

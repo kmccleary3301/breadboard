@@ -90,7 +90,9 @@ class SessionRunner:
         self._published_events = 0
         self._session_failure_published = False
         self._workspace_path: Optional[Path] = None
-        self._durable_product_workspace: Path | None = None
+        self._durable_product_session: (
+            tuple[Path, session_store.SessionDirectoryIdentity] | None
+        ) = None
         self._checkpoint_manager: Optional[CheckpointManager] = None
         self._closed = False
         self._attachment_store: Dict[str, Dict[str, Any]] = {}
@@ -147,16 +149,28 @@ class SessionRunner:
         )
         self._lifecycle_owner = SessionLifecycleOwner(self, self._task_execution)
 
-    def bind_durable_product_session(self, workspace: Path) -> None:
+    def bind_durable_product_session(
+        self,
+        workspace: Path,
+        session_directory_identity: session_store.SessionDirectoryIdentity,
+    ) -> None:
         with self._product_session_lock:
-            self._durable_product_workspace = workspace.resolve()
+            self._durable_product_session = (
+                workspace.resolve(),
+                session_directory_identity,
+            )
 
     def _commit_terminal_product_session_locked(self) -> None:
-        workspace = self._durable_product_workspace
+        binding = self._durable_product_session
         product_session = getattr(self.session, "product_session", None)
-        if workspace is None or product_session is None:
+        if binding is None or product_session is None:
             return
-        session_store.create_session(workspace, product_session)
+        workspace, expected_session_directory_identity = binding
+        session_store.create_session(
+            workspace,
+            product_session,
+            expected_session_directory_identity=expected_session_directory_identity,
+        )
         manifest_ref = self.session.metadata.get("artifact_manifest_ref")
         if not isinstance(manifest_ref, Mapping):
             return
@@ -170,6 +184,7 @@ class SessionRunner:
                 f"{product_session.read_model.session_id}."
                 f"{digest.removeprefix('sha256:')}.json"
             ),
+            expected_session_directory_identity=expected_session_directory_identity,
         )
 
     def _default_factory(
