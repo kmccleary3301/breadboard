@@ -88,7 +88,8 @@ from .security import (
 from .provider.health import RouteHealthManager
 from .provider import normalize_provider_result
 from .provider.metrics import ProviderMetricsCollector
-from .guardrails import GuardrailCoordinator, GuardrailOrchestrator
+from .guardrails import GuardrailCoordinator
+from .guardrails.orchestrator import GuardrailOrchestrator
 from .conductor.components import (
     apply_capability_tool_overrides,
     apply_streaming_policy_for_turn,

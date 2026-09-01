@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol
 
 from ..execution.agent_executor import AgentToolExecutor
 from ..execution.enhanced_executor import EnhancedToolExecutor
-from ..guardrails import GuardrailOrchestrator
+from ..guardrails.orchestrator import GuardrailOrchestrator
 from ..run_logging import LoggerV2Manager
 from ..run_logging.markdown_transcript import MarkdownTranscriptWriter
 from ..run_logging.request_recorder import StructuredRequestRecorder
