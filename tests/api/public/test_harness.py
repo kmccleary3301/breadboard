@@ -231,7 +231,7 @@ def test_harness_lock_rolls_back_pair_when_metadata_commit_fails(
 
     def fail_metadata_commit(source: Path, destination: Path) -> None:
         if Path(destination) == metadata:
-            raise OSError("injected metadata commit failure")
+            raise OSError("injected-secret-must-not-leak")
         replace(source, destination)
 
     monkeypatch.setattr(harness_operations.os, "replace", fail_metadata_commit)
@@ -240,6 +240,8 @@ def test_harness_lock_rolls_back_pair_when_metadata_commit_fails(
 
     assert response.status_code == 500
     assert response.json()["ok"] is False
+    assert "injected-secret-must-not-leak" not in response.text
+    assert str(tmp_path) not in response.text
     assert (target.read_bytes(), metadata.read_bytes()) == before
     assert not tuple(tmp_path.glob(".*.tmp"))
 

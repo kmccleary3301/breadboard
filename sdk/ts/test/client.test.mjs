@@ -47,6 +47,26 @@ test("candidate product methods preserve canonical result envelopes and routes",
   assert.deepEqual(requests.filter((row) => row[2]).map((row) => row[2]), ["probe-key", "start-key", "input-key", "approval-key", "resume-key", "cancel-key"])
 })
 
+test("invokePublicAction forwards the session event snapshot query", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  let requestedUrl
+  globalThis.fetch = async (input) => {
+    requestedUrl = String(input)
+    return new Response("", { headers: { "content-type": "text/event-stream" } })
+  }
+  const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
+  const events = await client.invokePublicAction("public.session.events", {
+    session_id: "session-snapshot",
+    follow: false,
+  })
+  for await (const _event of events) assert.fail("unexpected event")
+  assert.equal(
+    requestedUrl,
+    "http://breadboard.test:9099/v1/sessions/session-snapshot/events?follow=false",
+  )
+})
+
 test("configured fetch transport handles JSON and attachment requests", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => { globalThis.fetch = originalFetch })
@@ -86,6 +106,81 @@ test("configured fetch transport handles JSON and attachment requests", async (t
     ],
   )
   assert.ok(requests[1].init?.body instanceof FormData)
+})
+
+test("bearer tokens resolve before rejecting remote plaintext JSON and attachment requests", async () => {
+  let tokenResolutions = 0
+  let fetches = 0
+  const client = createBreadboardClient({
+    baseUrl: "http://breadboard.test:9099",
+    authToken: async () => {
+      tokenResolutions += 1
+      return "fixture-token"
+    },
+    fetch: async () => {
+      fetches += 1
+      throw new Error("fetch must not run")
+    },
+  })
+
+  await assert.rejects(() => client.listSession(), /requires HTTPS/)
+  await assert.rejects(
+    () => client.uploadAttachments("session-id", [{
+      base64: btoa("protected"),
+      filename: "protected.txt",
+      mime: "text/plain",
+    }]),
+    /requires HTTPS/,
+  )
+  assert.equal(tokenResolutions, 2)
+  assert.equal(fetches, 0)
+})
+
+test("an async empty token allows unauthenticated remote plaintext requests", async () => {
+  let tokenResolutions = 0
+  let requestedHeaders
+  const client = createBreadboardClient({
+    baseUrl: "http://breadboard.test:9099",
+    authToken: async () => {
+      tokenResolutions += 1
+      return undefined
+    },
+    fetch: async (_input, init) => {
+      requestedHeaders = new Headers(init?.headers)
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+      })
+    },
+  })
+
+  assert.deepEqual(await client.listSession(), { ok: true })
+  assert.equal(tokenResolutions, 1)
+  assert.equal(requestedHeaders.get("Authorization"), null)
+})
+
+
+test("bearer tokens allow HTTPS and literal loopback HTTP", async () => {
+  for (const baseUrl of [
+    "https://breadboard.test:9099",
+    "http://localhost:9099",
+    "http://127.0.0.2:9099",
+    "http://[::1]:9099",
+  ]) {
+    const requests = []
+    const client = createBreadboardClient({
+      baseUrl,
+      authToken: "fixture-token",
+      fetch: async (_input, init) => {
+        requests.push(init)
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { "content-type": "application/json" },
+        })
+      },
+    })
+
+    assert.deepEqual(await client.listSession(), { ok: true })
+    assert.equal(requests[0]?.headers?.Authorization, "Bearer fixture-token")
+  }
 })
 
 test("session readers preserve the established summary and expose an explicit raw envelope", async (t) => {

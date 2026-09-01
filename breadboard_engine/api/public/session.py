@@ -50,10 +50,17 @@ from .models import (
 router = APIRouter(tags=["public-session"])
 runtime_setup_router = APIRouter(tags=["runtime-setup"])
 
-_OBSERVATION_PAYLOAD_SCHEMAS = {
-    "assistant_message": "bb.payload.message.assistant.v1",
-    "tool_call": "bb.payload.tool.called.v1",
-    "tool_result": "bb.payload.tool.completed.v1",
+_REDACTED_SHA256 = "sha256:" + "0" * 64
+_PAYLOAD_SHA256_FIELDS = {
+    "session.started": ("effective_lock_hash", "task_hash"),
+    "input.accepted": ("content_hash",),
+    "session.reconfigured": ("effective_lock_hash",),
+}
+_PAYLOAD_LITERAL_FIELDS = {
+    "approval.resolved": ("decision",),
+    "session.completed": ("outcome",),
+    "session.failed": ("outcome",),
+    "session.canceled": ("outcome",),
 }
 
 
@@ -315,31 +322,24 @@ class _LiveSessionMutationAdapter:
             raise _mutation_error(error) from error
 
 
-def _kernel_event(event):
-    session_id, sequence = str(event["session_id"]), int(event["sequence"])
-    return {
-        "schema_version": "bb.kernel_event.v2",
-        "event_id": f"session:{session_id}:{sequence}",
-        "seq": sequence,
-        "timestamp": event["occurred_at"],
-        "work_item_id": None,
-        "parent_work_item_id": None,
-        "attempt_id": None,
-        "session_id": session_id,
-        "span_id": None,
-        "visibility": {
-            "model_visible": True,
-            "provider_visible": True,
-            "host_visible": True,
-            "redaction_state": "none",
-        },
-        "kind": event["kind"],
-        "payload": event["payload"],
-        "payload_schema_version": _OBSERVATION_PAYLOAD_SCHEMAS.get(
-            str(event["kind"]),
-            event["schema_version"],
-        ),
-    }
+
+
+def _scrub_event_payload(kind, payload, workspace):
+    public_payload = scrub_public(payload, workspace)
+    for field in _PAYLOAD_SHA256_FIELDS.get(kind, ()):
+        if public_payload[field] != payload[field]:
+            public_payload[field] = _REDACTED_SHA256
+    for field in _PAYLOAD_LITERAL_FIELDS.get(kind, ()):
+        public_payload[field] = payload[field]
+    if kind == "input.accepted":
+        for source, public in zip(
+            payload["attachments"],
+            public_payload["attachments"],
+            strict=True,
+        ):
+            if public["digest"] != source["digest"]:
+                public["digest"] = _REDACTED_SHA256
+    return public_payload
 
 
 @router.post(
@@ -566,6 +566,7 @@ async def events(
         ge=0,
     ),
     limit: int = Query(default=256, ge=1, le=1000),
+    follow: bool = Query(default=True),
 ):
     granted = authorize_public_operation("session.events")
     if isinstance(granted, JSONResponse):
@@ -600,7 +601,8 @@ async def events(
         while emitted < limit:
             if not batch.events:
                 if (
-                    batch.source == "durable"
+                    not follow
+                    or batch.source == "durable"
                     or batch.terminal
                     or await request.is_disconnected()
                 ):
@@ -625,7 +627,22 @@ async def events(
                     "session.failed",
                     "session.canceled",
                 }
-                public_event = scrub_public(_kernel_event(event), workspace)
+                projected_event = session_operations.public_session_event(event)
+                public_payload = _scrub_event_payload(
+                    event["kind"],
+                    projected_event["payload"],
+                    workspace,
+                )
+                public_event = projected_event
+                if public_payload != projected_event["payload"]:
+                    public_event = {
+                        **projected_event,
+                        "payload": public_payload,
+                        "visibility": {
+                            **projected_event["visibility"],
+                            "redaction_state": "redacted",
+                        },
+                    }
                 cursor = int(event["sequence"])
                 yield (
                     f"id: {cursor}\n"
@@ -637,6 +654,8 @@ async def events(
                 emitted += 1
                 if terminal or emitted >= limit:
                     return
+            if not follow:
+                return
             batch = await session_operations.read_session_event_batch(
                 session_operations.ListSessionEventsRequest(
                     session_id=session_id,

@@ -7,12 +7,15 @@ const catalogMethods = [
   "describeSystem", "healthSystem", "schemasSystem", "createHarness", "listHarness",
   "getHarness", "updateHarness", "validateHarness", "explainHarness", "lockHarness",
   "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact",
-  "getArtifact", "verifyArtifact", "startSession", "listSession", "getSession", "getSessionResult",
+  "getArtifact", "verifyArtifact", "startSession", "listSession", "getSessionResult",
   "sendInputSession", "approveSession", "resumeSession", "cancelSession", "eventsSession",
   "artifactsSession",
 ] as const
 
-test("catalog client methods are present", () => {
+test("package-root client exposes exactly the public catalog", () => {
   const client = createBreadboardClient({ baseUrl: "http://fixture.test" })
-  for (const method of catalogMethods) assert.equal(typeof client[method], "function", method)
+  assert.deepEqual(
+    Object.keys(client).sort(),
+    [...catalogMethods, "invokePublicAction"].sort(),
+  )
 })

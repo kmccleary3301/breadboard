@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from typing import Any, get_type_hints
 
 import pytest
@@ -26,6 +28,7 @@ from breadboard_sdk.types import (
     PublicSessionDecision,
     PublicSessionInputRequest,
     PublicSessionStartRequest,
+    SessionEvent,
     StageOutcome,
 )
 
@@ -114,6 +117,79 @@ def test_candidate_python_sdk_preserves_public_result_and_idempotency(
     )
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://breadboard.test:9099",
+        "http://192.0.2.1:9099",
+    ],
+)
+def test_python_sdk_rejects_bearer_token_over_remote_plaintext_http(
+    monkeypatch: pytest.MonkeyPatch,
+    base_url: str,
+) -> None:
+    requests: list[dict[str, Any]] = []
+
+    def fake_request(**kwargs: Any) -> _JsonResponse:
+        requests.append(kwargs)
+        return _JsonResponse({})
+
+    monkeypatch.setattr(client_module.requests, "request", fake_request)
+    client = BreadBoardClient(base_url=base_url, auth_token="secret-token")
+
+    with pytest.raises(ValueError, match="HTTPS"):
+        client.list_session()
+
+    assert requests == []
+
+
+def test_python_sdk_rejects_bearer_token_over_remote_plaintext_sse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[dict[str, Any]] = []
+
+    def fake_request(**kwargs: Any) -> _JsonResponse:
+        requests.append(kwargs)
+        return _JsonResponse({})
+
+    monkeypatch.setattr(client_module.requests, "request", fake_request)
+    client = BreadBoardClient(
+        base_url="http://breadboard.test:9099",
+        auth_token="secret-token",
+    )
+
+    with pytest.raises(ValueError, match="HTTPS"):
+        next(client.events_session("session-id"))
+
+    assert requests == []
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://localhost:9099",
+        "http://127.0.0.2:9099",
+        "http://[::1]:9099",
+        "https://breadboard.test:9099",
+    ],
+)
+def test_python_sdk_allows_bearer_token_over_protected_origins(
+    monkeypatch: pytest.MonkeyPatch,
+    base_url: str,
+) -> None:
+    requests: list[dict[str, Any]] = []
+
+    def fake_request(**kwargs: Any) -> _JsonResponse:
+        requests.append(kwargs)
+        return _JsonResponse({"data": {"sessions": []}})
+
+    monkeypatch.setattr(client_module.requests, "request", fake_request)
+    client = BreadBoardClient(base_url=base_url, auth_token="secret-token")
+
+    assert client.list_session() == {"data": {"sessions": []}}
+    assert requests[0]["headers"]["Authorization"] == "Bearer secret-token"
+
+
 def test_python_sdk_authored_types_and_client_hints_match_public_contract() -> None:
     assert not hasattr(types_module, "NotRequired")
     assert ArtifactRefV1.__required_keys__ == {
@@ -167,6 +243,22 @@ def test_python_sdk_authored_types_and_client_hints_match_public_contract() -> N
     assert PublicSessionApprovalRequest.__optional_keys__ == set()
     assert PublicSessionCancelRequest.__required_keys__ == set()
     assert PublicSessionCancelRequest.__optional_keys__ == {"reason"}
+    assert SessionEvent.__required_keys__ == {
+        "schema_version",
+        "event_id",
+        "seq",
+        "timestamp",
+        "work_item_id",
+        "parent_work_item_id",
+        "attempt_id",
+        "session_id",
+        "span_id",
+        "visibility",
+        "kind",
+        "payload",
+        "payload_schema_version",
+    }
+    assert SessionEvent.__optional_keys__ == set()
 
     json_methods = (
         "describe_system",
@@ -209,21 +301,51 @@ def test_python_sdk_authored_types_and_client_hints_match_public_contract() -> N
 def test_candidate_python_sdk_streams_generated_session_events_route(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    expected: SessionEvent = {
+        "schema_version": "bb.public_session_event.v1",
+        "event_id": "session:session id:1",
+        "seq": 1,
+        "timestamp": "2026-08-31T10:00:01Z",
+        "work_item_id": None,
+        "parent_work_item_id": None,
+        "attempt_id": None,
+        "session_id": "session id",
+        "span_id": None,
+        "visibility": {
+            "model_visible": True,
+            "provider_visible": True,
+            "host_visible": True,
+            "redaction_state": "none",
+        },
+        "kind": "session.started",
+        "payload": {
+            "effective_lock_hash": "sha256:" + "a" * 64,
+            "task_hash": "sha256:" + "b" * 64,
+        },
+        "payload_schema_version": "bb.payload.product_session.lifecycle.v1",
+    }
+
     class _StreamResponse:
         ok = True
         status_code = 200
         text = ""
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
 
         @staticmethod
         def iter_lines(*, decode_unicode: bool) -> list[str]:
             assert decode_unicode is True
-            return ['data: {"id": "evt-1", "type": "turn"}', ""]
+            return ["id: 1", f"data: {json.dumps(expected)}", ""]
+
+    response = _StreamResponse()
 
     requests: list[dict[str, Any]] = []
 
     def fake_request(**kwargs: Any) -> _StreamResponse:
         requests.append(kwargs)
-        return _StreamResponse()
+        return response
 
     monkeypatch.setattr(client_module.requests, "request", fake_request)
     client = BreadBoardClient(base_url="https://breadboard.test/", auth_token="secret")
@@ -232,7 +354,7 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
     )
 
     binding = PUBLIC_BINDINGS_BY_OPERATION_ID["session.events"]
-    assert events == [{"id": "evt-1", "type": "turn"}]
+    assert events == [expected]
     assert requests == [
         {
             "method": binding.http_method,
@@ -249,6 +371,64 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
             "timeout": 30.0,
         }
     ]
+    assert response.closed is True
+    snapshot = list(
+        client.events_session("session id", resume_token=3, limit=2, follow=False)
+    )
+    assert snapshot == [expected]
+    assert requests[-1]["url"].endswith("?resume_token=3&limit=2&follow=false")
+    forged = {**expected, "kind": "session.completed", "payload": {}}
+    with pytest.raises(ValueError, match="lifecycle payload fields"):
+        client_module._session_event(json.dumps(forged), "session id", "1")
+    nanosecond_timestamp = {
+        **expected,
+        "timestamp": "2026-08-31T10:00:01.123456789Z",
+    }
+    assert (
+        client_module._session_event(
+            json.dumps(nanosecond_timestamp),
+            "session id",
+            "1",
+        )["timestamp"]
+        == nanosecond_timestamp["timestamp"]
+    )
+    for valid_timestamp in (
+        "2016-12-31T23:59:60Z",
+        "2016-12-31T15:59:60-08:00",
+        "2026-08-31t10:00:01.123z",
+    ):
+        valid_timestamp_event = {**expected, "timestamp": valid_timestamp}
+        assert (
+            client_module._session_event(
+                json.dumps(valid_timestamp_event),
+                "session id",
+                "1",
+            )["timestamp"]
+            == valid_timestamp
+        )
+    invalid_leap_second = {
+        **expected,
+        "timestamp": "2016-11-30T23:59:60Z",
+    }
+    with pytest.raises(ValueError, match="timestamp"):
+        client_module._session_event(
+            json.dumps(invalid_leap_second),
+            "session id",
+            "1",
+        )
+    overflow_leap_second = {
+        **expected,
+        "timestamp": "0001-01-01T00:00:60+23:59",
+    }
+    with pytest.raises(ValueError, match="timestamp"):
+        client_module._session_event(
+            json.dumps(overflow_leap_second),
+            "session id",
+            "1",
+        )
+    bad_timestamp = {**expected, "timestamp": "not-a-time"}
+    with pytest.raises(ValueError, match="timestamp"):
+        client_module._session_event(json.dumps(bad_timestamp), "session id", "1")
 
 
 def test_compatibility_create_session_omits_only_an_absent_config_path(

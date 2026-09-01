@@ -208,7 +208,7 @@ def from_exception(
             command,
             EXIT_RESOLUTION_FAILURE,
             "path_unavailable",
-            str(error),
+            "path is unavailable",
             stage,
             "Check the workspace-relative path.",
             next_actions=["breadboard system health"],
@@ -223,10 +223,15 @@ def from_exception(
             "Validate the input before retrying.",
             next_actions=["breadboard system describe"],
         )
+    message = (
+        "internal runtime failure"
+        if isinstance(error, OSError)
+        else str(error) or error.__class__.__name__
+    )
     return OperationResult.failure(
         command,
         EXIT_RUNTIME_FAILURE,
         "runtime_failure",
-        str(error) or error.__class__.__name__,
+        message,
         stage,
     )

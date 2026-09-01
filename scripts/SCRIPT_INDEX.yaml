@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 438
+live_script_count: 440
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -142,7 +142,7 @@ entries:
   - path: scripts/breadboard_cli.py
     class: live-wired
     owner: kmccleary3301
-    callers: [pyproject.toml, scripts/SCRIPT_INDEX.yaml, scripts/quality/build_surface_inventory.py, tests/test_breadboard_cli_g2.py, tests/test_breadboard_cli_packaging.py, tests/test_public_binding_parity.py]
+    callers: [pyproject.toml, scripts/SCRIPT_INDEX.yaml, scripts/quality/build_surface_inventory.py, scripts/quality/run_i6_installed_differential.py, tests/test_breadboard_cli_g2.py, tests/test_breadboard_cli_packaging.py]
     expiry: none (durable tooling)
   - path: scripts/build_atp_hilbert_arm_audit_v1.py
     class: live-wired
@@ -1574,10 +1574,20 @@ entries:
     owner: kmccleary3301
     callers: [.github/workflows/ci.yml, docs/reference/public/index.md, docs/reference/public/operations/artifact/get.md, docs/reference/public/operations/artifact/list.md, docs/reference/public/operations/artifact/verify.md, docs/reference/public/operations/harness-lock/get.md]
     expiry: none (durable tooling)
+  - path: scripts/quality/i6_ts_probe.mjs
+    class: live-owned
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/quality/run_i6_installed_differential.py]
+    expiry: none (durable tooling)
   - path: scripts/quality/run_axis_smoke.py
     class: live-wired
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, tests/contracts/public/test_public_contracts.py]
+    expiry: none (durable tooling)
+  - path: scripts/quality/run_i6_installed_differential.py
+    class: live-owned
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/quality/run_provider_differential.py
     class: live-owned

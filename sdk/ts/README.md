@@ -21,7 +21,16 @@ const started = await client.startSession({
 const session = started.data.session as { session_id: string }
 
 for await (const event of client.eventsSession(session.session_id)) {
-  console.log(event.type, event.payload)
+  console.log(event.kind, event.payload)
 }
 ```
+
+Session streams use the strict `bb.public_session_event.v1` projection. The
+canonical kernel `bb.kernel_event.v2` envelope remains a separate internal
+contract.
+Each `payload_schema_version` resolves to the public lifecycle payload schema
+or the registered kernel observation payload schema.
+
+Legacy/runtime-only methods, including E4 inspection, are available only from
+`@breadboard/sdk/internal` through `createInternalBreadboardClient`.
 

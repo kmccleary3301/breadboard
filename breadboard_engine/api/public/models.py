@@ -6,12 +6,12 @@ import json
 import os
 import re
 import weakref
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Iterator, Literal
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
@@ -319,6 +319,18 @@ def result_response(
     operation_id: str | None = None,
 ) -> JSONResponse:
     content = _scrub(result.as_dict(), workspace, _secret_values())
+    if not result.ok and result.exit_code == 4:
+        content["record_refs"] = []
+        content["hashes"] = {}
+        content["warnings"] = []
+        content["next_actions"] = []
+        content["data"] = {}
+        error = content.get("error")
+        if isinstance(error, dict):
+            error["message"] = "internal runtime failure"
+            error["record_refs"] = []
+            error["hint"] = None
+            error["next_actions"] = []
     PublicResult.model_validate(content)
     binding = (
         PUBLIC_BINDINGS_BY_OPERATION_ID.get(operation_id)
@@ -355,9 +367,10 @@ def from_public_exception(operation_id: str, error: Exception) -> OperationResul
             409: "invalid_state",
             422: "invalid_state",
         }.get(status_code, "runtime_failure" if status_code >= 500 else "invalid_state")
-        return OperationResult.failure(
-            command, exit_code, error_code, str(error.detail), stage
+        message = (
+            "internal runtime failure" if status_code >= 500 else str(error.detail)
         )
+        return OperationResult.failure(command, exit_code, error_code, message, stage)
     return from_exception(command, error, stage)
 
 

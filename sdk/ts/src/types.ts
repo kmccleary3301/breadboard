@@ -59,40 +59,44 @@ export interface PublicSessionCancelRequest {
   readonly reason?: string
 }
 
-export type EventType =
-  | "stream.hello" | "stream.gap" | "session.start" | "session.meta" | "run.start" | "run.end"
-  | "user.message" | "user.command" | "assistant.message.start" | "assistant.message.delta"
-  | "assistant.message.end" | "assistant.reasoning.delta" | "assistant.thought_summary.delta"
-  | "assistant.tool_call.start" | "assistant.tool_call.delta" | "assistant.tool_call.end"
-  | "tool.exec.start" | "tool.exec.stdout.delta" | "tool.exec.stderr.delta" | "tool.exec.end"
-  | "tool.result" | "permission.request" | "permission.decision" | "permission.timeout"
-  | "warning" | "interrupt" | "cancel.requested" | "cancel.acknowledged" | "usage.update"
-  | "agent.spawn" | "agent.status" | "agent.end" | "turn_start" | "assistant_delta"
-  | "assistant_message" | "user_message" | "tool_call" | "tool_result" | "permission_request"
-  | "permission_response" | "checkpoint_list" | "checkpoint_restored" | "skills_catalog"
-  | "skills_selection" | "ctree_node" | "ctree_snapshot" | "task_event" | "reward_update"
-  | "completion" | "log_link" | "error" | "run_finished"
-  | "conversation.compaction.start" | "conversation.compaction.end"
+export interface SessionEventVisibility {
+  readonly model_visible: boolean
+  readonly provider_visible: boolean
+  readonly host_visible: boolean
+  readonly redaction_state: "none" | "redacted"
+}
 
-export interface SessionEvent<TPayload = Record<string, unknown>> {
-  readonly id: string
-  readonly type: EventType
+export interface SessionEvent<TPayload extends Record<string, unknown> = Record<string, unknown>> {
+  readonly schema_version: "bb.public_session_event.v1"
+  readonly event_id: string
+  readonly seq: number
+  readonly timestamp: string
+  readonly work_item_id: string | null
+  readonly parent_work_item_id: string | null
+  readonly attempt_id: string | null
   readonly session_id: string
-  readonly turn: number | null
-  readonly timestamp: number
-  readonly timestamp_ms?: number
-  readonly seq?: number
-  readonly v?: number
-  readonly schema_rev?: string | null
-  readonly run_id?: string | null
-  readonly thread_id?: string | null
-  readonly turn_id?: string | number | null
-  readonly span_id?: string | null
-  readonly parent_span_id?: string | null
-  readonly actor?: Record<string, unknown> | null
-  readonly visibility?: string | null
-  readonly tags?: string[] | null
+  readonly span_id: string | null
+  readonly visibility: SessionEventVisibility
+  readonly kind:
+    | "session.started"
+    | "input.accepted"
+    | "approval.requested"
+    | "approval.resolved"
+    | "session.reconfigured"
+    | "session.paused"
+    | "session.resumed"
+    | "session.completed"
+    | "session.failed"
+    | "session.canceled"
+    | "assistant_message"
+    | "tool_call"
+    | "tool_result"
   readonly payload: TPayload
+  readonly payload_schema_version:
+    | "bb.payload.product_session.lifecycle.v1"
+    | "bb.payload.message.assistant.v1"
+    | "bb.payload.tool.called.v1"
+    | "bb.payload.tool.completed.v1"
 }
 
 export interface AttachmentHandle {

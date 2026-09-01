@@ -10,6 +10,10 @@ test("internal entrypoint exposes the supported runtime surface", async () => {
   assert.equal(typeof internal.createLifecycleE4Client, "function")
   assert.equal(typeof internal.createEndpointScopedE4Client, "function")
   assert.equal(typeof internal.createLocalEndpointScopedTransport, "function")
+  const client = internal.createInternalBreadboardClient({
+    baseUrl: "http://fixture.test",
+  })
+  assert.equal(typeof client.getE4Health, "function")
 })
 
 test("internal event decoder accepts session-scoped compaction tree nodes", async () => {

@@ -359,6 +359,11 @@ Assistant content, tool arguments and results, credentials, paths, and backend
 event IDs are not written to the product session log. Completed streams replay
 with the same sequence after a service restart.
 
+The SSE envelope is `bb.public_session_event.v1`; it is not the canonical
+kernel `bb.kernel_event.v2` record.
+Every `payload_schema_version` resolves to either the public product-session
+lifecycle payload schema or the registered kernel observation payload schema.
+
 ### TypeScript SDK
 
 ```ts
@@ -374,7 +379,7 @@ const started = await client.startSession({
 const sessionId = started.data.session.session_id
 
 for await (const event of client.eventsSession(sessionId)) {
-  console.log(event.type, event.payload)
+  console.log(event.kind, event.payload)
 }
 ```
 

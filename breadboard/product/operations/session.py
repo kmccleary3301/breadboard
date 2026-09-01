@@ -4,7 +4,7 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Mapping, Protocol, Sequence
+from typing import Any, Literal, Mapping, Protocol, Sequence
 
 from breadboard.product.harness.lock import EffectiveHarnessLock, load_lock
 from breadboard.product.operations.harness import LockHarnessRequest, lock_harness
@@ -29,6 +29,50 @@ TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "canceled"})
 _RUNTIME_UNAVAILABLE_MESSAGE = (
     "session runtime state is unavailable after service restart"
 )
+_PUBLIC_PAYLOAD_SCHEMAS = {
+    "session.started": "bb.payload.product_session.lifecycle.v1",
+    "input.accepted": "bb.payload.product_session.lifecycle.v1",
+    "approval.requested": "bb.payload.product_session.lifecycle.v1",
+    "approval.resolved": "bb.payload.product_session.lifecycle.v1",
+    "session.reconfigured": "bb.payload.product_session.lifecycle.v1",
+    "session.paused": "bb.payload.product_session.lifecycle.v1",
+    "session.resumed": "bb.payload.product_session.lifecycle.v1",
+    "session.completed": "bb.payload.product_session.lifecycle.v1",
+    "session.failed": "bb.payload.product_session.lifecycle.v1",
+    "session.canceled": "bb.payload.product_session.lifecycle.v1",
+    "assistant_message": "bb.payload.message.assistant.v1",
+    "tool_call": "bb.payload.tool.called.v1",
+    "tool_result": "bb.payload.tool.completed.v1",
+}
+
+
+def public_session_event(
+    event: KernelEvent | Mapping[str, Any],
+) -> dict[str, Any]:
+    source = event.as_dict() if isinstance(event, KernelEvent) else event
+    session_id = str(source["session_id"])
+    sequence = int(source["sequence"])
+    kind = str(source["kind"])
+    return {
+        "schema_version": "bb.public_session_event.v1",
+        "event_id": f"session:{session_id}:{sequence}",
+        "seq": sequence,
+        "timestamp": source["occurred_at"],
+        "work_item_id": None,
+        "parent_work_item_id": None,
+        "attempt_id": None,
+        "session_id": session_id,
+        "span_id": None,
+        "visibility": {
+            "model_visible": True,
+            "provider_visible": True,
+            "host_visible": True,
+            "redaction_state": "none",
+        },
+        "kind": kind,
+        "payload": source["payload"],
+        "payload_schema_version": _PUBLIC_PAYLOAD_SCHEMAS[kind],
+    }
 
 
 class SessionMutationError(RuntimeError):
@@ -439,7 +483,7 @@ async def list_session_events(
         ["session", "events"],
         {
             "session_id": request.session_id,
-            "events": [event.as_dict() for event in batch.events],
+            "events": [public_session_event(event) for event in batch.events],
         },
         refs,
         stage="session.events",

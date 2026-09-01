@@ -29,9 +29,9 @@ import jinja2
 from jinja2 import StrictUndefined, meta, nodes
 from jinja2.sandbox import SandboxedEnvironment
 
-from agentic_coder_prototype.compilation.bundle import ManifestReader
-from agentic_coder_prototype.compilation import contracts as _contracts_module
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation import contracts as _contracts_module
+from breadboard_engine.compilation.bundle import ManifestReader
+from breadboard_engine.compilation.contracts import (
     AGENT_CONFIG_SCHEMA_ID,
     CANONICALIZER_ID,
     COMPILED_CONFIG_MANIFEST_SCHEMA_ID,

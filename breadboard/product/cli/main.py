@@ -31,7 +31,7 @@ def _harness(ns):
 def _harness_lock(ns):
     p=ns.add_parser("harness-lock",help="inspect effective harness locks");_common(p);s=p.add_subparsers(dest="command",required=True);x=s.add_parser("get");x.add_argument("PATH");x.set_defaults(handler=_harness_handler("get_lock"))
 def _session(ns):
-    p=ns.add_parser("session",help="operate Sessions");_common(p);s=p.add_subparsers(dest="command",required=True);s.add_parser("list").set_defaults(handler=session.list_sessions)
+    p=ns.add_parser("session",help="operate Sessions");_common(p);p.add_argument("--server");s=p.add_subparsers(dest="command",required=True);s.add_parser("list").set_defaults(handler=session.list_sessions)
     x=s.add_parser("get");x.add_argument("SESSION_ID");x.set_defaults(handler=lambda a:session.get(a,"get"))
     if _enabled("BREADBOARD_ENABLE_LOCAL_MIGRATIONS"):
         x=s.add_parser("bootstrap-local",help="trust one validated local pre-authority session");x.add_argument("SESSION_ID");x.set_defaults(handler=session.bootstrap_local)
@@ -39,12 +39,12 @@ def _session(ns):
         x=s.add_parser("show");x.add_argument("SESSION_ID");x.set_defaults(handler=lambda a:session.get(a,"show"))
     for n in ("events","artifacts"):
         x=s.add_parser(n);x.add_argument("SESSION_ID");x.set_defaults(handler=getattr(session,n))
-    x=s.add_parser("send-input");x.add_argument("SESSION_ID");x.add_argument("TEXT",nargs="?");x.add_argument("--content");x.set_defaults(handler=session.send_input)
+    x=s.add_parser("send-input");x.add_argument("SESSION_ID");x.add_argument("TEXT",nargs="?");x.add_argument("--content");x.add_argument("--idempotency-key");x.set_defaults(handler=session.send_input)
     if _enabled("BREADBOARD_LEGACY_ROUTES"):
-        x=s.add_parser("send");x.add_argument("SESSION_ID");x.add_argument("TEXT",nargs="?");x.add_argument("--content");x.set_defaults(handler=session.send_input)
-    x=s.add_parser("approve");x.add_argument("SESSION_ID");x.add_argument("request_id");x.add_argument("decision");x.set_defaults(handler=session.approve)
+        x=s.add_parser("send");x.add_argument("SESSION_ID");x.add_argument("TEXT",nargs="?");x.add_argument("--content");x.add_argument("--idempotency-key");x.set_defaults(handler=session.send_input)
+    x=s.add_parser("approve");x.add_argument("SESSION_ID");x.add_argument("request_id");x.add_argument("decision");x.add_argument("--idempotency-key");x.set_defaults(handler=session.approve)
     for n in ("resume","cancel"):
-        x=s.add_parser(n);x.add_argument("SESSION_ID");
+        x=s.add_parser(n);x.add_argument("SESSION_ID");x.add_argument("--idempotency-key")
         if n=="cancel":x.add_argument("--reason")
         x.set_defaults(handler=getattr(session,n))
 def _integration(ns):

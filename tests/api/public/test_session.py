@@ -12,11 +12,13 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
 from starlette.formparsers import MultiPartParser
 
 from breadboard_engine.api.cli_bridge.app import create_app
 import breadboard_engine.api.cli_bridge.app as app_module
 from breadboard_engine.api.public import models as public_models
+from breadboard_engine.api.public import session as public_session_api
 import breadboard_engine.provider_broker as provider_broker
 from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
@@ -229,10 +231,48 @@ def test_session_lifecycle_and_resumable_event_stream(
     assert '"reason":"abc"' not in streamed.text
     sequences = [event["seq"] for event in first]
     assert len(sequences) >= 2 and sequences == list(range(1, len(sequences) + 1))
-    assert all(event["schema_version"] == "bb.kernel_event.v2" for event in first)
+    assert all(
+        event["schema_version"] == "bb.public_session_event.v1" for event in first
+    )
+    contract_root = Path(__file__).resolve().parents[3]
+    event_schema = json.loads(
+        (
+            contract_root
+            / "contracts/public/schemas/bb.public_session_event.v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    lifecycle_schema = json.loads(
+        (
+            contract_root
+            / "contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    event_registry = Registry().with_resource(
+        lifecycle_schema["$id"], Resource.from_contents(lifecycle_schema)
+    )
+    event_validator = Draft202012Validator(event_schema, registry=event_registry)
+    payload_roots = {
+        "bb.payload.product_session.lifecycle.v1": (
+            contract_root / "contracts/public/schemas"
+        ),
+    }
+    for event in first:
+        event_validator.validate(event)
+        schema_id = event["payload_schema_version"]
+        schema_root = payload_roots.get(
+            schema_id,
+            Path(__file__).resolve().parents[3] / "contracts/kernel/schemas/payloads",
+        )
+        payload_schema = json.loads(
+            (schema_root / f"{schema_id}.schema.json").read_text(encoding="utf-8")
+        )
+        Draft202012Validator(payload_schema).validate(event["payload"])
+    forged_terminal = {**first[-1], "kind": "session.completed", "payload": {}}
+    assert not event_validator.is_valid(forged_terminal)
     assert sum(event["kind"] == "input.accepted" for event in first) == 1
     assert first[-1]["kind"] == "session.canceled"
     assert first[-1]["payload"]["reason"] == "<redacted>"
+    assert first[-1]["visibility"]["redaction_state"] == "redacted"
     resumed = _stream_records(
         client.get(
             "/v1/sessions/session-fixture/events",
@@ -245,6 +285,102 @@ def test_session_lifecycle_and_resumable_event_stream(
         == "canceled"
     )
     assert client.get("/v1/sessions/session-fixture/artifacts").json()["ok"] is True
+
+
+def test_public_session_events_snapshot_closes_without_live_follow(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    lock_id = _locked_harness(client)
+    started = client.post(
+        "/v1/sessions",
+        json={
+            "lock_id": lock_id,
+            "task": "snapshot public events",
+            "session_id": "snapshot-fixture",
+        },
+        headers={"Idempotency-Key": "start-snapshot"},
+    )
+    assert started.status_code == 202, started.text
+    batch_reads = 0
+    original_read_batch = (
+        public_session_api.session_operations.read_session_event_batch
+    )
+
+    async def read_snapshot_batch(*args, **kwargs):
+        nonlocal batch_reads
+        batch_reads += 1
+        if batch_reads > 1:
+            raise AssertionError("follow=false reread the live event buffer")
+        return await original_read_batch(*args, **kwargs)
+
+    monkeypatch.setattr(
+        public_session_api.session_operations,
+        "read_session_event_batch",
+        read_snapshot_batch,
+    )
+    assert started.json()["data"]["session"]["status"] == "running"
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            client.get,
+            "/v1/sessions/snapshot-fixture/events?follow=false",
+        )
+        streamed = future.result(timeout=2)
+    assert streamed.status_code == 200
+    records = _stream_records(streamed)
+    assert records
+    assert records[0]["kind"] == "session.started"
+    assert all(event["kind"] != "session.canceled" for event in records)
+    assert batch_reads == 1
+    cancelled = client.post(
+        "/v1/sessions/snapshot-fixture/cancel",
+        json={},
+        headers={"Idempotency-Key": "cancel-snapshot"},
+    )
+    assert cancelled.status_code == 202
+
+
+def test_public_session_event_redaction_preserves_structural_contract(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lock_id = _locked_harness(client)
+    session_id = "secret-session-fixture"
+    started = client.post(
+        "/v1/sessions",
+        json={
+            "lock_id": lock_id,
+            "task": "redaction contract",
+            "session_id": session_id,
+        },
+        headers={"Idempotency-Key": "redaction-contract"},
+    )
+    assert started.status_code == 202, started.text
+    baseline = _stream_records(
+        client.get(f"/v1/sessions/{session_id}/events?follow=false")
+    )
+    task_hash = baseline[0]["payload"]["task_hash"]
+    monkeypatch.setenv("SESSION_TOKEN", "secret")
+    monkeypatch.setenv("STRUCTURAL_TOKEN", task_hash[7:11])
+
+    streamed = client.get(f"/v1/sessions/{session_id}/events?follow=false")
+    records = _stream_records(streamed)
+
+    assert streamed.status_code == 200
+    assert records[0]["session_id"] == session_id
+    assert records[0]["kind"] == "session.started"
+    assert records[0]["payload"]["task_hash"] == "sha256:" + "0" * 64
+    assert records[0]["visibility"]["redaction_state"] == "redacted"
+    assert (
+        client.post(
+            f"/v1/sessions/{session_id}/cancel",
+            json={},
+            headers={"Idempotency-Key": "cancel-redaction-contract"},
+        ).status_code
+        == 202
+    )
 
 
 def test_managed_state_terminal_public_session_survives_restart(
