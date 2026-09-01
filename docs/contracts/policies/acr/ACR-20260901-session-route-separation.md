@@ -43,7 +43,7 @@ The default server assigned `/v1/sessions` to the public projected API after rem
   - Public and internal routes share one session registry and session identifier.
   - Public OpenAPI excludes `/v1/internal` paths.
   - Python and TypeScript SDK hello scripts complete against the same default server.
-  - Bearer credentials cannot reach plaintext non-loopback requests or engine execution children.
+  - The Python and TypeScript public SDK hello clients reject bearer use on plaintext non-loopback requests; the engine execution child allowlist excludes bearer and provider credentials.
 
 ## 6) Rollout Plan
 
@@ -61,7 +61,7 @@ The default server assigned `/v1/sessions` to the public projected API after rem
 
 ## 8) Approvals
 
-- Kernel reviewer: exact head `926a20b27223051f4b2b4b84e1c007d4dcd6e289` accepted.
-- Contracts reviewer: exact head accepted with no correctness finding.
-- Ops reviewer: exact head security review accepted with no finding.
+- Kernel reviewer: independent review required on the final exact head; code head `926a20b27223051f4b2b4b84e1c007d4dcd6e289` accepted.
+- Contracts reviewer: independent review required on the final exact head.
+- Ops reviewer: independent security review required on the final exact head; code head `926a20b27223051f4b2b4b84e1c007d4dcd6e289` accepted.
 - Final decision: protected branch checks and repository merge policy control merge.
