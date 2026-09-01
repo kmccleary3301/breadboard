@@ -383,6 +383,15 @@ def test_session_cli_bounds_complete_remote_event_snapshot_to_initial_count(
             ],
             "event snapshot terminated before its initial bound",
         ),
+        (
+            2,
+            [
+                (1, "assistant_message"),
+                (2, "assistant_message"),
+                (3, "assistant_message"),
+            ],
+            "oversized session event page",
+        ),
     ],
 )
 def test_session_cli_rejects_incomplete_remote_event_snapshot(

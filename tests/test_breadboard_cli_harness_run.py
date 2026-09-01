@@ -154,6 +154,12 @@ def test_session_cli_restores_flat_legacy_event_layout(tmp_path: Path) -> None:
         "session.started",
         "session.completed",
     ]
+    assert [event["schema_version"] for event in events.data["events"]] == [
+        "bb.public_session_event.v1",
+        "bb.public_session_event.v1",
+    ]
+    assert [event["seq"] for event in events.data["events"]] == [1, 2]
+    assert all("sequence" not in event for event in events.data["events"])
     assert events.record_refs == restored.record_refs
     assert artifacts.command == ["session", "artifacts"]
     assert artifacts.data == {"session_id": session_id, "artifacts": []}

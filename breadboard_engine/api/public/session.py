@@ -50,21 +50,6 @@ from .models import (
 router = APIRouter(tags=["public-session"])
 runtime_setup_router = APIRouter(tags=["runtime-setup"])
 
-_PUBLIC_PAYLOAD_SCHEMAS = {
-    "session.started": "bb.payload.product_session.lifecycle.v1",
-    "input.accepted": "bb.payload.product_session.lifecycle.v1",
-    "approval.requested": "bb.payload.product_session.lifecycle.v1",
-    "approval.resolved": "bb.payload.product_session.lifecycle.v1",
-    "session.reconfigured": "bb.payload.product_session.lifecycle.v1",
-    "session.paused": "bb.payload.product_session.lifecycle.v1",
-    "session.resumed": "bb.payload.product_session.lifecycle.v1",
-    "session.completed": "bb.payload.product_session.lifecycle.v1",
-    "session.failed": "bb.payload.product_session.lifecycle.v1",
-    "session.canceled": "bb.payload.product_session.lifecycle.v1",
-    "assistant_message": "bb.payload.message.assistant.v1",
-    "tool_call": "bb.payload.tool.called.v1",
-    "tool_result": "bb.payload.tool.completed.v1",
-}
 _REDACTED_SHA256 = "sha256:" + "0" * 64
 _PAYLOAD_SHA256_FIELDS = {
     "session.started": ("effective_lock_hash", "task_hash"),
@@ -337,28 +322,6 @@ class _LiveSessionMutationAdapter:
             raise _mutation_error(error) from error
 
 
-def _kernel_event(event):
-    session_id, sequence = str(event["session_id"]), int(event["sequence"])
-    return {
-        "schema_version": "bb.public_session_event.v1",
-        "event_id": f"session:{session_id}:{sequence}",
-        "seq": sequence,
-        "timestamp": event["occurred_at"],
-        "work_item_id": None,
-        "parent_work_item_id": None,
-        "attempt_id": None,
-        "session_id": session_id,
-        "span_id": None,
-        "visibility": {
-            "model_visible": True,
-            "provider_visible": True,
-            "host_visible": True,
-            "redaction_state": "none",
-        },
-        "kind": event["kind"],
-        "payload": event["payload"],
-        "payload_schema_version": _PUBLIC_PAYLOAD_SCHEMAS[str(event["kind"])],
-    }
 
 
 def _scrub_event_payload(kind, payload, workspace):
@@ -664,7 +627,7 @@ async def events(
                     "session.failed",
                     "session.canceled",
                 }
-                projected_event = _kernel_event(event)
+                projected_event = session_operations.public_session_event(event)
                 public_payload = _scrub_event_payload(
                     event["kind"],
                     projected_event["payload"],
