@@ -1347,6 +1347,72 @@ def test_snapshot_references_coordinate_across_store_instances(
     second_store.close()
     store.close()
 
+def test_stale_snapshot_recovery_is_idempotent_with_shared_object(
+    tmp_path: Path,
+) -> None:
+    store, workspace, cache_root, workspace_root = _empty_materialized_workspace(
+        tmp_path
+    )
+    (workspace.workspace_path / "answer.txt").write_bytes(b"shared")
+    second_store = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=store.source_reader,
+        clock=store.clock,
+        lease_ttl=store.lease_ttl,
+        storage_backend=directory_storage(),
+        random_bytes=DeterministicRandom(91_000),
+    )
+    limits = {
+        "max_depth": 0,
+        "max_files": 1,
+        "max_inodes": 1,
+        "max_bytes": 6,
+    }
+    stale_receipt, object_path = _seal_snapshot(store, workspace, **limits)
+    live_receipt, live_path = _seal_snapshot(
+        second_store,
+        workspace,
+        **limits,
+    )
+    record = {
+        "role": "verifier",
+        "snapshot_id": stale_receipt.snapshot_id,
+        "snapshot_root_digest": stale_receipt.root_digest,
+        "parent_lease_id": stale_receipt.source_lease_id,
+    }
+
+    assert store.recover_stale_snapshot(record) == CleanupStepReceipt(
+        "snapshot",
+        CleanupState.RELEASED,
+        stale_receipt.snapshot_id,
+    )
+    assert object_path.is_dir()
+    assert store.recover_stale_snapshot(record) == CleanupStepReceipt(
+        "snapshot",
+        CleanupState.ALREADY_RELEASED,
+        stale_receipt.snapshot_id,
+    )
+    second_store.verify_snapshot(live_receipt, live_path, **limits)
+    suffix = live_receipt.root_digest.removeprefix("sha256:")
+    store._cache.remove_tree("snapshot-objects/" + suffix)
+    assert store.recover_stale_snapshot(record) == CleanupStepReceipt(
+        "snapshot",
+        CleanupState.FAILED,
+        "RuntimeError",
+    )
+    assert (
+        cache_root
+        / "snapshot-references"
+        / suffix
+        / live_receipt.snapshot_id
+    ).is_file()
+    assert second_store.release_snapshot(live_receipt, live_path)
+    assert not object_path.exists()
+    workspace.close()
+    second_store.close()
+    store.close()
+
 
 def test_snapshot_staging_recovery_waits_for_record_publication(
     tmp_path: Path,

@@ -426,6 +426,7 @@ class DeterministicVerifier:
         self.close_receipt = receipt_from_resources(
             "runtime",
             "workspace",
+            "snapshot",
             "lease_record",
             lease_id="verifier-lease",
         )

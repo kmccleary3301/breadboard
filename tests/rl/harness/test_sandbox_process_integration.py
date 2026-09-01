@@ -41,6 +41,7 @@ from breadboard.rl.harness.sandbox import (
     WorkspaceStorageIdentity,
     build_sandbox_execution_plan,
     _sealed_repository_diff,
+    _snapshot_installed_executable,
 )
 from tests.rl.harness.test_runner_terminal import (
     RecordingEventSink,
@@ -308,6 +309,7 @@ async def test_run_argv_executes_requested_command_through_pinned_shell() -> Non
         (),
         {"proc_fd_path": "/proc/self/fd/71"},
     )()
+    handle._command_executable = None
     calls: list[tuple[tuple[str, ...], int, int]] = []
     expected = {"returncode": 0, "stdout": "ok\n", "stderr": ""}
 
@@ -521,6 +523,111 @@ async def test_pinned_shell_executes_admitted_bytes_after_source_mutation(
     assert result["returncode"] == 0
     assert result["stdout"] == "admitted-snapshot"
     assert (await primary.close()).state is CleanupState.RELEASED
+
+
+@requires_sealed_execution
+async def test_pinned_shell_bootstrap_does_not_require_inherited_marker_fd(
+    tmp_path: Path,
+) -> None:
+    held_descriptors: list[int] = []
+    try:
+        while not held_descriptors or held_descriptors[-1] < 32:
+            held_descriptors.append(os.open("/dev/null", os.O_RDONLY))
+        fixture = make_runtime_fixture(
+            with_writable_mount=True,
+            runtime_install_root=tmp_path / "runtime",
+        )
+        (tmp_path / "harness").mkdir()
+        harness = RuntimeHarness(tmp_path / "harness", fixture)
+        harness.manager.process_backend = TrustedProcessBackend()
+        primary = await harness.manager.open(fixture.request)
+        try:
+            result = await primary._runtime.run_shell(
+                "printf high-descriptor-bootstrap",
+                timeout_ms=1_000,
+                output_limit=4_096,
+            )
+        finally:
+            cleanup = await primary.close()
+    finally:
+        for descriptor in held_descriptors:
+            os.close(descriptor)
+
+    assert result["returncode"] == 0
+    assert result["stdout"] == "high-descriptor-bootstrap"
+    assert cleanup.state is CleanupState.RELEASED
+
+@requires_sealed_execution
+async def test_pinned_verifier_executes_admitted_bytes_after_source_replacement(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True,
+        runtime_install_root=tmp_path / "runtime",
+    )
+    (tmp_path / "harness").mkdir()
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    verifier_path = tmp_path / "verifier"
+    verifier_path.write_bytes(b"#!/bin/sh\nprintf admitted-verifier\n")
+    verifier_path.chmod(0o500)
+    verifier_digest = "sha256:" + __import__("hashlib").sha256(
+        verifier_path.read_bytes()
+    ).hexdigest()
+    pinned = _snapshot_installed_executable(str(verifier_path), verifier_digest)
+    primary._runtime._command_executable = pinned
+    replacement = tmp_path / "replacement-verifier"
+    replacement.write_bytes(b"#!/bin/sh\nprintf attacker-controlled\n")
+    replacement.chmod(0o500)
+    os.replace(replacement, verifier_path)
+
+    result = await primary._runtime.run_argv(
+        (str(verifier_path),),
+        timeout_ms=1_000,
+        output_limit=4_096,
+    )
+
+    assert result["returncode"] == 0
+    assert result["stdout"] == "admitted-verifier"
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert pinned.closed is True
+
+@requires_sealed_execution
+async def test_pinned_binary_verifier_preserves_direct_execution(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True,
+        runtime_install_root=tmp_path / "runtime",
+    )
+    (tmp_path / "harness").mkdir()
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    verifier_path = tmp_path / "binary-verifier"
+    shutil.copyfile(Path(os.path.realpath("/bin/sh")), verifier_path)
+    verifier_path.chmod(0o500)
+    verifier_digest = "sha256:" + __import__("hashlib").sha256(
+        verifier_path.read_bytes()
+    ).hexdigest()
+    pinned = _snapshot_installed_executable(str(verifier_path), verifier_digest)
+    primary._runtime._command_executable = pinned
+    replacement = tmp_path / "replacement-binary-verifier"
+    replacement.write_bytes(b"#!/bin/sh\nprintf attacker-controlled\n")
+    replacement.chmod(0o500)
+    os.replace(replacement, verifier_path)
+
+    result = await primary._runtime.run_argv(
+        (str(verifier_path), "-c", "printf admitted-binary"),
+        timeout_ms=1_000,
+        output_limit=4_096,
+    )
+
+    assert result["returncode"] == 0
+    assert result["stdout"] == "admitted-binary"
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert pinned.closed is True
 
 
 @requires_sealed_execution

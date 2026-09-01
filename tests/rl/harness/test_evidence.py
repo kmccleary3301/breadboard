@@ -523,7 +523,7 @@ def _verifier_released_receipt() -> SandboxCleanupReceipt:
         "verifier-lease-7",
         tuple(
             CleanupStepReceipt(resource, CleanupState.RELEASED)
-            for resource in ("runtime", "workspace", "lease_record")
+            for resource in ("runtime", "workspace", "snapshot", "lease_record")
         ),
     )
 
@@ -660,6 +660,7 @@ def _publish_closed(
             verifier_cleanup_required_resources=(
                 "runtime",
                 "workspace",
+                "snapshot",
                 "lease_record",
             ),
             export_authorization_refs=authorization_refs,
@@ -1984,6 +1985,7 @@ def test_caller_cannot_narrow_authoritative_cleanup_required_resources() -> None
                 verifier_cleanup_required_resources=(
                     "runtime",
                     "workspace",
+                    "snapshot",
                     "lease_record",
                 ),
             )
@@ -2186,7 +2188,7 @@ def test_failed_verifier_evidence_is_unadmitted_until_released_cleanup_proof() -
                 ),
                 failed_cleanup,
                 "verifier-lease-7",
-                ("runtime", "workspace", "lease_record"),
+                ("runtime", "workspace", "snapshot", "lease_record"),
             )
         )
 
@@ -2305,7 +2307,7 @@ def test_foreign_completed_aggregate_with_victim_tombstone_ref_is_rejected() -> 
                 ),
                 _verifier_released_receipt(),
                 "verifier-lease-7",
-                ("runtime", "workspace", "lease_record"),
+                ("runtime", "workspace", "snapshot", "lease_record"),
             )
         )
     assert locators.get(EPISODE) == locator_before
@@ -2550,7 +2552,7 @@ def test_close_requires_the_canonical_lifecycle_primary_lease(
                 ),
                 _verifier_released_receipt(),
                 "verifier-lease-7",
-                ("runtime", "workspace", "lease_record"),
+                ("runtime", "workspace", "snapshot", "lease_record"),
             )
         )
     assert locators.get(EPISODE) == locator_before
@@ -2692,7 +2694,7 @@ def test_close_rejects_verifier_cleanup_lease_claim_that_differs_from_persisted_
                 ),
                 _verifier_released_receipt(),
                 "wrong-verifier-lease",
-                ("runtime", "workspace", "lease_record"),
+                ("runtime", "workspace", "snapshot", "lease_record"),
             )
         )
     assert locators.get(EPISODE) == locator_before
@@ -2755,7 +2757,7 @@ def test_malformed_or_foreign_export_pins_fail_closed_with_typed_errors(
                 ),
                 _verifier_released_receipt(),
                 "verifier-lease-7",
-                ("runtime", "workspace", "lease_record"),
+                ("runtime", "workspace", "snapshot", "lease_record"),
                 **pins,
             )
         )
@@ -3548,7 +3550,12 @@ def test_atomic_close_failure_never_claims_closed(
         ),
         verifier_cleanup_receipt=_verifier_released_receipt(),
         verifier_cleanup_lease_id="verifier-lease-7",
-        verifier_cleanup_required_resources=("runtime", "workspace", "lease_record"),
+        verifier_cleanup_required_resources=(
+            "runtime",
+            "workspace",
+            "snapshot",
+            "lease_record",
+        ),
         export_authorization_refs=pins.authorization_refs,
         redaction_decision_refs=pins.redaction_decision_refs,
     )

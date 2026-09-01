@@ -2858,6 +2858,8 @@ class FilesystemMaterializationStore:
             finally:
                 os.close(reference_fd)
             if references:
+                if not self._cache.exists(immutable_relative):
+                    raise RuntimeError("snapshot_tampered")
                 return
             if self._cache.exists(immutable_relative):
                 raise RuntimeError("snapshot_tampered")
@@ -2884,6 +2886,119 @@ class FilesystemMaterializationStore:
             root_digest=receipt.root_digest,
             snapshot_id=receipt.snapshot_id,
             source_lease_id=receipt.source_lease_id,
+        )
+
+    def recover_stale_snapshot(
+        self,
+        record: Mapping[str, Any],
+    ) -> CleanupStepReceipt:
+        try:
+            frozen_record = dict(record) if isinstance(record, Mapping) else None
+        except Exception:
+            frozen_record = None
+        if frozen_record is None:
+            return CleanupStepReceipt(
+                "snapshot",
+                CleanupState.QUARANTINED,
+                "stale_identity_uncertain",
+            )
+        snapshot_id = frozen_record.get("snapshot_id")
+        root_digest = frozen_record.get("snapshot_root_digest")
+        source_lease_id = frozen_record.get("parent_lease_id")
+        if (
+            frozen_record.get("role") != "verifier"
+            or type(snapshot_id) is not str
+            or not snapshot_id.startswith("snapshot-")
+            or len(snapshot_id) != 41
+            or any(
+                character not in "0123456789abcdef"
+                for character in snapshot_id.removeprefix("snapshot-")
+            )
+            or type(root_digest) is not str
+            or not root_digest.startswith(_DIGEST_PREFIX)
+            or len(root_digest) != len(_DIGEST_PREFIX) + 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in root_digest.removeprefix(_DIGEST_PREFIX)
+            )
+            or type(source_lease_id) is not str
+            or not source_lease_id
+            or len(source_lease_id) > 256
+        ):
+            return CleanupStepReceipt(
+                "snapshot",
+                CleanupState.QUARANTINED,
+                "stale_identity_uncertain",
+            )
+        suffix = root_digest.removeprefix(_DIGEST_PREFIX)
+        reference_relative = (
+            "snapshot-references/" + suffix + "/" + snapshot_id
+        )
+        try:
+            reference_root_fd = self._cache.open_dir("snapshot-references")
+            try:
+                reference_suffixes = tuple(sorted(os.listdir(reference_root_fd)))
+            finally:
+                os.close(reference_root_fd)
+            locations: list[str] = []
+            for candidate_suffix in reference_suffixes:
+                if (
+                    len(candidate_suffix) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in candidate_suffix
+                    )
+                ):
+                    raise RuntimeError("snapshot_tampered")
+                candidate_relative = (
+                    "snapshot-references/"
+                    + candidate_suffix
+                    + "/"
+                    + snapshot_id
+                )
+                try:
+                    marker_fd = self._cache.open_file(
+                        candidate_relative,
+                        os.O_RDONLY,
+                    )
+                except FileNotFoundError:
+                    continue
+                else:
+                    os.close(marker_fd)
+                    locations.append(candidate_suffix)
+            if any(location != suffix for location in locations):
+                return CleanupStepReceipt(
+                    "snapshot",
+                    CleanupState.QUARANTINED,
+                    "stale_identity_uncertain",
+                )
+            reference_existed = suffix in locations
+            self._release_snapshot_reference(
+                root_digest=root_digest,
+                snapshot_id=snapshot_id,
+                source_lease_id=source_lease_id,
+            )
+            try:
+                reference_absent = not self._cache.exists(reference_relative)
+            except FileNotFoundError:
+                reference_absent = True
+            self._reject_unreferenced_snapshot_object(suffix)
+        except Exception as exc:
+            return CleanupStepReceipt(
+                "snapshot",
+                CleanupState.FAILED,
+                type(exc).__name__,
+            )
+        return CleanupStepReceipt(
+            "snapshot",
+            (
+                CleanupState.RELEASED
+                if reference_existed and reference_absent
+                else CleanupState.ALREADY_RELEASED
+                if reference_absent
+                else CleanupState.FAILED
+            ),
+            snapshot_id,
         )
 
     def release_snapshots_for_lease(self, source_lease_id: str) -> tuple[str, ...]:

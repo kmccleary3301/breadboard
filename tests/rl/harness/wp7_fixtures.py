@@ -74,6 +74,7 @@ def make_effective_plan(
     network_policy_digest: str | None = None,
     verifier_network_policy_digest: str | None = None,
     runtime_binary_digest: str | None = None,
+    verifier_executable_digest: str | None = None,
     runner_adapter_id: str = "terminal-responses",
     runner_runtime_abi: str = "responses-v1",
     runner_implementation_digest: str | None = None,
@@ -132,7 +133,8 @@ def make_effective_plan(
         verifier_id="verifier",
         implementation_digest=digest("verifier-implementation"),
         image_digest=digest("verifier-image"),
-        executable_digest=digest("verifier-executable"),
+        executable_digest=verifier_executable_digest
+        or digest("verifier-executable"),
         code_digest=digest("verifier-code"),
         input_schema_digest=digest("verifier-input-schema"),
         result_schema_digest=digest("verifier-result-schema"),
@@ -443,26 +445,34 @@ def _registry_snapshot(**records: tuple[Any, ...]) -> c.RegistrySnapshotSet:
 
 
 @lru_cache(maxsize=1)
-def _shared_private_shell_binary() -> str:
+def _shared_private_runtime_executables() -> tuple[str, str]:
     installation = Path(
         tempfile.mkdtemp(prefix="breadboard-wp7-runtime-")
     ).resolve(strict=True)
-    return _install_private_shell_binary(installation)
+    return _install_private_runtime_executables(installation)
 
 
-def _install_private_shell_binary(installation: Path) -> str:
+def _install_private_runtime_executables(
+    installation: Path,
+) -> tuple[str, str]:
     source = Path(os.path.realpath("/bin/sh"))
     if not source.is_absolute() or not source.is_file() or source.is_symlink():
         raise RuntimeError("canonical test shell must be an absolute regular file")
     installation.mkdir(mode=0o700, parents=True, exist_ok=True)
     canonical_installation = installation.resolve(strict=True)
-    target = canonical_installation / "shell"
-    shutil.copyfile(source, target)
-    target.chmod(0o500)
-    canonical_target = target.resolve(strict=True)
-    if canonical_target != target or canonical_target.is_symlink():
+    shell = canonical_installation / "shell"
+    shutil.copyfile(source, shell)
+    shell.chmod(0o500)
+    canonical_shell = shell.resolve(strict=True)
+    if canonical_shell != shell or canonical_shell.is_symlink():
         raise RuntimeError("private test shell must not contain a symlink")
-    return str(canonical_target)
+    verifier = canonical_installation / "verifier"
+    verifier.write_bytes(b"#!/bin/sh\nprintf verifier\n")
+    verifier.chmod(0o500)
+    canonical_verifier = verifier.resolve(strict=True)
+    if canonical_verifier != verifier or canonical_verifier.is_symlink():
+        raise RuntimeError("private test verifier must not contain a symlink")
+    return str(canonical_shell), str(canonical_verifier)
 
 
 def make_runtime_fixture(
@@ -523,12 +533,15 @@ def make_runtime_fixture(
     primary_security_digest = SandboxSecurityPolicy.derive_digest(primary_security_projection)
     verifier_security_digest = SandboxSecurityPolicy.derive_digest(verifier_security_projection)
     network_digest = SandboxNetworkPolicy.derive_digest(network_projection)
-    shell_path = (
-        _install_private_shell_binary(runtime_install_root / "runtime-install")
+    shell_path, verifier_path = (
+        _install_private_runtime_executables(
+            runtime_install_root / "runtime-install"
+        )
         if runtime_install_root is not None
-        else _shared_private_shell_binary()
+        else _shared_private_runtime_executables()
     )
     shell_binary_digest = digest(Path(shell_path).read_bytes())
+    verifier_binary_digest = digest(Path(verifier_path).read_bytes())
     plan = make_effective_plan(
         runtime_id=runtime_id,
         runtime_class=runtime_class,
@@ -538,6 +551,7 @@ def make_runtime_fixture(
         network_policy_digest=network_digest,
         verifier_network_policy_digest=network_digest,
         runtime_binary_digest=shell_binary_digest,
+        verifier_executable_digest=verifier_binary_digest,
         runner_adapter_id=runner_adapter_id,
         runner_runtime_abi=runner_runtime_abi,
         runner_implementation_digest=runner_implementation_digest,
@@ -680,7 +694,7 @@ def make_runtime_fixture(
         runtime_id=verifier_runtime_id,
         runtime_class=c.RuntimeClass.TRUSTED_PROCESS,
         security_policy_digest=verifier_security_digest,
-        argv=(shell_path, "-c", "printf verifier"),
+        argv=(verifier_path,),
         result_relative_path="result.json",
         executable_digest=plan.verifier.executable_digest,
         code_digest=plan.verifier.code_digest,
