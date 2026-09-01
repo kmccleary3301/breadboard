@@ -57,7 +57,7 @@ from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 
 @pytest.fixture(autouse=True)
 def _use_canonical_lifecycle_api(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
+    monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
 
 
 

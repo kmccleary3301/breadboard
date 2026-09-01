@@ -985,9 +985,14 @@ def create_app(
                 )
         principal = _public_request_principal(request, required_token)
         route_path = get_route_path(request.scope)
-        if route_path == "/v1/internal/sessions" or route_path.startswith(
-            "/v1/internal/sessions/"
-        ):
+        internal_session_request = (
+            route_path == "/v1/internal/sessions"
+            or route_path.startswith("/v1/internal/sessions/")
+        )
+        legacy_session_request = legacy_routes_enabled and (
+            route_path == "/v1/sessions" or route_path.startswith("/v1/sessions/")
+        )
+        if internal_session_request or legacy_session_request:
             try:
                 _require_local_control_request(request)
             except HTTPException as error:
@@ -1116,6 +1121,9 @@ def create_app(
         app,
         get_service=get_service,
         event_payloads=event_payloads,
+        route_prefix=(
+            "/v1/sessions" if legacy_routes_enabled else "/v1/internal/sessions"
+        ),
     )
     register_engine_routes(
         app,

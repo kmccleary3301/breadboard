@@ -385,7 +385,8 @@ def test_legacy_routes_can_be_explicitly_enabled(
     assert local_client.get("/status").status_code == 200
     assert local_client.get("/v1/status").status_code == 200
     assert local_client.get("/sessions").status_code == 200
-    assert local_client.get("/v1/internal/sessions").status_code == 200
+    assert local_client.get("/v1/sessions").status_code == 200
+    assert local_client.get("/v1/internal/sessions").status_code == 404
     assert local_client.get("/rl/runs/probe").status_code == 400
     assert local_client.get("/v1/rl/runs/probe").status_code == 400
 
@@ -719,14 +720,14 @@ def test_split_v1_session_file_endpoints_list_and_read_content(
     service.registry._records[record.session_id] = record
     local_client = TestClient(create_app(service=service))
 
-    listing = local_client.get("/v1/internal/sessions/file-session/files")
+    listing = local_client.get("/v1/sessions/file-session/files")
     assert listing.status_code == 200
     assert listing.json() == [
         {"path": "subdir", "type": "directory", "size": None, "updated_at": None},
         {"path": "alpha.txt", "type": "file", "size": 6, "updated_at": None},
     ]
 
-    content = local_client.get("/v1/internal/sessions/file-session/files/content", params={"path": "alpha.txt"})
+    content = local_client.get("/v1/sessions/file-session/files/content", params={"path": "alpha.txt"})
     assert content.status_code == 200
     assert content.json() == {"path": "alpha.txt", "content": "alpha\n", "truncated": False, "total_bytes": 6}
 
@@ -756,7 +757,7 @@ def test_session_records_endpoint_serves_runtime_jsonl_with_schema_filter(
     local_client = TestClient(create_app(service=service))
 
     response = local_client.get(
-        "/v1/internal/sessions/records-session/records",
+        "/v1/sessions/records-session/records",
         params={"schema_version": "bb.work_item.v2", "offset": 0, "limit": 1},
     )
 
@@ -796,15 +797,37 @@ def test_internal_sessions_require_loopback_or_api_token(
     }
 
 
+def test_legacy_sessions_require_loopback_or_api_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
+    monkeypatch.delenv("BREADBOARD_API_TOKEN", raising=False)
+    client = TestClient(create_app())
+
+    allowed = client.get(
+        "/v1/sessions",
+        headers={"Host": "127.0.0.1:9099"},
+    )
+    rejected = client.get(
+        "/v1/sessions",
+        headers={"Host": "attacker.example"},
+    )
+
+    assert allowed.status_code == 200
+    assert rejected.status_code == 403
+    assert rejected.json()["path"] == "/v1/sessions"
+
+
 def test_api_error_envelope_covers_auth_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     monkeypatch.setenv("BREADBOARD_API_TOKEN", "secret")
-    auth_response = TestClient(create_app()).get("/v1/internal/sessions")
+    auth_response = TestClient(create_app()).get("/v1/sessions")
     assert auth_response.status_code == 401
     assert auth_response.json() == {"error": "unauthorized", "detail": "unauthorized", "path": None}
 
     validation_response = TestClient(create_app()).post(
-        "/v1/internal/sessions",
+        "/v1/sessions",
         json={"config_path": "   "},
         headers={"Authorization": "Bearer secret"},
     )
@@ -993,7 +1016,7 @@ def test_runtime_emission_flag_off_writes_no_records(monkeypatch: pytest.MonkeyP
     client = TestClient(create_app())
 
     response = client.post(
-        "/v1/internal/sessions",
+        "/v1/sessions",
         json={"config_path": "agent_configs/atp_hilbert_like_gpt54_v1.yaml", "task": "runtime emission flag off probe"},
     )
     assert response.status_code == 200

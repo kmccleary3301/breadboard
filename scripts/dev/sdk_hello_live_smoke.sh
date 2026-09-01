@@ -65,12 +65,14 @@ else
     cd "${ROOT_DIR}"
     BREADBOARD_CLI_HOST=127.0.0.1 BREADBOARD_CLI_PORT="${PORT}" \
       BREADBOARD_API_TOKEN="${BREADBOARD_API_TOKEN-}" \
+      RAY_SCE_LOCAL_MODE="${RAY_SCE_LOCAL_MODE:-1}" \
       "${PYTHON_BIN}" -m breadboard_engine.api.cli_bridge.server
   ) >"${SERVER_LOG}" 2>&1 &
   SERVER_PID=$!
 fi
 
 export BREADBOARD_BASE_URL="${BASE_URL}"
+export PYTHONPATH="${ROOT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 ready=0
 for _ in {1..120}; do
   if BREADBOARD_SDK_TIMEOUT_S=0.25 \
