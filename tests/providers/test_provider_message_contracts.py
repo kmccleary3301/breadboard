@@ -7,8 +7,8 @@ import pytest
 
 from breadboard.product.runtime.artifacts import ArtifactStore
 from breadboard_engine.provider.contracts import ProviderContractError
-from breadboard_engine.provider_routing import provider_router
-from breadboard_engine.provider_runtime import (
+from breadboard_engine.provider.routing import provider_router
+from breadboard_engine.provider.runtime import (
     OpenAIResponsesRuntime,
     ProviderRuntimeContext,
     provider_registry,

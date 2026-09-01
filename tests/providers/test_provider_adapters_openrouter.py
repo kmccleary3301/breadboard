@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from breadboard_engine.provider_adapters import provider_adapter_manager
+from breadboard_engine.provider.adapters import provider_adapter_manager
 
 
 def test_openrouter_tool_result_includes_call_id_alias() -> None:

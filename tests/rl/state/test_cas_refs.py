@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-import breadboard.rl.state.cas as cas_module
-from breadboard.rl.state import (
+import breadboard.artifacts.cas as cas_module
+from breadboard.artifacts import (
     ArtifactConflictError,
     ArtifactIntegrityError,
     ArtifactRef,
@@ -219,7 +219,7 @@ def test_filesystem_cas_serializes_same_id_publication_across_processes(
 import sys
 import time
 from pathlib import Path
-from breadboard.rl.state import ArtifactConflictError, FilesystemCAS
+from breadboard.artifacts import ArtifactConflictError, FilesystemCAS
 
 root, ready, go, index = sys.argv[1:]
 Path(ready, index).touch()

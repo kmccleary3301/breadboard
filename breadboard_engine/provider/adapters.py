@@ -7,6 +7,8 @@ from typing import Dict, Any, List, Tuple
 from abc import ABC, abstractmethod
 import json
 import re
+from ..provider_broker.catalog import routable_provider_catalog
+
 
 
 _OPENAI_TOOL_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -205,8 +207,8 @@ class OpenAIAdapter(ProviderAdapter):
 class OpenRouterAdapter(OpenAIAdapter):
     """OpenRouter adapter (OpenAI-compatible) with Azure call_id aliasing."""
 
-    def __init__(self):
-        super().__init__("openrouter")
+    def __init__(self, provider_id: str = "openrouter"):
+        super().__init__(provider_id)
 
 
     def create_tool_result_message(self, call_id: str, tool_name: str, result: Any) -> Dict[str, Any]:
@@ -216,32 +218,39 @@ class OpenRouterAdapter(OpenAIAdapter):
         return msg
 
     def get_provider_id(self) -> str:
-        return "openrouter"
+        return self._provider_id
 
 
 class AnthropicAdapter(ProviderAdapter):
     """Anthropic-specific adapter for tool calling"""
+    def __init__(self, provider_id: str = "anthropic"):
+        self._provider_id = provider_id
+
     
     def should_use_native_tool(self, tool_def: Dict[str, Any]) -> bool:
         """Check if tool should use Anthropic native tool calling"""
         provider_routing = _get_provider_settings(tool_def)
-        anthropic_config = provider_routing.get("anthropic", {})
-        return anthropic_config.get("native_primary", False)
+        provider_config = provider_routing.get(self._provider_id, {})
+        return provider_config.get("native_primary", False)
     
     def translate_tool_to_native_schema(self, tool_def: Dict[str, Any]) -> Dict[str, Any]:
         """Convert to Anthropic tool format"""
         properties = {}
         required = []
         provider_routing = _get_provider_settings(tool_def)
-        anthropic_config = provider_routing.get("anthropic", {}) if isinstance(provider_routing, dict) else {}
+        provider_config = (
+            provider_routing.get(self._provider_id, {})
+            if isinstance(provider_routing, dict)
+            else {}
+        )
 
-        additional_props = anthropic_config.get("additional_properties")
+        additional_props = provider_config.get("additional_properties")
         if not isinstance(additional_props, bool):
-            additional_props = anthropic_config.get("additionalProperties")
+            additional_props = provider_config.get("additionalProperties")
         if not isinstance(additional_props, bool):
             additional_props = None
 
-        schema_uri = anthropic_config.get("schema_uri") or anthropic_config.get("$schema")
+        schema_uri = provider_config.get("schema_uri") or provider_config.get("$schema")
         schema_uri = schema_uri if isinstance(schema_uri, str) and schema_uri else None
         
         for param in (_get_tool_attr(tool_def, "parameters", []) or []):
@@ -326,22 +335,27 @@ class AnthropicAdapter(ProviderAdapter):
         }
     
     def get_provider_id(self) -> str:
-        return "anthropic"
+        return self._provider_id
 
 
 class ProviderAdapterManager:
     """Manages provider-specific adapters"""
     
     def __init__(self):
-        openai_compatible = {
-            provider_id: OpenAIAdapter(provider_id)
-            for provider_id in ("codex", "openai", "mock", "cli_mock", "smoke", "replay")
+        adapter_types = {
+            "openai": OpenAIAdapter,
+            "openrouter": OpenRouterAdapter,
+            "anthropic": AnthropicAdapter,
         }
-        self.adapters = {
-            **openai_compatible,
-            "anthropic": AnthropicAdapter(),
-            "openrouter": OpenRouterAdapter(),
-        }
+        self.adapters = {}
+        for entry in routable_provider_catalog():
+            try:
+                adapter_type = adapter_types[entry.tool_adapter_kind]
+            except KeyError as exc:
+                raise ValueError(
+                    f"unsupported provider tool adapter: {entry.tool_adapter_kind}"
+                ) from exc
+            self.adapters[entry.provider_id] = adapter_type(entry.provider_id)
 
     def get_adapter(self, provider_id: str) -> ProviderAdapter:
         """Get an explicitly cataloged adapter without provider substitution."""

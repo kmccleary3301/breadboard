@@ -11,14 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.compilation.bundle import (
+from breadboard_engine.compilation.bundle import (
     ManifestReader,
     build_dependency_closure,
     ingest_member_map,
     ingest_directory,
     ingest_zip,
 )
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     COMPILED_CONFIG_SEMANTIC_SCHEMA_ID,
     MAX_SAFE_INTEGER,
     BundleIntegrityError,
@@ -43,14 +43,14 @@ from agentic_coder_prototype.compilation.contracts import (
     canonical_json_loads,
     canonical_sha256,
 )
-from agentic_coder_prototype.compilation import server_compiler
-from agentic_coder_prototype.compilation.server_compiler import (
+from breadboard_engine.compilation import server_compiler
+from breadboard_engine.compilation.server_compiler import (
     compile_config,
     compiler_cache_key,
     verify_cached_manifest,
     strict_parse_payload,
 )
-from breadboard.rl.state import InMemoryCAS
+from breadboard.artifacts import InMemoryCAS
 
 
 _MINIMAL_CONFIG = b"""version: 2

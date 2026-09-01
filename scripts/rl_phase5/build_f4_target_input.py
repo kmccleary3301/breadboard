@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.phase5.f4_authority_authoring import build_f4_target_input, read_f4_authoring_input
 
 def main() -> int:

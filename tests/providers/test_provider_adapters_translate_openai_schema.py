@@ -5,7 +5,7 @@ from breadboard_engine.dialects.enhanced_base_dialect import (
     EnhancedToolParameter,
 )
 from breadboard_engine.compilation.tool_yaml_loader import load_yaml_tools
-from breadboard_engine.provider_adapters import OpenAIAdapter
+from breadboard_engine.provider.adapters import OpenAIAdapter
 
 
 def test_openai_adapter_translates_dataclass_params_with_default() -> None:

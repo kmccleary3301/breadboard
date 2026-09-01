@@ -22,13 +22,13 @@ from breadboard_engine.provider.contracts import (
     ProviderIdentity,
     ProviderRequest,
 )
-from breadboard_engine.provider_runtime import (
+from breadboard_engine.provider.runtime import (
     ProviderRuntimeContext,
     ProviderRuntimeError,
     ProviderResult,
     ProviderMessage,
 )
-from breadboard_engine.provider_routing import ProviderDescriptor
+from breadboard_engine.provider.routing import ProviderDescriptor
 from breadboard_engine.state.session_state import SessionState
 from breadboard_engine.provider.metrics import ProviderMetricsCollector
 

@@ -1,6 +1,6 @@
 import json
 
-from breadboard_engine.provider_ir import (
+from breadboard_engine.provider.ir import (
     convert_legacy_messages,
     IRPart,
     IRToolCall,

@@ -17,6 +17,10 @@ from starlette.formparsers import MultiPartParser
 
 from breadboard_engine.api.cli_bridge.app import create_app
 import breadboard_engine.api.cli_bridge.app as app_module
+from breadboard_engine.api.cli_bridge.models import SessionStatus
+from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry, TurnRecord
+from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.public import models as public_models
 from breadboard_engine.api.public import session as public_session_api
 import breadboard_engine.provider_broker as provider_broker
@@ -306,18 +310,18 @@ def test_public_session_events_snapshot_closes_without_live_follow(
     assert started.status_code == 202, started.text
     batch_reads = 0
     original_read_batch = (
-        public_session_api.session_operations.read_session_event_batch
+        public_session_api.session_operations.SessionRuntime.read_session_event_batch
     )
 
-    async def read_snapshot_batch(*args, **kwargs):
+    async def read_snapshot_batch(runtime, *args, **kwargs):
         nonlocal batch_reads
         batch_reads += 1
         if batch_reads > 1:
             raise AssertionError("follow=false reread the live event buffer")
-        return await original_read_batch(*args, **kwargs)
+        return await original_read_batch(runtime, *args, **kwargs)
 
     monkeypatch.setattr(
-        public_session_api.session_operations,
+        public_session_api.session_operations.SessionRuntime,
         "read_session_event_batch",
         read_snapshot_batch,
     )
@@ -411,12 +415,38 @@ def test_managed_state_terminal_public_session_survives_restart(
             headers={"Idempotency-Key": "start-managed-session"},
         )
         assert started.status_code == 202, started.text
+        paused = first.post("/v1/sessions/managed-session/pause")
+        assert paused.status_code == 202, paused.text
+        uploaded = first.post(
+            "/v1/sessions/managed-session/attachments",
+            files={"files": ("restart-proof.txt", b"restart artifact bytes\n", "text/plain")},
+        )
+        assert uploaded.status_code == 200, uploaded.text
+        artifact_before = first.get("/v1/sessions/managed-session/artifacts")
+        assert artifact_before.status_code == 200, artifact_before.text
+        artifact_rows = artifact_before.json()["data"]["artifacts"]
+        assert len(artifact_rows) == 1
+        artifact_digest = artifact_rows[0]["digest"]
+        artifact_bytes_before = first.get(f"/v1/artifacts/{artifact_digest}")
+        assert artifact_bytes_before.status_code == 200, artifact_bytes_before.text
+        assert artifact_bytes_before.json()["data"]["bytes"] == len(
+            b"restart artifact bytes\n"
+        )
+        resumed = first.post(
+            "/v1/sessions/managed-session/resume",
+            headers={"Idempotency-Key": "resume-managed-session"},
+        )
+        assert resumed.status_code == 202, resumed.text
         cancelled = first.post(
             "/v1/sessions/managed-session/cancel",
             json={"reason": "restart persistence test"},
             headers={"Idempotency-Key": "cancel-managed-session"},
         )
         assert cancelled.status_code == 202, cancelled.text
+        events_before = _stream_records(
+            first.get("/v1/sessions/managed-session/events?follow=false")
+        )
+        assert events_before and events_before[-1]["kind"] == "session.canceled"
 
     durable, _metadata = session_store.load_session(workspace, "managed-session")
     assert durable.read_model.status == "canceled"
@@ -424,6 +454,98 @@ def test_managed_state_terminal_public_session_survives_restart(
         restored = restarted.get("/v1/sessions/managed-session")
         assert restored.status_code == 200, restored.text
         assert restored.json()["data"]["session"]["status"] == "canceled"
+        restored_events = _stream_records(
+            restarted.get("/v1/sessions/managed-session/events?follow=false")
+        )
+        assert restored_events == events_before
+        restored_artifacts = restarted.get("/v1/sessions/managed-session/artifacts")
+        assert restored_artifacts.status_code == 200, restored_artifacts.text
+        assert restored_artifacts.json()["data"]["artifacts"] == artifact_rows
+        restored_bytes = restarted.get(f"/v1/artifacts/{artifact_digest}")
+        assert restored_bytes.status_code == 200, restored_bytes.text
+        assert restored_bytes.json()["data"]["bytes"] == len(
+            b"restart artifact bytes\n"
+        )
+def test_public_session_restart_terminalizes_each_unfinished_turn(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session_id = "retained-unfinished"
+    config = tmp_path / "retained.yaml"
+    config.write_text("{}\n", encoding="utf-8")
+    _new_durable_session(tmp_path, session_id)
+    state_root = tmp_path / "session-state"
+    first_registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id=session_id,
+        status=SessionStatus.RUNNING,
+        metadata={
+            "config_path": str(config),
+            "workspace": str(tmp_path),
+            "permission_mode": "configured",
+        },
+    )
+    failed_turn = TurnRecord(
+        input_id="input-failed",
+        turn_id="turn-failed",
+        client_message_id="client-failed",
+        content="not retained",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    cancelled_turn = TurnRecord(
+        input_id="input-cancelled",
+        turn_id="turn-cancelled",
+        client_message_id="client-cancelled",
+        content="not retained",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+        cancellation_requested=True,
+        cancellation_reason="user_requested",
+    )
+    record.turns_by_id = {
+        failed_turn.turn_id: failed_turn,
+        cancelled_turn.turn_id: cancelled_turn,
+    }
+    record.active_turn_id = failed_turn.turn_id
+    record.event_seq = 10
+    record.replay_head_sequence = 10
+    record.replay_head_event_id = "event-before-restart"
+    first_service = SessionService(registry=first_registry)
+    with TestClient(create_app(service=first_service, include_atp_routes=False)) as first:
+        first.portal.call(first_registry.create, record)
+
+    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    monkeypatch.setattr(SessionRunner, "schedule_start", lambda self: None)
+    monkeypatch.setattr(SessionRunner, "authorize_start", lambda self: None)
+    restarted_registry = SessionRegistry(state_root=state_root)
+    restarted_service = SessionService(registry=restarted_registry)
+    monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
+    monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    with TestClient(
+        create_app(service=restarted_service, include_atp_routes=False)
+    ) as restarted:
+        public_get = restarted.get(f"/v1/sessions/{session_id}")
+        assert public_get.status_code == 409, public_get.text
+        assert public_get.json()["error"]["error_code"] == "invalid_state"
+        summary = restarted.get(f"/v1/internal/sessions/{session_id}")
+        assert summary.status_code == 200, summary.text
+        assert summary.json()["active_turn_id"] is None
+        assert summary.json()["turn_admission"] == "idle"
+        recovered = restarted.portal.call(restarted_registry.get, session_id)
+        assert recovered is not None
+        assert recovered.active_turn_id is None
+        assert recovered.turns_by_id["turn-cancelled"].state == "cancelled"
+        assert (
+            recovered.turns_by_id["turn-cancelled"].terminal_outcome
+            == "cancelled"
+        )
+        assert recovered.turns_by_id["turn-failed"].state == "failed"
+        assert recovered.turns_by_id["turn-failed"].terminal_outcome == "failed"
 
 
 def test_c4_daily_driver_completes_with_stable_observations_and_restart(

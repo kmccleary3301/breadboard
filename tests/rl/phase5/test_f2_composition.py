@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes as jcs_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes as jcs_bytes
 from breadboard.rl.phase5.f2_composition import (
     F2CompositionError,
     ExecutableObservationInput,

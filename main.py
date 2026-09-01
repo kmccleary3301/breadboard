@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 
 from breadboard_engine.agent import create_agent
 from breadboard_engine.parity import EquivalenceLevel
-from breadboard_engine.parity_runner import run_parity_checks
+from breadboard_engine.parity.runner import run_parity_checks
 
 
 def _parse_args() -> argparse.Namespace:

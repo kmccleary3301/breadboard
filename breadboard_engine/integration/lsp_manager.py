@@ -13,8 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional, Any, Sequence, Tuple
 from breadboard_engine.security import (
-    build_child_environment,
-    build_restricted_process_command,
+    ChildProcessPolicy,
     protected_credential_paths,
     provider_credential_values,
     purge_provider_credentials,
@@ -146,15 +145,13 @@ class LSPManager:
         cwd: str | Path,
         overrides: Dict[str, str] | None = None,
     ) -> tuple[tuple[str, ...], dict[str, str]]:
-        environment = build_child_environment(overrides=overrides)
-        return build_restricted_process_command(
-            command,
+        launch = ChildProcessPolicy(
+            overrides=overrides,
             workspace=self.workspace_root,
             working_directory=cwd,
-            shell=False,
-            environment=environment,
-            protected_paths=self._protected_paths,
-        )
+            protected_paths=tuple(self._protected_paths),
+        ).command_and_environment(command)
+        return launch.argv, launch.environment_dict()
 
     def _run_static_command(
         self,

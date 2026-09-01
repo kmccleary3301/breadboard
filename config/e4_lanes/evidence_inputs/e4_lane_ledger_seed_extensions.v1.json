@@ -28,7 +28,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/effective_config_graph.py",
+        "source:breadboard_engine/compilation/effective_config_graph.py",
         "source:tests/compilation/test_effective_config_graph.py",
         "source:scripts/e4_parity/build_primitive_projection.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
@@ -65,7 +65,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json"
@@ -101,7 +101,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json"
@@ -137,7 +137,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json"
@@ -173,7 +173,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json",
         "source:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_evidence_manifest.json"
@@ -209,7 +209,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json"
@@ -245,7 +245,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json"
@@ -281,7 +281,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json"

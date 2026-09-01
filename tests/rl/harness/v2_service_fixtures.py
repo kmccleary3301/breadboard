@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.evidence import (
     EvidenceCorruptError,
@@ -30,7 +30,7 @@ from breadboard.rl.harness.runners.base import (
     RunnerTerminationEvent,
     RunnerTurn,
 )
-from breadboard.rl.state.state_ref import ArtifactRef
+from breadboard.artifacts.references import ArtifactRef
 from tests.rl.harness.test_config_selection import _resolution_fixture
 from tests.rl.harness.test_runner_policy_runtime import _observation, _plan
 

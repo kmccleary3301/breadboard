@@ -32,7 +32,7 @@ from breadboard_engine.parity import (
     build_run_ir_from_run_dir,
     compare_run_ir,
 )
-from breadboard_engine.parity_manifest import load_parity_scenarios
+from breadboard_engine.parity.manifest import load_parity_scenarios
 from safe_delete import safe_rmtree
 
 REPLAY_SCRIPT = ROOT_DIR / "scripts" / "replay_opencode_session.py"

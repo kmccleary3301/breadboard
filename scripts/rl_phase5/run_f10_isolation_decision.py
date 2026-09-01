@@ -13,7 +13,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes, canonical_json_loads
+from breadboard_engine.compilation.contracts import canonical_json_bytes, canonical_json_loads
 from breadboard.rl.phase5.f5_fault_campaign import F5PinnedIdentity
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 

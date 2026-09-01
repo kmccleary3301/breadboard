@@ -40,30 +40,33 @@ from ..utils.assistant_progress import assistant_is_progress_update
 from ..checkpointing.checkpoint_manager import CheckpointManager
 from ..hooks.model import HookResult
 from .components import latest_real_user_prompt, session_requires_workspace_tool_usage
-
 from .completion_guards import (
-    _ensure_tool_completion_final_message, _force_failed_verification_final_answer, _force_failed_write_final_answer,
-    _force_post_receipt_final_answer, _force_read_only_observation_final_answer, _maybe_block_read_only_implementation_loop,
-    _maybe_force_post_write_auto_verification_closure, _maybe_force_read_only_observation_closure,
-    _maybe_force_requested_shell_command_closure, _reject_completion_without_implementation_write,
+    _force_post_receipt_final_answer,
+    _force_read_only_observation_final_answer,
+    _reject_completion_without_implementation_write,
 )
-from .execution_records import ReplayToolOutputMismatchError, legacy_message_view
+from .execution_records import legacy_message_view
 from .implementation_receipts import (
-    _async_result_task_id_from_activity, _is_allowed_async_result_followup,
-    _implementation_receipt_missing, _implementation_receipts_satisfied, _latest_prompt_requests_verification,
-    _latest_prompt_requests_tool_stop_after_observation, _latest_prompt_requests_read_only_answer_after_observation,
-    _required_final_answer_marker, _required_final_answer_reminder,
+    _async_result_task_id_from_activity,
+    _implementation_receipt_missing,
+    _implementation_receipts_satisfied,
+    _latest_prompt_requests_tool_stop_after_observation,
+    _latest_prompt_requests_read_only_answer_after_observation,
+    _required_final_answer_marker,
+    _required_final_answer_reminder,
 )
 from .replay_compare import record_replay_tool_output_mismatches
 from .tool_executor import (
-    _coordination_task_context, _inject_async_result_retrieval,
-    _is_completion_action_result, build_exec_func, execute_agent_calls,
+    _coordination_task_context,
+    _inject_async_result_retrieval,
     _record_validated_signal,
+    ToolExecutor,
+    build_exec_func,
+    execute_agent_calls,
 )
-from .turn_runtime import (
-    apply_turn_guards, build_turn_context, finalize_turn_context_snapshot, handle_blocked_calls,
-    maybe_transition_plan_mode, summarize_execution_results,
-)
+from .turn_runtime import AgentRuntime, PreparedProviderExchange, TurnPolicy
+
+
 def _assistant_history_message(
     msg: Any,
     *,
@@ -138,10 +141,10 @@ def process_model_output(
     model: str,
 ) -> bool:
     msg = legacy_message_view(provider_message)
-    completion_cfg = (conductor.config.get("completion", {}) or {})
+    turn_policy = TurnPolicy.from_config(conductor.config)
     summary = getattr(session_state, "tool_usage_summary", {})
     if (
-        completion_cfg.get("allow_zero_tool_completion")
+        turn_policy.allows_zero_tool_completion()
         and not getattr(msg, "tool_calls", None)
     ):
         total_calls = int(summary.get("total_calls") or 0)
@@ -283,8 +286,7 @@ def process_model_output(
                     session_state.completion_summary.setdefault("signal", recorded_signal)
                 return True
         else:
-            completion_cfg = (conductor.config.get("completion", {}) or {})
-            if completion_cfg.get("allow_zero_tool_completion"):
+            if turn_policy.allows_zero_tool_completion():
                 summary = getattr(session_state, "tool_usage_summary", {})
                 total_calls = int(summary.get("total_calls") or 0)
                 if total_calls <= 0:
@@ -596,298 +598,131 @@ def handle_text_tool_calls(
                     pass
                 msg.content = ""
         return False
-    parsed = conductor._expand_multi_file_patches(parsed, session_state, markdown_logger)
-    if _maybe_block_read_only_implementation_loop(
-        conductor,
-        session_state,
-        markdown_logger,
-        parsed,
-        stream_responses,
-    ):
-        msg.content = ""
-        completion_summary = getattr(session_state, "completion_summary", None) or {}
-        return bool(completion_summary.get("completed"))
-    if _maybe_force_read_only_observation_closure(session_state, parsed):
-        msg.content = ""
-        return True
-    assistant_history = _assistant_history_message(msg)
-    session_state.add_message(assistant_history, to_provider=False)
-    session_state.add_message(dict(assistant_history), to_provider=True)
-    session_state.add_transcript_entry({"assistant": msg.content})
-
-    plan_bootstrap_traces = session_state.get_provider_metadata("plan_bootstrap_traces") or []
-    session_state.set_provider_metadata("plan_bootstrap_traces", plan_bootstrap_traces)
-
     caller.track_tool_usage(parsed, session_state=session_state)
 
-    turn_ctx = build_turn_context(conductor, session_state, parsed)
-    parsed = apply_turn_guards(conductor, turn_ctx, session_state)
-    handle_blocked_calls(conductor, turn_ctx, session_state, markdown_logger)
-    if not parsed:
-        msg.content = ""
-        return False
-
-    exec_func = build_exec_func(conductor, session_state)
-    executed_results, failed_at_index, execution_error, plan_metadata = execute_agent_calls(
-        conductor,
-        parsed,
-        exec_func,
-        session_state,
-        transcript_callback=session_state.add_transcript_entry,
-        policy_bypass=session_state.get_provider_metadata("replay_mode"),
+    assistant_history = _assistant_history_message(msg)
+    exchange = PreparedProviderExchange(
+        provider_message=msg,
+        parsed_calls=list(parsed),
+        assistant_message=assistant_history,
+        provider_assistant_message=dict(assistant_history),
+        model=str(session_state.get_provider_metadata("resolved_model") or ""),
+        dialect_selection=tuple(
+            session_state.get_provider_metadata("active_dialect_names") or ()
+        ),
+        input_kind="text",
+        transcript_entry={"assistant": msg.content},
     )
-    turn_ctx.plan_metadata = plan_metadata
 
-    session_state.add_transcript_entry({"tool_execution_plan": plan_metadata})
-    turn_index = session_state.get_provider_metadata("current_turn_index")
-    turn_index_int = turn_index if isinstance(turn_index, int) else None
-    try:
-        conductor.provider_metrics.add_concurrency_sample(
-            turn=turn_index_int,
-            plan=plan_metadata,
-        )
-    except Exception:
-        pass
-
-    recent_tools_summary, test_success = summarize_execution_results(
-        conductor,
-        turn_ctx,
-        executed_results,
-        session_state,
-        turn_index_int,
-    )
-    turn_ctx.recent_tools_summary = recent_tools_summary
-    turn_ctx.test_success = test_success
-    session_state.set_provider_metadata(
-        "recent_tool_activity",
-        {
-            "tools": recent_tools_summary,
-            "turn": session_state.get_provider_metadata("current_turn_index"),
-        },
-    )
-    if _maybe_force_requested_shell_command_closure(
-        session_state,
-        reason="requested_shell_command_observed_before_continuation",
-    ):
-        finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-        return True
-    if _force_failed_verification_final_answer(
-        session_state,
-        reason="failed_verification_after_retries",
-    ):
-        finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-        return True
-    if _force_failed_write_final_answer(
-        conductor,
-        session_state,
-        reason="failed_requested_write_after_retries",
-    ):
-        finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-        return True
-
-    try:
-        if conductor.logger_v2.run_dir and executed_results:
+    def persist_results(*, executed_results: Any, **_: Any) -> None:
+        try:
+            if not conductor.logger_v2.run_dir or not executed_results:
+                return
             persist_turn = len(session_state.transcript) + 1
-            persistable = []
-            for idx, (parsed_call, call_result) in enumerate(executed_results):
-                persistable.append({
+            persistable = [
+                {
                     "fn": getattr(parsed_call, "function", ""),
-                    "provider_fn": getattr(parsed_call, "provider_name", getattr(parsed_call, "function", "")),
+                    "provider_fn": getattr(
+                        parsed_call,
+                        "provider_name",
+                        getattr(parsed_call, "function", ""),
+                    ),
                     "call_id": getattr(parsed_call, "call_id", f"text_call_{idx}"),
                     "args": getattr(parsed_call, "arguments", {}),
                     "out": call_result,
-                })
+                }
+                for idx, (parsed_call, call_result) in enumerate(executed_results)
+            ]
             if persistable:
                 conductor.provider_logger.save_tool_results(persist_turn, persistable)
-    except Exception:
-        pass
-        if _force_failed_verification_final_answer(
-            session_state,
-            reason="failed_verification_after_retries",
-        ):
-            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-            return True
+        except Exception:
+            pass
 
-        if execution_error:
-            try:
-                use_responses_api = (
-                    str(session_state.get_provider_metadata("api_variant") or "").lower() == "responses"
-                )
-            except Exception:
-                use_responses_api = False
-            if use_responses_api and executed_results:
-                for parsed_result_call, parsed_result_out in executed_results:
-                    call_id = getattr(parsed_result_call, "call_id", None)
-                    tool_result_entry = conductor.message_formatter.create_tool_result_entry(
-                        getattr(parsed_result_call, "function", ""),
-                        parsed_result_out,
-                        syntax_type="openai",
-                        call_id=call_id,
-                    )
-                    session_state.add_message(tool_result_entry, to_provider=True)
-            if execution_error.get("validation_failed"):
-                session_state.increment_guardrail_counter("validation_errors")
-                error_msg = error_handler.handle_validation_error(execution_error)
-            elif execution_error.get("constraint_violation"):
-                error_msg = error_handler.handle_constraint_violation(execution_error["error"])
-            else:
-                error_msg = f"<EXECUTION_ERROR>\n{execution_error['error']}\n</EXECUTION_ERROR>"
-
-            session_state.add_message({"role": "user", "content": error_msg}, to_provider=True)
-            markdown_logger.log_user_message(error_msg)
-
-            if stream_responses:
-                print(f"[error] {execution_error.get('error', 'Unknown error')}")
-            try:
-                if turn_index_int is not None:
-                    if execution_error.get("validation_failed"):
-                        session_state.add_reward_metric(turn_index_int, "SVS", 0.0)
-                    session_state.add_reward_metric(turn_index_int, "CPS", 0.0)
-                    conductor._record_lsp_reward_metrics(session_state, turn_index_int)
-                    if test_success is not None:
-                        conductor._record_test_reward_metric(session_state, turn_index_int, 0.0)
-            except Exception:
-                pass
-            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-            return False
-    try:
-        if turn_index_int is not None:
-            session_state.add_reward_metric(turn_index_int, "SVS", 1.0)
-            if plan_metadata.get("total_calls"):
-                executed_calls = plan_metadata.get("executed_calls", 0)
-                total_calls = plan_metadata.get("total_calls", 0)
-                cps_value = 1.0 if executed_calls == total_calls else 0.0
-                session_state.add_reward_metric(turn_index_int, "CPS", cps_value)
-            if executed_results:
-                acs_value = 1.0 if failed_at_index == -1 else 0.0
-                session_state.add_reward_metric(turn_index_int, "ACS", acs_value)
-    except Exception:
-        pass
-    finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-
-    for tool_parsed, tool_result in executed_results:
-        tool_name = getattr(tool_parsed, "function", "") if tool_parsed else ""
-        action = tool_result.get("action") if isinstance(tool_result, dict) else None
-        if action == "complete" or tool_name == "mark_task_complete":
-            if _implementation_receipt_missing(conductor, session_state):
-                abort = _reject_completion_without_implementation_write(
-                    conductor,
-                    session_state,
-                    markdown_logger,
-                    stream_responses,
-                )
-                if abort:
-                    return True
-                continue
-            signal_task_id, signal_parent_task_id, signal_mission_task_id = _coordination_task_context(session_state)
-            rejection_reasons: list[str] = []
-            guard_ok, guard_reason = conductor._completion_guard_check(session_state)
-            if not guard_ok and guard_reason:
-                rejection_reasons.append(f"completion_guard_failed:{guard_reason}")
-            validated_signal = validate_signal_proposal(
-                build_tool_completion_signal_proposal(
-                    task_id=signal_task_id,
-                    tool_name=tool_name,
-                    tool_result=tool_result,
-                    parent_task_id=signal_parent_task_id,
-                    mission_task_id=signal_mission_task_id,
-                ),
-                mission_owner_role=str(
-                    session_state.get_provider_metadata("completion_owner_role") or "assistant"
-                ),
-                extra_rejection_reasons=rejection_reasons,
-            )
-            recorded_signal = _record_validated_signal(
-                session_state,
-                validated_signal,
-                turn=turn_index_int,
-            )
-
-            if not guard_ok and guard_reason:
-                abort = conductor._emit_completion_guard_feedback(
-                    session_state,
-                    markdown_logger,
-                    guard_reason,
-                    stream_responses,
-                )
-                if abort:
-                    session_state.set_provider_metadata("completion_guard_abort", True)
-                continue
-
-            if not is_accepted_signal(recorded_signal):
-                continue
-
-            final_message = _ensure_tool_completion_final_message(
-                conductor,
-                session_state,
-                reason="mark_task_complete_after_receipts",
-            )
-            chunks = conductor.message_formatter.format_execution_results(executed_results, failed_at_index, len(parsed))
-            provider_tool_msg = "\n\n".join(chunks)
-            session_state.add_message({"role": "user", "content": provider_tool_msg}, to_provider=True)
-            markdown_logger.log_user_message(provider_tool_msg)
-
-            if not getattr(session_state, "completion_summary", None):
-                session_state.completion_summary = {
-                    "completed": True,
-                    "method": "tool_mark_task_complete",
-                    "reason": "mark_task_complete",
-                    "confidence": 1.0,
-                    "tool": tool_parsed.function,
-                    "tool_result": tool_result,
-                    "source": "tool_call",
-                    "signal": recorded_signal,
-                }
-                if final_message:
-                    session_state.completion_summary["final_message"] = final_message
-            else:
-                session_state.completion_summary.setdefault("completed", True)
-                session_state.completion_summary.setdefault("reason", "mark_task_complete")
-                session_state.completion_summary.setdefault("method", "tool_mark_task_complete")
-                session_state.completion_summary.setdefault("signal", recorded_signal)
-                if final_message:
-                    session_state.completion_summary.setdefault("final_message", final_message)
-
-            if stream_responses:
-                print(f"[stop] reason=tool_based confidence=1.0 - mark_task_complete() called")
-            return True
-
-    artifact_links: list[str] = []
-    try:
-        if conductor.logger_v2.run_dir:
-            for idx, (tool_parsed, tool_result) in enumerate(executed_results):
-                rel = conductor.message_formatter.write_tool_result_file(
-                    conductor.logger_v2.run_dir,
-                    len(session_state.transcript) + 1,
-                    idx,
-                    tool_parsed.function,
-                    tool_result,
-                )
-                if rel:
-                    artifact_links.append(rel)
-    except Exception:
-        pass
-
-    chunks = conductor.message_formatter.format_execution_results(executed_results, failed_at_index, len(parsed))
-
-    for tool_parsed, tool_result in executed_results:
-        call_id = getattr(tool_parsed, "call_id", None)
-        tool_result_entry = conductor.message_formatter.create_tool_result_entry(
-            tool_parsed.function, tool_result, syntax_type="custom-pythonic", call_id=call_id
+    def on_completion(
+        *,
+        results: Any,
+        executed_results: Any,
+        failed_at_index: int,
+        final_message: Optional[str],
+        **_: Any,
+    ) -> None:
+        del results, final_message
+        chunks = conductor.message_formatter.format_execution_results(
+            executed_results,
+            failed_at_index,
+            len(exchange.parsed_calls),
         )
-        session_state.add_message(tool_result_entry, to_provider=False)
+        provider_tool_msg = "\n\n".join(chunks)
+        session_state.add_message(
+            {"role": "user", "content": provider_tool_msg},
+            to_provider=True,
+        )
+        markdown_logger.log_user_message(provider_tool_msg)
 
-    turn_cfg = conductor.config.get("turn_strategy", {})
-    conductor.turn_relayer.relay_execution_chunks(
-        chunks=chunks,
-        artifact_links=artifact_links,
+    turn_policy = TurnPolicy.from_config(conductor.config)
+    def relay_results(
+        *,
+        results: Any,
+        executed_results: Any,
+        failed_at_index: int,
+        turn_context: Any,
+        **_: Any,
+    ) -> None:
+        artifact_links: List[str] = []
+        try:
+            if conductor.logger_v2.run_dir:
+                for idx, (parsed_call, call_result) in enumerate(executed_results):
+                    rel = conductor.message_formatter.write_tool_result_file(
+                        conductor.logger_v2.run_dir,
+                        len(session_state.transcript) + 1,
+                        idx,
+                        parsed_call.function,
+                        call_result,
+                    )
+                    if rel:
+                        artifact_links.append(rel)
+        except Exception:
+            pass
+        chunks = conductor.message_formatter.format_execution_results(
+            executed_results,
+            failed_at_index,
+            len(turn_context.parsed_calls),
+        )
+        for parsed_call, call_result in executed_results:
+            result_entry = conductor.message_formatter.create_tool_result_entry(
+                parsed_call.function,
+                call_result,
+                syntax_type="custom-pythonic",
+                call_id=getattr(parsed_call, "call_id", None),
+            )
+            session_state.add_message(result_entry, to_provider=False)
+        conductor.turn_relayer.relay_execution_chunks(
+            chunks=chunks,
+            artifact_links=artifact_links,
+            session_state=session_state,
+            turn_cfg=turn_policy.turn_strategy,
+        )
+
+    return AgentRuntime(
+        conductor=conductor,
+        policy=turn_policy,
+        tool_executor=ToolExecutor(
+            conductor=conductor,
+            session_state=session_state,
+            exec_func=build_exec_func(conductor, session_state),
+            execute_calls=execute_agent_calls,
+        ),
+        event_sink=session_state.add_transcript_entry,
+        log_sink=markdown_logger,
+    ).run(
+        exchange,
         session_state=session_state,
-        markdown_logger=markdown_logger,
-        turn_cfg=turn_cfg,
+        error_handler=error_handler,
+        stream_responses=stream_responses,
+        relay_results=relay_results,
+        persist_results=persist_results,
+        on_completion=on_completion,
     )
-
-    conductor._maybe_transition_plan_mode(session_state, markdown_logger)
-    return False
 
 def handle_native_tool_calls(
     conductor: ConductorContext,
@@ -898,228 +733,224 @@ def handle_native_tool_calls(
     stream_responses: bool,
     model: str,
 ) -> bool:
-    turn_cfg = conductor.config.get("turn_strategy", {})
-    relay_strategy = (turn_cfg.get("relay") or "tool_role").lower()
+    turn_policy = TurnPolicy.from_config(conductor.config)
+    relay_strategy = turn_policy.relay_strategy()
 
-    tool_messages_to_relay: List[Dict[str, Any]] = []
+    tool_calls_payload: List[Dict[str, Any]] = []
+    for tc in msg.tool_calls:
+        fn_name = getattr(getattr(tc, "function", None), "name", None)
+        arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
+        payload = {
+            "id": getattr(tc, "id", None),
+            "type": "function",
+            "function": {
+                "name": fn_name,
+                "arguments": arg_str
+                if isinstance(arg_str, str)
+                else json.dumps(arg_str or {}),
+            },
+        }
+        raw_tool_call = getattr(tc, "raw", None)
+        if hasattr(raw_tool_call, "model_dump"):
+            try:
+                raw_tool_call = raw_tool_call.model_dump(exclude_none=True)
+            except Exception:
+                raw_tool_call = None
+        if isinstance(raw_tool_call, dict):
+            for field_name in ("thought_signature", "thoughtSignature", "extra_content"):
+                if raw_tool_call.get(field_name) is not None:
+                    payload[field_name] = raw_tool_call[field_name]
+        tool_calls_payload.append(payload)
 
     try:
-        tool_calls_payload = []
-        for tc in msg.tool_calls:
-            fn_name = getattr(getattr(tc, "function", None), "name", None)
-            arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
-            tool_call_payload = {
-                "id": getattr(tc, "id", None),
-                "type": "function",
-                "function": {"name": fn_name, "arguments": arg_str if isinstance(arg_str, str) else json.dumps(arg_str or {})},
-            }
-            raw_tool_call = getattr(tc, "raw", None)
-            if hasattr(raw_tool_call, "model_dump"):
-                try:
-                    raw_tool_call = raw_tool_call.model_dump(exclude_none=True)
-                except Exception:
-                    raw_tool_call = None
-            if isinstance(raw_tool_call, dict):
-                for field_name in ("thought_signature", "thoughtSignature", "extra_content"):
-                    if raw_tool_call.get(field_name) is not None:
-                        tool_call_payload[field_name] = raw_tool_call[field_name]
-            tool_calls_payload.append(tool_call_payload)
+        if conductor.logger_v2.run_dir and tool_calls_payload:
+            turn_index = len(session_state.transcript) + 1
+            conductor.provider_logger.save_tool_calls(turn_index, tool_calls_payload)
+            short = "\n".join(
+                f"- {call['function']['name']} (id={call.get('id')})"
+                for call in tool_calls_payload
+            )
+            conductor.logger_v2.append_text(
+                "conversation/conversation.md",
+                conductor.md_writer.provider_tool_calls(
+                    short,
+                    f"provider_native/tool_calls/turn_{turn_index}.json",
+                ),
+            )
+    except Exception:
+        pass
+
+    enhanced_tool_calls = conductor.message_formatter.create_enhanced_tool_calls(
+        tool_calls_payload
+    )
+    assistant_entry = _assistant_history_message(
+        msg,
+        tool_calls=enhanced_tool_calls,
+    )
+    provider_assistant_tool_message = _assistant_history_message(
+        msg,
+        tool_calls=tool_calls_payload,
+    )
+
+    parsed_calls: List[Any] = []
+    for tc in msg.tool_calls:
+        fn = getattr(getattr(tc, "function", None), "name", None)
+        if not fn:
+            continue
+        arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
         try:
-            if conductor.logger_v2.run_dir and tool_calls_payload:
-                turn_index = len(session_state.transcript) + 1
-                conductor.provider_logger.save_tool_calls(turn_index, tool_calls_payload)
-                short = "\n".join([f"- {c['function']['name']} (id={c.get('id')})" for c in tool_calls_payload])
-                conductor.logger_v2.append_text(
-                    "conversation/conversation.md",
-                    conductor.md_writer.provider_tool_calls(
-                        short,
-                        f"provider_native/tool_calls/turn_{turn_index}.json",
-                    ),
-                )
+            args = (
+                json.loads(arg_str)
+                if isinstance(arg_str, str)
+                else (arg_str or {})
+            )
         except Exception:
-            pass
-
-        enhanced_tool_calls = conductor.message_formatter.create_enhanced_tool_calls(tool_calls_payload)
-
-        assistant_entry = _assistant_history_message(msg, tool_calls=enhanced_tool_calls)
-        provider_assistant_tool_message = _assistant_history_message(msg, tool_calls=tool_calls_payload)
-
-        parsed_calls: List[Any] = []
-        for tc in msg.tool_calls:
-            fn = getattr(getattr(tc, "function", None), "name", None)
-            call_id = getattr(tc, "id", None)
-            arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
-            try:
-                args = json.loads(arg_str) if isinstance(arg_str, str) else (arg_str or {})
-            except Exception:
-                args = {}
-            if not fn:
-                continue
-            canonical_fn = conductor.agent_executor.canonical_tool_name(fn)
-            raw_meta = getattr(tc, "raw", None)
-            expected_output = None
-            expected_status = None
-            expected_metadata = None
-            if isinstance(raw_meta, dict):
-                expected_output = raw_meta.get("expected_output")
-                expected_status = raw_meta.get("expected_status")
-                expected_metadata = raw_meta.get("metadata")
-            call_obj = SimpleNamespace(
+            args = {}
+        canonical_fn = conductor.agent_executor.canonical_tool_name(fn)
+        raw_meta = getattr(tc, "raw", None)
+        expected_output = None
+        expected_status = None
+        expected_metadata = None
+        if isinstance(raw_meta, dict):
+            expected_output = raw_meta.get("expected_output")
+            expected_status = raw_meta.get("expected_status")
+            expected_metadata = raw_meta.get("metadata")
+        parsed_calls.append(
+            SimpleNamespace(
                 function=canonical_fn,
                 arguments=args,
                 provider_name=fn,
-                call_id=call_id,
+                call_id=getattr(tc, "id", None),
                 expected_output=expected_output,
                 expected_status=expected_status,
                 expected_metadata=expected_metadata,
             )
-            parsed_calls.append(call_obj)
+        )
 
-        current_mode = session_state.get_provider_metadata("current_mode")
-        turn_ctx = build_turn_context(conductor, session_state, parsed_calls)
-        parsed_calls = apply_turn_guards(conductor, turn_ctx, session_state)
-        handle_blocked_calls(conductor, turn_ctx, session_state, markdown_logger)
-        parsed_calls = conductor._expand_multi_file_patches(parsed_calls, session_state, markdown_logger)
-        if _maybe_block_read_only_implementation_loop(
-            conductor,
-            session_state,
-            markdown_logger,
-            parsed_calls,
-            stream_responses,
-        ):
-            completion_summary = getattr(session_state, "completion_summary", None) or {}
-            return bool(completion_summary.get("completed"))
-        prior_tool_activity = session_state.get_provider_metadata("recent_tool_activity")
-        if (
-            parsed_calls
-            and prior_tool_activity
-            and _latest_prompt_requests_tool_stop_after_observation(session_state)
-            and not _is_allowed_async_result_followup(parsed_calls, prior_tool_activity)
-        ):
-            async_task_id = _async_result_task_id_from_activity(prior_tool_activity)
-            if async_task_id:
-                return _inject_async_result_retrieval(
-                    conductor,
-                    session_state,
-                    markdown_logger,
-                    prior_tool_activity,
-                    reason="post_required_extra_call_before_async_result",
-                    stream_responses=stream_responses,
+    prior_tool_activity = session_state.get_provider_metadata("recent_tool_activity")
+    if (
+        parsed_calls
+        and prior_tool_activity
+        and _latest_prompt_requests_tool_stop_after_observation(session_state)
+        and not _is_allowed_async_result_followup(parsed_calls, prior_tool_activity)
+    ):
+        async_task_id = _async_result_task_id_from_activity(prior_tool_activity)
+        if async_task_id:
+            return _inject_async_result_retrieval(
+                conductor,
+                session_state,
+                markdown_logger,
+                prior_tool_activity,
+                reason="post_required_extra_call_before_async_result",
+                stream_responses=stream_responses,
+            )
+        blocked_count = (
+            int(
+                session_state.get_provider_metadata(
+                    "post_required_tool_extra_call_blocks"
                 )
-            blocked_count = int(session_state.get_provider_metadata("post_required_tool_extra_call_blocks") or 0) + 1
-            session_state.set_provider_metadata("post_required_tool_extra_call_blocks", blocked_count)
-            blocked_tools = [str(getattr(call, "function", "") or "") for call in parsed_calls]
-            try:
-                session_state.add_transcript_entry({
+                or 0
+            )
+            + 1
+        )
+        session_state.set_provider_metadata(
+            "post_required_tool_extra_call_blocks",
+            blocked_count,
+        )
+        blocked_tools = [
+            str(getattr(call, "function", "") or "") for call in parsed_calls
+        ]
+        try:
+            session_state.add_transcript_entry(
+                {
                     "post_required_tool_extra_call_block": {
                         "blocked_tools": blocked_tools,
                         "count": blocked_count,
                     }
-                })
-            except Exception:
-                pass
-            reminder = (
-                "<VALIDATION_ERROR>\n"
-                "The required workspace tool has already run for this request. Do not call additional tools. "
-                f"Answer from the observed tool result now.{_required_final_answer_reminder(session_state)}\n"
-                "</VALIDATION_ERROR>"
-            )
-            session_state.add_message({"role": "user", "content": reminder}, to_provider=True)
-            try:
-                markdown_logger.log_user_message(reminder)
-            except Exception:
-                pass
-            if stream_responses:
-                try:
-                    print("[guard] blocking extra tool call after required tool use")
-                except Exception:
-                    pass
-            if blocked_count >= 3:
-                session_state.completion_summary = {
-                    "completed": False,
-                    "reason": "post_required_tool_extra_call_loop",
-                    "method": "turn_contract_guard",
-                    "blocked_tools": blocked_tools,
                 }
-                session_state.set_provider_metadata("completion_guard_abort", True)
-                return True
-            return False
-        if parsed_calls and _maybe_force_read_only_observation_closure(session_state, parsed_calls):
-            return True
-        session_state.add_message(assistant_entry, to_provider=False)
-        session_state.add_transcript_entry({
-            "assistant_with_tool_calls": {
-                "content": msg.content,
-                "tool_calls_count": len(msg.tool_calls),
-                "tool_calls": [tc["function"]["name"] for tc in tool_calls_payload]
-            }
-        })
-        session_state.add_message(provider_assistant_tool_message, to_provider=True)
-        executed_results: List[tuple] = []
-        failed_at_index = -1
-        execution_error: Optional[Dict[str, Any]] = None
-
-        exec_func = build_exec_func(conductor, session_state)
-        if parsed_calls:
-            executed_results, failed_at_index, execution_error, plan_metadata = execute_agent_calls(
-                conductor,
-                parsed_calls,
-                exec_func,
-                session_state,
-                transcript_callback=session_state.add_transcript_entry,
-                policy_bypass=session_state.get_provider_metadata("replay_mode"),
-            )
-        else:
-            plan_metadata = {
-                "strategy": "no_calls",
-                "can_run_concurrent": False,
-                "max_workers": 0,
-                "group_counts": {},
-                "group_limits": {},
-                "total_calls": 0,
-                "executed_calls": 0,
-            }
-            if current_mode == "plan":
-                manager = session_state.get_todo_manager()
-                snapshot = manager.snapshot() if manager else None
-                todos = []
-                if isinstance(snapshot, dict):
-                    todos = snapshot.get("todos") or []
-                if not todos:
-                    warning = (
-                        "<VALIDATION_ERROR>\n"
-                        "Plan mode requires creating at least one todo via `todo.create` before continuing.\n"
-                        "</VALIDATION_ERROR>"
-                    )
-                    session_state.increment_guardrail_counter("todo_plan_violation")
-                    session_state.add_message({"role": "user", "content": warning}, to_provider=True)
-                    try:
-                        markdown_logger.log_user_message(warning)
-                    except Exception:
-                        pass
-                    try:
-                        session_state.add_transcript_entry({
-                            "todo_guard": {
-                                "function": "todo.create",
-                                "reason": "no_todos_created_in_plan_mode",
-                            }
-                        })
-                    except Exception:
-                        pass
-                    return False
-
-        turn_ctx.plan_metadata = plan_metadata
-        turn_index = session_state.get_provider_metadata("current_turn_index")
-        turn_index_int = turn_index if isinstance(turn_index, int) else None
-        session_state.add_transcript_entry({"tool_execution_plan": plan_metadata})
-        try:
-            conductor.provider_metrics.add_concurrency_sample(
-                turn=turn_index_int,
-                plan=plan_metadata,
             )
         except Exception:
             pass
+        reminder = (
+            "<VALIDATION_ERROR>\n"
+            "The required workspace tool has already run for this request. Do not call additional tools. "
+            f"Answer from the observed tool result now.{_required_final_answer_reminder(session_state)}\n"
+            "</VALIDATION_ERROR>"
+        )
+        session_state.add_message({"role": "user", "content": reminder}, to_provider=True)
+        try:
+            markdown_logger.log_user_message(reminder)
+        except Exception:
+            pass
+        if stream_responses:
+            try:
+                print("[guard] blocking extra tool call after required tool use")
+            except Exception:
+                pass
+        if blocked_count >= 3:
+            session_state.completion_summary = {
+                "completed": False,
+                "reason": "post_required_tool_extra_call_loop",
+                "method": "turn_contract_guard",
+                "blocked_tools": blocked_tools,
+            }
+            session_state.set_provider_metadata("completion_guard_abort", True)
+            return True
+        return False
 
+    current_mode = session_state.get_provider_metadata("current_mode")
+    if not parsed_calls and current_mode == "plan":
+        manager = session_state.get_todo_manager()
+        snapshot = manager.snapshot() if manager else None
+        todos = snapshot.get("todos") if isinstance(snapshot, dict) else []
+        if not todos:
+            warning = (
+                "<VALIDATION_ERROR>\n"
+                "Plan mode requires creating at least one todo via `todo.create` before continuing.\n"
+                "</VALIDATION_ERROR>"
+            )
+            session_state.increment_guardrail_counter("todo_plan_violation")
+            session_state.add_message({"role": "user", "content": warning}, to_provider=True)
+            try:
+                markdown_logger.log_user_message(warning)
+            except Exception:
+                pass
+            session_state.add_transcript_entry(
+                {
+                    "todo_guard": {
+                        "function": "todo.create",
+                        "reason": "no_todos_created_in_plan_mode",
+                    }
+                }
+            )
+            return False
+
+    exchange = PreparedProviderExchange(
+        provider_message=msg,
+        parsed_calls=parsed_calls,
+        assistant_message=assistant_entry,
+        provider_assistant_message=provider_assistant_tool_message,
+        model=model,
+        dialect_selection=tuple(
+            session_state.get_provider_metadata("active_dialect_names") or ()
+        ),
+        input_kind="native",
+        transcript_entry={
+            "assistant_with_tool_calls": {
+                "content": msg.content,
+                "tool_calls_count": len(msg.tool_calls),
+                "tool_calls": [
+                    call["function"]["name"] for call in tool_calls_payload
+                ],
+            }
+        },
+    )
+
+    def record_execution(
+        *,
+        executed_results: Any,
+        **_: Any,
+    ) -> None:
         record_replay_tool_output_mismatches(
             conductor,
             session_state,
@@ -1127,280 +958,148 @@ def handle_native_tool_calls(
             model=model,
         )
 
-        recent_tools_summary, test_success = summarize_execution_results(
-            conductor,
-            turn_ctx,
-            executed_results,
-            session_state,
-            turn_index_int,
-        )
-        turn_ctx.recent_tools_summary = recent_tools_summary
-        turn_ctx.test_success = test_success
+    def persist_results(*, executed_results: Any, **_: Any) -> None:
         try:
-            session_state.set_provider_metadata(
-                "recent_tool_activity",
+            if not conductor.logger_v2.run_dir or not executed_results:
+                return
+            persist_turn = len(session_state.transcript) + 1
+            persistable = [
                 {
-                    "tools": recent_tools_summary,
-                    "turn": session_state.get_provider_metadata("current_turn_index"),
-                },
+                    "fn": getattr(parsed_call, "function", ""),
+                    "provider_fn": getattr(
+                        parsed_call,
+                        "provider_name",
+                        getattr(parsed_call, "function", ""),
+                    ),
+                    "call_id": getattr(parsed_call, "call_id", None),
+                    "args": getattr(parsed_call, "arguments", {}),
+                    "out": call_result,
+                }
+                for parsed_call, call_result in executed_results
+            ]
+            conductor.provider_logger.save_tool_results(persist_turn, persistable)
+            short = "\n".join(
+                f"- {entry['provider_fn']} (id={entry.get('call_id')})"
+                for entry in persistable
+            )
+            conductor.logger_v2.append_text(
+                "conversation/conversation.md",
+                conductor.md_writer.provider_tool_results(
+                    short,
+                    f"provider_native/tool_results/turn_{persist_turn}.json",
+                ),
             )
         except Exception:
             pass
 
-        if _maybe_force_post_write_auto_verification_closure(
-            conductor,
-            session_state,
-            reason="post_write_auto_verified_before_continuation",
-        ):
-            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-            return True
-
-        if _maybe_force_requested_shell_command_closure(
-            session_state,
-            reason="requested_shell_command_observed_before_continuation",
-        ):
-            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-            return True
-
-        if _force_failed_verification_final_answer(
-            session_state,
-            reason="failed_verification_after_retries",
-        ):
-            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-            return True
-
-        if _force_failed_write_final_answer(
-            conductor,
-            session_state,
-            reason="failed_requested_write_after_retries",
-        ):
-            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-            return True
-
-        if execution_error:
-            try:
+    def relay_results(
+        *,
+        results: Any,
+        **_: Any,
+    ) -> None:
+        tool_messages_to_relay: List[Dict[str, Any]] = []
+        try:
+            flow_strategy = turn_policy.relay_flow()
+            if flow_strategy == "assistant_continuation":
                 use_responses_api = (
-                    str(session_state.get_provider_metadata("api_variant") or "").lower() == "responses"
+                    str(
+                        session_state.get_provider_metadata("api_variant") or ""
+                    ).lower()
+                    == "responses"
                 )
-            except Exception:
-                use_responses_api = False
-            if use_responses_api and executed_results:
-                for parsed_result_call, parsed_result_out in executed_results:
-                    call_id = getattr(parsed_result_call, "call_id", None)
-                    tool_result_entry = conductor.message_formatter.create_tool_result_entry(
-                        getattr(parsed_result_call, "function", ""),
-                        parsed_result_out,
-                        syntax_type="openai",
-                        call_id=call_id,
+                all_results_text = []
+                for entry in results:
+                    formatted_output = conductor.message_formatter.format_tool_output(
+                        entry["fn"],
+                        entry["out"],
+                        entry["args"],
                     )
-                    session_state.add_message(tool_result_entry, to_provider=True)
-            if execution_error.get("validation_failed"):
-                session_state.increment_guardrail_counter("validation_errors")
-                error_msg = error_handler.handle_validation_error(execution_error)
-            elif execution_error.get("constraint_violation"):
-                error_msg = error_handler.handle_constraint_violation(execution_error["error"])
-            else:
-                error_msg = f"<EXECUTION_ERROR>\n{execution_error['error']}\n</EXECUTION_ERROR>"
-
-            session_state.add_message({"role": "user", "content": error_msg}, to_provider=True)
-            markdown_logger.log_user_message(error_msg)
-            if stream_responses:
-                print(f"[error] {execution_error.get('error', 'Unknown error')}")
-            try:
-                if turn_index_int is not None:
-                    if execution_error.get("validation_failed"):
-                        session_state.add_reward_metric(turn_index_int, "SVS", 0.0)
-                    session_state.add_reward_metric(turn_index_int, "CPS", 0.0)
-                    conductor._record_lsp_reward_metrics(session_state, turn_index_int)
-            except Exception:
-                pass
-            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-            return False
-
-        results: List[Dict[str, Any]] = []
-        turn_index_hint = turn_index_int
-        for parsed, tool_result in executed_results:
-            tool_result_dict = tool_result if isinstance(tool_result, dict) else {}
-            results.append({
-                "fn": getattr(parsed, "function", ""),
-                "provider_fn": getattr(parsed, "provider_name", getattr(parsed, "function", "")),
-                "out": tool_result,
-                "args": getattr(parsed, "arguments", {}),
-                "call_id": getattr(parsed, "call_id", None),
-                "failed": conductor.agent_executor.is_tool_failure(getattr(parsed, "function", ""), tool_result_dict),
-            })
-
-        guard_blocked = False
-        for idx in range(len(results) - 1, -1, -1):
-            current = results[idx]
-            current_fn = str(current.get("fn") or "")
-            current_out = current.get("out") if isinstance(current.get("out"), dict) else {}
-            if _is_completion_action_result(current_fn, current_out):
-                guard_ok, guard_reason = conductor._completion_guard_check(session_state)
-                if guard_ok:
-                    continue
-                guard_blocked = True
-                session_state.increment_guardrail_counter("completion_guard_blocks")
-                abort = conductor._emit_completion_guard_feedback(
-                    session_state,
-                    markdown_logger,
-                    guard_reason or f"Completion guard blocked {current_fn or 'tool completion'}",
-                    stream_responses,
+                    tool_result_entry = (
+                        conductor.message_formatter.create_tool_result_entry(
+                            entry["fn"],
+                            entry["out"],
+                            syntax_type="openai",
+                            call_id=entry.get("call_id"),
+                        )
+                    )
+                    session_state.add_message(
+                        tool_result_entry,
+                        to_provider=use_responses_api,
+                    )
+                    all_results_text.append(formatted_output)
+                continuation_content = (
+                    "\n\nTool execution results:\n"
+                    + "\n\n".join(all_results_text)
                 )
-                summary = session_state.tool_usage_summary
-                summary["total_calls"] = max(0, int(summary.get("total_calls", 0)) - 1)
-                if isinstance(turn_index_hint, int):
-                    turn_usage = session_state.turn_tool_usage.get(turn_index_hint)
-                    if turn_usage and isinstance(turn_usage.get("tools"), list):
-                        tools_list = turn_usage["tools"]
-                        for tool_entry_idx in range(len(tools_list) - 1, -1, -1):
-                            if tools_list[tool_entry_idx].get("name") == current_fn:
-                                tools_list.pop(tool_entry_idx)
-                                break
-                recent_tools_summary = [
-                    entry for entry in recent_tools_summary
-                    if entry.get("name") != current_fn
-                ]
-                results.pop(idx)
-                if abort:
-                    finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-                    return True
-                break
-
-        try:
-            if turn_index_int is not None:
-                session_state.add_reward_metric(turn_index_int, "SVS", 1.0)
-                if plan_metadata.get("total_calls"):
-                    executed_calls = plan_metadata.get("executed_calls", 0)
-                    total_calls = plan_metadata.get("total_calls", 0)
-                    cps_value = 1.0 if executed_calls == total_calls else 0.0
-                    session_state.add_reward_metric(turn_index_int, "CPS", cps_value)
-                if executed_results:
-                    acs_value = 1.0 if failed_at_index == -1 else 0.0
-                    session_state.add_reward_metric(turn_index_int, "ACS", acs_value)
-        except Exception:
-            pass
-        if turn_index_int is not None:
-            conductor._record_lsp_reward_metrics(session_state, turn_index_int)
-            conductor._record_test_reward_metric(session_state, turn_index_int, test_success)
-        finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-        if turn_ctx.blocked_calls:
-            for blocked in turn_ctx.blocked_calls:
-                if blocked.get("source") != "todo":
-                    continue
-                entry = conductor._emit_todo_guard_violation(
-                    session_state,
-                    markdown_logger,
-                    blocked.get("reason") or "Plan guard violation",
-                    blocked_call=blocked.get("call"),
+                session_state.add_message(
+                    {"role": "assistant", "content": continuation_content},
+                    to_provider=not use_responses_api,
                 )
-                if entry:
-                    results.append(entry)
+                markdown_logger.log_assistant_message(continuation_content)
+                return
 
-        flow_strategy = turn_cfg.get("flow", "assistant_continuation").lower()
-
-        try:
-            if conductor.logger_v2.run_dir and results:
-                persist_turn = len(session_state.transcript) + 1
-                persistable = []
-                for r in results:
-                    persistable.append({
-                        "fn": r["fn"],
-                        "provider_fn": r.get("provider_fn", r["fn"]),
-                        "call_id": r.get("call_id"),
-                        "args": r.get("args"),
-                        "out": r.get("out"),
-                    })
-                conductor.provider_logger.save_tool_results(persist_turn, persistable)
-                short = "\n".join([f"- {r.get('provider_fn', r['fn'])} (id={r.get('call_id')})" for r in results])
-                conductor.logger_v2.append_text("conversation/conversation.md", conductor.md_writer.provider_tool_results(short, f"provider_native/tool_results/turn_{persist_turn}.json"))
-        except Exception:
-            pass
-
-        for result_entry in results:
-            tool_name = str(result_entry.get("fn") or "")
-            tool_out = result_entry.get("out") if isinstance(result_entry.get("out"), dict) else {}
-            if not _is_completion_action_result(tool_name, tool_out):
-                continue
-
-            if not getattr(session_state, "completion_summary", None):
-                session_state.completion_summary = {
-                    "completed": True,
-                    "method": "tool_completion_action",
-                    "reason": tool_name or "tool_completion_action",
-                    "confidence": 1.0,
-                    "tool": tool_name,
-                    "tool_result": tool_out,
-                    "source": "tool_call",
-                }
-            else:
-                session_state.completion_summary.setdefault("completed", True)
-                session_state.completion_summary.setdefault("reason", tool_name or "tool_completion_action")
-                session_state.completion_summary.setdefault("method", "tool_completion_action")
-
-            if stream_responses:
-                print(f"[stop] reason=tool_based confidence=1.0 - {tool_name}() completed")
-            return True
-
-        if flow_strategy == "assistant_continuation":
-            try:
-                use_responses_api = (
-                    str(session_state.get_provider_metadata("api_variant") or "").lower() == "responses"
+            for entry in results:
+                formatted_output = conductor.message_formatter.format_tool_output(
+                    entry["fn"],
+                    entry["out"],
+                    entry["args"],
                 )
-            except Exception:
-                use_responses_api = False
-            all_results_text = []
-            for r in results:
-                formatted_output = conductor.message_formatter.format_tool_output(r["fn"], r["out"], r["args"])
-                call_id = r.get("call_id")
-
                 tool_result_entry = conductor.message_formatter.create_tool_result_entry(
-                    r["fn"], r["out"], syntax_type="openai", call_id=call_id
-                )
-                session_state.add_message(tool_result_entry, to_provider=use_responses_api)
-                all_results_text.append(formatted_output)
-
-            continuation_content = f"\n\nTool execution results:\n" + "\n\n".join(all_results_text)
-            assistant_continuation = {
-                "role": "assistant",
-                "content": continuation_content
-            }
-            session_state.add_message(assistant_continuation, to_provider=not use_responses_api)
-            markdown_logger.log_assistant_message(continuation_content)
-        else:
-            for r in results:
-                formatted_output = conductor.message_formatter.format_tool_output(r["fn"], r["out"], r["args"])
-                call_id = r.get("call_id")
-
-                tool_result_entry = conductor.message_formatter.create_tool_result_entry(
-                    r["fn"], r["out"], syntax_type="openai", call_id=call_id
+                    entry["fn"],
+                    entry["out"],
+                    syntax_type="openai",
+                    call_id=entry.get("call_id"),
                 )
                 session_state.add_message(tool_result_entry, to_provider=False)
-
+                call_id = entry.get("call_id")
                 if relay_strategy == "tool_role" and call_id:
                     route_hint = getattr(conductor, "_current_route_id", None) or model
                     provider_id = provider_router.parse_model_id(route_hint)[0]
                     adapter = provider_adapter_manager.get_adapter(provider_id)
-                    tool_result_msg = adapter.create_tool_result_message(call_id, r.get("provider_fn", r["fn"]), r["out"])
-                    tool_messages_to_relay.append(tool_result_msg)
+                    tool_messages_to_relay.append(
+                        adapter.create_tool_result_message(
+                            call_id,
+                            entry.get("provider_fn", entry["fn"]),
+                            entry["out"],
+                        )
+                    )
                 else:
-                    session_state.add_message({"role": "user", "content": formatted_output}, to_provider=True)
-
+                    session_state.add_message(
+                        {"role": "user", "content": formatted_output},
+                        to_provider=True,
+                    )
             if tool_messages_to_relay:
                 session_state.provider_messages.extend(tool_messages_to_relay)
-
-        maybe_transition_plan_mode(conductor, session_state, markdown_logger)
-        return False
-    except ReplayToolOutputMismatchError:
-        raise
-    except Exception:
-        try:
-            if tool_messages_to_relay:
-                fallback_blob = "\n\n".join([m.get("content", "") for m in tool_messages_to_relay])
-                session_state.add_message({"role": "user", "content": fallback_blob}, to_provider=True)
         except Exception:
-            pass
-        return False
+            if tool_messages_to_relay:
+                fallback_blob = "\n\n".join(
+                    message.get("content", "") for message in tool_messages_to_relay
+                )
+                session_state.add_message(
+                    {"role": "user", "content": fallback_blob},
+                    to_provider=True,
+                )
+    return AgentRuntime(
+        conductor=conductor,
+        policy=turn_policy,
+        tool_executor=ToolExecutor(
+            conductor=conductor,
+            session_state=session_state,
+            exec_func=build_exec_func(conductor, session_state),
+            execute_calls=execute_agent_calls,
+        ),
+        event_sink=session_state.add_transcript_entry,
+        log_sink=markdown_logger,
+    ).run(
+        exchange,
+        session_state=session_state,
+        error_handler=error_handler,
+        stream_responses=stream_responses,
+        relay_results=relay_results,
+        persist_results=persist_results,
+        record_execution=record_execution,
+        post_write_closure=True,
+    )
 
 def retry_with_fallback(
     conductor: ConductorContext,

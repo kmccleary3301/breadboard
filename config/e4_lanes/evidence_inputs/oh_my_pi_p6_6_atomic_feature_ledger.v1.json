@@ -1206,14 +1206,14 @@
       "feature_id": "feat_7fdb5e54163f8491",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+      "reference": "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
     },
     {
       "disposition": "historical_provenance_only",
       "feature_id": "feat_66aa65167fe1a23e",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+      "reference": "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
     },
     {
       "disposition": "historical_provenance_only",
@@ -1234,14 +1234,14 @@
       "feature_id": "feat_e82097c722ea3de6",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+      "reference": "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
     },
     {
       "disposition": "historical_provenance_only",
       "feature_id": "feat_e15856161865ccf0",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+      "reference": "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
     },
     {
       "disposition": "historical_provenance_only",
@@ -1381,56 +1381,56 @@
       "feature_id": "feat_b3bcb7697f3ea258",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/compilation/effective_config_graph.py"
+      "reference": "source:breadboard_engine/compilation/effective_config_graph.py"
     },
     {
       "disposition": "historical_provenance_only",
       "feature_id": "feat_0234bfa2b266f538",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
     },
     {
       "disposition": "historical_provenance_only",
       "feature_id": "feat_5123d3276f9ca468",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
     },
     {
       "disposition": "historical_provenance_only",
       "feature_id": "feat_a8c1754af302f290",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
     },
     {
       "disposition": "historical_provenance_only",
       "feature_id": "feat_b650fa627d57aa92",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
     },
     {
       "disposition": "historical_provenance_only",
       "feature_id": "feat_bc11e30da175b4a9",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
     },
     {
       "disposition": "historical_provenance_only",
       "feature_id": "feat_dcc5055b78969aba",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
     },
     {
       "disposition": "historical_provenance_only",
       "feature_id": "feat_e9ae27a72149301b",
       "field": "source_refs",
       "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
     }
   ],
   "row_count": 98,
@@ -1455,7 +1455,7 @@
       "promotion_state": "candidate",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+        "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
       ],
       "stateful": true,
       "target": "breadboard"
@@ -1502,7 +1502,7 @@
       "promotion_state": "candidate",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+        "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
       ],
       "stateful": true,
       "target": "breadboard"
@@ -1677,7 +1677,7 @@
       "promotion_state": "candidate",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+        "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
       ],
       "stateful": true,
       "target": "breadboard"
@@ -1726,7 +1726,7 @@
       "promotion_state": "candidate",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+        "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
       ],
       "stateful": false,
       "target": "breadboard"
@@ -3586,7 +3586,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/effective_config_graph.py",
+        "source:breadboard_engine/compilation/effective_config_graph.py",
         "source:tests/compilation/test_effective_config_graph.py",
         "source:scripts/e4_parity/build_primitive_projection.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
@@ -3623,7 +3623,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json"
@@ -3659,7 +3659,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json"
@@ -3695,7 +3695,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json"
@@ -3731,7 +3731,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json",
         "source:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_evidence_manifest.json"
@@ -3767,7 +3767,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json"
@@ -3803,7 +3803,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json"
@@ -3839,7 +3839,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
         "source:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json"

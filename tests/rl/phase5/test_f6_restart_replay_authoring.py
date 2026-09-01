@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     canonical_json_bytes,
     canonical_json_loads,
 )
@@ -41,7 +41,7 @@ from breadboard.rl.phase5.f3_composition import (
     build_f3_production_composition,
     sha256_bytes,
 )
-from breadboard.rl.state.cas import FilesystemCAS, InMemoryCAS
+from breadboard.artifacts.cas import FilesystemCAS, InMemoryCAS
 import breadboard.rl.phase5.f6_restart_replay_authoring as f6_authoring_module
 from breadboard.rl.phase5.f6_restart_replay_authoring import (
     F6ImmutableFileSource,

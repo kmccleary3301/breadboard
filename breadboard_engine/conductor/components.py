@@ -957,18 +957,26 @@ def get_default_tool_definitions() -> List[ToolDefinition]:
 
 def maybe_run_plan_bootstrap(conductor: Any, session_state: Any, markdown_logger: Optional[Any] = None) -> None:
     try:
-        exec_raw = conductor._build_exec_func(session_state)
-        execute_calls = getattr(conductor, "_execute_agent_calls", None)
-        if not callable(execute_calls):
-            return
+        from .tool_executor import ToolExecutor, build_exec_func, execute_agent_calls
+
+        executor = ToolExecutor(
+            conductor=conductor,
+            session_state=session_state,
+            exec_func=build_exec_func(conductor, session_state),
+            execute_calls=execute_agent_calls,
+        )
 
         def _exec_plan_calls(calls, *, transcript_callback=None, policy_bypass: bool = False):
-            return execute_calls(
+            batch = executor.execute(
                 calls,
-                exec_raw,
-                session_state,
                 transcript_callback=transcript_callback,
                 policy_bypass=policy_bypass,
+            )
+            return (
+                batch.executed_results,
+                batch.failed_at_index,
+                batch.execution_error,
+                batch.plan_metadata,
             )
 
         conductor.guardrail_orchestrator.maybe_run_plan_bootstrap(
@@ -978,7 +986,6 @@ def maybe_run_plan_bootstrap(conductor: Any, session_state: Any, markdown_logger
         )
     except Exception:
         pass
-
 
 def should_require_build_guard(conductor: Any, user_prompt: str) -> bool:
     guard_cfg = (conductor.config.get("completion", {}) or {}).get("build_guard", {})

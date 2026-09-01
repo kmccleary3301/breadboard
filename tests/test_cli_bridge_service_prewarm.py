@@ -412,7 +412,7 @@ async def test_explicit_config_metadata_remains_custom(monkeypatch, tmp_path) ->
         tmp_path,
         metadata={"default_profile": {"profile_id": "forged"}},
     )
-    assert record.metadata["config_path"] == CONFIG
+    assert record.metadata["config_path"] == str(Path(CONFIG).resolve())
     assert "default_profile" not in record.metadata
     await service.stop_session(response.session_id)
     await _stop(record)
@@ -494,7 +494,7 @@ async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch
     service, called = SessionService(), []; monkeypatch.setattr(service, "_prewarm_request_runtime_sync", lambda request, values, config: called.append((request.config_path, values["cli_session_kind"], config["providers"]["default_model"])))
     if not task: monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records"))
     service, response, record = await _create(monkeypatch, tmp_path, service=service, metadata=metadata, stream=True, task=task)
-    assert called == [(CONFIG, metadata["cli_session_kind"], record.runner.current_runtime_config()["providers"]["default_model"])]
+    assert called == [(str(Path(CONFIG).resolve()), metadata["cli_session_kind"], record.runner.current_runtime_config()["providers"]["default_model"])]
     if not task:
         title = "interactive session awaiting input"; stream = Path(record.metadata["runtime_record_dir"]) / "records" / "config_plane.jsonl"; work = [json.loads(line) for line in stream.read_text().splitlines() if '"name":"work_item_' in line]
         assert [item["name"] for item in work] == ["work_item_created", "work_item_lease_acquired", "work_item_attempt_started", "work_item_snapshot"] and [item["record"].get("kind") for item in work] == ["work_item.created", "lease.acquired", "attempt.started", None] and work[-1]["schema_version"] == "bb.work_item.v2"
@@ -775,7 +775,15 @@ async def test_session_service_authorizes_runner_after_prewarm(monkeypatch, tmp_
 
 @pytest.mark.asyncio
 async def test_effective_lock_is_exact_and_secret_free(monkeypatch, tmp_path) -> None:
-    from breadboard_engine.auth.store import DEFAULT_PROVIDER_AUTH_STORE; auth = SimpleNamespace(api_key="forbidden-key", base_url="https://secret.invalid", headers={"X-Secret": "forbidden-header"}); monkeypatch.setattr(DEFAULT_PROVIDER_AUTH_STORE, "get", lambda _: auth); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records"))
+    auth = SimpleNamespace(
+        api_key="forbidden-key",
+        base_url="https://secret.invalid",
+        headers={"X-Secret": "forbidden-header"},
+    )
+    monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True)
+    monkeypatch.setenv(
+        "BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records")
+    )
     workspace = str((tmp_path / "workspace").resolve()); service, response, record = await _create(monkeypatch, tmp_path, workspace=workspace, metadata={"model": "test-runtime-model"}, overrides={"provider_auth_runtime.openai.api_key": auth.api_key})
     config = record.runner.current_runtime_config(); original_lock = service._runtime_lock(response.session_id, config, CONFIG); graph = json.loads(Path(record.metadata["runtime_records"]["effective_config_graph"]).read_text(encoding="utf-8")); assert graph == original_lock.as_dict() and graph["graph_hash"] == record.product_session.read_model.effective_lock_hash
     config["nested"] = {"provider_auth_runtime": {"token": "nested-secret"}, "provider_auth_runtime.token": "dotted-secret", "safe": True}; lock = service._runtime_lock(response.session_id, config, CONFIG); values = {row["path"]: row["value"] for row in lock["effective_values"]}
@@ -787,7 +795,7 @@ async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_p
     with pytest.raises(OSError, match="sink unavailable"): await service.send_input(response.session_id, SessionInputRequest(content="next"))
     assert record.runner._input_queue.empty(); assert [event.kind for event in record.product_session.events] == ["session.started"]
     record.product_session._sink = sink; record.runner._rehydrate_pending_permissions("permission_request", {"request_id": "perm-1", "category": "shell"}); record.runner._permission_queue = _Failing(); persisted = []
-    monkeypatch.setattr("breadboard_engine.api.cli_bridge.session_control.upsert_permission_rule", lambda *_args, **_kwargs: persisted.append(True) or True); request = SessionCommandRequest(command="permission_decision", payload={"request_id": "perm-1", "decision": "always", "rule": "*.sh"})
+    monkeypatch.setattr(record.runner.permission_authority, "update_rule", lambda *_args, **_kwargs: persisted.append(True) or True); request = SessionCommandRequest(command="permission_decision", payload={"request_id": "perm-1", "decision": "always", "rule": "*.sh"})
     with pytest.raises(HTTPException) as error: await service.execute_command(response.session_id, request)
     assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["approval.resolved", "session.failed"]; assert record.status.value == "failed"
     assert persisted == [True] and record.metadata["permission_rules"][0]["rule"] == "*.sh"
@@ -901,20 +909,20 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
     Upload = _Upload
     workspace = tmp_path / "workspace"; service, response, record = await _create(monkeypatch, tmp_path, workspace=str(workspace))
     upload = Upload(); upload.filename = "résumé.txt"; uploaded = await service.upload_attachments(response.session_id, [upload]); attachment_id = uploaded.attachments[0].id
-    digest = record.metadata["artifact_manifest_ref"]["digest"].removeprefix("sha256:"); manifest_path = workspace / ".breadboard" / "artifacts" / "manifests" / f"{response.session_id}.{digest}.json"; manifest = json.loads(manifest_path.read_text()); assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == digest; empty = Upload(); empty.data = b""; attachment_root = workspace / ".breadboard" / "attachments"; before = (manifest_path.read_bytes(), dict(record.product_artifacts), dict(record.metadata), {path.name for path in attachment_root.iterdir()})
+    digest = record.metadata["artifact_manifest_ref"]["digest"].removeprefix("sha256:"); manifest_path = workspace / ".breadboard" / "artifacts" / "manifests" / f"{response.session_id}.{digest}.json"; manifest = json.loads(manifest_path.read_text()); assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == digest; empty = Upload(); empty.data = b""; attachment_root = workspace / ".breadboard" / "attachments"; before = (manifest_path.read_bytes(), dict(record.runner.artifacts.artifact_refs()), dict(record.metadata), {path.name for path in attachment_root.iterdir()})
     attachment_path = next((attachment_root / attachment_id).iterdir()); attachment_path.write_bytes(b"tampered")
-    helper = record.runner._format_attachment_helper([attachment_id, attachment_id]); attachment_path.write_bytes(b"raced"); uri = f"attachment://{record.product_artifacts[attachment_id].digest}"
+    helper = record.runner._format_attachment_helper([attachment_id, attachment_id]); attachment_path.write_bytes(b"raced"); uri = f"attachment://{record.runner.artifacts.artifact_refs()[attachment_id].digest}"
     conductor_class = OpenAIConductor.__ray_metadata__.modified_class; conductor = object.__new__(conductor_class); conductor.config, conductor.workspace, conductor.read_file, conductor._ray_get = {}, str(workspace), lambda _path: {"content": "bypass"}, lambda value: value; conductor._active_session_state = SimpleNamespace(get_provider_metadata=lambda key, default=None: record.runner._active_attachment_capabilities if key == "attachment_capabilities" else default); conductor.sandbox = SimpleNamespace(grep=SimpleNamespace(remote=lambda *args: {"matches": [{"path": str(attachment_path.relative_to(workspace)), "text": "secret"}, {"path": "README.md", "text": "public"}]} if args[3] == 0 else (_ for _ in ()).throw(AssertionError("grep limit applied before privacy filter"))), glob=SimpleNamespace(remote=lambda *args: [str(attachment_path.relative_to(workspace)), "README.md"] if args[2] is None else (_ for _ in ()).throw(AssertionError("glob limit applied before privacy filter"))), ls=SimpleNamespace(remote=lambda *_: {"items": [{"path": str(attachment_path.relative_to(workspace))}, {"path": "README.md"}]}))
-    read_result = conductor._exec_raw({"function": "read_file", "arguments": {"path": uri}}); denied_result = conductor._exec_raw({"function": "read_file", "arguments": {"path": "attachment://sha256:" + "0" * 64}}); digest_path = record.product_artifacts[attachment_id].digest[7:]; direct_result = conductor._exec_raw({"function": "read_file", "arguments": {"path": str(workspace / ".breadboard" / "artifacts" / "sha256" / digest_path[:2] / digest_path)}}); legacy_result = conductor._exec_raw({"function": "read_file", "arguments": {"path": str(attachment_path)}}); grep_result = conductor._exec_raw({"function": "grep", "arguments": {"pattern": ".*", "path": "."}}); glob_result = conductor._exec_raw({"function": "glob", "arguments": {"pattern": "**/*", "path": "."}}); list_result = conductor._exec_raw({"function": "list_dir", "arguments": {"path": ".", "depth": 5}}); shell_result = {"stdout": "preserved"}; blob_result = conductor._exec_raw({"function": "blob.put_file_slice", "arguments": {"path": str(attachment_path)}})
+    read_result = conductor._exec_raw({"function": "read_file", "arguments": {"path": uri}}); denied_result = conductor._exec_raw({"function": "read_file", "arguments": {"path": "attachment://sha256:" + "0" * 64}}); digest_path = record.runner.artifacts.artifact_refs()[attachment_id].digest[7:]; direct_result = conductor._exec_raw({"function": "read_file", "arguments": {"path": str(workspace / ".breadboard" / "artifacts" / "sha256" / digest_path[:2] / digest_path)}}); legacy_result = conductor._exec_raw({"function": "read_file", "arguments": {"path": str(attachment_path)}}); grep_result = conductor._exec_raw({"function": "grep", "arguments": {"pattern": ".*", "path": "."}}); glob_result = conductor._exec_raw({"function": "glob", "arguments": {"pattern": "**/*", "path": "."}}); list_result = conductor._exec_raw({"function": "list_dir", "arguments": {"path": ".", "depth": 5}}); shell_result = {"stdout": "preserved"}; blob_result = conductor._exec_raw({"function": "blob.put_file_slice", "arguments": {"path": str(attachment_path)}})
     assert uri in helper and "content=" not in helper and read_result["content"] == "proof" and "not authorized" in denied_result["error"] and all("model tools" in result["error"] or "attachment URI" in result["error"] for result in (direct_result, legacy_result, blob_result)) and [row["path"] for row in grep_result["matches"]] == glob_result == [row["path"] for row in list_result["items"]] == ["README.md"] and shell_result["stdout"] == "preserved" and attachment_path.read_bytes() == b"raced" and helper.count("Attachment ") == 1
     cas_path = workspace / ".breadboard" / "artifacts" / "sha256" / digest_path[:2] / digest_path; edit_result = conductor._exec_raw({"function": "apply_search_replace", "arguments": {"file_name": str(cas_path), "search": "proof", "replace": "corrupt"}}); patch_result = conductor._exec_raw({"function": "apply_unified_patch", "arguments": {"patch": f"*** Begin Patch\n*** Update File: {cas_path}\n@@\n-proof\n+corrupt\n*** End Patch\n"}})
     assert all("private workspace storage" in result["error"] for result in (edit_result, patch_result)) and conductor._exec_raw({"function": "read_file", "arguments": {"path": uri}})["content"] == "proof" and cas_path.read_bytes() == b"proof"
     empty_error, missing_error = await asyncio.gather(service.upload_attachments(response.session_id, [empty]), service.send_input(response.session_id, SessionInputRequest(content="use it", attachments=["missing"])), return_exceptions=True)
-    assert isinstance(empty_error, HTTPException) and empty_error.status_code == 400 and isinstance(missing_error, HTTPException) and missing_error.status_code == 400 and record.runner._input_queue.empty(); assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata, {path.name for path in attachment_root.iterdir()}) and manifest["schema_version"] == "bb.artifact_manifest.v1" and manifest["artifacts"][0]["name"] == attachment_id
+    assert isinstance(empty_error, HTTPException) and empty_error.status_code == 400 and isinstance(missing_error, HTTPException) and missing_error.status_code == 400 and record.runner._input_queue.empty(); assert before == (manifest_path.read_bytes(), record.runner.artifacts.artifact_refs(), record.metadata, {path.name for path in attachment_root.iterdir()}) and manifest["schema_version"] == "bb.artifact_manifest.v1" and manifest["artifacts"][0]["name"] == attachment_id
     cas_root = workspace / ".breadboard" / "artifacts" / "sha256"; cas_before = {path.relative_to(cas_root): path.read_bytes() for path in cas_root.rglob("*") if path.is_file()}
     real_put, calls = ArtifactStore.put, []; monkeypatch.setattr(ArtifactStore, "put", lambda store, *args, **kwargs: (_ for _ in ()).throw(OSError("write failed")) if (calls.append(1) or len(calls) == 2) else real_put(store, *args, **kwargs))
     with pytest.raises(OSError, match="write failed"): await service.upload_attachments(response.session_id, [Upload(), Upload()])
-    assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata, {path.name for path in attachment_root.iterdir()})
+    assert before == (manifest_path.read_bytes(), record.runner.artifacts.artifact_refs(), record.metadata, {path.name for path in attachment_root.iterdir()})
     assert cas_before == {path.relative_to(cas_root): path.read_bytes() for path in cas_root.rglob("*") if path.is_file()}
     if os.name != "nt":
         outside, attachment_dir = tmp_path / "outside-helper", attachment_path.parent; outside.mkdir(); attachment_path.unlink(); attachment_dir.rmdir(); attachment_dir.symlink_to(outside, target_is_directory=True)
@@ -947,7 +955,7 @@ async def test_image_attachment_becomes_first_class_model_input(
     ).attachments[0].id
 
     helper = record.runner._format_attachment_helper([attachment_id])
-    artifact = record.product_artifacts[attachment_id]
+    artifact = record.runner.artifacts.artifact_refs()[attachment_id]
     assert "read with read_file" in helper
     assert record.runner._active_input_media == [
         {
@@ -965,9 +973,9 @@ async def test_attachment_size_limit_is_rejected_before_durable_input(monkeypatc
     service, response, record = await _create(monkeypatch, tmp_path, workspace=str(tmp_path / "workspace"))
     class Oversized(_Upload):
         async def read(self, size: int = -1) -> bytes: assert 0 < size <= MAX_ATTACHMENT_BYTES + 1; return b"x" * size
-    before = (record.product_session.events, dict(record.product_artifacts), record.runner._input_queue.qsize())
+    before = (record.product_session.events, dict(record.runner.artifacts.artifact_refs()), record.runner._input_queue.qsize())
     with pytest.raises(HTTPException) as upload_error: await service.upload_attachments(response.session_id, [Oversized()])
-    assert upload_error.value.status_code == 413 and before == (record.product_session.events, record.product_artifacts, record.runner._input_queue.qsize())
+    assert upload_error.value.status_code == 413 and before == (record.product_session.events, record.runner.artifacts.artifact_refs(), record.runner._input_queue.qsize())
     first = _Upload(); first.data = b"a" * (MAX_ATTACHMENT_BYTES // 2 + 1); second = _Upload(); second.data = b"b" * (MAX_ATTACHMENT_BYTES // 2 + 1)
     first_id = (await service.upload_attachments(response.session_id, [first])).attachments[0].id; second_id = (await service.upload_attachments(response.session_id, [second])).attachments[0].id; events = record.product_session.events; metadata = json.loads(json.dumps(record.metadata))
     with pytest.raises(HTTPException) as selection_error: await service.send_input(response.session_id, SessionInputRequest(content="Say hi inspect", attachments=[first_id, second_id]))

@@ -29,6 +29,7 @@ from breadboard.product.harness.resolution import (
 )
 from breadboard.product.operations import session as session_operations
 from breadboard.product.runtime import session_store
+from breadboard.product.runtime.public_event_projection import public_session_event
 
 from .models import (
     PublicResult,
@@ -125,11 +126,10 @@ class _LiveSessionAdapter:
             if error.status_code == 404:
                 return None
             raise
-        artifacts = getattr(record, "product_artifacts", {})
-        return [
-            {"name": name, **reference.as_dict()}
-            for name, reference in sorted(artifacts.items())
-        ]
+        runner = getattr(record, "runner", None)
+        if runner is None:
+            return []
+        return runner.artifacts.list_rows()
 
 
 async def _require_live_product_session(
@@ -363,11 +363,10 @@ async def start(
         "session.start",
         idempotency_key,
         values,
-        lambda workspace: session_operations.start(
-            neutral_request,
+        lambda workspace: session_operations.SessionRuntime(
             public_operation_context(workspace),
-            _LiveSessionMutationAdapter(_service(context)),
-        ),
+            mutation_port=_LiveSessionMutationAdapter(_service(context)),
+        ).start(neutral_request),
     )
 
 
@@ -375,11 +374,10 @@ async def start(
 async def list_sessions(request: Request):
     return await invoke_async(
         "session.list",
-        lambda workspace: session_operations.list_sessions(
-            session_operations.ListSessionsRequest(),
+        lambda workspace: session_operations.SessionRuntime(
             public_operation_context(workspace),
-            _LiveSessionAdapter(_service(request)),
-        ),
+            live_port=_LiveSessionAdapter(_service(request)),
+        ).list_sessions(session_operations.ListSessionsRequest()),
     )
 
 
@@ -404,11 +402,10 @@ async def send_input(
         "session.send_input",
         idempotency_key,
         values,
-        lambda workspace: session_operations.send_input(
-            neutral_request,
+        lambda workspace: session_operations.SessionRuntime(
             public_operation_context(workspace),
-            _LiveSessionMutationAdapter(_service(context)),
-        ),
+            mutation_port=_LiveSessionMutationAdapter(_service(context)),
+        ).send_input(neutral_request),
     )
 
 
@@ -434,11 +431,10 @@ async def approve(
         "session.approve",
         idempotency_key,
         values,
-        lambda workspace: session_operations.approve(
-            neutral_request,
+        lambda workspace: session_operations.SessionRuntime(
             public_operation_context(workspace),
-            _LiveSessionMutationAdapter(_service(context)),
-        ),
+            mutation_port=_LiveSessionMutationAdapter(_service(context)),
+        ).approve(neutral_request),
     )
 
 
@@ -457,11 +453,10 @@ async def resume(
         "session.resume",
         idempotency_key,
         {"session_id": session_id},
-        lambda workspace: session_operations.resume(
-            session_operations.ResumeSessionRequest(session_id),
+        lambda workspace: session_operations.SessionRuntime(
             public_operation_context(workspace),
-            _LiveSessionMutationAdapter(_service(request)),
-        ),
+            mutation_port=_LiveSessionMutationAdapter(_service(request)),
+        ).resume(session_operations.ResumeSessionRequest(session_id)),
     )
 
 
@@ -486,11 +481,10 @@ async def cancel(
         "session.cancel",
         idempotency_key,
         values,
-        lambda workspace: session_operations.cancel(
-            neutral_request,
+        lambda workspace: session_operations.SessionRuntime(
             public_operation_context(workspace),
-            _LiveSessionMutationAdapter(_service(context)),
-        ),
+            mutation_port=_LiveSessionMutationAdapter(_service(context)),
+        ).cancel(neutral_request),
     )
 
 
@@ -577,14 +571,16 @@ async def events(
         workspace = public_workspace()
         context = public_operation_context(workspace, capabilities=granted)
         live_port = _LiveSessionAdapter(_service(request))
-        first_batch = await session_operations.read_session_event_batch(
+        runtime = session_operations.SessionRuntime(
+            context,
+            live_port=live_port,
+        )
+        first_batch = await runtime.read_session_event_batch(
             session_operations.ListSessionEventsRequest(
                 session_id=session_id,
                 after_sequence=start_after,
                 limit=limit,
-            ),
-            context,
-            live_port,
+            )
         )
     except Exception as error:
         return result_response(
@@ -608,14 +604,12 @@ async def events(
                 ):
                     return
                 await asyncio.sleep(0.05)
-                batch = await session_operations.read_session_event_batch(
+                batch = await runtime.read_session_event_batch(
                     session_operations.ListSessionEventsRequest(
                         session_id=session_id,
                         after_sequence=cursor,
                         limit=limit - emitted,
-                    ),
-                    context,
-                    live_port,
+                    )
                 )
                 if batch.error is not None:
                     return
@@ -627,7 +621,7 @@ async def events(
                     "session.failed",
                     "session.canceled",
                 }
-                projected_event = session_operations.public_session_event(event)
+                projected_event = public_session_event(event)
                 public_payload = _scrub_event_payload(
                     event["kind"],
                     projected_event["payload"],
@@ -656,14 +650,12 @@ async def events(
                     return
             if not follow:
                 return
-            batch = await session_operations.read_session_event_batch(
+            batch = await runtime.read_session_event_batch(
                 session_operations.ListSessionEventsRequest(
                     session_id=session_id,
                     after_sequence=cursor,
                     limit=limit - emitted,
-                ),
-                context,
-                live_port,
+                )
             )
             if batch.error is not None:
                 return
@@ -683,10 +675,11 @@ async def events(
 async def artifacts(session_id: str, request: Request):
     return await invoke_async(
         "session.artifacts",
-        lambda workspace: session_operations.list_session_artifacts(
-            session_operations.ListSessionArtifactsRequest(session_id),
+        lambda workspace: session_operations.SessionRuntime(
             public_operation_context(workspace),
-            _LiveSessionAdapter(_service(request)),
+            live_port=_LiveSessionAdapter(_service(request)),
+        ).list_session_artifacts(
+            session_operations.ListSessionArtifactsRequest(session_id)
         ),
     )
 
@@ -699,9 +692,8 @@ async def artifacts(session_id: str, request: Request):
 async def get(session_id: str, request: Request):
     return await invoke_async(
         "session.get",
-        lambda workspace: session_operations.get_session(
-            session_operations.GetSessionRequest(session_id),
+        lambda workspace: session_operations.SessionRuntime(
             public_operation_context(workspace),
-            _LiveSessionAdapter(_service(request)),
-        ),
+            live_port=_LiveSessionAdapter(_service(request)),
+        ).get_session(session_operations.GetSessionRequest(session_id)),
     )

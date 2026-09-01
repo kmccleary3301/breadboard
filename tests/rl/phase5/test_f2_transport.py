@@ -136,7 +136,7 @@ def test_scratch_host_runtime_payload_is_deterministic_and_uv_bound(tmp_path: Pa
 
 
 def test_host_runtime_build_is_sealed_and_non_authorizing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    bundle = tmp_path / "source.tar.gz"; bundle.write_bytes(runner._archive({"breadboard/rl/__init__.py": b"", "agentic_coder_prototype/compilation/server_compiler.py": b""}))
+    bundle = tmp_path / "source.tar.gz"; bundle.write_bytes(runner._archive({"breadboard/rl/__init__.py": b"", "breadboard_engine/compilation/server_compiler.py": b""}))
     inventory = tmp_path / "inventory.json"; inventory.write_text("{}")
     output, report_path = tmp_path / "runtime", tmp_path / "runtime-report.json"
     def bounded(argv: list[str], **kwargs: object):

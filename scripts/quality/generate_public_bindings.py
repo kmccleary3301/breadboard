@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -15,8 +16,17 @@ from typing import Any, Final, Mapping, Sequence
 
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG_RELATIVE: Final = Path("contracts/public/operations.v2.json")
+KERNEL_EVENT_REGISTRY_RELATIVE: Final = Path(
+    "contracts/kernel/registries/kernel_event_kinds.v1.json"
+)
+PROJECTION_MODULE_RELATIVE: Final = Path(
+    "breadboard/product/runtime/public_event_projection.py"
+)
+EVENT_BINDINGS_RELATIVE: Final = Path(
+    "sdk/ts/src/generated/session-event-bindings.ts"
+)
 GENERATOR_PATH: Final = "scripts/quality/generate_public_bindings.py"
-GENERATOR_VERSION: Final = "3"
+GENERATOR_VERSION: Final = "4"
 SCHEMA_VERSION: Final = "bb.public_client_binding_manifest.v1"
 GENERATED_FILE_MODE: Final = 0o644
 DOCUMENT_MARKER: Final = "<!-- GENERATED FILE - do not edit by hand. -->"
@@ -66,6 +76,59 @@ POLICY_FIELDS: Final = (
 _HTTP_METHODS: Final = frozenset({"DELETE", "GET", "PATCH", "POST", "PUT"})
 _IDENTIFIER = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _OPERATION_ID = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
+_EVENT_DECODER_CLASSIFICATIONS: Final[Mapping[str, tuple[str, str | None]]] = {
+    "assistant_message": ("assistant-message", None),
+    "user_message": ("input-text", "input_observed"),
+    "provider_response": ("deprecated", None),
+    "provider_response_v2": ("unsupported", None),
+    "tool_call": ("tool-called", "tool_called"),
+    "tool_result": ("tool-result-or-todo", "tool_result_observed"),
+    "permission_request": ("permission-requested", "permission_requested"),
+    "permission_response": ("permission-responded", "permission_responded"),
+    "task_event": ("task-observed", "task_event_observed"),
+    "session_control": ("session-control", "session_control_observed"),
+    "turn_start": ("turn-start", "turn_started"),
+    "guardrail_event": ("unsupported", None),
+    "lifecycle_event": ("unsupported", None),
+    "ctree_node": ("ctree-node", "ctree_node_observed"),
+    "todo_event": ("todo", "todo_updated"),
+    "ctree_snapshot": ("ctree-snapshot", "ctree_snapshot_observed"),
+    "stream.gap": ("gap", "stream_gap_observed"),
+    "assistant.message.start": ("assistant-start", "assistant_message_started"),
+    "assistant.message.delta": ("text", "assistant_text_delta"),
+    "assistant.message.end": ("optional-text", "assistant_text_completed"),
+    "assistant.reasoning.delta": ("text", "assistant_reasoning_delta"),
+    "assistant.thought_summary.delta": ("text", "assistant_thought_summary_delta"),
+    "assistant.tool_call.start": ("assistant-tool-start", "assistant_tool_call_started"),
+    "assistant.tool_call.delta": ("assistant-tool-delta", "assistant_tool_call_delta"),
+    "assistant.tool_call.end": ("assistant-tool-end", "assistant_tool_call_completed"),
+    "tool.exec.start": ("tool-exec-start", "tool_execution_started"),
+    "tool.exec.stdout.delta": ("tool-exec-stdout", "tool_execution_stdout_delta"),
+    "tool.exec.stderr.delta": ("tool-exec-stderr", "tool_execution_stderr_delta"),
+    "tool.exec.end": ("tool-exec-end", "tool_execution_completed"),
+    "assistant_delta": ("text", "assistant_text_delta"),
+    "conversation.compaction.start": ("compaction-start", "conversation_compaction_started"),
+    "conversation.compaction.end": ("compaction-end", "conversation_compaction_completed"),
+    "checkpoint_list": ("checkpoint-list", "checkpoint_list_observed"),
+    "checkpoint_restored": ("checkpoint-restored", "checkpoint_restored"),
+    "skills_catalog": ("skills-catalog", "skills_catalog_observed"),
+    "skills_selection": ("skills-selection", "skills_selection_observed"),
+    "warning": ("warning", "warning_observed"),
+    "reward_update": ("reward", "reward_updated"),
+    "limits_update": ("limits", "limits_updated"),
+    "completion": ("completion", "completion_observed"),
+    "log_link": ("log-link", "log_linked"),
+    "error": ("runtime-error", "runtime_error_observed"),
+    "run_finished": ("run-finished", "run_finished"),
+    "coordination_signal": ("unsupported", None),
+    "coordination_review_verdict": ("unsupported", None),
+    "coordination_directive": ("unsupported", None),
+    "tool.result": ("tool-result-or-todo", "tool_result_observed"),
+    "turn_completed": ("turn-completed", "turn_completed"),
+    "turn_failed": ("turn-failed", "turn_failed"),
+    "turn_cancelled": ("turn-cancelled", "turn_cancelled"),
+}
+
 
 
 class CatalogError(ValueError):
@@ -353,6 +416,252 @@ def _load_catalog(root: Path) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise CatalogError(f"unable to load catalog {path}: {exc}") from exc
+
+def _load_event_registry(root: Path) -> Any | None:
+    path = root / KERNEL_EVENT_REGISTRY_RELATIVE
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CatalogError(f"unable to load event registry {path}: {exc}") from exc
+
+
+def _normalize_event_registry(
+    registry: Any,
+) -> tuple[dict[str, Any], ...]:
+    if not isinstance(registry, Mapping):
+        raise CatalogError("event registry root must be an object")
+    if registry.get("schema_version") != "bb.registry.v1":
+        raise CatalogError("event registry has an unsupported schema_version")
+    if registry.get("registry_id") != "kernel_event_kinds":
+        raise CatalogError("event registry has an unexpected registry_id")
+    entries = registry.get("entries")
+    if not isinstance(entries, list):
+        raise CatalogError("event registry entries must be a list")
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, Mapping):
+            raise CatalogError(f"event registry entry {index} must be an object")
+        event_id = entry.get("id")
+        status = entry.get("status")
+        metadata = entry.get("metadata")
+        if not isinstance(event_id, str) or not event_id:
+            raise CatalogError(f"event registry entry {index} has an invalid id")
+        if event_id in seen:
+            raise CatalogError(f"event registry has duplicate id {event_id}")
+        if status not in {"active", "deprecated"}:
+            raise CatalogError(f"{event_id}: event registry status is invalid")
+        if not isinstance(metadata, Mapping):
+            raise CatalogError(f"{event_id}: event registry metadata must be an object")
+        disposition = _EVENT_DECODER_CLASSIFICATIONS.get(event_id)
+        if disposition is None:
+            raise CatalogError(
+                f"{event_id}: missing explicit event decoder classification"
+            )
+        decoder, normalized_kind = disposition
+        if status == "deprecated" and decoder != "deprecated":
+            raise CatalogError(
+                f"{event_id}: deprecated event requires a deprecated disposition"
+            )
+        seen.add(event_id)
+        normalized.append(
+            {
+                "event_type": event_id,
+                "registry_id": event_id,
+                "source": "kernel_registry",
+                "status": status,
+                "classification": str(metadata.get("classification") or "unknown"),
+                "decoder": decoder,
+                "normalized_kind": normalized_kind,
+                "payload_schema_version": (
+                    str(metadata["payload_schema_version"])
+                    if isinstance(metadata.get("payload_schema_version"), str)
+                    else None
+                ),
+            }
+        )
+    return tuple(sorted(normalized, key=lambda row: row["event_type"]))
+
+
+def _load_public_payload_schemas(root: Path) -> dict[str, str] | None:
+    path = root / PROJECTION_MODULE_RELATIVE
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location(
+        "_breadboard_public_event_projection_codegen",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise CatalogError(f"unable to load projection module {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(root))
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        raise CatalogError(f"unable to load projection module {path}: {exc}") from exc
+    finally:
+        sys.path.pop(0)
+    schemas = getattr(module, "PUBLIC_PAYLOAD_SCHEMAS", None)
+    if not isinstance(schemas, Mapping) or not schemas:
+        raise CatalogError("projection module has no PUBLIC_PAYLOAD_SCHEMAS mapping")
+    if any(
+        not isinstance(kind, str)
+        or not kind
+        or not isinstance(schema, str)
+        or not schema
+        for kind, schema in schemas.items()
+    ):
+        raise CatalogError("projection module has invalid public payload schemas")
+    return dict(sorted(schemas.items()))
+
+
+def _canonical_event_registry_bytes(registry: Mapping[str, Any]) -> bytes:
+    entries = registry.get("entries")
+    if isinstance(entries, list) and all(
+        isinstance(entry, Mapping) and isinstance(entry.get("id"), str)
+        for entry in entries
+    ):
+        registry = dict(registry)
+        registry["entries"] = sorted(entries, key=lambda entry: entry["id"])
+    return canonical_bytes(registry)
+
+
+def canonical_event_registry_sha256(registry: Mapping[str, Any]) -> str:
+    return _sha256(_canonical_event_registry_bytes(registry))
+
+
+def _render_session_event_bindings(
+    rows: Sequence[Mapping[str, Any]],
+    public_payload_schemas: Mapping[str, str],
+    registry_sha256: str,
+    projection_sha256: str,
+    catalog_id: str,
+    catalog_sha256: str,
+) -> bytes:
+    event_types = " | ".join(_ts_string(str(row["event_type"])) for row in rows)
+    decoders = " | ".join(
+        _ts_string(decoder)
+        for decoder in sorted({str(row["decoder"]) for row in rows})
+    )
+    out = [
+        "// GENERATED FILE - do not edit by hand.",
+        f"// generator: {GENERATOR_PATH}",
+        f"// generator-version: {GENERATOR_VERSION}",
+        f"// catalog-id: {catalog_id}",
+        f"// catalog-sha256: {catalog_sha256}",
+        f"// kernel-event-registry: {KERNEL_EVENT_REGISTRY_RELATIVE.as_posix()}",
+        f"// kernel-event-registry-sha256: {registry_sha256}",
+        f"// public-projection-module: {PROJECTION_MODULE_RELATIVE.as_posix()}",
+        f"// public-projection-sha256: {projection_sha256}",
+        "",
+        f"export type GeneratedEventType = {event_types};",
+        f"export type GeneratedEventDecoder = {decoders};",
+        "",
+        "export interface GeneratedEventKindMetadata {",
+        "  readonly eventType: GeneratedEventType;",
+        "  readonly registryId: string | null;",
+        '  readonly source: "kernel_registry" | "bridge";',
+        '  readonly status: "active" | "deprecated";',
+        "  readonly classification: string;",
+        "  readonly decoder: GeneratedEventDecoder;",
+        "  readonly normalizedKind: string | null;",
+        "  readonly payloadSchemaVersion: string | null;",
+        "}",
+        "",
+        "export const GENERATED_EVENT_KIND_METADATA: readonly GeneratedEventKindMetadata[] = [",
+    ]
+    for row in rows:
+        out.extend(
+            [
+                "  {",
+                f"    eventType: {_ts_string(str(row['event_type']))},",
+                f"    registryId: {_ts_string(str(row['registry_id'])) if row['registry_id'] is not None else 'null'},",
+                f"    source: {_ts_string(str(row['source']))},",
+                f"    status: {_ts_string(str(row['status']))},",
+                f"    classification: {_ts_string(str(row['classification']))},",
+                f"    decoder: {_ts_string(str(row['decoder']))},",
+                f"    normalizedKind: {_ts_string(str(row['normalized_kind'])) if row['normalized_kind'] is not None else 'null'},",
+                f"    payloadSchemaVersion: {_ts_string(str(row['payload_schema_version'])) if row['payload_schema_version'] is not None else 'null'},",
+                "  },",
+            ]
+        )
+    out.extend(
+        [
+            "] as const;",
+            "",
+            "export const GENERATED_EVENT_KIND_METADATA_BY_TYPE: Readonly<Record<string, GeneratedEventKindMetadata>> = {",
+        ]
+    )
+    for index, row in enumerate(rows):
+        out.append(
+            f"  {_ts_string(str(row['event_type']))}: GENERATED_EVENT_KIND_METADATA[{index}],"
+        )
+    out.extend(
+        [
+            "} as const;",
+            "",
+            "export const PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS = {",
+        ]
+    )
+    for kind, schema in sorted(public_payload_schemas.items()):
+        out.append(f"  {_ts_string(kind)}: {_ts_string(schema)},")
+    out.extend(
+        [
+            "} as const satisfies Readonly<Record<string, string>>;",
+            "export type PublicSessionEventKind = keyof typeof PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS;",
+            "export type PublicSessionEventPayloadSchema = (typeof PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS)[PublicSessionEventKind];",
+            "",
+        ]
+    )
+    return "\n".join(out).encode("utf-8")
+
+
+def _event_bindings_output(
+    root: Path,
+    catalog_id: str,
+    catalog_sha256: str,
+) -> tuple[Path, bytes] | None:
+    registry = _load_event_registry(root)
+    if registry is None:
+        return None
+    rows = list(_normalize_event_registry(registry))
+    known = {str(row["event_type"]) for row in rows}
+    for event_type, disposition in _EVENT_DECODER_CLASSIFICATIONS.items():
+        if event_type in known:
+            continue
+        decoder, normalized_kind = disposition
+        rows.append(
+            {
+                "event_type": event_type,
+                "registry_id": None,
+                "source": "bridge",
+                "status": "active",
+                "classification": "bridge",
+                "decoder": decoder,
+                "normalized_kind": normalized_kind,
+                "payload_schema_version": None,
+            }
+        )
+    rows.sort(key=lambda row: str(row["event_type"]))
+    schemas = _load_public_payload_schemas(root)
+    if schemas is None:
+        raise CatalogError(
+            f"event registry requires projection module {PROJECTION_MODULE_RELATIVE}"
+        )
+    projection_source = canonical_bytes(schemas)
+    return (
+        root / EVENT_BINDINGS_RELATIVE,
+        _render_session_event_bindings(
+            rows,
+            schemas,
+            canonical_event_registry_sha256(registry),
+            _sha256(projection_source),
+            catalog_id,
+            catalog_sha256,
+        ),
+    )
 
 
 def _canonical_catalog_bytes(catalog: Any) -> bytes:
@@ -903,6 +1212,10 @@ def build_outputs(root: Path | str | None = None) -> dict[Path, bytes]:
             rows, "tui", catalog_id, catalog_sha256
         ),
     }
+    event_output = _event_bindings_output(repo_root, catalog_id, catalog_sha256)
+    if event_output is not None:
+        event_path, event_content = event_output
+        outputs[event_path] = event_content
     for row in rows:
         docs_path = repo_root / "docs/reference/public" / f"{row['docs_slug']}.md"
         outputs[docs_path] = _render_operation_document(row, catalog_id, catalog_sha256)

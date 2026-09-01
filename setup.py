@@ -23,24 +23,21 @@ _MAX_SOURCE_IDENTITY_BYTES = 4096
 _HEX40 = re.compile(r"[0-9a-f]{40}")
 _WHEEL_INPUT_PATHS = (
     "adaptive_iter.py",
-    "agent_configs",
-    "agentic_coder_prototype",
+    "agent_configs/templates",
     "breadboard",
     "breadboard_engine",
     "breadboard_sdk",
-    "config",
-    "conformance",
-    "contracts",
-    "docs",
+    "config/product",
+    "conformance/comparators",
+    "contracts/internal/evidence",
+    "contracts/kernel",
+    "contracts/public",
     "implementations",
-    "scripts",
     "pyproject.toml",
     "setup.py",
-    "requirements.txt",
-    "requirements_web.txt",
-    ":(exclude)docs/conformance/evidence_snapshots/**",
-    ":(exclude)docs/conformance/e4_target_support/**",
-    ":(exclude)scripts/archive/**",
+    ":(exclude)breadboard/optimize/**",
+    ":(exclude)breadboard/rl/**",
+    ":(exclude)breadboard/search/**",
 )
 
 

@@ -48,7 +48,7 @@ _ALLOWED_IMPORTS_BY_PATH = {
             "math",
             "re",
             "typing",
-            "agentic_coder_prototype.compilation.contracts",
+            "breadboard_engine.compilation.contracts",
             "breadboard.rl.harness.contracts",
             "breadboard.rl.harness.runners.base",
             "breadboard.rl.harness.runner_identity",
@@ -62,10 +62,10 @@ _DENIED_IMPORT_PREFIXES = (
     "pathlib",
     "socket",
     "subprocess",
-    "agentic_coder_prototype.agent",
-    "agentic_coder_prototype.agent_llm_openai",
-    "agentic_coder_prototype.conductor",
-    "agentic_coder_prototype.provider",
+    "breadboard_engine.agent",
+    "breadboard_engine.agent_llm_openai",
+    "breadboard_engine.conductor",
+    "breadboard_engine.provider",
     "breadboard.rl.harness.api",
     "breadboard.rl.harness.config_runtime",
     "breadboard.rl.harness.evidence",
@@ -268,15 +268,15 @@ import scripts.rl_phase5.bootstrap_phase5
     legacy_runtime_tree = ast.parse(
         """
 from breadboard.rl.harness.policy import PolicyClient
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.provider.routing import provider_router
-from agentic_coder_prototype.provider.runtime import provider_registry
+from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.provider.routing import provider_router
+from breadboard_engine.provider.runtime import provider_registry
 """
     )
     assert _disallowed_imports(legacy_runtime_tree, frozenset()) == {
-        "agentic_coder_prototype.agent_llm_openai",
-        "agentic_coder_prototype.provider.routing",
-        "agentic_coder_prototype.provider.runtime",
+        "breadboard_engine.agent_llm_openai",
+        "breadboard_engine.provider.routing",
+        "breadboard_engine.provider.runtime",
         "breadboard.rl.harness.policy",
     }
 

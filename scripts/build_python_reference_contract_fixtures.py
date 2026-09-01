@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from breadboard_engine.checkpointing.checkpoint_manager import CheckpointSummary, build_checkpoint_metadata_record
 from breadboard_engine.longrun.checkpoint import build_longrun_checkpoint_metadata_record
-from breadboard_engine.conductor_execution import (
+from breadboard_engine.conductor.execution_records import (
     build_tool_execution_outcome_record,
     build_tool_model_render_record,
 )

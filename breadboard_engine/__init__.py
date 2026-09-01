@@ -1,9 +1,7 @@
-"""
-Agentic Coder Prototype Module
+"""Supported top-level BreadBoard engine entry points.
 
-A simplified, modular implementation of the agentic coding system.
-This module abstracts complex implementation details and provides
-a clean interface for agent-based code generation and manipulation.
+Implementation modules live in their owning packages; this module exposes only
+the small construction and provider-routing interface retained for consumers.
 """
 
 from typing import TYPE_CHECKING

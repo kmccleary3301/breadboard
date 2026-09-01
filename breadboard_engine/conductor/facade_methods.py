@@ -15,7 +15,6 @@ from .components import (
     get_default_tool_definitions,
     get_prompt_cache_control,
     is_read_only_tool,
-    maybe_run_plan_bootstrap,
     normalize_assistant_text,
     prepare_concurrency_policy,
     record_lsp_reward_metrics,
@@ -25,39 +24,23 @@ from .components import (
     tool_defs_from_yaml,
     inject_cache_control_into_message,
 )
-from .execution import (
-    apply_turn_guards,
-    build_exec_func,
-    build_turn_context,
-    execute_agent_calls,
-    finalize_turn_context_snapshot,
-    handle_blocked_calls,
+from .execution_records import legacy_message_view
+from .model_output import (
     handle_native_tool_calls,
     handle_text_tool_calls,
-    hydrate_turn_context_signals,
-    legacy_message_view,
     log_provider_message,
-    maybe_transition_plan_mode,
     process_model_output,
-    resolve_replay_todo_placeholders,
     retry_with_fallback,
-    summarize_execution_results,
-    emit_turn_snapshot,
 )
 from .loop import run_main_loop
 from .modes import (
     add_enhanced_message_fields,
     adjust_tool_prompt_mode,
-    apply_preference_order,
-    apply_selection_legacy,
-    apply_turn_strategy_from_loop,
-    apply_v2_dialect_selection,
-    create_dialect_mapping,
     get_model_response,
-    get_native_preference_hint,
     setup_native_tools,
     setup_tool_prompts,
 )
+from ..execution.dialect_manager import DialectManager
 from .patching import (
     apply_patch_operations_direct,
     convert_patch_to_unified,
@@ -76,9 +59,6 @@ from .patching import (
 
 class OpenAIConductorFacadeMethods:
     """Pass-through OpenAIConductor facade methods delegated to conductor modules."""
-
-    def _apply_turn_strategy_from_loop(self) -> None:
-        apply_turn_strategy_from_loop(self)
 
     def _apply_cache_control_to_initial_user_prompt(
         self,
@@ -142,44 +122,10 @@ class OpenAIConductorFacadeMethods:
     def _register_prompt_hash(self, prompt_type: str, content: Optional[str], turn_index: Optional[int] = None) -> None:
         register_prompt_hash(self, prompt_type, content, turn_index)
 
-    def _maybe_run_plan_bootstrap(self, session_state: Any, markdown_logger: Optional[Any] = None) -> None:
-        maybe_run_plan_bootstrap(self, session_state, markdown_logger)
 
     def _should_require_build_guard(self, user_prompt: str) -> bool:
         return should_require_build_guard(self, user_prompt)
 
-    def _build_turn_context(self, session_state: Any, parsed_calls: List[Any]) -> Any:
-        return build_turn_context(self, session_state, parsed_calls)
-
-    def _summarize_execution_results(
-        self,
-        turn_ctx: Any,
-        executed_results: List[Any],
-        session_state: Any,
-        turn_index_int: Optional[int],
-    ) -> Tuple[List[Dict[str, Any]], Optional[float]]:
-        return summarize_execution_results(self, turn_ctx, executed_results, session_state, turn_index_int)
-
-    def _emit_turn_snapshot(self, session_state: Any, turn_ctx: Any) -> None:
-        emit_turn_snapshot(self, session_state, turn_ctx)
-
-    def _hydrate_turn_context_signals(self, session_state: Any, turn_ctx: Any) -> None:
-        hydrate_turn_context_signals(session_state, turn_ctx)
-
-    def _finalize_turn_context_snapshot(self, session_state: Any, turn_ctx: Any, turn_index: Optional[int]) -> None:
-        finalize_turn_context_snapshot(self, session_state, turn_ctx, turn_index)
-
-    def _apply_turn_guards(self, turn_ctx: Any, session_state: Any) -> List[Any]:
-        return apply_turn_guards(self, turn_ctx, session_state)
-
-    def _handle_blocked_calls(self, turn_ctx: Any, session_state: Any, markdown_logger: Any) -> None:
-        handle_blocked_calls(self, turn_ctx, session_state, markdown_logger)
-
-    def _resolve_replay_todo_placeholders(self, session_state: Any, parsed_call: Any) -> None:
-        resolve_replay_todo_placeholders(self, session_state, parsed_call)
-
-    def _maybe_transition_plan_mode(self, session_state: Any, markdown_logger: Optional[Any] = None) -> None:
-        maybe_transition_plan_mode(self, session_state, markdown_logger)
 
     @staticmethod
     def _count_diff_hunks(text: Optional[str]) -> int:
@@ -248,10 +194,20 @@ class OpenAIConductorFacadeMethods:
         return get_default_tool_definitions()
 
     def _create_dialect_mapping(self) -> Dict[str, Any]:
-        return create_dialect_mapping()
+        return DialectManager.create_dialect_mapping()
 
     def _apply_v2_dialect_selection(self, current: List[str], model_id: str, tool_defs: List[Any]) -> List[str]:
-        return apply_v2_dialect_selection(self, current, model_id, tool_defs)
+        try:
+            ordered, native_hint = DialectManager(self.config).select_v2_dialects(
+                current,
+                model_id,
+                tool_defs,
+            )
+            self._native_preference_hint = native_hint
+            return ordered
+        except Exception:
+            self._native_preference_hint = None
+            return current
 
     def _apply_selection_legacy(
         self,
@@ -260,7 +216,7 @@ class OpenAIConductorFacadeMethods:
         tool_defs: List[Any],
         selection_cfg: Dict[str, Any],
     ) -> List[str]:
-        return apply_selection_legacy(current, model_id, tool_defs, selection_cfg)
+        return DialectManager.apply_selection_legacy(current, model_id, tool_defs, selection_cfg)
 
     def _apply_preference_order(
         self,
@@ -269,10 +225,10 @@ class OpenAIConductorFacadeMethods:
         tool_defs: List[Any],
         preference_cfg: Dict[str, Any],
     ) -> Tuple[List[str], Optional[bool]]:
-        return apply_preference_order(base_order, model_id, tool_defs, preference_cfg)
+        return DialectManager.apply_preference_order(base_order, model_id, tool_defs, preference_cfg)
 
     def _get_native_preference_hint(self) -> Optional[bool]:
-        return get_native_preference_hint(self)
+        return getattr(self, "_native_preference_hint", None)
 
     def _setup_native_tools(self, model: str, use_native_tools: bool) -> bool:
         return setup_native_tools(self, model, use_native_tools)
@@ -398,26 +354,7 @@ class OpenAIConductorFacadeMethods:
             route_id=route_id,
         )
 
-    def _build_exec_func(self, session_state: Any) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
-        return build_exec_func(self, session_state)
 
-    def _execute_agent_calls(
-        self,
-        parsed_calls: List[Any],
-        exec_func: Callable[[Dict[str, Any]], Dict[str, Any]],
-        session_state: Any,
-        *,
-        transcript_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
-        policy_bypass: bool = False,
-    ) -> Tuple[List[Any], int, Optional[Dict[str, Any]], Dict[str, Any]]:
-        return execute_agent_calls(
-            self,
-            parsed_calls,
-            exec_func,
-            session_state,
-            transcript_callback=transcript_callback,
-            policy_bypass=policy_bypass,
-        )
 
     def _get_model_response(
         self,

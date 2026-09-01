@@ -107,7 +107,7 @@ Keep capture output under `docs_tmp/`. Promotion into `docs/conformance/` still 
 | `replay` | operational | breadboard_engine.conductor.bootstrap | 3 |
 | `schema_version` | operational | breadboard_engine.compilation.v2_loader | 0 |
 | `tools` | operational | breadboard_engine.compilation.tool_registry | 4 |
-| `turn_strategy` | operational | breadboard_engine.conductor.execution | 1 |
+| `turn_strategy` | operational | breadboard_engine.conductor.turn_runtime | 1 |
 | `version` | operational | breadboard_engine.compilation.v2_loader | 4 |
 | `workspace` | operational | breadboard_engine.agent | 4 |
 | `profile` | dossier_only | - | 4 |

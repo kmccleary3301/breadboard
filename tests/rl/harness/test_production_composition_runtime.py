@@ -22,7 +22,7 @@ from breadboard.rl.harness.composition import (
 )
 from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.sandbox import InstalledRuntime
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 
 
 def _digest(payload: bytes) -> str:

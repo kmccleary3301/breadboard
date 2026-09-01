@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence, List
 from breadboard_engine.compilation.v2_loader import load_agent_config
-from breadboard.product.runtime.artifacts import _validate_artifact_name
 from breadboard.product.runtime import session_store
 from breadboard_engine.model_roles import (
     ModelRoleProblem,
@@ -32,9 +31,9 @@ from breadboard_engine.skills.registry import (
 )
 from breadboard_engine.plugins.loader import discover_plugin_manifests, plugin_snapshot
 from breadboard_engine.permissions import (
-    build_permission_overrides,
-    load_permission_rules,
-    upsert_permission_rule,
+    PermissionAuthority,
+    PermissionBroker,
+    PolicyPack,
 )
 
 from .events import EventType, SessionEvent
@@ -55,10 +54,10 @@ from .session_control import SessionControlController
 from .task_execution import TaskExecutionOwner
 from .session_lifecycle import SessionLifecycleOwner
 
+from .session_artifacts import MAX_ATTACHMENT_BYTES, SessionArtifactStore
 
 logger = logging.getLogger(__name__)
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
-MAX_ATTACHMENT_BYTES = 16 * 1024
 
 
 class SessionRunner:
@@ -71,6 +70,7 @@ class SessionRunner:
         registry: SessionRegistry,
         request: SessionCreateRequest,
         agent_factory: AgentFactory | None = None,
+        permission_authority: PermissionAuthority | None = None,
     ) -> None:
         self.session = session
         self.registry = registry
@@ -95,10 +95,12 @@ class SessionRunner:
         ) = None
         self._checkpoint_manager: Optional[CheckpointManager] = None
         self._closed = False
-        self._attachment_store: Dict[str, Dict[str, Any]] = {}
         self._active_attachment_capabilities: Dict[str, Dict[str, Any]] = {}
         self._active_input_media: List[Dict[str, str]] = []
         self._permission_queue: Any = None
+        self.permission_authority: PermissionAuthority = (
+            permission_authority or PermissionBroker()
+        )
         self._consumed_permission_responses: Dict[tuple[str, str, str], int] = {}
         self._skills_catalog_cache: Optional[Dict[str, Any]] = None
         self._ctree_snapshot_cache: Optional[Dict[str, Any]] = None
@@ -111,6 +113,10 @@ class SessionRunner:
         initial_metadata = self.session.metadata
         initial_metadata.update(dict(request.metadata or {}))
         self.session.metadata = initial_metadata
+        self.artifacts = SessionArtifactStore(
+            session_id=self.session.session_id,
+            metadata=self.session.metadata,
+        )
         task_context = dict(initial_metadata.get("task_context") or {})
         task_context.setdefault("session_id", self.session.session_id)
         if (
@@ -171,19 +177,8 @@ class SessionRunner:
             product_session,
             expected_session_directory_identity=expected_session_directory_identity,
         )
-        manifest_ref = self.session.metadata.get("artifact_manifest_ref")
-        if not isinstance(manifest_ref, Mapping):
-            return
-        digest = manifest_ref.get("digest")
-        if not isinstance(digest, str) or not digest.startswith("sha256:"):
-            raise ValueError("invalid attachment manifest reference")
-        session_store.authorize_session_artifact_manifest(
+        self.artifacts.authorize_manifest(
             workspace,
-            product_session.read_model.session_id,
-            (
-                f"{product_session.read_model.session_id}."
-                f"{digest.removeprefix('sha256:')}.json"
-            ),
             expected_session_directory_identity=expected_session_directory_identity,
         )
 
@@ -443,23 +438,7 @@ class SessionRunner:
         if admitted_turn.attachments != tuple(attachment_ids):
             raise RuntimeError("attachments do not match the admitted turn")
         with self._product_session_lock:
-            artifacts = getattr(self.session, "product_artifacts", {})
-            unknown = [
-                item
-                for item in attachment_ids
-                if not isinstance(artifacts, dict) or item not in artifacts
-            ]
-            if unknown:
-                raise ValueError(f"unknown attachment IDs: {', '.join(unknown)}")
-            selected_artifacts = [artifacts[item] for item in attachment_ids]
-            total_bytes = sum(
-                int(getattr(item, "size_bytes", MAX_ATTACHMENT_BYTES + 1))
-                for item in selected_artifacts
-            )
-            if total_bytes > MAX_ATTACHMENT_BYTES:
-                raise ValueError(
-                    f"selected attachments exceed {MAX_ATTACHMENT_BYTES}-byte handoff limit"
-                )
+            selected_artifacts = self.artifacts.selected_artifacts(attachment_ids)
             content = self._sanitize_interactive_input_content(content)
             payload = {
                 "content": content,
@@ -467,14 +446,16 @@ class SessionRunner:
                 "input_id": input_id,
                 "turn_id": turn_id,
             }
+            product_session = getattr(self.session, "product_session", None)
+            if product_session is not None:
+                product_session.input(content, selected_artifacts)
+                self.session.metadata["session_contract"] = (
+                    product_session.read_model.as_dict()
+                )
+
             def enqueue() -> None:
-                product_session = getattr(self.session, "product_session", None)
-                if product_session is not None:
-                    product_session.input(content, selected_artifacts)
-                    self.session.metadata["session_contract"] = (
-                        product_session.read_model.as_dict()
-                    )
                 self._input_queue.put_nowait(payload)
+
             if defer_execution is None:
                 enqueue()
             else:
@@ -632,7 +613,7 @@ class SessionRunner:
         decision: str,
         scope: str,
     ) -> bool:
-        return upsert_permission_rule(
+        return self.permission_authority.update_rule(
             workspace_dir,
             category=category,
             pattern=pattern,
@@ -737,6 +718,7 @@ class SessionRunner:
             overrides["providers.default_model"] = self._model_override.strip()
         if isinstance(self._mode, str) and self._mode.strip():
             overrides["mode"] = self._mode.strip()
+        base_cfg = self._load_base_config()
         requested_permission_mode = (
             (
                 self.request.permission_mode
@@ -746,14 +728,19 @@ class SessionRunner:
             .strip()
             .lower()
         )
-        base_cfg = self._load_base_config()
-        if requested_permission_mode in {"prompt", "ask", "interactive"}:
-            overrides.setdefault("permissions.options.mode", "prompt")
-            overrides.setdefault("permissions.options.default_response", "reject")
-            overrides.setdefault("permissions.edit.default", "ask")
-            overrides.setdefault("permissions.shell.default", "ask")
-            overrides.setdefault("permissions.webfetch.default", "ask")
-            overrides.setdefault("permissions.read.default", "ask")
+        permissions_cfg = (
+            base_cfg.get("permissions")
+            if isinstance(base_cfg.get("permissions"), dict)
+            else {}
+        )
+        self.permission_authority.configure(
+            permissions_cfg,
+            policy_pack=PolicyPack.from_config(base_cfg),
+        )
+        for key, value in self.permission_authority.permission_mode_overrides(
+            requested_permission_mode
+        ).items():
+            overrides.setdefault(key, value)
         if requested_permission_mode in {"prompt", "ask", "interactive", "configured"}:
             self.request.permission_mode = requested_permission_mode
             self.session.metadata["permission_mode"] = requested_permission_mode
@@ -763,13 +750,10 @@ class SessionRunner:
             workspace = str(workspace_guess_path)
             self.request.workspace = workspace
             overrides["workspace.root"] = workspace
-            try:
-                rules = load_permission_rules(workspace_guess_path)
-            except Exception:
-                rules = []
-            for key, value in (
-                build_permission_overrides(base_cfg, rules).items() if rules else ()
-            ):
+            rules = self.permission_authority.load_rules(workspace_guess_path)
+            for key, value in self.permission_authority.build_rule_overrides(
+                base_cfg, rules
+            ).items():
                 existing = overrides.get(key)
                 if (
                     key in overrides
@@ -1199,46 +1183,12 @@ class SessionRunner:
             return path
         return None
 
-    def register_attachments(self, entries: Sequence[Dict[str, Any]]) -> None:
-        for entry in entries:
-            attachment_id = entry.get("id")
-            if not attachment_id:
-                continue
-            self._attachment_store[str(attachment_id)] = dict(entry)
 
     def _format_attachment_helper(self, attachment_ids: Sequence[str]) -> str:
-        helper_lines: list[str] = []
-        self._active_attachment_capabilities = {}
-        self._active_input_media = []
-        for index, key in enumerate(
-            dict.fromkeys(str(value) for value in attachment_ids), start=1
-        ):
-            info = self._attachment_store.get(key)
-            if not info:
-                continue
-            artifact_ref = getattr(self.session, "product_artifacts", {}).get(key)
-            if artifact_ref is None:
-                raise RuntimeError(f"attachment artifact missing: {key}")
-            filename = str(info.get("filename") or key)
-            _validate_artifact_name(key)
-            uri = f"attachment://{artifact_ref.digest}"
-            self._active_attachment_capabilities[uri] = artifact_ref.as_dict()
-            if str(artifact_ref.media_type).startswith("image/"):
-                self._active_input_media.append(
-                    {
-                        "type": "media",
-                        "kind": "image",
-                        "uri": uri,
-                        "mime": str(artifact_ref.media_type),
-                    }
-                )
-            helper_lines.append(
-                "[Attachment "
-                f"{index}: name={json.dumps(filename, ensure_ascii=True)}; "
-                f"uri={uri}; size_bytes={artifact_ref.size_bytes}; "
-                "read with read_file after normal authorization]"
-            )
-        return "\n".join(helper_lines)
+        helper, capabilities, media = self.artifacts.format_helper(attachment_ids)
+        self._active_attachment_capabilities = capabilities
+        self._active_input_media = media
+        return helper
 
     def _load_run_summary(self, logging_dir: Optional[str]) -> Optional[Dict[str, Any]]:
         return self._task_execution.load_run_summary(logging_dir)

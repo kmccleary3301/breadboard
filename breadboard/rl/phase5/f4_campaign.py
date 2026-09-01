@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")

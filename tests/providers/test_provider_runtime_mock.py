@@ -1,8 +1,8 @@
 from __future__ import annotations
 import pytest
 
-from breadboard_engine.provider_routing import provider_router
-from breadboard_engine.provider_runtime import ProviderRuntimeContext, provider_registry
+from breadboard_engine.provider.routing import provider_router
+from breadboard_engine.provider.runtime import ProviderRuntimeContext, provider_registry
 from breadboard_engine.provider.normalizer import normalize_provider_result
 
 

@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-import agentic_coder_prototype.compilation.bundle as bundle_module
-from agentic_coder_prototype.compilation.bundle import (
+import breadboard_engine.compilation.bundle as bundle_module
+from breadboard_engine.compilation.bundle import (
     ManifestReader,
     build_dependency_closure,
     ingest_directory,
@@ -24,7 +24,7 @@ from agentic_coder_prototype.compilation.bundle import (
     ingest_tar,
     ingest_zip,
 )
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     BundleEntry,
     BundleEntrypoint,
     BundleIntegrityError,
@@ -42,7 +42,7 @@ from agentic_coder_prototype.compilation.contracts import (
     canonical_json_bytes,
     canonical_json_loads,
 )
-from breadboard.rl.state import ArtifactRef, FilesystemCAS, InMemoryCAS
+from breadboard.artifacts import ArtifactRef, FilesystemCAS, InMemoryCAS
 
 
 class CountingCAS:

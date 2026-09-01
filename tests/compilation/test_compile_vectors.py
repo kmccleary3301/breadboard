@@ -4,12 +4,12 @@ from dataclasses import replace
 
 import pytest
 
-from agentic_coder_prototype.compilation.bundle import (
+from breadboard_engine.compilation.bundle import (
     ManifestReader,
     build_dependency_closure,
     ingest_member_map,
 )
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     CompileOptions,
     ConfigBundleManifest,
     ConfigCompileError,
@@ -18,11 +18,11 @@ from agentic_coder_prototype.compilation.contracts import (
     canonical_json_loads,
     canonical_sha256,
 )
-from agentic_coder_prototype.compilation.server_compiler import (
+from breadboard_engine.compilation.server_compiler import (
     compile_config,
     verify_cached_manifest,
 )
-from breadboard.rl.state import InMemoryCAS
+from breadboard.artifacts import InMemoryCAS
 import base64
 import hashlib
 import json
@@ -44,10 +44,10 @@ import json
 import sys
 from dataclasses import replace
 from pathlib import Path
-from agentic_coder_prototype.compilation.bundle import ManifestReader, build_dependency_closure, ingest_member_map
-from agentic_coder_prototype.compilation.contracts import CompileOptions, ConfigBundleManifest, DependencyClosureManifest, canonical_json_loads
-from agentic_coder_prototype.compilation.server_compiler import compile_config
-from breadboard.rl.state import InMemoryCAS
+from breadboard_engine.compilation.bundle import ManifestReader, build_dependency_closure, ingest_member_map
+from breadboard_engine.compilation.contracts import CompileOptions, ConfigBundleManifest, DependencyClosureManifest, canonical_json_loads
+from breadboard_engine.compilation.server_compiler import compile_config
+from breadboard.artifacts import InMemoryCAS
 
 root = Path(sys.argv[1])
 vector = json.loads((root / 'vector.json').read_bytes())

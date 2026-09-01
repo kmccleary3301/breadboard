@@ -8,13 +8,13 @@ from breadboard_engine.conductor.components import (
     session_requires_workspace_tool_usage,
     should_require_workspace_tool_usage,
 )
-from breadboard_engine.guardrail.orchestrator import GuardrailOrchestrator
-from breadboard_engine.conductor.execution import (
+from breadboard_engine.guardrails.orchestrator import GuardrailOrchestrator
+from breadboard_engine.conductor.implementation_receipts import (
     _async_result_task_id_from_activity,
     _is_allowed_async_result_followup,
     _required_final_answer_marker,
-    handle_text_tool_calls,
 )
+from breadboard_engine.conductor.model_output import handle_text_tool_calls
 
 
 class _FakeSessionState:

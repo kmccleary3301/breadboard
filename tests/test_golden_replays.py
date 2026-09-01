@@ -17,7 +17,7 @@ from breadboard_engine.parity import (
     build_run_ir_from_run_dir,
     compare_run_ir,
 )
-from breadboard_engine.parity_manifest import ParityScenario, load_parity_scenarios
+from breadboard_engine.parity.manifest import ParityScenario, load_parity_scenarios
 
 ROOT = Path(__file__).resolve().parents[1]
 REPLAY_SCRIPT = ROOT / "scripts/replay_opencode_session.py"

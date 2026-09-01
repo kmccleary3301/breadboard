@@ -22,7 +22,6 @@ from breadboard.rl.harness.qualification import (
 
 PRODUCTION_SOURCE_ROOT_NAMES = (
     "agent_configs",
-    "agentic_coder_prototype",
     "breadboard",
     "breadboard_ext",
     "breadboard_sdk",

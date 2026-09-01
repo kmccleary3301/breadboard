@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.compilation.bundle import (
+from breadboard_engine.compilation.bundle import (
     ManifestReader,
     build_dependency_closure,
     ingest_member_map,
 )
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     BundleIntegrityError,
     BundleLimitError,
     BundleLimits,
@@ -25,7 +25,7 @@ from agentic_coder_prototype.compilation.contracts import (
     DependencyEdge,
     UndeclaredMemberError,
 )
-from breadboard.rl.state import ArtifactRef, InMemoryCAS
+from breadboard.artifacts import ArtifactRef, InMemoryCAS
 
 
 class MutableProtocolCAS:

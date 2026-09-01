@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from breadboard_engine.permission_broker import PermissionBroker, PermissionDeniedError
-from breadboard_engine.policy_pack import PolicyPack
-from breadboard_engine.policy_pack import PolicyPack
+from breadboard_engine.permissions.broker import PermissionBroker, PermissionDeniedError
+from breadboard_engine.permissions.policy_pack import PolicyPack
+from breadboard_engine.permissions.policy_pack import PolicyPack
 
 
 class _DummySessionState:
