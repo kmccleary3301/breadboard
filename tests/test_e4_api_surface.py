@@ -385,7 +385,7 @@ def test_legacy_routes_can_be_explicitly_enabled(
     assert local_client.get("/status").status_code == 200
     assert local_client.get("/v1/status").status_code == 200
     assert local_client.get("/sessions").status_code == 200
-    assert local_client.get("/v1/sessions").status_code == 200
+    assert local_client.get("/v1/internal/sessions").status_code == 200
     assert local_client.get("/rl/runs/probe").status_code == 400
     assert local_client.get("/v1/rl/runs/probe").status_code == 400
 
@@ -394,6 +394,7 @@ def test_legacy_routes_default_off_removes_unversioned_aliases(monkeypatch: pyte
     monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
 
     local_client = TestClient(create_app())
+    public_sessions = local_client.get("/v1/sessions")
 
     assert local_client.get("/status").status_code == 200
     assert local_client.get("/features").status_code == 404
@@ -404,6 +405,9 @@ def test_legacy_routes_default_off_removes_unversioned_aliases(monkeypatch: pyte
     assert local_client.get("/v1/status").status_code == 404
     assert local_client.get("/v1/features").status_code == 404
     assert local_client.get("/v1/system").status_code == 200
+    assert public_sessions.status_code == 404
+    assert public_sessions.json()["schema_version"] == "bb.cli.result.v1"
+    assert local_client.get("/v1/internal/sessions").status_code == 200
     assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 @pytest.mark.parametrize("flag_value", ["0", "false", "no", "off"])
@@ -413,6 +417,7 @@ def test_legacy_routes_flag_off_removes_unversioned_aliases(
     monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", flag_value)
 
     local_client = TestClient(create_app())
+    public_sessions = local_client.get("/v1/sessions")
 
     assert local_client.get("/status").status_code == 200
     assert local_client.get("/features").status_code == 404
@@ -423,6 +428,9 @@ def test_legacy_routes_flag_off_removes_unversioned_aliases(
     assert local_client.get("/v1/status").status_code == 404
     assert local_client.get("/v1/features").status_code == 404
     assert local_client.get("/v1/system").status_code == 200
+    assert public_sessions.status_code == 404
+    assert public_sessions.json()["schema_version"] == "bb.cli.result.v1"
+    assert local_client.get("/v1/internal/sessions").status_code == 200
     assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 
@@ -711,14 +719,14 @@ def test_split_v1_session_file_endpoints_list_and_read_content(
     service.registry._records[record.session_id] = record
     local_client = TestClient(create_app(service=service))
 
-    listing = local_client.get("/v1/sessions/file-session/files")
+    listing = local_client.get("/v1/internal/sessions/file-session/files")
     assert listing.status_code == 200
     assert listing.json() == [
         {"path": "subdir", "type": "directory", "size": None, "updated_at": None},
         {"path": "alpha.txt", "type": "file", "size": 6, "updated_at": None},
     ]
 
-    content = local_client.get("/v1/sessions/file-session/files/content", params={"path": "alpha.txt"})
+    content = local_client.get("/v1/internal/sessions/file-session/files/content", params={"path": "alpha.txt"})
     assert content.status_code == 200
     assert content.json() == {"path": "alpha.txt", "content": "alpha\n", "truncated": False, "total_bytes": 6}
 
@@ -748,7 +756,7 @@ def test_session_records_endpoint_serves_runtime_jsonl_with_schema_filter(
     local_client = TestClient(create_app(service=service))
 
     response = local_client.get(
-        "/v1/sessions/records-session/records",
+        "/v1/internal/sessions/records-session/records",
         params={"schema_version": "bb.work_item.v2", "offset": 0, "limit": 1},
     )
 
@@ -766,12 +774,12 @@ def test_session_records_endpoint_serves_runtime_jsonl_with_schema_filter(
 def test_api_error_envelope_covers_auth_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     monkeypatch.setenv("BREADBOARD_API_TOKEN", "secret")
-    auth_response = TestClient(create_app()).get("/v1/sessions")
+    auth_response = TestClient(create_app()).get("/v1/internal/sessions")
     assert auth_response.status_code == 401
     assert auth_response.json() == {"error": "unauthorized", "detail": "unauthorized", "path": None}
 
     validation_response = TestClient(create_app()).post(
-        "/v1/sessions",
+        "/v1/internal/sessions",
         json={"config_path": "   "},
         headers={"Authorization": "Bearer secret"},
     )
@@ -960,7 +968,7 @@ def test_runtime_emission_flag_off_writes_no_records(monkeypatch: pytest.MonkeyP
     client = TestClient(create_app())
 
     response = client.post(
-        "/v1/sessions",
+        "/v1/internal/sessions",
         json={"config_path": "agent_configs/atp_hilbert_like_gpt54_v1.yaml", "task": "runtime emission flag off probe"},
     )
     assert response.status_code == 200

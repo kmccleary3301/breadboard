@@ -325,7 +325,7 @@ def test_default_profile_route_errors_are_typed_and_secret_safe(
 
     monkeypatch.setattr(service, "create_session", fail)
     response = TestClient(create_app(service=service)).post(
-        "/v1/sessions",
+        "/v1/internal/sessions",
         json={},
     )
     assert response.status_code == status_code

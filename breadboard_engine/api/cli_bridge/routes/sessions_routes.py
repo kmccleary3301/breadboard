@@ -25,7 +25,8 @@ from breadboard.product.harness.default_profile import (
 def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> None:
 
     @app.post(
-        "/v1/sessions",
+        "/v1/internal/sessions",
+        include_in_schema=False,
         response_model=SessionCreateResponse,
         responses={
             400: {"model": ErrorResponse},
@@ -65,7 +66,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
             )
 
     @app.get(
-        "/v1/sessions",
+        "/v1/internal/sessions",
+        include_in_schema=False,
         response_model=list[SessionSummary],
     )
     @app.get(
@@ -77,7 +79,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         return list(summaries)
 
     @app.get(
-        "/v1/sessions/{session_id}",
+        "/v1/internal/sessions/{session_id}",
+        include_in_schema=False,
         response_model=SessionSummary,
         responses={404: {"model": ErrorResponse}},
     )
@@ -91,7 +94,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         return record.to_summary()
 
     @app.get(
-        "/v1/sessions/{session_id}/records",
+        "/v1/internal/sessions/{session_id}/records",
+        include_in_schema=False,
         responses={404: {"model": ErrorResponse}},
     )
     async def get_session_records(
@@ -109,7 +113,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         )
 
     @app.post(
-        "/v1/sessions/{session_id}/input",
+        "/v1/internal/sessions/{session_id}/input",
+        include_in_schema=False,
         response_model=SessionInputResponse,
         status_code=status.HTTP_202_ACCEPTED,
         responses={
@@ -141,7 +146,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         )
 
     @app.post(
-        "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
+        "/v1/internal/sessions/{session_id}/turns/{turn_id}/cancel",
+        include_in_schema=False,
         response_model=SessionTurnCancelResponse,
         status_code=status.HTTP_202_ACCEPTED,
         responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 400: {"model": ErrorResponse}},
@@ -153,7 +159,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         return await svc.cancel_turn(session_id, turn_id, payload)
 
     @app.post(
-        "/v1/sessions/{session_id}/command",
+        "/v1/internal/sessions/{session_id}/command",
+        include_in_schema=False,
         response_model=SessionCommandResponse,
         status_code=status.HTTP_202_ACCEPTED,
         responses={
@@ -178,7 +185,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         return await svc.execute_command(session_id, payload)
 
     @app.post(
-        "/v1/sessions/{session_id}/attachments",
+        "/v1/internal/sessions/{session_id}/attachments",
+        include_in_schema=False,
         response_model=AttachmentUploadResponse,
         responses={
             400: {"model": ErrorResponse},
@@ -213,7 +221,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         return await svc.upload_attachments(session_id, files, metadata_payload)
 
     @app.get(
-        "/v1/sessions/{session_id}/files",
+        "/v1/internal/sessions/{session_id}/files",
+        include_in_schema=False,
         response_model=list[SessionFileInfo],
         responses={
             400: {"model": ErrorResponse},
@@ -267,7 +276,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         return await svc.list_files(session_id, root=path or ".")
 
     @app.get(
-        "/v1/sessions/{session_id}/files/content",
+        "/v1/internal/sessions/{session_id}/files/content",
+        include_in_schema=False,
         response_model=SessionFileContent,
         responses={
             400: {"model": ErrorResponse},
@@ -298,7 +308,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         )
 
     @app.get(
-        "/v1/sessions/{session_id}/skills",
+        "/v1/internal/sessions/{session_id}/skills",
+        include_in_schema=False,
         response_model=SkillCatalogResponse,
         responses={404: {"model": ErrorResponse}},
     )
@@ -311,7 +322,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         return await svc.list_skills(session_id)
 
     @app.get(
-        "/v1/sessions/{session_id}/ctrees",
+        "/v1/internal/sessions/{session_id}/ctrees",
+        include_in_schema=False,
         response_model=CTreeSnapshotResponse,
         responses={404: {"model": ErrorResponse}},
     )
@@ -324,7 +336,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         return await svc.get_ctree_snapshot(session_id)
 
     @app.delete(
-        "/v1/sessions/{session_id}",
+        "/v1/internal/sessions/{session_id}",
+        include_in_schema=False,
         status_code=status.HTTP_204_NO_CONTENT,
         responses={404: {"model": ErrorResponse}},
     )
@@ -338,7 +351,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get(
-        "/v1/sessions/{session_id}/events",
+        "/v1/internal/sessions/{session_id}/events",
+        include_in_schema=False,
         responses={404: {"model": ErrorResponse}},
     )
     @app.get(
@@ -374,7 +388,8 @@ def register_session_routes(app: FastAPI, *, get_service, event_payloads) -> Non
         )
 
     @app.get(
-        "/v1/sessions/{session_id}/download",
+        "/v1/internal/sessions/{session_id}/download",
+        include_in_schema=False,
         responses={
             400: {"model": ErrorResponse},
             404: {"model": ErrorResponse},

@@ -9,7 +9,7 @@ export const ENGINE_CLIENT_REGISTRATION_SCHEMA_VERSION = "bb.engine_client_regis
 export const ENGINE_DRAIN_CONTROL_SCHEMA_VERSION = "bb.engine_drain_control.v1" as const
 export const P30_SESSION_CONTRACT_ID = "p30-e4-session-v1" as const
 export const P30_SESSION_SCHEMA_SHA256 =
-  "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a" as const
+  "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9" as const
 
 const ENGINE_PROTOCOL_VERSION = "1.0" as const
 const OWNER_LEASE_TTL_SECONDS = 30 as const

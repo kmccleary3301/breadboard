@@ -1344,7 +1344,7 @@ const parseSafeErrorEnvelope = async (
 }
 
 const pathForSession = (sessionId: SessionId | string, suffix = ""): string =>
-  `/v1/sessions/${encodeURIComponent(String(sessionId))}${suffix}`
+  `/v1/internal/sessions/${encodeURIComponent(String(sessionId))}${suffix}`
 
 const isAbortError = (error: unknown): boolean =>
   typeof error === "object" && error !== null && "name" in error && (error as { readonly name?: unknown }).name === "AbortError"
@@ -2146,7 +2146,7 @@ export const createCanonicalE4Client = (config: CanonicalE4ClientConfig): Canoni
   return {
     create: async (request) => {
       if (request.configPath !== undefined && !request.configPath) throw new CanonicalE4ClientError({ kind: "protocol", code: "missing_config_path" })
-      const response = await requestJson(context, "/v1/sessions", "POST", createRequestBody(request))
+      const response = await requestJson(context, "/v1/internal/sessions", "POST", createRequestBody(request))
       if (!isRawObject(response)) throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_create_response" })
       const sessionId = requiredString(own(response, "session_id"), "session_id") as SessionId
       return open(sessionId)

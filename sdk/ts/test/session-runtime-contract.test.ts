@@ -27,13 +27,13 @@ test("canonical session create omits config_path for the packaged default profil
   let createBody: Record<string, unknown> | null = null
   const fetchImplementation: typeof fetch = async (input, init) => {
     const url = new URL(String(input))
-    if (url.pathname === "/v1/sessions" && init?.method === "POST") {
+    if (url.pathname === "/v1/internal/sessions" && init?.method === "POST") {
       createBody = JSON.parse(String(init.body)) as Record<string, unknown>
       return new Response(JSON.stringify({ session_id: "default-profile-session" }), {
         headers: { "content-type": "application/json" },
       })
     }
-    assert.equal(url.pathname, "/v1/sessions/default-profile-session")
+    assert.equal(url.pathname, "/v1/internal/sessions/default-profile-session")
     return new Response(JSON.stringify({
       session_id: "default-profile-session",
       status: "running",

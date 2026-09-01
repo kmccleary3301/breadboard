@@ -12,6 +12,7 @@ import secrets
 import stat
 import subprocess
 import time
+from copy import copy
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict
 from urllib.parse import urlsplit
@@ -219,6 +220,7 @@ def _drop_legacy_routes(app: FastAPI, *, drop_versioned: bool = False) -> None:
         for prefix, enabled in (
             ("/v1/e4", _env_flag("BREADBOARD_ENABLE_E4_API")),
             ("/v1/engine", True),
+            ("/v1/internal", True),
             ("/v1/models", True),
         )
         if enabled
@@ -446,7 +448,25 @@ def _p30_session_contract_descriptor(
     app: FastAPI,
     service: SessionService,
 ) -> dict[str, Any]:
-    document = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    p30_route_keys = {
+        (method, path)
+        for method, path, _handler, _service_method in P30_SESSION_ROUTE_BINDINGS
+    }
+    contract_routes: list[APIRoute] = []
+    for route in app.routes:
+        if not isinstance(route, APIRoute) or not any(
+            route.path == path and method in route.methods
+            for method, path in p30_route_keys
+        ):
+            continue
+        contract_route = copy(route)
+        contract_route.include_in_schema = True
+        contract_routes.append(contract_route)
+    document = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=contract_routes,
+    )
     operations: list[dict[str, Any]] = []
     handler_bindings: list[dict[str, Any]] = []
     missing_routes: list[str] = []
@@ -513,7 +533,7 @@ def _p30_session_contract_descriptor(
     handler_bindings.append(
         {
             "method": "GET",
-            "path": "/v1/sessions/{session_id}/events",
+            "path": "/v1/internal/sessions/{session_id}/events",
             "handler": "prepared_event_stream",
             "expected_handler": "prepared_event_stream",
             "service_method": "prepared_event_stream",
@@ -525,7 +545,7 @@ def _p30_session_contract_descriptor(
     handler_bindings.append(
         {
             "method": "GET",
-            "path": "/v1/sessions/{session_id}/events",
+            "path": "/v1/internal/sessions/{session_id}/events",
             "handler": getattr(_encode_sse_event, "__name__", None),
             "expected_handler": "_encode_sse_event",
             "service_method": None,
@@ -537,7 +557,7 @@ def _p30_session_contract_descriptor(
     handler_bindings.append(
         {
             "method": "GET",
-            "path": "/v1/sessions/{session_id}/events",
+            "path": "/v1/internal/sessions/{session_id}/events",
             "handler": "SessionEvent.asdict",
             "expected_handler": "SessionEvent.asdict",
             "service_method": None,
@@ -549,7 +569,7 @@ def _p30_session_contract_descriptor(
     handler_bindings.append(
         {
             "method": "GET",
-            "path": "/v1/sessions/{session_id}",
+            "path": "/v1/internal/sessions/{session_id}",
             "handler": "SessionRecord.to_summary",
             "expected_handler": "SessionRecord.to_summary",
             "service_method": None,
@@ -587,7 +607,7 @@ def _p30_session_contract_descriptor(
             r
             for r in app.routes
             if isinstance(r, APIRoute)
-            and r.path == "/v1/sessions/{session_id}/input"
+            and r.path == "/v1/internal/sessions/{session_id}/input"
             and "POST" in r.methods
             and getattr(r.endpoint, "__name__", None) == "post_input"
         ),
@@ -598,7 +618,7 @@ def _p30_session_contract_descriptor(
             r
             for r in app.routes
             if isinstance(r, APIRoute)
-            and r.path == "/v1/sessions/{session_id}/events"
+            and r.path == "/v1/internal/sessions/{session_id}/events"
             and "GET" in r.methods
             and getattr(r.endpoint, "__name__", None) == "stream_events"
         ),
@@ -632,11 +652,11 @@ def _p30_session_contract_descriptor(
             if isinstance(route, APIRoute)
             and route.path
             in {
-                "/v1/sessions",
-                "/v1/sessions/{session_id}",
-                "/v1/sessions/{session_id}/input",
-                "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
-                "/v1/sessions/{session_id}/events",
+                "/v1/internal/sessions",
+                "/v1/internal/sessions/{session_id}",
+                "/v1/internal/sessions/{session_id}/input",
+                "/v1/internal/sessions/{session_id}/turns/{turn_id}/cancel",
+                "/v1/internal/sessions/{session_id}/events",
             }
         }
     )
@@ -1127,11 +1147,11 @@ def create_app(
         if isinstance(route, APIRoute)
         and route.path
         in {
-            "/v1/sessions",
-            "/v1/sessions/{session_id}",
-            "/v1/sessions/{session_id}/input",
-            "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
-            "/v1/sessions/{session_id}/events",
+            "/v1/internal/sessions",
+            "/v1/internal/sessions/{session_id}",
+            "/v1/internal/sessions/{session_id}/input",
+            "/v1/internal/sessions/{session_id}/turns/{turn_id}/cancel",
+            "/v1/internal/sessions/{session_id}/events",
         }
     }
     return app

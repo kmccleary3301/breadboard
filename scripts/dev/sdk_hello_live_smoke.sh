@@ -64,19 +64,18 @@ else
   (
     cd "${ROOT_DIR}"
     BREADBOARD_CLI_HOST=127.0.0.1 BREADBOARD_CLI_PORT="${PORT}" \
+      BREADBOARD_API_TOKEN="${BREADBOARD_API_TOKEN-}" \
       "${PYTHON_BIN}" -m breadboard_engine.api.cli_bridge.server
   ) >"${SERVER_LOG}" 2>&1 &
   SERVER_PID=$!
 fi
 
-health_args=(--fail --silent --show-error)
-if [[ -n "${BREADBOARD_API_TOKEN:-}" ]]; then
-  health_args+=(--header "Authorization: Bearer ${BREADBOARD_API_TOKEN}")
-fi
-
+export BREADBOARD_BASE_URL="${BASE_URL}"
 ready=0
 for _ in {1..120}; do
-  if curl "${health_args[@]}" "${BASE_URL%/}/v1/health" >/dev/null 2>&1; then
+  if BREADBOARD_SDK_TIMEOUT_S=0.25 \
+    "${PYTHON_BIN}" "${ROOT_DIR}/scripts/dev/python_sdk_hello.py" \
+    >/dev/null 2>&1; then
     ready=1
     break
   fi
@@ -95,7 +94,6 @@ if [[ "${ready}" != "1" ]]; then
   exit 1
 fi
 
-export BREADBOARD_BASE_URL="${BASE_URL}"
 "${PYTHON_BIN}" "${ROOT_DIR}/scripts/dev/python_sdk_hello.py"
 if [[ "${RUN_TS}" == "1" ]]; then
   "${NODE_BIN}" "${ROOT_DIR}/scripts/dev/ts_sdk_hello.mjs"

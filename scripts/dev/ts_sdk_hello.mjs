@@ -3,7 +3,7 @@
 import { createBreadboardClient } from "../../sdk/ts/dist/index.js"
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:9099"
-const baseUrl = process.env.BREADBOARD_BASE_URL ?? DEFAULT_BASE_URL
+const baseUrl = process.env.BREADBOARD_BASE_URL || DEFAULT_BASE_URL
 const authToken = process.env.BREADBOARD_API_TOKEN
 const client = authToken
   ? createBreadboardClient({ baseUrl, authToken })
