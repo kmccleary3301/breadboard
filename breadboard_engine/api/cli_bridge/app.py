@@ -984,12 +984,25 @@ def create_app(
                     ).model_dump(),
                 )
         principal = _public_request_principal(request, required_token)
+        route_path = get_route_path(request.scope)
+        if route_path == "/v1/internal/sessions" or route_path.startswith(
+            "/v1/internal/sessions/"
+        ):
+            try:
+                _require_local_control_request(request)
+            except HTTPException as error:
+                return JSONResponse(
+                    status_code=error.status_code,
+                    content=ErrorEnvelope(
+                        error="forbidden",
+                        detail=str(error.detail),
+                        path=route_path,
+                    ).model_dump(),
+                )
         if (
             public_api_enabled
             and not legacy_routes_enabled
-            and _is_public_runtime_setup_request(
-                request.method, get_route_path(request.scope)
-            )
+            and _is_public_runtime_setup_request(request.method, route_path)
         ):
             try:
                 _require_local_control_request(request)

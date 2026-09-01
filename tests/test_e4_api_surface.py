@@ -771,6 +771,31 @@ def test_session_records_endpoint_serves_runtime_jsonl_with_schema_filter(
     assert payload["records"][0]["record"]["status"] == "running"
 
 
+def test_internal_sessions_require_loopback_or_api_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    monkeypatch.delenv("BREADBOARD_API_TOKEN", raising=False)
+    client = TestClient(create_app())
+
+    allowed = client.get(
+        "/v1/internal/sessions",
+        headers={"Host": "127.0.0.1:9099"},
+    )
+    rejected = client.get(
+        "/v1/internal/sessions",
+        headers={"Host": "attacker.example"},
+    )
+
+    assert allowed.status_code == 200
+    assert rejected.status_code == 403
+    assert rejected.json() == {
+        "error": "forbidden",
+        "detail": "credential control requires a loopback host or API bearer token",
+        "path": "/v1/internal/sessions",
+    }
+
+
 def test_api_error_envelope_covers_auth_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     monkeypatch.setenv("BREADBOARD_API_TOKEN", "secret")

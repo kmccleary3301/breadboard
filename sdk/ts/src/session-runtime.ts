@@ -1368,6 +1368,7 @@ const requestJson = async (
   method: "GET" | "POST",
   body: unknown,
   callerSignal?: AbortSignal,
+  notFoundSessionId?: SessionId,
 ): Promise<unknown> => {
   const controller = new AbortController()
   let timedOut = false
@@ -1393,9 +1394,8 @@ const requestJson = async (
           ? CANCELLATION_ERROR_CODES
           : []
       const safe = await parseSafeErrorEnvelope(response, controller, allowedCodes, INPUT_ERROR_CODES)
-      if (response.status === 404) {
-        const sessionId = path.split("/")[3] ?? "unknown"
-        throw new CanonicalE4ClientError({ kind: "session-not-found", sessionId: sessionId as SessionId })
+      if (response.status === 404 && notFoundSessionId !== undefined) {
+        throw new CanonicalE4ClientError({ kind: "session-not-found", sessionId: notFoundSessionId })
       }
       throw new CanonicalE4ClientError({ kind: "http", status: response.status, code: safe.code, body: REDACTED_VALUE, ...(safe.turnId === null ? {} : { turnId: safe.turnId }) })
     }
@@ -1771,7 +1771,14 @@ class RuntimeSession implements OpenedSession {
 
   async snapshot(): Promise<SessionSnapshot> {
     this.assertOpen()
-    const observed = await decodeSnapshot(await requestJson(this.context, pathForSession(this.sessionId), "GET", undefined))
+    const observed = await decodeSnapshot(await requestJson(
+      this.context,
+      pathForSession(this.sessionId),
+      "GET",
+      undefined,
+      undefined,
+      this.sessionId,
+    ))
     if (observed.sessionId !== this.sessionId) {
       throw new CanonicalE4ClientError({ kind: "protocol", code: "cross_session_snapshot" })
     }
@@ -1813,7 +1820,14 @@ class RuntimeSession implements OpenedSession {
       throw error
     }
     try {
-      const receipt = decodeSubmitReceipt(await requestJson(this.context, pathForSession(this.sessionId, "/input"), "POST", body))
+      const receipt = decodeSubmitReceipt(await requestJson(
+        this.context,
+        pathForSession(this.sessionId, "/input"),
+        "POST",
+        body,
+        undefined,
+        this.sessionId,
+      ))
       if (receipt.clientMessageId !== clientMessageId) {
         throw new CanonicalE4ClientError({ kind: "protocol", code: "submit_receipt_identity_mismatch" })
       }
@@ -1839,6 +1853,8 @@ class RuntimeSession implements OpenedSession {
         pathForSession(this.sessionId, `/turns/${encodeURIComponent(turnId)}/cancel`),
         "POST",
         { cancellation_request_key: cancellationRequestKey, reason: request.reason ?? "user_requested" },
+        undefined,
+        this.sessionId,
       ))
       if (receipt.cancellationRequestKey !== cancellationRequestKey || receipt.turnId !== turnId) {
         throw new CanonicalE4ClientError({ kind: "protocol", code: "cancellation_receipt_identity_mismatch" })
@@ -1859,7 +1875,7 @@ class RuntimeSession implements OpenedSession {
       await requestJson(this.context, pathForSession(this.sessionId, "/command"), "POST", {
         command: "respond_permission",
         payload: { request_id: requestId, response: decision },
-      }),
+      }, undefined, this.sessionId),
       requestId,
       decision,
     )

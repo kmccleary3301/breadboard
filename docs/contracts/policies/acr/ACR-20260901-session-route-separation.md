@@ -44,6 +44,7 @@ The default server assigned `/v1/sessions` to the public projected API after rem
   - Public OpenAPI excludes `/v1/internal` paths.
   - Python and TypeScript SDK hello scripts complete against the same default server.
   - The Python and TypeScript public SDK hello clients reject bearer use on plaintext non-loopback requests; the engine execution child allowlist excludes bearer and provider credentials.
+  - The internal session namespace requires an API bearer token or same-site loopback access.
 
 ## 6) Rollout Plan
 
