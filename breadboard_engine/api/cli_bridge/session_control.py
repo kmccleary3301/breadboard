@@ -26,6 +26,7 @@ from breadboard_engine.permissions import (
     normalize_permission_responses,
     resolve_permission_responses,
 )
+from breadboard_engine.security import WorkspaceFilesystem
 from breadboard_engine.skills.registry import normalize_skill_selection
 
 from .events import EventType

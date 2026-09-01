@@ -16,7 +16,7 @@ try:
     from breadboard_engine.compilation.tool_registry import load_tool_registry
     from breadboard_engine.compilation.v2_loader import load_agent_config_view
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from breadboard_engine.compilation.primitive_records import finalize_record, get_spec
     from breadboard_engine.compilation.tool_registry import load_tool_registry
     from breadboard_engine.compilation.v2_loader import load_agent_config_view
@@ -27,7 +27,7 @@ REGISTRY_PATH = Path("contracts/kernel/registries/config_surface_fields.v1.json"
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return Path(__file__).resolve().parents[3]
 
 
 def _repo_rel(path: Path) -> str:

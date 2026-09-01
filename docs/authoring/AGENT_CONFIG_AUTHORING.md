@@ -82,7 +82,7 @@ Keep capture output under `docs_tmp/`. Promotion into `docs/conformance/` still 
 
 `bbh` is the authoring front door. These scripts remain available for maintenance and debugging:
 
-- `scripts/authoring/explain_agent_config.py` backs `bbh harness explain`.
+- `breadboard/product/harness/config_explanation.py` backs `bbh harness explain`.
 - `scripts/authoring/validate_lane.py` backs `bbh lane validate`.
 - `scripts/e4_parity/compile_lane_lock.py` backs `bbh lane lock`.
 - `scripts/e4_parity/run_lane.py` backs `bbh lane capture`.

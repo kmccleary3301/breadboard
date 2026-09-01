@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 443
+live_script_count: 438
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -17,7 +17,7 @@ entries:
   - path: scripts/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/e4_parity/test_regenerate_evidence.py]
+    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py]
     expiry: none (durable tooling)
   - path: scripts/_cross_system_eval_v1.py
     class: campaign
@@ -102,12 +102,7 @@ entries:
   - path: scripts/authoring/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/rl/phase4/test_wrapper_identity.py]
-    expiry: none (durable tooling)
-  - path: scripts/authoring/explain_agent_config.py
-    class: live-wired
-    owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, tests/e4_parity/test_config_explanation.py]
+    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py]
     expiry: none (durable tooling)
   - path: scripts/authoring/render_field_table.py
     class: live-owned
@@ -899,11 +894,6 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/dev/first_time_doctor.py, tests/test_artifact_tasks.py]
     expiry: none (durable tooling)
-  - path: scripts/dev/audit_engine_rename.py
-    class: live-owned
-    owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml]
-    expiry: none (durable tooling)
   - path: scripts/dev/bootstrap_first_time.sh
     class: live-wired
     owner: kmccleary3301
@@ -959,11 +949,6 @@ entries:
     owner: kmccleary3301
     callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml, tests/test_ts_sdk_codegen.py]
     expiry: none (durable tooling)
-  - path: scripts/dev/make_rename_compat_fixtures.py
-    class: live-owned
-    owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml]
-    expiry: none (durable tooling)
   - path: scripts/dev/python_sdk_hello.py
     class: live-owned
     owner: kmccleary3301
@@ -973,11 +958,6 @@ entries:
     class: live-wired
     owner: kmccleary3301
     callers: [Makefile, docs/getting-started/INSTALL_AND_DEV_QUICKSTART.md, docs/quickstarts/FIRST_RUN_5_MIN.md, scripts/SCRIPT_INDEX.yaml, scripts/dev/check_onboarding_contract_drift.py, scripts/dev/devx_smoke.sh]
-    expiry: none (durable tooling)
-  - path: scripts/dev/rename_codemod.py
-    class: live-owned
-    owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/dev/report_devx_timing.py
     class: live-wired
@@ -999,11 +979,6 @@ entries:
     owner: kmccleary3301
     callers: [Makefile, scripts/SCRIPT_INDEX.yaml, scripts/dev/quickstart_first_time.py]
     expiry: none (durable tooling)
-  - path: scripts/dev/shim_package_init.template.py
-    class: live-owned
-    owner: kmccleary3301
-    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml]
-    expiry: none (durable tooling)
   - path: scripts/dev/ts_sdk_hello.mjs
     class: live-owned
     owner: kmccleary3301
@@ -1022,12 +997,12 @@ entries:
   - path: scripts/e4_parity/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/e4_parity/test_regenerate_evidence.py]
+    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/rl/phase4/test_wrapper_identity.py]
+    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/accepted_artifact_materialize.py
     class: live-owned
@@ -1187,7 +1162,7 @@ entries:
   - path: scripts/e4_parity/fixtures/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/rl/phase4/test_wrapper_identity.py]
+    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/fixtures/p3_lane_fixtures.py
     class: live-owned
@@ -1377,7 +1352,7 @@ entries:
   - path: scripts/e4_parity/validators/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/e4_parity/test_regenerate_evidence.py]
+    callers: [docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/validators/gate_errors.py
     class: live-owned

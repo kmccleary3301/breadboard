@@ -37,6 +37,8 @@ _WHEEL_INPUT_PATHS = (
     "contracts/public",
     "implementations",
     "pyproject.toml",
+    "requirements.txt",
+    "requirements_web.txt",
     "setup.py",
     ":(exclude)breadboard/optimize/**",
     ":(exclude)breadboard/rl/**",

@@ -393,6 +393,22 @@ print(json.dumps({{
     assert help_result.stdout.startswith("usage: breadboard")
     assert "harness" in help_result.stdout
     assert "lane" not in help_result.stdout
+    minimal_config = next(
+        venv.glob(
+            "lib/python*/site-packages/agent_configs/templates/minimal_harness.v3.yaml"
+        )
+    )
+    explain_result = subprocess.run(
+        [str(breadboard), "harness", "explain", str(minimal_config)],
+        cwd=outside_repo,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert explain_result.returncode == 0, explain_result.stderr
+    assert "minimal_harness" in explain_result.stdout
+
 
     payloads = {}
     for command, expected_stage in (
