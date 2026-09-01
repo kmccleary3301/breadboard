@@ -398,14 +398,9 @@ async def test_verifier_uses_distinct_runtime_workspace_and_read_only_snapshot(
     result = await verifier.execute()
     assert isinstance(result, MappingProxyType)
     assert dict(result) == payload
-    verifier_executable = next(
-        runtime.executable_path
-        for runtime in harness.fixture.authorities.runtimes
-        if runtime.runtime_id == verifier.plan.runtime.runtime_id
-    )
     assert harness.backend.handles[1].argv_actions == [
         (
-            (verifier_executable, "-c", "printf verifier"),
+            verifier.plan.verifier.argv,
             primary.plan.limits.verifier_timeout_ms,
             primary.plan.limits.observation_bytes,
         )
@@ -1139,6 +1134,12 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
     tmp_path: Path, phase: str
 ) -> None:
     harness, primary, snapshot = await _opened_snapshot(tmp_path)
+    snapshot_object = (
+        harness.cache_root
+        / "snapshot-objects"
+        / snapshot.root_digest.removeprefix("sha256:")
+    )
+    assert snapshot_object.exists()
     opening: asyncio.Task[Any] | None = None
     if phase == "allocating":
         harness.backend.launch_entered = asyncio.Event()
@@ -1194,6 +1195,11 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
         else CleanupState.RELEASED
     )
     assert verifier_receipt.steps == (
+        CleanupStepReceipt(
+            "snapshot",
+            CleanupState.RELEASED,
+            snapshot.snapshot_id,
+        ),
         CleanupStepReceipt("runtime", expected_runtime_state),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
         CleanupStepReceipt("cache_holder", CleanupState.ALREADY_RELEASED),
@@ -1203,11 +1209,6 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
         CleanupStepReceipt(
             "child_verifier",
             CleanupState.ALREADY_RELEASED,
-        ),
-        CleanupStepReceipt(
-            "snapshot",
-            CleanupState.RELEASED,
-            snapshot.snapshot_id,
         ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
@@ -1219,6 +1220,42 @@ async def test_restart_reconciles_durable_verifier_child_before_parent(
         harness.lease_root / f"{primary.lease_id}.json"
     ).exists()
     assert list(harness.workspace_root.iterdir()) == []
+    assert not snapshot_object.exists()
+
+@pytest.mark.parametrize("mutation", ["root", "parent", "role"])
+async def test_recorded_verifier_snapshot_rejects_mismatched_identity(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    harness, primary, snapshot = await _opened_snapshot(tmp_path)
+    object_path = (
+        harness.cache_root
+        / "snapshot-objects"
+        / snapshot.root_digest.removeprefix("sha256:")
+    )
+    record = {
+        "role": "verifier",
+        "snapshot_id": snapshot.snapshot_id,
+        "snapshot_root_digest": snapshot.root_digest,
+        "parent_lease_id": primary.lease_id,
+    }
+    if mutation == "root":
+        record["snapshot_root_digest"] = "sha256:" + "0" * 64
+    elif mutation == "parent":
+        record["parent_lease_id"] = "lease-" + "f" * 32
+    else:
+        record["role"] = "primary"
+
+    receipt = await harness.manager._release_recorded_verifier_snapshot(
+        record
+    )
+
+    assert receipt.resource == "snapshot"
+    assert receipt.state in {CleanupState.FAILED, CleanupState.QUARANTINED}
+    assert snapshot.snapshot_id in harness.manager._snapshots
+    assert object_path.is_dir()
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert not object_path.exists()
 
 
 async def test_same_manager_reconcile_skips_live_primary_and_verifier_leases(

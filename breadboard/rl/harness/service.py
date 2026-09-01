@@ -1963,7 +1963,7 @@ class BreadBoardV2EpisodeService:
             or verifier_cleanup_lease_mismatch
             or not _cleanup_released(
                 verifier_receipt,
-                required={"runtime", "workspace", "lease_record"},
+                required={"runtime", "workspace", "snapshot", "lease_record"},
             )
         )
         if verifier_cleanup_bad and coordinator.verifier_cleanup_failure is None:
@@ -2872,7 +2872,7 @@ class BreadBoardV2EpisodeService:
             != coordinator.verifier_lease_id
             or not _cleanup_released(
                 coordinator.verifier_cleanup_receipt,
-                required={"runtime", "workspace", "lease_record"},
+                required={"runtime", "workspace", "snapshot", "lease_record"},
             )
         ):
             failure = coordinator.verifier_cleanup_failure or _v2_failure(
@@ -2982,7 +2982,12 @@ class BreadBoardV2EpisodeService:
                         if coordinator.verifier_cleanup_receipt is not None
                         and _cleanup_released(
                             coordinator.verifier_cleanup_receipt,
-                            required={"runtime", "workspace", "lease_record"},
+                            required={
+                                "runtime",
+                                "workspace",
+                                "snapshot",
+                                "lease_record",
+                            },
                         )
                         else None
                     ),
@@ -2991,16 +2996,26 @@ class BreadBoardV2EpisodeService:
                         if coordinator.verifier_cleanup_receipt is not None
                         and _cleanup_released(
                             coordinator.verifier_cleanup_receipt,
-                            required={"runtime", "workspace", "lease_record"},
+                            required={
+                                "runtime",
+                                "workspace",
+                                "snapshot",
+                                "lease_record",
+                            },
                         )
                         else None
                     ),
                     verifier_cleanup_required_resources=(
-                        ("runtime", "workspace", "lease_record")
+                        ("runtime", "workspace", "snapshot", "lease_record")
                         if coordinator.verifier_cleanup_receipt is not None
                         and _cleanup_released(
                             coordinator.verifier_cleanup_receipt,
-                            required={"runtime", "workspace", "lease_record"},
+                            required={
+                                "runtime",
+                                "workspace",
+                                "snapshot",
+                                "lease_record",
+                            },
                         )
                         else ()
                     ),

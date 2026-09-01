@@ -54,7 +54,7 @@ _PRIMARY_CLEANUP_RESOURCES = (
     "cache_holder",
     "lease_record",
 )
-_VERIFIER_CLEANUP_RESOURCES = ("runtime", "workspace", "lease_record")
+_VERIFIER_CLEANUP_RESOURCES = ("runtime", "workspace", "snapshot", "lease_record")
 _SCHEMA_MEDIA = "application/vnd.breadboard.evidence+json"
 
 

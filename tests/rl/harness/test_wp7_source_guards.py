@@ -455,10 +455,11 @@ def test_trusted_process_launch_uses_pinned_fd_and_cannot_resume_before_recordin
     keywords = {keyword.arg: keyword.value for keyword in creator.keywords}
     assert {"executable", "pass_fds"} <= keywords.keys()
     assert _qualified_name(keywords["executable"]) == "self._executable.proc_fd_path"
-    assert isinstance(keywords["pass_fds"], ast.Tuple)
-    assert {
-        _qualified_name(item) for item in keywords["pass_fds"].elts
-    } == {"self._executable.fd", "self._workspace_fd", "write_fd"}
+    pass_fds = ast.unparse(keywords["pass_fds"])
+    assert "self._executable" in pass_fds
+    assert "self._command_executable" in pass_fds
+    assert "self._workspace_fd" in pass_fds
+    assert "write_fd" not in pass_fds
     assert _qualified_name(keywords["executable"]) != "self.plan.runtime.executable_path"
 
     calls = [
@@ -469,7 +470,9 @@ def test_trusted_process_launch_uses_pinned_fd_and_cannot_resume_before_recordin
     create_line = min(
         line for line, name in calls if name == "asyncio.create_subprocess_exec"
     )
-    barrier_line = min(line for line, name in calls if name == "os.read")
+    barrier_line = min(
+        line for line, name in calls if name == "process.stdout.readexactly"
+    )
     stopped_line = min(line for line, name in calls if name == "self._proc_fields")
     recorder_line = min(line for line, name in calls if name == "recorder")
     resume_line = min(line for line, name in calls if name == "os.kill")
@@ -480,15 +483,17 @@ def test_trusted_process_launch_uses_pinned_fd_and_cannot_resume_before_recordin
     assert create_line < drain_line
 
     bootstrap = next(
-        node.value
+        node.value.value
         for node in ast.walk(run)
         if isinstance(node, ast.Assign)
-        and any(isinstance(target, ast.Name) and target.id == "bootstrap" for target in node.targets)
-        and isinstance(node.value, ast.JoinedStr)
+        and any(
+            isinstance(target, ast.Name) and target.id == "bootstrap"
+            for target in node.targets
+        )
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
     )
-    literals = "".join(
-        item.value for item in bootstrap.values if isinstance(item, ast.Constant)
-    )
+    literals = bootstrap
     assert "printf B" in literals
     assert "kill -STOP $$" in literals
     assert 'exec "$@"' in literals

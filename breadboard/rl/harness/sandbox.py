@@ -510,6 +510,8 @@ class _PinnedExecutable:
     snapshot_device: int
     snapshot_inode: int
     proc_fd_path: str
+    execution_format: Literal["elf", "script"]
+    interpreter_path: str | None
     closed: bool = False
 
     def close(self) -> None:
@@ -550,10 +552,13 @@ def _snapshot_installed_executable(
         )
         hasher = __import__("hashlib").sha256()
         size = 0
+        header = bytearray()
         while True:
             chunk = os.read(source_fd, 1024 * 1024)
             if not chunk:
                 break
+            if len(header) < 256:
+                header.extend(chunk[: 256 - len(header)])
             hasher.update(chunk)
             size += len(chunk)
             view = memoryview(chunk)
@@ -566,6 +571,32 @@ def _snapshot_installed_executable(
         if expected_digest is not None and digest != expected_digest:
             raise SandboxLaunchError(
                 "trusted process executable identity mismatch",
+                code="runtime_preflight_failed",
+            )
+        if header.startswith(b"\x7fELF"):
+            execution_format: Literal["elf", "script"] = "elf"
+            interpreter_path = None
+        elif header.startswith(b"#!"):
+            first_line = bytes(header).split(b"\n", 1)[0][2:].strip()
+            try:
+                interpreter_path = first_line.decode("ascii")
+            except UnicodeDecodeError as exc:
+                raise SandboxLaunchError(
+                    "trusted process script interpreter is invalid",
+                    code="runtime_preflight_failed",
+                ) from exc
+            if (
+                not _exact_absolute_path(interpreter_path)
+                or any(character.isspace() for character in interpreter_path)
+            ):
+                raise SandboxLaunchError(
+                    "trusted process script interpreter is unsupported",
+                    code="runtime_preflight_failed",
+                )
+            execution_format = "script"
+        else:
+            raise SandboxLaunchError(
+                "trusted process executable format is unsupported",
                 code="runtime_preflight_failed",
             )
         os.fchmod(snapshot_fd, 0o500)
@@ -597,6 +628,8 @@ def _snapshot_installed_executable(
             snapshot_device=snapshot.st_dev,
             snapshot_inode=snapshot.st_ino,
             proc_fd_path=proc_fd_path,
+            execution_format=execution_format,
+            interpreter_path=interpreter_path,
         )
         snapshot_fd = -1
         return pinned
@@ -1376,12 +1409,14 @@ class TrustedProcessHandle:
         git_executable: str,
         workspace_fd: int,
         workspace_identity: tuple[int, int],
+        command_executable: _PinnedExecutable | None = None,
     ) -> None:
         self.plan = plan
         self.workspace = workspace
         self.lease_id = lease_id
         self.runtime_id = "process-group-" + lease_id
         self._executable = executable
+        self._command_executable = command_executable
         self._git_executable = git_executable
         self._workspace_fd = workspace_fd
         self._workspace_identity = workspace_identity
@@ -1595,13 +1630,32 @@ class TrustedProcessHandle:
                 code="runtime_preflight_failed",
                 lease_id=self.lease_id,
             )
+        execution_argv = tuple(argv)
+        if self._command_executable is not None:
+            if execution_argv[0] != self._command_executable.source_path:
+                raise SandboxLaunchError(
+                    "fixed argv executable is not the pinned authority",
+                    code="runtime_preflight_failed",
+                    lease_id=self.lease_id,
+                )
+            if self._command_executable.execution_format == "script":
+                execution_argv = (
+                    self._executable.proc_fd_path,
+                    self._command_executable.proc_fd_path,
+                    *execution_argv[1:],
+                )
+            else:
+                execution_argv = (
+                    self._command_executable.proc_fd_path,
+                    *execution_argv[1:],
+                )
         return await self._run_pinned_argv(
             (
                 self._executable.proc_fd_path,
                 "-lc",
                 'exec "$@"',
                 "breadboard-execute",
-                *argv,
+                *execution_argv,
             ),
             timeout_ms=timeout_ms,
             output_limit=output_limit,
@@ -1616,7 +1670,6 @@ class TrustedProcessHandle:
                 code="runtime_preflight_failed",
                 lease_id=self.lease_id,
             )
-        read_fd = write_fd = -1
         process: asyncio.subprocess.Process | None = None
         identity_published = False
         try:
@@ -1634,12 +1687,7 @@ class TrustedProcessHandle:
                         code="workspace_authority_mismatch",
                         lease_id=self.lease_id,
                     )
-                read_fd, write_fd = os.pipe()
-                os.set_inheritable(write_fd, True)
-                bootstrap = (
-                    f"printf B >&{write_fd}; "
-                    'kill -STOP $$; exec "$@"'
-                )
+                bootstrap = 'printf B; kill -STOP $$; exec "$@"'
                 process = await asyncio.create_subprocess_exec(
                     self._executable.proc_fd_path,
                     "-c",
@@ -1647,23 +1695,34 @@ class TrustedProcessHandle:
                     "breadboard-bootstrap",
                     *argv,
                     executable=self._executable.proc_fd_path,
-                    pass_fds=(
-                        self._executable.fd,
-                        self._workspace_fd,
-                        write_fd,
-                    ),
+                    pass_fds=tuple(
+                        executable.fd
+                        for executable in (
+                            self._executable,
+                            self._command_executable,
+                        )
+                        if executable is not None
+                    )
+                    + (self._workspace_fd,),
                     preexec_fn=lambda: os.fchdir(self._workspace_fd),
                     env=dict(self.plan.runtime.fixed_environment),
                     start_new_session=True,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                os.close(write_fd)
-                write_fd = -1
-                if os.read(read_fd, 1) != b"B":
-                    raise RuntimeError("trusted process bootstrap failed")
+                if process.stdout is None:
+                    raise RuntimeError("trusted process bootstrap pipe is unavailable")
                 loop = asyncio.get_running_loop()
                 deadline = loop.time() + timeout_ms / 1000
+                try:
+                    marker = await asyncio.wait_for(
+                        process.stdout.readexactly(1),
+                        min(timeout_ms / 1000, 1.0),
+                    )
+                except (asyncio.IncompleteReadError, asyncio.TimeoutError):
+                    raise RuntimeError("trusted process bootstrap failed") from None
+                if marker != b"B":
+                    raise RuntimeError("trusted process bootstrap failed")
                 stop_deadline = min(deadline, loop.time() + 0.25)
                 while True:
                     fields = self._proc_fields(process.pid)
@@ -1691,11 +1750,6 @@ class TrustedProcessHandle:
                     process, clear_identity=identity_published
                 )
             raise
-        finally:
-            if read_fd >= 0:
-                os.close(read_fd)
-            if write_fd >= 0:
-                os.close(write_fd)
 
         total = 0
         count_lock = asyncio.Lock()
@@ -1859,6 +1913,8 @@ class TrustedProcessHandle:
         async with self._launch_lock:
             if not failed and not self._groups:
                 self._executable.close()
+                if self._command_executable is not None:
+                    self._command_executable.close()
                 if self._workspace_fd >= 0:
                     os.close(self._workspace_fd)
                     self._workspace_fd = -1
@@ -1895,14 +1951,41 @@ class TrustedProcessBackend:
                 lease_id=lease_id,
             )
         executable: _PinnedExecutable | None = None
+        command_executable: _PinnedExecutable | None = None
         try:
             executable = _snapshot_installed_executable(
                 plan.runtime.executable_path,
                 plan.runtime.measured_binary_digest,
             )
+            if context.role == "verifier":
+                if (
+                    plan.verifier.runtime_id != plan.runtime.runtime_id
+                    or not plan.verifier.argv
+                ):
+                    raise SandboxLaunchError(
+                        "verifier executable authority is incomplete",
+                        code="runtime_preflight_failed",
+                        lease_id=lease_id,
+                    )
+                command_executable = _snapshot_installed_executable(
+                    plan.verifier.argv[0],
+                    plan.verifier.executable_digest,
+                )
+                if command_executable.execution_format == "script":
+                    interpreter = _snapshot_installed_executable(
+                        os.path.realpath(command_executable.interpreter_path or ""),
+                        plan.runtime.measured_binary_digest,
+                    )
+                    interpreter.close()
             handle = TrustedProcessHandle(
-                plan, workspace, lease_id, executable, git_executable,
-                context.workspace_fd, context.workspace_identity,
+                plan,
+                workspace,
+                lease_id,
+                executable,
+                git_executable,
+                context.workspace_fd,
+                context.workspace_identity,
+                command_executable,
             )
             if context.record_process_identity is None:
                 raise SandboxLaunchError(
@@ -1925,6 +2008,15 @@ class TrustedProcessBackend:
                 "size": executable.size,
                 "execution": "linux-sealed-memfd",
             }
+            if command_executable is not None:
+                effective["trusted_command_executable"] = {
+                    "source_path": command_executable.source_path,
+                    "digest": command_executable.digest,
+                    "size": command_executable.size,
+                    "execution": "linux-sealed-memfd",
+                    "format": command_executable.execution_format,
+                    "interpreter_path": command_executable.interpreter_path,
+                }
             effective["workspace_diff_git_path"] = git_executable
             if repository_base_commit is not None:
                 effective["workspace_base_commit"] = repository_base_commit
@@ -1947,6 +2039,8 @@ class TrustedProcessBackend:
                 False,
             )
         except BaseException:
+            if command_executable is not None:
+                command_executable.close()
             if executable is not None:
                 executable.close()
             os.close(context.workspace_fd)
@@ -3174,6 +3268,23 @@ class SandboxRuntimeManager:
             ",".join(released),
         )
 
+    async def _release_recorded_verifier_snapshot(
+        self,
+        record: Mapping[str, Any],
+    ) -> CleanupStepReceipt:
+        receipt = await asyncio.to_thread(
+            self.materialization_store.recover_stale_snapshot,
+            record,
+        )
+        snapshot_id = record.get("snapshot_id")
+        if (
+            type(snapshot_id) is str
+            and receipt.state
+            in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+        ):
+            self._snapshots.pop(snapshot_id, None)
+        return receipt
+
 
     async def open(self, request: WorkspaceOpenRequest) -> SandboxWorkspaceLease:
         plan = build_sandbox_execution_plan(request, self.registries, self.installed_authorities)
@@ -3598,11 +3709,6 @@ class SandboxRuntimeManager:
                 launched, measurement = await backend.launch(
                     verifier_plan, workspace, context=context
                 )
-                if isinstance(launched, TrustedProcessHandle):
-                    launched.bind_identity_recorder(
-                        lambda resource_id, identity, lease_id=lease_id:
-                            self._record_process_identity(lease_id, resource_id, identity)
-                    )
                 if measurement.mismatch:
                     raise SandboxAttestationError("verifier runtime measurement mismatch", code="runtime_measurement_mismatch",
                                                   lease_id=lease_id)
@@ -4165,6 +4271,10 @@ class SandboxRuntimeManager:
                         CleanupState.QUARANTINED,
                         "dependent verifier cleanup incomplete",
                     )
+            elif role == "verifier":
+                snapshot_step = (
+                    await self._release_recorded_verifier_snapshot(record)
+                )
             reconciliation_prefix = tuple(
                 step
                 for step in (child_step, snapshot_step)
@@ -4223,6 +4333,7 @@ class SandboxRuntimeManager:
                     }
                     if role == "primary"
                     else {
+                        *(("snapshot",) if snapshot_step is not None else ()),
                         "runtime",
                         "workspace",
                         "cache_holder",

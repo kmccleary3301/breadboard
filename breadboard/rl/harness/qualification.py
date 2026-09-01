@@ -1273,7 +1273,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
         runtime_id=verifier_runtime_id,
         runtime_class=c.RuntimeClass.TRUSTED_PROCESS,
         driver_implementation_digest=digest_payload("verifier-process-driver"),
-        runtime_binary_digest=verifier_binary_digest,
+        runtime_binary_digest=shell_digest,
         security_policy_digest=verifier_security_digest,
         image_digest=capability.verifier.image_digest,
         network_policy_digest=network_digest,
@@ -1362,8 +1362,8 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
                     runtime_id=verifier_runtime_id,
                     runtime_class=c.RuntimeClass.TRUSTED_PROCESS,
                     driver_implementation_digest=verifier_binding.driver_implementation_digest,
-                    executable_path=str(verifier_path),
-                    measured_binary_digest=verifier_binary_digest,
+                    executable_path=str(shell_path),
+                    measured_binary_digest=shell_digest,
                     oci_runtime_name="process",
                     supported_platform_versions=(platform_identity,),
                     fixed_environment=(("PATH", "/usr/bin:/bin"),),
@@ -2040,14 +2040,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
 
     runtime_path = Path(installed_runtimes[0].executable_path)
     runtime_stat = runtime_path.stat(follow_symlinks=False)
-    verifier_runtime_path = Path(
-        next(
-            item.executable_path
-            for item in installed_runtimes
-            if item.runtime_id == verifier_runtime_id
-        )
-    )
-    verifier_runtime_stat = verifier_runtime_path.stat(follow_symlinks=False)
+    verifier_stat = verifier_path.stat(follow_symlinks=False)
     response_payload = (
         {
             "output": [
@@ -2130,10 +2123,10 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
             inode=runtime_stat.st_ino,
         ),
         verifier_executable_identity=ExecutableIdentity(
-            path=verifier_runtime_path,
+            path=verifier_path,
             sha256=verifier_binary_digest,
-            device=verifier_runtime_stat.st_dev,
-            inode=verifier_runtime_stat.st_ino,
+            device=verifier_stat.st_dev,
+            inode=verifier_stat.st_ino,
         ),
         selector_digest=selector_runtime_ref.sha256,
         create_body=MappingProxyType(create_body),
