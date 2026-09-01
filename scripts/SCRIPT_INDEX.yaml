@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 440
+live_script_count: 443
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -964,6 +964,11 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/dev/audit_engine_rename.py, tests/rename_compat/test_frozen_provenance.py]
     expiry: none (durable tooling)
+  - path: scripts/dev/python_sdk_hello.py
+    class: live-owned
+    owner: kmccleary3301
+    callers: [Makefile, scripts/SCRIPT_INDEX.yaml, scripts/dev/bootstrap_first_time.sh, scripts/dev/quickstart_first_time.py]
+    expiry: none (durable tooling)
   - path: scripts/dev/quickstart_first_time.py
     class: live-wired
     owner: kmccleary3301
@@ -989,10 +994,20 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
+  - path: scripts/dev/sdk_hello_live_smoke.sh
+    class: live-owned
+    owner: kmccleary3301
+    callers: [Makefile, scripts/SCRIPT_INDEX.yaml, scripts/dev/quickstart_first_time.py]
+    expiry: none (durable tooling)
   - path: scripts/dev/shim_package_init.template.py
     class: live-wired
     owner: kmccleary3301
     callers: [docs/reference/ENGINE_RENAME_MIGRATION.md, docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/dev/audit_engine_rename.py, tests/rename_compat/test_shim_guard.py]
+    expiry: none (durable tooling)
+  - path: scripts/dev/ts_sdk_hello.mjs
+    class: live-owned
+    owner: kmccleary3301
+    callers: [Makefile, scripts/SCRIPT_INDEX.yaml, scripts/dev/bootstrap_first_time.sh, scripts/dev/quickstart_first_time.py]
     expiry: none (durable tooling)
   - path: scripts/dev/verify_sha_pins.py
     class: live-owned

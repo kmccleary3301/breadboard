@@ -454,12 +454,12 @@ def test_compatibility_create_session_omits_only_an_absent_config_path(
     assert requests == [
         (
             "POST",
-            "/v1/sessions",
+            "/v1/internal/sessions",
             {"body": {"task": "", "stream": True, "workspace": "/workspace"}},
         ),
         (
             "POST",
-            "/v1/sessions",
+            "/v1/internal/sessions",
             {
                 "body": {
                     "config_path": "/custom.yaml",
