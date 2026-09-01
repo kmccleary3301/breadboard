@@ -797,8 +797,10 @@ def test_internal_sessions_require_loopback_or_api_token(
     }
 
 
+@pytest.mark.parametrize("path", ["/v1/sessions", "/sessions"])
 def test_legacy_sessions_require_loopback_or_api_token(
     monkeypatch: pytest.MonkeyPatch,
+    path: str,
 ) -> None:
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
     monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
@@ -806,17 +808,17 @@ def test_legacy_sessions_require_loopback_or_api_token(
     client = TestClient(create_app())
 
     allowed = client.get(
-        "/v1/sessions",
+        path,
         headers={"Host": "127.0.0.1:9099"},
     )
     rejected = client.get(
-        "/v1/sessions",
+        path,
         headers={"Host": "attacker.example"},
     )
 
     assert allowed.status_code == 200
     assert rejected.status_code == 403
-    assert rejected.json()["path"] == "/v1/sessions"
+    assert rejected.json()["path"] == path
 
 
 def test_api_error_envelope_covers_auth_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:

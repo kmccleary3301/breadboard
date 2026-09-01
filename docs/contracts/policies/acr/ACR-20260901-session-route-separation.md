@@ -29,14 +29,14 @@ The default server assigned `/v1/sessions` to the public projected API after rem
 ## 4) Change Classification
 
 - Classification: `internal`
-- Compatibility window: clean cutover on the default server before publication. Canonical internal callers move to `/v1/internal/sessions`; public callers remain on `/v1/sessions`. Explicit `BREADBOARD_LEGACY_ROUTES=1` compatibility mode retains its prior raw `/v1/sessions` prefix for legacy clients only.
+- Compatibility window: clean cutover on the default server before publication. Canonical internal callers move to `/v1/internal/sessions`; public callers remain on `/v1/sessions`. Explicit `BREADBOARD_LEGACY_ROUTES=1` compatibility mode retains its prior raw `/v1/sessions` and `/sessions` aliases for legacy clients only.
 - Required schema/version bumps: P30 session schema digest changes to `sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9`. Protocol and package versions remain unchanged.
 
 ## 5) Evidence and Validation Plan
 
 - Required contract lane tests: engine identity, lifecycle authority, CLI bridge export, TypeScript SDK codegen, Python SDK, E4 API surface, public session API, and the default-profile route error regression.
 - Required replay/parity checks: product compilation and replay determinism on the exact PR head.
-- Required conformance/ablation checks: public binding parity, clean SDK consumer, wheel packaging, and default-server SDK smokes.
+- Required conformance/ablation checks: public binding parity, clean SDK consumer, wheel packaging, default-server SDK smokes, and the installed wheel plus packed-SDK artifact probe.
 - Required evidence: exact-head correctness review, exact-head security review, patch secret scan, and protected PR checks.
 - Acceptance criteria:
   - Default engine identity reports the P30 contract compatible and ready.
@@ -44,7 +44,7 @@ The default server assigned `/v1/sessions` to the public projected API after rem
   - Public OpenAPI excludes `/v1/internal` paths.
   - Python and TypeScript SDK hello scripts complete against the same default server.
   - The Python and TypeScript public SDK hello clients reject bearer use on plaintext non-loopback requests; the engine execution child allowlist excludes bearer and provider credentials.
-  - The internal session namespace and explicit legacy raw alias require an API bearer token or same-site loopback access.
+  - The internal session namespace and explicit legacy raw aliases require an API bearer token or same-site loopback access.
 
 ## 6) Rollout Plan
 

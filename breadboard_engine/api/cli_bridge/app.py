@@ -990,7 +990,10 @@ def create_app(
             or route_path.startswith("/v1/internal/sessions/")
         )
         legacy_session_request = legacy_routes_enabled and (
-            route_path == "/v1/sessions" or route_path.startswith("/v1/sessions/")
+            route_path == "/v1/sessions"
+            or route_path.startswith("/v1/sessions/")
+            or route_path == "/sessions"
+            or route_path.startswith("/sessions/")
         )
         if internal_session_request or legacy_session_request:
             try:

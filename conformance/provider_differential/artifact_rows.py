@@ -371,7 +371,6 @@ def _installed_server(bundle: ArtifactBundle, root: Path) -> Iterator[str]:
             "BREADBOARD_SESSION_EVENT_ROOT": str(server_root / "session-events"),
             "BREADBOARD_ENABLE_E4_API": "0",
             "RAY_SCE_LOCAL_MODE": "1",
-            "BREADBOARD_LEGACY_ROUTES": "1",
         }
     )
     log_path = server_root / "server.log"
