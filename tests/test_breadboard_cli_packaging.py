@@ -62,7 +62,6 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
             "-m",
             "pip",
             "install",
-            "--no-deps",
             "--editable",
             str(ROOT),
         ],

@@ -17,7 +17,7 @@ py-modules = ["adaptive_iter"]
 include-package-data = false
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent_configs.templates*", "breadboard_engine*", "breadboard*", "breadboard_sdk*", "config.product*", "conformance.comparators*", "contracts.kernel*", "contracts.public*", "contracts.internal.evidence*", "implementations*"]
+include = ["agent_configs.templates*", "breadboard_engine*", "breadboard*", "breadboard_sdk*", "config.e4_targets*", "config.product*", "conformance.comparators*", "contracts.kernel*", "contracts.public*", "contracts.internal.evidence*", "implementations*"]
 exclude = ["breadboard.rl*", "breadboard.optimize*", "breadboard.search*", "breadboard_ext*"]
 namespaces = true
 
@@ -27,6 +27,11 @@ namespaces = true
 "breadboard_engine" = ["engine-build-provenance.v1.json"]
 "breadboard_sdk.generated" = ["*.json"]
 "config.product" = ["*.json"]
+"config.e4_targets" = ["index.json"]
+"config.e4_targets.oh_my_pi.16.2.13" = ["*.json", "*.yaml"]
+"config.e4_targets.oh_my_pi.16.2.13.prompts" = ["*.md"]
+"config.e4_targets.pi.0.57.1" = ["*.json", "*.yaml"]
+"config.e4_targets.pi.0.57.1.prompts" = ["*.md"]
 "conformance.comparators" = ["registry.json"]
 "contracts.kernel" = ["*.json"]
 "contracts.kernel.manifests" = ["*.json"]
