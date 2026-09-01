@@ -173,7 +173,7 @@
       "promotion_state": "ready",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:breadboard_engine/compilation/helper_runtime_primitives.py",
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
         "source:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json",
         "source:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_evidence_manifest.json"

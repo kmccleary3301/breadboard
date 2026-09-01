@@ -110,8 +110,8 @@ def test_default_store_path_uses_state_dir_as_the_state_directory(
     assert default_store_path() == state_dir / "credentials.sqlite3"
 
 
-def test_broker_nine_method_surface_and_plain_data(tmp_path):
-    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+def test_broker_nine_method_surface_and_plain_data():
+    broker = ProviderBroker(SQLiteCredentialStore(":memory:"))
     methods = (
         "listProviders",
         "listCredentials",
