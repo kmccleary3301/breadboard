@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.e4_parity.tree_digest import digest_directory
+from breadboard.product.evidence.e4.tree_digest import digest_directory
 
 
 EXPECTED_PREIMAGE = (

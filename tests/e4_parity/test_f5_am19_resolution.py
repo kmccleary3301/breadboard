@@ -10,13 +10,15 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from scripts.e4_parity import run_lane
-from scripts.e4_parity.path_refs import (
+from breadboard.product.evidence.e4 import run_lane
+from breadboard.product.evidence.e4.path_refs import (
     ReferenceResolutionError,
     resolve_declared_reference,
     workspace_root_for_checkout,
 )
-from scripts.e4_parity.validate_atomic_feature_ledger import collect_atomic_feature_ledger_errors
+from scripts.e4_parity.validate_atomic_feature_ledger import (
+    collect_atomic_feature_ledger_errors,
+)
 
 
 DERIVED_LEDGER_REF = "docs_tmp/phase_20/derived/BB_ER_FEATURE_LEDGER.json"
@@ -53,7 +55,10 @@ def _write_claim_lane(lane_def_dir: Path, lane_id: str, output_ref: str) -> None
             "comparator_class": "byte",
         },
         "compare": {"comparator": "byte", "config": {}},
-        "claim": {"scope": {"behaviors": ["claim"], "surfaces": ["artifact"]}, "exclusions": []},
+        "claim": {
+            "scope": {"behaviors": ["claim"], "surfaces": ["artifact"]},
+            "exclusions": [],
+        },
         "artifacts_root": "artifacts/conformance/node_gate",
         "reverify_command": {
             "argv": ["python", "claim.py", "--json-out", output_ref],
@@ -72,7 +77,9 @@ def _json_output_path(command: list[str]) -> Path:
     raise AssertionError(f"command has no --json-out argument: {command!r}")
 
 
-def test_repo_namespace_resolves_phase_20_derived_inside_nested_checkout(tmp_path: Path) -> None:
+def test_repo_namespace_resolves_phase_20_derived_inside_nested_checkout(
+    tmp_path: Path,
+) -> None:
     checkout = _nested_checkout(tmp_path)
     ledger = checkout / DERIVED_LEDGER_REF
     ledger.parent.mkdir(parents=True)
@@ -94,7 +101,9 @@ def test_run_lane_resolver_keeps_phase_20_derived_inside_nested_checkout(
     checkout = _nested_checkout(tmp_path)
     monkeypatch.setattr(run_lane, "ROOT", checkout)
 
-    assert run_lane._resolve_repo_path(DERIVED_LEDGER_REF) == checkout / DERIVED_LEDGER_REF
+    assert (
+        run_lane._resolve_repo_path(DERIVED_LEDGER_REF) == checkout / DERIVED_LEDGER_REF
+    )
 
 
 @pytest.mark.parametrize(
@@ -202,7 +211,9 @@ def test_er_progress_seed_refresh_uses_explicit_workspace_root(
     )
 
     progress = json.loads(progress_path.read_text(encoding="utf-8"))
-    assert progress["workstreams"][0]["items"][0]["evidence"][0]["sha256"] == run_lane.sha256_file(seed_path)
+    assert progress["workstreams"][0]["items"][0]["evidence"][0][
+        "sha256"
+    ] == run_lane.sha256_file(seed_path)
 
 
 def test_er_progress_seed_refresh_fails_when_progress_file_is_missing(
@@ -251,10 +262,10 @@ def test_promotion_refresh_propagates_valid_explicit_workspace_root(
     monkeypatch.setattr(run_lane, "ROOT", checkout)
     monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
 
+    from breadboard.product.evidence.e4 import generate_support_claims
     from scripts.e4_parity import (
         build_artifact_catalog,
         build_e4_final_readiness_packet,
-        generate_support_claims,
         seed_atomic_feature_ledger,
     )
 
@@ -275,7 +286,9 @@ def test_promotion_refresh_propagates_valid_explicit_workspace_root(
         "build_catalog",
         lambda **_kwargs: {"integrity": {"entry_count": 2}},
     )
-    monkeypatch.setattr(build_artifact_catalog, "write_json", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        build_artifact_catalog, "write_json", lambda *_args, **_kwargs: None
+    )
     monkeypatch.setattr(
         generate_support_claims,
         "generate",

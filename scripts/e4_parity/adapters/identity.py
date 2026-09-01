@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Mapping
+import sys
 
+from breadboard.product.evidence.e4.adapters import identity as _owner
 
-def translate(payload: Any, *, config: Mapping[str, Any] | None = None) -> Any:
-    """Return an already-normalized E4 payload unchanged."""
-    return payload
+sys.modules[__name__] = _owner

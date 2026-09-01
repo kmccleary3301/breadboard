@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 
 from breadboard_engine.compilation.primitive_records import get_spec, validate_record
-from scripts.e4_parity import run_lane
-from scripts.e4_parity.lane_definitions import load_lane_def
+from breadboard.product.evidence.e4 import run_lane
+from breadboard.product.evidence.e4.lane_definitions import load_lane_def
 from scripts.e4_parity.adapters import oh_my_pi_compiler_capture as compiler
 from scripts.e4_parity.adapters.oh_my_pi_p6_6_work_item_projection import PROJECTION_ID as WORK_ITEM_V2_PROJECTION_ID
 

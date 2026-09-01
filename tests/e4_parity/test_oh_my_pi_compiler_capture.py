@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping
@@ -18,7 +19,7 @@ from scripts.e4_parity.lane_definitions import load_manifest_lane_def
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE = ROOT.parent
+WORKSPACE = Path(os.environ.get("BB_WORKSPACE_ROOT", ROOT.parent)).resolve()
 LANE_DIR = ROOT / "config/e4_lanes"
 INVENTORY_PATH = ROOT / "docs/conformance/e4_lane_inventory.json"
 SUPPORT_CLAIMS_DIR = ROOT / "docs/conformance/support_claims"

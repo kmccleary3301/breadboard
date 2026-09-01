@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from scripts.e4_parity import run_lane
-from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
+from breadboard.product.evidence.e4 import run_lane
+from breadboard.product.evidence.e4.stage_contracts import STAGES_BY_KIND, check_stage_report
 
 _VALID_SHA256 = "sha256:" + "a" * 64
 _STAGE_REPORT_BASE: dict[str, Any] = {

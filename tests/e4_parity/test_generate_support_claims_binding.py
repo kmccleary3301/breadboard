@@ -7,25 +7,40 @@ from typing import Any
 
 import pytest
 
-from breadboard_engine.conformance.catalog_binding import CATALOG_PATH, catalog_segment_hash, stable_entries_hash
-from scripts.e4_parity.validators.registries import schema_generation_default
+from breadboard_engine.conformance.catalog_binding import (
+    CATALOG_PATH,
+    catalog_segment_hash,
+    stable_entries_hash,
+)
+from breadboard.product.evidence.e4.validators.registries import (
+    schema_generation_default,
+)
 
 
-generator = importlib.import_module("scripts.e4_parity.generate_support_claims")
+generator = importlib.import_module(
+    "breadboard.product.evidence.e4.generate_support_claims"
+)
 ROOT = Path(__file__).resolve().parents[2]
 SUPPORT_CLAIM_SCHEMA_VERSION = schema_generation_default("support_claim")
 
 
 def _lane(lane_id: str = "lane_alpha") -> dict[str, str]:
-    return {"lane_id": lane_id, "support_claim_schema_version": SUPPORT_CLAIM_SCHEMA_VERSION}
+    return {
+        "lane_id": lane_id,
+        "support_claim_schema_version": SUPPORT_CLAIM_SCHEMA_VERSION,
+    }
 
 
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
-def _catalog(*, revision: int | bool = 3, include_stable_hash: bool = True) -> dict[str, Any]:
+def _catalog(
+    *, revision: int | bool = 3, include_stable_hash: bool = True
+) -> dict[str, Any]:
     entries = [
         {
             "artifact_kind": "capture",
@@ -85,7 +100,10 @@ def test_claim_derived_validator_ref_hashes_physical_artifact_outside_binding_ca
         "docs/conformance/lane_alpha/prevalidation_report.json#sha256:" + "0" * 64,
     )
 
-    assert resolved == f"docs/conformance/lane_alpha/prevalidation_report.json#{generator.sha256_path(validator_path)}"
+    assert (
+        resolved
+        == f"docs/conformance/lane_alpha/prevalidation_report.json#{generator.sha256_path(validator_path)}"
+    )
 
 
 def test_catalog_binding_uses_fixture_revision_and_segment_hashes(
@@ -153,7 +171,10 @@ def test_catalog_binding_uses_live_revision_when_segment_digest_changes(
     assert binding["segment_hash"] == stable_entries_hash(catalog["entries"])
 
 
-@pytest.mark.parametrize("catalog", [{**_catalog(), "entries": None}, _catalog(revision=True), _catalog(revision=0)])
+@pytest.mark.parametrize(
+    "catalog",
+    [{**_catalog(), "entries": None}, _catalog(revision=True), _catalog(revision=0)],
+)
 def test_catalog_binding_rejects_missing_digest_or_invalid_revision(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -244,12 +265,16 @@ def test_updated_node_gate_only_syncs_refs_and_hashes(tmp_path: Path) -> None:
     assert updated["ok"] is False
     assert updated["accepted"] is False
     assert updated["hashes"]["support_claim"] == generator.sha256_path(claim_path)
-    assert updated["hashes"]["evidence_manifest"] == generator.sha256_path(manifest_path)
+    assert updated["hashes"]["evidence_manifest"] == generator.sha256_path(
+        manifest_path
+    )
     assert updated["refs"]["support_claim"] == generator.display(claim_path)
     assert updated["refs"]["evidence_manifest"] == generator.display(manifest_path)
 
 
-def _lane_for_outputs(lane_id: str, *, claim: str, manifest: str, node_gate: str) -> dict[str, Any]:
+def _lane_for_outputs(
+    lane_id: str, *, claim: str, manifest: str, node_gate: str
+) -> dict[str, Any]:
     return {
         "lane_id": lane_id,
         "status": "accepted",
@@ -272,19 +297,40 @@ def _lane_for_outputs(lane_id: str, *, claim: str, manifest: str, node_gate: str
 
 def test_claim_generation_key_orders_manifest_before_claim_outputs() -> None:
     lanes = [
-        _lane_for_outputs("z", claim="docs/conformance/support_claims/z_claim.json", manifest="docs/conformance/support_claims/z_manifest.json", node_gate="artifacts/conformance/node_gate/z.json"),
-        _lane_for_outputs("a", claim="docs/conformance/support_claims/a_claim.json", manifest="docs/conformance/support_claims/a_manifest.json", node_gate="artifacts/conformance/node_gate/a.json"),
-        _lane_for_outputs("m", claim="docs/conformance/support_claims/aa_claim.json", manifest="docs/conformance/support_claims/a_manifest.json", node_gate="artifacts/conformance/node_gate/m.json"),
+        _lane_for_outputs(
+            "z",
+            claim="docs/conformance/support_claims/z_claim.json",
+            manifest="docs/conformance/support_claims/z_manifest.json",
+            node_gate="artifacts/conformance/node_gate/z.json",
+        ),
+        _lane_for_outputs(
+            "a",
+            claim="docs/conformance/support_claims/a_claim.json",
+            manifest="docs/conformance/support_claims/a_manifest.json",
+            node_gate="artifacts/conformance/node_gate/a.json",
+        ),
+        _lane_for_outputs(
+            "m",
+            claim="docs/conformance/support_claims/aa_claim.json",
+            manifest="docs/conformance/support_claims/a_manifest.json",
+            node_gate="artifacts/conformance/node_gate/m.json",
+        ),
     ]
 
-    ordered = [lane["lane_id"] for lane in sorted(lanes, key=generator._claim_generation_key)]
+    ordered = [
+        lane["lane_id"] for lane in sorted(lanes, key=generator._claim_generation_key)
+    ]
 
     assert ordered == ["a", "m", "z"]
 
 
 def test_checked_in_v4_claims_bind_to_live_catalog_segments() -> None:
     catalog = json.loads((ROOT / CATALOG_PATH).read_text(encoding="utf-8"))
-    claims = sorted((ROOT / "docs" / "conformance" / "support_claims").glob("*_c4_support_claim.json"))
+    claims = sorted(
+        (ROOT / "docs" / "conformance" / "support_claims").glob(
+            "*_c4_support_claim.json"
+        )
+    )
     checked = 0
 
     for claim_path in claims:
@@ -296,9 +342,17 @@ def test_checked_in_v4_claims_bind_to_live_catalog_segments() -> None:
         assert isinstance(binding, dict), claim_path.as_posix()
         lane_id = claim["scope"]["lane_id"]
         assert binding["segment_id"] == lane_id, claim_path.as_posix()
-        assert binding["segment_hash"] == catalog_segment_hash(catalog, lane_id), claim_path.as_posix()
-        assert binding["shared_segment_hash"] == catalog_segment_hash(catalog, "shared"), claim_path.as_posix()
-        assert isinstance(binding["catalog_revision"], int) and not isinstance(binding["catalog_revision"], bool), claim_path.as_posix()
-        assert 1 <= binding["catalog_revision"] <= catalog["revision"], claim_path.as_posix()
+        assert binding["segment_hash"] == catalog_segment_hash(catalog, lane_id), (
+            claim_path.as_posix()
+        )
+        assert binding["shared_segment_hash"] == catalog_segment_hash(
+            catalog, "shared"
+        ), claim_path.as_posix()
+        assert isinstance(binding["catalog_revision"], int) and not isinstance(
+            binding["catalog_revision"], bool
+        ), claim_path.as_posix()
+        assert 1 <= binding["catalog_revision"] <= catalog["revision"], (
+            claim_path.as_posix()
+        )
 
     assert checked > 0

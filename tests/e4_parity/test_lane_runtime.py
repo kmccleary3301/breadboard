@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from scripts.e4_parity import lane_runtime
+from breadboard.product.evidence.e4 import lane_runtime
 
 
 def test_canonical_json_supports_default_and_compact_styles() -> None:

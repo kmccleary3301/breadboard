@@ -4,7 +4,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from scripts.e4_parity import generate_lane_inventory, lane_acceptance_artifacts, run_lane
+from breadboard.product.evidence.e4 import lane_acceptance_artifacts, run_lane
+from scripts.e4_parity import generate_lane_inventory
 
 
 class MetadataReadError(AssertionError):
@@ -48,12 +49,17 @@ def sentinel_lane_def() -> GuardedLaneDef:
             "normalize": {"mode": "identity", "translator": "identity", "config": {}},
             "replay": {
                 "mode": "stored",
-                "artifacts": [f"docs/conformance/e4_target_support/{lane_id}/bb_replay_result.json"],
+                "artifacts": [
+                    f"docs/conformance/e4_target_support/{lane_id}/bb_replay_result.json"
+                ],
                 "session": None,
                 "comparator_class": "semantic",
             },
             "compare": {"comparator": "sentinel_comparator", "config": {}},
-            "claim": {"scope": {"behaviors": ["bb.sentinel.v1"], "surfaces": ["sentinel"]}, "exclusions": []},
+            "claim": {
+                "scope": {"behaviors": ["bb.sentinel.v1"], "surfaces": ["sentinel"]},
+                "exclusions": [],
+            },
             "artifacts_root": f"docs/conformance/e4_target_support/{lane_id}",
             "reverify_command": {
                 "argv": [
@@ -88,7 +94,12 @@ def sentinel_lane_def() -> GuardedLaneDef:
                 "behavior_family": "replay_capture",
                 "semantic_key": "sentinel_capture",
                 "target": "sentinel",
-                "assertions": [{"id": "sentinel_present", "description": "sentinel data is present"}],
+                "assertions": [
+                    {
+                        "id": "sentinel_present",
+                        "description": "sentinel data is present",
+                    }
+                ],
             },
             "metadata": {"legacy_inventory_ct_test_id": "CT-MUST-NOT-BE-READ"},
         }

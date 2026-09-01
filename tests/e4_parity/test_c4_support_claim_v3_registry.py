@@ -10,7 +10,7 @@ import pytest
 from breadboard_engine.conformance import c4_chain
 from breadboard_engine.conformance.c4_chain import validate_c4_chain
 from breadboard_engine.conformance.catalog_binding import CATALOG_PATH, stable_entries_hash
-from scripts.e4_parity.validators import registries
+from breadboard.product.evidence.e4.validators import registries
 
 
 def _write_json(path: Path, payload: Any) -> None:

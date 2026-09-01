@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from scripts import breadboard_cli
-from scripts.e4_parity import run_lane
+from breadboard.product.evidence.e4 import run_lane
 
 
 LANE_ID = "g4_cli_fixture"
@@ -153,6 +153,23 @@ def test_lane_lock_writes_to_out_and_check_reports_artifact_drift(
     assert sidecar_path.read_bytes() == tampered
 
 
+def test_lane_lock_missing_declared_input_preserves_reference_exit_code(
+    tmp_path: Path,
+    compiler_input_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    manifest_path = _write_manifest(tmp_path, compiler_input_dir)
+    (compiler_input_dir / "target-freeze.yaml").unlink()
+
+    exit_code = breadboard_cli.main(
+        ["--json", "lane", "lock", str(manifest_path), "--out", str(tmp_path / "out")]
+    )
+
+    assert exit_code == 3
+    result = json.loads(capsys.readouterr().out)
+    assert result["error"]["error_code"] == "path_unavailable"
+
+
 def test_lane_capture_delegates_exact_manifest_directory_to_capture_stage(
     tmp_path: Path,
     monkeypatch,
@@ -162,30 +179,28 @@ def test_lane_capture_delegates_exact_manifest_directory_to_capture_stage(
     supplied_manifest_dir.mkdir()
     manifest_path = _write_manifest(supplied_manifest_dir, compiler_input_dir)
     out_dir = tmp_path / "capture"
-    received: list[list[str]] = []
+    received: list[tuple[str, dict[str, object]]] = []
 
-    def fake_run_lane_main(argv: list[str]) -> int:
-        received.append(argv)
-        return 17
+    def fake_run_lane(lane_id: str, **options: object) -> dict[str, object]:
+        received.append((lane_id, options))
+        return {"ok": True, "stages": []}
 
-    monkeypatch.setattr(run_lane, "main", fake_run_lane_main)
+    monkeypatch.setattr(run_lane, "run_lane", fake_run_lane)
 
     exit_code = breadboard_cli.main(
         ["lane", "capture", str(manifest_path), "--out", str(out_dir)]
     )
 
-    assert exit_code == 17
+    assert exit_code == 0
     assert received == [
-        [
-            "--lane",
+        (
             LANE_ID,
-            "--stage",
-            "capture",
-            "--out",
-            str(out_dir),
-            "--lane-def-dir",
-            str(supplied_manifest_dir),
-        ]
+            {
+                "stage": "capture",
+                "out_dir": out_dir,
+                "lane_def_dir": supplied_manifest_dir,
+            },
+        )
     ]
 
 
@@ -236,15 +251,18 @@ def test_lane_capture_runs_supplied_manifest_when_default_has_same_lane_id(
 
     monkeypatch.setattr(run_lane, "DEFAULT_LANE_DEF_DIR", default_manifest_dir)
 
-    assert breadboard_cli.main(
-        [
-            "lane",
-            "capture",
-            str(supplied_manifest),
-            "--out",
-            str(tmp_path / "capture"),
-        ]
-    ) == 0
+    assert (
+        breadboard_cli.main(
+            [
+                "lane",
+                "capture",
+                str(supplied_manifest),
+                "--out",
+                str(tmp_path / "capture"),
+            ]
+        )
+        == 0
+    )
 
 
 @pytest.mark.parametrize("command", ["lock", "capture"])
@@ -253,11 +271,14 @@ def test_lane_command_missing_manifest_returns_validation_exit(
     monkeypatch,
     command: str,
 ) -> None:
-    def fail_if_delegated(argv: list[str]) -> int:
-        raise AssertionError(f"runner must not receive a missing manifest: {argv}")
+    def fail_if_delegated(*args: object, **kwargs: object) -> dict[str, object]:
+        raise AssertionError(
+            f"runner must not receive a missing manifest: args={args} kwargs={kwargs}"
+        )
 
-    monkeypatch.setattr(run_lane, "main", fail_if_delegated)
+    monkeypatch.setattr(run_lane, "run_lane", fail_if_delegated)
 
-    assert breadboard_cli.main(
-        ["lane", command, str(tmp_path / "missing.manifest.yaml")]
-    ) == 3
+    assert (
+        breadboard_cli.main(["lane", command, str(tmp_path / "missing.manifest.yaml")])
+        == 3
+    )

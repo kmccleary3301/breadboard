@@ -10,13 +10,28 @@ from typing import Any, Mapping
 
 import yaml
 from jsonschema import Draft202012Validator, RefResolver
-from scripts.e4_parity.path_refs import (
+from breadboard.product.evidence.e4.path_refs import (
     ReferenceResolutionError,
     resolve_declared_reference,
     workspace_root_for_checkout,
 )
-from scripts.e4_parity.validators.gate_errors import BlameEntry, GateError, apply_gate_error_envelope, gate_error_to_dict, gate_exit_code
-from scripts.e4_parity.validators.registries import RegistryValidationError, assert_registered
+from breadboard.product.evidence.e4.validators.gate_errors import (
+    BlameEntry,
+    GateError,
+    apply_gate_error_envelope,
+    gate_error_to_dict,
+    gate_exit_code,
+)
+from breadboard.product.evidence.e4.validators.registries import (
+    RegistryValidationError,
+    assert_registered,
+)
+from breadboard_engine.conformance.catalog_binding import (
+    CATALOG_PATH,
+    catalog_stable_entries_hash,
+    stable_entries,
+    stable_entries_hash,
+)
 
 FORBIDDEN_COMPONENTS = {"scratch", "scratch_runs", "tmp"}
 SHARED_PREFIXES = ("/shared_folders", "/shared/")
@@ -47,7 +62,6 @@ SUPPORT_CLAIM_SCHEMA_PATHS = {
 }
 COMMON_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "contracts" / "kernel" / "schemas" / "bb.kernel.common.v1.schema.json"
 E4_COMMON_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "contracts" / "kernel" / "schemas" / "bb.e4.common.v1.schema.json"
-from breadboard_engine.conformance.catalog_binding import CATALOG_PATH, catalog_stable_entries_hash, stable_entries, stable_entries_hash
 
 
 

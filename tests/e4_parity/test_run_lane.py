@@ -9,8 +9,8 @@ from types import ModuleType
 
 import pytest
 
-from scripts.e4_parity import run_lane
-from scripts.e4_parity.tree_digest import digest_directory
+from breadboard.product.evidence.e4 import run_lane
+from breadboard.product.evidence.e4.tree_digest import digest_directory
 
 
 def _write_lane_def(
@@ -1435,3 +1435,35 @@ def test_capture_owned_paths_preserve_projection_sources_inside_artifacts_root()
     }
 
     assert run_lane._capture_owned_paths(lane) == (generated,)
+
+
+def test_capture_adapter_rejects_inactive_registry_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        run_lane,
+        "load_registry",
+        lambda _registry_id: {
+            "entries": [
+                {
+                    "id": "fixture_capture",
+                    "status": "deprecated",
+                    "metadata": {
+                        "kind": "capture_adapter",
+                        "impl": "fixture:capture",
+                    },
+                }
+            ]
+        },
+    )
+
+    with pytest.raises(run_lane.LaneRunError, match="one active capture_adapter"):
+        run_lane._capture_adapter_callable(
+            {
+                "lane_id": "fixture_lane",
+                "capture": {
+                    "strategy": "adapter",
+                    "adapter": "fixture_capture",
+                },
+            }
+        )

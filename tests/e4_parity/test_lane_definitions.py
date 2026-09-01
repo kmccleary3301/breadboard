@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from scripts.e4_parity.lane_definitions import inventory_lane_sources, load_lane_defs
+from breadboard.product.evidence.e4.lane_definitions import inventory_lane_sources, load_lane_defs
 
 
 ROOT = Path(__file__).resolve().parents[2]

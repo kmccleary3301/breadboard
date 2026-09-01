@@ -115,9 +115,9 @@ entries:
     callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/authoring/validate_lane.py
-    class: live-owned
+    class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml]
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/product/evidence/test_e4_owner.py]
     expiry: none (durable tooling)
   - path: scripts/backfill_atp_hilbert_bb_spend_v1.py
     class: live-wired
@@ -1032,47 +1032,47 @@ entries:
   - path: scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py, scripts/e4_parity/lane_definitions.py, scripts/e4_parity/lint_schema_lifecycle.py, tests/e4_parity/test_c4_catalog_binding.py, tests/e4_parity/test_generate_support_claims_binding.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/lint_schema_lifecycle.py, tests/e4_parity/test_c4_catalog_binding.py, tests/e4_parity/test_generate_support_claims_binding.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/oh_my_pi_l5_projection.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/oh_my_pi_l6_projection.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/oh_my_pi_p3_1_projection.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/oh_my_pi_p3_packet.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/oh_my_pi_p3_remaining_projections.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py, scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/oh_my_pi_p6_6_work_item_projection.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py, scripts/e4_parity/lane_definitions.py, tests/e4_parity/test_build_oh_my_pi_p6_6_task_job_subagent.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/e4_parity/test_build_oh_my_pi_p6_6_task_job_subagent.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/oh_my_pi_projection_packet.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py, scripts/e4_parity/lane_definitions.py, tests/e4_parity/test_build_oh_my_pi_l5_memory_compaction.py, tests/e4_parity/test_build_oh_my_pi_l6_tui_projection.py, tests/e4_parity/test_oh_my_pi_compiler_capture.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/e4_parity/test_build_oh_my_pi_l5_memory_compaction.py, tests/e4_parity/test_build_oh_my_pi_l6_tui_projection.py, tests/e4_parity/test_oh_my_pi_compiler_capture.py, tests/e4_parity/test_p3_remaining_helper_runtime_inventory.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/package_capture.py
     class: live-owned
@@ -1122,7 +1122,7 @@ entries:
   - path: scripts/e4_parity/build_primitive_projection.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py, scripts/e4_parity/regenerate_evidence.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/regenerate_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/build_source_index.py
     class: live-owned
@@ -1130,9 +1130,9 @@ entries:
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/regenerate_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/candidate_journey.py
-    class: live-wired
+    class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/run_lane.py, tests/e4_parity/test_candidate_journey.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/catalog_refs.py
     class: live-owned
@@ -1145,9 +1145,9 @@ entries:
     callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/compile_lane_lock.py
-    class: live-owned
+    class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/lane_definitions.py, scripts/e4_parity/materialize_source_freeze.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/materialize_source_freeze.py, tests/product/evidence/test_e4_owner.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/doctest_e4_consumption.py
     class: live-owned
@@ -1177,12 +1177,12 @@ entries:
   - path: scripts/e4_parity/fixtures/p3_lane_fixtures.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/generate_ct_rows.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/pi_p5_l1_capture.py, scripts/e4_parity/adapters/pi_p5_l2_capture.py, scripts/e4_parity/lane_runtime.py, scripts/e4_parity/regenerate_evidence.py, tests/e4_parity/test_generate_ct_rows.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/regenerate_evidence.py, tests/e4_parity/test_generate_ct_rows.py, tests/product/evidence/test_e4_owner.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/generate_e4_coverage.py
     class: live-owned
@@ -1197,7 +1197,7 @@ entries:
   - path: scripts/e4_parity/generate_support_claims.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/regenerate_evidence.py, scripts/e4_parity/run_lane.py, tests/e4_parity/test_generate_support_claims_binding.py, tests/e4_parity/test_regenerate_evidence.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/regenerate_evidence.py, tests/e4_parity/test_regenerate_evidence.py, tests/product/evidence/test_e4_owner.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/immutable_inputs.py
     class: live-wired
@@ -1205,14 +1205,14 @@ entries:
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/provision_immutable_inputs.py, scripts/e4_parity/regenerate_evidence.py, tests/e4_parity/test_immutable_inputs.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/lane_acceptance_artifacts.py
-    class: live-wired
+    class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/lane_definition_build.py, scripts/e4_parity/adapters/package_capture.py, scripts/e4_parity/lint_schema_lifecycle.py, scripts/e4_parity/oh_my_pi_p6_lane_projection.py, scripts/e4_parity/run_lane.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/lint_schema_lifecycle.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/lane_definitions.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/authoring/validate_lane.py, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py, scripts/e4_parity/build_north_star_proof_packets.py, scripts/e4_parity/generate_ct_rows.py, scripts/e4_parity/generate_lane_inventory.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/build_north_star_proof_packets.py, scripts/e4_parity/generate_lane_inventory.py, scripts/e4_parity/regenerate_evidence.py, scripts/e4_parity/seed_atomic_feature_ledger.py, tests/e4_parity/test_oh_my_pi_compiler_capture.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/lane_inventory_utils.py
     class: live-owned
@@ -1227,7 +1227,7 @@ entries:
   - path: scripts/e4_parity/lane_runtime.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/lane_acceptance_artifacts.py, scripts/e4_parity/lane_promotion_artifacts.py, scripts/e4_parity/regenerate_evidence.py, scripts/e4_parity/run_lane.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/lane_promotion_artifacts.py, scripts/e4_parity/regenerate_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/lint_contract_conventions.py
     class: live-wired
@@ -1257,17 +1257,17 @@ entries:
   - path: scripts/e4_parity/oh_my_pi_p6_lane_projection.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/lane_acceptance_artifacts.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/path_refs.py
-    class: live-wired
+    class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py, scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py, scripts/e4_parity/build_e4_final_readiness_packet.py, scripts/e4_parity/catalog_refs.py, scripts/e4_parity/compile_lane_lock.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/build_e4_final_readiness_packet.py, scripts/e4_parity/validate_frozen_e4_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/promote_lane_payload_source.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/compile_lane_lock.py, tests/e4_parity/test_phase20_pilot_lane_manifest_lock.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/e4_parity/test_phase20_pilot_lane_manifest_lock.py, tests/product/evidence/test_e4_owner.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/provision_immutable_inputs.py
     class: live-wired
@@ -1287,7 +1287,7 @@ entries:
   - path: scripts/e4_parity/regenerate_evidence.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/validators/gate_errors.py, tests/test_run_ct_scenarios.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/test_run_ct_scenarios.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/report_atomic_feature_ledger.py
     class: live-owned
@@ -1317,7 +1317,7 @@ entries:
   - path: scripts/e4_parity/self_capture_determinism.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/lane_acceptance_artifacts.py, scripts/e4_parity/lane_promotion_artifacts.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/lane_promotion_artifacts.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/soak_runtime_emission.py
     class: live-owned
@@ -1325,14 +1325,14 @@ entries:
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/runtime_emission_soak.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/stage_contracts.py
-    class: live-wired
+    class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/run_lane.py, tests/e4_parity/test_candidate_journey.py, tests/e4_parity/test_stage_contracts.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/tree_digest.py
-    class: live-wired
+    class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/compile_lane_lock.py, scripts/e4_parity/run_lane.py, tests/e4_parity/test_phase20_pilot_lane_manifest_lock.py, tests/e4_parity/test_run_lane.py, tests/e4_parity/test_tree_digest.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/validate_atomic_feature_ledger.py
     class: live-wired
@@ -1357,7 +1357,7 @@ entries:
   - path: scripts/e4_parity/validate_frozen_e4_evidence.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/generate_ct_rows.py, scripts/e4_parity/generate_lane_inventory.py, tests/e4_parity/test_generate_ct_rows.py, tests/e4_parity/test_generate_lane_inventory.py]
+    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/generate_lane_inventory.py, tests/e4_parity/test_generate_ct_rows.py, tests/e4_parity/test_generate_lane_inventory.py, tests/e4_parity/test_validate_frozen_e4_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/validators/__init__.py
     class: live-wired
@@ -1367,17 +1367,17 @@ entries:
   - path: scripts/e4_parity/validators/gate_errors.py
     class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/check_er_progress.py, scripts/e4_parity/e4_closure_readiness_section.py, scripts/e4_parity/e4_closure_score_section.py, scripts/e4_parity/validate_e4_report_hash_freshness.py, scripts/e4_parity/validators/registries.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/check_er_progress.py, scripts/e4_parity/e4_closure_readiness_section.py, scripts/e4_parity/e4_closure_score_section.py, scripts/e4_parity/validate_e4_report_hash_freshness.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/validators/hash_utils.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/candidate_journey.py, scripts/e4_parity/check_er_progress.py, scripts/e4_parity/compile_lane_lock.py, scripts/e4_parity/immutable_inputs.py, scripts/e4_parity/lane_definitions.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/check_er_progress.py, scripts/e4_parity/immutable_inputs.py, scripts/e4_parity/regen.py, tests/e4_parity/test_regenerate_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/validators/registries.py
-    class: live-wired
+    class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/authoring/validate_lane.py, scripts/build_python_reference_contract_fixtures.py, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py, scripts/e4_parity/adapters/pi_p5_l1_capture.py, scripts/e4_parity/adapters/pi_p5_l2_capture.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/authoring/validate_lane.py, scripts/build_python_reference_contract_fixtures.py, scripts/e4_parity/lane_promotion_artifacts.py, scripts/e4_parity/scaffold_e4_target_lane.py, scripts/e4_parity/validate_e4_coverage.py]
     expiry: none (durable tooling)
   - path: scripts/emit_darwin_evidence_and_claims_v1.py
     class: live-wired
@@ -1652,7 +1652,7 @@ entries:
   - path: scripts/replay_session_from_records.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/lane_acceptance_artifacts.py, scripts/e4_parity/lane_promotion_artifacts.py, tests/compilation/test_kernel_emitter.py, tests/e4_parity/test_wsj_compliance_contracts.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/lane_promotion_artifacts.py, tests/compilation/test_kernel_emitter.py, tests/e4_parity/test_wsj_compliance_contracts.py, tests/product/evidence/test_e4_owner.py]
     expiry: none (durable tooling)
   - path: scripts/research/parity/audit_e4_target_drift.py
     class: live-wired
@@ -2437,7 +2437,7 @@ entries:
   - path: scripts/validate_e4_c4_chain.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py, scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py, scripts/e4_parity/adapters/pi_p5_l1_capture.py, scripts/e4_parity/adapters/pi_p5_l2_capture.py]
+    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/generate_lane_inventory.py, scripts/e4_parity/lane_promotion_artifacts.py, scripts/e4_parity/metadata_non_normative.py, scripts/e4_parity/scaffold_e4_target_lane.py]
     expiry: none (durable tooling)
   - path: scripts/validate_engine_conformance_manifest.py
     class: live-wired
