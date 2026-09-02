@@ -820,6 +820,14 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
 
     first = await service.send_input(record.session_id, request)
     duplicate = await service.send_input(record.session_id, request)
+    with pytest.raises(HTTPException) as conflict:
+        await service.send_input(
+            record.session_id,
+            SessionInputRequest(
+                content="different",
+                client_message_id="client-1",
+            ),
+        )
 
     assert first.model_dump() == {
         "status": "accepted",
@@ -833,10 +841,104 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
         **first.model_dump(),
         "disposition": "deduplicated",
     }
+    assert conflict.value.status_code == 409
+    assert conflict.value.detail == {
+        "code": "input_idempotency_conflict",
+        "turn_id": first.turn_id,
+    }
     assert runner.inputs == [
         ("continue", [], first.input_id, first.turn_id, first.turn_id),
     ]
     assert record.active_turn_id == first.turn_id
+
+
+@pytest.mark.asyncio
+async def test_parallel_sends_remain_separate_in_durable_admission_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-parallel-admission",
+        status=SessionStatus.RUNNING,
+    )
+
+    class Runner:
+        def __init__(self) -> None:
+            self.inputs: list[tuple[str, str | None, str | None]] = []
+
+        async def enqueue_input(
+            self,
+            content: str,
+            attachments: list[str],
+            *,
+            input_id: str | None = None,
+            turn_id: str | None = None,
+            defer_execution: Any = None,
+        ) -> str:
+            async def execute() -> None:
+                self.inputs.append((content, input_id, turn_id))
+
+            defer_execution(execute)
+            return content
+
+    runner = Runner()
+    record.runner = runner
+    await registry.create(record)
+    original_persist = registry.persist
+    first_persist_started = asyncio.Event()
+    release_first_persist = asyncio.Event()
+    persist_count = 0
+
+    async def controlled_persist(
+        persisted_record: SessionRecord,
+        **kwargs: Any,
+    ) -> None:
+        nonlocal persist_count
+        persist_count += 1
+        if persist_count == 1:
+            first_persist_started.set()
+            await release_first_persist.wait()
+        await original_persist(persisted_record, **kwargs)
+
+    monkeypatch.setattr(registry, "persist", controlled_persist)
+    service = SessionService(registry=registry)
+    first_task = asyncio.create_task(
+        service.send_input(
+            record.session_id,
+            SessionInputRequest(content="first", client_message_id="parallel-1"),
+        )
+    )
+    await asyncio.wait_for(first_persist_started.wait(), timeout=2)
+    second_task = asyncio.create_task(
+        service.send_input(
+            record.session_id,
+            SessionInputRequest(content="second", client_message_id="parallel-2"),
+        )
+    )
+    await asyncio.sleep(0)
+    assert second_task.done() is False
+    release_first_persist.set()
+
+    first, second = await asyncio.wait_for(
+        asyncio.gather(first_task, second_task),
+        timeout=2,
+    )
+    restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+
+    assert [first.disposition, second.disposition] == ["started", "queued"]
+    assert restored is not None
+    assert [
+        (turn.original_disposition, turn.body_digest)
+        for turn in restored.turns_by_id.values()
+    ] == [
+        ("started", submission_body_digest("first", ())),
+        ("queued", submission_body_digest("second", ())),
+    ]
+    assert runner.inputs == [
+        ("first", first.input_id, first.turn_id),
+        ("second", second.input_id, second.turn_id),
+    ]
 
 
 @pytest.mark.asyncio
