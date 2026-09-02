@@ -6,7 +6,7 @@ Implemented at existing Session/Lock and SessionService owners; no generic Gener
 
 ## Focused proof surface
 
-`tests/product/runtime/test_session_kernel.py::test_generation_identity_is_pinned_and_reconstructed_from_durable_order` checks pinned identity, ordered Lock sequence, durable adoption identity/reason/effective sequence, and restart reconstruction. The existing service/session owners retain the durable event sink and admission locks; no public contract was changed. Per assignment, tests and validation were not run in this worktree.
+`tests/product/runtime/test_session_kernel.py::test_generation_identity_is_pinned_and_reconstructed_from_durable_order` checks pinned identity, ordered Lock sequence, collision-safe durable segment identity, adoption reason/effective sequence, and restart reconstruction. Focused service tests cover atomic non-quiescent refusal with rollback, candidate-publication rollback, typed incompatible Lock rejection, admission closure before teardown, terminalization races, and role-command routing. Verification: 245 focused cases passed.
 
 ## E1.3 disposition
 

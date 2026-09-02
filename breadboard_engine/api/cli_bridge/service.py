@@ -1961,7 +1961,7 @@ class SessionService:
         def durable_reconfigure(runtime_config: dict[str, Any]) -> None:
             # Use the applied agent config when present; before agent setup the
             # prepared candidate is the authoritative immutable input.
-            agent_config = getattr(runner._agent, "config", None)
+            agent_config = getattr(getattr(runner, "_agent", None), "config", None)
             candidate_config = (
                 dict(agent_config)
                 if isinstance(agent_config, dict)
@@ -1976,15 +1976,32 @@ class SessionService:
                 payload.command,
             )
 
+        reconfigure_commands = {
+            "set_model",
+            "set_mode",
+            "set_skills",
+            "set_role",
+            "set_model_role",
+        }
         try:
-            detail = await runner.handle_command(
-                payload.command,
-                payload.payload,
-                durable_reconfigure=durable_reconfigure
-                if payload.command
-                in {"set_model", "set_mode", "set_skills", "set_role", "set_model_role"}
-                else None,
-            )
+            if payload.command in reconfigure_commands:
+                async with record.admission_lock:
+                    if record.active_turn_id is not None or record.queued_turn_ids:
+                        raise GenerationAdoptionError(
+                            "non_quiescent",
+                            "generation adoption requires a quiescent turn boundary",
+                        )
+                    detail = await runner.handle_command(
+                        payload.command,
+                        payload.payload,
+                        durable_reconfigure=durable_reconfigure,
+                    )
+            else:
+                detail = await runner.handle_command(
+                    payload.command,
+                    payload.payload,
+                    durable_reconfigure=None,
+                )
         except ModelRoleResolutionError as exc:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail=exc.problem.to_dict()

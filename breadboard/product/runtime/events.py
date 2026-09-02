@@ -234,7 +234,7 @@ class Session:
     def trajectory_segments(self) -> tuple[Mapping[str, Any], ...]:
         sequence = self.generation_sequence
         boundaries = [event for event in self._events if event.kind in {"session.started", "session.reconfigured"}]
-        return tuple(MappingProxyType({"segment_id": f"{self._view.session_id}:segment:{index}:{generation[7:19]}", "segment_index": index, "generation_id": generation, "start_sequence": boundary.sequence}) for index, (generation, boundary) in enumerate(zip(sequence, boundaries)))
+        return tuple(MappingProxyType({"segment_id": f"{self._view.session_id}:segment:{index}:{generation.removeprefix('sha256:')}", "segment_index": index, "generation_id": generation, "start_sequence": boundary.sequence}) for index, (generation, boundary) in enumerate(zip(sequence, boundaries)))
     @property
     def adoption_history(self) -> tuple[Mapping[str, Any], ...]:
         prior = None
@@ -244,7 +244,7 @@ class Session:
                 continue
             generation = event.payload["effective_lock_hash"]
             if event.kind == "session.reconfigured":
-                history.append(MappingProxyType({"old_generation_id": prior, "new_generation_id": generation, "reason": event.payload["reason"], "effective_sequence": event.sequence, "trajectory_segment_id": f"{self._view.session_id}:segment:{len(history) + 1}:{generation[7:19]}"}))
+                history.append(MappingProxyType({"old_generation_id": prior, "new_generation_id": generation, "reason": event.payload["reason"], "effective_sequence": event.sequence, "trajectory_segment_id": f"{self._view.session_id}:segment:{len(history) + 1}:{generation.removeprefix('sha256:')}"}))
             prior = generation
         return tuple(history)
     def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])

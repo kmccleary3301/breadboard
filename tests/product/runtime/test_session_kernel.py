@@ -241,7 +241,7 @@ def test_generation_identity_is_pinned_and_reconstructed_from_durable_order() ->
         "new_generation_id": OTHER_HASH,
         "reason": "provider swap",
         "effective_sequence": 2,
-        "trajectory_segment_id": "generation-session:segment:1:bbbbbbbbbbbb",
+        "trajectory_segment_id": "generation-session:segment:1:" + "b" * 64,
     }
     restored = Session.restore(session.events)
     assert restored.generation_sequence == session.generation_sequence
