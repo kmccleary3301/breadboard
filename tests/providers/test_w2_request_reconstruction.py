@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
 from breadboard_engine.compilation.system_prompt_compiler import SystemPromptCompiler
 from breadboard_engine.core.core import ToolDefinition, ToolParameter
 from breadboard_engine.provider.contract_messages import ProviderMessage, ProviderResult
@@ -83,10 +85,13 @@ def _descriptor(profile: OpenAICompletionsProviderProfile) -> ProviderDescriptor
 class _HeldOutRuntime(ProviderRuntime):
     """Fake adapter that writes its post-dispatch bytes only after receiving input."""
 
-    def __init__(self, oracle_path: Path, profile: OpenAICompletionsProviderProfile) -> None:
+    def __init__(
+        self, oracle_path: Path | None, profile: OpenAICompletionsProviderProfile
+    ) -> None:
         super().__init__(_descriptor(profile))
         self.oracle_path = oracle_path
         self.profile = profile
+        self.held_out: bytes | None = None
 
     def invoke(
         self,
@@ -116,7 +121,19 @@ class _HeldOutRuntime(ProviderRuntime):
             "n": self.profile.sampling.n,
             "enable_thinking": False,
         }
-        self.oracle_path.write_bytes(canonical_json(wire).encode("utf-8"))
+        for field_name in (
+            "temperature",
+            "top_p",
+            "seed",
+            "frequency_penalty",
+            "presence_penalty",
+        ):
+            value = getattr(self.profile.sampling, field_name)
+            if value is not None:
+                wire[field_name] = value
+        self.held_out = canonical_json(wire).encode("utf-8")
+        if self.oracle_path is not None:
+            self.oracle_path.write_bytes(self.held_out)
         return ProviderResult(
             messages=[
                 ProviderMessage(
@@ -152,6 +169,194 @@ def _fixture_messages(
         ],
         raw_tools,
     )
+
+
+W24_RUN_SET: tuple[dict[str, object], ...] = (
+    {
+        "case": "W1.FT-01.case-a-authority-replacement-before-submit",
+        "session_id": "w24-session-01-yolo",
+        "approval_mode": "yolo",
+        "mode_name": "ft01_authority_replacement",
+        "provider_before": "cli_mock/reference",
+        "provider_after": "cli_mock/reference",
+    },
+    {
+        "case": "W1.FT-01.case-b-permission-after-dispatch",
+        "session_id": "w24-session-02-write",
+        "approval_mode": "write",
+        "mode_name": "ft01_permission_settlement",
+        "provider_before": "cli_mock/reference",
+        "provider_after": "cli_mock/reference",
+    },
+    {
+        "case": "W3.FT-02.invalid-edit-in-flight",
+        "session_id": "w24-session-03-yolo",
+        "approval_mode": "yolo",
+        "mode_name": "ft02_invalid_inflight_edit",
+        "provider_before": "cli_mock/reference",
+        "provider_after": "cli_mock/reference",
+    },
+    {
+        "case": "W3.FT-02.reconfigure-mid-turn",
+        "session_id": "w24-session-04-write",
+        "approval_mode": "write",
+        "mode_name": "ft02_mid_turn_reconfigure",
+        "provider_before": "cli_mock/reference",
+        "provider_after": "cli_mock/reference",
+    },
+    {
+        "case": "W3.FT-02.reconfigure-across-restart",
+        "session_id": "w24-session-05-yolo",
+        "approval_mode": "yolo",
+        "mode_name": "ft02_restart_durability",
+        "provider_before": "cli_mock/reference",
+        "provider_after": "cli_mock/reference",
+    },
+    {
+        "case": "W3.FT-02.provider-swap-between-turns",
+        "session_id": "w24-session-06-write",
+        "approval_mode": "write",
+        "mode_name": "ft02_provider_swap",
+        "provider_before": "mock/provider-a",
+        "provider_after": "mock/provider-b",
+    },
+)
+
+
+def _ablation_records(
+    fixture: dict[str, object], run_case: dict[str, object]
+) -> dict[str, object]:
+    records = copy.deepcopy(fixture)
+    session = records["session"]
+    session["session_id"] = run_case["session_id"]
+    session["approval_mode"] = run_case["approval_mode"]
+    prompt = records["prompt"]
+    prompt["mode_name"] = run_case["mode_name"]
+    prompt["config"]["modes"] = [
+        {
+            "name": run_case["mode_name"],
+            "prompt": f"[ablation:{run_case['case']}]\nMode-specific section.",
+        }
+    ]
+    records["ablation"] = dict(run_case)
+    return records
+
+
+def test_w24_run_set_has_six_sessions_two_modes_and_one_swap() -> None:
+    assert len(W24_RUN_SET) == 6
+    assert len({case["session_id"] for case in W24_RUN_SET}) == 6
+    assert {case["approval_mode"] for case in W24_RUN_SET} == {"yolo", "write"}
+    assert sum(
+        case["provider_before"] != case["provider_after"] for case in W24_RUN_SET
+    ) == 1
+    assert len(W24_RUN_SET) + sum(
+        case["provider_before"] != case["provider_after"] for case in W24_RUN_SET
+    ) == 7
+
+
+@pytest.mark.parametrize(
+    "run_case",
+    W24_RUN_SET,
+    ids=[str(case["case"]) for case in W24_RUN_SET],
+)
+def test_records_only_ablation_reconstructs_each_request(
+    tmp_path: Path, run_case: dict[str, object]
+) -> None:
+    fixture = _ablation_records(_load_fixture(), run_case)
+    provider_swap = run_case["provider_before"] != run_case["provider_after"]
+    routes = [run_case["provider_after"]]
+    if provider_swap:
+        routes = [run_case["provider_before"], run_case["provider_after"]]
+
+    reconstructed_count = 0
+    held_out_by_route: dict[str, bytes] = {}
+    profile_identity_by_route: dict[str, str] = {}
+    for route_index, route in enumerate(routes):
+        route_fixture = copy.deepcopy(fixture)
+        profile_raw = copy.deepcopy(route_fixture["lock"]["provider_profile"])
+        if provider_swap:
+            if route == run_case["provider_before"]:
+                profile_raw["base_url"] = "http://127.0.0.1:8111/v1"
+                profile_raw["sampling"] = {"temperature": 0.1}
+            else:
+                profile_raw["base_url"] = "http://127.0.0.1:8222/v1"
+                profile_raw["sampling"] = {"temperature": 0.2}
+        route_fixture["lock"]["provider_profile"] = profile_raw
+        route_fixture["ablation"]["provider_route"] = route
+
+        dispatch_compiler = SystemPromptCompiler(
+            cache_dir=str(tmp_path / f"dispatch-compiler-cache-{route_index}")
+        )
+        dispatch_messages, dispatch_tools = _fixture_messages(
+            route_fixture, dispatch_compiler
+        )
+        profile = _profile(profile_raw)
+        runtime = _HeldOutRuntime(None, profile)
+        state = SessionState(workspace=".", image="w24", config={})
+        state.set_provider_metadata(
+            "session_id", f"{run_case['session_id']}-{route_index}"
+        )
+        state.set_provider_metadata(
+            "input_id", f"{run_case['session_id']}-{route_index}-input"
+        )
+        state.set_provider_metadata(
+            "turn_id", f"{run_case['session_id']}-{route_index}-turn"
+        )
+        for message in route_fixture["session"]["history"]:
+            state.add_message(message, to_provider=False)
+
+        _invoker().invoke(
+            runtime=runtime,
+            client=object(),
+            model=profile.model,
+            send_messages=dispatch_messages,
+            tools_schema=dispatch_tools,
+            stream_responses=True,
+            runtime_context=ProviderRuntimeContext(
+                session_state=state,
+                agent_config={},
+                stream=True,
+                provider_profile=profile,
+            ),
+            session_state=state,
+            markdown_logger=Mock(),
+            turn_index=1,
+            route_id=route,
+        )
+        held_out_bytes = runtime.held_out
+        assert held_out_bytes is not None
+        held_out_by_route[route] = held_out_bytes
+        profile_identity_by_route[route] = profile.identity_json()
+
+        reconstruct_compiler = SystemPromptCompiler(
+            cache_dir=str(tmp_path / f"reconstruct-compiler-cache-{route_index}")
+        )
+        reconstruct_messages, reconstruct_tools = _fixture_messages(
+            route_fixture, reconstruct_compiler
+        )
+        reconstructed = OpenAIChatRuntime(
+            _descriptor(profile)
+        ).profile_chat_request(
+            profile,
+            reconstruct_messages,
+            reconstruct_tools,
+            context=ProviderRuntimeContext(
+                session_state=SimpleNamespace(),
+                agent_config={},
+                stream=True,
+                provider_profile=profile,
+            ),
+        )
+        assert held_out_bytes == canonical_json(reconstructed).encode("utf-8")
+        runtime.held_out = None
+        reconstructed_count += 1
+
+    assert reconstructed_count == (2 if provider_swap else 1)
+    if provider_swap:
+        before_route = run_case["provider_before"]
+        after_route = run_case["provider_after"]
+        assert profile_identity_by_route[before_route] != profile_identity_by_route[after_route]
+        assert held_out_by_route[before_route] != held_out_by_route[after_route]
 
 
 def _invoker() -> ProviderInvoker:
