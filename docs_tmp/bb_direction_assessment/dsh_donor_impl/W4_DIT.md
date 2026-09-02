@@ -46,17 +46,12 @@ The designs below are alternatives, not an implementation proposal. No design ha
 
 ## Decision
 
-**PENDING Kyle selection.** This note authorizes no implementation and does not claim a selection. The selectable outcomes are:
-
-- **A** — deepen each existing projector and share only the result vocabulary; proceed to W4.3 on that basis.
-- **B** — admit one common interface over typed source streams; first supply the missing adapter/deletion evidence and any required seam approval.
-- **C** — keep projection APIs unchanged and put composition in W10; accept the coordination as-of limitation only if Kyle explicitly accepts the resulting W10 contract.
-- **Decline / no DIT seam** — only if Kyle permits this route under the plan; resolve E3.12 as rejected and deepen existing owners without a universal interface.
+**SELECTED by Kyle on 2026-09-02 through the plan-authorized ask-tool auto-selection: A — deepen each existing projector and share only the result vocabulary.** W4.3 may proceed on that basis. The selection rejects a universal registry: semantic validation, source slicing, and as-of bounds remain with each emitting domain.
 
 ## E3.12 resolution and recommendation
 
 **E3.12 is resolved as REJECTED for a universal projection registry at this point.** W4.1 names multiple computations, but no common caller, two genuinely interchangeable adapters, or concrete deletion payoff. B's apparent adapter count is source-shape variety, not the §5.2 threshold; C has no seam. A shares a result vocabulary while retaining domain seams and therefore does not admit a registry or universal fold.
 
-**Recommended default (not Kyle-selected): A.** It is the boring existing-owner cutover supported by the evidence: add only the lineage/version/result facts W10 actually consumes, keep each emitting domain authoritative, and avoid a generic registry until a real caller can show deletions. The recommendation is conditional on W10 being concrete enough to delete command-local result assembly; absent that caller, W4 should deepen owners only where a named acceptance case fails, not add a vocabulary for its own sake.
+**Selected design: A.** It is the boring existing-owner cutover supported by the evidence: add only the lineage/version/result facts W10 actually consumes, keep each emitting domain authoritative, and avoid a generic registry until a real caller can show deletions. The selection remains conditional on W10's concrete consumption: W4 deepens owners only where a named acceptance case fails; it does not add a vocabulary for its own sake.
 
-**Bounded W4.3 handoff.** If Kyle selects A, define the smallest owner-specific result records and typed `as_of` errors; migrate only W10; delete its duplicate lineage/version wrapping; then prove hand-written expected state, exact source range, version mismatch, replay equality, and cache deletion/rebuild equality. Do not add a Generation Runtime abstraction, alter Work Item/Session/Todo authority, or treat bridge/E4 projections as product truth. If Kyle selects another design, its implementation must first supply the missing adapter/deletion evidence and preserve the same W10 acceptance checks.
+**Selected W4.3 handoff.** Define the smallest owner-specific result records and typed `as_of` errors; migrate only W10; delete its duplicate lineage/version wrapping; then prove hand-written expected state, exact source range, version mismatch, replay equality, and cache deletion/rebuild equality. Do not add a Generation Runtime abstraction, alter Work Item/Session/Todo authority, or treat bridge/E4 projections as product truth.
