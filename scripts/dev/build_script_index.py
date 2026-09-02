@@ -63,6 +63,19 @@ CAMPAIGN_PATTERNS = (
     "start_tmux",
 )
 
+GENERIC_BASENAMES = frozenset({"__init__.py"})
+
+
+def _reference_pattern(full: str) -> re.Pattern[str]:
+    """Match real script references without treating generic basenames as calls."""
+    name = Path(full).name
+    module = full.removeprefix("scripts/").removesuffix(".py").replace("/", ".")
+    terms = [full, f"scripts.{module}"]
+    if name not in GENERIC_BASENAMES:
+        terms.insert(0, name)
+    return re.compile(r"(?<![\w/])(?:%s)(?![\w])" % "|".join(map(re.escape, terms)))
+
+
 
 def tracked_scripts() -> list[str]:
     out = subprocess.run(
@@ -97,20 +110,13 @@ def reference_map(scripts: list[str]) -> dict[str, set[str]]:
                 haystacks.append((rel, fp.read_text(encoding="utf-8", errors="ignore")))
             except Exception:
                 continue
-    for p, (name, full) in names.items():
-        stem = Path(name).stem
-        module = full.removeprefix("scripts/").removesuffix(".py").replace("/", ".")
-        pat = re.compile(
-            r"(?<![\w/])(?:%s|%s|scripts\.%s)(?![\w])"
-            % (re.escape(name), re.escape(full), re.escape(module))
-        )
+    for p, (_, full) in names.items():
+        pat = _reference_pattern(full)
         for rel, text in haystacks:
             if rel == full:
                 continue
-            if name in text or f"scripts.{module}" in text:
-                if pat.search(text):
-                    refs[p].add(rel)
-        _ = stem
+            if pat.search(text):
+                refs[p].add(rel)
     return refs
 
 

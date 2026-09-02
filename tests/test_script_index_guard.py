@@ -30,6 +30,14 @@ def test_script_index_current() -> None:
         proc.stdout
     )
 
+def test_reference_pattern_ignores_generic_basename_data() -> None:
+    """A data path such as ``__init__.py`` is not a script callsite."""
+    pattern = script_index._reference_pattern("scripts/__init__.py")
+
+    assert pattern.search("sdk_root / '__init__.py'") is None
+    assert pattern.search("scripts/__init__.py") is not None
+    assert pattern.search("scripts.__init__") is not None
+
 
 def test_script_index_guard_rejects_noncanonical_rows_and_duplicates(
     tmp_path: Path, monkeypatch
