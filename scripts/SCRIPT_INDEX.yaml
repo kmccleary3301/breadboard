@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 438
+live_script_count: 441
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -17,7 +17,7 @@ entries:
   - path: scripts/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/e4_parity/test_regenerate_evidence.py]
+    callers: [docs/reference/ENGINE_RENAME_MIGRATION.md, docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, scripts/interface_inventory.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/e4_parity/test_regenerate_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/_cross_system_eval_v1.py
     class: campaign
@@ -102,7 +102,12 @@ entries:
   - path: scripts/authoring/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/rl/phase4/test_wrapper_identity.py]
+    callers: [docs/reference/ENGINE_RENAME_MIGRATION.md, docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, scripts/interface_inventory.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/rl/phase4/test_wrapper_identity.py]
+    expiry: none (durable tooling)
+  - path: scripts/authoring/explain_agent_config.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/e4_parity/test_config_explanation.py]
     expiry: none (durable tooling)
   - path: scripts/authoring/render_field_table.py
     class: live-owned
@@ -997,12 +1002,12 @@ entries:
   - path: scripts/e4_parity/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/e4_parity/test_regenerate_evidence.py]
+    callers: [docs/reference/ENGINE_RENAME_MIGRATION.md, docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, scripts/interface_inventory.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/e4_parity/test_regenerate_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/rl/phase4/test_wrapper_identity.py]
+    callers: [docs/reference/ENGINE_RENAME_MIGRATION.md, docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, scripts/interface_inventory.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/rl/phase4/test_wrapper_identity.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/accepted_artifact_materialize.py
     class: live-owned
@@ -1162,7 +1167,7 @@ entries:
   - path: scripts/e4_parity/fixtures/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/rl/phase4/test_wrapper_identity.py]
+    callers: [docs/reference/ENGINE_RENAME_MIGRATION.md, docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, scripts/interface_inventory.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/rl/phase4/test_wrapper_identity.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/fixtures/p3_lane_fixtures.py
     class: live-owned
@@ -1352,7 +1357,7 @@ entries:
   - path: scripts/e4_parity/validators/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/e4_parity/test_regenerate_evidence.py]
+    callers: [docs/reference/ENGINE_RENAME_MIGRATION.md, docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, scripts/interface_inventory.py, tests/decomposition/test_engine_import_direction.py, tests/decomposition/test_provider_runtime_import_direction.py, tests/e4_parity/test_regenerate_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/validators/gate_errors.py
     class: live-owned
@@ -1448,6 +1453,11 @@ entries:
     class: live-wired
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, tests/test_script_wrapper_paths.py]
+    expiry: none (durable tooling)
+  - path: scripts/interface_inventory.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/test_interface_inventory.py]
     expiry: none (durable tooling)
   - path: scripts/log_reduce.py
     class: live-referenced
