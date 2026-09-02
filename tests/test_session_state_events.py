@@ -792,6 +792,9 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
                 tuple[str, list[str], str | None, str | None, str | None]
             ] = []
 
+        def prepare_input_content(self, content: str) -> str:
+            return content
+
         async def enqueue_input(
             self,
             content: str,
@@ -981,6 +984,68 @@ async def test_session_input_is_durable_before_deferred_execution(tmp_path: Path
     queued = await runner._input_queue.get()
     assert queued["input_id"] == receipt.input_id
     assert queued["turn_id"] == receipt.turn_id
+
+
+@pytest.mark.asyncio
+async def test_sanitized_input_is_staged_before_registry_persistence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-sanitized-admission",
+        status=SessionStatus.RUNNING,
+    )
+    record.product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "sanitized admission",
+        session_id=record.session_id,
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    runner._accepted_task_texts = ["hello"]
+    persisted_contents: list[str] = []
+    original_persist = registry.persist
+
+    async def capture_persist(persisted_record: SessionRecord) -> None:
+        persisted_contents.extend(
+            turn.content for turn in persisted_record.turns_by_id.values()
+        )
+        await original_persist(persisted_record)
+
+    monkeypatch.setattr(registry, "persist", capture_persist)
+    record.runner = runner
+    await registry.create(record)
+    deferred: list[Any] = []
+
+    receipt = await SessionService(registry=registry).send_input(
+        record.session_id,
+        SessionInputRequest(
+            content="hello world",
+            client_message_id="client-sanitized",
+        ),
+        defer_execution=deferred.append,
+    )
+
+    restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+    assert restored is not None
+    assert record.turns_by_id[receipt.turn_id].content == "world"
+    assert persisted_contents == ["world"]
+    assert restored.turns_by_id[receipt.turn_id].content == ""
+    assert record.product_session.events[-1].payload["content_hash"] == (
+        "sha256:" + hashlib.sha256(b"world").hexdigest()
+    )
+    assert len(deferred) == 1
 
 @pytest.mark.asyncio
 async def test_terminal_product_session_rejects_before_durable_admission(

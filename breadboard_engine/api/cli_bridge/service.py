@@ -154,6 +154,7 @@ _START_PENDING, _START_COMMITTED, _START_OWNER = (
     ".start.owner",
 )
 _SESSION_EVENT_ROOT_METADATA_KEY = "session_event_root"
+_SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY = "durable_product_workspace"
 
 
 def _event_root(state_paths: ManagedStatePaths | None = None) -> Path:
@@ -777,6 +778,7 @@ class SessionService:
             "resources",
             "workspace",
             _SESSION_EVENT_ROOT_METADATA_KEY,
+            _SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY,
         ):
             request_metadata.pop(reserved_key, None)
         if default_profile is not None:
@@ -809,9 +811,9 @@ class SessionService:
             )
             if requested_event_root == durable_event_root:
                 durable_product_workspace = candidate_workspace
-        metadata[_SESSION_EVENT_ROOT_METADATA_KEY] = str(
-            (event_root or _event_root()).expanduser().resolve()
-        )
+                metadata[_SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY] = str(
+                    candidate_workspace
+                )
         runtime_providers = (
             runtime_config.get("providers")
             if isinstance(runtime_config, dict)
@@ -874,6 +876,8 @@ class SessionService:
         else:
             runtime_base = runtime_root or default_runtime_record_root()
             event_base = event_root or _event_root()
+        event_base = event_base.expanduser().resolve()
+        metadata[_SESSION_EVENT_ROOT_METADATA_KEY] = str(event_base)
         runtime_record_dir, event_dir = (
             runtime_base / session_id,
             event_base / session_id,
@@ -1257,17 +1261,13 @@ class SessionService:
     def _bind_restored_durable_product_session(
         record: SessionRecord,
         runner: SessionRunner,
-        event_root: Path,
     ) -> None:
-        workspace_value = record.metadata.get("workspace")
+        workspace_value = record.metadata.get(
+            _SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY
+        )
         if not isinstance(workspace_value, str) or not workspace_value.strip():
             return
         workspace = Path(workspace_value).expanduser().resolve()
-        durable_event_root = (
-            session_event_path(workspace, record.session_id).parent.parent.resolve()
-        )
-        if event_root.resolve() != durable_event_root:
-            return
         runner.bind_durable_product_session(
             workspace,
             session_directory_identity(workspace),
@@ -1316,7 +1316,6 @@ class SessionService:
             self._bind_restored_durable_product_session(
                 record,
                 terminal_runner,
-                retained_event_root,
             )
             terminal_outcome = {
                 SessionStatus.COMPLETED: "completed",
@@ -1384,7 +1383,6 @@ class SessionService:
         self._bind_restored_durable_product_session(
             record,
             runner,
-            retained_event_root,
         )
         for turn in record.turns_by_id.values():
             if turn.terminal_outcome is not None:
@@ -1905,12 +1903,13 @@ class SessionService:
                         disposition="deduplicated",
                         original_disposition=existing.original_disposition,
                     )
+                accepted_content = runner.prepare_input_content(payload.content)
                 disposition = "started" if record.active_turn_id is None else "queued"
                 turn = TurnRecord(
                     input_id=f"input-{uuid.uuid4().hex}",
                     turn_id=f"turn-{uuid.uuid4().hex}",
                     client_message_id=client_message_id,
-                    content=payload.content,
+                    content=accepted_content,
                     attachments=attachments,
                     original_disposition=disposition,
                     state="active" if disposition == "started" else "queued",
@@ -1931,7 +1930,7 @@ class SessionService:
                     await self.registry.persist(record)
                     admission_persisted = True
                     accepted_content = await runner.enqueue_input(
-                        payload.content,
+                        accepted_content,
                         attachments=list(attachments),
                         input_id=turn.input_id,
                         turn_id=turn.turn_id,
@@ -1941,6 +1940,11 @@ class SessionService:
                     if len(scheduled_operations) != 1:
                         raise RuntimeError("input execution was not scheduled exactly once")
                     turn.content = accepted_content
+                    if payload.content != accepted_content:
+                        runner.record_input_boundary_repair(
+                            payload.content,
+                            accepted_content,
+                        )
                 except Exception as exc:
                     if not logical_input_committed:
                         record.turns_by_id.pop(turn.turn_id, None)
@@ -2088,11 +2092,13 @@ class SessionService:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, detail="workspace not ready"
                 )
-            return await runner.artifacts.upload(
+            response = await runner.artifacts.upload(
                 files,
                 workspace_dir=workspace_dir,
                 metadata=metadata,
             )
+            await self.registry.persist(record)
+            return response
 
 
     @staticmethod

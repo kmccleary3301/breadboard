@@ -556,47 +556,61 @@ class SessionRunner:
             family, payload, message_projection=message_projection
         )
 
-    def _sanitize_interactive_input_content(self, content: str) -> str:
-        """Remove an exact prior-prompt prefix accidentally repeated by the TUI.
+    def prepare_input_content(self, content: str) -> str:
+        with self._product_session_lock:
+            normalized, _ = self._input_boundary_repair(content)
+            return normalized
 
-        Independent prompt POSTs must remain separate turns; only the nonempty suffix
-        of an exact prior accepted prompt is new input.
-        """
+    def record_input_boundary_repair(self, raw: str, normalized: str) -> None:
+        with self._product_session_lock:
+            self._record_input_boundary_repair(raw, normalized)
+
+    def _record_input_boundary_repair(self, raw: str, normalized: str) -> None:
+        repaired, prior = self._input_boundary_repair(raw)
+        if prior is None or repaired != normalized:
+            return
+        logger.warning(
+            "session(%s) stripped stale prompt prefix from interactive input old_len=%s new_len=%s",
+            self.session.session_id,
+            len(prior),
+            len(raw) - len(prior),
+        )
+        meta = (
+            self.session.metadata if isinstance(self.session.metadata, dict) else {}
+        )
+        repairs = (
+            list(meta.get("input_boundary_repairs") or [])
+            if isinstance(meta.get("input_boundary_repairs"), list)
+            else []
+        )
+        repairs.append(
+            {
+                "prior_len": len(prior),
+                "raw_len": len(raw),
+                "suffix_len": len(raw) - len(prior),
+            }
+        )
+        meta["input_boundary_repairs"] = repairs[-10:]
+        self.session.metadata = meta
+        self._persist_metadata_snapshot_threadsafe()
+
+    def _input_boundary_repair(self, content: str) -> tuple[str, str | None]:
         raw = str(content or "")
         if not raw:
-            return raw
+            return raw, None
         for prior in sorted(self._accepted_task_texts, key=len, reverse=True):
             if not prior or not raw.startswith(prior) or len(raw) <= len(prior):
                 continue
             suffix = raw[len(prior) :]
-            if not suffix.strip():
-                continue
-            logger.warning(
-                "session(%s) stripped stale prompt prefix from interactive input old_len=%s new_len=%s",
-                self.session.session_id,
-                len(prior),
-                len(suffix),
-            )
-            meta = (
-                self.session.metadata if isinstance(self.session.metadata, dict) else {}
-            )
-            repairs = (
-                list(meta.get("input_boundary_repairs") or [])
-                if isinstance(meta.get("input_boundary_repairs"), list)
-                else []
-            )
-            repairs.append(
-                {
-                    "prior_len": len(prior),
-                    "raw_len": len(raw),
-                    "suffix_len": len(suffix),
-                }
-            )
-            meta["input_boundary_repairs"] = repairs[-10:]
-            self.session.metadata = meta
-            self._persist_metadata_snapshot_threadsafe()
-            return suffix.lstrip()
-        return raw
+            if suffix.strip():
+                return suffix.lstrip(), prior
+        return raw, None
+
+    def _sanitize_interactive_input_content(self, content: str) -> str:
+        """Remove an exact prior-prompt prefix accidentally repeated by the TUI."""
+        normalized, _ = self._input_boundary_repair(content)
+        self._record_input_boundary_repair(str(content or ""), normalized)
+        return normalized
 
     def _upsert_permission_rule(
         self,

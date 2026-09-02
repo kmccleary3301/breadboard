@@ -852,6 +852,10 @@ async def test_recovery_uses_retained_event_root_and_rebinds_durable_workspace(
         runtime_root=workspace / ".breadboard" / "service_records",
     )
     initial = await initial_service.ensure_session(response.session_id)
+    uploaded = await initial_service.upload_attachments(
+        response.session_id,
+        [_Upload()],
+    )
     initial.product_session.complete()
     await _stop(initial)
     await initial_service.registry.persist(initial)
@@ -895,6 +899,13 @@ async def test_recovery_uses_retained_event_root_and_rebinds_durable_workspace(
     assert session_store.session_metadata_path(
         workspace, response.session_id
     ).is_file()
+    artifact_rows = session_store.session_artifact_rows(
+        workspace,
+        response.session_id,
+    )
+    assert [row["name"] for row in artifact_rows] == [
+        uploaded.attachments[0].id
+    ]
 
     async def collect_replay() -> list:
         return [
@@ -908,6 +919,43 @@ async def test_recovery_uses_retained_event_root_and_rebinds_durable_workspace(
     replay = await asyncio.wait_for(collect_replay(), timeout=1)
     assert replay
     assert getattr(recovered, "_dispatcher_complete", False) is True
+
+
+@pytest.mark.asyncio
+async def test_managed_session_persists_actual_journal_root(monkeypatch, tmp_path) -> None:
+    managed_root = tmp_path / "managed"
+    managed_root.mkdir(mode=0o700)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("BREADBOARD_ENGINE_LAUNCH_ID", "managed-root-test")
+    monkeypatch.setenv("BREADBOARD_ENGINE_STATE_ROOT", str(managed_root))
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+
+    service = SessionService()
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="retain the actual managed journal root",
+            workspace=str(workspace),
+        ),
+        session_id="managed-event-root",
+        event_root=workspace / ".breadboard" / "sessions",
+    )
+    record = await service.ensure_session(response.session_id)
+
+    expected_root = (managed_root / "session-events").resolve()
+    assert record.metadata["session_event_root"] == str(expected_root)
+    assert (
+        expected_root / response.session_id / "session_events.jsonl"
+    ).is_file()
+    await _stop(record)
+    await service.registry.persist(record)
+
+    recovered = await SessionService().ensure_session(response.session_id)
+    assert recovered.metadata["session_event_root"] == str(expected_root)
+    assert recovered.product_session.events[0].kind == "session.started"
+    await _stop(recovered)
 
 
 @pytest.mark.asyncio

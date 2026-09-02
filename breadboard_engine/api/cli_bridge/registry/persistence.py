@@ -13,6 +13,8 @@ from typing import (
     Optional,
 )
 
+from breadboard.product.runtime.artifacts import ArtifactRef
+
 from ..events import EventType, SessionEvent
 from ..models import (
     SessionStatus,
@@ -51,6 +53,22 @@ _PROVIDER_USAGE_FIELDS = {
     "reasoningTokens",
     "extensions",
 }
+
+
+def _retained_artifact_manifest_ref(value: Any) -> Dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {
+        "digest",
+        "size_bytes",
+        "media_type",
+    }:
+        raise ValueError("retained artifact manifest reference is invalid")
+    return ArtifactRef(
+        digest=value["digest"],
+        size_bytes=value["size_bytes"],
+        media_type=value["media_type"],
+    ).as_dict()
 
 
 def _retained_turn_completed_payload(value: Any) -> Dict[str, Any]:
@@ -444,6 +462,12 @@ class PersistenceMixin:
                 "config_path": str(metadata.get("config_path") or ""),
                 "workspace": str(metadata.get("workspace") or ""),
                 "session_event_root": str(metadata.get("session_event_root") or ""),
+                "durable_product_workspace": str(
+                    metadata.get("durable_product_workspace") or ""
+                ),
+                "artifact_manifest_ref": _retained_artifact_manifest_ref(
+                    metadata.get("artifact_manifest_ref")
+                ),
                 "model_role_lock": role_lock,
                 "active_model_role": str(active_role) if active_role else None,
                 "permission_mode": (
@@ -601,6 +625,19 @@ class PersistenceMixin:
             if not isinstance(event_root, str) or not Path(event_root).is_absolute():
                 raise ValueError("retained session event root is invalid")
             metadata["session_event_root"] = event_root
+        durable_product_workspace = session.get("durable_product_workspace")
+        if durable_product_workspace:
+            if (
+                not isinstance(durable_product_workspace, str)
+                or not Path(durable_product_workspace).is_absolute()
+            ):
+                raise ValueError("retained durable product workspace is invalid")
+            metadata["durable_product_workspace"] = durable_product_workspace
+        artifact_manifest_ref = _retained_artifact_manifest_ref(
+            session.get("artifact_manifest_ref")
+        )
+        if artifact_manifest_ref is not None:
+            metadata["artifact_manifest_ref"] = artifact_manifest_ref
         permission_mode = str(session.get("permission_mode") or "").strip().lower()
         if permission_mode in {"prompt", "ask", "interactive", "configured"}:
             metadata["permission_mode"] = permission_mode
