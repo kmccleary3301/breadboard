@@ -50,6 +50,7 @@ from .implementation_receipts import (
     _async_result_task_id_from_activity,
     _implementation_receipt_missing,
     _implementation_receipts_satisfied,
+    _is_allowed_async_result_followup,
     _latest_prompt_requests_tool_stop_after_observation,
     _latest_prompt_requests_read_only_answer_after_observation,
     _required_final_answer_marker,
@@ -701,6 +702,7 @@ def handle_text_tool_calls(
             artifact_links=artifact_links,
             session_state=session_state,
             turn_cfg=turn_policy.turn_strategy,
+            markdown_logger=markdown_logger,
         )
 
     return AgentRuntime(

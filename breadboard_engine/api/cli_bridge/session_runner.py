@@ -447,21 +447,21 @@ class SessionRunner:
                 "turn_id": turn_id,
             }
             product_session = getattr(self.session, "product_session", None)
-            if product_session is not None:
-                product_session.input(content, selected_artifacts)
-                self.session.metadata["session_contract"] = (
-                    product_session.read_model.as_dict()
-                )
 
-            def enqueue() -> None:
+            def commit_input() -> None:
+                if product_session is not None:
+                    product_session.input(content, selected_artifacts)
+                    self.session.metadata["session_contract"] = (
+                        product_session.read_model.as_dict()
+                    )
                 self._input_queue.put_nowait(payload)
 
             if defer_execution is None:
-                enqueue()
+                commit_input()
             else:
                 async def enqueue_after_response() -> None:
                     with self._product_session_lock:
-                        enqueue()
+                        commit_input()
 
                 defer_execution(enqueue_after_response)
         return content

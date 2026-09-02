@@ -724,6 +724,11 @@ async def test_session_runner_can_defer_execution_until_after_admission_response
     )
     record.turns_by_id[turn.turn_id] = turn
     record.active_turn_id = turn.turn_id
+    product_inputs: list[tuple[str, list[Any]]] = []
+    record.product_session = SimpleNamespace(
+        input=lambda content, artifacts: product_inputs.append((content, artifacts)),
+        read_model=SimpleNamespace(as_dict=lambda: {"status": "running"}),
+    )
     deferred: list[Any] = []
     runner = SessionRunner(
         session=record,
@@ -740,8 +745,10 @@ async def test_session_runner_can_defer_execution_until_after_admission_response
 
     assert accepted == "continue"
     assert runner._input_queue.empty()
+    assert product_inputs == []
     assert len(deferred) == 1
     await deferred[0]()
+    assert product_inputs == [("continue", [])]
     assert await runner._input_queue.get() == {
         "content": "continue",
         "attachments": [],

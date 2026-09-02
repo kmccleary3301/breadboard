@@ -457,7 +457,11 @@ class AgentRuntime:
                     0.0 if failed else (1.0 if failed_at_index == -1 else 0.0),
                 )
             self.conductor._record_lsp_reward_metrics(session_state, turn_index)
-            self.conductor._record_test_reward_metric(session_state, turn_index, test_success)
+            self.conductor._record_test_reward_metric(
+                session_state,
+                turn_index,
+                0.0 if failed else test_success,
+            )
         except Exception:
             pass
 
@@ -652,14 +656,13 @@ class AgentRuntime:
         turn_ctx = build_turn_context(self.conductor, session_state, calls)
         calls = apply_turn_guards(self.conductor, turn_ctx, session_state)
         turn_ctx.parsed_calls = list(calls)
-        handle_blocked_calls(self.conductor, turn_ctx, session_state, self.log_sink)
-        if not calls and exchange.input_kind == "text":
-            return False
-
         session_state.add_message(exchange.assistant_message, to_provider=False)
         self.event_sink(exchange.transcript_entry)
         if exchange.provider_assistant_message is not None:
             session_state.add_message(exchange.provider_assistant_message, to_provider=True)
+        handle_blocked_calls(self.conductor, turn_ctx, session_state, self.log_sink)
+        if not calls and exchange.input_kind == "text":
+            return False
 
         turn_index = session_state.get_provider_metadata("current_turn_index")
         turn_index_int = turn_index if isinstance(turn_index, int) else None
@@ -800,6 +803,14 @@ class AgentRuntime:
             return False
 
         results = self._result_entries(executed_results)
+        self._record_rewards(
+            session_state,
+            turn_index_int,
+            plan_metadata,
+            executed_results,
+            failed_at_index,
+            test_success,
+        )
         completion_result: Optional[bool] = None
         for result_entry in reversed(results):
             completion_result = self._handle_completion_action(
@@ -831,6 +842,12 @@ class AgentRuntime:
                             0,
                             int(summary.get("total_calls", 0)) - 1,
                         )
+                        turn_usage = session_state.turn_tool_usage.get(turn_index_int) or {}
+                        tools = turn_usage.get("tools") or []
+                        for index in range(len(tools) - 1, -1, -1):
+                            if tools[index].get("name") == result_entry.get("fn"):
+                                tools.pop(index)
+                                break
                         recent_tools_summary = [
                             entry
                             for entry in recent_tools_summary
@@ -840,14 +857,6 @@ class AgentRuntime:
                     except Exception:
                         pass
                 break
-        self._record_rewards(
-            session_state,
-            turn_index_int,
-            plan_metadata,
-            executed_results,
-            failed_at_index,
-            test_success,
-        )
         if turn_ctx.blocked_calls:
             for blocked in turn_ctx.blocked_calls:
                 if blocked.get("source") != "todo":
