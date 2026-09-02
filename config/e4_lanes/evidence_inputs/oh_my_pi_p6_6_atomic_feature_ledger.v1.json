@@ -7,8 +7,8 @@
   "plan_ref": "docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_MASTER_PLAN.md:317-323",
   "reference_resolution": {
     "policy": "Every unresolved historical source/fixture reference has an explicit justified tombstone; the P6.6 claim consumes only tracked, lock-pinned inputs.",
-    "resolved_reference_count": 291,
-    "tombstone_count": 203
+    "resolved_reference_count": 303,
+    "tombstone_count": 191
   },
   "reference_tombstones": [
     {
@@ -1203,20 +1203,6 @@
     },
     {
       "disposition": "historical_provenance_only",
-      "feature_id": "feat_7fdb5e54163f8491",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_66aa65167fe1a23e",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
-    },
-    {
-      "disposition": "historical_provenance_only",
       "feature_id": "feat_58c32354547a6f30",
       "field": "source_refs",
       "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
@@ -1228,20 +1214,6 @@
       "field": "source_refs",
       "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
       "reference": "source:agent_configs/misc/oh_my_pi_p3_8_projection_broker_adapter_v1.yaml#sha256:c0a2df72a80d705c4b2fdbfd19ce510c78710e45524585a33e22f831c802d40d"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_e82097c722ea3de6",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_e15856161865ccf0",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/api/cli_bridge/runtime_emission.py"
     },
     {
       "disposition": "historical_provenance_only",
@@ -1375,62 +1347,6 @@
       "field": "source_refs",
       "reason": "Historical source digest predates the provider-stream-ir agent-config update; superseded bytes remain tracked at this path and the pinned digest is retained only as provenance, not consumed by the P6.6 lane.",
       "reference": "source:agent_configs/misc/oh_my_pi_p3_5_resource_blob_compiler_v1.yaml#sha256:3c791f8ec67f6ddffd53f30bc13fd3e9642c2a67ccc6e0eb54f2030547301be6"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_b3bcb7697f3ea258",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/compilation/effective_config_graph.py"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_0234bfa2b266f538",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_5123d3276f9ca468",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_a8c1754af302f290",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_b650fa627d57aa92",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_bc11e30da175b4a9",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_dcc5055b78969aba",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_e9ae27a72149301b",
-      "field": "source_refs",
-      "reason": "Historical source module was removed from the tracked checkout by the provider-stream-ir legacy-prototype cleanup; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "source:breadboard_engine/compilation/helper_runtime_primitives.py"
     }
   ],
   "row_count": 98,
@@ -2275,7 +2191,7 @@
       "promotion_state": "draft",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:039e7861f37ee4733ad61074194ac3364ba09ce338b2a516e382135c21052fe8",
+        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:bd93060370890e3f8b3b59b440847963d6ee17584547b9318f8c3b01f45bba93",
         "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841",
         "source:agent_configs/misc/oh_my_pi_p3_3_capability_registry_compiler_v1.yaml#sha256:596bc2f58566f92d9dbd8eaab4801992310e506bf97508d9e853acb401d83ea7"
       ],
@@ -2613,7 +2529,7 @@
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
         "source:agent_configs/misc/oh_my_pi_p6_0_l4_mcp_browser_resource_v1.yaml#sha256:1d29771072a821903fdcbe4887d80576df8487411867f3de03264596bfd6b190",
-        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:039e7861f37ee4733ad61074194ac3364ba09ce338b2a516e382135c21052fe8",
+        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:bd93060370890e3f8b3b59b440847963d6ee17584547b9318f8c3b01f45bba93",
         "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841"
       ],
       "stateful": true,
@@ -2636,7 +2552,7 @@
       "promotion_state": "draft",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:039e7861f37ee4733ad61074194ac3364ba09ce338b2a516e382135c21052fe8",
+        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:bd93060370890e3f8b3b59b440847963d6ee17584547b9318f8c3b01f45bba93",
         "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841",
         "source:agent_configs/misc/oh_my_pi_p3_3_capability_registry_compiler_v1.yaml#sha256:596bc2f58566f92d9dbd8eaab4801992310e506bf97508d9e853acb401d83ea7"
       ],
@@ -2704,7 +2620,7 @@
       "promotion_state": "draft",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:039e7861f37ee4733ad61074194ac3364ba09ce338b2a516e382135c21052fe8",
+        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:bd93060370890e3f8b3b59b440847963d6ee17584547b9318f8c3b01f45bba93",
         "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841",
         "source:agent_configs/misc/oh_my_pi_p3_3_capability_registry_compiler_v1.yaml#sha256:596bc2f58566f92d9dbd8eaab4801992310e506bf97508d9e853acb401d83ea7"
       ],
@@ -2752,7 +2668,7 @@
       "source_refs": [
         "source:agent_configs/misc/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1.yaml#sha256:5708fef16bf0fb7b9e4ad09f6121c1f4c84b156e1543653f16b3a5d4c8a1102f",
         "source:agent_configs/misc/oh_my_pi_p6_0_l4_mcp_browser_resource_v1.yaml#sha256:1d29771072a821903fdcbe4887d80576df8487411867f3de03264596bfd6b190",
-        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:039e7861f37ee4733ad61074194ac3364ba09ce338b2a516e382135c21052fe8"
+        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:bd93060370890e3f8b3b59b440847963d6ee17584547b9318f8c3b01f45bba93"
       ],
       "stateful": true,
       "target": "omp"
@@ -2853,7 +2769,7 @@
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
         "source:agent_configs/misc/oh_my_pi_p6_6_task_job_subagent_v1.yaml#sha256:1561b410d8d58e1c105222ae8c39bdef3e3c10ac1fa0eb74c547357f0ba99122",
-        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:039e7861f37ee4733ad61074194ac3364ba09ce338b2a516e382135c21052fe8",
+        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:bd93060370890e3f8b3b59b440847963d6ee17584547b9318f8c3b01f45bba93",
         "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841"
       ],
       "stateful": true,
@@ -2944,7 +2860,7 @@
       "promotion_state": "draft",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:039e7861f37ee4733ad61074194ac3364ba09ce338b2a516e382135c21052fe8",
+        "source:agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml#sha256:bd93060370890e3f8b3b59b440847963d6ee17584547b9318f8c3b01f45bba93",
         "source:agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml#sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841",
         "source:agent_configs/misc/oh_my_pi_p3_3_capability_registry_compiler_v1.yaml#sha256:596bc2f58566f92d9dbd8eaab4801992310e506bf97508d9e853acb401d83ea7"
       ],
