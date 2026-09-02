@@ -1256,6 +1256,25 @@ class SessionService:
             SessionStatus.FAILED,
             SessionStatus.STOPPED,
         }:
+            terminal_runner = SessionRunner(
+                session=record,
+                registry=self.registry,
+                request=SessionCreateRequest(task="", metadata=dict(record.metadata or {})),
+            )
+            terminal_outcome = {
+                SessionStatus.COMPLETED: "completed",
+                SessionStatus.FAILED: "failed",
+                SessionStatus.STOPPED: "cancelled",
+            }[restored_status]
+            await terminal_runner._terminalize_admitted_turns(
+                outcome=terminal_outcome,
+                reason="restored_terminal_session",
+                error_code=(
+                    "runtime_failure"
+                    if restored_status is SessionStatus.FAILED
+                    else None
+                ),
+            )
             await self.registry.update_status(record.session_id, restored_status)
             record.loaded_from_retained_state = False
             return

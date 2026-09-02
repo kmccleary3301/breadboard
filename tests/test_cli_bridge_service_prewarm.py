@@ -739,7 +739,12 @@ async def test_recovery_reconciles_terminal_logical_journal_before_runner_start(
 ) -> None:
     from breadboard.product.runtime import Session as ProductSession
     from breadboard.product.runtime.events import JsonlEventSink
-    from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+    from breadboard_engine.api.cli_bridge.registry import (
+        SessionRecord,
+        SessionRegistry,
+        TurnRecord,
+        submission_body_digest,
+    )
 
     state_root = tmp_path / "state"
     event_root = tmp_path / "events"
@@ -757,6 +762,19 @@ async def test_recovery_reconciles_terminal_logical_journal_before_runner_start(
         session_id=record.session_id,
         sink=JsonlEventSink(event_root / record.session_id / "session_events.jsonl"),
     )
+    turn = TurnRecord(
+        input_id="input-before-terminal-crash",
+        turn_id="turn-before-terminal-crash",
+        client_message_id="client-before-terminal-crash",
+        content="work",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+        body_digest=submission_body_digest("work", ()),
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+    record.product_session.input("work", [])
     await registry.create(record)
     record.product_session.complete()
 
@@ -770,6 +788,10 @@ async def test_recovery_reconciles_terminal_logical_journal_before_runner_start(
     assert recovered.loaded_from_retained_state is False
     assert persisted is not None
     assert persisted.status is SessionStatus.COMPLETED
+    persisted_turn = persisted.turns_by_id[turn.turn_id]
+    assert persisted_turn.terminal_outcome == "completed"
+    assert persisted_turn.terminal_resolution_committed is True
+    assert persisted.active_turn_id is None
 
 
 @pytest.mark.asyncio
