@@ -734,6 +734,45 @@ async def test_recovered_admission_is_present_in_logical_session_journal(
 
 
 @pytest.mark.asyncio
+async def test_recovery_reconciles_terminal_logical_journal_before_runner_start(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+    from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+
+    state_root = tmp_path / "state"
+    event_root = tmp_path / "events"
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(event_root))
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id="terminal-before-registry-update",
+        status=SessionStatus.RUNNING,
+    )
+    record.product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "retained terminal session",
+        session_id=record.session_id,
+        sink=JsonlEventSink(event_root / record.session_id / "session_events.jsonl"),
+    )
+    await registry.create(record)
+    record.product_session.complete()
+
+    recovered_service = SessionService(state_root=state_root)
+    recovered = await recovered_service.ensure_session(record.session_id)
+    persisted = await SessionRegistry(state_root=state_root).get(record.session_id)
+
+    assert recovered.status is SessionStatus.COMPLETED
+    assert recovered.projected_status() is SessionStatus.COMPLETED
+    assert recovered.runner is None
+    assert recovered.loaded_from_retained_state is False
+    assert persisted is not None
+    assert persisted.status is SessionStatus.COMPLETED
+
+
+@pytest.mark.asyncio
 async def test_terminalization_closes_admission_before_async_resolution(
     monkeypatch, tmp_path
 ) -> None:

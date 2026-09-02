@@ -857,32 +857,31 @@ async def test_parallel_sends_remain_separate_in_durable_admission_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    registry = SessionRegistry(state_root=tmp_path)
+    import hashlib
+
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+
+    registry = SessionRegistry(state_root=tmp_path / "registry")
     record = SessionRecord(
         session_id="sess-parallel-admission",
         status=SessionStatus.RUNNING,
     )
-
-    class Runner:
-        def __init__(self) -> None:
-            self.inputs: list[tuple[str, str | None, str | None]] = []
-
-        async def enqueue_input(
-            self,
-            content: str,
-            attachments: list[str],
-            *,
-            input_id: str | None = None,
-            turn_id: str | None = None,
-            defer_execution: Any = None,
-        ) -> str:
-            async def execute() -> None:
-                self.inputs.append((content, input_id, turn_id))
-
-            defer_execution(execute)
-            return content
-
-    runner = Runner()
+    journal = tmp_path / "events" / record.session_id / "session_events.jsonl"
+    record.product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "parallel admission",
+        session_id=record.session_id,
+        sink=JsonlEventSink(journal),
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
     record.runner = runner
     await registry.create(record)
     original_persist = registry.persist
@@ -924,7 +923,9 @@ async def test_parallel_sends_remain_separate_in_durable_admission_order(
         asyncio.gather(first_task, second_task),
         timeout=2,
     )
-    restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+    restored = await SessionRegistry(state_root=tmp_path / "registry").get(
+        record.session_id
+    )
 
     assert [first.disposition, second.disposition] == ["started", "queued"]
     assert restored is not None
@@ -935,10 +936,19 @@ async def test_parallel_sends_remain_separate_in_durable_admission_order(
         ("started", submission_body_digest("first", ())),
         ("queued", submission_body_digest("second", ())),
     ]
-    assert runner.inputs == [
-        ("first", first.input_id, first.turn_id),
-        ("second", second.input_id, second.turn_id),
+    accepted_events = [
+        event
+        for event in map(json.loads, journal.read_text(encoding="utf-8").splitlines())
+        if event["kind"] == "input.accepted"
     ]
+    assert [event["payload"]["content_hash"] for event in accepted_events] == [
+        "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
+        for content in ("first", "second")
+    ]
+    assert [
+        runner._input_queue.get_nowait()["content"],
+        runner._input_queue.get_nowait()["content"],
+    ] == ["first", "second"]
 
 
 @pytest.mark.asyncio

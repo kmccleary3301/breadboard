@@ -1250,6 +1250,15 @@ class SessionService:
             record.session_id,
             self._managed_state_paths,
         )
+        restored_status = record.projected_status()
+        if restored_status in {
+            SessionStatus.COMPLETED,
+            SessionStatus.FAILED,
+            SessionStatus.STOPPED,
+        }:
+            await self.registry.update_status(record.session_id, restored_status)
+            record.loaded_from_retained_state = False
+            return
         metadata = dict(record.metadata or {})
         recorded_config_path = str(metadata.get("config_path") or "").strip()
         retained_config_path = (
