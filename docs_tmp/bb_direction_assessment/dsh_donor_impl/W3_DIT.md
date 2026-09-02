@@ -64,4 +64,4 @@ The threshold result is **no common activation owner is proven**: no design has 
 
 ## Decision
 
-**PENDING Kyle.** This note records the comparison and recommendation only. No adapter, source, test, public contract, or schema was changed.
+**DECLINED by Kyle on 2026-09-02 through the plan-authorized ask-tool auto-selection.** GEN-ACTIVATION is NOT-TAKEN. Config, provider, and plugin activation remain with their current domain owners; W3.2's Session/Lock implementation is the built route. Reopen only when one named consumer supplies a common caller, two genuinely varying adapters, and a concrete deletion payoff.
