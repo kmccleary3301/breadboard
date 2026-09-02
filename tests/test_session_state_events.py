@@ -1077,55 +1077,80 @@ async def test_retained_submission_digest_deduplicates_after_restart(
 
 
 @pytest.mark.asyncio
-async def test_admission_persistence_failure_rolls_back_unscheduled_turn(
+async def test_admission_persistence_failure_precedes_logical_input_append(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+
+    class RecordingSink:
+        def __init__(self) -> None:
+            self.events: list[Any] = []
+
+        def append(self, event: Any) -> None:
+            self.events.append(event)
+
     registry = SessionRegistry(state_root=tmp_path)
     record = SessionRecord(
         session_id="sess-admission-persist-failure",
         status=SessionStatus.RUNNING,
     )
-
-    class Runner:
-        async def enqueue_input(
-            self,
-            content: str,
-            attachments: list[str],
-            *,
-            defer_execution: Any,
-            **_kwargs: Any,
-        ) -> str:
-            async def execute() -> None:
-                raise AssertionError("failed admission must not execute")
-
-            defer_execution(execute)
-            return content
-
-    record.runner = Runner()
+    sink = RecordingSink()
+    record.product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "durable admission",
+        session_id=record.session_id,
+        sink=sink,
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    record.runner = runner
     await registry.create(record)
+    original_persist = registry.persist
 
     async def fail_persist(*_args: Any, **_kwargs: Any) -> None:
         raise OSError("injected admission persistence failure")
 
     monkeypatch.setattr(registry, "persist", fail_persist)
     deferred: list[Any] = []
+    request = SessionInputRequest(
+        content="continue",
+        client_message_id="client-persist-failure",
+    )
     with pytest.raises(OSError, match="injected admission persistence failure"):
         await SessionService(registry=registry).send_input(
             record.session_id,
-            SessionInputRequest(
-                content="continue",
-                client_message_id="client-persist-failure",
-            ),
+            request,
             defer_execution=deferred.append,
         )
 
+    assert [event.kind for event in sink.events] == ["session.started"]
     assert deferred == []
     assert record.turns_by_id == {}
     assert record.submissions_by_key == {}
     assert record.submissions_by_key_digest == {}
     assert record.active_turn_id is None
     assert record.turn_admission.value == "idle"
+
+    monkeypatch.setattr(registry, "persist", original_persist)
+    receipt = await SessionService(registry=registry).send_input(
+        record.session_id,
+        request,
+        defer_execution=deferred.append,
+    )
+
+    assert receipt.disposition == "started"
+    assert [event.kind for event in sink.events] == [
+        "session.started",
+        "input.accepted",
+    ]
+    assert len(deferred) == 1
 
 @pytest.mark.asyncio
 async def test_cancel_turn_requests_only_the_active_turn_and_is_idempotent(

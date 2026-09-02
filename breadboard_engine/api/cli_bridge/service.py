@@ -1925,7 +1925,11 @@ class SessionService:
                     record.queued_turn_ids.append(turn.turn_id)
                 record.turn_admission = record.turn_admission.__class__.ACTIVE
                 scheduled_operations: list[Callable[[], Awaitable[None]]] = []
+                admission_persisted = False
+                logical_input_committed = False
                 try:
+                    await self.registry.persist(record)
+                    admission_persisted = True
                     accepted_content = await runner.enqueue_input(
                         payload.content,
                         attachments=list(attachments),
@@ -1933,26 +1937,29 @@ class SessionService:
                         turn_id=turn.turn_id,
                         defer_execution=scheduled_operations.append,
                     )
+                    logical_input_committed = True
                     if len(scheduled_operations) != 1:
                         raise RuntimeError("input execution was not scheduled exactly once")
                     turn.content = accepted_content
-                    await self.registry.persist(record)
                 except Exception as exc:
-                    record.turns_by_id.pop(turn.turn_id, None)
-                    record.submissions_by_key.pop(client_message_id, None)
-                    record.submissions_by_key_digest.pop(key_digest, None)
-                    if record.active_turn_id == turn.turn_id:
-                        record.active_turn_id = None
-                    else:
-                        try:
-                            record.queued_turn_ids.remove(turn.turn_id)
-                        except ValueError:
-                            pass
-                    record.turn_admission = (
-                        record.turn_admission.__class__.ACTIVE
-                        if record.active_turn_id is not None
-                        else record.turn_admission.__class__.IDLE
-                    )
+                    if not logical_input_committed:
+                        record.turns_by_id.pop(turn.turn_id, None)
+                        record.submissions_by_key.pop(client_message_id, None)
+                        record.submissions_by_key_digest.pop(key_digest, None)
+                        if record.active_turn_id == turn.turn_id:
+                            record.active_turn_id = None
+                        else:
+                            try:
+                                record.queued_turn_ids.remove(turn.turn_id)
+                            except ValueError:
+                                pass
+                        record.turn_admission = (
+                            record.turn_admission.__class__.ACTIVE
+                            if record.active_turn_id is not None
+                            else record.turn_admission.__class__.IDLE
+                        )
+                        if admission_persisted:
+                            await self.registry.persist(record)
                     if not isinstance(exc, (ValueError, RuntimeError)):
                         raise
                     http_status = (
