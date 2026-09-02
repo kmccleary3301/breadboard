@@ -13,7 +13,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 from fastapi import HTTPException, UploadFile, status
 
 from breadboard.product.runtime import AnchoredStorage, ArtifactStore
-from breadboard.product.runtime.artifacts import _validate_artifact_name
+from breadboard.product.runtime.artifacts import ArtifactRef, _validate_artifact_name
 from breadboard.product.runtime.session_store import (
     authorize_session_artifact_manifest,
 )
@@ -170,6 +170,61 @@ class SessionArtifactStore:
         candidate = filename.strip() or "attachment.bin"
         candidate = candidate.replace("\\", "/")
         return os.path.basename(candidate)
+
+    def restore_manifest(self, workspace: Path) -> None:
+        manifest_value = self.metadata.get("artifact_manifest_ref")
+        if not isinstance(manifest_value, Mapping):
+            return
+        manifest_ref = ArtifactRef(
+            digest=manifest_value.get("digest"),
+            size_bytes=manifest_value.get("size_bytes"),
+            media_type=manifest_value.get("media_type"),
+        )
+        anchor, _, descriptor, windows_handles = _open_workspace_breadboard(workspace)
+        artifact_fd = None
+        try:
+            if descriptor is not None:
+                artifact_fd = AnchoredStorage.open_directory(
+                    descriptor,
+                    "artifacts",
+                    create=False,
+                )
+            store = ArtifactStore(anchor / "artifacts", descriptor=artifact_fd)
+            document = json.loads(store.read(manifest_ref))
+        finally:
+            if artifact_fd is not None:
+                os.close(artifact_fd)
+            if descriptor is not None:
+                os.close(descriptor)
+            for handle in reversed(windows_handles):
+                AnchoredStorage.close_windows_handle(handle)
+        if (
+            not isinstance(document, dict)
+            or document.get("schema_version") != "bb.artifact_manifest.v1"
+            or document.get("session_id") != self.session_id
+            or not isinstance(document.get("artifacts"), list)
+        ):
+            raise ValueError("invalid retained attachment manifest")
+        restored: Dict[str, ArtifactRef] = {}
+        for row in document["artifacts"]:
+            if not isinstance(row, dict) or set(row) != {
+                "name",
+                "digest",
+                "size_bytes",
+                "media_type",
+            }:
+                raise ValueError("invalid retained attachment manifest row")
+            name = row["name"]
+            _validate_artifact_name(name)
+            if name in restored:
+                raise ValueError("duplicate retained attachment manifest row")
+            restored[name] = ArtifactRef(
+                digest=row["digest"],
+                size_bytes=row["size_bytes"],
+                media_type=row["media_type"],
+            )
+        self._artifact_refs = restored
+
 
     def authorize_manifest(
         self,

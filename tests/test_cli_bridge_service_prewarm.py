@@ -943,6 +943,10 @@ async def test_managed_session_persists_actual_journal_root(monkeypatch, tmp_pat
         event_root=workspace / ".breadboard" / "sessions",
     )
     record = await service.ensure_session(response.session_id)
+    first_upload = await service.upload_attachments(
+        response.session_id,
+        [_Upload()],
+    )
 
     expected_root = (managed_root / "session-events").resolve()
     assert record.metadata["session_event_root"] == str(expected_root)
@@ -952,9 +956,26 @@ async def test_managed_session_persists_actual_journal_root(monkeypatch, tmp_pat
     await _stop(record)
     await service.registry.persist(record)
 
-    recovered = await SessionService().ensure_session(response.session_id)
+    recovered_service = SessionService()
+    recovered = await recovered_service.ensure_session(response.session_id)
+    second_file = _Upload()
+    second_file.filename = "second-proof.txt"
+    second_upload = await recovered_service.upload_attachments(
+        response.session_id,
+        [second_file],
+    )
+
     assert recovered.metadata["session_event_root"] == str(expected_root)
     assert recovered.product_session.events[0].kind == "session.started"
+    expected_attachment_ids = {
+        first_upload.attachments[0].id,
+        second_upload.attachments[0].id,
+    }
+    assert set(recovered.runner.artifacts.artifact_refs()) == expected_attachment_ids
+    recovered.product_session.complete()
+    recovered.runner._commit_terminal_product_session_locked()
+    rows = session_store.session_artifact_rows(workspace, response.session_id)
+    assert {row["name"] for row in rows} == expected_attachment_ids
     await _stop(recovered)
 
 

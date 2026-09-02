@@ -161,6 +161,7 @@ class SessionRunner:
         session_directory_identity: session_store.SessionDirectoryIdentity,
     ) -> None:
         with self._product_session_lock:
+            self.artifacts.restore_manifest(workspace)
             self._durable_product_session = (
                 workspace.resolve(),
                 session_directory_identity,
