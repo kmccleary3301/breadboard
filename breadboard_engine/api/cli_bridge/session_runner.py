@@ -54,6 +54,7 @@ from .runtime_event_projector import (
 from .session_control import SessionControlController
 from .task_execution import TaskExecutionOwner
 from .session_lifecycle import SessionLifecycleOwner
+from breadboard.product.runtime.events import GenerationAdoptionError
 
 
 logger = logging.getLogger(__name__)
@@ -335,6 +336,8 @@ class SessionRunner:
     async def stop(self, reason: str = "operator request") -> None:
         if self._closed:
             return
+        async with self.session.admission_lock:
+            self.session.admission_closed = True
         cancelled_before_start = (
             self._task is None or not self._start_authority.is_set()
         )
@@ -475,22 +478,25 @@ class SessionRunner:
             product_session = getattr(self.session, "product_session", None)
             if product_session is None:
                 return
-            if transition in {
-                "complete",
-                "fail",
-                "cancel",
-            } and product_session.read_model.status in {
-                "completed",
-                "failed",
-                "canceled",
-            }:
-                return
-            getattr(product_session, transition)(*args)
+            if transition == "reconfigure":
+                if self.session.active_turn_id is not None or self.session.queued_turn_ids:
+                    raise GenerationAdoptionError(
+                        "non_quiescent",
+                        "generation adoption requires a quiescent turn boundary",
+                    )
+                if not args or not hasattr(product_session, "adopt_generation"):
+                    raise GenerationAdoptionError(
+                        "incompatible",
+                        "generation candidate is not Lock-compatible",
+                    )
+                product_session.adopt_generation(*args)
+            else:
+                if transition in {"complete", "fail", "cancel"} and product_session.read_model.status in {"completed", "failed", "canceled"}:
+                    return
+                getattr(product_session, transition)(*args)
             if transition in {"complete", "fail", "cancel"}:
                 self._commit_terminal_product_session_locked()
-            self.session.metadata["session_contract"] = (
-                product_session.read_model.as_dict()
-            )
+            self.session.metadata["session_contract"] = product_session.read_model.as_dict()
 
     # Provider-supplied names are not public identities until they resolve into
     # the active, configured tool surface.

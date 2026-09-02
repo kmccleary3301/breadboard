@@ -19,7 +19,11 @@ from breadboard.product.runtime import (
     ArtifactStore,
     Session as ProductSession,
 )
-from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
+from breadboard.product.runtime.events import (
+    GenerationAdoptionError,
+    JsonlEventSink,
+    ProcessLock,
+)
 from breadboard.product.runtime.session_store import (
     authorize_session_artifact_manifest,
     session_event_path,
@@ -1837,6 +1841,11 @@ class SessionService:
                         disposition="deduplicated",
                         original_disposition=existing.original_disposition,
                     )
+                if record.admission_closed:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="session admission is closed",
+                    )
                 disposition = "started" if record.active_turn_id is None else "queued"
                 turn = TurnRecord(
                     input_id=f"input-{uuid.uuid4().hex}",
@@ -1950,11 +1959,20 @@ class SessionService:
             )
 
         def durable_reconfigure(runtime_config: dict[str, Any]) -> None:
+            # Use the applied agent config when present; before agent setup the
+            # prepared candidate is the authoritative immutable input.
+            agent_config = getattr(runner._agent, "config", None)
+            candidate_config = (
+                dict(agent_config)
+                if isinstance(agent_config, dict)
+                else dict(runtime_config)
+            )
+            candidate_lock = self._runtime_lock(
+                session_id, candidate_config, runner.request.config_path
+            )
             runner.transition_product_session(
                 "reconfigure",
-                self._runtime_lock(
-                    session_id, runtime_config, runner.request.config_path
-                ),
+                candidate_lock,
                 payload.command,
             )
 
@@ -1970,6 +1988,11 @@ class SessionService:
         except ModelRoleResolutionError as exc:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail=exc.problem.to_dict()
+            ) from exc
+        except GenerationAdoptionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": exc.code, "detail": exc.detail},
             ) from exc
         except ValueError as exc:
             raise HTTPException(

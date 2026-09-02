@@ -194,6 +194,15 @@ def _graph_hash(lock: EffectiveHarnessLock) -> str:
 def _hash(value: str) -> str: return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
 def _check(condition: bool, error: type[Exception], message: str) -> None:
     if not condition: raise error(message)
+class GenerationAdoptionError(RuntimeError):
+    """Typed refusal for an invalid or non-quiescent generation adoption."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
 class Session:
     """Lifecycle owner; adapters may add only validated, minimal runtime observations."""
     def __init__(self, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> None:
@@ -213,13 +222,54 @@ class Session:
     @property
     def read_model(self) -> SessionView:
         with self._transition_lock: return self._view
+    @property
+    def pinned_generation_id(self) -> str:
+        """The immutable Lock identity pinned by this Session."""
+        return self._view.effective_lock_hash
+    @property
+    def generation_sequence(self) -> tuple[str, ...]:
+        """Ordered Lock identities that have governed this Session."""
+        return tuple(event.payload["effective_lock_hash"] for event in self._events if event.kind in {"session.started", "session.reconfigured"})
+    @property
+    def trajectory_segments(self) -> tuple[Mapping[str, Any], ...]:
+        sequence = self.generation_sequence
+        boundaries = [event for event in self._events if event.kind in {"session.started", "session.reconfigured"}]
+        return tuple(MappingProxyType({"segment_id": f"{self._view.session_id}:segment:{index}:{generation[7:19]}", "segment_index": index, "generation_id": generation, "start_sequence": boundary.sequence}) for index, (generation, boundary) in enumerate(zip(sequence, boundaries)))
+    @property
+    def adoption_history(self) -> tuple[Mapping[str, Any], ...]:
+        prior = None
+        history = []
+        for event in self._events:
+            if event.kind not in {"session.started", "session.reconfigured"}:
+                continue
+            generation = event.payload["effective_lock_hash"]
+            if event.kind == "session.reconfigured":
+                history.append(MappingProxyType({"old_generation_id": prior, "new_generation_id": generation, "reason": event.payload["reason"], "effective_sequence": event.sequence, "trajectory_segment_id": f"{self._view.session_id}:segment:{len(history) + 1}:{generation[7:19]}"}))
+            prior = generation
+        return tuple(history)
     def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])
     def assistant_message(self, content: str) -> SessionView: return self._append("observe assistant", "assistant_message", lambda: (_check(type(content) is str, TypeError, "assistant content must be a string"), {"metadata": {"has_content": bool(content)}})[1])
     def tool_called(self, tool: str) -> SessionView: return self._append("observe tool call", "tool_call", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), {"tool": tool})[1])
     def tool_completed(self, tool: str, failed: bool) -> SessionView: return self._append("observe tool result", "tool_result", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), _check(type(failed) is bool, TypeError, "tool completion error flag must be boolean"), {"tool": tool, "error": failed})[2])
     def request_approval(self, request_id: str, operation: str) -> SessionView: return self._append("request approval", "approval.requested", lambda: (_check(bool(request_id and operation), ValueError, "approval request fields must be populated"), {"request_id": request_id, "operation": operation})[1])
     def resolve_approval(self, request_id: str, decision: str) -> SessionView: return self._append("resolve approval", "approval.resolved", lambda: (_check(bool(request_id and decision in _DECISIONS), ValueError, "invalid approval decision"), {"request_id": request_id, "decision": decision})[1])
-    def reconfigure(self, lock: EffectiveHarnessLock, reason: str) -> SessionView: return self._append("reconfigure", "session.reconfigured", lambda: (_check(isinstance(lock, EffectiveHarnessLock), TypeError, "reconfigure requires an EffectiveHarnessLock"), {"effective_lock_hash": _graph_hash(lock), "reason": reason})[1])
+    def adopt_generation(self, lock: EffectiveHarnessLock, reason: str) -> SessionView:
+        if not isinstance(lock, EffectiveHarnessLock):
+            raise GenerationAdoptionError("incompatible", "generation must be an EffectiveHarnessLock")
+        if not isinstance(reason, str):
+            raise GenerationAdoptionError("incompatible", "adoption reason must be a string")
+        try:
+            generation_id = _graph_hash(lock)
+        except (TypeError, ValueError) as error:
+            raise GenerationAdoptionError(
+                "incompatible", "generation Lock has no canonical identity"
+            ) from error
+        return self._append(
+            "reconfigure",
+            "session.reconfigured",
+            lambda: {"effective_lock_hash": generation_id, "reason": reason},
+        )
+    def reconfigure(self, lock: EffectiveHarnessLock, reason: str) -> SessionView: return self.adopt_generation(lock, reason)
     def pause(self, reason: str) -> SessionView: return self._append("pause", "session.paused", lambda: {"reason": reason})
     def resume(self) -> SessionView: return self._append("resume", "session.resumed", lambda: {})
     def cancel(self, reason: str = "operator request") -> SessionView: return self._append("cancel", "session.canceled", lambda: {"outcome": "canceled", "reason": reason})
@@ -234,4 +284,5 @@ class Session:
             try:
                 body = payload(); event = KernelEvent.create(self._view.session_id, len(self._events) + 1, kind, self._clock.now(), body); next_events = [*self._events, event]; next_view = rebuild(next_events); self._sink.append(event)
                 self._events, self._view = next_events, next_view; return next_view
-            finally: self._appending = False
+            finally:
+                self._appending = False

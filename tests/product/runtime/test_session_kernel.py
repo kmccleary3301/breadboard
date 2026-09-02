@@ -4,7 +4,7 @@ from pathlib import Path; from typing import Any
 from jsonschema import Draft202012Validator
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
-from breadboard.product.runtime.events import JsonlEventSink, KernelEvent, Session, SessionView, rebuild
+from breadboard.product.runtime.events import GenerationAdoptionError, JsonlEventSink, KernelEvent, Session, SessionView, rebuild
 from breadboard.product.runtime.session_store import validate_session_id
 HASH, OTHER_HASH, PORTS, ARTIFACTS = "sha256:" + "a" * 64, "sha256:" + "b" * 64, "breadboard.product.runtime.events.os.", "breadboard.product.runtime.artifacts.os."
 def _lock(digest: str = HASH) -> EffectiveHarnessLock: return EffectiveHarnessLock._from_record({"graph_hash": digest})
@@ -230,3 +230,26 @@ _EVENT_KINDS = {"input": "input.accepted", "assistant": "assistant_message", "to
 _REPLAY_DENIED = [(status, action) for status in ("running", "awaiting_approval", "paused", "completed", "failed", "canceled") for action in _ACTIONS if status not in _FACADE_ALLOWED[action]]
 @pytest.mark.parametrize(("status", "action"), _REPLAY_DENIED)
 def test_replay_transition_table_rejects_every_disallowed_pair(status: str, action: str) -> None: events = list(_session(status).events); events.append(_event(len(events) + 1, _EVENT_KINDS[action])); pytest.raises(ValueError, rebuild, events)
+
+def test_generation_identity_is_pinned_and_reconstructed_from_durable_order() -> None:
+    session = Session.start(_lock(), "task", session_id="generation-session")
+    session.adopt_generation(_lock(OTHER_HASH), "provider swap")
+    assert session.pinned_generation_id == OTHER_HASH
+    assert session.generation_sequence == (HASH, OTHER_HASH)
+    assert session.adoption_history[0] == {
+        "old_generation_id": HASH,
+        "new_generation_id": OTHER_HASH,
+        "reason": "provider swap",
+        "effective_sequence": 2,
+        "trajectory_segment_id": "generation-session:segment:1:bbbbbbbbbbbb",
+    }
+    restored = Session.restore(session.events)
+    assert restored.generation_sequence == session.generation_sequence
+    assert restored.trajectory_segments == session.trajectory_segments
+
+def test_generation_adoption_rejects_incompatible_lock_as_typed_refusal() -> None:
+    session = Session.start(_lock(), "task")
+    with pytest.raises(GenerationAdoptionError) as error:
+        session.adopt_generation(_lock("not-a-digest"), "invalid")
+    assert error.value.code == "incompatible"
+    assert session.generation_sequence == (HASH,)
