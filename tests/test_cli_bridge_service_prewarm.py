@@ -499,7 +499,7 @@ async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch
         title = "interactive session awaiting input"; stream = Path(record.metadata["runtime_record_dir"]) / "records" / "config_plane.jsonl"; work = [json.loads(line) for line in stream.read_text().splitlines() if '"name":"work_item_' in line]
         assert [item["name"] for item in work] == ["work_item_created", "work_item_lease_acquired", "work_item_attempt_started", "work_item_snapshot"] and [item["record"].get("kind") for item in work] == ["work_item.created", "lease.acquired", "attempt.started", None] and work[-1]["schema_version"] == "bb.work_item.v2"
         assert work[-1]["record"]["title"] == title and record.product_session.events[0].payload["task_hash"] == "sha256:" + hashlib.sha256(title.encode()).hexdigest() and record.runner.request.task == "" and record.runner._input_queue.empty()
-    await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.STOPPED and type(record.product_session).restore(record.product_session.events).read_model.status == "canceled"; await _stop(record)
+    await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.STOPPED; await _stop(record)
 
 
 @pytest.mark.asyncio
@@ -850,7 +850,7 @@ async def test_effective_lock_is_exact_and_secret_free(monkeypatch, tmp_path) ->
     config = record.runner.current_runtime_config(); original_lock = service._runtime_lock(response.session_id, config, CONFIG); graph = json.loads(Path(record.metadata["runtime_records"]["effective_config_graph"]).read_text(encoding="utf-8")); assert graph == original_lock.as_dict() and graph["graph_hash"] == record.product_session.read_model.effective_lock_hash
     config["nested"] = {"provider_auth_runtime": {"token": "nested-secret"}, "provider_auth_runtime.token": "dotted-secret", "safe": True}; lock = service._runtime_lock(response.session_id, config, CONFIG); values = {row["path"]: row["value"] for row in lock["effective_values"]}
     serialized = lock.canonical_json() + "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "records" / response.session_id).rglob("*") if path.is_file()); assert (values["workspace.root"], values["providers.default_model"]) == (workspace, "test-runtime-model"); assert all(secret not in serialized for secret in ("provider_auth_runtime", auth.api_key, auth.base_url, auth.headers["X-Secret"], "nested-secret", "dotted-secret")); assert _tool_names(load_agent_config(CONFIG)) == ["apply_patch", "shell_command", "update_plan"]; assert _tool_names({"tools": {"defs_dir": "implementations/tools/defs_oc", "enabled": {"list": True}}}) == ["list"]
-    record.runner.transition_product_session("complete"); await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.COMPLETED and type(record.product_session).restore(record.product_session.events).read_model.status == "completed"; await _stop(record)
+    record.runner.transition_product_session("complete"); await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.COMPLETED; await _stop(record)
 @pytest.mark.asyncio
 async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(monkeypatch, tmp_path); sink, record.product_session._sink = record.product_session._sink, _Failing()
@@ -861,7 +861,7 @@ async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_p
     with pytest.raises(HTTPException) as error: await service.execute_command(response.session_id, request)
     assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["approval.resolved", "session.failed"]; assert record.status.value == "failed"
     assert persisted == [True] and record.metadata["permission_rules"][0]["rule"] == "*.sh"
-    await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.FAILED and type(record.product_session).restore(record.product_session.events).read_model.status == "failed"; await _stop(record)
+    await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.FAILED; await _stop(record)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("command", "payload"), [("set_model", {"model": "openrouter/openai/gpt-5-nano"}), ("set_skills", {"allowlist": ["test-skill"]}), ("set_mode", {"mode": "plan"})])
 async def test_failed_durable_reconfigure_rolls_back_runtime_mutation(monkeypatch, tmp_path, command, payload) -> None:

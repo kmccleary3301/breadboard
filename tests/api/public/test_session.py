@@ -28,7 +28,7 @@ from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
 from breadboard.product.runtime import session_store
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.events import KernelEvent, Session
+from breadboard.product.runtime.events import KernelEvent, ReplayError, Session
 
 
 @pytest.fixture(autouse=True)
@@ -71,6 +71,91 @@ def _stream_records(response) -> list[dict]:
         for line in response.text.splitlines()
         if line.startswith("data: ")
     ]
+
+
+def test_session_restore_raises_typed_replay_error_for_invalid_history() -> None:
+    digest = "sha256:" + "a" * 64
+    events = (
+        KernelEvent(
+            "typed-replay",
+            1,
+            "session.started",
+            "2026-09-02T00:00:00Z",
+            {"effective_lock_hash": digest, "task_hash": digest},
+        ),
+        KernelEvent(
+            "typed-replay",
+            3,
+            "input.accepted",
+            "2026-09-02T00:00:01Z",
+            {"content_hash": digest, "attachments": []},
+        ),
+    )
+
+    with pytest.raises(ReplayError) as captured:
+        Session.restore(events)
+
+    assert captured.value.code == "invalid_event_stream"
+
+
+def test_replay_differential_uses_durable_projection_as_expected_side() -> None:
+    lock = EffectiveHarnessLock._from_record(
+        {"graph_hash": "sha256:" + "b" * 64}
+    )
+    session = Session.start(lock, "replay task", session_id="replay-differential")
+    session.input("next")
+    session.assistant_message("answer")
+    session.tool_called("run")
+    session.tool_completed("run", False)
+    session.request_approval("approval-1", "run command")
+    session.resolve_approval("approval-1", "allow")
+    session.reconfigure(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "c" * 64}
+        ),
+        "operator update",
+    )
+    session.pause("checkpoint")
+    session.resume()
+    session.complete("done")
+    expected = {
+        "schema_version": "bb.session.v1",
+        "session_id": "replay-differential",
+        "status": "completed",
+        "effective_lock_hash": "sha256:" + "c" * 64,
+        "task_hash": "sha256:"
+        + hashlib.sha256(b"replay task").hexdigest(),
+        "event_count": 11,
+        "pending_approval": None,
+        "terminal_outcome": {"outcome": "completed", "summary": "done"},
+    }
+    calls = 0
+
+    def build() -> Session:
+        nonlocal calls
+        calls += 1
+        return Session.restore(session.events)
+
+    matched = session_store.replay_differential(expected, build)
+    drifted = session_store.replay_differential(
+        {**expected, "event_count": 12},
+        build,
+    )
+
+    assert matched.matches is True
+    assert matched.mismatches == ()
+    assert matched.session.read_model.as_dict() == expected
+    assert drifted.matches is False
+    assert drifted.mismatches == ("event_count",)
+    assert calls == 2
+
+    with pytest.raises(ReplayError) as captured:
+        session_store._session_from_payloads(
+            session_store._event_bytes(session),
+            json.dumps({**expected, "event_count": 12}).encode(),
+            session_id="replay-differential",
+        )
+    assert captured.value.code == "projection_mismatch"
 
 
 def test_workspace_identity_uses_physical_directory_identity(

@@ -6,13 +6,14 @@ import os
 import stat
 import threading
 import weakref
+from dataclasses import dataclass
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, TypeVar
 
 from breadboard.product.runtime.artifacts import AnchoredStorage, is_portable_basename
-from breadboard.product.runtime.events import KernelEvent, ProcessLock, Session
+from breadboard.product.runtime.events import KernelEvent, ProcessLock, ReplayError, Session
 
 
 def session_directory(workspace: Path) -> Path:
@@ -43,6 +44,48 @@ def event_from_record(record: Mapping[str, Any]) -> KernelEvent:
         occurred_at=str(record["occurred_at"]),
         payload=record.get("payload", {}),
         schema_version=str(record.get("schema_version", "bb.session_event.v1")),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayDiff:
+    session: Session
+    mismatches: tuple[str, ...]
+
+    @property
+    def matches(self) -> bool:
+        return not self.mismatches
+
+
+def replay_differential(
+    records: Mapping[str, Any],
+    build: Callable[[], Session],
+) -> ReplayDiff:
+    if not isinstance(records, Mapping):
+        raise ReplayError(
+            "invalid_projection",
+            "durable session projection must be a mapping",
+        )
+    expected = dict(records)
+    session = build()
+    if not isinstance(session, Session):
+        raise ReplayError(
+            "invalid_replay_builder",
+            "replay builder must return a Session",
+        )
+    actual = {
+        "schema_version": "bb.session.v1",
+        **session.read_model.as_dict(),
+    }
+    missing = object()
+    mismatches = tuple(
+        key
+        for key in sorted(expected.keys() | actual.keys())
+        if expected.get(key, missing) != actual.get(key, missing)
+    )
+    return ReplayDiff(
+        session=session,
+        mismatches=mismatches,
     )
 
 
@@ -784,18 +827,31 @@ def _session_from_payloads(
         TypeError,
         ValueError,
     ) as error:
-        raise ValueError("invalid session transaction projection") from error
+        raise ReplayError(
+            "invalid_projection_encoding",
+            "invalid session transaction projection",
+        ) from error
     if not events or any(event.session_id != session_id for event in events):
-        raise ValueError("session transaction event identity mismatch")
-    restored = Session.restore(events)
+        raise ReplayError(
+            "event_identity_mismatch",
+            "session transaction event identity mismatch",
+        )
+    differential = replay_differential(
+        metadata,
+        lambda: Session.restore(events),
+    )
+    restored = differential.session
     if restored.read_model.session_id != session_id:
-        raise ValueError("session transaction event identity mismatch")
-    expected = {
-        "schema_version": "bb.session.v1",
-        **restored.read_model.as_dict(),
-    }
-    if metadata != expected:
-        raise ValueError("session transaction projections do not match")
+        raise ReplayError(
+            "event_identity_mismatch",
+            "session transaction event identity mismatch",
+        )
+    if not differential.matches:
+        raise ReplayError(
+            "projection_mismatch",
+            "session transaction projections do not match: "
+            + ", ".join(differential.mismatches),
+        )
     return restored
 
 
@@ -1751,15 +1807,27 @@ def _load_untrusted_running_anchored(
             for line in event_payload.decode().splitlines()
             if line.strip()
         ]
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("invalid session event projection") from error
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise ReplayError(
+            "invalid_projection_encoding",
+            "invalid session event projection",
+        ) from error
     session = Session.restore(events)
     if session.read_model.session_id != session_id or session.read_model.status in {
         "completed",
         "failed",
         "canceled",
     }:
-        raise ValueError("terminal session projection lacks private authority")
+        raise ReplayError(
+            "missing_projection_authority",
+            "terminal session projection lacks private authority",
+        )
     return session, event_path
 
 

@@ -192,6 +192,15 @@ def _graph_hash(lock: EffectiveHarnessLock) -> str:
     if not isinstance(graph_hash, str) or not graph_hash.startswith("sha256:"): raise ValueError("EffectiveHarnessLock has no canonical graph_hash")
     return graph_hash
 def _hash(value: str) -> str: return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
+class ReplayError(ValueError):
+    """A durable event stream cannot be rebuilt into a valid Session."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
 def _check(condition: bool, error: type[Exception], message: str) -> None:
     if not condition: raise error(message)
 class Session:
@@ -206,7 +215,11 @@ class Session:
         event = KernelEvent.create(active_session_id, 1, "session.started", active_clock.now(), {"effective_lock_hash": graph_hash, "task_hash": _hash(task)}); active_sink = sink if sink is not None else NullEventSink(); active_sink.append(event)
         return cls((event,), clock=active_clock, sink=active_sink)
     @classmethod
-    def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> "Session": return cls(events, clock=clock, sink=sink)
+    def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> "Session":
+        try:
+            return cls(events, clock=clock, sink=sink)
+        except (AttributeError, TypeError, ValueError) as error:
+            raise ReplayError("invalid_event_stream", str(error)) from error
     @property
     def events(self) -> tuple[KernelEvent, ...]:
         with self._transition_lock: return tuple(self._events)

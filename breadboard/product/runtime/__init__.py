@@ -1,6 +1,6 @@
 """Product-owned Session runtime facade."""
 from .artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
-from .events import KernelEvent, Session, SessionView, rebuild
+from .events import KernelEvent, ReplayError, Session, SessionView, rebuild
 from .public_event_projection import (
     PUBLIC_PAYLOAD_SCHEMAS,
     PUBLIC_SESSION_EVENT_SCHEMA_VERSION,
@@ -11,6 +11,7 @@ __all__ = [
     "ArtifactRef",
     "ArtifactStore",
     "KernelEvent",
+    "ReplayError",
     "Session",
     "SessionView",
     "rebuild",

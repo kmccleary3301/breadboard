@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from fastapi import HTTPException
 
+from breadboard.product.runtime import ReplayError
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest,
@@ -1590,6 +1591,32 @@ async def test_retained_restart_preserves_explicit_config_and_workspace(
     finally:
         if restored.runner is not None:
             await restored.runner.stop()
+
+
+
+@pytest.mark.asyncio
+async def test_retained_restart_without_logical_journal_fails_typed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_EVENT_ROOT",
+        str(tmp_path / "session-events"),
+    )
+    state_root = tmp_path / "state"
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id="session-missing-logical-journal",
+        status=SessionStatus.RUNNING,
+    )
+    await registry.create(record)
+
+    service = SessionService(registry=SessionRegistry(state_root=state_root))
+    with pytest.raises(ReplayError) as captured:
+        await service.ensure_session(record.session_id)
+
+    assert captured.value.code == "missing_event_stream"
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(

@@ -16,6 +16,8 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, S
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import (
     AnchoredStorage,
+    ArtifactStore,
+    ReplayError,
     Session as ProductSession,
 )
 from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
@@ -181,13 +183,20 @@ def _restore_product_session(
                     for record in (json.loads(line),)
                 ]
     except FileNotFoundError as exc:
-        raise RuntimeError(
-            f"retained session {session_id!r} has no logical event journal"
+        raise ReplayError(
+            "missing_event_stream",
+            f"retained session {session_id!r} has no logical event journal",
+        ) from exc
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        raise ReplayError(
+            "invalid_event_record",
+            f"retained session {session_id!r} has an invalid logical event journal",
         ) from exc
     restored = ProductSession.restore(events, sink=sink)
     if restored.read_model.session_id != session_id:
-        raise RuntimeError(
-            f"retained session {session_id!r} logical event identity mismatch"
+        raise ReplayError(
+            "event_identity_mismatch",
+            f"retained session {session_id!r} logical event identity mismatch",
         )
     return restored
 
