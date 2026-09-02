@@ -672,6 +672,68 @@ async def test_failure_recovery_preserves_terminal_product_session(
 
 
 @pytest.mark.asyncio
+async def test_recovered_admission_is_present_in_logical_session_journal(
+    monkeypatch, tmp_path
+) -> None:
+    state_root = tmp_path / "state"
+    monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records"))
+    initial_service = SessionService(state_root=state_root)
+    _, response, initial = await _create(
+        monkeypatch, tmp_path, service=initial_service, task=""
+    )
+    initial_scheduled = []
+    initial_receipt = await initial_service.send_input(
+        response.session_id,
+        SessionInputRequest(
+            content="Create and validate the deterministic bubble sort fixture.",
+            client_message_id="ft01-initial-test",
+        ),
+        defer_execution=initial_scheduled.append,
+    )
+    await initial_scheduled[0]()
+    await initial.runner._finish_turn(
+        initial.turns_by_id[initial_receipt.turn_id], "completed"
+    )
+    await _stop(initial)
+
+    recovered_service = SessionService(state_root=state_root)
+    recovered = await recovered_service.ensure_session(response.session_id)
+    scheduled = []
+    receipt = await recovered_service.send_input(
+        response.session_id,
+        SessionInputRequest(
+            content="Prove the recovered engine can execute the deterministic validation.",
+            client_message_id="ft01-recovery-test",
+        ),
+        defer_execution=scheduled.append,
+    )
+    await scheduled[0]()
+    try:
+        durable_turns = list(recovered.turns_by_id)
+        logical_events = [
+            json.loads(line)
+            for line in (
+                tmp_path
+                / "events"
+                / response.session_id
+                / "session_events.jsonl"
+            )
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        accepted_events = [
+            event for event in logical_events if event["kind"] == "input.accepted"
+        ]
+
+        assert receipt.disposition == "started"
+        assert receipt.turn_id in durable_turns
+        assert len(scheduled) == 1
+        assert len(accepted_events) == len(durable_turns) == 2
+    finally:
+        await _stop(recovered)
+
+
+@pytest.mark.asyncio
 async def test_terminalization_closes_admission_before_async_resolution(
     monkeypatch, tmp_path
 ) -> None:
