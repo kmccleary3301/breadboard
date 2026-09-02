@@ -40,6 +40,21 @@ def cas(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Any]:
         yield FilesystemCAS(tmp_path / "cas")
 
 
+def test_filesystem_cas_refuses_platform_without_posix_locks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "cas"
+    monkeypatch.setattr(cas_module, "_fcntl", None)
+
+    with pytest.raises(
+        ArtifactStoreError,
+        match="requires POSIX descriptor-safe file locking",
+    ):
+        FilesystemCAS(root)
+
+    assert not root.exists()
+
+
 def test_cas_refs_are_hash_addressed_and_retrievable(cas: Any) -> None:
     ref = cas.put_bytes(b"hello", media_type="text/plain")
 

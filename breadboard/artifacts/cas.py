@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import copy
 import contextlib
-import fcntl
+try:
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - exercised by Windows import smoke
+    _fcntl = None
 import functools
 import hashlib
 import json
@@ -180,6 +183,10 @@ class FilesystemCAS:
     """Durable immutable artifact store backed by content-addressed files."""
 
     def __init__(self, root: str | Path) -> None:
+        if _fcntl is None:
+            raise ArtifactStoreError(
+                "FilesystemCAS requires POSIX descriptor-safe file locking"
+            )
         self.root = Path(root).expanduser().resolve()
         self.blobs = self.root / "blobs"
         self.locks = self.root / "locks"
@@ -285,6 +292,11 @@ class FilesystemCAS:
 
     @contextlib.contextmanager
     def _artifact_lock(self, artifact_id: str) -> Iterator[None]:
+        locking = _fcntl
+        if locking is None:
+            raise ArtifactStoreError(
+                "FilesystemCAS requires POSIX descriptor-safe file locking"
+            )
         lock_name = f"{self._record_key(artifact_id)}.lock"
         flags = os.O_RDWR
         if hasattr(os, "O_CLOEXEC"):
@@ -311,11 +323,11 @@ class FilesystemCAS:
             opened = os.fstat(fd)
             if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
                 raise ArtifactIntegrityError("CAS artifact lock is unsafe")
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            locking.flock(fd, locking.LOCK_EX)
             yield
         finally:
             try:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                locking.flock(fd, locking.LOCK_UN)
             finally:
                 os.close(fd)
 
