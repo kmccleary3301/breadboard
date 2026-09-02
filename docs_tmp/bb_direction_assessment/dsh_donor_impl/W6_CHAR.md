@@ -68,6 +68,5 @@ annotation or preference-label kind ([`breadboard_engine/api/cli_bridge/events.p
 W6.3 should consume these facts without changing the current identities retroactively: preserve
 `session_id`/`input_id`/`turn_id` for admission correlation, explicitly bind message and
 trajectory identity, and make author/generation immutable label fields. W7.1 is the durable
-child/session and replay-owner handoff where child trajectories are involved. W11.1 is the
-public annotation/sidecar and preference-label event/schema handoff. No W6 design choice is
-made here; in particular, this report does not choose the storage layout or public event shape.
+child/session and replay-owner handoff where child trajectories are involved. W9.2 owns the
+required public annotation event/schema amendment. No W6 design choice is made here; in particular, this report does not choose the storage layout or public event shape.
