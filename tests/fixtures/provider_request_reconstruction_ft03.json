@@ -1,0 +1,111 @@
+{
+  "schema_version": "ft03.fixture.v1",
+  "fixture_id": "ft03-secret-free-ordered-prompt-tools-history-default-adapter-override-v1",
+  "clock": "2026-09-02T00:00:00Z",
+  "session": {
+    "session_id": "ft03-session-01",
+    "task": "Reconstruct this representative provider request.",
+    "history": [
+      {
+        "role": "user",
+        "content": "Earlier user fact: preserve ordering."
+      },
+      {
+        "role": "assistant",
+        "content": "Earlier assistant fact: ordering preserved."
+      },
+      {
+        "role": "user",
+        "content": "Current user request: inspect the ordered tools."
+      }
+    ]
+  },
+  "prompt": {
+    "mode_name": "ft03",
+    "dialects": [],
+    "config": {
+      "prompts": {
+        "dedupe": false,
+        "packs": {
+          "base": {
+            "section_one": "[prompt-section:one]\nFirst ordered policy section.",
+            "section_two": "[prompt-section:two]\nSecond ordered policy section."
+          }
+        },
+        "injection": {
+          "system_order": [
+            "@pack(base).section_one",
+            "@pack(base).section_two"
+          ],
+          "per_turn_order": [
+            "mode_specific"
+          ]
+        }
+      },
+      "modes": [
+        {
+          "name": "ft03",
+          "prompt": "[prompt-section:mode]\nMode-specific ordered section."
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "inspect_order",
+        "description": "Inspect a named ordering marker.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "marker": {
+              "type": "string",
+              "description": "Ordering marker to inspect."
+            }
+          },
+          "required": [
+            "marker"
+          ],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "record_order",
+        "description": "Record the observed ordering marker.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "marker": {
+              "type": "string",
+              "description": "Ordering marker to record."
+            }
+          },
+          "required": [
+            "marker"
+          ],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    }
+  ],
+  "lock": {
+    "schema_version": "bb.effective_config_graph.v1",
+    "graph_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "provider_profile": {
+      "model": "Qwen/Qwen3.5-35B-A3B",
+      "base_url": "http://127.0.0.1:8111/v1",
+      "context_window": 131072,
+      "max_output_tokens": 32000,
+      "sampling": {},
+      "provider_id": "openai",
+      "runtime_id": "openai_chat",
+      "caller_headers": {}
+    }
+  }
+}
