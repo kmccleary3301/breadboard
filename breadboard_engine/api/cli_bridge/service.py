@@ -153,6 +153,7 @@ _START_PENDING, _START_COMMITTED, _START_OWNER = (
     ".start.committed",
     ".start.owner",
 )
+_SESSION_EVENT_ROOT_METADATA_KEY = "session_event_root"
 
 
 def _event_root(state_paths: ManagedStatePaths | None = None) -> Path:
@@ -170,10 +171,13 @@ def _event_root(state_paths: ManagedStatePaths | None = None) -> Path:
 def _restore_product_session(
     session_id: str,
     state_paths: ManagedStatePaths | None = None,
+    *,
+    event_root: Path | None = None,
 ) -> ProductSession:
-    event_path = _event_root(state_paths) / session_id / "session_events.jsonl"
-    sink = JsonlEventSink(event_path)
+    selected_event_root = event_root if event_root is not None else _event_root(state_paths)
+    event_path = selected_event_root / session_id / "session_events.jsonl"
     try:
+        sink = JsonlEventSink(event_path)
         with ProcessLock(event_path):
             with event_path.open("r", encoding="utf-8") as stream:
                 events = [
@@ -182,17 +186,25 @@ def _restore_product_session(
                     if line.strip()
                     for record in (json.loads(line),)
                 ]
+        restored = ProductSession.restore(events, sink=sink)
     except FileNotFoundError as exc:
         raise ReplayError(
             "missing_event_stream",
             f"retained session {session_id!r} has no logical event journal",
+        ) from exc
+    except RuntimeError as exc:
+        recovery_cause = exc.__cause__ or exc.__context__
+        if not isinstance(recovery_cause, (UnicodeError, ValueError)):
+            raise
+        raise ReplayError(
+            "invalid_event_record",
+            f"retained session {session_id!r} has an invalid logical event journal",
         ) from exc
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise ReplayError(
             "invalid_event_record",
             f"retained session {session_id!r} has an invalid logical event journal",
         ) from exc
-    restored = ProductSession.restore(events, sink=sink)
     if restored.read_model.session_id != session_id:
         raise ReplayError(
             "event_identity_mismatch",
@@ -764,6 +776,7 @@ class SessionService:
             "effective_lock_hash",
             "resources",
             "workspace",
+            _SESSION_EVENT_ROOT_METADATA_KEY,
         ):
             request_metadata.pop(reserved_key, None)
         if default_profile is not None:
@@ -796,6 +809,9 @@ class SessionService:
             )
             if requested_event_root == durable_event_root:
                 durable_product_workspace = candidate_workspace
+        metadata[_SESSION_EVENT_ROOT_METADATA_KEY] = str(
+            (event_root or _event_root()).expanduser().resolve()
+        )
         runtime_providers = (
             runtime_config.get("providers")
             if isinstance(runtime_config, dict)
@@ -1237,6 +1253,26 @@ class SessionService:
         if record.loaded_from_retained_state:
             await self._resume_retained_session(record)
         return record
+    @staticmethod
+    def _bind_restored_durable_product_session(
+        record: SessionRecord,
+        runner: SessionRunner,
+        event_root: Path,
+    ) -> None:
+        workspace_value = record.metadata.get("workspace")
+        if not isinstance(workspace_value, str) or not workspace_value.strip():
+            return
+        workspace = Path(workspace_value).expanduser().resolve()
+        durable_event_root = (
+            session_event_path(workspace, record.session_id).parent.parent.resolve()
+        )
+        if event_root.resolve() != durable_event_root:
+            return
+        runner.bind_durable_product_session(
+            workspace,
+            session_directory_identity(workspace),
+        )
+
 
     async def _resume_retained_session(self, record: SessionRecord) -> None:
         if record.status in {
@@ -1246,10 +1282,26 @@ class SessionService:
         }:
             record.loaded_from_retained_state = False
             return
+        metadata = dict(record.metadata or {})
+        recorded_event_root = metadata.get(_SESSION_EVENT_ROOT_METADATA_KEY)
+        retained_event_root = (
+            Path(recorded_event_root).expanduser().resolve()
+            if isinstance(recorded_event_root, str) and recorded_event_root.strip()
+            else _event_root(self._managed_state_paths)
+        )
         record.product_session = _restore_product_session(
             record.session_id,
             self._managed_state_paths,
+            event_root=retained_event_root,
         )
+        if record.product_session.read_model.status == "awaiting_approval":
+            pending_approval = record.product_session.read_model.pending_approval
+            if pending_approval is None:
+                raise ReplayError(
+                    "invalid_event_record",
+                    f"retained session {record.session_id!r} has no pending approval identity",
+                )
+            record.product_session.resolve_approval(pending_approval, "deny")
         restored_status = record.projected_status()
         if restored_status in {
             SessionStatus.COMPLETED,
@@ -1260,6 +1312,11 @@ class SessionService:
                 session=record,
                 registry=self.registry,
                 request=SessionCreateRequest(task="", metadata=dict(record.metadata or {})),
+            )
+            self._bind_restored_durable_product_session(
+                record,
+                terminal_runner,
+                retained_event_root,
             )
             terminal_outcome = {
                 SessionStatus.COMPLETED: "completed",
@@ -1275,7 +1332,10 @@ class SessionService:
                     else None
                 ),
             )
+            terminal_runner._commit_terminal_product_session_locked()
             await self.registry.update_status(record.session_id, restored_status)
+            async with record.dispatch_lock:
+                setattr(record, "_dispatcher_complete", True)
             record.loaded_from_retained_state = False
             return
         metadata = dict(record.metadata or {})
@@ -1321,6 +1381,11 @@ class SessionService:
             ),
         )
         runner.prepare_runtime_config()
+        self._bind_restored_durable_product_session(
+            record,
+            runner,
+            retained_event_root,
+        )
         for turn in record.turns_by_id.values():
             if turn.terminal_outcome is not None:
                 continue

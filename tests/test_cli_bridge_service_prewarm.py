@@ -794,6 +794,161 @@ async def test_recovery_reconciles_terminal_logical_journal_before_runner_start(
     assert persisted.active_turn_id is None
 
 
+
+def test_restore_wraps_invalid_event_transaction_as_typed_replay_error(tmp_path) -> None:
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    event_root = tmp_path / "events"
+    session_id = "invalid-transaction"
+    session_dir = event_root / session_id
+    session_dir.mkdir(parents=True)
+    (session_dir / ".session_events.jsonl.txn").write_text(
+        "not-an-offset", encoding="ascii"
+    )
+
+    with pytest.raises(runtime_ports.ReplayError) as raised:
+        _restore_product_session(session_id, event_root=event_root)
+
+    assert raised.value.code == "invalid_event_record"
+
+
+
+def test_restore_does_not_misclassify_event_sink_infrastructure_failure(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    def fail_sink(_path):
+        try:
+            raise OSError("event storage unavailable")
+        except OSError as cause:
+            raise RuntimeError("event sink recovery failed") from cause
+
+    monkeypatch.setattr(SERVICE + "JsonlEventSink", fail_sink)
+
+    with pytest.raises(RuntimeError, match="event sink recovery failed"):
+        _restore_product_session("infrastructure-failure", event_root=tmp_path)
+
+@pytest.mark.asyncio
+async def test_recovery_uses_retained_event_root_and_rebinds_durable_workspace(
+    monkeypatch, tmp_path
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    event_root = workspace / ".breadboard" / "sessions"
+    state_root = tmp_path / "state"
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+
+    initial_service = SessionService(state_root=state_root)
+    response = await initial_service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="finish before the registry status commit",
+            workspace=str(workspace),
+        ),
+        session_id="retained-custom-root",
+        event_root=event_root,
+        runtime_root=workspace / ".breadboard" / "service_records",
+    )
+    initial = await initial_service.ensure_session(response.session_id)
+    initial.product_session.complete()
+    await _stop(initial)
+    await initial_service.registry.persist(initial)
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_EVENT_ROOT",
+        str(tmp_path / "unrelated-default-events"),
+    )
+
+    from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+
+    recovered_service = SessionService(state_root=state_root)
+    real_commit = SessionRunner._commit_terminal_product_session_locked
+    commit_attempts = 0
+
+    def fail_first_commit(runner) -> None:
+        nonlocal commit_attempts
+        commit_attempts += 1
+        if commit_attempts == 1:
+            raise OSError("durable product projection unavailable")
+        real_commit(runner)
+
+    monkeypatch.setattr(
+        SessionRunner,
+        "_commit_terminal_product_session_locked",
+        fail_first_commit,
+    )
+    with pytest.raises(OSError, match="durable product projection unavailable"):
+        await recovered_service.ensure_session(response.session_id)
+    retained = await recovered_service.registry.get(response.session_id)
+    assert retained is not None
+    assert retained.status not in {
+        SessionStatus.COMPLETED,
+        SessionStatus.FAILED,
+        SessionStatus.STOPPED,
+    }
+    assert retained.loaded_from_retained_state is True
+
+    recovered = await recovered_service.ensure_session(response.session_id)
+
+    assert recovered.projected_status() is SessionStatus.COMPLETED
+    assert session_store.session_metadata_path(
+        workspace, response.session_id
+    ).is_file()
+
+    async def collect_replay() -> list:
+        return [
+            event
+            async for event in recovered_service.event_stream(
+                response.session_id,
+                replay=True,
+            )
+        ]
+
+    replay = await asyncio.wait_for(collect_replay(), timeout=1)
+    assert replay
+    assert getattr(recovered, "_dispatcher_complete", False) is True
+
+
+@pytest.mark.asyncio
+async def test_recovery_denies_orphaned_approval_and_reopens_admission(
+    monkeypatch, tmp_path
+) -> None:
+    state_root = tmp_path / "state"
+    monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records"))
+    initial_service = SessionService(state_root=state_root)
+    _, response, initial = await _create(
+        monkeypatch,
+        tmp_path,
+        service=initial_service,
+        task="request approval before a process crash",
+    )
+    initial.product_session.request_approval("approval-before-crash", "write")
+    await initial_service.registry.persist(initial)
+    await _stop(initial)
+
+    recovered_service = SessionService(state_root=state_root)
+    recovered = await recovered_service.ensure_session(response.session_id)
+    scheduled = []
+    receipt = await recovered_service.send_input(
+        response.session_id,
+        SessionInputRequest(
+            content="continue after orphaned approval reconciliation",
+            client_message_id="after-approval-recovery",
+        ),
+        defer_execution=scheduled.append,
+    )
+
+    assert recovered.product_session.read_model.status == "running"
+    assert recovered.product_session.read_model.pending_approval is None
+    assert {
+        event.kind
+        for event in recovered.product_session.events
+    } >= {"approval.requested", "approval.resolved"}
+    assert receipt.disposition == "started"
+    assert len(scheduled) == 1
+    await _stop(recovered)
+
 @pytest.mark.asyncio
 async def test_terminalization_closes_admission_before_async_resolution(
     monkeypatch, tmp_path

@@ -448,17 +448,17 @@ class SessionRunner:
             }
             product_session = getattr(self.session, "product_session", None)
 
-            def commit_input() -> None:
-                if product_session is not None:
-                    product_session.input(content, selected_artifacts)
+            if product_session is not None:
+                product_session.input(content, selected_artifacts)
+
+            def deliver_input() -> None:
                 self._input_queue.put_nowait(payload)
 
             if defer_execution is None:
-                commit_input()
+                deliver_input()
             else:
                 async def enqueue_after_response() -> None:
-                    with self._product_session_lock:
-                        commit_input()
+                    deliver_input()
 
                 defer_execution(enqueue_after_response)
         return content

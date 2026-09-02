@@ -443,6 +443,7 @@ class PersistenceMixin:
                 ),
                 "config_path": str(metadata.get("config_path") or ""),
                 "workspace": str(metadata.get("workspace") or ""),
+                "session_event_root": str(metadata.get("session_event_root") or ""),
                 "model_role_lock": role_lock,
                 "active_model_role": str(active_role) if active_role else None,
                 "permission_mode": (
@@ -595,6 +596,11 @@ class PersistenceMixin:
             metadata["config_path"] = str(session["config_path"])
         if session.get("workspace"):
             metadata["workspace"] = str(session["workspace"])
+        event_root = session.get("session_event_root")
+        if event_root:
+            if not isinstance(event_root, str) or not Path(event_root).is_absolute():
+                raise ValueError("retained session event root is invalid")
+            metadata["session_event_root"] = event_root
         permission_mode = str(session.get("permission_mode") or "").strip().lower()
         if permission_mode in {"prompt", "ask", "interactive", "configured"}:
             metadata["permission_mode"] = permission_mode

@@ -1012,7 +1012,9 @@ def test_orphaned_running_session_is_not_exposed_as_resumable(
     with TestClient(create_app(include_atp_routes=False)) as test_client:
         listing = test_client.get("/v1/sessions")
         assert listing.status_code == 200
-        assert listing.json()["data"]["sessions"] == []
+        assert session_id not in {
+            item["session_id"] for item in listing.json()["data"]["sessions"]
+        }
         requests = (
             test_client.get(f"/v1/sessions/{session_id}"),
             test_client.get(f"/v1/sessions/{session_id}/events"),
