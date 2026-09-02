@@ -559,6 +559,19 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
     config = tmp_path / "retained.yaml"
     config.write_text("{}\n", encoding="utf-8")
     _new_durable_session(tmp_path, session_id)
+    from breadboard.product.runtime.events import JsonlEventSink
+
+    event_root = tmp_path / "session-events"
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(event_root))
+    lock = EffectiveHarnessLock._from_record(
+        {"graph_hash": "sha256:" + "a" * 64}
+    )
+    Session.start(
+        lock,
+        "durability test",
+        session_id=session_id,
+        sink=JsonlEventSink(event_root / session_id / "session_events.jsonl"),
+    )
     state_root = tmp_path / "session-state"
     first_registry = SessionRegistry(state_root=state_root)
     record = SessionRecord(
@@ -615,8 +628,8 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
         create_app(service=restarted_service, include_atp_routes=False)
     ) as restarted:
         public_get = restarted.get(f"/v1/sessions/{session_id}")
-        assert public_get.status_code == 409, public_get.text
-        assert public_get.json()["error"]["error_code"] == "invalid_state"
+        assert public_get.status_code == 200, public_get.text
+        assert public_get.json()["data"]["session"]["status"] == "running"
         summary = restarted.get(f"/v1/internal/sessions/{session_id}")
         assert summary.status_code == 200, summary.text
         assert summary.json()["active_turn_id"] is None

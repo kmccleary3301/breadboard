@@ -983,7 +983,7 @@ async def test_session_input_is_durable_before_deferred_execution(tmp_path: Path
     assert queued["turn_id"] == receipt.turn_id
 
 @pytest.mark.asyncio
-async def test_terminal_product_session_rejects_input_before_persistence(
+async def test_terminal_product_session_failure_terminalizes_durable_admission(
     tmp_path: Path,
 ) -> None:
     registry = SessionRegistry(state_root=tmp_path)
@@ -1006,19 +1006,25 @@ async def test_terminal_product_session_rejects_input_before_persistence(
     await registry.create(record)
     deferred: list[Any] = []
 
-    with pytest.raises(HTTPException) as error:
-        await SessionService(registry=registry).send_input(
-            record.session_id,
-            SessionInputRequest(
-                content="continue",
-                client_message_id="client-terminal-race",
-            ),
-            defer_execution=deferred.append,
-        )
+    receipt = await SessionService(registry=registry).send_input(
+        record.session_id,
+        SessionInputRequest(
+            content="continue",
+            client_message_id="client-terminal-race",
+        ),
+        defer_execution=deferred.append,
+    )
+    retained = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+    assert retained is not None
+    assert retained.turns_by_id[receipt.turn_id].state == "active"
+    assert len(deferred) == 1
 
-    assert error.value.status_code == 409
-    assert deferred == []
-    assert record.turns_by_id == {}
+    await deferred[0]()
+
+    turn = record.turns_by_id[receipt.turn_id]
+    assert turn.state == "failed"
+    assert turn.terminal_outcome == "failed"
+    assert turn.terminal_resolution_committed is True
     assert record.active_turn_id is None
     assert runner._input_queue.empty()
 
