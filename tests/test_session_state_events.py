@@ -55,6 +55,27 @@ class EventCollector:
         return [evt for evt in self.events if evt[0] == event_type]
 
 
+def _seed_product_session_journal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    session_id: str,
+) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+
+    event_root = tmp_path / "session-events"
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(event_root))
+    ProductSession.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "retained session",
+        session_id=session_id,
+        sink=JsonlEventSink(event_root / session_id / "session_events.jsonl"),
+    )
+
+
 def test_completion_sentinel_scrubbing_is_recursive_and_text_scoped() -> None:
     payload = [
         {"type": "text", "text": "answer\nTASK COMPLETE\n"},
@@ -1457,6 +1478,7 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
         status=SessionStatus.RUNNING,
         metadata={"permission_mode": "configured"},
     )
+    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
     interrupted = TurnRecord(
         input_id="input-interrupted",
         turn_id="turn-interrupted",
@@ -1538,6 +1560,7 @@ async def test_retained_restart_preserves_explicit_config_and_workspace(
             "mode": "review",
         },
     )
+    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
     await registry.create(record)
 
     monkeypatch.setattr(
@@ -1616,6 +1639,7 @@ async def test_locked_operation_resumes_retained_session_without_deadlock(
             "permission_mode": "configured",
         },
     )
+    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
     await registry.create(record)
     monkeypatch.setattr(
         "breadboard_engine.api.cli_bridge.service.resolve_default_profile",

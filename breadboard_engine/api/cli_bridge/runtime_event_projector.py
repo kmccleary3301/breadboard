@@ -509,9 +509,6 @@ class RuntimeEventProjector:
                             next(iter(self._product_tool_completions))
                         )
                     self._product_tool_completions[fingerprint] = duplicate_count + 1
-            self.session.metadata["session_contract"] = (
-                product_session.read_model.as_dict()
-            )
 
     def _normalize_tool_call_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         call = payload.get("call") or payload.get("tool_call") or payload.get("tool")

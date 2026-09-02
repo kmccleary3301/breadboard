@@ -451,9 +451,6 @@ class SessionRunner:
             def commit_input() -> None:
                 if product_session is not None:
                     product_session.input(content, selected_artifacts)
-                    self.session.metadata["session_contract"] = (
-                        product_session.read_model.as_dict()
-                    )
                 self._input_queue.put_nowait(payload)
 
             if defer_execution is None:
@@ -484,9 +481,6 @@ class SessionRunner:
             getattr(product_session, transition)(*args)
             if transition in {"complete", "fail", "cancel"}:
                 self._commit_terminal_product_session_locked()
-            self.session.metadata["session_contract"] = (
-                product_session.read_model.as_dict()
-            )
 
     # Provider-supplied names are not public identities until they resolve into
     # the active, configured tool surface.

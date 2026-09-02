@@ -20,6 +20,8 @@ from breadboard.product.runtime import (
 )
 from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
 from breadboard.product.runtime.session_store import (
+    authorize_session_artifact_manifest,
+    event_from_record,
     session_directory_identity,
     session_event_path,
 )
@@ -161,6 +163,33 @@ def _event_root(state_paths: ManagedStatePaths | None = None) -> Path:
             Path.home() / ".breadboard" / "session_events",
         )
     ).resolve()
+
+
+def _restore_product_session(
+    session_id: str,
+    state_paths: ManagedStatePaths | None = None,
+) -> ProductSession:
+    event_path = _event_root(state_paths) / session_id / "session_events.jsonl"
+    sink = JsonlEventSink(event_path)
+    try:
+        with ProcessLock(event_path):
+            with event_path.open("r", encoding="utf-8") as stream:
+                events = [
+                    event_from_record(record)
+                    for line in stream
+                    if line.strip()
+                    for record in (json.loads(line),)
+                ]
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"retained session {session_id!r} has no logical event journal"
+        ) from exc
+    restored = ProductSession.restore(events, sink=sink)
+    if restored.read_model.session_id != session_id:
+        raise RuntimeError(
+            f"retained session {session_id!r} logical event identity mismatch"
+        )
+    return restored
 
 
 def _sync_tree(root: Path) -> None:
@@ -872,7 +901,6 @@ class SessionService:
                 runtime_lock, session_title, session_id=session_id, sink=event_sink
             )
             record.product_session = product_session
-            metadata["session_contract"] = product_session.read_model.as_dict()
             async with self.registry.publish_session(record, runner):
                 runner.schedule_start()
                 self._publish_start_bundle(
@@ -1209,6 +1237,10 @@ class SessionService:
         }:
             record.loaded_from_retained_state = False
             return
+        record.product_session = _restore_product_session(
+            record.session_id,
+            self._managed_state_paths,
+        )
         metadata = dict(record.metadata or {})
         recorded_config_path = str(metadata.get("config_path") or "").strip()
         retained_config_path = (
