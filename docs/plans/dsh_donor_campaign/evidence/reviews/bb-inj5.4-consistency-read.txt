@@ -1,0 +1,60 @@
+# Workstream D fresh-context consistency read
+
+Candidate: docs_tmp/bb_direction_assessment/dsh_donor_campaign/03_EVIDENCE_AND_APPROVAL_CONTRACT.md
+Pinned ENGINE head: b3cacc7356244253305f8a6f84308a993485bfe2
+Pinned TUI head: 73d6e6f55a238fc9ff0486bbcc9ecffe85705715
+Authorities: STANDING_DOCTRINE.md; ENGINE DIRECTION_CHARTER.md; FREEZE_POLICY.md; execution-plan sections 1, 5, 6, 13, 17-19; raw/bb-inj5.4/q1-decision.txt.
+Method: fresh-context, contract-first application to all six scenarios. Only P0/P1 correctness was reviewed.
+
+## Six mechanical decisions
+
+### 1. PARTIAL donor row with a current owner
+Classification: PARTIAL, not SATISFIED and not an automatic promotion. The owner proves ownership only, not the missing behavior.
+Required proof/action: verify the owner symbol at the pinned head; record owner evidence and the exact missing behavior, with affected consumer/contract/test boundary where known. Preserve PARTIAL and do not infer a broader claim. If head/owner changes, PROC-STALE only this row and rebuilds the smallest affected inventory.
+Approval: none to retain PARTIAL. Any later promotion separately needs its packet, module/seam, and gate proof.
+Retry/stop: no retry merely for PARTIAL; retry only after new bytes, oracle, environment, or written mechanism diagnosis. Stop at the bounded partial claim pending characterization.
+Fresh supervisor: YES; the contract explicitly gives this minimum support for PARTIAL.
+
+### 2. Installed behavior appears wrong but intended behavior is unspecified
+Classification: contract red, not product red. Observation without intended contract cannot establish a product defect.
+Required proof/action: record the public/installed-seam observation with raw sequence and provenance; resolve intended law/policy in Workstream E. Do not patch or manufacture a test. After intent is chosen, a mismatch may invoke PROC-DEFECT, but the campaign still never patches.
+Approval: the material law/policy decision is Kyle-owned under G-D/E; neither a supervisor, owner, nor test result supplies intent.
+Retry/stop: diagnose rather than blindly rerun; stop the fix path at contract resolution. PROC-STALE applies only when seam, head, oracle, or material law changes. D=2 sessions and E=3; an overrun requires PROC-HUMAN, not silent extension.
+Fresh supervisor: YES; the red taxonomy maps unspecified intent to contract and forbids adding tests.
+
+### 3. Review cites a nonexistent test path
+Classification: evidence red. The record/anchor is invalid; this does not prove behavior is wrong.
+Required proof/action: repair only the evidence boundary by replacing it with an existing pinned test/evidence path and provenance, or downgrade/remove the unsupported claim. Do not create a test just to satisfy the citation. If the repair changes a disposition, verdict, or other material decision, invalidate only citing review/decision and perform the one allowed affected renewal; a non-material link correction does not stale it.
+Approval: supervisor may repair the raw/evidence artifact within the cap; the reviewer remains independent and cannot self-approve. No P2 authority is involved.
+Retry/stop: the repaired record or written diagnosis is the transition; never rerun with the same bytes/oracle/environment. Stop approval until a valid boundary exists; otherwise retain only the downgraded claim.
+Fresh supervisor: YES; evidence-red and staleness rules give one action.
+
+### 4. First-tranche packet proposes a new public schema
+Classification: freeze/scope violation; prohibited, so G-F fails closed.
+Required proof/action: reject/remove it; packet must state NO PUBLIC SCHEMA OR API CHANGE, NO NEW SEAM, and freeze impact none. A genuinely necessary surface goes through a separate future FREEZE_POLICY.md/SPEC_AMENDMENTS.md route, never hidden in the first tranche.
+Approval: none can approve this inside the first tranche, including a Kyle auto-selection. A later public-surface plan needs Kyle explicit approval and the named amendment route; implementation remains outside this campaign.
+Retry/stop: stop the packet/G-F decision. Retry only after compliant evidence-only scope or separately authorized amendment; unchanged proposal is a blind rerun.
+Fresh supervisor: YES; plan section 13/F2/F8, section 17, freeze policy, and approval matrix agree.
+
+### 5. Later packet proposes compatibility deletion while consumers remain
+Classification: deletion/migration not ready; approval is blocked while consumers remain unmigrated.
+Required proof/action: name every consumer, survivor authority, and interface lock; prove completed migration (or zero consumers), registry/freeze disposition, and simplification by removal of interface facts/authority. Cover compatibility paths and clean cutover. A plan-only proposal may exist, but deletion cannot be approved or implemented on these facts.
+Approval: Kyle explicit approval is required in addition to consumer/survivor/lock proof. Supervisor, repository owner, or tool capability cannot substitute; an authorized ask-tool auto-selection counts as Kyle's answer under q1-decision.txt.
+Retry/stop: stop until migration/consumer evidence or governing authority changes; do not retry unchanged inventory. A head, consumer, survivor, lock, or disposition change triggers PROC-STALE only for affected decisions/reviews and the smallest inventory rebuild. Implementation is outside campaign.
+Fresh supervisor: YES; sections 6.6, deletion proof, 17, staleness, and approval matrix agree.
+
+### 6. Score reaches 1000 but final spec is uncommitted
+Classification: completion gate failure. G-Score may pass, but completion is false because G-I and section 19 require committed spec and audit plus all other final conditions; score is not completion.
+Required proof/action: do not close final child/map. Complete I in the authorized local spec worktree: commit spec and audit on docs/dsh-donor-campaign-spec, then run integrity and check_phase20_freeze.py with links resolving and freeze clean. Recheck linked evidence affected by material final-byte changes.
+Approval: local final-spec commit is allowed only in I under plan authorization; Kyle prototype approval remains a separate section-19 condition. Push, PR, merge, release, publication, and implementation remain prohibited.
+Retry/stop: stop completion; do not blindly rerun score. After commit, rerun smallest affected G-I proof and stale linked decisions/reviews; close only after all section-19 conditions hold.
+Fresh supervisor: YES; G-I, G-Score, I, and section 19 explicitly distinguish score from completion.
+
+## Cross-checks
+Authority precedence is Kyle latest instruction, active instruction files, ENGINE governance, doctrine, plan, tracker, then historical assessments. Kyle's q1-decision supersedes q1-attempt: only Kyle may accept P2; acceptance records finding, scope, rationale, and expiry/revisit; authorized ask-tool auto-selections count as his answer. Supervisor/owner self-acceptance is rejected; P0/P1 always block.
+Budgets/retries: D=2, E=3, and this is one D/E/G fresh-context read, not an independent review; typed defects max three attempts, each requiring a transition; budget overrun uses PROC-HUMAN.
+Staleness: head/source/denominator/oracle/material disposition/law/packet/verdict changes stale only citing decisions/reviews; prose/spelling/non-evidence link edits do not; PROC-STALE rebuilds smallest affected scope.
+Approval/freeze: docs_tmp evidence writes are allowed within cap; ENGINE/TUI edits, first-tranche public changes/new seams, and campaign implementation are prohibited. Later public schema/API and compatibility deletion require Kyle and their named route; commit only in I; no push/PR/merge/release/publication.
+
+P0/P1 findings: none.
+Verdict: PASS.

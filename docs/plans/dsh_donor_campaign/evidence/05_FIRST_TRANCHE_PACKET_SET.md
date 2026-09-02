@@ -1,0 +1,259 @@
+# Evidence-only first-tranche packet set
+
+Ticket: `bb-inj5.6`
+Status: APPROVED — Kyle selected FT-01 through FT-06; Gate G-F passed
+Session: 2 of 2
+
+## Control panel
+
+- North star: choose the smallest packet-ready tranche that reduces uncertainty on the seven-part research substrate without changing product behavior or weakening the Lock.
+- Current claim: six evidence-only, no-new-seam packets are executable without product-policy invention; they cover every F3/F6 obligation and the highest-value unresolved reconstruction law. No internal type is justified.
+- Latest product signal: a recovered durable turn was absent from the selected logical Session journal after engine replacement; first-tranche FT-01 is bounded to characterize, not repair, that held defect.
+- Current red class: none. The original evidence/executable-contract red was corrected and the sole renewal approved with zero residual findings.
+- Next cheapest discriminator: Workstream G maps every promoted item and deferred gate into the dependency DAG, using these six packet contracts as its first tranche.
+- Active external blocker: none.
+- Stop or escalation: reopen only through PROC-STALE/PROC-AMEND if a packet, disposition, head, or governing law changes. Any public surface, new seam, or product fix remains outside this tranche.
+
+DECISION THIS STAGE CAN MOVE: which evidence-only packets enter tranche one and which candidates remain deferred.
+EVIDENCE THAT WOULD MOVE IT: observed gaps or proven simplifications ranked against section 6.6 scenarios, with executable packet contracts and a zero-surface scope audit.
+EVIDENCE PRODUCED SO FAR: six selected packet contracts; Kyle's recorded selection; one CHANGES_REQUESTED review; corrections for six P1 and two P2; one permitted renewal with P0/P1/P2/P3 = 0/0/0/0 and Gate G-F PASS.
+PROVENANCE-ONLY ARTIFACTS PRODUCED SO FAR: one raw store at `raw/bb-inj5.6/` containing two session provenance blocks and the owner decision.
+
+## Gate card and bounded charter
+
+- Claim: the selected first tranche is the smallest set that covers plan F3/F6 and one additional high-value section-6.6 uncertainty, while changing no public schema/API and introducing no seam.
+- Denominator: all six selected candidates, every explicit F3 subject (bounded S2, four reconfiguration scenarios, S8, S7), every F6 inventory subject, and every learned behavior proposed for a permanent lock.
+- Discriminating power: each characterization returns one terminal classification per predeclared case; each lock must satisfy all six section-6.5 tests; the inventory reports exact counts and recall limits. Deterministic checks need no interval.
+- Oracle: persisted Session events versus independently read durable owned turns; recorded provider-request bytes versus deterministic reconstruction; compiler/schema acceptance versus the stated fixture; generated registries and exact consumer decoders; existing freeze checker for scope.
+- Cost: six packets, each one focused baseline proof; no production run beyond one installed composition case; one independent review; two campaign sessions total.
+- Retry: only after new bytes, oracle, environment, or a written mechanism diagnosis; at most three attempts per typed defect.
+- Stop/fallback: product red becomes PROC-DEFECT and is not fixed here; contract red returns to the approved E laws; evidence red repairs only the harness; infrastructure red uses the cheapest local discriminator; unsupported promotion remains deferred.
+- Nonclaims: no implementation outcome, measured performance gain, public compatibility promise, schema/API change, new module/seam, SDK package, lane, ledger, scoreboard, or authorization to repair the known defect.
+
+## Evidence base and current locks
+
+`OBSERVED` at the pinned heads:
+
+- ENGINE `b3cacc7356244253305f8a6f84308a993485bfe2`; TUI `73d6e6f55a238fc9ff0486bbcc9ecffe85705715`; both clean in session 1.
+- C observed one recovered durable turn missing from the selected `session_events.jsonl`, one unchanged explicit retry producing one durable recovered turn, and one permission rejection converging to one cancelled turn with no gated result.
+- `breadboard/product/runtime/events.py:Session.restore` rebuilds from logical events. `breadboard_engine/api/cli_bridge/service.py:SessionService.send_input` owns admission. These are existing seams.
+- `tests/test_cli_bridge_service_prewarm.py:test_failed_durable_reconfigure_rolls_back_runtime_mutation` locks failed event persistence rollback; `tests/test_model_role_runtime.py` covers active-turn role rejection and durable role transition; `tests/product/runtime/test_session_kernel.py` locks event replay for `session.reconfigured`. The full four-case section-7 characterization is not present.
+- Python `breadboard_sdk/client.py:_validate_event_payload`, TypeScript `sdk/ts/src/stream.ts:validateEventPayload`, canonical TypeScript `sdk/ts/src/session-runtime.ts:decodeLoggedSessionEvent`, and separate-TUI `packages/coding-agent/src/breadboard/engine-port.test.ts` fail closed on unsupported event families. Cross-client parity and ignorable/required classification remain uncharacterized as one proof.
+- Exact request facts are split across `breadboard_engine/provider/contract_messages.py:ProviderRequest`, `breadboard_engine/provider/contract_exchange.py:ProviderExchangeV2`, `breadboard_engine/provider/invoker.py:ProviderInvoker`, `breadboard_engine/compilation/system_prompt_compiler.py:SystemPromptCompiler`, `breadboard/product/harness/lock.py:EffectiveHarnessLock`, and Session replay. No parallel request envelope is justified.
+- `breadboard/product/harness/compile.py:compile_harness_definition` and the existing `bb.harness_definition.v1` / compatible v2 schema inputs are the only S8 probe seam. A failed expressiveness fixture is evidence, not permission to extend the schema.
+- B's surface report provides an initial inventory but records dynamic imports, TUI `.omp`, and exact per-reference reconfiguration paths as blind spots. It is not a per-change interface report.
+
+## Promotion matrix
+
+Scale: expected value and dependency leverage `H/M/L`; interface change is facts added to callers (`0` means none); evidence quality `strong/medium/weak`. `N/A` means no new/changed seam is proposed, so adapter count is not a promotion basis. Counts come from B's pinned inventory unless a row names its local counting rule.
+
+| Candidate | Basis | Section-6.6 value | Dependency leverage | Deletion payoff | Interface change | Adapter count and method | Consumers | Blast radius | Evidence quality | Disposition |
+| --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- |
+| Recovery truth + admission differential | observed C defect and contract gap | `H`: trajectory re-analysis and exact recovery | `H`: blocks event truth, replay, SDK/TUI trust | none in tranche; may later remove retained-state authority | 0 | 2 existing event-source modes: live and durable, counted at the public reader | 3 families: SDK, TUI, replay | test/harness only | strong installed observation | `SELECT` FT-01 |
+| Reconfiguration law characterization | E4.8/E4.9 normative; current coverage partial | `H`: mid-run variant switch | `H`: gates generation/adoption DAG | none | 0 | 3 activation-generation adapters in B: config data, provider runtime, plugin runtime | Session control, compiler/Lock, clients | tests only | medium | `SELECT` FT-02 |
+| Exact request reconstruction | E5.1/E5.2 normative and B partial | `H`: reconstruction half of provider/prompt ablation | `H`: gates provenance and future analysis | avoids parallel RequestEnvelope | 0 | `N/A`: composes existing provider seam; FT-06 must report its adapter count before later seam work | provider adapters, replay, analysis | fixture/test only | medium | `SELECT` FT-03 |
+| Unknown required events across clients | E3.5 normative and S7 partial | `M`: protects future projection analysis | `H`: compatibility precondition for every new event | none | 0 | 4 current decoder/classifier adapters, exact paths in FT-04 | Python SDK, public TS SDK, canonical TS runtime, separate TUI | tests/report only | strong per-client locks, parity unproved | `SELECT` FT-04 |
+| V2 expressiveness probe | S8 partial; E4.11/E4.12 consumers | `H`: determines whether annotations/children need later surface work | `H`: blocks or kills three broad proposals | none | 0 | 1 compiler implementation over 2 accepted definition forms; not a new seam | compiler/Lock, later runtime design | fixture/report only | medium-low | `SELECT` FT-05 |
+| Interface inventory report | S4 partial and F6 requirement | enabling evidence, not a win alone | `H`: bounds compatibility, owners, deletion conditions | names zero-consumer candidates; deletes nothing | 0 | `N/A`: report inventories adapters; it is not one | implementation supervisor, G/H/I reviewers | report only | medium; known blind spots | `SELECT` FT-06 |
+| Standalone permission abstraction | current behavior coherent and domain owner exists | `L` incremental value | `L` | negative; adds surface | >0 | 1 existing authority path, below new-seam threshold | tool admission and Session control | broad | strong evidence against need | `REJECT`; retain one composition lock inside FT-01 |
+| First-tranche internal type | no candidate proves two duplicates/callers plus smaller interface | `L` until evidence | `L` | unproved | unknown | 0 proven duplicate/caller pairs | none admitted | code | weak | `DEFER`; no F5 packet |
+| Execution-world seam | module test/design-it-twice incomplete | potentially high later | medium | unproved | >0 | 2 foundations in B: `DevSandboxV2`, `DockerSandboxV2`; full interface unproved | local/container; Ray/Slurm absent | high | weak | `DEFER`; no new seam |
+| Projection registry | common caller interface/deletion payoff unproved | medium later | medium | unproved | >0 | at least 3 projectors but 0 adapters to one common seam | Session/todo/coordination projections | high | weak | `DEFER`; no new seam |
+| Annotation module | no current owner/adapter | high preference-labeling upside later | medium | unproved | >0 | 0 current adapters | analysis clients unimplemented | high | weak | `DEFER`; no new seam |
+| Durable-child module | adjacent owners do not share a proven interface | high later | medium | unproved | >0 | 3 adjacent owners, 0 adapters to one provider-neutral seam | orchestrator, agent, jobs | high | weak | `DEFER`; no new seam |
+| Full 4×4 S2 matrix | only 2 observed cells move a current decision | low beyond selected cells | low | none | 0 | 1 installed composition target; no proposed seam | installed client/runtime | high operational cost | weak for unlearned races | `REJECT` as slop |
+
+## Selected tranche and order
+
+Recommended order: FT-01, FT-04, FT-02, FT-03, FT-05, FT-06. FT-01 resolves the held truth defect boundary first. FT-04 proves clients stop rather than silently lose future semantics. FT-02 and FT-03 then characterize the two highest-leverage runtime contracts. FT-05 decides whether later annotation/child/Code Mode work can reuse the Lock surface. FT-06 captures the exact compatibility and deletion boundary after the focused probes identify the relevant owners.
+
+The order is execution guidance, not a new dependency graph; Workstream G owns the full DAG.
+
+## Learned behaviors and behavior-lock budget
+
+| Learned behavior | Source | Existing equivalent? | First-tranche action |
+| --- | --- | --- | --- |
+| Recovered durable turn can be absent from selected logical journal | C `KNOWN DIVERGENCE`, E held product defect | no | one permanent differential lock in FT-01 |
+| Permission rejection converges to one deny, one cancelled turn, no gated result | C observed; source-level TUI coverage exists | no installed composition lock | one provider-free installed composition lock in FT-01 |
+| First post-replacement submit can fail generically while unchanged explicit retry creates one durable turn | C observed; exact installed retry identity remains unverified | source lock only | characterize in FT-01; do not lock generic HTTP text |
+| Failed durable reconfiguration rolls back runtime state when event persistence fails | existing focused test | yes | reuse; no duplicate lock |
+| Active-turn model-role change is rejected | existing focused test | yes | reuse; FT-02 adds only missing scenarios after six-holds check |
+| Unknown event families fail current Python/TS/TUI decoders | existing focused sources/tests | per-client yes, parity no | FT-04 characterization; add no duplicate lock |
+| Request reconstruction/provenance is partial | B/E | no end-to-end lock | one byte-equality lock in FT-03 if baseline reconstruction is complete; otherwise characterize gap and stop |
+
+Global permanent-lock allocation is exactly three: L1 journal completeness and L2 installed permission composition in FT-01, and L3 request-byte equality in FT-03. FT-02, FT-04, FT-05, and FT-06 may retain zero new permanent tests; they produce characterization reports and may cite existing tests only. A newly observed behavior opens a later packet instead of consuming an unallocated lock. Each retained lock must add a record keyed to exactly one of the seven rows above with six explicit fields: `observable_contract`, `plausible_bug`, `independent_oracle`, `stable_interface_seam`, `deterministic_and_isolated`, and `not_covered_by_existing_test`; every field carries `PASS` plus evidence or the lock is deleted.
+
+| Lock | Learned-behavior row | Observable contract | Plausible bug | Independent oracle | Stable interface seam | Deterministic/isolated | Uncovered |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| L1 journal completeness | recovered durable turn absent from journal | every durable owned turn replays from logical events | recovery persists state but skips journal | durable owned-turn/admission enumeration versus logical event replay | public Session events + `Session.restore` | provider-free replacement fixture | C found divergence; no existing differential lock |
+| L2 permission composition | permission rejection converges cleanly | one deny, one cancelled turn, no gated result | half-cancel or hidden tool execution | event pair + terminal turn + absence of gated result | installed `bb` permission UI to public Session state | provider-free gated tool fixture | source-level coverage exists; installed composition lock absent |
+| L3 request-byte equality | request reconstruction/provenance partial | reconstruction equals emitted provider request bytes | default/order/override drift | held-out capture-adapter bytes, never reconstruction input | provider adapter dispatch | fake capture adapter, secret-free fixture | no end-to-end records-only reconstruction lock |
+
+## Internal-type audit
+
+No internal-type packet enters tranche one. The candidate set proves neither an internal type replacing at least two duplicates nor an internal type consumed by at least two call sites while shrinking the caller interface. Any later candidate must record all seven module-test answers, add no dispatch layer, and run identical characterization bytes before and after. Discovery of a possible type in FT-03/FT-06 opens a later packet; it does not expand this tranche.
+
+## Packet FT-01 — recovery truth and admission differential
+
+- **Workstream/name:** runtime truth / recovery truth and admission differential.
+- **Goal and observable behavior:** at the existing public Session seam, characterize two of the 16 S2 fault/timing cells: `replace authority × before submit` and `reject permission × after client dispatch / before receipt`. The unchanged explicit retry is an observation inside the replacement cell, not a third cell. For replacement, independently compare selected logical events, durable owned turns, admissions, client receipt, and unchanged-retry outcome. For permission, prove one requested/resolved-deny pair, one cancelled turn, and no gated result.
+- **Promotion basis/substrate:** C's observed held defect and contract gap; converges durable event truth and exact recovery.
+- **Module/seam record:** no module proposed. Existing `SessionService.send_input`, `Session.restore`, `/v1 session.events`, and client binding are used unchanged. Live/durable event sources are existing adapters behind one logical cursor; no design-it-twice applies.
+- **Dependency/test strategy:** local-substitutable Session persistence plus installed client composition. Deterministic differential: event replay versus independently enumerated durable owned turns/admissions.
+- **Repositories/baselines:** ENGINE and TUI heads named in `#Evidence base and current locks`; installed identity must be recorded afresh and shown as ancestor of both heads before any installed case.
+- **First action/provenance:** before observing an outcome, write the report's single provenance block: ENGINE/TUI paths, exact heads, clean status, Python path/version, installed product/distribution/backend/TUI build identities, command or harness SHA-256, fixture identity, wall clock, and extraction method. Link every base proof to its raw file; no second provenance block in this packet.
+- **Inputs/dependencies:** C raw store, E laws E1.1/E1.4/E1.6/E3.1/E3.4, existing recovery and permission source tests. Do not reuse C's stale integration checkout as a writable evidence root.
+- **Owners/consumers/files:** `breadboard_engine/api/cli_bridge/service.py:SessionService.send_input`; `breadboard/product/runtime/events.py:Session.restore`; public session-event readers; Python/TS SDK and separate TUI. Output binds to `docs/plans/dsh_donor_campaign/evidence/first_tranche/FT-01_RECOVERY_TRUTH.md` and its cited raw directory. Permanent changes, if L1/L2 pass, are limited to the existing recovery/session-runtime test suites found by exact owner search; no production file.
+- **In scope:** one provider-free baseline reproduction per selected cell; exact event/admission/turn identities; a temporary harness if needed; at most the two new locks named above after the six-holds audit.
+- **Non-goals:** remaining 14 S2 cells; soak/race hunting; auto-retry policy; public retry receipt; defect repair; permission abstraction.
+- **Surface/freeze:** public schema/API impact `none`; freeze impact `none`; `NO PUBLIC SCHEMA OR API CHANGE`; `NO NEW SEAM`. Any missing public receipt is a recorded gap, not tranche work. Freeze amendment route for a later packet only: stop → PROC-AMEND → named failing consumer/correctness case → Kyle sign-off in `docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md`.
+- **Before/edit/clean cutover:** reproduce on untouched base first. If a retained lock is justified, add it at the public Session/client interface; remove temporary harness bytes. No production edit or compatibility path change.
+- **Generated/contracts/fixtures/docs:** deterministic temporary fixture and one evidence report only; generated product contracts/schemas and compatibility paths affected: none.
+- **Proof/gate:** narrow proof is one run per selected S2 cell with event-versus-owned-turn diff; the replacement proof also records the unchanged-retry observation. Broader handoff gate is the focused existing session runtime/recovery test target. No broad suite.
+- **Risk/budget/retry/kill:** risk `high` (runtime-truth classification); permissions: local test writes plus one authenticated installed process lifecycle, no secrets/network/provider; blast radius: temporary roots and test/report files only. Budget ≤6 minutes; three typed attempts maximum. Kill if exact authority cleanup cannot be authenticated or if the case needs production instrumentation.
+- **Rollback/review/approval:** rollback is deletion of test/harness-only additions. Exact-artifact binding is the FT-01 report digest plus cited raw identities. Reviewer checks independent oracles, authenticated cleanup, no generic-HTTP assertion, and no extra matrix cells. Approval nodes: none to run evidence; retaining L1/L2 requires their six-field PASS records; any product/public/freeze change is forbidden and routes through PROC-DEFECT or the amendment route above.
+- **Completion claim/unlock:** may claim exact classifications for 2/16 S2 cells, the within-replacement retry observation, and L1/L2 only if their six-field records pass. Unlocks later event-truth repair design and retry-receipt decision; failure preserves the strongest observed classification.
+
+## Packet FT-02 — generation and durable-reconfiguration characterization
+
+- **Workstream/name:** configuration generations / four-case durable-reconfiguration characterization.
+- **Goal and observable behavior:** run exactly the section-7 cases: invalid edit during an in-flight turn; reconfigure mid-turn; reconfigure durability across restart; provider swap mid-Session. Record whether the current system rejects, rolls back, or durably applies, and whether any applied change occurs only at a quiescent boundary with old/new Lock-compatible identity, reason, and effective sequence.
+- **Promotion basis/substrate:** E4.8/E4.9 normative laws plus incomplete current coverage; converges immutable generation pin/adoption and the mid-run variant-switch scenario.
+- **Module/seam record:** no module. Existing `SessionService.durable_reconfigure` closure → `SessionRunner.transition_product_session("reconfigure", ...)`, model-role handling, `Session.reconfigure`, and `EffectiveHarnessLock` are the seam. Three current generation adapters make characterization real but do not authorize a new activation module.
+- **Dependency/test strategy:** in-process/local-substitutable config and Session persistence. Table-driven deterministic cases using exact current commands and replayed events; existing rollback and model-role tests are reused as controls.
+- **Repositories/baselines:** ENGINE baseline only unless a real TUI command is necessary; TUI remains a consumer, not authority.
+- **First action/provenance:** write the FT-02 report provenance before results: ENGINE path/head/clean status, Python path/version, exact four-case fixture or test IDs and SHA-256, invoked commands, and source/test method. Every case links its untouched-base raw output.
+- **Inputs/dependencies:** E laws E4.4/E4.8/E4.9; plan section 7; current tests named in `#Evidence base and current locks`.
+- **Owners/consumers/files:** `breadboard_engine/api/cli_bridge/service.py`, `session_control.py`, `session_runner.py`; `breadboard/product/runtime/events.py`; `breadboard/product/harness/lock.py`; tests under `tests/test_cli_bridge_service_prewarm.py`, `tests/test_model_role_runtime.py`, and `tests/product/runtime/test_session_kernel.py`.
+- **In scope:** four baseline characterizations, exact transition/event/Lock identities, and one terminal current-behavior classification per case. New permanent locks: zero; cite existing controls only. A newly learned behavior is recorded for a later packet.
+- **Non-goals:** file watching, impact classifier, atomic publish service, provider implementation reload, new generation API/schema, auto-adoption policy, TUI UX.
+- **Surface/freeze:** impact `none`; `NO PUBLIC SCHEMA OR API CHANGE`; `NO NEW SEAM`. Missing generation facts become later work. Freeze amendment route for a later packet only: stop → PROC-AMEND → failing consumer/correctness case → Kyle sign-off in `SPEC_AMENDMENTS.md`.
+- **Before/edit/clean cutover:** run the four cases on base. Temporary characterization code is deleted after raw/report capture; do not consolidate current domain owners or retain a new test.
+- **Generated/contracts/fixtures/docs:** temporary fixtures plus `docs/plans/dsh_donor_campaign/evidence/first_tranche/FT-02_RECONFIGURATION.md`; output binds to that report and cited raw identities; generated product contracts/schemas and compatibility paths affected: none.
+- **Proof/gate:** four-case result table with one terminal classification each; focused reconfigure/model-role/session-kernel targets once. Broader gate is existing affected-test selection, not project suite.
+- **Risk/budget/retry/kill:** risk `medium`; permissions: local test/temp-file/process control only, no provider/network/secrets; blast radius: temporary fixtures and one report. Budget ≤4 minutes; maximum three attempts per typed case. Stop if a case requires new public facts or production instrumentation.
+- **Rollback/review/approval:** rollback deletes temporary additions. Exact-artifact binding is the FT-02 report digest plus four cited raw cases. Reviewer checks quiescence, durable replay, Lock subordination, and no implementation reload. Approval nodes: none to run evidence; any product mismatch routes PROC-DEFECT, contract mismatch stops against E, and any surface change requires the amendment route above.
+- **Completion claim/unlock:** may claim current behavior for 4/4 named cases and identify exactly which later generation packets are evidence-admitted; it may not claim a new behavior lock.
+
+## Packet FT-03 — exact provider-request reconstruction
+
+- **Workstream/name:** provider provenance / byte-exact request reconstruction.
+- **Goal and observable behavior:** reconstruct one provider request from logical Session facts, immutable artifact references, exact effective Lock, prompt-compiler inputs, and non-request exchange metadata; compare canonical bytes and requested/effective/default source facts to bytes captured independently at adapter dispatch.
+- **Promotion basis/substrate:** B partial plus normative E5.1/E5.2; exercises only the reconstruction half of the provider/prompt-ablation scenario. It does not claim an ablation result.
+- **Module/seam record:** no new RequestEnvelope or service. Existing Session restore, `ProviderRequest`, `ProviderExchangeV2`, `ProviderInvoker`, `SystemPromptCompiler`, and `EffectiveHarnessLock` compose the proof. `ProviderExchangeV2.request` is explicitly excluded as reconstruction input.
+- **Dependency/test strategy:** external provider adapters are remote-owned, but proof uses a deterministic fake capture adapter. Its held-out bytes are written only after the reconstructed request crosses dispatch and are never read by reconstruction; no live provider or stochastic estimate.
+- **Repositories/baselines:** ENGINE baseline.
+- **First action/provenance:** write the FT-03 report provenance before capture: ENGINE path/head/clean status, Python path/version, fixture SHA-256, fake-adapter identity, canonicalization method, command, and explicit allowed/excluded reconstruction inputs. Link base capture and reconstruction raw files separately.
+- **Inputs/dependencies:** allowed reconstruction inputs are logical Session events, immutable artifact bytes/digests, exact `EffectiveHarnessLock`, prompt-resource bytes, compiler defaults, adapter-configuration inputs, and exchange correlation/route/generation metadata. Forbidden inputs are `ProviderExchangeV2.request`, any retained `ProviderRequest`, captured outbound bytes/digest, or expected provenance results. The held-out capture contains one secret-free representative request.
+- **Owners/consumers/files:** exact owners in `#Evidence base and current locks`; consumers are replay, ablation analysis, provider adapters, and audit views. Output binds to `docs/plans/dsh_donor_campaign/evidence/first_tranche/FT-03_REQUEST_RECONSTRUCTION.md`; permanent change is only L3 in an existing focused provider/request test suite if its six-field record passes.
+- **In scope:** one representative request containing ordered prompt sections, tool schemas, history, one defaulted field, and one adapter override; byte equality and provenance classification.
+- **Non-goals:** new request schema/envelope, provider rewrite, live call, cache validity claim, public provenance fields, broad fixture framework.
+- **Surface/freeze:** impact `none`; `NO PUBLIC SCHEMA OR API CHANGE`; `NO NEW SEAM`. A missing fact is reported and stops L3; it is not synthesized. Freeze amendment route for a later packet only: stop → PROC-AMEND → failing consumer/correctness case → Kyle sign-off in `SPEC_AMENDMENTS.md`.
+- **Before/edit/clean cutover:** capture the held-out adapter bytes and reconstruct independently on base before retaining L3. If equality or any six-holds field fails, report the first missing fact and delete the candidate lock. No production edit.
+- **Generated/contracts/fixtures/docs:** one secret-free fixture, separate held-out capture, and FT-03 report; generated product contracts/schemas, SDK output, and compatibility paths affected: none.
+- **Proof/gate:** SHA-256 or direct byte equality over canonical request bytes plus field-by-field requested/effective/default provenance; broader gate is the focused provider contract/invoker test target.
+- **Risk/budget/retry/kill:** risk `medium` (circular-oracle/secret exposure); permissions: local fixture/temp-file execution only, no network/provider credential; blast radius: one focused test candidate and report. Budget ≤2 minutes; three attempts maximum. Kill on secret-bearing bytes, nondeterministic serialization, forbidden-input access, or need for a public field.
+- **Rollback/review/approval:** delete test fixture/report additions. Exact-artifact binding is the FT-03 report digest, fixture digest, and separate capture/reconstruction raw files. Reviewer checks forbidden-input enforcement and byte oracle independence. Approval nodes: none to run evidence; L3 retention requires its six-field PASS record; missing facts defer, and surface work requires the amendment route above.
+- **Completion claim/unlock:** may claim one exact reconstruction characterization or name the first irreducible missing fact. It cannot claim the full ablation scenario. Unlocks later request-provenance design and a separately pre-registered ablation packet.
+
+## Packet FT-04 — unknown-required-event cross-client check
+
+- **Workstream/name:** compatibility / required-event fail-closed parity.
+- **Goal and observable behavior:** apply one semantic unknown-required-event case through four explicit wire/classifier mappings and prove Python SDK, public TypeScript SDK, canonical TypeScript runtime, and separate TUI each stop with its existing typed protocol failure rather than silently drop or render through it.
+- **Promotion basis/substrate:** S7 partial and E3.5 normative; protects event truth and future projections.
+- **Module/seam record:** no compatibility layer. Existing generated event metadata and each current client decoder remain separate adapters to the public event stream.
+- **Dependency/test strategy:** in-process deterministic decoder assertions; four current consumer implementations; no network needed.
+- **Repositories/baselines:** ENGINE and TUI baselines.
+- **First action/provenance:** write the FT-04 report provenance before decoding: ENGINE/TUI paths, exact heads, clean status, Python/Node/package-runner versions, semantic fixture SHA-256, four mapped fixture SHA-256 values, commands, and decoder versions/paths. Link each untouched-base outcome.
+- **Inputs/dependencies:** canonical semantic fixture `required=true, event_id=e-required, session_id=s-required, sequence=2, kind=future.required`. Map it without semantic loss as follows. (A) Python/public-TS JSON envelope is exactly `{"schema_version":"bb.public_session_event.v1","event_id":"e-required","seq":2,"timestamp":"2026-09-02T00:00:00Z","work_item_id":null,"parent_work_item_id":null,"attempt_id":null,"session_id":"s-required","span_id":null,"visibility":{"model_visible":false,"provider_visible":false,"host_visible":true,"redaction_state":"none"},"kind":"future.required","payload":{},"payload_schema_version":"bb.payload.future.required.v1"}` with expected session `s-required` and SSE id `2`; expected errors are Python `ValueError("invalid session event kind")` and TS `Error("Invalid session event kind")`. (B) canonical-TS E4 envelope is exactly `{"stable_cursor":true,"id":"e-required","seq":2,"session_id":"s-required","input_id":null,"turn_id":null,"timestamp_ms":1,"type":"future.required","payload":{}}`; expected `CanonicalE4ClientError` with `kind=protocol`, `code=unsupported_event_family`. (C) TUI classifier value is exactly the normalized shape `{"eventId":"e-required","sequence":2,"sessionId":"s-required","inputId":null,"turnId":null,"occurredAtMs":1,"kind":"future_required","payload":{}}`, cast only at the test boundary; expected `BreadBoard unsupported canonical runtime event family`. The registry must not mark the semantic kind deprecated or ignorable.
+- **Owners/consumers/files:** Python `breadboard_sdk/client.py`; TS `sdk/ts/src/stream.ts` and `session-runtime.ts`; TUI `packages/coding-agent/src/breadboard/engine-port.test.ts` / `e4-agent-stream.test.ts`; generated metadata read-only. Output binds to `docs/plans/dsh_donor_campaign/evidence/first_tranche/FT-04_UNKNOWN_REQUIRED_EVENT.md`.
+- **In scope:** run existing decoders/classifier with the four mapped fixtures and record outcomes. New permanent locks/tests: zero; temporary fixture adapters are deleted. Any registry-governed ignorable classification is a separate result and cannot convert this required fixture.
+- **Non-goals:** new ignorable marker, schema revision, compatibility shim, event migration, generated binding change, UI fallback.
+- **Surface/freeze:** impact `none`; `NO PUBLIC SCHEMA OR API CHANGE`; `NO NEW SEAM`. Freeze amendment route for a later packet only: stop → PROC-AMEND → failing consumer/correctness case → Kyle sign-off in `SPEC_AMENDMENTS.md`.
+- **Before/edit/clean cutover:** execute current tests first, then temporary mapped-fixture calls. Add no permanent test; delete temporary adapters after report/raw capture.
+- **Generated/contracts/fixtures/docs:** four mapped temporary fixtures plus the FT-04 report; shared/generated product files, registries, and compatibility paths affected: none.
+- **Proof/gate:** four consumers, four typed stops, zero silent accepts; focused Python/TS/TUI decoder targets once.
+- **Risk/budget/retry/kill:** risk `low`; permissions: local decoder/test execution only, no network/process authority/secrets; blast radius: temporary fixtures and one report. Budget ≤2 minutes; three evidence attempts. Stop and PROC-DEFECT if a required event is silently discarded; do not patch a decoder.
+- **Rollback/review/approval:** rollback deletes temporary fixtures. Exact-artifact binding is the FT-04 report digest plus four fixture/outcome raw identities. Reviewer checks semantic equivalence of the mappings, required status, and typed stop. Approval nodes: none to run evidence; any decoder/product fix is forbidden, and surface work requires the amendment route above.
+- **Completion claim/unlock:** may claim fail-closed parity for one semantic required event mapped across 4/4 consumers, or identify exact divergent consumers. It may not claim identical wire formats. Unlocks later event/version DAG decisions.
+
+## Packet FT-05 — harness-definition expressiveness probe
+
+- **Workstream/name:** Lock/config algebra / S8 bounded expressiveness probe.
+- **Goal and observable behavior:** using only existing accepted Definition inputs and `compile_harness_definition`, determine separately whether Code Mode, immutable annotation sidecars, and durable child Sessions with lineage can be expressed today without adding fields or weakening the Lock.
+- **Promotion basis/substrate:** S8 partial; E4.11/E4.12 normative; kills or narrows later public-surface proposals before design.
+- **Module/seam record:** no module. The canonical compiler and current schemas are the sole seam. One compiler implementation means no new abstraction is proposed.
+- **Dependency/test strategy:** in-process deterministic compilation/validation. Each capability is its own fixture and terminal verdict: expressible, partially expressible with exact missing fact, or inexpressible.
+- **Repositories/baselines:** ENGINE baseline.
+- **First action/provenance:** write the FT-05 report provenance before compilation: ENGINE path/head/clean status, Python path/version, base Definition SHA-256, each exact mutation SHA-256, compiler/schema identities, command, and canonical Lock/explanation method. Link all untouched-base outputs.
+- **Inputs/dependencies:** use this exact base Definition from the existing compiler-test convention: `{"schema_version":"bb.harness_definition.v1","version":1,"workspace":{"root":"."},"providers":{"default_model":"mock/reference","models":[{"id":"mock/reference","adapter":"mock_chat"}]},"modes":[{"name":"respond"}],"loop":{"sequence":[{"mode":"respond"}]}}`. Apply each capability mutation independently, never cumulatively:
+  - Code Mode: replace `modes` with `[{"name":"code","tools_enabled":["run_shell"],"tools_disabled":["write","apply_patch"]}]`; replace `loop` with `{"sequence":[{"mode":"code"}]}`; add `tools.registry={"paths":["implementations/tools/defs"],"include":["run_shell","write","apply_patch"]}`.
+  - Annotation sidecar: add the exact sentinel `annotations={"storage":"sidecar","identity":"message"}`. This sentinel is expected to fail if no accepted existing field owns the concept; it never authorizes that field.
+  - Durable child: add `multi_agent={"enabled":true,"event_log_path":".breadboard/child-events.jsonl"}`.
+  Verdict criteria derive only from E laws. `EXPRESSIBLE` requires accepted compilation and a Lock/explanation containing every required fact. Code Mode requires named mode, code tool visibility, direct-native exclusion, and the same tool-registry/authority identity; annotation requires message and trajectory identities, author, generation, immutable payload, and no message mutation; durable child requires child Session identity, parent/root lineage, durable recovery reference, and one terminal settlement. `PARTIAL` requires accepted compilation with a nonempty strict subset and names the first absent fact. `INEXPRESSIBLE` requires schema rejection or zero required facts. Compile acceptance alone never proves runtime lineage or authority.
+- **Owners/consumers/files:** `breadboard/product/harness/compile.py`, `model.py`, `validate.py`, `contracts/public/schemas/bb.harness_definition.v1.schema.json`, compatible v2 schema, and focused harness compiler tests. Output binds to `docs/plans/dsh_donor_campaign/evidence/first_tranche/FT-05_EXPRESSIVENESS.md`.
+- **In scope:** compile/explain the base plus three independent mutations; enumerate accepted authored facts, materialized Lock facts, and the first missing fact against the exact criteria above. New permanent locks/tests: zero.
+- **Non-goals:** schema extension, dynamic package system, Code Mode runtime, annotation store, child-session module, public API, implementation prototype.
+- **Surface/freeze:** read-only product surface; impact `none`; `NO PUBLIC SCHEMA OR API CHANGE`; `NO NEW SEAM`. Rejection by `additionalProperties` is a valid result. Freeze amendment route for a later packet only: stop → PROC-AMEND → failing consumer/correctness case → Kyle sign-off in `SPEC_AMENDMENTS.md`.
+- **Before/edit/clean cutover:** run the exact fixtures on base, capture compiler output, and delete all temporary fixture/test bytes. No characterization test is retained.
+- **Generated/contracts/fixtures/docs:** exact temporary base/mutations plus the FT-05 report; schemas, generated bindings, and compatibility paths affected: none.
+- **Proof/gate:** 3/3 verdicts with compiler output/error, exact Lock facts, and first missing fact; broader gate is focused harness compile/validation tests.
+- **Risk/budget/retry/kill:** risk `low` (false expressibility); permissions: local compile/read/temp-file only, no runtime/provider/network/secrets; blast radius: temporary fixtures and one report. Budget ≤2 minutes; maximum three evidence attempts. Kill any branch that needs schema change or runtime implementation to answer.
+- **Rollback/review/approval:** rollback deletes temporary fixtures. Exact-artifact binding is the FT-05 report digest plus four input/output identities. Reviewer checks the exact verdict criteria, no aspirational mapping, and first missing fact. Approval nodes: none to run evidence; any surface work requires the amendment route above.
+- **Completion claim/unlock:** may claim `EXPRESSIBLE`, `PARTIAL`, or `INEXPRESSIBLE` only for each of the 3/3 exact probes. It cannot infer runtime behavior from compiler acceptance. Results narrow later runtime work or gate later surface work through amendment.
+
+## Packet FT-06 — generated interface inventory report
+
+- **Workstream/name:** compatibility evidence / current interface inventory report.
+- **Goal and observable behavior:** regenerate an exact report of owners, schemas, event kinds, projections, SDK exports, TUI consumers, compatibility surfaces, and deletion conditions; compare it with B's pinned counts and explain every delta.
+- **Promotion basis/substrate:** S4 partial and F6; supplies bounded inputs to all later compatibility/deletion decisions. It is assurance/enabling evidence, not a product win by itself.
+- **Module/seam record:** no inventory service or registry. Existing generated operation/event/schema registries are authoritative inputs; the output is a report, never a product ledger.
+- **Dependency/test strategy:** deterministic repository inventory. Generated manifests where authoritative; exact AST/declaration or exact-token enumeration elsewhere; one sampled recall check and explicit dynamic-import blind spot.
+- **Repositories/baselines:** ENGINE and TUI baselines.
+- **First action/provenance:** write the FT-06 report provenance before counting: ENGINE/TUI paths, exact heads, clean status, Python/Node versions, inventory command/extractor identities, authoritative registry digests, include/exclude roots, and counting method. Link raw counts before comparing with B.
+- **Inputs/dependencies:** B `surface-inventory.json`, contract-tier and schema-lifecycle registries, generated public-operation/event bindings, SDK export roots, TUI consumer roots.
+- **Owners/consumers/files:** current owners named by B; consumers are the implementation supervisor and G/H/I spec reviewers. Output binds to `docs/plans/dsh_donor_campaign/evidence/first_tranche/FT-06_INTERFACE_INVENTORY.md`, not JSONL/ledger/scoreboard; extraction code is temporary.
+- **In scope:** exact methods, denominators, blind spots, one sampled recall check, current deletion conditions and zero-consumer evidence; include the previously unretained exact `durable_reconfigure` paths and enumerate TUI `.omp` only if it is a named public consumer surface.
+- **Non-goals:** source-of-truth registry, CI gate, new generator framework, migration, deletion, schema rewrite, line-count claim.
+- **Surface/freeze:** report only; impact `none`; `NO PUBLIC SCHEMA OR API CHANGE`; `NO NEW SEAM`; no ledger or scoreboard. Freeze amendment route for a later packet only: stop → PROC-AMEND → failing consumer/correctness case → Kyle sign-off in `SPEC_AMENDMENTS.md`.
+- **Before/edit/clean cutover:** reproduce B counts first. If bytes changed, use PROC-STALE rather than normalize the difference. Remove temporary extraction scripts; no new inventory owner may remain.
+- **Generated/contracts/fixtures/docs:** FT-06 Markdown report and cited raw command output; generated product files/contracts and compatibility paths affected: none.
+- **Proof/gate:** every required inventory family has method, numerator/denominator, anchors, blind spots, recall result, and deletion condition; broader gate is exact comparison to B plus focused freeze checker by construction.
+- **Risk/budget/retry/kill:** risk `medium` (stale/duplicate authority); permissions: read-only repository enumeration and report/temp-file writes, no process/network/secrets; blast radius: one report and raw output. Budget ≤3 minutes; one regeneration plus at most one stale-input rerun. Kill if provenance-only work begins producing new forms or a second inventory authority.
+- **Rollback/review/approval:** report can be deleted without product effect. Exact-artifact binding is the FT-06 report digest plus raw count identities. Reviewer checks methods, denominators, recall, and that the report is not a registry. Approval nodes: none to run evidence; deletion/migration is forbidden, and any surface work requires the amendment route above.
+- **Completion claim/unlock:** may claim the exact pinned interface inventory and named blind spots, never behavior. Unlocks G packet sizing, compatibility windows, deletion gates, and H traceability.
+
+## Scope, freeze, and prohibited-work audit
+
+| Prohibition | Packet-set result |
+| --- | --- |
+| Public migration or compatibility removal | absent; all packets characterize or report |
+| New seam/module/dispatch layer | absent; every packet names existing owner seams |
+| New schema family or public API field | absent; missing facts stop or defer |
+| SDK package, lane, ledger, scoreboard, evidence form | absent; FT-06 is one bounded Markdown report |
+| Broad provider/runtime rewrite | absent; no production edit |
+| Speculative test or generator framework | absent; temporary harnesses are deleted; existing conventions preferred |
+| Implementation reload | explicitly excluded |
+| Presumed later promotion | absent; each completion claim is bounded and failure has a branch |
+| Freeze impact | `none` for 6/6 packets by construction |
+
+## Selection options
+
+1. **Six-packet balanced tranche — recommended.** Select FT-01 through FT-06. It satisfies every F3/F6 requirement and adds the one highest-value optional packet, exact request reconstruction. Cost is one more deterministic fixture packet than the required-only cut.
+2. **Five-packet required-only cut.** Select FT-01, FT-02, FT-04, FT-05, FT-06; defer FT-03. Smallest checklist-complete set, but leaves the provider/prompt ablation scenario with no first-tranche proof and delays a high-leverage E5 law.
+3. **Expanded eight-packet tranche.** Select all six plus standalone compaction and execution-world characterizations. Covers more substrate pieces but exceeds observed evidence, increases blast/cost, and violates the smallest-set rule.
+
+## Decision and review
+
+**DECIDED by Kyle, 2026-09-02:** select the balanced six-packet tranche, FT-01 through FT-06. This is the smallest set that covers every F3/F6 obligation while also exercising exact request reconstruction, the highest-leverage optional E5/section-6.6 question. The required-only five-packet cut was rejected because it postpones provider/prompt ablation evidence; the expanded eight-packet set was rejected because compaction and execution-world work exceed current evidence and the smallest-set rule. Raw decision: `raw/bb-inj5.6/q1-tranche-selection.txt`.
+
+The original independent review bound to SHA-256 `5a9d1178da50c04d1fecaaddd19a7954bd3c73d8d251a04dad2dc4620562c9b1` returned `CHANGES_REQUESTED`: six P1 and two P2. All eight were corrected without changing Kyle's selected six-packet scope. The one permitted renewal bound to SHA-256 `abcb7369d1bb13f7ce42b24a4491b746dd5319eb5edacaf277fd82b919446701` returned `APPROVED`, confidence 0.99, with no P0/P1/P2/P3. Review: `05_FIRST_TRANCHE_PACKET_SET_REVIEW.md`.
+
+## Closure
+
+- Gate G-F: PASS.
+- Selected tranche: FT-01 through FT-06; 6/6 evidence-only packets; permanent-lock cap 3 against 7 learned behaviors.
+- Scope: public/schema/API change `none`; compatibility removal `none`; new seam/module/dispatch `none`; freeze impact `none`; no product defect repair.
+- Internal types: none admitted.
+- What remains unclaimable: packet runtime outcomes, product fixes, later surface/seam promotion, the full provider ablation scenario, and any unrun S2 cell.
+- Downstream: Workstream G must preserve the six packet contracts and place every deferred gate in the promoted-workstream DAG.

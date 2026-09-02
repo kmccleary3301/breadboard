@@ -1,0 +1,26 @@
+Fresh-context consistency read — Workstream G
+
+Artifact: docs_tmp/bb_direction_assessment/dsh_donor_campaign/06_PROMOTED_WORKSTREAM_DAG.md
+Reviewed SHA-256: bcf5b18ff22ee3471ce0ac918caed01ecdb374bb9848140bd68909b655329a7e
+Scope: P0/P1 consistency only; G1-G10, approved FT-01..06 contracts, current raw row routing/DAG, and guarded-conditional owner policy.
+
+Initial read: CHANGES_REQUIRED, P0=0, P1=1.
+- RESEARCH-DISTRIBUTED-TEAMS stated durable local children plus WorkItem coordination, but depended only on CH-PILOT. Corrected to depend on CH-PILOT and WF-CHAR.
+
+Permitted renewal corrections:
+- Every DIT predicate now explicitly requires a common caller, at least two real adapters/foundations, deletion payoff, and three interface designs; every conditional new-seam implementation still requires Kyle approval.
+- FT-04 and FT-05 raw risk metadata now says low, matching the approved F packet contracts and G execution table.
+- The validator now enforces the complete DIT predicate and exact first-tranche risk classes.
+- Validator rerun: PASS.
+
+Final renewal verdict: PASS
+P0: 0
+P1: 0
+
+Evidence checked:
+- 50/50 nodes topologically ordered; dependencies acyclic.
+- 623/623 unique ledger rows routed; promoted rows exactly S1, S2, S4, S7, S8; phases 0-12 all represented.
+- FT-01 through FT-06 remain evidence/inventory packets with no new seam or public/freeze change; exact risk classes align.
+- Cross-repo/generated/client/installed/E4 order, branch/rollback/stale/freeze/approval metadata, and DIT gates are explicit.
+- Seven-piece substrate remains honestly FOG/NOT RUNNABLE; no public command implementation is claimed.
+- owner-decision.txt records Guarded conditional.
