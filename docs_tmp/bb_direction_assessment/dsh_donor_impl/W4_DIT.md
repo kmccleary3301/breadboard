@@ -44,6 +44,15 @@ The designs below are alternatives, not an implementation proposal. No design ha
 
 **Acceptance.** This can prove Session/Work Item as-of only where their APIs can be called with sliced streams. It cannot prove one consistent coordination as-of without changing an owner or duplicating its graph rules, and command-local wrappers remain easy to forget for a new projection. It therefore fails the full W10 acceptance shape unless it grows into A or B.
 
+## Decision
+
+**PENDING Kyle selection.** This note authorizes no implementation and does not claim a selection. The selectable outcomes are:
+
+- **A** — deepen each existing projector and share only the result vocabulary; proceed to W4.3 on that basis.
+- **B** — admit one common interface over typed source streams; first supply the missing adapter/deletion evidence and any required seam approval.
+- **C** — keep projection APIs unchanged and put composition in W10; accept the coordination as-of limitation only if Kyle explicitly accepts the resulting W10 contract.
+- **Decline / no DIT seam** — only if Kyle permits this route under the plan; resolve E3.12 as rejected and deepen existing owners without a universal interface.
+
 ## E3.12 resolution and recommendation
 
 **E3.12 is resolved as REJECTED for a universal projection registry at this point.** W4.1 names multiple computations, but no common caller, two genuinely interchangeable adapters, or concrete deletion payoff. B's apparent adapter count is source-shape variety, not the §5.2 threshold; C has no seam. A shares a result vocabulary while retaining domain seams and therefore does not admit a registry or universal fold.
