@@ -3,6 +3,7 @@ from __future__ import annotations
 import json; from datetime import datetime; from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace; from threading import RLock; from types import MappingProxyType; from typing import Any
 from breadboard.product.runtime.events import Clock, IdSource, SystemClock, UUIDSource; from .placement import WorkPlacement
+from breadboard.product.projection import Projected, ProjectionSource
 STATUSES = frozenset({"blocked", "ready", "leased", "running", "waiting", "paused", "completed", "failed", "canceled"}); TERMINAL_STATUSES = frozenset({"completed", "failed", "canceled"})
 _RULES = MappingProxyType({
     "dependency.added": (("blocked", "ready"), {"dependency_ref"}, None), "dependency.satisfied": (("blocked",), {"dependency_ref"}, None),
@@ -272,6 +273,42 @@ def rebuild_work_item(events: Iterable[WorkItemEvent]) -> WorkItemSnapshot:
         _reject(event.work_item_id != rows[0].work_item_id or event.sequence != expected, "event stream is not contiguous for one Work Item"); occurred_at = _timestamp(event.occurred_at, "occurred_at"); _reject(occurred_at < previous_occurred_at, "Work Item event timestamps must be nondecreasing"); previous_occurred_at = occurred_at
         snapshot = replace(_apply(snapshot, event), event_count=expected)
     return snapshot
+WORK_ITEM_PROJECTOR_VERSION = "bb.work_item.projector.v1"
+class WorkItemProjectionError(ValueError):
+    """A Work Item projection request cannot be satisfied."""
+class WorkItemProjectionAsOfError(WorkItemProjectionError):
+    """A requested Work Item source sequence is outside the stream."""
+    def __init__(self, as_of: object, available: int) -> None:
+        super().__init__(f"Work Item as_of {as_of!r} is outside source range 1..{available}")
+        self.as_of, self.available = as_of, available
+class WorkItemProjectionVersionError(WorkItemProjectionError):
+    """A caller requested a projector version this owner does not provide."""
+    def __init__(self, expected: str) -> None:
+        super().__init__(f"unsupported Work Item projector version {expected!r}")
+        self.expected = expected
+def _work_item_projection_limit(rows: tuple[WorkItemEvent, ...], as_of: object) -> int:
+    if not rows:
+        raise ValueError("event stream must begin with work_item.created")
+    limit = len(rows) if as_of is None else as_of
+    if type(limit) is not int or limit < 1 or limit > len(rows):
+        raise WorkItemProjectionAsOfError(limit, len(rows))
+    return limit
+def _check_work_item_projection_version(expected: str | None) -> None:
+    if expected is not None and expected != WORK_ITEM_PROJECTOR_VERSION:
+        raise WorkItemProjectionVersionError(expected)
+def project_work_item_replay(events: Iterable[WorkItemEvent], *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[WorkItemSnapshot]:
+    _check_work_item_projection_version(expected_projector_version)
+    rows = tuple(events); limit = _work_item_projection_limit(rows, as_of); value = rebuild_work_item(rows[:limit])
+    return Projected(value, WORK_ITEM_PROJECTOR_VERSION, ProjectionSource(f"work_item:{value.work_item_id}", 1, limit), limit)
+def project_work_item(events: Iterable[WorkItemEvent], *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[WorkItemSnapshot]:
+    return project_work_item_replay(events, as_of=as_of, expected_projector_version=expected_projector_version)
+def project_work_item_snapshot(snapshot: WorkItemSnapshot, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[WorkItemSnapshot]:
+    _check_work_item_projection_version(expected_projector_version)
+    if not isinstance(snapshot, WorkItemSnapshot):
+        raise TypeError("Work Item snapshot projection requires a WorkItemSnapshot")
+    if as_of is not None and (type(as_of) is not int or as_of != snapshot.event_count):
+        raise WorkItemProjectionAsOfError(as_of, snapshot.event_count)
+    return Projected(snapshot, WORK_ITEM_PROJECTOR_VERSION, ProjectionSource(f"work_item:{snapshot.work_item_id}", 1, snapshot.event_count), snapshot.event_count)
 class WorkItem:
     def __init__(self, events: Iterable[WorkItemEvent], *, repository: WorkItemRepository, clock: Clock | None = None, ids: IdSource | None = None) -> None:
         self._lock, self._appending, self._repository = RLock(), False, repository
@@ -310,6 +347,8 @@ class WorkItem:
     @property
     def read_model(self) -> WorkItemSnapshot:
         with self._lock: self._refresh(); return self._snapshot
+    def projected_read_model(self, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[WorkItemSnapshot]:
+        return project_work_item_live(self, as_of=as_of, expected_projector_version=expected_projector_version)
     def add_dependency(self, dependency_ref: str) -> WorkItemSnapshot: return self._append("dependency.added", lambda: {"dependency_ref": dependency_ref})
     def satisfy_dependency(self, dependency_ref: str) -> WorkItemSnapshot: return self._append("dependency.satisfied", lambda: {"dependency_ref": dependency_ref})
     def acquire_lease(self, worker_id: str, *, lease_id: str | None = None, expires_at: str | None = None) -> WorkItemSnapshot: return self._append("lease.acquired", lambda: {"lease_id": self._ids.new_id() if lease_id is None else lease_id, "worker_id": worker_id, "expires_at": expires_at})
@@ -380,3 +419,7 @@ class WorkItem:
                 return next_snapshot
             finally:
                 self._appending = False
+def project_work_item_live(item: WorkItem, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[WorkItemSnapshot]:
+    if not isinstance(item, WorkItem):
+        raise TypeError("live Work Item projection requires a WorkItem")
+    return project_work_item_replay(item.events, as_of=as_of, expected_projector_version=expected_projector_version)
