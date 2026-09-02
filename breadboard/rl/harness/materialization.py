@@ -19,7 +19,7 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, Callable, Iterator, Mapping, Protocol
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 
 from .contracts import EffectiveExecutionPlan, MountAccess
 from .runners.base import RunnerToolBinding

@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-import breadboard.rl.state.cas as cas_module
-from breadboard.rl.state import (
+import breadboard.artifacts.cas as cas_module
+from breadboard.artifacts import (
     ArtifactConflictError,
     ArtifactIntegrityError,
     ArtifactRef,
@@ -38,6 +38,21 @@ def cas(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Any]:
         yield InMemoryCAS()
     else:
         yield FilesystemCAS(tmp_path / "cas")
+
+
+def test_filesystem_cas_refuses_platform_without_posix_locks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "cas"
+    monkeypatch.setattr(cas_module, "_fcntl", None)
+
+    with pytest.raises(
+        ArtifactStoreError,
+        match="requires POSIX descriptor-safe file locking",
+    ):
+        FilesystemCAS(root)
+
+    assert not root.exists()
 
 
 def test_cas_refs_are_hash_addressed_and_retrievable(cas: Any) -> None:
@@ -219,7 +234,7 @@ def test_filesystem_cas_serializes_same_id_publication_across_processes(
 import sys
 import time
 from pathlib import Path
-from breadboard.rl.state import ArtifactConflictError, FilesystemCAS
+from breadboard.artifacts import ArtifactConflictError, FilesystemCAS
 
 root, ready, go, index = sys.argv[1:]
 Path(ready, index).touch()

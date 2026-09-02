@@ -1,8 +1,8 @@
 {
   "archive": {
-    "bytes": 25364889,
+    "bytes": 25369025,
     "file": "e4_immutable_inputs.v1.zip",
-    "sha256": "3d344fe52dd2017db8845871b3ab40d75d54c5ba38e709cc98cf25b543d6005a"
+    "sha256": "655970280a3dcd09b0920ff22c7b0729f8c43bceea5f26c58b15903f839358a7"
   },
   "format_version": 1,
   "members": [
@@ -1793,25 +1793,25 @@
     {
       "bytes": 13633,
       "classification": "phase16_score_evidence",
-      "destination": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/runtime_emission.py",
+      "destination": "breadboard_repo_integration_main_20260326/breadboard_engine/api/cli_bridge/runtime_emission.py",
       "namespace": "workspace",
-      "path": "workspace/breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/runtime_emission.py",
+      "path": "workspace/breadboard_repo_integration_main_20260326/breadboard_engine/api/cli_bridge/runtime_emission.py",
       "sha256": "202b2086ab449c58b49b4288029f0d9092b14f8764f7db99ea474cbe37b98401"
     },
     {
       "bytes": 45389,
       "classification": "phase16_score_evidence",
-      "destination": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py",
+      "destination": "breadboard_repo_integration_main_20260326/breadboard_engine/api/cli_bridge/service.py",
       "namespace": "workspace",
-      "path": "workspace/breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py",
+      "path": "workspace/breadboard_repo_integration_main_20260326/breadboard_engine/api/cli_bridge/service.py",
       "sha256": "aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf"
     },
     {
       "bytes": 26559,
       "classification": "phase16_score_evidence",
-      "destination": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
+      "destination": "breadboard_repo_integration_main_20260326/breadboard_engine/api/e4/router.py",
       "namespace": "workspace",
-      "path": "workspace/breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
+      "path": "workspace/breadboard_repo_integration_main_20260326/breadboard_engine/api/e4/router.py",
       "sha256": "4342d2f4df75c3d462dadd222f5bc38bc51ee005c80e25093dce3323d505c6ec"
     },
     {
@@ -2167,12 +2167,12 @@
       "sha256": "273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602"
     },
     {
-      "bytes": 96299,
+      "bytes": 96155,
       "classification": "phase16_score_authority",
       "destination": "docs_tmp/phase_16/BB_ER_PROGRESS.json",
       "namespace": "workspace",
       "path": "workspace/docs_tmp/phase_16/BB_ER_PROGRESS.json",
-      "sha256": "af9bf10d416ca3fc2cd291025e5475137303f02c37a7b358f976239635535a20"
+      "sha256": "da8c39dfaa62441ac955c3dcfac231fb983b04949fc039fc8b0dea6a6a98b053"
     },
     {
       "bytes": 6917,

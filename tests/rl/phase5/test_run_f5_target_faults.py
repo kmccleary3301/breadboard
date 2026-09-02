@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.evidence import EvidenceValidationError, canonical_digest
 from breadboard.rl.harness.service import (

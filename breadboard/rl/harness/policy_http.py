@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     CanonicalJSONError,
     canonical_json_bytes,
     canonical_json_loads,

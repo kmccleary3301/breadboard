@@ -1525,7 +1525,7 @@ def build_host_runtime(*, python: Path, source_bundle: Path, source_inventory: P
             raise RuntimeError("host runtime dependency install failed")
         freeze = _bounded([str(runtime_python), "-m", "pip", "freeze", "--all"])
         smoke_env = {"PATH": str(output / "bin"), "PYTHONPATH": str(source)}
-        smoke = subprocess.run([str(runtime_python), "-c", "import pydantic,fastapi,uvicorn,jinja2,yaml; import breadboard.rl.harness.__main__; import agentic_coder_prototype.compilation.server_compiler"], env=smoke_env, capture_output=True, check=False, timeout=60)
+        smoke = subprocess.run([str(runtime_python), "-c", "import pydantic,fastapi,uvicorn,jinja2,yaml; import breadboard.rl.harness.__main__; import breadboard_engine.compilation.server_compiler"], env=smoke_env, capture_output=True, check=False, timeout=60)
         if freeze.returncode != 0 or smoke.returncode != 0:
             shutil.rmtree(output, ignore_errors=True)
             raise RuntimeError("host runtime import/CLI smoke failed")

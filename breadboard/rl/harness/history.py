@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
-from breadboard.rl.state.cas import FilesystemCAS
-from breadboard.rl.state.state_ref import ArtifactRef
+from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.artifacts.references import ArtifactRef
 
 _HISTORICAL_SCHEMA = "bb.harness.episode.v1"
 _EPISODE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")

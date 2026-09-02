@@ -11,7 +11,10 @@ from breadboard_engine.compilation.primitive_records import PrimitiveCompileErro
 from breadboard_engine.runtime.kernel_emitter import JsonlKernelEmitter
 from breadboard_engine.api.cli_bridge.models import SessionCreateRequest
 from breadboard_engine.api.cli_bridge.runtime_emission import emit_session_start_records
-from breadboard_engine.conductor.execution import build_exec_func, execute_agent_calls
+from breadboard_engine.conductor.tool_executor import (
+    build_exec_func,
+    execute_agent_calls,
+)
 from breadboard_engine.state.session_state import SessionState
 
 ROOT = Path(__file__).resolve().parents[2]

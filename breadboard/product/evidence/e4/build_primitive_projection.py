@@ -13,7 +13,7 @@ from breadboard.product.evidence.e4.validators import hash_utils as _hash_utils
 
 ROOT = SOURCE_ROOT
 
-from agentic_coder_prototype.compilation.effective_config_graph import compile_effective_config_graph
+from breadboard_engine.compilation.effective_config_graph import compile_effective_config_graph
 
 
 L1_DIR = ROOT / "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface"

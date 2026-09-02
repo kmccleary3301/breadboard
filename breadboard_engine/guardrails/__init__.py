@@ -1,9 +1,13 @@
-from .manager import GuardrailManager, build_guardrail_manager, GuardrailDefinition
+"""Guardrail definition, evaluation, and turn coordination."""
 
-# Import handlers to register built-in guard types.
-from . import handlers  # noqa: F401
+from .coordinator import GuardrailCoordinator
+from .manager import GuardrailDefinition, GuardrailManager, build_guardrail_manager
+
+# Register built-in guard types.
+from . import handlers as handlers
 
 __all__ = [
+    "GuardrailCoordinator",
     "GuardrailDefinition",
     "GuardrailManager",
     "build_guardrail_manager",

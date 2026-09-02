@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.compilation.bundle import (
+from breadboard_engine.compilation.bundle import (
     ManifestReader,
     build_dependency_closure,
     ingest_directory,
@@ -21,7 +21,7 @@ from agentic_coder_prototype.compilation.bundle import (
     ingest_tar,
     ingest_zip,
 )
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     BundleLimitError,
     BundleLimits,
     BundleSecurityError,
@@ -29,7 +29,7 @@ from agentic_coder_prototype.compilation.contracts import (
     ConfigBundleManifest,
     DependencyEdge,
 )
-from breadboard.rl.state import ArtifactRef, InMemoryCAS
+from breadboard.artifacts import ArtifactRef, InMemoryCAS
 
 
 class CountingCAS:

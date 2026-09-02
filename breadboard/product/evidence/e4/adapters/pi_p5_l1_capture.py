@@ -23,10 +23,10 @@ from breadboard.product.evidence.e4.path_refs import workspace_root_for_checkout
 from breadboard.product.evidence.e4.paths import SOURCE_ROOT
 from breadboard.product.evidence.e4 import generate_ct_rows
 from breadboard.product.evidence.e4.validators.registries import schema_generation_default
-from agentic_coder_prototype.compilation import helper_runtime_primitives as helper
-from agentic_coder_prototype.compilation.effective_config_graph import compile_effective_config_graph, finalize_effective_config_graph
+from breadboard_engine.compilation import helper_runtime_primitives as helper
+from breadboard_engine.compilation.effective_config_graph import compile_effective_config_graph, finalize_effective_config_graph
 from breadboard_engine.conformance.c4_chain import validate_c4_chain
-from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH as CATALOG_BINDING_PATH, catalog_segment_hash, reusable_catalog_revision
+from breadboard_engine.conformance.catalog_binding import CATALOG_PATH as CATALOG_BINDING_PATH, catalog_segment_hash, reusable_catalog_revision
 
 ROOT = SOURCE_ROOT
 

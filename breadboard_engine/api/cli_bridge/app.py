@@ -36,7 +36,7 @@ from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
 from starlette._utils import get_route_path
-from ...security import build_child_environment, sanitized_process_environment
+from ...security import ChildProcessPolicy, sanitized_process_environment
 
 try:
     from dotenv import load_dotenv
@@ -126,8 +126,6 @@ from .routes.engine_routes import register_engine_routes
 from .routes.provider_auth_routes import register_provider_auth_routes
 from .routes.sessions_routes import register_session_routes
 from .routes.system_routes import register_system_routes
-from breadboard.rl.phase3.api_router import create_phase3_rl_router
-from breadboard.rl.phase3.service_live import LiveRLRunService
 from breadboard_engine.api.public import mount_public_routes
 from breadboard_engine.api.public.models import (
     PUBLIC_CAPABILITIES,
@@ -265,7 +263,7 @@ def _run_git_command(
             capture_output=True,
             text=True,
             timeout=2,
-            env=build_child_environment(),
+            env=ChildProcessPolicy().environment_only().as_dict(),
         )
     except Exception:
         return None
@@ -794,12 +792,6 @@ def create_app(
     app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
     _service = service or SessionService()
     app.state.session_service = _service
-    rl_service = LiveRLRunService(
-        Path(os.environ.get("BREADBOARD_RL_RUN_STORE", ":memory:"))
-    )
-    rl_router = create_phase3_rl_router(rl_service)
-    app.include_router(rl_router, prefix="/v1/rl", tags=["rl"])
-    app.include_router(rl_router, prefix="/rl", tags=["rl"])
 
     @app.exception_handler(LifecycleAuthorityError)
     async def _lifecycle_authority_error_handler(

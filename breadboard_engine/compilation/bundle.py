@@ -14,8 +14,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, BinaryIO, Protocol
 
-from breadboard.rl.state.cas import ArtifactStoreError, CASReader
-from breadboard.rl.state.state_ref import ArtifactRef
+from breadboard.artifacts.cas import ArtifactStoreError, CASReader
+from breadboard.artifacts.references import ArtifactRef
 
 from breadboard_engine.compilation.contracts import (
     BundleEntry,

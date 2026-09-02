@@ -5,7 +5,7 @@ import json
 from dataclasses import replace
 from types import SimpleNamespace
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 import pytest
 
 from breadboard.rl.harness import service as service_module
@@ -33,8 +33,8 @@ from breadboard.rl.harness.service import (
     V2LifecycleDependencies,
     V2OperationDisposition,
 )
-from breadboard.rl.state.cas import InMemoryCAS
-from breadboard.rl.state.state_ref import ArtifactRef
+from breadboard.artifacts.cas import InMemoryCAS
+from breadboard.artifacts.references import ArtifactRef
 from tests.rl.harness.v2_service_fixtures import (
     cancellation_fingerprint,
     canonical_create_response_bytes,

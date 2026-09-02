@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from breadboard.rl.state.cas import (
+from breadboard.artifacts.cas import (
     ArtifactConflictError,
     ArtifactIntegrityError,
     FilesystemCAS,

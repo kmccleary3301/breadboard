@@ -1,6 +1,6 @@
 import types
 
-from breadboard_engine.provider_runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
+from breadboard_engine.provider.runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
 
 
 def test_call_with_raw_response_retries_on_rate_limit(monkeypatch) -> None:

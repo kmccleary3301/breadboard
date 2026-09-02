@@ -21,7 +21,7 @@ If we do nothing, the PR can claim `1000/1000` readiness while validating self-c
 
 ## 2) Scope and Surfaces
 
-- Kernel modules touched: `breadboard/rl/phase3/**`, `breadboard/rl/phase2/service.py` contract consumers, `agentic_coder_prototype/api/cli_bridge/app.py` route exposure.
+- Kernel modules touched: `breadboard/rl/phase3/**`, `breadboard/rl/phase2/service.py` contract consumers, `breadboard_engine/api/cli_bridge/app.py` route exposure.
 - Extension modules touched: none directly.
 - Contract surfaces touched: `event`, `artifact`, `provider-request`, `promotion-audit`, `operator-script`, `danger-zone-governance`.
 - Is this a **kernel danger-zone** change? `yes`

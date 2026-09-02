@@ -1,0 +1,460 @@
+"""Session-owned attachment staging, content addressing, and projection."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import uuid
+from pathlib import Path
+from types import MappingProxyType
+from typing import Any, Dict, Mapping, Optional, Sequence
+
+from fastapi import HTTPException, UploadFile, status
+
+from breadboard.product.runtime import AnchoredStorage, ArtifactStore
+from breadboard.product.runtime.artifacts import _validate_artifact_name
+from breadboard.product.runtime.session_store import (
+    authorize_session_artifact_manifest,
+)
+
+from .models import AttachmentHandle, AttachmentUploadResponse
+
+MAX_ATTACHMENT_BYTES = 16 * 1024
+
+def _open_workspace_breadboard(
+    workspace_dir: Path,
+) -> tuple[Path, Path, int | None, list[int]]:
+    workspace_root = workspace_dir.resolve()
+    logical = workspace_root / ".breadboard"
+    if os.name == "nt":
+        handles: list[int] = []
+        try:
+            handles.append(
+                AnchoredStorage.windows_handle(
+                    workspace_root, directory=True, create=False
+                )
+            )
+            handles.append(AnchoredStorage.windows_handle(logical, directory=True))
+            return logical, workspace_root, None, handles
+        except OSError as exc:
+            for handle in reversed(handles):
+                AnchoredStorage.close_windows_handle(handle)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid workspace metadata path",
+            ) from exc
+    try:
+        expected = workspace_root.stat(follow_symlinks=False)
+        root_fd = os.open(
+            workspace_root,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="invalid workspace root"
+        ) from exc
+    actual = os.fstat(root_fd)
+    if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino):
+        os.close(root_fd)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="workspace root changed",
+        )
+    metadata_fd = None
+    try:
+        try:
+            os.mkdir(".breadboard", dir_fd=root_fd)
+        except FileExistsError:
+            pass
+        metadata_fd = os.open(
+            ".breadboard",
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=root_fd,
+        )
+        os.fsync(root_fd)
+        return logical, workspace_root, metadata_fd, []
+    except OSError as exc:
+        if metadata_fd is not None:
+            os.close(metadata_fd)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid workspace metadata path",
+        ) from exc
+    finally:
+        os.close(root_fd)
+
+
+class SessionArtifactStore:
+    """Own live attachment references and their durable artifact projection."""
+
+    def __init__(self, *, session_id: str, metadata: Dict[str, Any]) -> None:
+        self.session_id = session_id
+        self.metadata = metadata
+        self._artifact_refs: Dict[str, Any] = {}
+        self._attachment_entries: Dict[str, Dict[str, Any]] = {}
+
+    def register_attachments(self, entries: Sequence[Dict[str, Any]]) -> None:
+        for entry in entries:
+            attachment_id = entry.get("id")
+            if attachment_id:
+                self._attachment_entries[str(attachment_id)] = dict(entry)
+
+    def artifact_refs(self) -> Mapping[str, Any]:
+        return MappingProxyType(self._artifact_refs)
+
+    def selected_artifacts(
+        self, attachment_ids: Sequence[str]
+    ) -> list[Any]:
+        unknown = [
+            item
+            for item in attachment_ids
+            if item not in self._artifact_refs
+        ]
+        if unknown:
+            raise ValueError(f"unknown attachment IDs: {', '.join(unknown)}")
+        selected = [self._artifact_refs[item] for item in attachment_ids]
+        total_bytes = sum(
+            int(getattr(item, "size_bytes", MAX_ATTACHMENT_BYTES + 1))
+            for item in selected
+        )
+        if total_bytes > MAX_ATTACHMENT_BYTES:
+            raise ValueError(
+                f"selected attachments exceed {MAX_ATTACHMENT_BYTES}-byte handoff limit"
+            )
+        return selected
+
+    def list_rows(self) -> list[dict[str, Any]]:
+        return [
+            {"name": name, **reference.as_dict()}
+            for name, reference in sorted(self._artifact_refs.items())
+        ]
+
+    def format_helper(
+        self, attachment_ids: Sequence[str]
+    ) -> tuple[str, Dict[str, Dict[str, Any]], list[Dict[str, str]]]:
+        helper_lines: list[str] = []
+        capabilities: Dict[str, Dict[str, Any]] = {}
+        media: list[Dict[str, str]] = []
+        for index, key in enumerate(
+            dict.fromkeys(str(value) for value in attachment_ids), start=1
+        ):
+            info = self._attachment_entries.get(key)
+            if not info:
+                continue
+            artifact_ref = self._artifact_refs.get(key)
+            if artifact_ref is None:
+                raise RuntimeError(f"attachment artifact missing: {key}")
+            filename = str(info.get("filename") or key)
+            _validate_artifact_name(key)
+            uri = f"attachment://{artifact_ref.digest}"
+            capabilities[uri] = artifact_ref.as_dict()
+            if str(artifact_ref.media_type).startswith("image/"):
+                media.append(
+                    {
+                        "type": "media",
+                        "kind": "image",
+                        "uri": uri,
+                        "mime": str(artifact_ref.media_type),
+                    }
+                )
+            helper_lines.append(
+                "[Attachment "
+                f"{index}: name={json.dumps(filename, ensure_ascii=True)}; "
+                f"uri={uri}; size_bytes={artifact_ref.size_bytes}; "
+                "read with read_file after normal authorization]"
+            )
+        return "\n".join(helper_lines), capabilities, media
+    @staticmethod
+    def _sanitize_filename(filename: str) -> str:
+        candidate = filename.strip() or "attachment.bin"
+        candidate = candidate.replace("\\", "/")
+        return os.path.basename(candidate)
+
+    def authorize_manifest(
+        self,
+        workspace: Path,
+        *,
+        expected_session_directory_identity: Any = None,
+    ) -> None:
+        manifest_ref = self.metadata.get("artifact_manifest_ref")
+        if not isinstance(manifest_ref, Mapping):
+            return
+        digest = manifest_ref.get("digest")
+        if not isinstance(digest, str) or not digest.startswith("sha256:"):
+            raise ValueError("invalid attachment manifest reference")
+        authorize_session_artifact_manifest(
+            workspace,
+            self.session_id,
+            f"{self.session_id}.{digest.removeprefix('sha256:')}.json",
+            expected_session_directory_identity=expected_session_directory_identity,
+        )
+
+    async def upload(
+        self,
+        files: Sequence[UploadFile],
+        *,
+        workspace_dir: Path,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> AttachmentUploadResponse:
+        if not files:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="no files provided"
+            )
+        staged_uploads = []
+        staged_bytes = 0
+        for index, upload in enumerate(files, start=1):
+            data = bytearray()
+            try:
+                while True:
+                    chunk = await upload.read(
+                        MAX_ATTACHMENT_BYTES - staged_bytes - len(data) + 1
+                    )
+                    if not chunk:
+                        break
+                    data.extend(chunk)
+                    if staged_bytes + len(data) > MAX_ATTACHMENT_BYTES:
+                        raise HTTPException(
+                            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                            detail=f"attachments exceed {MAX_ATTACHMENT_BYTES}-byte handoff limit",
+                        )
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"failed to read upload: {exc}",
+                ) from exc
+            if data:
+                staged_uploads.append((index, upload, bytes(data)))
+                staged_bytes += len(data)
+        if not staged_uploads:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="no attachment data found",
+            )
+        attachment_entries: list[dict[str, Any]] = []
+        handles: list[AttachmentHandle] = []
+        created_dirs: list[str] = []
+        created_refs = set()
+        anchor, workspace_root, descriptor, windows_handles = (
+            _open_workspace_breadboard(workspace_dir)
+        )
+        artifact_fd = attachment_fd = None
+        artifact_root, attachment_root = anchor / "artifacts", anchor / "attachments"
+        artifact_refs = dict(self._artifact_refs)
+        manifest_path: Path | None = None
+        manifest_fd = None
+        manifest_name = None
+        transaction = None
+        registered_before = dict(self._attachment_entries)
+        try:
+            if descriptor is not None:
+                artifact_fd = AnchoredStorage.open_directory(descriptor, "artifacts")
+                try:
+                    attachment_fd = AnchoredStorage.open_directory(
+                        descriptor, "attachments"
+                    )
+                except BaseException:
+                    os.close(artifact_fd)
+                    artifact_fd = None
+                    raise
+                os.fsync(descriptor)
+            artifact_store = ArtifactStore(artifact_root, descriptor=artifact_fd)
+            candidate_transaction = artifact_store.transaction()
+            candidate_transaction.__enter__()
+            transaction = candidate_transaction
+            if attachment_fd is None:
+                attachment_root.mkdir(parents=True, exist_ok=True)
+            if os.name == "nt":
+                windows_handles.append(
+                    AnchoredStorage.windows_handle(artifact_root, directory=True)
+                )
+                windows_handles.append(
+                    AnchoredStorage.windows_handle(attachment_root, directory=True)
+                )
+            try:
+                for index, upload, data in staged_uploads:
+                    attachment_id = f"att-{uuid.uuid4().hex[:10]}"
+                    filename = self._sanitize_filename(
+                        upload.filename or f"attachment-{index}.bin"
+                    )
+                    created_dirs.append(attachment_id)
+                    if attachment_fd is not None:
+                        target_fd = AnchoredStorage.open_directory(
+                            attachment_fd, attachment_id
+                        )
+                    else:
+                        target_fd = None
+                        (attachment_root / attachment_id).mkdir(
+                            parents=True, exist_ok=True
+                        )
+                    try:
+                        artifact_ref = artifact_store.put(
+                            data,
+                            media_type=upload.content_type
+                            or "application/octet-stream",
+                            created=created_refs,
+                        )
+                        if target_fd is not None:
+                            artifact_store.materialize_at(
+                                artifact_ref, target_fd, filename
+                            )
+                        else:
+                            artifact_store.materialize(
+                                artifact_ref, attachment_root / attachment_id / filename
+                            )
+                        artifact_refs[attachment_id] = artifact_ref
+                    finally:
+                        if target_fd is not None:
+                            os.close(target_fd)
+                    logical_target = (
+                        workspace_root
+                        / ".breadboard"
+                        / "attachments"
+                        / attachment_id
+                        / filename
+                    )
+                    handles.append(
+                        AttachmentHandle(
+                            id=attachment_id,
+                            filename=filename,
+                            mime=upload.content_type,
+                            size_bytes=len(data),
+                        )
+                    )
+                    attachment_entries.append(
+                        {
+                            "id": attachment_id,
+                            "filename": filename,
+                            "absolute_path": str(logical_target),
+                            "relative_path": str(
+                                logical_target.relative_to(workspace_root)
+                            ),
+                            "metadata": metadata or {},
+                        }
+                    )
+                manifest = artifact_store.manifest(self.session_id, artifact_refs)
+                manifest_ref = artifact_store.put_json(manifest, created=created_refs)
+                manifest_name = (
+                    f"{self.session_id}.{manifest_ref.digest.removeprefix('sha256:')}.json"
+                )
+                if artifact_fd is not None:
+                    manifest_fd = AnchoredStorage.open_directory(
+                        artifact_fd, "manifests"
+                    )
+                    artifact_store.materialize_at(
+                        manifest_ref, manifest_fd, manifest_name
+                    )
+                    os.fsync(artifact_fd)
+                else:
+                    manifest_path = artifact_root / "manifests" / manifest_name
+                    artifact_store.materialize(manifest_ref, manifest_path)
+                if (
+                    descriptor is not None
+                    and (workspace_root / ".breadboard").resolve()
+                    != AnchoredStorage.descriptor_path(descriptor).resolve()
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="workspace metadata path changed",
+                    )
+                self.register_attachments(attachment_entries)
+            except BaseException:
+                if attachment_fd is not None:
+                    for name in created_dirs:
+                        try:
+                            target_fd = AnchoredStorage.open_directory(
+                                attachment_fd, name, create=False
+                            )
+                        except FileNotFoundError:
+                            continue
+                        try:
+                            for child in os.listdir(target_fd):
+                                os.unlink(child, dir_fd=target_fd)
+                        finally:
+                            os.close(target_fd)
+                        os.rmdir(name, dir_fd=attachment_fd)
+                    if manifest_fd is not None and manifest_name is not None:
+                        try:
+                            os.unlink(manifest_name, dir_fd=manifest_fd)
+                        except FileNotFoundError:
+                            pass
+                        os.fsync(manifest_fd)
+                        os.fsync(artifact_fd)
+                    os.fsync(attachment_fd)
+                else:
+                    for name in created_dirs:
+                        target = attachment_root / name
+                        target_lock = (
+                            AnchoredStorage.windows_handle(
+                                target, directory=True, create=False
+                            )
+                            if os.name == "nt"
+                            else None
+                        )
+                        try:
+                            if target_lock is None:
+                                shutil.rmtree(target, ignore_errors=True)
+                            else:
+                                for child in target.iterdir():
+                                    child.unlink()
+                        finally:
+                            AnchoredStorage.close_windows_handle(target_lock)
+                        if target_lock is not None:
+                            target.rmdir()
+                    if manifest_path is not None:
+                        manifest_lock = (
+                            AnchoredStorage.windows_handle(
+                                manifest_path.parent, directory=True, create=False
+                            )
+                            if os.name == "nt"
+                            else None
+                        )
+                        try:
+                            manifest_path.unlink(missing_ok=True)
+                        finally:
+                            AnchoredStorage.close_windows_handle(manifest_lock)
+                    for parent in {
+                        attachment_root,
+                        manifest_path.parent
+                        if manifest_path is not None
+                        else artifact_root,
+                    }:
+                        AnchoredStorage.sync_directory(
+                            parent
+                        ) if parent.is_dir() else None
+                for artifact_ref in created_refs:
+                    artifact_store.discard(artifact_ref)
+                self._attachment_entries = registered_before
+                raise
+        finally:
+            if transaction is not None:
+                transaction.__exit__(None, None, None)
+            for open_descriptor in (
+                manifest_fd,
+                artifact_fd,
+                attachment_fd,
+                descriptor,
+            ):
+                if open_descriptor is not None:
+                    os.close(open_descriptor)
+            for handle in reversed(windows_handles):
+                AnchoredStorage.close_windows_handle(handle)
+        if manifest_name is None:
+            raise RuntimeError("attachment manifest was not published")
+        try:
+            authorize_session_artifact_manifest(
+                workspace_root,
+                self.session_id,
+                manifest_name,
+            )
+        except FileNotFoundError:
+            # Live bridge sessions have no durable product projection yet.
+            pass
+        self._artifact_refs = artifact_refs
+        (
+            self.metadata["artifact_manifest"],
+            self.metadata["artifact_manifest_ref"],
+        ) = manifest, manifest_ref.as_dict()
+        return AttachmentUploadResponse(attachments=handles)

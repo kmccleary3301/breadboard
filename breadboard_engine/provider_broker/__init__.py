@@ -1,11 +1,11 @@
 """BreadBoard provider credential broker and SQLite store."""
 
+from .authority import CredentialAuthority, CredentialOrigin, CredentialSelector
 from .broker import (
     AUTH_SOURCE_PRECEDENCE,
     REMOTE_BROKER_URL_ENV,
     BrokerProblem,
     CredentialAuditPersistenceError,
-    CredentialOrigin,
     ProviderBroker,
     ProviderBrokerConfigurationError,
     get_provider_broker,
@@ -27,6 +27,8 @@ __all__ = [
     "BrokerProblem",
     "CredentialAuditPersistenceError",
     "CredentialOrigin",
+    "CredentialAuthority",
+    "CredentialSelector",
     "OAuthFlowAdapter",
     "OAuthFlowError",
     "OAuthFlowSpec",

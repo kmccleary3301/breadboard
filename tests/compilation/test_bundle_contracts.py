@@ -5,11 +5,11 @@ from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
-from agentic_coder_prototype.compilation.bundle import (
+from breadboard_engine.compilation.bundle import (
     build_dependency_closure,
     ingest_member_map,
 )
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     MAX_SAFE_INTEGER,
     BundleIntegrityError,
     BundleLimits,
@@ -21,7 +21,7 @@ from agentic_coder_prototype.compilation.contracts import (
     canonical_json_loads,
     normalize_logical_path,
 )
-from breadboard.rl.state import InMemoryCAS
+from breadboard.artifacts import InMemoryCAS
 
 
 class DuplicateKeyMapping(Mapping[str, int]):

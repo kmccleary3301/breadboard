@@ -19,7 +19,7 @@ from breadboard_engine.provider.contracts import (
 )
 from breadboard_engine.provider import normalize_provider_result
 from breadboard_engine.provider.normalizer import normalized_result_replay
-from breadboard_engine.provider_runtime import (
+from breadboard_engine.provider.runtime import (
     ProviderResult, ProviderMessage, ProviderToolCall,
 )
 

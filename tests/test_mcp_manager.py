@@ -20,26 +20,18 @@ def test_mcp_stdio_parameters_use_restricted_process_boundary(
     manager._protected_paths = (str(tmp_path / "protected"),)
     captured = {}
 
-    def build_environment(*, overrides=None, allowed_override_keys=()):
-        captured["allowed_override_keys"] = tuple(allowed_override_keys)
-        return {"PATH": "/usr/bin", **(overrides or {})}
+    class Policy:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
 
-    monkeypatch.setattr(
-        manager_module,
-        "build_child_environment",
-        build_environment,
-    )
+        def command_and_environment(self, command):
+            captured["command"] = command
+            return SimpleNamespace(
+                argv=("/isolated-launch", *command),
+                environment_dict=lambda: {"PATH": "/usr/bin"},
+            )
 
-    def isolate(command, **kwargs):
-        captured["command"] = command
-        captured.update(kwargs)
-        return (("/isolated-launch", *command), {"PATH": "/usr/bin"})
-
-    monkeypatch.setattr(
-        manager_module,
-        "build_restricted_process_command",
-        isolate,
-    )
+    monkeypatch.setattr(manager_module, "ChildProcessPolicy", Policy)
     monkeypatch.setattr(
         manager_module,
         "StdioServerParameters",

@@ -4,7 +4,7 @@ import {
   openEventStream,
   streamSessionEvents,
 } from "@breadboard/sdk"
-import { createInternalBreadboardClient } from "@breadboard/sdk/internal"
+import { createBreadboardClient as createEngineClient } from "@breadboard/sdk/engine"
 
 let input = ""
 for await (const chunk of process.stdin) input += chunk
@@ -15,7 +15,7 @@ const client = createBreadboardClient({
 })
 
 if (request.action_id === "__surface.audit") {
-  const internal = createInternalBreadboardClient({ baseUrl: request.base_url })
+  const engine = createEngineClient({ baseUrl: request.base_url })
   let terminalStreamRequests = 0
   let terminalCallbackErrorObserved = false
   let resumeHandle
@@ -201,7 +201,7 @@ if (request.action_id === "__surface.audit") {
     ok: true,
     result: {
       public_methods: Object.keys(client).sort(),
-      internal_e4_available: typeof internal.getE4Health === "function",
+      internal_e4_available: typeof engine.getE4Health === "function",
       terminal_stream_requests: terminalStreamRequests,
       terminal_callback_error_observed: terminalCallbackErrorObserved,
       resume_query_advanced: true,

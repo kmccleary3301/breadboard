@@ -19,13 +19,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Set, Optional
 
 from ..core.core import ToolDefinition
-from ..dialects.pythonic02 import Pythonic02Dialect
-from ..dialects.pythonic_inline import PythonicInlineDialect
-from ..dialects.bash_block import BashBlockDialect
-from ..dialects.aider_diff import AiderDiffDialect
-from ..dialects.unified_diff import UnifiedDiffDialect
-from ..dialects.opencode_patch import OpenCodePatchDialect
-from ..dialects.yaml_command import YAMLCommandDialect
+from ..execution.dialect_manager import DialectManager
 from .tool_prompt_synth import ToolPromptSynthesisEngine
 
 
@@ -36,20 +30,7 @@ class SystemPromptCompiler:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
-        # All available dialects keyed by config name
-        self.dialect_lookup = {
-            "pythonic02": Pythonic02Dialect(),
-            "pythonic_inline": PythonicInlineDialect(),
-            "bash_block": BashBlockDialect(),
-            "aider_diff": AiderDiffDialect(),
-            "unified_diff": UnifiedDiffDialect(),
-            "opencode_patch": OpenCodePatchDialect(),
-            "yaml_command": YAMLCommandDialect(),
-        }
-        self.all_dialects = list(self.dialect_lookup.values())
-        self._dialect_aliases = {
-            "pythonic": "pythonic02",
-        }
+        self.dialect_manager = DialectManager({})
         
         # Tool format categories for the per-turn availability list
         # Ordered by research-based preference (Aider > OpenCode > Unified)
@@ -60,13 +41,6 @@ class SystemPromptCompiler:
             "opencode": "OpenCode Add File format (Good structured alternative)",
             "unified_diff": "Unified Patch Git-like format (Use only if Aider unavailable)"
         }
-        
-        # Research-based format preferences
-        self.format_preferences = [
-            "aider_diff",      # Highest success rate (59% vs 26%)
-            "opencode_patch",  # Structured but more complex
-            "unified_diff"     # Lowest success rate for smaller models
-        ]
         
         self.tpsl = ToolPromptSynthesisEngine()
 
@@ -172,18 +146,7 @@ class SystemPromptCompiler:
     def _generate_comprehensive_prompt(self, tools: List[ToolDefinition], dialects: List[str], primary_prompt: str = "", tool_prompt_mode: str = "system_once") -> str:
         """Generate comprehensive system prompt with all tool formats"""
         
-        # Filter dialects to only those requested (supports aliases)
-        active_dialects: List[Any] = []
-        if not dialects:
-            active_dialects = list(self.all_dialects)
-        else:
-            for name in dialects:
-                if not name:
-                    continue
-                resolved = self._dialect_aliases.get(name, name)
-                dialect = self.dialect_lookup.get(resolved)
-                if dialect and dialect not in active_dialects:
-                    active_dialects.append(dialect)
+        dialect_prompt = self.dialect_manager.build_prompt(tools, dialects)
         
         prompt_parts = []
         
@@ -203,12 +166,10 @@ class SystemPromptCompiler:
         prompt_parts.append("## AVAILABLE TOOL FORMATS")
         prompt_parts.append("")
         
-        # Add each dialect's prompt
-        for dialect in active_dialects:
-            dialect_prompt = dialect.prompt_for_tools(tools)
-            if dialect_prompt.strip():
-                prompt_parts.append(dialect_prompt)
-                prompt_parts.append("")
+        # Add the catalog-owned dialect prompt sections.
+        if dialect_prompt:
+            prompt_parts.append(dialect_prompt)
+            prompt_parts.append("")
         
         # Tool-specific documentation
         prompt_parts.append("## TOOL FUNCTIONS")
@@ -289,23 +250,7 @@ class SystemPromptCompiler:
         
         Research shows Aider SEARCH/REPLACE has 2.3x success rate advantage.
         """
-        # Map dialect names to preference order
-        preference_map = {
-            "aider_diff": 1,
-            "opencode_patch": 2, 
-            "unified_diff": 3,
-            "pythonic02": 4,
-            "bash_block": 5,
-            "pythonic_inline": 6
-        }
-        
-        # Sort available dialects by preference
-        sorted_dialects = sorted(
-            available_dialects,
-            key=lambda d: preference_map.get(d, 999)
-        )
-        
-        return sorted_dialects
+        return self.dialect_manager.get_preferred_formats(available_dialects)
     
     def format_per_turn_availability_enhanced(self, enabled_tools: List[str], preferred_formats: List[str]) -> str:
         """

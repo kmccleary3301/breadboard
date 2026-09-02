@@ -19,7 +19,7 @@ from typing import Callable, cast
 
 import pytest
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness.materialization import _DirFd
 from breadboard.rl.phase5 import g4_source_deletion as deletion_module
 from breadboard.rl.phase5.g4_source_deletion import (

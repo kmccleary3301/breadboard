@@ -436,9 +436,10 @@ def _roles_document() -> dict[str, Any]:
 
 def _write_sdk_probe(path: Path) -> None:
     path.write_text(
-        """import { createCanonicalE4Client, createInternalBreadboardClient } from '@breadboard/sdk/internal';
+        """import { createBreadboardClient } from '@breadboard/sdk/engine';
+import { createCanonicalE4Client } from '@breadboard/sdk/session';
 const config = { baseUrl: process.env.F6_BASE_URL, requestTimeoutMs: 30000 };
-const client = createInternalBreadboardClient(config);
+const client = createBreadboardClient(config);
 const sessions = createCanonicalE4Client(config);
 const roles = JSON.parse(process.env.F6_ROLES);
 const providers = await client.listProviders();

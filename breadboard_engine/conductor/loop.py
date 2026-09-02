@@ -23,8 +23,8 @@ from ..ctrees.collapse import collapse_ctree
 from ..ctrees.runner import TreeRunner
 from ..ctrees.executor_hooks import filter_tool_defs_by_allowlist
 from ..reward import aggregate_reward_v1, validate_reward_v1
-from ..permissions.policy_pack import PolicyPack
-
+from .components import maybe_run_plan_bootstrap
+from .turn_runtime import TurnPolicy
 
 def _canonical_hash(payload: Any) -> str:
     try:
@@ -169,8 +169,7 @@ def run_main_loop(
 
     completed = False
     step_index = -1
-    policy = PolicyPack.from_config(getattr(self, "config", None))
-    # Transient empty provider responses are retried with backoff instead of
+    turn_policy = TurnPolicy.from_config(getattr(self, "config", None))
     # terminating the session; only consecutive empties past the cap are fatal.
     loop_cfg = ((getattr(self, "config", None) or {}).get("loop") or {})
     max_empty_response_retries = int(loop_cfg.get("empty_response_retries", 2) or 0)
@@ -600,8 +599,15 @@ def run_main_loop(
                 except Exception:
                     pass
                 try:
-                    if policy.tool_allowlist is not None or policy.tool_denylist:
-                        allowed_names = policy.filter_tool_names(allowed_names)
+                    if (
+                        turn_policy.tool_policy.tool_allowlist is not None
+                        or turn_policy.tool_policy.tool_denylist
+                    ):
+                        allowed_names = [
+                            name
+                            for name in allowed_names
+                            if turn_policy.tool_allowed(name)
+                        ]
                         effective_tool_defs = [
                             definition
                             for definition in (effective_tool_defs or [])
@@ -905,7 +911,10 @@ def run_main_loop(
             self._capture_turn_diagnostics(session_state, provider_result, turn_allowed_tool_names)
             if not completed:
                 try:
-                    from .execution import _force_post_receipt_final_answer, _implementation_receipts_satisfied
+                    from .completion_guards import _force_post_receipt_final_answer
+                    from .implementation_receipts import (
+                        _implementation_receipts_satisfied,
+                    )
 
                     if _implementation_receipts_satisfied(self, session_state):
                         completed = _force_post_receipt_final_answer(
@@ -1011,7 +1020,7 @@ def run_main_loop(
                         }
                         return finalize_run("policy_violation", "no_tool_activity", extra_payload or {})
 
-                self._maybe_run_plan_bootstrap(session_state, markdown_logger)
+                maybe_run_plan_bootstrap(self, session_state, markdown_logger)
 
                 if session_state.get_provider_metadata("completion_guard_abort", False):
                     session_state.completion_summary = {

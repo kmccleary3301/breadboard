@@ -387,8 +387,8 @@ def test_legacy_routes_can_be_explicitly_enabled(
     assert local_client.get("/sessions").status_code == 200
     assert local_client.get("/v1/sessions").status_code == 200
     assert local_client.get("/v1/internal/sessions").status_code == 404
-    assert local_client.get("/rl/runs/probe").status_code == 400
-    assert local_client.get("/v1/rl/runs/probe").status_code == 400
+    assert local_client.get("/rl/runs/probe").status_code == 404
+    assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 
 def test_legacy_routes_default_off_removes_unversioned_aliases(monkeypatch: pytest.MonkeyPatch) -> None:

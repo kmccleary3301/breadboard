@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable
 
 from breadboard_engine.compilation.provider_schema import build_openai_tools_schema_from_yaml
 from breadboard_engine.compilation.v2_loader import load_agent_config
-from breadboard_engine.conductor_components import initialize_yaml_tools
+from breadboard_engine.conductor.components import initialize_yaml_tools
 from breadboard_engine.surface import build_tool_schema_snapshot
 
 

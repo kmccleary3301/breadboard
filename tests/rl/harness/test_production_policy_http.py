@@ -5,7 +5,7 @@ import hashlib
 import ssl
 import os
 import stat
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes, canonical_sha256
+from breadboard_engine.compilation.contracts import canonical_json_bytes, canonical_sha256
 from pathlib import Path
 
 import httpx

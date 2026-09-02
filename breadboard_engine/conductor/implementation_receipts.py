@@ -13,8 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from ..security import (
-    build_child_environment,
-    build_restricted_process_command,
+    ChildProcessPolicy,
     contains_provider_credential_value,
     provider_credential_values,
     redaction,
@@ -90,18 +89,14 @@ def _run_subprocess_capture_with_group_timeout(
         }
     with redaction.secret_value_scope(*secret_values):
         try:
-            child_environment = build_child_environment()
-            isolated_args, child_environment = build_restricted_process_command(
-                args,
+            launch = ChildProcessPolicy(
                 workspace=cwd,
                 working_directory=cwd,
-                shell=False,
-                environment=child_environment,
-            )
+            ).command_and_environment(args)
             proc = subprocess.Popen(
-                isolated_args,
+                launch.argv,
                 cwd=cwd,
-                env=child_environment,
+                env=launch.environment_dict(),
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

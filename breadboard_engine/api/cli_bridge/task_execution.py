@@ -15,8 +15,7 @@ from breadboard_engine.provider.contracts import (
     strip_provider_exchange_completion_sentinels,
     strip_public_completion_sentinel_tree,
 )
-from breadboard_engine.todo import TodoStore
-from breadboard_engine.todo.projection import project_store_snapshot_to_tui_envelope
+from breadboard_engine.permissions import PermissionAuthority
 
 from .events import EventType, SessionEvent
 from .registry import TurnRecord
@@ -53,6 +52,7 @@ class TaskExecutionHost(Protocol):
     _ctree_snapshot_cache: Optional[Dict[str, Any]]
     _permission_queue: Any
     _active_attachment_capabilities: Dict[str, Dict[str, Any]]
+    permission_authority: PermissionAuthority
     _active_input_media: List[Dict[str, str]]
     _active_bridge_timing_context: Optional[Dict[str, float]]
 
@@ -555,11 +555,9 @@ class TaskExecutionOwner:
             .strip()
             .lower()
         )
-        interactive_permissions = permission_mode in {
-            "prompt",
-            "ask",
-            "interactive",
-        }
+        interactive_permissions = runner.permission_authority.is_interactive_mode(
+            permission_mode
+        )
         logger.info(
             "session(%s) task=%s stream=%s local=%s remote_toggle=%s",
             runner.session.session_id,
@@ -570,22 +568,6 @@ class TaskExecutionOwner:
         )
         if runner._model_override:
             runner._apply_model_override()
-        if interactive_permissions:
-            try:
-                perms = getattr(runner._agent, "config", {}).setdefault(
-                    "permissions", {}
-                )  # type: ignore[attr-defined]
-                if not isinstance(perms, dict):
-                    perms = {}
-                    runner._agent.config["permissions"] = perms  # type: ignore[attr-defined]
-                opts = perms.get("options")
-                if not isinstance(opts, dict):
-                    opts = {}
-                opts["mode"] = "prompt"
-                opts.setdefault("default_response", "reject")
-                perms["options"] = opts
-            except Exception:
-                pass
         if not is_local_agent and (
             interactive_permissions or (runner.request.stream and remote_stream_enabled)
         ):

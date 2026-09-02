@@ -7,7 +7,7 @@ from dataclasses import fields, is_dataclass
 from enum import Enum
 from typing import Any, Literal, Mapping
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError

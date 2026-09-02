@@ -43,7 +43,7 @@ from breadboard.rl.harness.service import (
     V2LifecycleDependencies,
     V2OperationDisposition,
 )
-from breadboard.rl.state.cas import InMemoryCAS
+from breadboard.artifacts.cas import InMemoryCAS
 from tests.rl.harness.v2_service_fixtures import (
     DeterministicSession,
     cancellation_fingerprint,

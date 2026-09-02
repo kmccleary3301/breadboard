@@ -9,19 +9,19 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
-from agentic_coder_prototype.compilation.bundle import (
+from breadboard_engine.compilation.bundle import (
     ManifestReader,
     build_dependency_closure,
     ingest_member_map,
 )
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     ConfigBundleManifest,
     CompiledConfigManifest,
     DependencyClosureManifest,
     canonical_json_bytes,
     canonical_json_loads,
 )
-from agentic_coder_prototype.compilation.server_compiler import compile_config
+from breadboard_engine.compilation.server_compiler import compile_config
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from breadboard.rl.harness import contracts as c
@@ -67,7 +67,7 @@ from breadboard.rl.phase5.f4_campaign import (
     ImmutableRef,
     OptimizerReceiptKind,
 )
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 from scripts.rl_phase5.run_f4_target_canaries import (
     F4ProductionBinding,
     F4TargetCanaryInput,

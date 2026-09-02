@@ -10,7 +10,7 @@ from typing import Callable
 import pytest
 from pydantic import ValidationError
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from scripts.rl_phase5.build_f7_target_launch_packet import (
     F7AuthorityClosure,
     F7AuthorityRef,

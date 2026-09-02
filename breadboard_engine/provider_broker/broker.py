@@ -19,6 +19,7 @@ from typing import Any, Callable, Mapping
 from breadboard_engine import security
 from breadboard_engine.security import redaction
 
+from .authority import CredentialOrigin, CredentialSelector
 from .catalog import get_provider_catalog_entry, product_provider_catalog
 from .oauth import (
     DEFAULT_OAUTH_HTTP_TIMEOUT_SECONDS,
@@ -55,32 +56,6 @@ class CredentialAuditPersistenceError(RuntimeError):
         super().__init__()
 
 
-@dataclass(frozen=True)
-class CredentialOrigin:
-    """Secret-free provenance for the credential selected by one operation."""
-
-    kind: str
-    account_id: str | None = None
-    credential_id: str | None = None
-    env_var: str | None = None
-    source: str | None = None
-    binding_kind: str | None = None
-    binding_reason: str | None = None
-
-    def to_dict(self) -> dict[str, str]:
-        return {
-            key: value
-            for key, value in (
-                ("kind", self.kind),
-                ("account_id", self.account_id),
-                ("credential_id", self.credential_id),
-                ("env_var", self.env_var),
-                ("source", self.source),
-                ("binding_kind", self.binding_kind),
-                ("binding_reason", self.binding_reason),
-            )
-            if value
-        }
 
 
 @dataclass(frozen=True)

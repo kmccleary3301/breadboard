@@ -1,12 +1,51 @@
-"""Canonical parity package."""
+"""Parity comparison and replay interfaces."""
 
-from .core import *  # noqa: F401,F403
+from .core import (
+    EquivalenceLevel,
+    RunIR,
+    build_expected_run_ir,
+    build_run_ir_from_run_dir,
+    compare_guardrail_events,
+    compare_lifecycle_events,
+    compare_multi_agent_events,
+    compare_prompt_hashes,
+    compare_run_ir,
+    compare_surface_manifest,
+    compare_surface_snapshots,
+    compare_todo_journal,
+    compare_tool_usage_summary,
+    compare_turn_tool_usage,
+    compare_workspace_files,
+    compare_workspace_manifests,
+    load_guardrail_expectations,
+    load_todo_expectations,
+    sanitize_guardrail_events,
+)
 from .manifest import DEFAULT_MANIFEST, ParityScenario, load_parity_scenarios
 from .runner import run_parity_checks
 
 __all__ = [
     "DEFAULT_MANIFEST",
+    "EquivalenceLevel",
     "ParityScenario",
+    "RunIR",
+    "build_expected_run_ir",
+    "build_run_ir_from_run_dir",
+    "compare_guardrail_events",
+    "compare_lifecycle_events",
+    "compare_multi_agent_events",
+    "compare_prompt_hashes",
+    "compare_run_ir",
+    "compare_surface_manifest",
+    "compare_surface_snapshots",
+    "compare_todo_journal",
+    "compare_tool_usage_summary",
+    "compare_turn_tool_usage",
+    "compare_workspace_files",
+    "compare_workspace_manifests",
+    "load_guardrail_expectations",
     "load_parity_scenarios",
+    "load_todo_expectations",
     "run_parity_checks",
+    "sanitize_guardrail_events",
 ]

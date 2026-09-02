@@ -18,7 +18,7 @@ Current score: `100 / 100`
 
 ## Implementation Evidence
 
-- Additive artifact-task package: `agentic_coder_prototype/artifact_tasks/`
+- Additive artifact-task package: `breadboard_engine/artifact_tasks/`
 - Contract core: `contracts.py`
 - Response materialization: `materialize.py`
 - External evaluator hooks: `evaluators.py`
@@ -35,7 +35,7 @@ Current score: `100 / 100`
 ## Latest Validation
 
 - `pytest tests/test_artifact_tasks.py -q`: `14 passed`
-- `python -m compileall agentic_coder_prototype/artifact_tasks scripts/dev/artifact_task_smoke.py scripts/dev/config_explain.py scripts/dev/first_time_doctor.py`: passed
+- `python -m compileall breadboard_engine/artifact_tasks scripts/dev/artifact_task_smoke.py scripts/dev/config_explain.py scripts/dev/first_time_doctor.py`: passed
 - `python scripts/dev/first_time_doctor.py --profile engine --json`: passed with all checks `ok: true`
 - `python scripts/dev/artifact_task_smoke.py --out-dir /tmp/breadboard_artifact_task_smoke_phase12 --json`: passed with `status: passed`
 - `python scripts/dev/config_explain.py --json`: passed with `preset_id: artifact_single_response_materialize_v1`

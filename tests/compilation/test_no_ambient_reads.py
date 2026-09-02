@@ -12,12 +12,12 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation.bundle import (
+from breadboard_engine.compilation.bundle import (
     ManifestReader,
     build_dependency_closure,
     ingest_member_map,
 )
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     CompileErrorCode,
     CompileOptions,
     CompileStage,
@@ -29,8 +29,8 @@ from agentic_coder_prototype.compilation.contracts import (
     TaskRetentionContract,
     TaskVerifierContract,
 )
-from agentic_coder_prototype.compilation.server_compiler import compile_config
-from breadboard.rl.state import InMemoryCAS
+from breadboard_engine.compilation.server_compiler import compile_config
+from breadboard.artifacts import InMemoryCAS
 
 
 _MINIMAL_CONFIG = b"""version: 2

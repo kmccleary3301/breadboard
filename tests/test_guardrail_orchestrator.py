@@ -3,7 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
-from breadboard_engine.guardrail import GuardrailCoordinator, GuardrailOrchestrator
+from breadboard_engine.guardrails import GuardrailCoordinator
+from breadboard_engine.guardrails.orchestrator import GuardrailOrchestrator
 
 
 class DummySessionState:

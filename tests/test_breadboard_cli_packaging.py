@@ -62,7 +62,6 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
             "-m",
             "pip",
             "install",
-            "--no-deps",
             "--editable",
             str(ROOT),
         ],
@@ -121,10 +120,10 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
             "-c",
             (
                 "import importlib.util, json; "
-                "names=['adaptive_iter','breadboard_engine','breadboard','breadboard_sdk','conformance','scripts.authoring','scripts.e4_parity']; "
+                "names=['adaptive_iter','breadboard_engine','breadboard','breadboard.product','breadboard.artifacts','breadboard_sdk']; "
                 "specs=[importlib.util.find_spec(name) for name in names]; "
                 "assert all(spec is not None for spec in specs); "
-                "print(json.dumps([spec.origin for spec in specs[:5]]))"
+                "print(json.dumps([spec.origin for spec in specs]))"
             ),
         ],
         cwd=outside_repo,
@@ -157,7 +156,7 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "agent_configs/templates/minimal_harness.v3.yaml",
         "agent_configs/templates/prompts/daily_driver_system.md",
         "agent_configs/templates/prompts/minimal_system.md",
-        "agentic_coder_prototype/__init__.py",
+        "breadboard_engine/__init__.py",
         "breadboard/product/cli/main.py",
         "breadboard/product/operations/generated_bindings.py",
         "breadboard_engine/compilation/bundle.py",
@@ -166,15 +165,6 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "breadboard_sdk/generated/__init__.py",
         "breadboard_sdk/generated/public_bindings.py",
         "breadboard_sdk/generated/public_surface_manifest.v1.json",
-        "config/e4_targets/index.json",
-        "config/e4_targets/oh_my_pi/16.2.13/harness.yaml",
-        "config/e4_targets/oh_my_pi/16.2.13/prompts/system-prompt.md",
-        "config/e4_targets/oh_my_pi/16.2.13/target.json",
-        "config/e4_targets/oh_my_pi/16.2.13/tool-surface.json",
-        "config/e4_targets/pi/0.57.1/harness.yaml",
-        "config/e4_targets/pi/0.57.1/prompts/system-prompt.md",
-        "config/e4_targets/pi/0.57.1/target.json",
-        "config/e4_targets/pi/0.57.1/tool-surface.json",
         "config/product/tui-release.json",
         "conformance/comparators/registry.json",
         "contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json",
@@ -183,23 +173,23 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "contracts/public/operations.v2.json",
         "contracts/public/record_schemas.v1.json",
         "contracts/public/surface_inventory.v1.json",
-        "docs/conformance/e4_lane_inventory.json",
         "implementations/prompts/todos/build.md",
         "implementations/prompts/todos/plan.md",
         "implementations/system_prompts/default.md",
         "implementations/tool_prompt_synthesis/pythonic/system_full.j2.md",
         "implementations/tools/defs/read_file.yaml",
-        "scripts/breadboard_cli.py",
     }
     assert required <= names, sorted(required - names)
     assert entry_points == (
         "[console_scripts]\n"
-        "bbh = scripts.breadboard_cli:main\n"
         "breadboard = breadboard.product.cli:main\n"
-        "breadboard-rl = breadboard.rl.harness.__main__:main\n"
     )
 
     forbidden_prefixes = (
+        "agentic_coder_prototype/",
+        "breadboard/optimize/",
+        "breadboard/rl/",
+        "breadboard/search/",
         ".beads/",
         ".git/",
         "artifacts/",
@@ -228,38 +218,6 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         or "/.env" in name
     )
     assert forbidden == []
-    assert all(
-        name.startswith("docs/conformance/")
-        for name in names
-        if name.startswith("docs/")
-    )
-
-    zip_probe = subprocess.run(
-        [
-            sys.executable,
-            "-I",
-            "-c",
-            (
-                "import json, sys; "
-                f"sys.path.insert(0, {str(wheel)!r}); "
-                "from breadboard_engine.e4_targets import "
-                "list_e4_target_ids, load_e4_target; "
-                "targets = list_e4_target_ids(); "
-                "assert load_e4_target('pi@0.57.1').read_asset_text("
-                "'harness.yaml').startswith('schema_version:'); "
-                "print(json.dumps(targets))"
-            ),
-        ],
-        cwd=tmp_path,
-        env=_clean_environment(),
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert json.loads(zip_probe.stdout) == [
-        "oh-my-pi@16.2.13",
-        "pi@0.57.1",
-    ]
 
 
 def test_built_wheel_clean_install_runs_public_surface_without_credentials(
@@ -435,6 +393,22 @@ print(json.dumps({{
     assert help_result.stdout.startswith("usage: breadboard")
     assert "harness" in help_result.stdout
     assert "lane" not in help_result.stdout
+    minimal_config = next(
+        venv.glob(
+            "lib/python*/site-packages/agent_configs/templates/minimal_harness.v3.yaml"
+        )
+    )
+    explain_result = subprocess.run(
+        [str(breadboard), "harness", "explain", str(minimal_config)],
+        cwd=outside_repo,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert explain_result.returncode == 0, explain_result.stderr
+    assert "minimal_harness" in explain_result.stdout
+
 
     payloads = {}
     for command, expected_stage in (

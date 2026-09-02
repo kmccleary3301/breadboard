@@ -6,7 +6,7 @@ import subprocess
 import stat
 from typing import Any, Literal, Mapping
 
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     ConfigBundleManifest,
     CompiledConfigManifest,
     canonical_json_bytes,
@@ -29,7 +29,7 @@ from breadboard.rl.harness.composition import (
     _verify_config_bundle_cas,
 )
 from breadboard.rl.phase5.f4_campaign import ImmutableRef
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 from scripts.rl_phase5.run_f6_restart_replay import (
     F6ImmutableIdentity,
     F6FileIdentity,
