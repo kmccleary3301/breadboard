@@ -513,24 +513,37 @@ def _tui_consumers(
     schema_rows: Sequence[Mapping[str, Any]],
     sdk_exports: Mapping[str, Any],
 ) -> dict[str, Any]:
-    event_tokens = {str(row["id"]) for row in event_rows if isinstance(row.get("id"), str)}
-    schema_tokens = {str(row["id"]) for row in schema_rows if isinstance(row.get("id"), str)}
+    event_tokens = {
+        str(row["id"]) for row in event_rows if isinstance(row.get("id"), str)
+    }
+    schema_tokens = {
+        str(row["id"]) for row in schema_rows if isinstance(row.get("id"), str)
+    }
     export_tokens = {
         str(row["name"])
         for language in ("python", "typescript")
         for row in sdk_exports[language]["exports"]
         if isinstance(row.get("name"), str)
     }
-    # Generic exported helper names create false-positive consumers.  Session and
+    # Generic exported helper names create false-positive consumers. Session and
     # event names are the stable public tokens relevant to this inventory.
     export_tokens = {
         token
         for token in export_tokens
-        if "session" in token.lower() or "event" in token.lower() or token.startswith("Public")
+        if "session" in token.lower()
+        or "event" in token.lower()
+        or token.startswith("Public")
     }
-    tokens = sorted(event_tokens | schema_tokens | export_tokens, key=lambda item: (-len(item), item))
+    contract_tokens = event_tokens | schema_tokens
+    tokens = sorted(contract_tokens | export_tokens, key=lambda item: (-len(item), item))
     token_patterns = {
-        token: re.compile(rf"(?<![A-Za-z0-9_$]){re.escape(token)}(?![A-Za-z0-9_$])")
+        token: (
+            re.compile(rf"""(?P<quote>['"`]){re.escape(token)}(?P=quote)""")
+            if token in contract_tokens
+            else re.compile(
+                rf"(?<![A-Za-z0-9_$]){re.escape(token)}(?![A-Za-z0-9_$])"
+            )
+        )
         for token in tokens
     }
     roots: list[dict[str, Any]] = []

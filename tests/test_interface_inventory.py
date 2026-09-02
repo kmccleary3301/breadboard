@@ -60,6 +60,10 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
     tui_source = tui / "packages" / "coding-agent" / "src" / "consumer.ts"
     tui_source.parent.mkdir(parents=True)
     tui_source.write_text("export const eventKind = 'tool_result';\n", encoding="utf-8")
+    (tui_source.parent / "not-a-consumer.ts").write_text(
+        "const error = new Error('failure');\n",
+        encoding="utf-8",
+    )
     return engine, tui
 
 

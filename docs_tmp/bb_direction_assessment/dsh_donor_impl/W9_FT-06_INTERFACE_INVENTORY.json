@@ -6014,7 +6014,7 @@
       },
       {
         "line_numbers": [
-          629
+          642
         ],
         "occurrence_count": 1,
         "path": "engine_root/scripts/interface_inventory.py"
@@ -19149,7 +19149,7 @@
     }
   },
   "tui_consumers": {
-    "consumer_count": 873,
+    "consumer_count": 401,
     "files": [
       {
         "matched_tokens": [
@@ -19170,16 +19170,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/artifacts.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "assistant_message",
           "completion"
         ],
@@ -19191,13 +19181,11 @@
       },
       {
         "matched_tokens": [
-          "SessionEvent",
-          "completion"
+          "SessionEvent"
         ],
         "path": "engine_root/tui_skeleton/src/commands/askLogic.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
-          "event-kind",
           "sdk-export"
         ]
       },
@@ -19206,76 +19194,6 @@
           "error"
         ],
         "path": "engine_root/tui_skeleton/src/commands/auth.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/commandOutcome.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/commandPresentation.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/commandRuntime.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/commandValidation.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/config.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/doctor.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/engine.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "event-kind"
@@ -19324,16 +19242,6 @@
         "signals": [
           "event-kind",
           "sdk-export"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/plugin.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
         ]
       },
       {
@@ -19454,18 +19362,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerStateRenderMarkdown.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error",
           "task_event"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerSubagentRouting.test.ts",
@@ -19511,8 +19407,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
-          "error",
           "task_event",
           "tool_call"
         ],
@@ -19536,18 +19430,7 @@
       },
       {
         "matched_tokens": [
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/providerCapabilityResolution.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
+          "completion"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/renderText.test.ts",
         "root_id": "engine-tui-skeleton",
@@ -19565,7 +19448,6 @@
           "assistant_delta",
           "assistant_message",
           "completion",
-          "error",
           "run_finished",
           "tool.exec.end",
           "tool.exec.start",
@@ -19671,27 +19553,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/workingTreeDiff.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/command.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "SessionEvent",
           "error",
           "task_event"
@@ -19787,7 +19648,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controllerRuntimeScenarioValidator.ts",
@@ -19799,11 +19659,8 @@
       {
         "matched_tokens": [
           "SessionEvent",
-          "completion",
-          "ctree_snapshot",
           "error",
           "task_event",
-          "tool_call",
           "warning"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controllerStateMethods.ts",
@@ -19825,20 +19682,9 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controllerUserMethods.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/controllerUtils.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "event-kind"
@@ -19867,8 +19713,7 @@
       {
         "matched_tokens": [
           "completion",
-          "error",
-          "warning"
+          "error"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/renderText.ts",
         "root_id": "engine-tui-skeleton",
@@ -19923,24 +19768,12 @@
       },
       {
         "matched_tokens": [
-          "SessionEvent",
-          "completion"
+          "SessionEvent"
         ],
         "path": "engine_root/tui_skeleton/src/commands/resumeLogic.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
-          "event-kind",
           "sdk-export"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/run.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
         ]
       },
       {
@@ -19953,26 +19786,6 @@
         "signals": [
           "event-kind",
           "sdk-export"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/sessions.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/config/appConfig.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
         ]
       },
       {
@@ -19999,47 +19812,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "engine_root/tui_skeleton/src/legacy/main.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/main.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "engine_root/tui_skeleton/src/markdown/streamer.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/markdown/worker-thread-entry.js",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/markdown/worker-thread-entry.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "event-kind"
@@ -20057,17 +19830,6 @@
         "root_id": "engine-tui-skeleton",
         "signals": [
           "sdk-export"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/providers/modelCatalog.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
         ]
       },
       {
@@ -20094,26 +19856,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "engine_root/tui_skeleton/src/repl/components/GuardrailBanner.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/LineEditor.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "engine_root/tui_skeleton/src/repl/components/LiveSlot.tsx",
         "root_id": "engine-tui-skeleton",
         "signals": [
@@ -20122,29 +19864,7 @@
       },
       {
         "matched_tokens": [
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/EscalatedOwnedShellHost.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/SceneOwnedRuntimeShellHost.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
+          "error"
         ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/composer/ComposerPanel.tsx",
         "root_id": "engine-tui-skeleton",
@@ -20176,26 +19896,6 @@
       },
       {
         "matched_tokens": [
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/composer/ThinkingPreviewWidget.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/composer/__tests__/ComposerPanel.placeholder.test.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "assistant.thought_summary.delta"
         ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/composer/__tests__/ComposerPanel.todoPreview.test.tsx",
@@ -20209,16 +19909,6 @@
           "error"
         ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/composer/__tests__/FooterV2.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/composer/__tests__/todoStatusPresentation.render.test.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "event-kind"
@@ -20260,16 +19950,6 @@
           "error"
         ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/__tests__/subagentStrip.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/__tests__/taskFocusLoader.test.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "event-kind"
@@ -20350,26 +20030,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/keyHandlers/useGlobalKeys.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/replViewControllerUtils.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "tool_call",
           "warning"
@@ -20405,16 +20065,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/taskFocusLoader.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/taskboardStatus.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
@@ -20434,8 +20084,7 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "warning"
+          "error"
         ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/useReplCommands.ts",
         "root_id": "engine-tui-skeleton",
@@ -20458,27 +20107,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/useReplViewMenus.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/useReplViewModalStack.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/useReplViewPanels.tsx",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "event-kind"
@@ -20501,16 +20130,6 @@
           "warning"
         ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/useReplViewScrollback.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/features/composer/useComposerController.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "event-kind"
@@ -20548,8 +20167,7 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "warning"
+          "error"
         ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/overlays/buildModalStack.tsx",
         "root_id": "engine-tui-skeleton",
@@ -20559,28 +20177,7 @@
       },
       {
         "matched_tokens": [
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/overlays/modalBasics.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/renderers/conversationRenderer.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
         ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/renderers/toolRenderer.tsx",
         "root_id": "engine-tui-skeleton",
@@ -20600,27 +20197,6 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/theme.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/utils/diff.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "ctree_node",
           "ctree_snapshot"
         ],
@@ -20632,63 +20208,9 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/designSystem.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/shikiHighlighter.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/slashCommandRegistry.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/todos/__tests__/todoStatusPresentation.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/todos/todoStatusPresentation.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "SessionEvent",
           "assistant.tool_call.delta",
-          "assistant.tool_call.end",
-          "tool_call"
+          "assistant.tool_call.end"
         ],
         "path": "engine_root/tui_skeleton/src/repl/transcript/__tests__/normalizeSessionEvent.test.ts",
         "root_id": "engine-tui-skeleton",
@@ -20737,7 +20259,6 @@
           "reward_update",
           "task_event",
           "tool.result",
-          "tool_call",
           "tool_result",
           "user_message",
           "warning"
@@ -20747,26 +20268,6 @@
         "signals": [
           "event-kind",
           "sdk-export"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/transcript/normalizedEvent.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/transcript/projection.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
         ]
       },
       {
@@ -20854,29 +20355,7 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/util/clipboard.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/utils/json.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error",
-          "tool_result",
           "turn_start"
         ],
         "path": "tui_root/packages/agent/src/agent-loop.ts",
@@ -20887,7 +20366,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error",
           "turn_start"
         ],
@@ -20901,17 +20379,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/agent/src/append-only-context.ts",
-        "root_id": "paired-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
         "path": "tui_root/packages/agent/src/compaction/branch-summarization.ts",
         "root_id": "paired-agent",
         "signals": [
@@ -20920,18 +20387,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/agent/src/compaction/compaction-v2-streaming.ts",
-        "root_id": "paired-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/agent/src/compaction/compaction.ts",
@@ -20942,39 +20397,9 @@
       },
       {
         "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/agent/src/compaction/entries.ts",
-        "root_id": "paired-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/agent/src/compaction/errors.ts",
-        "root_id": "paired-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error"
         ],
         "path": "tui_root/packages/agent/src/compaction/message-cache.ts",
-        "root_id": "paired-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/agent/src/compaction/messages.ts",
         "root_id": "paired-agent",
         "signals": [
           "event-kind"
@@ -20994,27 +20419,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/agent/src/compaction/pruning.ts",
-        "root_id": "paired-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/agent/src/compaction/transcript-tokens.ts",
-        "root_id": "paired-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/agent/src/pause.ts",
         "root_id": "paired-agent",
         "signals": [
           "event-kind"
@@ -21052,10 +20457,8 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error",
-          "tool_call",
-          "warning"
+          "tool_call"
         ],
         "path": "tui_root/packages/agent/src/telemetry.ts",
         "root_id": "paired-agent",
@@ -21065,7 +20468,6 @@
       },
       {
         "matched_tokens": [
-          "error",
           "turn_start"
         ],
         "path": "tui_root/packages/agent/src/types.ts",
@@ -21086,18 +20488,7 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/advisor/advise-tool.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
+          "error"
         ],
         "path": "tui_root/packages/coding-agent/src/advisor/config.ts",
         "root_id": "paired-coding-agent",
@@ -21107,42 +20498,9 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/advisor/runtime.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/advisor/watchdog.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/async/auto-background.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/async/job-manager.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21174,28 +20532,7 @@
           "error",
           "warning"
         ],
-        "path": "tui_root/packages/coding-agent/src/autoresearch/git.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
         "path": "tui_root/packages/coding-agent/src/autoresearch/index.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/autoresearch/storage.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21227,117 +20564,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/bb.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/broker.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/daemon.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/exposure.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/provider-file-types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/provider-files-gemini.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/blob-broker/provider-files-openai.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/provider-files.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/savings.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/server.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/service.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/store.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21357,67 +20584,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/uploader-runtime.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/uploaders-anonymous.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/uploaders-image-hosts.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/blob-broker/uploaders-legacy.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/uploaders-self-hosted.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/blob-broker/uploaders.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/canonical-e4-session-port.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21432,7 +20599,6 @@
           "assistant.tool_call.delta",
           "assistant.tool_call.end",
           "assistant.tool_call.start",
-          "completion",
           "ctree_node",
           "error",
           "permission_request",
@@ -21456,7 +20622,6 @@
       {
         "matched_tokens": [
           "checkpoint_restored",
-          "completion",
           "error",
           "run_finished",
           "turn_cancelled",
@@ -21484,16 +20649,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/engine-port.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/darwin-pinned-directory.test.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -21502,101 +20657,35 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/darwin-pinned-directory.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/darwin-verified-spawn.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "bb.effective_config_graph.v1",
-          "bb.harness_definition.v1",
-          "error"
+          "bb.harness_definition.v1"
         ],
         "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/engine-distribution-installer.test.ts",
         "root_id": "paired-coding-agent",
         "signals": [
-          "event-kind",
           "schema"
         ]
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/engine-distribution-installer.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/engine-runtime-bundle.test.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/engine-runtime-bundle.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "bb.effective_config_graph.v1",
-          "bb.harness_definition.v1",
-          "error"
+          "bb.harness_definition.v1"
         ],
         "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/installed-engine-manifest.test.ts",
         "root_id": "paired-coding-agent",
         "signals": [
-          "event-kind",
           "schema"
         ]
       },
       {
         "matched_tokens": [
           "bb.effective_config_graph.v1",
-          "bb.harness_definition.v1",
-          "error"
+          "bb.harness_definition.v1"
         ],
         "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/installed-engine-selection.test.ts",
         "root_id": "paired-coding-agent",
         "signals": [
-          "event-kind",
           "schema"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/installed-engine-selection.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
         ]
       },
       {
@@ -21611,7 +20700,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/lifecycle-supervisor.ts",
@@ -21624,87 +20712,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/linux-pinned-directory.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/local-authority-store.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/product-run-config.test.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/product-run-config.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/run-config.test.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/runtime-cleanup-store.test.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/runtime-cleanup-store.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/native-launch-policy.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/breadboard/provider-auth-adapter.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21744,80 +20752,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/capability/rule.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/capability/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cleanse/agent.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cleanse/balance.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cleanse/board.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/cleanse/checkers.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cleanse/index.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cleanse/loop.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21836,7 +20771,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
@@ -21850,17 +20784,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/cli-commands.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
         "path": "tui_root/packages/coding-agent/src/cli.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -21869,38 +20792,6 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/agents-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/args.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/auth-broker-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/cli/auth-gateway-cli.ts",
@@ -21911,21 +20802,9 @@
       },
       {
         "matched_tokens": [
-          "completion",
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/bench-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/cli/browser-relay-cli.ts",
+        "path": "tui_root/packages/coding-agent/src/cli/bench-cli.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21943,70 +20822,9 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/command-help.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/commands/init-xdg.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/completion-gen.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/config-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/cli/dry-balance-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/file-processor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/flag-tables.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -22026,37 +20844,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/cli/gallery-fixtures/agentic.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/gallery-fixtures/edit.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/cli/gallery-fixtures/fs.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/gallery-fixtures/search.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -22074,8 +20862,7 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "warning"
+          "error"
         ],
         "path": "tui_root/packages/coding-agent/src/cli/gallery-fixtures/status-line.ts",
         "root_id": "paired-coding-agent",
@@ -22097,57 +20884,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/cli/gallery-fixtures/web.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/gc-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/grep-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/grievances-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/cli/images-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/models-cli.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -22159,126 +20896,6 @@
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/cli/plugin-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/profile-alias.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/progress-reporter.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/ps-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/ps-data.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/ps-tui.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/read-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/render-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/session-picker.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/setup-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/tiny-models-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/ttsr-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/update-cli.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -22298,36 +20915,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/cli/usage-error.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/web-search-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/cli/worktree-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/collab/guest.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -22337,7 +20924,6 @@
       {
         "matched_tokens": [
           "error",
-          "turn_start",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/collab/host.ts",
@@ -22360,156 +20946,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/collab/relay-client.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/acp.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/auth-gateway.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/cleanse.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/commit.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/complete.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/completions.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/compress.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/engine.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/gc.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/launch.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/render.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/say.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/setup.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commands/token.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/commit/agentic/agent.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -22518,8 +20954,7 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "warning"
+          "error"
         ],
         "path": "tui_root/packages/coding-agent/src/commit/agentic/index.ts",
         "root_id": "paired-coding-agent",
@@ -22529,20 +20964,9 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commit/agentic/tools/split-commit.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/commit/agentic/topo-sort.ts",
+        "path": "tui_root/packages/coding-agent/src/commit/agentic/tools/split-commit.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -22592,27 +21016,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/commit/changelog/index.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/commit/execute.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/commit/map-reduce/map-phase.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -22633,58 +21036,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/commit/pipeline.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/compress/index.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/compress/session.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/compress/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/config/api-key-resolver.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/config/config-file.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -22695,49 +21046,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/config/keybindings.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/config/model-discovery.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/config/model-provider-discovery.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/config/model-registry.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/config/model-resolver.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -22758,40 +21067,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/config/prompt-templates.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error",
-          "tool_call",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/config/settings-schema.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/config/settings.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/cursor.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -22810,40 +21085,9 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/dap/session.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/dap/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/debug/log-viewer.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/debug/profiler.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -22862,7 +21106,6 @@
       },
       {
         "matched_tokens": [
-          "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/debug/raw-sse.ts",
@@ -22883,195 +21126,9 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "warning"
+          "error"
         ],
         "path": "tui_root/packages/coding-agent/src/discovery/agent-plugin-format.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/discovery/agent-plugins.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/discovery/claude-plugins.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/discovery/claude.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/discovery/codex.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/discovery/cursor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/discovery/helpers.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/discovery/omp-extension-roots.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/discovery/windsurf.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/edit/apply-patch/index.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/edit/blackbox.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/edit/diff.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/edit/hashline/diff.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/edit/hashline/filesystem.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/edit/hashline/noop-loop-guard.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/edit/index.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/edit/modes/patch.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/edit/notebook.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/edit/read-file.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -23102,37 +21159,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/edit/sloppy.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/edit/streaming.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/agent-bridge.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/bridge-timeout.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -23161,59 +21188,9 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/idle-timeout.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/jl/executor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/eval/js/context-manager.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/js/executor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/js/shared/local-module-loader.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/js/shared/rewrite-imports.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -23225,17 +21202,6 @@
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/eval/js/shared/runtime.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/js/tool-bridge.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -23275,46 +21241,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/eval/kernel-session-registry.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/py/executor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/py/tool-bridge.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/rb/executor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/eval/types.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -23324,49 +21250,6 @@
       {
         "matched_tokens": [
           "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/exa/mcp-client.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/exa/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/exec/bash-executor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/exec/direnv.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/export/html/template.js",
         "root_id": "paired-coding-agent",
@@ -23390,27 +21273,6 @@
           "error",
           "warning"
         ],
-        "path": "tui_root/packages/coding-agent/src/export/html/web-palette.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/export/ttsr.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
         "path": "tui_root/packages/coding-agent/src/extensibility/custom-commands/bundled/review/index.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -23421,68 +21283,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/custom-commands/loader.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/extensibility/custom-commands/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/custom-tools/loader.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/custom-tools/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/extensions/load-errors.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/extensions/loader.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/extensions/managed-timers.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -23519,7 +21320,6 @@
       },
       {
         "matched_tokens": [
-          "error",
           "tool_call",
           "tool_result"
         ],
@@ -23531,17 +21331,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/hooks/loader.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
           "tool_call",
           "tool_result"
         ],
@@ -23553,7 +21342,6 @@
       },
       {
         "matched_tokens": [
-          "error",
           "tool_call",
           "tool_result"
         ],
@@ -23566,7 +21354,6 @@
       {
         "matched_tokens": [
           "SessionEvent",
-          "completion",
           "error",
           "tool_call",
           "tool_result",
@@ -23604,16 +21391,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/legacy-typebox.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
@@ -23625,40 +21402,10 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/plugins/loader.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/extensibility/plugins/manager.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/plugins/marketplace/manager.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -23678,7 +21425,6 @@
       {
         "matched_tokens": [
           "SessionEvent",
-          "error",
           "tool_call",
           "tool_result",
           "turn_start"
@@ -23713,38 +21459,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/hindsight/backend.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/hindsight/bank.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/hindsight/mental-models.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/hindsight/state.ts",
@@ -23755,137 +21469,6 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/internal-urls/docs-index.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/internal-urls/local-protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/internal-urls/mcp-protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/internal-urls/memory-protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/internal-urls/router.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/internal-urls/skill-protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/internal-urls/ssh-protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/internal-urls/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/internal-urls/vault-protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/irc/bus.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/irc/conversations.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/irc/history.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/irc/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/launch/broker.ts",
@@ -23896,7 +21479,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/launch/client.ts",
@@ -23909,88 +21491,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/launch/ensure.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/launch/paths.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/launch/presence.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/launch/protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/launch/terminal-output-worker-client.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/launch/terminal-output-worker-protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/launch/terminal-output-worker.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/launch/terminal-output.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/lib/xai-http.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -24060,27 +21561,6 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/lsp/diagnostics.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/lsp/edits.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/lsp/mux/daemon.ts",
@@ -24132,19 +21612,7 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/lsp/tool.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
+          "error"
         ],
         "path": "tui_root/packages/coding-agent/src/lsp/types.ts",
         "root_id": "paired-coding-agent",
@@ -24167,109 +21635,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/lsp/writethrough.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
         "path": "tui_root/packages/coding-agent/src/main.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/markit/registry.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/markit/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/client.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/config-writer.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/json-rpc.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/loader.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/manager.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/oauth-discovery.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/oauth-flow.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -24309,66 +21675,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/mcp/smithery-registry.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/startup-events.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/timeout.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/tool-bridge.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/tool-cache.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mcp/transports/header-policy.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/mcp/transports/http.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -24399,17 +21705,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/mcp/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/memories/index.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -24421,47 +21716,6 @@
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/memories/storage.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/memory-backend/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mnemopi/backend.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mnemopi/config.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mnemopi/embed-client.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -24491,17 +21745,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/mnemopi/state.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
         "path": "tui_root/packages/coding-agent/src/modes/acp/acp-agent.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -24521,16 +21764,6 @@
       },
       {
         "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/components/advisor-config.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
@@ -24542,21 +21775,10 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/components/agent-hub-renderer.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/components/agent-hub.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -24597,7 +21819,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/components/agent-transcript-viewer.ts",
@@ -24650,16 +21871,6 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/components/chat-transcript-builder.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
@@ -24691,16 +21902,6 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/components/custom-editor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/components/error-banner.ts",
@@ -24715,16 +21916,6 @@
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/components/execution-shared.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/components/extensions/extension-dashboard.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -24752,17 +21943,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/components/extensions/state-manager.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/components/login-dialog.ts",
@@ -24783,7 +21963,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
@@ -24858,7 +22037,6 @@
       },
       {
         "matched_tokens": [
-          "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/components/plugin-settings.ts",
@@ -24869,7 +22047,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
@@ -24907,16 +22084,6 @@
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/components/session-selector.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/components/settings-defs.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -24977,21 +22144,9 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/components/todo-reminder.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/components/tool-execution.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -25040,36 +22195,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/controllers/btw-controller.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/controllers/cleanse-command-controller.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/controllers/command-controller-shared.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
@@ -25083,7 +22208,6 @@
         "matched_tokens": [
           "completion",
           "error",
-          "turn_start",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/controllers/event-controller.ts",
@@ -25105,27 +22229,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/controllers/input-controller.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/controllers/live-command-controller.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
@@ -25157,7 +22260,6 @@
       },
       {
         "matched_tokens": [
-          "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/controllers/selector-controller.ts",
@@ -25168,57 +22270,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/controllers/ssh-command-controller.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/controllers/tan-command-controller.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/controllers/todo-command-controller.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/controllers/tool-args-reveal.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/image-references.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
@@ -25230,27 +22281,6 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/internal-url-autocomplete.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/loop-limit.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/macos-spelling.ts",
@@ -25263,17 +22293,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/modes/oauth-manual-input.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/modes/print-mode.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -25282,71 +22301,9 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/prompt-action-autocomplete.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/rpc/host-tools.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/rpc/host-uris.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error",
           "turn_start"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/rpc/rpc-client.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/rpc/rpc-frame.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/rpc/rpc-input.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/rpc/rpc-messages.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -25369,26 +22326,6 @@
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/rpc/rpc-types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/runtime-init.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/session-teardown.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -25438,26 +22375,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/startup-composer.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/theme/loader.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
@@ -25472,28 +22389,7 @@
           "error",
           "warning"
         ],
-        "path": "tui_root/packages/coding-agent/src/modes/theme/symbols.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
         "path": "tui_root/packages/coding-agent/src/modes/theme/theme-class.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/theme/theme.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -25532,17 +22428,6 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/utils/hotkeys-markdown.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/utils/transcript-render-helpers.ts",
@@ -25553,7 +22438,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
@@ -25579,80 +22463,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/omp.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/plan-mode/plan-files.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/plan-mode/plan-handoff.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/registry/agent-lifecycle.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/registry/persisted-agents.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/sdk.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/secrets/index.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/security/auth.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -25680,50 +22491,10 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/security/coordinator.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/security/importers/codex-security.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/security/importers/sarif.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/security/preflight.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/security/publication.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -25742,16 +22513,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/security/store.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
@@ -25763,17 +22524,6 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/agent-session-types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error",
           "tool_call",
           "tool_result",
@@ -25788,51 +22538,9 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/session/agent-storage.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/async-job-delivery.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/auth-broker-config.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/bash-runner.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/blob-store.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -25844,16 +22552,6 @@
           "tool_result"
         ],
         "path": "tui_root/packages/coding-agent/src/session/claude-session-store.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/codex-auto-reset.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -25874,17 +22572,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/session/compact-modes.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
         "path": "tui_root/packages/coding-agent/src/session/exit-diagnostics.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -25894,48 +22581,6 @@
       {
         "matched_tokens": [
           "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/history-storage.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/indexed-session-storage.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/irc-bridge.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/launch-completion.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error",
-          "tool_result"
         ],
         "path": "tui_root/packages/coding-agent/src/session/messages.ts",
         "root_id": "paired-coding-agent",
@@ -25967,36 +22612,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/redis-session-storage.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/retry-fallback-chains.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/role-models.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
@@ -26008,51 +22623,9 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "tool_result",
-          "warning"
+          "error"
         ],
         "path": "tui_root/packages/coding-agent/src/session/session-context.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/session-dump-format.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/session-entries.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/session-handoff.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/session-history-format.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -26070,82 +22643,10 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/session-loader.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/session/session-maintenance.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/session-manager.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/session-memory.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/session-paths.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/session-pins.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/session-provider-boundary.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/session-storage.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -26164,60 +22665,10 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/snapcompact-inline.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/sql-session-storage.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/session/stream-guards.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/streaming-output.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/title-index.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/todo-tracker.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -26245,9 +22696,7 @@
       },
       {
         "matched_tokens": [
-          "completion",
-          "error",
-          "tool_result"
+          "error"
         ],
         "path": "tui_root/packages/coding-agent/src/session/turn-recovery.ts",
         "root_id": "paired-coding-agent",
@@ -26260,47 +22709,6 @@
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/session/unexpected-stop-classifier.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/yield-queue.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/builtin-collaboration.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/builtin-completions.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/builtin-control.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -26330,26 +22738,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/builtin-modes.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/builtin-registry.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/slash-commands/builtin-session.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -26361,106 +22749,6 @@
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/slash-commands/helpers/collab-qrcode.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/helpers/mcp.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/helpers/parse.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/helpers/reset-usage.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/helpers/security.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/helpers/ssh.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/helpers/stats-dashboard.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/marketplace-install-parser.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/slash-commands/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/ssh/config-writer.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/ssh/connection-manager.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -26488,7 +22776,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/stt/asr-worker.ts",
@@ -26499,39 +22786,7 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/stt/downloader.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/stt/sherpa-runtime.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/stt/stt-controller.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/subprocess/worker-client.ts",
         "root_id": "paired-coding-agent",
@@ -26551,52 +22806,9 @@
       },
       {
         "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/system-prompt.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/task/agents.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/task/discovery.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/task/error-attribution.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error",
           "tool_call",
-          "turn_start",
-          "warning"
+          "turn_start"
         ],
         "path": "tui_root/packages/coding-agent/src/task/executor.ts",
         "root_id": "paired-coding-agent",
@@ -26606,7 +22818,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/task/index.ts",
@@ -26617,48 +22828,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/task/isolation-ownership.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/task/isolation-runner.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/task/label.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/task/parallel.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
           "tool_call"
         ],
         "path": "tui_root/packages/coding-agent/src/task/persisted-revive.ts",
@@ -26679,7 +22848,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
@@ -26693,17 +22861,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/task/spawn-policy.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/task/structured-subagent.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -26712,31 +22869,9 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/task/subprocess-tool-registry.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/task/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/task/worktree.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -26788,16 +22923,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/acp-bridge.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
@@ -26820,20 +22945,9 @@
       },
       {
         "matched_tokens": [
-          "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/tools/ast-grep.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/auto-generated-guard.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -26852,51 +22966,10 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/bash-interceptor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/bash-skill-urls.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/tools/bash.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/browser.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/browser/aria/aria-snapshot.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -26916,16 +22989,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/tools/browser/cmux/cmux-tab.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/tools/browser/cmux/socket-client.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -26936,77 +22999,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/tools/browser/launch.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/browser/registry.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/browser/relay/bridge.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/browser/relay/daemon.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/browser/relay/protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/browser/relay/server.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/tools/browser/render.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/browser/shared-daemon.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -27056,27 +23049,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/tools/computer/protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/tools/computer/supervisor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/computer/worker.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -27116,7 +23089,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/tools/eval.ts",
@@ -27138,26 +23110,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/file-write-fallback.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/gh-pr-checkout.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error",
           "warning"
         ],
@@ -27169,17 +23121,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/gh-view.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/tools/glob.ts",
@@ -27190,21 +23131,9 @@
       },
       {
         "matched_tokens": [
-          "completion",
-          "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/tools/grep.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/hub/index.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -27223,7 +23152,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
@@ -27256,17 +23184,6 @@
       },
       {
         "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/index.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/tools/inspect-image-renderer.ts",
@@ -27287,46 +23204,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/jtd-to-json-schema.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/learn.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/memory-recall.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/memory-reflect.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/tools/memory-render.ts",
@@ -27339,79 +23216,7 @@
         "matched_tokens": [
           "warning"
         ],
-        "path": "tui_root/packages/coding-agent/src/tools/memory-retain.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
         "path": "tui_root/packages/coding-agent/src/tools/output-meta.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/output-schema-validator.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/path-utils.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/plan-mode-guard.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/read-archive.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/read-path-resolution.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/read-pdf.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -27430,41 +23235,10 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/read-sqlite.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/read.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/tools/render-utils.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/report-tool-issue.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -27496,16 +23270,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/tools/run-scope.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/tools/security-scan.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -27514,51 +23278,10 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/sqlite-reader.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
           "error",
           "warning"
         ],
         "path": "tui_root/packages/coding-agent/src/tools/todo.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/tool-errors.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/tool-result.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/tts.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -27589,16 +23312,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/tools/xdev.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/tools/yield.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -27607,20 +23320,9 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/tts/speech-enhancer.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tts/streaming-player.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -27648,21 +23350,9 @@
       },
       {
         "matched_tokens": [
-          "completion",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/tts/tts-worker.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tts/vocalizer.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -27715,37 +23405,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/utils/block-context.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/changelog.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/utils/clipboard.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/command-usage.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -27765,66 +23425,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/utils/event-bus.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/external-editor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/fetch-timeout.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/git.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/image-loading.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/image-resize.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/utils/image-vision-fallback.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -27835,108 +23435,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/utils/ipc.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/jj.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/late-cleanup.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/markit-cache.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/markit.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/open.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/qrcode.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/utils/title-generator.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/utils/tools-manager.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/vibe/runtime.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/kagi.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -27957,67 +23456,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/web/scrapers/docs-rs.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/web/scrapers/go-pkg.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/scrapers/mastodon.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/scrapers/mdn.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/scrapers/rawg.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/scrapers/repology.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/scrapers/semantic-scholar.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -28037,188 +23476,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/web/scrapers/twitter.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/scrapers/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/scrapers/utils.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/scrapers/youtube.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/index.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/provider.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/anthropic.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/brave.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/browser-page.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/web/search/providers/codex.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/duckduckgo.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/ecosia.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/exa.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/firecrawl.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/gemini.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/google.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/jina.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/kimi.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/mojeek.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -28238,97 +23496,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/public.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/searxng.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/startpage.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/synthetic.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/web/search/providers/tavily.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/tinyfish.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/utils.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/xai.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/zai.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/query.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -28347,61 +23515,9 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/tui/src/autocomplete.ts",
-        "root_id": "paired-tui",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "error"
-        ],
-        "path": "tui_root/packages/tui/src/components/editor.ts",
-        "root_id": "paired-tui",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "warning"
         ],
         "path": "tui_root/packages/tui/src/components/settings-list.ts",
-        "root_id": "paired-tui",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/tui/src/desktop-notify.ts",
-        "root_id": "paired-tui",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/tui/src/stdin-buffer.ts",
         "root_id": "paired-tui",
         "signals": [
           "event-kind"
@@ -28427,42 +23543,32 @@
         "signals": [
           "event-kind"
         ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/tui/src/tui.ts",
-        "root_id": "paired-tui",
-        "signals": [
-          "event-kind"
-        ]
       }
     ],
     "roots": [
       {
-        "consumer_count": 147,
+        "consumer_count": 98,
         "exists": true,
         "files_scanned": 365,
         "root": "engine_root/tui_skeleton/src",
         "root_id": "engine-tui-skeleton"
       },
       {
-        "consumer_count": 19,
+        "consumer_count": 12,
         "exists": true,
         "files_scanned": 28,
         "root": "tui_root/packages/agent/src",
         "root_id": "paired-agent"
       },
       {
-        "consumer_count": 699,
+        "consumer_count": 288,
         "exists": true,
         "files_scanned": 1352,
         "root": "tui_root/packages/coding-agent/src",
         "root_id": "paired-coding-agent"
       },
       {
-        "consumer_count": 8,
+        "consumer_count": 3,
         "exists": true,
         "files_scanned": 47,
         "root": "tui_root/packages/tui/src",
