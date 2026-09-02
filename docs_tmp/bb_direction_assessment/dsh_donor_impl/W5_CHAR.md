@@ -1,8 +1,8 @@
 # W5.1 DSH pre-run execution-world contract
 
-Status: pre-run contract **ACKNOWLEDGED by Kyle on 2026-09-02 through the plan-authorized ask-tool auto-selection**. No local, container, Ray, or Slurm world had been run when the mask was registered.
+Status: pre-run contract **ACKNOWLEDGED by Kyle on 2026-09-02 through the plan-authorized ask-tool auto-selection**. The mask was registered before any world started. The local-process and Docker execution record is below; Ray and Slurm were not run in this W5.1 slice.
 
-This note registers the comparison before any world is started. It does not infer a mask from output. The four worlds are local process, Docker container, Ray actor, and Slurm job.
+This note registered the comparison before any world started and does not infer a mask from output. The four world labels are local process, Docker container, Ray actor, and Slurm job. The execution record below does not change the registered mask.
 
 ## Mask
 
@@ -65,7 +65,49 @@ Liveness is observed separately from Session event equality. The observer record
 | Ray actor | actor creation success, `ray.get` completion for each operation, actor/node/resource identity, actor termination, and workspace cleanup | `sandbox_driver.py:create_sandbox` and `conductor/bootstrap.py:setup_sandbox` |
 | Slurm job | exact `sbatch --parsable` receipt, `SLURM_JOB_ID`, allocated node, fresh `squeue` active observation, fresh `sacct` terminal observation, raw stdout/stderr, exit code, and cleanup | `breadboard/rl/phase3/scheduler.py` and `scripts/rl_phase5/run_f3_target_episode.py` |
 
-The later run evidence owner is `docs_tmp/bb_direction_assessment/dsh_donor_impl/W5_EVIDENCE/<world>/`. Each world must publish its raw event JSONL, public projection, ordered diff report, fixture/Lock hashes, and liveness records there. No run result is recorded in this pre-run note.
+
+The later run evidence owner is `docs_tmp/bb_direction_assessment/dsh_donor_impl/W5_EVIDENCE/<world>/`. Each world publishes its raw event JSONL, public projection, ordered diff report, fixture/Lock hashes, and liveness records there. The local and Docker records below contain no secrets. The cross-world report is `W5_EVIDENCE/ordered_diff_report.json`.
+
+## W5.1 local and Docker execution
+
+The same copied Definition and Lock were used for both attempts:
+
+- Definition: `W5_EVIDENCE/fixture/minimal_harness.v2.yaml`.
+- Lock: `W5_EVIDENCE/fixture/minimal_harness.v2.lock.json`.
+- Lock graph hash: `sha256:6671b8f8863bd792bb37ba64f8283a23bba7abdfe8ed2464011b396b4783ab71`.
+- Task hash: `sha256:f72986898c2d83f2bea060a5ae468fdb427b1ebb401dbc14fbd3f92b0182fe7c`.
+- Task: `inspect the workspace and print verification command passed`.
+- Session ID: `w5-dsh-session`.
+- Sandbox command: `printf 'verification command passed\n'`.
+
+Exact fixture-lock command:
+
+```text
+PYTHONPATH=. uv run --no-project --with-requirements requirements.txt -- python scripts/breadboard_cli.py harness lock docs_tmp/bb_direction_assessment/dsh_donor_impl/W5_EVIDENCE/fixture/minimal_harness.v2.yaml
+```
+
+Result: lock written at `W5_EVIDENCE/fixture/minimal_harness.v2.lock.json` with the graph hash above.
+
+Exact local-process command:
+
+```text
+PYTHONPATH=. uv run --no-project --with-requirements requirements.txt -- python docs_tmp/bb_direction_assessment/dsh_donor_impl/W5_EVIDENCE/run_world.py local
+```
+
+Local result: `DevSandboxV2.__ray_metadata__.modified_class` ran the command successfully with exit `0`, stdout `verification command passed\n`, and empty stderr. Its durable Session stream has five events and ends in `session.completed`. Raw event JSONL, public projection, sandbox result, and metadata are under `W5_EVIDENCE/local/`.
+
+Exact Docker-container command:
+
+```text
+PYTHONPATH=. uv run --no-project --with-requirements requirements.txt -- python docs_tmp/bb_direction_assessment/dsh_donor_impl/W5_EVIDENCE/run_world.py docker
+```
+
+Docker result: `DockerSandboxV2.__ray_metadata__.modified_class` returned exit `1` before a container started because the Docker API socket was unavailable: `dial unix /var/run/docker.sock: connect: no such file or directory`. Its durable Session stream has five events and ends in `session.failed` with `sandbox_execution_failed`. Raw event JSONL, public projection, sandbox result, and metadata are under `W5_EVIDENCE/docker/`.
+
+Ordered diff after applying only `/occurred_at` and `/timestamp`: the event counts, session ID, event schema versions, sequences, event IDs, and events 1 through 3 match. At sequence 4, `payload.error` is `false` locally and `true` for Docker. At sequence 5, `kind` is `session.completed` locally and `session.failed` for Docker, with different terminal payloads. The rebuilt `SessionView` also differs in terminal status and outcome. These are undeclared semantic differences, so local-versus-Docker equivalence is **PRODUCT RED**. The Docker liveness failure explains the absent container only; it does not downgrade the event mismatch.
+
+The mask remains unchanged. This record does not claim Ray or Slurm equivalence and does not authorize those pilots.
+
 
 ## Acceptance gate
 
