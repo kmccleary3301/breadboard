@@ -102,6 +102,46 @@ def test_profile_builds_exact_qwen_stream_request_without_fallback():
     assert "store" not in request
     assert "provider" not in request
 
+def test_profile_request_provenance_separates_requested_default_and_adapter_facts():
+    profile = _profile()
+    messages = [{"role": "system", "content": "sys"}]
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read",
+                "description": "Read a file",
+                "parameters": {"type": "object"},
+                "strict": True,
+            },
+        }
+    ]
+
+    provenance = profile.chat_request_provenance(
+        messages, tools, requested_stream=False
+    )
+
+    assert provenance["messages"]["status"] == "requested"
+    assert provenance["messages"]["source"] == "session.model_history"
+    assert provenance["tools"]["status"] == "requested"
+    assert provenance["tools"]["source"] == "provider.tool_registry"
+    assert provenance["n"] == {
+        "status": "default",
+        "source": "OpenAICompletionsSampling.n",
+        "effective": 1,
+        "uncertainty": None,
+    }
+    assert provenance["stream"] == {
+        "status": "adapter",
+        "source": "openai_chat.profile",
+        "requested": False,
+        "effective": True,
+        "uncertainty": None,
+    }
+    assert provenance["tools[0].function.strict"]["status"] == "adapter"
+    assert provenance["tools[0].function.strict"]["effective"] is False
+    assert all(item.get("uncertainty") is None for item in provenance.values())
+
 
 def test_profile_projects_exact_sdk_stream_request(monkeypatch):
     profile = _profile(sampling={"temperature": 0.2})

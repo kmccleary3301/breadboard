@@ -42,3 +42,32 @@ def test_compile_v2_prompts_minimal():
 
 
 
+def test_compile_v2_prompts_records_ordered_model_surface_contributions():
+    comp = get_compiler()
+    cfg = {
+        "prompts": {
+            "packs": {"base": {"first": "first", "second": "second"}},
+            "injection": {
+                "system_order": ["@pack(base).first", "@pack(base).second"],
+                "per_turn_order": ["mode_specific"],
+            },
+        },
+        "modes": [{"name": "build", "prompt": "mode"}],
+    }
+
+    result = comp.compile_v2_prompts(
+        cfg, mode_name="build", tools=_mk_tools(), dialects=["unified_diff"]
+    )
+
+    assert [
+        (item["order"], item["source_ref"])
+        for item in result["model_surface"]["prompt_sections"]["system"]
+    ] == [(0, "@pack(base).first"), (1, "@pack(base).second")]
+    assert result["model_surface"]["prompt_sections"]["per_turn"][0][
+        "source_ref"
+    ] == "mode_specific"
+    assert [
+        (item["order"], item["source_ref"])
+        for item in result["model_surface"]["tools"]
+    ] == [(0, "tool_registry[0]"), (1, "tool_registry[1]")]
+

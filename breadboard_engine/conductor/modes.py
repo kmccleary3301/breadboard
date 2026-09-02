@@ -421,6 +421,18 @@ def get_model_response(
         client_config=client_config,
         context=runtime_context,
     )
+    request_provenance: Optional[Dict[str, Any]] = None
+    if provider_profile is not None:
+        try:
+            request_provenance = provider_profile.chat_request_provenance(
+                runtime._convert_messages_to_chat(
+                    send_messages, context=runtime_context
+                ),
+                runtime._convert_tools_to_openai(tools_schema),
+                requested_stream=stream_responses,
+            )
+        except Exception:
+            request_provenance = None
     try:
         session_state.set_provider_metadata("current_stream_requested", stream_responses)
         session_state.set_provider_metadata("current_stream_effective", effective_stream_responses)
@@ -447,7 +459,6 @@ def get_model_response(
         pass
 
 
-
     try:
         if getattr(conductor.logger_v2, "include_structured_requests", True):
             extra_meta: Dict[str, Any] = {
@@ -456,6 +467,41 @@ def get_model_response(
             }
             if profile_identity is not None:
                 extra_meta["provider_profile_identity"] = profile_identity
+            if request_provenance is not None:
+                extra_meta["request_provenance"] = request_provenance
+            model_surface = session_state.get_provider_metadata(
+                "current_model_surface"
+            )
+            if isinstance(model_surface, dict):
+                extra_meta["model_surface"] = model_surface
+            model_history = getattr(session_state, "provider_messages", []) or []
+            extra_meta["model_history"] = [
+                {
+                    "order": index,
+                    "source_ref": f"session.provider_messages[{index}]",
+                    "role": message.get("role"),
+                    "uncertainty": None,
+                }
+                for index, message in enumerate(model_history)
+                if isinstance(message, dict)
+            ]
+            attachment_capabilities = session_state.get_provider_metadata(
+                "attachment_capabilities", {}
+            )
+            if isinstance(attachment_capabilities, dict):
+                extra_meta["resource_refs"] = [
+                    {
+                        "source_ref": uri,
+                        "digest": ref.get("digest"),
+                        "size_bytes": ref.get("size_bytes"),
+                        "media_type": ref.get("media_type"),
+                        "uncertainty": None,
+                    }
+                    for uri, ref in sorted(attachment_capabilities.items())
+                    if isinstance(uri, str)
+                    and isinstance(ref, dict)
+                    and isinstance(ref.get("digest"), str)
+                ]
             if stream_policy:
                 extra_meta["stream_policy"] = {
                     "reason": stream_policy.get("reason"),

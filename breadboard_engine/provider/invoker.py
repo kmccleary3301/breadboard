@@ -315,11 +315,25 @@ class ProviderInvoker:
                             )
                         )
                 elapsed = time.time() - start_time
+                cache_observation = self._cache_observation(
+                    call_result,
+                    route_id=route_id or target_model,
+                    model=target_model,
+                    context=runtime_context,
+                )
+                runtime_context.extra["cache_observation"] = cache_observation
+                try:
+                    session_state.set_provider_metadata(
+                        "last_cache_observation", cache_observation
+                    )
+                except Exception:
+                    pass
                 self.provider_metrics.add_call(
                     target_model,
                     stream=use_stream,
                     elapsed=elapsed,
                     outcome="success",
+                    details={"cache_observation": cache_observation},
                 )
                 self.set_last_latency(elapsed)
                 self.set_html_detected(False)
@@ -738,6 +752,47 @@ class ProviderInvoker:
                 "provider result contains conflicting finish reasons"
             )
         return canonical_reasons[0]
+
+    @staticmethod
+    def _cache_observation(
+        result: ProviderResult,
+        *,
+        route_id: str,
+        model: str,
+        context: ProviderRuntimeContext,
+    ) -> Dict[str, Any]:
+        usage = result.usage if isinstance(result.usage, Mapping) else {}
+
+        def _token(*names: str) -> int | None:
+            for name in names:
+                value = usage.get(name)
+                if type(value) is int and value >= 0:
+                    return value
+            return None
+
+        prefix_digest = (context.extra or {}).get("cache_prefix_digest")
+        divergence_reason = (context.extra or {}).get("cache_divergence_reason")
+        if not isinstance(prefix_digest, str):
+            prefix_digest = None
+        if not isinstance(divergence_reason, str):
+            divergence_reason = None
+        cache_read_tokens = _token(
+            "cache_read_tokens", "cache_read", "cache_read_input_tokens"
+        )
+        cache_write_tokens = _token(
+            "cache_write_tokens", "cache_write", "cache_creation_input_tokens"
+        )
+        return {
+            "observed": cache_read_tokens is not None or cache_write_tokens is not None,
+            "prefix_digest": prefix_digest,
+            "provider_tokens": {
+                "cache_read": cache_read_tokens,
+                "cache_write": cache_write_tokens,
+            },
+            "route_id": route_id,
+            "model": model,
+            "divergence_reason": divergence_reason,
+        }
 
     @staticmethod
     def _raw_finish(result: ProviderResult) -> Optional[str]:

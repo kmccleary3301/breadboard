@@ -122,6 +122,89 @@ def test_provider_invoker_stream_success():
 
 
 
+def test_provider_invoker_records_cache_observation_as_independent_facts() -> None:
+    runtime = _mk_runtime(
+        ProviderResult(
+            messages=[
+                ProviderMessage(
+                    role="assistant",
+                    content="ok",
+                    tool_calls=[],
+                    finish_reason="stop",
+                    index=0,
+                )
+            ],
+            raw_response=None,
+            usage={"cache_read_tokens": 11, "cache_write_tokens": 3},
+            metadata={},
+        )
+    )
+    invoker = _make_invoker(Mock(return_value=None))
+    invoker.route_health.is_circuit_open.return_value = False
+    state = _session_state()
+    context = ProviderRuntimeContext(
+        session_state=state,
+        agent_config={},
+        extra={
+            "cache_prefix_digest": "sha256:" + "a" * 64,
+            "cache_divergence_reason": "provider_route_changed",
+        },
+    )
+
+    invoker.invoke(
+        runtime=runtime,
+        client=object(),
+        model="cli_mock/dev",
+        send_messages=[],
+        tools_schema=None,
+        stream_responses=False,
+        runtime_context=context,
+        session_state=state,
+        markdown_logger=_markdown_logger(),
+        turn_index=1,
+        route_id="cli_mock/dev",
+    )
+
+    expected = {
+        "observed": True,
+        "prefix_digest": "sha256:" + "a" * 64,
+        "provider_tokens": {"cache_read": 11, "cache_write": 3},
+        "route_id": "cli_mock/dev",
+        "model": "cli_mock/dev",
+        "divergence_reason": "provider_route_changed",
+    }
+    assert state.get_provider_metadata("last_cache_observation") == expected
+    details = invoker.provider_metrics.add_call.call_args.kwargs["details"]
+    assert details == {"cache_observation": expected}
+
+def test_provider_invoker_requires_typed_operation_correlation_before_dispatch() -> None:
+    runtime = _mk_runtime(_provider_result())
+    invoker = _make_invoker(Mock(return_value=None))
+    state = SessionState(workspace=".", image="cli", config={})
+
+    with pytest.raises(
+        ProviderContractError,
+        match="requires exact session/input/turn correlation",
+    ):
+        invoker.invoke(
+            runtime=runtime,
+            client=object(),
+            model="cli_mock/dev",
+            send_messages=[],
+            tools_schema=None,
+            stream_responses=False,
+            runtime_context=ProviderRuntimeContext(
+                session_state=state,
+                agent_config={},
+            ),
+            session_state=state,
+            markdown_logger=_markdown_logger(),
+            turn_index=1,
+            route_id="cli_mock/dev",
+        )
+
+    runtime.invoke.assert_not_called()
+
 @pytest.mark.parametrize(
     "runtime_error",
     (
