@@ -423,16 +423,13 @@ def get_model_response(
     )
     request_provenance: Optional[Dict[str, Any]] = None
     if provider_profile is not None:
-        try:
-            request_provenance = provider_profile.chat_request_provenance(
-                runtime._convert_messages_to_chat(
-                    send_messages, context=runtime_context
-                ),
-                runtime._convert_tools_to_openai(tools_schema),
-                requested_stream=stream_responses,
-            )
-        except Exception:
-            request_provenance = None
+        request_provenance = provider_profile.chat_request_provenance(
+            runtime._convert_messages_to_chat(
+                send_messages, context=runtime_context
+            ),
+            runtime._convert_tools_to_openai(tools_schema),
+            requested_stream=stream_responses,
+        )
     try:
         session_state.set_provider_metadata("current_stream_requested", stream_responses)
         session_state.set_provider_metadata("current_stream_effective", effective_stream_responses)
