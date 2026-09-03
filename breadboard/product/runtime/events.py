@@ -91,8 +91,8 @@ class JsonlEventSink:
 class NullEventSink:
     def append(self, event: object) -> None: return None
 _OBSERVATION_EVENT_KINDS = frozenset({"assistant_message", "tool_call", "tool_result"})
-_EVENT_KINDS = frozenset({"session.started", "input.accepted", "approval.requested", "approval.resolved", "session.reconfigured", "session.paused", "session.resumed", "session.completed", "session.failed", "session.canceled"}) | _OBSERVATION_EVENT_KINDS
-_ALLOWED = MappingProxyType({"input.accepted": ("running",), "assistant_message": ("running",), "tool_call": ("running",), "tool_result": ("running",), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",), "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"), "session.resumed": ("paused",), "session.completed": ("running",), "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused")})
+_EVENT_KINDS = frozenset({"session.started", "input.accepted", "annotation", "approval.requested", "approval.resolved", "session.reconfigured", "session.paused", "session.resumed", "session.completed", "session.failed", "session.canceled"}) | _OBSERVATION_EVENT_KINDS
+_ALLOWED = MappingProxyType({"input.accepted": ("running",), "assistant_message": ("running",), "tool_call": ("running",), "tool_result": ("running",), "annotation": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",), "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"), "session.resumed": ("paused",), "session.completed": ("running",), "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused")})
 _STATUSES, _DECISIONS = frozenset({"running", "awaiting_approval", "paused", "completed", "failed", "canceled"}), frozenset({"allow", "deny", "once", "always", "reject"})
 _TERMINAL = {"session.completed": ("completed", ("summary",)), "session.failed": ("failed", ("error", "detail")), "session.canceled": ("canceled", ("reason",))}
 def _string(value: Any, name: str, populated: bool = True) -> str:
@@ -101,17 +101,32 @@ def _string(value: Any, name: str, populated: bool = True) -> str:
 def _sha256(value: Any, name: str) -> str:
     if len(value := _string(value, name)) != 71 or not value.startswith("sha256:") or any(c not in "0123456789abcdef" for c in value[7:]): raise ValueError(f"{name} must be an exact lowercase sha256 hash")
     return value
+def _validate_annotation_payload(payload: Mapping[str, Any]) -> None:
+    required = {"annotation_id", "message_id", "trajectory_id", "label", "author", "generation"}
+    if set(payload) != required:
+        raise ValueError("annotation payload must contain only stable annotation fields")
+    for name in required:
+        _string(payload.get(name), name)
 def _validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
     if kind == "session.started": _sha256(payload.get("effective_lock_hash"), "effective_lock_hash"); _sha256(payload.get("task_hash"), "task_hash")
     elif kind == "assistant_message":
         metadata = payload.get("metadata")
-        if set(payload) != {"metadata"} or not isinstance(metadata, Mapping) or set(metadata) != {"has_content"} or type(metadata.get("has_content")) is not bool: raise ValueError("assistant_message payload must contain only boolean metadata.has_content")
+        if not isinstance(metadata, Mapping) or set(metadata) != {"has_content"} or type(metadata.get("has_content")) is not bool:
+            raise ValueError("assistant_message payload must contain boolean metadata.has_content")
+        identity = set(payload) - {"metadata"}
+        if identity not in (set(), {"message_id", "trajectory_id"}):
+            raise ValueError("assistant_message identity must contain message_id and trajectory_id")
+        if identity:
+            _string(payload.get("message_id"), "message_id")
+            _string(payload.get("trajectory_id"), "trajectory_id")
     elif kind == "tool_call":
         if set(payload) != {"tool"}: raise ValueError("tool_call payload must contain only tool")
         _string(payload.get("tool"), "tool")
     elif kind == "tool_result":
         if set(payload) != {"tool", "error"} or type(payload.get("error")) is not bool: raise ValueError("tool_result payload must contain tool and one boolean error field")
         _string(payload.get("tool"), "tool")
+    elif kind == "annotation":
+        _validate_annotation_payload(payload)
     elif kind == "input.accepted":
         _sha256(payload.get("content_hash"), "content_hash"); attachments = payload.get("attachments")
         if not isinstance(attachments, (list, tuple)): raise ValueError("attachments must be an array")
@@ -140,6 +155,30 @@ def _plain(value: Any) -> Any:
     if isinstance(value, Mapping): return {key: _plain(item) for key, item in value.items()}
     if isinstance(value, tuple): return [_plain(item) for item in value]
     return value
+@dataclass(frozen=True, slots=True)
+class AnnotationRecord:
+    """Stable, immutable label metadata for one canonical message target."""
+
+    annotation_id: str
+    message_id: str
+    trajectory_id: str
+    label: str
+    author: str
+    generation: str
+
+    def __post_init__(self) -> None:
+        for name in ("annotation_id", "message_id", "trajectory_id", "label", "author", "generation"):
+            _string(getattr(self, name), name)
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "annotation_id": self.annotation_id,
+            "message_id": self.message_id,
+            "trajectory_id": self.trajectory_id,
+            "label": self.label,
+            "author": self.author,
+            "generation": self.generation,
+        }
 @dataclass(frozen=True, slots=True)
 class KernelEvent:
     session_id: str; sequence: int; kind: str; occurred_at: str; payload: Mapping[str, Any]; schema_version: str = "bb.session_event.v1"
@@ -171,22 +210,49 @@ class SessionView:
     def as_dict(self) -> dict[str, Any]: return {"schema_version": "bb.session.v1", "session_id": self.session_id, "status": self.status, "effective_lock_hash": self.effective_lock_hash, "task_hash": self.task_hash, "event_count": self.event_count, "pending_approval": self.pending_approval, "terminal_outcome": _plain(self.terminal_outcome)}
 def rebuild(events: Iterable[KernelEvent]) -> SessionView:
     rows = tuple(events)
-    if not rows or rows[0].kind != "session.started": raise ValueError("event stream must begin with session.started")
-    start, status, pending, outcome = rows[0], "running", None, None; lock_hash = start.payload["effective_lock_hash"]
+    if not rows or rows[0].kind != "session.started":
+        raise ValueError("event stream must begin with session.started")
+    start, status, pending, outcome = rows[0], "running", None, None
+    lock_hash = start.payload["effective_lock_hash"]
+    message_targets: dict[str, str] = {}
+    annotation_ids: set[str] = set()
     for expected, event in enumerate(rows, 1):
-        if event.session_id != start.session_id or event.sequence != expected: raise ValueError("event stream is not contiguous for one session")
-        if expected == 1: continue
-        if status not in _ALLOWED.get(event.kind, ()): raise ValueError(f"invalid {event.kind} transition from {status}")
-        if event.kind == "approval.requested": pending, status = event.payload["request_id"], "awaiting_approval"
+        if event.session_id != start.session_id or event.sequence != expected:
+            raise ValueError("event stream is not contiguous for one session")
+        if expected == 1:
+            continue
+        if status not in _ALLOWED.get(event.kind, ()):
+            raise ValueError(f"invalid {event.kind} transition from {status}")
+        if event.kind == "assistant_message" and "message_id" in event.payload:
+            message_id = event.payload["message_id"]
+            trajectory_id = event.payload["trajectory_id"]
+            previous_trajectory = message_targets.get(message_id)
+            if previous_trajectory is not None and previous_trajectory != trajectory_id:
+                raise ValueError("message identity maps to multiple trajectories")
+            message_targets[message_id] = trajectory_id
+        elif event.kind == "annotation":
+            annotation_id = event.payload["annotation_id"]
+            if annotation_id in annotation_ids:
+                raise ValueError("duplicate annotation_id in event stream")
+            annotation_ids.add(annotation_id)
+            if message_targets.get(event.payload["message_id"]) != event.payload["trajectory_id"]:
+                raise ValueError("annotation target is not registered for this session")
+        if event.kind == "approval.requested":
+            pending, status = event.payload["request_id"], "awaiting_approval"
         elif event.kind == "approval.resolved":
-            if pending != event.payload["request_id"]: raise ValueError("approval does not match the pending request")
+            if pending != event.payload["request_id"]:
+                raise ValueError("approval does not match the pending request")
             pending, status = None, "running"
-        elif event.kind == "session.reconfigured": lock_hash = event.payload["effective_lock_hash"]
-        elif event.kind == "session.paused": status = "paused"
-        elif event.kind == "session.resumed": status = "running"
-        elif event.kind.startswith("session."): pending, status, outcome = None, event.kind.removeprefix("session."), event.payload
+        elif event.kind == "session.reconfigured":
+            lock_hash = event.payload["effective_lock_hash"]
+        elif event.kind == "session.paused":
+            status = "paused"
+        elif event.kind == "session.resumed":
+            status = "running"
+        elif event.kind.startswith("session."):
+            pending, status, outcome = None, event.kind.removeprefix("session."), event.payload
     return SessionView(start.session_id, status, lock_hash, start.payload["task_hash"], len(rows), pending, outcome)
-_SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
+_SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "annotate": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
 def _graph_hash(lock: EffectiveHarnessLock) -> str:
     graph_hash = lock.as_dict().get("graph_hash")
     if not isinstance(graph_hash, str) or not graph_hash.startswith("sha256:"): raise ValueError("EffectiveHarnessLock has no canonical graph_hash")
@@ -194,6 +260,20 @@ def _graph_hash(lock: EffectiveHarnessLock) -> str:
 def _hash(value: str) -> str: return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
 def _check(condition: bool, error: type[Exception], message: str) -> None:
     if not condition: raise error(message)
+def _assistant_payload(
+    content: str,
+    message_id: str | None,
+    trajectory_id: str | None,
+) -> dict[str, Any]:
+    _check(type(content) is str, TypeError, "assistant content must be a string")
+    if (message_id is None) != (trajectory_id is None):
+        raise ValueError("assistant message identity requires message_id and trajectory_id")
+    payload: dict[str, Any] = {"metadata": {"has_content": bool(content)}}
+    if message_id is not None and trajectory_id is not None:
+        _string(message_id, "message_id")
+        _string(trajectory_id, "trajectory_id")
+        payload.update(message_id=message_id, trajectory_id=trajectory_id)
+    return payload
 class Session:
     """Lifecycle owner; adapters may add only validated, minimal runtime observations."""
     def __init__(self, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> None:
@@ -214,8 +294,9 @@ class Session:
     def read_model(self) -> SessionView:
         with self._transition_lock: return self._view
     def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])
-    def assistant_message(self, content: str) -> SessionView: return self._append("observe assistant", "assistant_message", lambda: (_check(type(content) is str, TypeError, "assistant content must be a string"), {"metadata": {"has_content": bool(content)}})[1])
+    def assistant_message(self, content: str, *, message_id: str | None = None, trajectory_id: str | None = None) -> SessionView: return self._append("observe assistant", "assistant_message", lambda: _assistant_payload(content, message_id, trajectory_id))
     def tool_called(self, tool: str) -> SessionView: return self._append("observe tool call", "tool_call", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), {"tool": tool})[1])
+    def annotate(self, record: AnnotationRecord) -> SessionView: return self._append("annotate", "annotation", lambda: self._annotation_payload(record))
     def tool_completed(self, tool: str, failed: bool) -> SessionView: return self._append("observe tool result", "tool_result", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), _check(type(failed) is bool, TypeError, "tool completion error flag must be boolean"), {"tool": tool, "error": failed})[2])
     def request_approval(self, request_id: str, operation: str) -> SessionView: return self._append("request approval", "approval.requested", lambda: (_check(bool(request_id and operation), ValueError, "approval request fields must be populated"), {"request_id": request_id, "operation": operation})[1])
     def resolve_approval(self, request_id: str, decision: str) -> SessionView: return self._append("resolve approval", "approval.resolved", lambda: (_check(bool(request_id and decision in _DECISIONS), ValueError, "invalid approval decision"), {"request_id": request_id, "decision": decision})[1])
@@ -225,6 +306,24 @@ class Session:
     def cancel(self, reason: str = "operator request") -> SessionView: return self._append("cancel", "session.canceled", lambda: {"outcome": "canceled", "reason": reason})
     def complete(self, summary: str = "completed") -> SessionView: return self._append("complete", "session.completed", lambda: {"outcome": "completed", "summary": summary})
     def fail(self, error_code: str, detail: str) -> SessionView: return self._append("fail", "session.failed", lambda: (_check(bool(error_code and detail), ValueError, "terminal error fields must be populated"), {"outcome": "failed", "error": error_code, "detail": detail})[1])
+    def _annotation_payload(self, record: AnnotationRecord) -> dict[str, str]:
+        if not isinstance(record, AnnotationRecord):
+            raise TypeError("annotation requires an AnnotationRecord")
+        message_targets = {
+            event.payload["message_id"]: event.payload["trajectory_id"]
+            for event in self._events
+            if event.kind == "assistant_message" and "message_id" in event.payload
+        }
+        annotation_ids = {
+            event.payload["annotation_id"]
+            for event in self._events
+            if event.kind == "annotation"
+        }
+        if record.annotation_id in annotation_ids:
+            raise ValueError("duplicate annotation_id")
+        if message_targets.get(record.message_id) != record.trajectory_id:
+            raise ValueError("annotation target is not registered for this session")
+        return record.as_dict()
     def _require(self, action: str) -> None:
         if self._appending: raise RuntimeError("cannot mutate session while an append is in progress")
         if self._view.status not in _SESSION_ACTIONS[action]: raise RuntimeError(f"cannot {action} while session is {self._view.status}")

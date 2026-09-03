@@ -4,7 +4,7 @@ from pathlib import Path; from typing import Any
 from jsonschema import Draft202012Validator
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
-from breadboard.product.runtime.events import JsonlEventSink, KernelEvent, Session, SessionView, rebuild
+from breadboard.product.runtime.events import AnnotationRecord, JsonlEventSink, KernelEvent, Session, SessionView, rebuild
 from breadboard.product.runtime.session_store import validate_session_id
 HASH, OTHER_HASH, PORTS, ARTIFACTS = "sha256:" + "a" * 64, "sha256:" + "b" * 64, "breadboard.product.runtime.events.os.", "breadboard.product.runtime.artifacts.os."
 def _lock(digest: str = HASH) -> EffectiveHarnessLock: return EffectiveHarnessLock._from_record({"graph_hash": digest})
@@ -230,3 +230,99 @@ _EVENT_KINDS = {"input": "input.accepted", "assistant": "assistant_message", "to
 _REPLAY_DENIED = [(status, action) for status in ("running", "awaiting_approval", "paused", "completed", "failed", "canceled") for action in _ACTIONS if status not in _FACADE_ALLOWED[action]]
 @pytest.mark.parametrize(("status", "action"), _REPLAY_DENIED)
 def test_replay_transition_table_rejects_every_disallowed_pair(status: str, action: str) -> None: events = list(_session(status).events); events.append(_event(len(events) + 1, _EVENT_KINDS[action])); pytest.raises(ValueError, rebuild, events)
+def test_annotation_event_uses_registered_target_and_preserves_message_owner_bytes() -> None:
+
+    session = Session.start(_lock(), "task")
+    message_bytes = b"candidate bytes owned by the transcript"
+    session.assistant_message(
+        message_bytes.decode(),
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation-1",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+        label="preferred",
+        author="reviewer-1",
+        generation="generation-a",
+    )
+    before = message_bytes
+    session.annotate(record)
+
+    event = session.events[-1]
+    assert event.kind == "annotation"
+    assert event.payload == record.as_dict()
+    assert message_bytes == before
+
+
+def test_annotation_rejects_unknown_target_and_duplicate_before_append() -> None:
+
+    session = Session.start(_lock(), "task")
+    record = AnnotationRecord(
+        annotation_id="annotation-1",
+        message_id="missing",
+        trajectory_id="trajectory-a",
+        label="preferred",
+        author="reviewer-1",
+        generation="generation-a",
+    )
+    before = session.events
+    with pytest.raises(ValueError, match="annotation target"):
+        session.annotate(record)
+    assert session.events == before
+
+    session.assistant_message(
+        "candidate",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    session.annotate(
+        AnnotationRecord(
+            annotation_id="annotation-1",
+            message_id="message-a",
+            trajectory_id="trajectory-a",
+            label="preferred",
+            author="reviewer-1",
+            generation="generation-a",
+        )
+    )
+    before = session.events
+    with pytest.raises(ValueError, match="duplicate annotation_id"):
+        session.annotate(
+            AnnotationRecord(
+                annotation_id="annotation-1",
+                message_id="message-a",
+                trajectory_id="trajectory-a",
+                label="rejected",
+                author="reviewer-1",
+                generation="generation-a",
+            )
+        )
+    assert session.events == before
+
+
+def test_annotation_replay_is_stable_and_allows_post_terminal_labels() -> None:
+
+    session = Session.start(_lock(), "task")
+    session.assistant_message(
+        "candidate",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    session.complete("done")
+    record = AnnotationRecord(
+        annotation_id="annotation-1",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+        label="preferred",
+        author="reviewer-1",
+        generation="generation-a",
+    )
+    session.annotate(record)
+    restored = Session.restore(session.events)
+
+    assert restored.events == session.events
+    assert restored.read_model == session.read_model
+    assert restored.events[-1].as_dict()["payload"] == record.as_dict()
+ 
