@@ -152,11 +152,15 @@ class AgenticCoder:
                 return True
             except Exception:
                 return False
-        # Ray actor: attempt remote method if present
+        # Ray actor: wait for the actor to acknowledge the update so callers can
+        # safely persist or roll back the corresponding generation change.
         try:
             if hasattr(self.agent, "apply_config_overrides"):
-                self.agent.apply_config_overrides.remote(overrides)
-                return True
+                reference = self.agent.apply_config_overrides.remote(overrides)
+                ray_mod = _get_ray()
+                if ray_mod is None:
+                    return False
+                return ray_mod.get(reference) is not False
         except Exception:
             return False
         return False

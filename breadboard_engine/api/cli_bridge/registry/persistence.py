@@ -21,6 +21,7 @@ from ..models import (
     SessionSummary,
     TurnAdmission,
 )
+from ..runtime_emission import retained_runtime_overrides as _retained_runtime_overrides
 
 from .records import (
     _STATE_SCHEMA_VERSION,
@@ -53,32 +54,6 @@ _PROVIDER_USAGE_FIELDS = {
     "reasoningTokens",
     "extensions",
 }
-_RUNTIME_OVERRIDE_KEYS = frozenset(
-    {
-        "providers.default_model",
-        "mode",
-        "skills.allowlist",
-        "skills.blocklist",
-    }
-)
-
-
-def _retained_runtime_overrides(value: Any) -> Dict[str, Any]:
-    if not isinstance(value, dict):
-        return {}
-    retained: Dict[str, Any] = {}
-    for key in _RUNTIME_OVERRIDE_KEYS:
-        candidate = value.get(key)
-        if key in {"providers.default_model", "mode"}:
-            if isinstance(candidate, str) and candidate.strip():
-                retained[key] = candidate.strip()
-        elif isinstance(candidate, list):
-            retained[key] = [
-                item.strip()
-                for item in candidate
-                if isinstance(item, str) and item.strip()
-            ]
-    return retained
 
 
 def _retained_skills_selection(value: Any) -> Dict[str, Any] | None:

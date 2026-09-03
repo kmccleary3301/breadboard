@@ -31,6 +31,7 @@ from breadboard_engine.permissions import (
 from breadboard_engine.security import WorkspaceFilesystem
 from breadboard_engine.skills.registry import normalize_skill_selection
 
+from .runtime_emission import retained_runtime_overrides
 from .events import EventType
 
 logger = logging.getLogger(__name__)
@@ -160,25 +161,7 @@ class SessionControlController:
         )
     @staticmethod
     def _runtime_override_delta(value: Any) -> Dict[str, Any]:
-        raw = value if isinstance(value, dict) else {}
-        retained: Dict[str, Any] = {}
-        for key in (
-            "providers.default_model",
-            "mode",
-            "skills.allowlist",
-            "skills.blocklist",
-        ):
-            candidate = raw.get(key)
-            if key in {"providers.default_model", "mode"}:
-                if isinstance(candidate, str) and candidate.strip():
-                    retained[key] = candidate.strip()
-            elif isinstance(candidate, list):
-                retained[key] = [
-                    item.strip()
-                    for item in candidate
-                    if isinstance(item, str) and item.strip()
-                ]
-        return retained
+        return retained_runtime_overrides(value)
 
     @staticmethod
     def _snapshot_runtime_state(runner: SessionControlHost) -> Dict[str, Any]:
@@ -219,17 +202,40 @@ class SessionControlController:
             if callable(apply_runtime_overrides):
                 previous_config = snapshot["runtime_config"]
                 previous_skills = previous_config.get("skills")
+                previous_providers = previous_config.get("providers")
+                previous_model = (
+                    previous_providers.get("default_model")
+                    if isinstance(previous_providers, Mapping)
+                    else None
+                )
+                runtime_rollback = {
+                    "mode": previous_config.get("mode"),
+                    "skills.allowlist": (
+                        (previous_skills or {}).get("allowlist") or []
+                    ),
+                    "skills.blocklist": (
+                        (previous_skills or {}).get("blocklist") or []
+                    ),
+                }
+                if isinstance(previous_model, str) and previous_model.strip():
+                    runtime_rollback["providers.default_model"] = previous_model
+                else:
+                    runtime_rollback["providers"] = (
+                        copy.deepcopy(previous_providers)
+                        if isinstance(previous_providers, Mapping)
+                        else {}
+                    )
+                previous_role_lock = previous_config.get("model_role_lock")
+                if isinstance(previous_role_lock, Mapping):
+                    runtime_rollback["model_role_lock"] = copy.deepcopy(
+                        previous_role_lock
+                    )
+                previous_role = previous_config.get("active_model_role")
+                if isinstance(previous_role, str) and previous_role.strip():
+                    runtime_rollback["active_model_role"] = previous_role
                 try:
                     runner._rollback_runtime_overrides(
-                        {
-                            "mode": previous_config.get("mode"),
-                            "skills.allowlist": (
-                                (previous_skills or {}).get("allowlist") or []
-                            ),
-                            "skills.blocklist": (
-                                (previous_skills or {}).get("blocklist") or []
-                            ),
-                        },
+                        runtime_rollback,
                         (
                             "skills",
                             isinstance(previous_skills, dict),
@@ -294,6 +300,15 @@ class SessionControlController:
         runner = self._runner
         if runner._closed:
             raise RuntimeError("session is closed")
+        if (
+            command
+            in {"set_skills", "set_role", "set_model_role", "set_model", "set_mode"}
+            and getattr(runner.session, "product_session", None) is not None
+            and durable_reconfigure is None
+        ):
+            raise RuntimeError(
+                "runtime mutations require durable generation reconfiguration"
+            )
         if command == "set_model" and runner._model_role_lock is not None:
             raise ModelRoleResolutionError(
                 ModelRoleProblem(
@@ -664,13 +679,6 @@ class SessionControlController:
                             "no model-role lock is active",
                             "$.roles",
                         )
-                    )
-                if (
-                    getattr(runner.session, "product_session", None) is not None
-                    and durable_reconfigure is None
-                ):
-                    raise RuntimeError(
-                        "model-role transitions require durable reconfiguration"
                     )
                 async with self._admission_guard():
                     if runner.session.active_turn_id is not None:

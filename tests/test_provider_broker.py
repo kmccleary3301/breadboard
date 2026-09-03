@@ -487,6 +487,40 @@ def test_agent_config_does_not_cross_inline_provider_credentials(monkeypatch):
     )
 
 
+@pytest.mark.parametrize(("acknowledgement", "expected"), [(True, True), (False, False)])
+def test_remote_runtime_override_waits_for_actor_acknowledgement(
+    monkeypatch, acknowledgement, expected
+) -> None:
+    import breadboard_engine.agent as agent_module
+    from breadboard_engine.agent import AgenticCoder
+
+    monkeypatch.setattr(
+        AgenticCoder, "_load_config", lambda _self: {"providers": {}}
+    )
+    agent = AgenticCoder("unused.json", force_local_mode=False)
+    reference = object()
+    remote_calls = []
+    observed = []
+
+    class RemoteOverride:
+        def remote(self, overrides):
+            remote_calls.append(overrides)
+            return reference
+
+    def get(candidate):
+        observed.append(candidate)
+        return acknowledgement
+
+    agent.agent = SimpleNamespace(apply_config_overrides=RemoteOverride())
+    monkeypatch.setattr(
+        agent_module, "_get_ray", lambda: SimpleNamespace(get=get)
+    )
+
+    overrides = {"providers.default_model": "mock/reconfigured"}
+    assert agent.apply_runtime_overrides(overrides) is expected
+    assert remote_calls == [overrides]
+    assert observed == [reference]
+
 def test_provider_client_construction_uses_one_operation_broker_lease(
     tmp_path, monkeypatch
 ):

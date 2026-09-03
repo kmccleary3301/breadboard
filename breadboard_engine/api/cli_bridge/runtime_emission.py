@@ -171,6 +171,67 @@ def _json_safe_runtime_config(value: Any) -> Any:
 def _sanitize_persisted_runtime_config(value: Any) -> Any:
     return _json_safe_runtime_config(redaction.strip_provider_auth_runtime(value))
 
+_RETAINED_RUNTIME_OVERRIDE_KEYS = frozenset(
+    {
+        "completion.natural_finish.idle_turn_limit",
+        "mode",
+        "providers.default_model",
+        "skills.allowlist",
+        "skills.blocklist",
+        "skills.profile",
+        "workspace.root",
+    }
+)
+
+
+def retained_runtime_overrides(
+    value: Any, *, reject_unsupported: bool = False
+) -> dict[str, Any]:
+    """Return the bounded, secret-free create overrides safe to retain."""
+    raw = value if isinstance(value, Mapping) else {}
+    sanitized = redaction.strip_provider_auth_runtime(raw)
+    unsupported = sorted(
+        str(key) for key in sanitized if str(key) not in _RETAINED_RUNTIME_OVERRIDE_KEYS
+    )
+    invalid: list[str] = []
+    retained: dict[str, Any] = {}
+    for key, item in sanitized.items():
+        name = str(key)
+        if name not in _RETAINED_RUNTIME_OVERRIDE_KEYS:
+            continue
+        if name in {
+            "mode",
+            "providers.default_model",
+            "skills.profile",
+            "workspace.root",
+        }:
+            if isinstance(item, str) and item.strip():
+                retained[name] = item.strip()
+            else:
+                invalid.append(name)
+        elif name in {"skills.allowlist", "skills.blocklist"}:
+            if isinstance(item, list) and all(
+                isinstance(entry, str) and entry.strip() for entry in item
+            ):
+                retained[name] = [entry.strip() for entry in item]
+            else:
+                invalid.append(name)
+        elif (
+            name == "completion.natural_finish.idle_turn_limit"
+            and isinstance(item, int)
+            and not isinstance(item, bool)
+            and item > 0
+        ):
+            retained[name] = item
+        else:
+            invalid.append(name)
+    if reject_unsupported and (unsupported or invalid):
+        joined = ", ".join(unsupported + invalid)
+        raise ValueError(
+            f"session override cannot be retained across restart: {joined}"
+        )
+    return retained
+
 def _config_path(repo_root: Path, config_path: str) -> Path:
     raw = Path(config_path)
     if raw.is_absolute():

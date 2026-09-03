@@ -118,6 +118,7 @@ from .runtime_emission import (
     emit_session_start_records,
     managed_state_paths,
     prepare_managed_state,
+    retained_runtime_overrides,
     primitive_emission_enabled,
 )
 from ...compilation.v2_loader import load_agent_config
@@ -1500,6 +1501,9 @@ class SessionService:
                     )
                 }
             )
+        retained_request_overrides = retained_runtime_overrides(
+            request.overrides, reject_unsupported=True
+        )
         default_profile_overridden = any(
             key != "workspace.root" for key in (request.overrides or {})
         )
@@ -1552,6 +1556,8 @@ class SessionService:
         )
         runner = SessionRunner(session=record, registry=self.registry, request=request)
         runtime_config = runner.prepare_runtime_config()
+        if retained_request_overrides:
+            metadata["runtime_overrides"] = retained_request_overrides
         if runner.request.workspace:
             metadata["workspace"] = str(
                 Path(runner.request.workspace).expanduser().resolve()
@@ -2220,56 +2226,58 @@ class SessionService:
                 setattr(record, "_dispatcher_complete", True)
             record.loaded_from_retained_state = False
             return
-        metadata = dict(record.metadata or {})
-        recorded_config_path = str(metadata.get("config_path") or "").strip()
-        retained_config_path = (
-            Path(recorded_config_path).expanduser()
-            if recorded_config_path
-            else None
-        )
-        if retained_config_path is not None and retained_config_path.is_absolute():
-            config_path = str(retained_config_path)
-        else:
-            profile = resolve_default_profile()
-            default_identity = profile.public_identity()
-            config_path = (
-                str(profile.source_path)
-                if not recorded_config_path
-                or recorded_config_path == default_identity["definition_ref"]
-                else recorded_config_path
-            )
-        recorded_workspace = metadata.get("workspace")
-        workspace = (
-            str(recorded_workspace).strip()
-            if isinstance(recorded_workspace, str) and recorded_workspace.strip()
-            else None
-        )
-        permission_mode = str(
-            metadata.get("permission_mode") or "configured"
-        ).strip().lower()
-        if permission_mode not in {"prompt", "ask", "interactive", "configured"}:
-            permission_mode = "configured"
-        metadata["permission_mode"] = permission_mode
-        runtime_overrides = metadata.get("runtime_overrides")
-        if not isinstance(runtime_overrides, dict):
-            runtime_overrides = None
-        request_overrides = (
-            dict(runtime_overrides) if runtime_overrides is not None else None
-        )
-        record.metadata = metadata
-        runner = SessionRunner(
-            session=record,
-            registry=self.registry,
-            request=SessionCreateRequest(
-                config_path=config_path,
-                task="",
-                overrides=request_overrides,
-                metadata=metadata,
-                workspace=workspace,
-                permission_mode=permission_mode,
-            ),
-        )
         try:
+            metadata = dict(record.metadata or {})
+            recorded_config_path = str(metadata.get("config_path") or "").strip()
+            retained_config_path = (
+                Path(recorded_config_path).expanduser()
+                if recorded_config_path
+                else None
+            )
+            if retained_config_path is not None and retained_config_path.is_absolute():
+                config_path = str(retained_config_path)
+            else:
+                profile = resolve_default_profile()
+                default_identity = profile.public_identity()
+                config_path = (
+                    str(profile.source_path)
+                    if not recorded_config_path
+                    or recorded_config_path == default_identity["definition_ref"]
+                    else recorded_config_path
+                )
+            recorded_workspace = metadata.get("workspace")
+            workspace = (
+                str(recorded_workspace).strip()
+                if isinstance(recorded_workspace, str)
+                and recorded_workspace.strip()
+                else None
+            )
+            permission_mode = str(
+                metadata.get("permission_mode") or "configured"
+            ).strip().lower()
+            if permission_mode not in {
+                "prompt",
+                "ask",
+                "interactive",
+                "configured",
+            }:
+                permission_mode = "configured"
+            metadata["permission_mode"] = permission_mode
+            runtime_overrides = metadata.get("runtime_overrides")
+            request_overrides = retained_runtime_overrides(runtime_overrides)
+            record.metadata = metadata
+            runner = SessionRunner(
+                session=record,
+                registry=self.registry,
+                request=SessionCreateRequest(
+                    config_path=config_path,
+                    task="",
+                    overrides=request_overrides,
+                    metadata=metadata,
+                    workspace=workspace,
+                    permission_mode=permission_mode,
+                ),
+            )
             runtime_config = runner.prepare_runtime_config()
             rebuilt_generation = self._runtime_lock(
                 record.session_id,
