@@ -1313,10 +1313,16 @@ class SessionService:
             workspace_event_root = session_event_path(
                 retained_workspace,
                 record.session_id,
-            ).parent.parent.resolve()
+            ).parent.parent
+            workspace_event_journal = (
+                workspace_event_root
+                / record.session_id
+                / "session_events.jsonl"
+            )
             if (
-                workspace_event_root / record.session_id / "session_events.jsonl"
-            ).is_file():
+                workspace_event_journal.is_file()
+                and workspace_event_journal.resolve() == workspace_event_journal
+            ):
                 retained_event_root = workspace_event_root
                 discovered_workspace_journal = True
             elif (
