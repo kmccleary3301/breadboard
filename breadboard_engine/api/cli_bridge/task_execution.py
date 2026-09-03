@@ -372,11 +372,20 @@ class TaskExecutionOwner:
                                 fragment
                             )
                 elif event_type is EventType.ASSISTANT_MESSAGE_END:
-                    stream_key = (
-                        ("provider", message_id)
-                        if message_id is not None
-                        else active_replay_stream
-                    )
+                    if active_replay_stream is not None:
+                        if (
+                            message_id is not None
+                            and active_replay_stream[0] == "provider"
+                            and active_replay_stream[1] != message_id
+                        ):
+                            raise RuntimeProtocolError("runtime_protocol_error")
+                        stream_key = active_replay_stream
+                    else:
+                        stream_key = (
+                            ("provider", message_id)
+                            if message_id is not None
+                            else None
+                        )
                     if stream_key is not None:
                         final_text = next(
                             (
@@ -387,17 +396,21 @@ class TaskExecutionOwner:
                             None,
                         )
                         observed_message_id = (
-                            identity_digest(
-                                "\0".join(
-                                    (
-                                        str(runner.session.session_id),
-                                        str(correlation["turn_id"]),
-                                        stream_key[1],
+                            message_id
+                            if message_id is not None
+                            else (
+                                identity_digest(
+                                    "\0".join(
+                                        (
+                                            str(runner.session.session_id),
+                                            str(correlation["turn_id"]),
+                                            stream_key[1],
+                                        )
                                     )
                                 )
+                                if stream_key[0] == "anonymous"
+                                else stream_key[1]
                             )
-                            if stream_key[0] == "anonymous"
-                            else stream_key[1]
                         )
                         if observed_message_id in registered_assistant_ids:
                             raise RuntimeProtocolError("runtime_protocol_error")

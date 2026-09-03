@@ -363,6 +363,39 @@ async def test_idless_replay_stream_gets_deterministic_annotation_target(
 
 
 @pytest.mark.asyncio
+async def test_replay_stream_end_promotes_identity_without_losing_deltas(
+    tmp_path,
+) -> None:
+    fixture = tmp_path / "end-identified-assistant-replay.jsonl"
+    fixture.write_text(
+        "\n".join(
+            (
+                '{"type":"assistant.message.start","payload":{}}',
+                '{"type":"assistant.message.delta","payload":{"delta":"hello"}}',
+                '{"type":"assistant.message.end","payload":{"item_id":"late-id","trajectory_id":"turn-test"}}',
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner, session = _product_runner("replay-end-identified-stream")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    await runner._execute_replay_task(
+        f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    product_event = next(
+        event for event in session.events if event.kind == "assistant_message"
+    )
+    assert product_event.payload["message_id"] == "late-id"
+    assert product_event.payload["metadata"]["has_content"] is True
+
+
+@pytest.mark.asyncio
 async def test_idless_replay_stream_remains_valid_without_product_session(
     tmp_path,
 ) -> None:
@@ -403,7 +436,7 @@ async def test_direct_replay_assistant_remains_valid_without_product_session(
 ) -> None:
     fixture = tmp_path / "legacy-direct-assistant-replay.jsonl"
     fixture.write_text(
-        '{"type":"assistant_message","payload":{"text":"hello"}}\n',
+        '{"type":"assistant_message","payload":{"text":"hello","message_id":"replayed-id","trajectory_id":"prior-turn"}}\n',
         encoding="utf-8",
     )
     runner = _runner("legacy-replay-direct-assistant")

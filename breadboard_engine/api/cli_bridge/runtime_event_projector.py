@@ -91,7 +91,15 @@ _REPLAY_EVENT_PAYLOAD_FIELDS = {
         {"message_id", "item_id", "index", "delta", "text", "content"}
     ),
     EventType.ASSISTANT_MESSAGE_END: frozenset(
-        {"message_id", "item_id", "index", "text", "content", "finish_reason"}
+        {
+            "message_id",
+            "item_id",
+            "index",
+            "text",
+            "content",
+            "finish_reason",
+            "trajectory_id",
+        }
     ),
     EventType.ASSISTANT_REASONING_DELTA: frozenset(
         {"message_id", "item_id", "index", "delta", "text", "provider_field"}
@@ -129,7 +137,9 @@ _REPLAY_EVENT_PAYLOAD_FIELDS = {
     EventType.TOOL_EXEC_STDOUT_DELTA: frozenset({"call_id", "exec_id", "delta"}),
     EventType.TOOL_EXEC_STDERR_DELTA: frozenset({"call_id", "exec_id", "delta"}),
     EventType.TOOL_EXEC_END: frozenset({"call_id", "exec_id", "exit_code"}),
-    EventType.ASSISTANT_MESSAGE: frozenset({"text", "message", "source"}),
+    EventType.ASSISTANT_MESSAGE: frozenset(
+        {"text", "message", "source", "message_id", "trajectory_id"}
+    ),
     EventType.ASSISTANT_DELTA: frozenset({"text", "message_id"}),
     EventType.TOOL_CALL: frozenset(
         {
