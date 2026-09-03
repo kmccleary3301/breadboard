@@ -81,3 +81,15 @@ Historical fresh-context dry-read renewal: **PASS**, P0/P1/P2/P3 = **0/0/0/0**, 
 ## Gate G-H
 
 **PASS.** The reviewed candidate is complete enough to present to Kyle. It preserves pinned heads, current owners, approved laws, the six evidence-only/no-new-seam packet boundaries, guarded conditional promotion, Phase 20 freeze, honest substrate fog, and separately reviewable engine/provider/SDK/TUI/installed/E4 boundaries. It does not claim implementation or current substrate runnability.
+
+## Post-PR renewal
+
+Renewal date: 2026-09-02. Reviewed prototype SHA-256 `9d1af965f921f5cf5b205113928c1f5e01d372862615320c0f3e2e6177ec3cde`; reviewed PR head `10ae04c5`; pinned ENGINE/TUI heads unchanged.
+
+The independent renewal verified that FT-01's qualifying L2 exception is mirrored exactly: the named separate-TUI installed-product test is test-only, while production ENGINE and TUI bytes remain forbidden. FT-02 and FT-03's detailed contracts remain incorporated through the prototype's normative exact-section link to the renewed packet set; duplicating them would create a second authority. Deterministic validation reports 50 acyclic DAG nodes, 623/623 unique routes, and zero unconditional seams; prototype validation reports 19 checks, 623 routes, and honest `NOT RUNNABLE` substrate status.
+
+Independent renewal verdict: **APPROVED**.
+P0/P1/P2/P3: **0/0/0/0**.
+Confidence: 0.99.
+
+Gate G-H remains **PASS** on the exact prototype digest above.

@@ -43,3 +43,13 @@ Final prohibited-work audit: 6/6 packets are evidence-only with freeze impact `n
 Residual findings: P0 0, P1 0, P2 0, P3 0.
 
 Verdict: `APPROVED`, confidence 0.99. Gate G-F passes. Future packet observations remain unverified; this review approves their contracts and scope only.
+
+## Second renewal review — APPROVED
+
+Renewal date: 2026-09-02. Exact packet SHA-256 `b11afb51d72ea2597042b404dcfa6204474a4b0997ddbf9ecd6fbab14525ba3e`; reviewed PR head `10ae04c5`; pinned ENGINE/TUI heads unchanged.
+
+The independent renewal revalidated FT-02's fixed four-case barrier, exact commands and payloads, pinned ENGINE working directory and provenance, 30-second case deadlines, 240-second total deadline, observations, and cleanup contract. FT-03 now binds immutable fixture `ft03-request-v1` at SHA-256 `e8cfac26efd0210997ecc31241d95d805d656b0436f2ccd42f3b58523da4dcd2`, with exact prompt-section, tool-schema, history, default, adapter-override, canonicalization, and independent held-out-oracle inputs. FT-01 permits only qualifying test-only L1/L2 changes, including the named separate-TUI installed-product test for L2; production ENGINE and TUI bytes remain forbidden.
+
+Residual findings: P0 0, P1 0, P2 0, P3 0.
+
+Verdict: `APPROVED`, confidence 0.99. Gate G-F passes on the exact packet digest above.
