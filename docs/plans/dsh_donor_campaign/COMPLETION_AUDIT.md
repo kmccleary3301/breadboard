@@ -56,7 +56,7 @@ Workstream I's binding covers its provenance block, deterministic package valida
 
 ## Gate status
 
-- G-I final package validation: PASS; the authoritative source package has 22/22 byte-exact evidence copies and the self-contained publication package has 27/27 exact inputs with exact-artifact bindings for every blocking G-A through G-H review, including the donor inventory and executable DAG validation of 50 acyclic nodes and 623/623 routes; all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
+- G-I final package validation: PASS; the authoritative source package has 26/26 byte-exact evidence copies and the self-contained publication package has 31/31 exact inputs (33 REQUIRED controls including the specification/audit wrappers) with exact-artifact bindings for every blocking G-A through G-H review, including the donor inventory and executable DAG validation of 50 acyclic nodes and 623/623 routes; all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
 - G-Score: PASS at 1000/1000 with every checked item linked and zero structural findings.
 - Phase 20 freeze checker: PASS at unchanged baseline `3b8d862f62ee9c2c421fe07758606b6973902c67`.
 - G-F/G-G/G-H escalation reviews: PASS. Corrected FT-01 terminal routes, FT-03 product-adapter oracle, and FT-06 executable fixed point are exact-artifact bound; P0/P1/P2/P3 = 0/0/0/0 for F/H and P0/P1 = 0/0 for G.
@@ -64,7 +64,7 @@ Workstream I's binding covers its provenance block, deterministic package valida
 
 ## Known fog and tranche boundary
 
-Execution worlds beyond characterization, generic Capability Runtime, universal Operation, a projection registry, an annotation owner, durable children, workflows, compaction, advanced clients, Code Mode, dynamic packages, and distributed teams remain unpromoted. Each branch has a named measurement or characterization and a kill threshold in the DAG. Negative evidence closes a branch; it does not create a fallback.
+Execution worlds beyond characterization, generic Capability Runtime, universal Operation, a projection registry, durable children, workflows, compaction, advanced clients, Code Mode, dynamic packages, and distributed teams remain unpromoted. W6's internal immutable Product Session annotation owner is implemented; remaining W11 fog is canonical message/trajectory identity binding and public annotation sidecar/projection acceptance. Each branch has a named measurement or characterization and a kill threshold in the DAG. Negative evidence closes a branch; it does not create a fallback.
 
 FT-01 is the first packet after this package commits and final gates/tickets close. It runs exactly two provider-free cells, writes only the five declared raw records and report plus a disposable harness, and may retain at most L1/L2 after six-holds review. It does not authorize implementation, public/schema/API changes, new seams, compatibility deletion, push, PR, merge, release, publication, deployment, or secret access.
 
@@ -75,7 +75,7 @@ The specification contains mission/substrate, authorities and baseline heads, fr
 ## Finalization record
 
 - Package integrity: `/opt/homebrew/bin/python3.11 docs/plans/dsh_donor_campaign/check_package.py` → PASS, zero findings.
-- Source/package validator: PASS; 22 exact evidence/fixture/review/validator copies, six packet sections/guard pairs, 13 valid relative links, zero findings.
+- Source/package validator: PASS; 26 exact evidence/fixture/review/validator copies, six packet sections/guard pairs, 13 valid relative links, zero findings.
 - Freeze checker: PASS at baseline `3b8d862f62ee9c2c421fe07758606b6973902c67`.
 - Package provenance: exact candidate and validator-input SHA-256 identities are bound above; GitHub PR 98 records the complete reachable commit history and merge identity.
 - Original documentation finalization performed no production implementation, release, publication, or deployment. The later implementation campaign and this documentation PR are governed separately and do not retroactively expand this audit's authority.

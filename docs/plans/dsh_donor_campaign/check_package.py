@@ -83,6 +83,7 @@ REQUIRED = (
     *FIXTURES,
     *SPEC_FIXTURES,
 )
+PUBLICATION_INPUTS = tuple(path for path in REQUIRED if path not in (SPEC, AUDIT))
 
 
 def main() -> int:
@@ -94,6 +95,11 @@ def main() -> int:
     if findings:
         print(json.dumps({"status": "FAIL", "findings": findings}, indent=2))
         return 1
+    if len(REQUIRED) != 33 or len(PUBLICATION_INPUTS) != 31:
+        findings.append(
+            "package control-input count drifted: "
+            f"required={len(REQUIRED)} publication={len(PUBLICATION_INPUTS)}"
+        )
 
     spec = SPEC.read_text(encoding="utf-8")
     audit = AUDIT.read_text(encoding="utf-8")
