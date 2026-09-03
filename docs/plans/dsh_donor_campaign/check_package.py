@@ -12,10 +12,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 EVIDENCE = ROOT / "evidence"
 SPEC = ROOT / "DSH_DONOR_CAMPAIGN_SPEC.md"
-SPEC_DIGEST = "54b78fc2b896561bfaed216a26883928346aa27f8e108ba80288bffe968b95a0"
+SPEC_DIGEST = "a5bf42997d34877ccb55dbc9d587e37b5ef29abbf6ef81a7148b748ee9a0f26d"
 AUDIT = ROOT / "COMPLETION_AUDIT.md"
 FINAL_SPEC_REVIEW = EVIDENCE / "FINAL_SPEC_REVIEW.json"
-FINAL_SPEC_REVIEW_DIGEST = "74a4113485a69b8dae8433e4e93349c7dd8568d2ee4fee3d5f77715bf51e9811"
+FINAL_SPEC_REVIEW_DIGEST = "357bf78ce787286bfee3c661e20e23e15d66690c079967cafff7aa6ac3423d35"
 PACKETS = EVIDENCE / "05_FIRST_TRANCHE_PACKET_SET.md"
 PACKETS_DIGEST = "8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69"
 DONOR_INVENTORY = EVIDENCE / "DONOR_ITEMS.yaml"
@@ -42,6 +42,18 @@ DAG_GRAPH = DAG_ROOT / "dag-prototype.json"
 DAG_ROUTING = DAG_ROOT / "row-routing.json"
 DAG_JOIN_FIXTURES = DAG_ROOT / "join-semantics.json"
 DAG_JOIN_TEST = DAG_ROOT / "test_join_semantics.py"
+FT01_SCHEMA = EVIDENCE / "fixtures/ft01_cleanup_process_identity_v1.schema.json"
+FT01_FIXTURE = EVIDENCE / "fixtures/ft01_cleanup_process_identity_v1.json"
+FT01_VALIDATOR = DAG_ROOT / "validate_ft01_cleanup.py"
+FT01_TEST = DAG_ROOT / "test_ft01_cleanup_process_identity.py"
+FT01_ARTIFACT_DIGESTS = {
+    FT01_SCHEMA: "839ff0a8c1a44b1480de22469b5586445ef9c564c1ff6e7a1937e13de4e32780",
+    FT01_FIXTURE: "512a9796f8a66ba315faa3f9c87b65c98f3ec55205a803169d4312a6e66a6015",
+}
+FT01_INPUT_DIGESTS = {
+    FT01_VALIDATOR: "479ef8cb0db7ce624191b905354cfe0b0263300a59429ebd5106a47605009b11",
+    FT01_TEST: "8a717309b3d5f909f082603e5e83f0acf151ebe9d8ec00e040bf6624b866203f",
+}
 DAG_INPUT_DIGESTS = {
     DAG_VALIDATOR: "04f471da5821d1dac8e576dd997f68571464d8ef4e1d53425acc04c66981f41d",
     DAG_GRAPH: "1b71d68d4eb533f5dc62e1256489a28759ce7be115caa5df2b43ba64166a2f0d",
@@ -82,6 +94,10 @@ REQUIRED = (
     DAG_JOIN_TEST,
     *FIXTURES,
     *SPEC_FIXTURES,
+    FT01_SCHEMA,
+    FT01_FIXTURE,
+    FT01_VALIDATOR,
+    FT01_TEST,
 )
 PUBLICATION_INPUTS = tuple(path for path in REQUIRED if path not in (SPEC, AUDIT))
 
@@ -95,7 +111,7 @@ def main() -> int:
     if findings:
         print(json.dumps({"status": "FAIL", "findings": findings}, indent=2))
         return 1
-    if len(REQUIRED) != 33 or len(PUBLICATION_INPUTS) != 31:
+    if len(REQUIRED) != 37 or len(PUBLICATION_INPUTS) != 35:
         findings.append(
             "package control-input count drifted: "
             f"required={len(REQUIRED)} publication={len(PUBLICATION_INPUTS)}"
@@ -226,6 +242,25 @@ def main() -> int:
             "DAG join semantics test failed: "
             + (join_test.stderr.strip() or join_test.stdout.strip())
         )
+    ft01_test = subprocess.run(
+        [sys.executable, str(FT01_TEST)],
+        cwd=DAG_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if ft01_test.returncode != 0:
+        findings.append(
+            "FT-01 client process identity test failed: "
+            + (ft01_test.stderr.strip() or ft01_test.stdout.strip())
+        )
+    for path, expected_digest in FT01_INPUT_DIGESTS.items():
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if digest != expected_digest:
+            findings.append(
+                f"committed FT-01 input digest differs for "
+                f"{path.relative_to(ROOT)}: {digest}"
+            )
     for path, expected_digest in DAG_INPUT_DIGESTS.items():
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         if digest != expected_digest:
@@ -310,6 +345,16 @@ def main() -> int:
             findings.append(
                 "fixture digest is not bound by final specification: "
                 f"{fixture.relative_to(ROOT)}"
+            )
+    for artifact, expected_digest in FT01_ARTIFACT_DIGESTS.items():
+        digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        if digest != expected_digest:
+            findings.append(
+                f"FT-01 artifact digest differs for {artifact.relative_to(ROOT)}: {digest}"
+            )
+        if expected_digest not in spec:
+            findings.append(
+                f"FT-01 artifact digest is not bound by final specification: {artifact.relative_to(ROOT)}"
             )
     extracted_surface_digest = hashlib.sha256(
         EXTRACTED_SURFACE.read_bytes()

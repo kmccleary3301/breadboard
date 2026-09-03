@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.ft01.cleanup-process-identity.v1",
+  "title": "FT-01 client process identity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["client_process"],
+  "properties": {
+    "client_process": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pid", "start_token", "lifecycle_proof", "terminal_proof", "dead"],
+          "properties": {
+            "pid": { "type": "integer", "minimum": 1 },
+            "start_token": { "type": "string", "minLength": 1 },
+            "lifecycle_proof": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["authenticated", "evidence"],
+              "properties": {
+                "authenticated": { "const": true },
+                "evidence": { "type": "string", "minLength": 1 }
+              }
+            },
+            "terminal_proof": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["authenticated", "dead", "evidence"],
+              "properties": {
+                "authenticated": { "const": true },
+                "dead": { "type": "boolean" },
+                "evidence": { "type": "string", "minLength": 1 }
+              }
+            },
+            "dead": { "type": "boolean" }
+          }
+        }
+      ]
+    }
+  }
+}

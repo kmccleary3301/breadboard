@@ -2,7 +2,7 @@
   "schema_version": "bb.final_spec_review.v1",
   "review_id": "PR98FinalReview-2026-09-03",
   "reviewed_spec_path": "docs/plans/dsh_donor_campaign/DSH_DONOR_CAMPAIGN_SPEC.md",
-  "reviewed_spec_sha256": "54b78fc2b896561bfaed216a26883928346aa27f8e108ba80288bffe968b95a0",
+  "reviewed_spec_sha256": "a5bf42997d34877ccb55dbc9d587e37b5ef29abbf6ef81a7148b748ee9a0f26d",
   "reviewed_packet_path": "docs/plans/dsh_donor_campaign/evidence/05_FIRST_TRANCHE_PACKET_SET.md",
   "reviewed_packet_sha256": "8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69",
   "verdict": "APPROVED",

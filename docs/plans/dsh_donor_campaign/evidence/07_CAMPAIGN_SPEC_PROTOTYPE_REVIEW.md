@@ -3,7 +3,7 @@
 Ticket: `bb-inj5.8`
 Date: 2026-09-02
 Candidate: `docs/plans/dsh_donor_campaign/evidence/07_CAMPAIGN_SPEC_PROTOTYPE.md`
-Reviewed SHA-256: `8cbdbfbdeba61e37af992f1cfac401d934dfa8be7b50984f1a9602e198984584`
+Reviewed SHA-256: `ece79385aa2f6707f426e1d0ccd5c66cb806561aa025f4f0398ed271c757b6da`
 ENGINE: `b3cacc7356244253305f8a6f84308a993485bfe2`
 TUI: `73d6e6f55a238fc9ff0486bbcc9ecffe85705715`
 
@@ -108,7 +108,7 @@ Gate G-H remains **PASS** on the exact prototype digest above.
 
 ## Post-contract escalation review — repair-success predicate
 
-Final exact review date: 2026-09-03. Reviewed prototype SHA-256 `8cbdbfbdeba61e37af992f1cfac401d934dfa8be7b50984f1a9602e198984584`; pinned ENGINE/TUI heads unchanged.
+Final exact review date: 2026-09-03. Reviewed prototype SHA-256 `ece79385aa2f6707f426e1d0ccd5c66cb806561aa025f4f0398ed271c757b6da`; pinned ENGINE/TUI heads unchanged.
 
 The independent exact read verified that the prototype now matches the machine DAG: `RT-REPLAY` opens after `KNOWN_DIVERGENCE` only when `RT-REPAIR` explicitly succeeds and proves the divergence absent. Unknown, killed, exhausted, product-red, and every other typed-red repair outcome leaves replay and every dependent node closed. The exact machine validator passes 50 acyclic nodes and 623 unique routes.
 
