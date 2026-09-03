@@ -207,6 +207,16 @@ class ChildState:
     def from_retained(cls, value: Mapping[str, Any]) -> "ChildState":
         if value.get("schema_version") != _CHILD_SCHEMA:
             raise ValueError("unsupported durable child state")
+        boolean_fields = (
+            "cancellation_requested",
+            "launch_claimed",
+            "launch_published",
+            "result_prepared",
+            "joined",
+        )
+        for field_name in boolean_fields:
+            if type(value.get(field_name, False)) is not bool:
+                raise ValueError(f"durable child state field {field_name!r} must be boolean")
         return cls(
             child_session_id=str(value["child_session_id"]),
             child_work_item_id=str(value["child_work_item_id"]),
@@ -219,19 +229,19 @@ class ChildState:
             adapter_family=str(value["adapter_family"]),
             status=str(value["status"]),
             revision=int(value["revision"]),
-            cancellation_requested=bool(value.get("cancellation_requested")),
-            launch_claimed=bool(value.get("launch_claimed")),
+            cancellation_requested=value.get("cancellation_requested", False),
+            launch_claimed=value.get("launch_claimed", False),
             launch_claim_owner=str(value["launch_claim_owner"]) if value.get("launch_claim_owner") is not None else None,
             launch_claim_until=float(value["launch_claim_until"]) if value.get("launch_claim_until") is not None else None,
-            launch_published=bool(value.get("launch_published")),
+            launch_published=value.get("launch_published", False),
             startup_phase=str(value.get("startup_phase") or "unknown"),
             startup_lease_until=float(value["startup_lease_until"]) if value.get("startup_lease_until") is not None else None,
             cancellation_reason=value.get("cancellation_reason"),
-            result_prepared=bool(value.get("result_prepared")),
+            result_prepared=value.get("result_prepared", False),
             result_refs=tuple(str(ref) for ref in value.get("result_refs", ())),
             terminal_outcome=value.get("terminal_outcome"),
             terminal_count=int(value.get("terminal_count", 0)),
-            joined=bool(value.get("joined")),
+            joined=value.get("joined", False),
             settlement=value.get("settlement"),
             child_spec=value.get("child_spec") or {},
             execution_target=value.get("execution_target") or {},

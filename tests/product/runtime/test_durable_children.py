@@ -256,6 +256,38 @@ def test_start_fences_parent_cancellation_after_delegation(
         ),
     )
     assert ChildState.from_retained(retained.metadata["durable_child"]).terminal_outcome == "canceled"
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    (
+        "cancellation_requested",
+        "launch_claimed",
+        "launch_published",
+        "result_prepared",
+        "joined",
+    ),
+)
+def test_child_state_rejects_non_boolean_retained_flags(field_name: str) -> None:
+    retained = ChildState(
+        child_session_id="child-session",
+        child_work_item_id="child-work",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        attempt_id="attempt",
+        recovery_ref="child://child-session/attempt/attempt",
+        execution_target_ref="reserved:child-session",
+        adapter_family="execution-world-process",
+        status="starting",
+        revision=0,
+    ).retained()
+    retained[field_name] = "false"
+
+    with pytest.raises(ValueError, match=field_name):
+        ChildState.from_retained(retained)
+
+
 def test_process_launch_crash_window_is_recovered_or_terminated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repository = WorkItemRepository(tmp_path / "work-items.jsonl")
     workspace, repository, parent, registry = _running_parent(tmp_path, repository)
