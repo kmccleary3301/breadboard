@@ -94,6 +94,7 @@ class SessionRunner:
         self._durable_product_workspace: Path | None = None
         self._checkpoint_manager: Optional[CheckpointManager] = None
         self._closed = False
+        self._admission_lock_owner: Optional[asyncio.Task[Any]] = None
         self._attachment_store: Dict[str, Dict[str, Any]] = {}
         self._active_attachment_capabilities: Dict[str, Dict[str, Any]] = {}
         self._active_input_media: List[Dict[str, str]] = []

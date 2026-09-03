@@ -15,6 +15,7 @@ from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.api.cli_bridge.models import (
     SessionCommandRequest,
     SessionCreateRequest,
+    SessionInputRequest,
     SessionStatus,
 )
 from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
@@ -442,6 +443,111 @@ async def test_role_switch_survives_product_session_rebuild() -> None:
     assert (
         rebuild(product_session.events).effective_lock_hash == effective["graph_hash"]
     )
+
+
+@pytest.mark.asyncio
+async def test_role_switch_serializes_racing_input_without_deadlock() -> None:
+    session_id = "durable-role-race"
+    role_lock = compile_model_roles(_document())
+    runtime_config = {
+        "version": 2,
+        "providers": {
+            "default_model": "mock/primary",
+            "models": ["mock/primary", "mock/slow", "mock/task"],
+        },
+        "model_role_lock": role_lock.as_dict(),
+        "active_model_role": "default",
+    }
+    registry = SessionRegistry()
+    record = SessionRecord(
+        session_id=session_id,
+        status=SessionStatus.RUNNING,
+        metadata={},
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="unused.json"),
+    )
+    runner._prepared_runtime_config = copy.deepcopy(runtime_config)
+    runner.install_model_role_lock(role_lock)
+
+    class ActiveAgent:
+        def __init__(self) -> None:
+            self.config = copy.deepcopy(runtime_config)
+
+        def apply_runtime_overrides(self, overrides: dict) -> bool:
+            self.config.setdefault("providers", {})["default_model"] = overrides[
+                "providers.default_model"
+            ]
+            self.config["active_model_role"] = overrides["active_model_role"]
+            self.config["model_role_lock"] = overrides["model_role_lock"]
+            return True
+
+    runner._agent = ActiveAgent()
+    initial_lock = SessionService._runtime_lock(
+        session_id, runtime_config, "unused.json"
+    )
+    record.product_session = ProductSession.start(
+        initial_lock,
+        "task",
+        session_id=session_id,
+    )
+    record.runner = runner
+    await registry.create(record)
+    service = SessionService(registry=registry)
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    real_handle_command = runner.handle_command
+
+    async def blocked_handle_command(
+        command: str,
+        payload: dict,
+        *,
+        durable_reconfigure=None,
+    ) -> dict:
+        if command == "set_role":
+            entered.set()
+            await release.wait()
+        return await real_handle_command(
+            command,
+            payload,
+            durable_reconfigure=durable_reconfigure,
+        )
+
+    runner.handle_command = blocked_handle_command  # type: ignore[method-assign]
+    role_switch = asyncio.create_task(
+        service.execute_command(
+            session_id,
+            SessionCommandRequest(
+                command="set_role",
+                payload={"role": "slow"},
+            ),
+        )
+    )
+    await entered.wait()
+
+    input_request = asyncio.create_task(
+        service.send_input(
+            session_id,
+            SessionInputRequest(content="racing input"),
+            defer_execution=lambda _operation: None,
+        )
+    )
+    await asyncio.sleep(0)
+    assert not input_request.done()
+
+    release.set()
+    role_result, input_result = await asyncio.wait_for(
+        asyncio.gather(role_switch, input_request),
+        timeout=2,
+    )
+
+    assert role_result.detail["status"] == "ok"
+    assert role_result.detail["role"] == "slow"
+    assert input_result.disposition == "started"
+    assert runner._admission_lock_owner is None
 
 
 def test_session_role_switch_rejects_active_turn() -> None:

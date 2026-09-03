@@ -1991,11 +1991,15 @@ class SessionService:
                             "non_quiescent",
                             "generation adoption requires a quiescent turn boundary",
                         )
-                    detail = await runner.handle_command(
-                        payload.command,
-                        payload.payload,
-                        durable_reconfigure=durable_reconfigure,
-                    )
+                    runner._admission_lock_owner = asyncio.current_task()
+                    try:
+                        detail = await runner.handle_command(
+                            payload.command,
+                            payload.payload,
+                            durable_reconfigure=durable_reconfigure,
+                        )
+                    finally:
+                        runner._admission_lock_owner = None
             else:
                 detail = await runner.handle_command(
                     payload.command,

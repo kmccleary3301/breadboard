@@ -8,8 +8,9 @@ import logging
 import os
 import threading
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence
+from typing import Any, AsyncIterator, Callable, Dict, List, Mapping, Optional, Protocol, Sequence
 
 from breadboard_engine.auth.enforcer import apply_dotted_overrides
 from breadboard_engine.checkpointing.checkpoint_manager import CheckpointManager
@@ -43,6 +44,7 @@ class SessionControlHost(Protocol):
     _permission_decision_lock: asyncio.Lock
     _product_session_lock: threading.RLock
     _resume_event: asyncio.Event
+    _admission_lock_owner: Optional[asyncio.Task[Any]]
     _agent: Any
     _model_role_lock: Any
     _active_model_role: Optional[str]
@@ -211,6 +213,14 @@ class SessionControlController:
 
     def __init__(self, runner: SessionControlHost) -> None:
         self._runner = runner
+
+    @asynccontextmanager
+    async def _admission_guard(self) -> AsyncIterator[None]:
+        if self._runner._admission_lock_owner is asyncio.current_task():
+            yield
+            return
+        async with self._runner.session.admission_lock:
+            yield
 
     def _upsert_permission_rule(
         self,
@@ -623,7 +633,7 @@ class SessionControlController:
                     raise RuntimeError(
                         "model-role transitions require durable reconfiguration"
                     )
-                async with runner.session.admission_lock:
+                async with self._admission_guard():
                     if runner.session.active_turn_id is not None:
                         raise ModelRoleResolutionError(
                             ModelRoleProblem(
