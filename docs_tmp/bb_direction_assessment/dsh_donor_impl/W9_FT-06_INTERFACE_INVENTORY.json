@@ -18647,6 +18647,22 @@
       "tier": "host_protocol"
     },
     {
+      "domain": "kernel_manifest",
+      "fields": [
+        "contractVersion",
+        "generatedAt",
+        "rows",
+        "schemaVersion"
+      ],
+      "id": "bb.engine_conformance_manifest.v1",
+      "path": "engine_root/contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json",
+      "required": [
+        "contractVersion",
+        "rows",
+        "schemaVersion"
+      ]
+    },
+    {
       "domain": "kernel_payload",
       "fields": [
         "metadata",

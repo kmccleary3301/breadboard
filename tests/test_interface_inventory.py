@@ -108,6 +108,22 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
     _json(keep_schema, {"$id": "bb.keep.v1", "type": "object", "properties": {"value": {"type": "string"}}})
     remove_schema = engine / "contracts" / "kernel" / "schemas" / "bb.remove.v1.schema.json"
     _json(remove_schema, {"$id": "bb.remove.v1", "type": "object", "properties": {"value": {"type": "string"}}})
+    manifest_schema = (
+        engine
+        / "contracts"
+        / "kernel"
+        / "manifests"
+        / "bb.engine_manifest.v1.schema.json"
+    )
+    _json(
+        manifest_schema,
+        {
+            "$id": "bb.engine_manifest.v1",
+            "type": "object",
+            "properties": {"engine": {"type": "string"}},
+            "required": ["engine"],
+        },
+    )
     _json(
         engine / "contracts" / "public" / "frozen_public_surface.v1.json",
         {
@@ -259,6 +275,11 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
         for row in first["compatibility_surfaces"]["public_catalogs"]
         if row["path"].endswith("frozen_public_surface.v1.json")
     )
+    manifest = next(
+        row for row in first["schemas"] if row["id"] == "bb.engine_manifest.v1"
+    )
+    assert manifest["domain"] == "kernel_manifest"
+    assert manifest["fields"] == ["engine"]
     assert frozen["operation_ids"] == ["artifact.list", "session.start"]
     assert first["method"]["excluded_path_parts"] == sorted(EXCLUDED_PARTS)
     deletion_ids = {

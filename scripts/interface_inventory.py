@@ -208,6 +208,7 @@ def _schema_rows(
     schema_roots = (
         (engine_root / "contracts" / "kernel" / "schemas", "kernel"),
         (engine_root / "contracts" / "kernel" / "schemas" / "payloads", "kernel_payload"),
+        (engine_root / "contracts" / "kernel" / "manifests", "kernel_manifest"),
         (engine_root / "contracts" / "public" / "schemas", "public"),
     )
     rows: list[dict[str, Any]] = []
