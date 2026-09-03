@@ -290,9 +290,7 @@ def project_session_snapshot(view: SessionView, *, as_of: int | None = None, exp
     return Projected(view, SESSION_PROJECTOR_VERSION, ProjectionSource(f"session:{view.session_id}", 1, view.event_count), view.event_count)
 _SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "annotate": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
 def _graph_hash(lock: EffectiveHarnessLock) -> str:
-    graph_hash = lock.as_dict().get("graph_hash")
-    if not isinstance(graph_hash, str) or not graph_hash.startswith("sha256:"): raise ValueError("EffectiveHarnessLock has no canonical graph_hash")
-    return graph_hash
+    return _sha256(lock.as_dict().get("graph_hash"), "graph_hash")
 def _hash(value: str) -> str: return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
 def _check(condition: bool, error: type[Exception], message: str) -> None:
     if not condition: raise error(message)

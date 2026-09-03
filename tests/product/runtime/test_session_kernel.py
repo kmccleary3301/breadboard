@@ -249,10 +249,13 @@ def test_generation_identity_is_pinned_and_reconstructed_from_durable_order() ->
     assert restored.generation_sequence == session.generation_sequence
     assert restored.trajectory_segments == session.trajectory_segments
 
-def test_generation_adoption_rejects_incompatible_lock_as_typed_refusal() -> None:
+@pytest.mark.parametrize("invalid_hash", ["not-a-digest", "sha256:short", "sha256:" + "A" * 64])
+def test_generation_adoption_rejects_incompatible_lock_as_typed_refusal(
+    invalid_hash: str,
+) -> None:
     session = Session.start(_lock(), "task")
     with pytest.raises(GenerationAdoptionError) as error:
-        session.adopt_generation(_lock("not-a-digest"), "invalid")
+        session.adopt_generation(_lock(invalid_hash), "invalid")
     assert error.value.code == "incompatible"
     assert session.generation_sequence == (HASH,)
 def test_annotation_event_uses_registered_target_and_preserves_message_owner_bytes() -> None:
