@@ -340,7 +340,7 @@ test("BackboneSession can classify and drive a local terminal session lifecycle"
   assert.equal(terminalSession.summary().publicHandles.length, 1)
 })
 
-test("BackboneSession terminals can get and list multiple sessions with mixed states", async () => {
+test("BackboneSession keeps direct cleaned views but excludes them from registry lists", async () => {
   const workspace = createWorkspace({
     workspaceId: "ws-3",
     rootDir: "/tmp",
@@ -351,10 +351,10 @@ test("BackboneSession terminals can get and list multiple sessions with mixed st
   await session.terminals.cleanup({ scope: "all" })
 
   const firstStarted = await session.terminals.start({
-    command: ["/bin/bash", "-lc", "printf 'one\\n'; sleep 0.5"],
+    command: ["/bin/bash", "-lc", "printf 'one\\n'; sleep 2"],
   })
   const secondStarted = await session.terminals.start({
-    command: ["/bin/bash", "-lc", "printf 'two\\n'; sleep 0.5"],
+    command: ["/bin/bash", "-lc", "printf 'two\\n'; sleep 2"],
   })
 
   assert.ok(firstStarted.session)
@@ -402,20 +402,14 @@ test("BackboneSession terminals can get and list multiple sessions with mixed st
 
   const listViewsAfterCleanup = await session.terminals.listViews()
   assert.ok(listViewsAfterCleanup.snapshot)
-  assert.equal(listViewsAfterCleanup.sessions.length, 2)
+  assert.equal(listViewsAfterCleanup.sessions.length, 1)
   assert.equal(listViewsAfterCleanup.activeCount, 1)
-  assert.equal(listViewsAfterCleanup.endedCount, 1)
-  assert.equal(listViewsAfterCleanup.sessionCount, 2)
-  const cleanedView = listViewsAfterCleanup.sessions.find(
-    (item) => item.descriptor.terminal_session_id === firstStarted.descriptor!.terminal_session_id,
-  )
+  assert.equal(listViewsAfterCleanup.endedCount, 0)
+  assert.equal(listViewsAfterCleanup.sessionCount, 1)
   const runningView = listViewsAfterCleanup.sessions.find(
     (item) => item.descriptor.terminal_session_id === secondStarted.descriptor!.terminal_session_id,
   )
-  assert.ok(cleanedView)
   assert.ok(runningView)
-  assert.equal(cleanedView?.status, "ended")
-  assert.equal(cleanedView?.summary().lastEndState, "cleaned_up")
   assert.equal(runningView?.status, "running")
 
   const cleanedSecond = await secondStarted.session.cleanup()
@@ -656,6 +650,45 @@ test("Backbone terminal classification does not advertise a partial driver as co
   assert.equal(claim.terminalSupport?.canList, false)
   assert.equal(claim.terminalSupport?.canCleanup, false)
 })
+
+test("Backbone normalizes contradictory cleanup results", async () => {
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "contradictory-cleanup-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    cleanupTerminalSessions: async (input) => ({
+      schema_version: "bb.terminal_cleanup_result.v1",
+      cleanup_id: input.cleanupId,
+      scope: input.scope,
+      cleaned_session_ids: ["term-contradictory"],
+      failed_session_ids: ["term-contradictory"],
+    }),
+  }
+  const workspace = createWorkspace({
+    workspaceId: "ws-contradictory-cleanup",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({
+    workspace,
+    executionWorld: createExecutionWorld({ drivers: [driver] }),
+  })
+
+  const result = await backbone
+    .openSession({ sessionId: "s-contradictory-cleanup" })
+    .terminals.cleanup({
+      scope: "filtered",
+      sessionIds: ["term-contradictory"],
+    })
+
+  assert.equal(result.result, null)
+  assert.equal(
+    result.unsupportedCase?.reason_code,
+    "terminal_cleanup_failed",
+  )
+}
+)
+
 
 test("BackboneSession interact and cleanup pass exact terminalSessionId to resolveTerminalDriver, satisfying capability-id-gated driver", async () => {
   const targetSessionId = "session-exact-cap-1"

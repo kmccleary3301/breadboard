@@ -118,10 +118,19 @@ export function defaultOciCommandExecutor(input: {
     child.stderr?.on("data", (chunk) => {
       stderr += String(chunk)
     })
+    let abortListener: (() => void) | null = null
+    const removeAbortListener = () => {
+      if (input.signal && abortListener) {
+        input.signal.removeEventListener("abort", abortListener)
+        abortListener = null
+      }
+    }
     child.on("error", (err) => {
+      removeAbortListener()
       if (!killed) reject(err)
     })
     child.on("close", (exitCode) => {
+      removeAbortListener()
       resolve({
         exitCode: exitCode ?? 1,
         stdout,
@@ -160,6 +169,7 @@ export function defaultOciCommandExecutor(input: {
       if (input.signal.aborted) {
         onAbort()
       } else {
+        abortListener = onAbort
         input.signal.addEventListener("abort", onAbort, { once: true })
       }
     }
@@ -181,6 +191,17 @@ function buildOciSideEffectDigest(request: SandboxRequestV1, result: OciCommandE
     .digest("hex")}`
 }
 
+function isDeadlineAbort(signal?: AbortSignal): boolean {
+  if (!signal?.aborted) return false
+  const reason = signal.reason
+  return (
+    reason === "deadline" ||
+    (reason instanceof Error &&
+      (reason.name === "TimeoutError" || reason.message.toLowerCase().includes("deadline")))
+  )
+}
+
+
 export async function executeOciSandboxRequest(
   request: SandboxRequestV1,
   options: {
@@ -199,7 +220,7 @@ export async function executeOciSandboxRequest(
     containerName: options.containerName,
   })
   const preAborted = options.signal?.aborted === true
-  const deadlineBeforeExecution = preAborted && options.signal?.reason === "deadline"
+  const deadlineBeforeExecution = isDeadlineAbort(options.signal)
   const result = preAborted
     ? {
         exitCode: deadlineBeforeExecution ? 124 : 130,
@@ -217,8 +238,7 @@ export async function executeOciSandboxRequest(
   await writeFile(stdoutPath, result.stdout, "utf8")
   await writeFile(stderrPath, result.stderr, "utf8")
   const isAborted = preAborted || options.signal?.aborted === true
-  const isDeadline =
-    deadlineBeforeExecution || (isAborted && options.signal?.reason === "deadline")
+  const isDeadline = deadlineBeforeExecution || isDeadlineAbort(options.signal)
   const status: SandboxResultV1["status"] = isAborted
     ? isDeadline
       ? "timed_out"

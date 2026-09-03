@@ -71,10 +71,19 @@ export function defaultLocalCommandExecutor(input: {
     child.stderr?.on("data", (chunk) => {
       stderr += String(chunk)
     })
+    let abortListener: (() => void) | null = null
+    const removeAbortListener = () => {
+      if (input.signal && abortListener) {
+        input.signal.removeEventListener("abort", abortListener)
+        abortListener = null
+      }
+    }
     child.on("error", (err) => {
+      removeAbortListener()
       if (!killed) reject(err)
     })
     child.on("close", (exitCode) => {
+      removeAbortListener()
       resolve({
         exitCode: exitCode ?? 1,
         stdout,
@@ -113,6 +122,7 @@ export function defaultLocalCommandExecutor(input: {
       if (input.signal.aborted) {
         onAbort()
       } else {
+        abortListener = onAbort
         input.signal.addEventListener("abort", onAbort, { once: true })
       }
     }

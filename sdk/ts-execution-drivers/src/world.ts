@@ -45,6 +45,17 @@ export class ExecutionDriverResultValidationError extends Error {
   }
 }
 
+function isTimeoutAbortSignal(signal: AbortSignal): boolean {
+  const reason = signal.reason
+  return (
+    typeof reason === "object" &&
+    reason !== null &&
+    "name" in reason &&
+    reason.name === "TimeoutError"
+  )
+}
+
+
 export interface ExecutionDriverTerminationContextV1 {
   readonly reason: "deadline" | "cancelled"
   readonly signal: AbortSignal
@@ -395,6 +406,9 @@ function buildPrelaunchSandboxRequest(operation: ExecutionWorldSandboxInputV1): 
 }
 
 
+const MAX_CLEANED_SESSION_TOMBSTONES = 4096
+
+
 export function createExecutionWorld(input: {
   drivers: readonly TerminalSessionDriverV1[]
   defaultDeadlineMs?: number | null
@@ -405,12 +419,25 @@ export function createExecutionWorld(input: {
   const defaultTerminationGraceMs = input.terminationGraceMs ?? 2000
   const sessions = new Map<string, TerminalSessionDriverV1>()
   const endedSessionOwners = new Map<string, TerminalSessionDriverV1>()
+  const cleanedSessionOwners = new Map<string, string>()
   const startingSessionIds = new Set<string>()
   function rememberEndedSessionOwner(sessionId: string, driver: TerminalSessionDriverV1): void {
     if (endedSessionOwners.has(sessionId)) {
       endedSessionOwners.delete(sessionId)
     }
     endedSessionOwners.set(sessionId, driver)
+  }
+  function rememberCleanedSession(
+    sessionId: string,
+    driver: TerminalSessionDriverV1,
+  ): void {
+    cleanedSessionOwners.delete(sessionId)
+    cleanedSessionOwners.set(sessionId, driver.driverId)
+    while (cleanedSessionOwners.size > MAX_CLEANED_SESSION_TOMBSTONES) {
+      const oldestSessionId = cleanedSessionOwners.keys().next().value
+      if (typeof oldestSessionId !== "string") break
+      cleanedSessionOwners.delete(oldestSessionId)
+    }
   }
   function adoptTerminalSnapshot(
     driver: TerminalSessionDriverV1,
@@ -419,19 +446,31 @@ export function createExecutionWorld(input: {
     const activeIds = new Set(
       snapshot.active_sessions.map((session) => session.terminal_session_id),
     )
+    const endedIds = new Set(snapshot.ended_session_ids ?? [])
     for (const session of snapshot.active_sessions) {
       const sessionId = session.terminal_session_id
       const knownOwner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId)
       if (knownOwner && knownOwner.driverId !== driver.driverId) continue
       sessions.set(sessionId, driver)
+      cleanedSessionOwners.delete(sessionId)
       endedSessionOwners.delete(sessionId)
     }
-    for (const sessionId of snapshot.ended_session_ids ?? []) {
+    for (const sessionId of endedIds) {
+      if (cleanedSessionOwners.has(sessionId)) continue
       if (activeIds.has(sessionId)) continue
       const knownOwner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId)
       if (knownOwner && knownOwner.driverId !== driver.driverId) continue
       sessions.delete(sessionId)
       rememberEndedSessionOwner(sessionId, driver)
+    }
+    for (const [sessionId, driverId] of cleanedSessionOwners) {
+      if (
+        driverId === driver.driverId &&
+        !activeIds.has(sessionId) &&
+        !endedIds.has(sessionId)
+      ) {
+        cleanedSessionOwners.delete(sessionId)
+      }
     }
     return activeIds
   }
@@ -445,21 +484,37 @@ export function createExecutionWorld(input: {
     const driverId = driver?.driverId ?? null
 
     if (operation.signal?.aborted) {
+      const timedOut = isTimeoutAbortSignal(operation.signal)
       const request = buildPrelaunchSandboxRequest(operation)
       const livenessEvidence = buildLivenessEvidence({
         requestId: request.request_id,
-        state: "cancelled",
+        state: timedOut ? "timed_out" : "cancelled",
         executionStarted: false,
         terminationRequested: false,
         terminationObserved: false,
       })
+      if (timedOut && operation.onTimeout) {
+        try {
+          void Promise.resolve(
+            operation.onTimeout({
+              driverId: driverId ?? "unknown",
+              request,
+              liveness: livenessEvidence,
+            }),
+          ).catch(() => {})
+        } catch {
+          // Timeout notification is advisory and cannot strand termination.
+        }
+      }
       const sandboxResult = assertValid<SandboxResultV1>(
         "sandboxResult",
         buildSandboxFailureResult({
           request,
-          status: "cancelled",
-          message: "Execution was cancelled before starting",
-          reason: "execution_cancelled",
+          status: timedOut ? "timed_out" : "cancelled",
+          message: timedOut
+            ? "Execution exceeded deadline before starting"
+            : "Execution was cancelled before starting",
+          reason: timedOut ? "deadline_exceeded" : "execution_cancelled",
         }),
       )
       return {
@@ -607,6 +662,19 @@ export function createExecutionWorld(input: {
       resolveTerminal = resolve
     })
 
+    let timeoutNotified = false
+    const notifyTimeout = (liveness: ExecutionLivenessEvidenceV1): void => {
+      if (timeoutNotified || !operation.onTimeout) return
+      timeoutNotified = true
+      try {
+        void Promise.resolve(
+          operation.onTimeout({ driverId: driver.driverId, request, liveness }),
+        ).catch(() => {})
+      } catch {
+        // Timeout notification is advisory and cannot strand termination.
+      }
+    }
+
     const requestTermination = async (reason: "deadline" | "cancelled"): Promise<void> => {
       if (terminalized) return
       terminalized = true
@@ -634,13 +702,7 @@ export function createExecutionWorld(input: {
         terminationRequested: executionStarted,
         terminationObserved,
       })
-      if (reason === "deadline" && operation.onTimeout) {
-        try {
-          void Promise.resolve(operation.onTimeout({ driverId: driver.driverId, request, liveness })).catch(() => {})
-        } catch {
-          // Timeout notification is advisory and cannot strand termination.
-        }
-      }
+      if (reason === "deadline") notifyTimeout(liveness)
       resolveTerminal?.({
         status: reason === "deadline" ? "timed_out" : "cancelled",
         executionStarted,
@@ -741,11 +803,19 @@ export function createExecutionWorld(input: {
       timer = setTimeout(() => void requestTermination("deadline"), Math.max(0, deadlineMs))
     }
     if (operation.signal) {
+      const abortReason = isTimeoutAbortSignal(operation.signal)
+        ? "deadline"
+        : "cancelled"
       if (operation.signal.aborted) {
-        void requestTermination("cancelled")
+        void requestTermination(abortReason)
       } else {
-        externalAbortListener = () => void requestTermination("cancelled")
-        operation.signal.addEventListener("abort", externalAbortListener, { once: true })
+        externalAbortListener = () =>
+          void requestTermination(
+            isTimeoutAbortSignal(operation.signal!) ? "deadline" : "cancelled",
+          )
+        operation.signal.addEventListener("abort", externalAbortListener, {
+          once: true,
+        })
       }
     }
 
@@ -822,6 +892,7 @@ export function createExecutionWorld(input: {
       terminationRequested: terminal.terminationRequested,
       terminationObserved: terminal.terminationObserved,
     })
+    if (sandboxResult.status === "timed_out") notifyTimeout(livenessEvidence)
 
     return {
       kind: "sandbox",
@@ -931,9 +1002,11 @@ export function createExecutionWorld(input: {
       if (!end) {
         sessions.set(operation.input.terminalSessionId, driver)
         endedSessionOwners.delete(operation.input.terminalSessionId)
+        cleanedSessionOwners.delete(operation.input.terminalSessionId)
       } else {
         sessions.delete(operation.input.terminalSessionId)
         rememberEndedSessionOwner(operation.input.terminalSessionId, driver)
+        cleanedSessionOwners.delete(operation.input.terminalSessionId)
       }
       return {
         kind: "terminal_start",
@@ -986,6 +1059,7 @@ export function createExecutionWorld(input: {
       }
       if (cleanedConfirmed) {
         endedSessionOwners.delete(operation.input.terminalSessionId)
+        rememberCleanedSession(operation.input.terminalSessionId, driver)
       }
       return {
         kind: "terminal_start",
@@ -1056,6 +1130,11 @@ export function createExecutionWorld(input: {
       if (interaction.terminal_session_id !== operation.input.terminalSessionId) {
         throw new Error(
           `Terminal interaction terminal_session_id '${interaction.terminal_session_id}' does not match requested '${operation.input.terminalSessionId}'`,
+        )
+      }
+      if (interaction.interaction_kind !== operation.input.interactionKind) {
+        throw new Error(
+          `Terminal interaction kind '${interaction.interaction_kind}' does not match requested '${operation.input.interactionKind}'`,
         )
       }
       const outputDeltas = (rawResult.outputDeltas ?? []).map((delta) => {
@@ -1138,7 +1217,9 @@ export function createExecutionWorld(input: {
         .map(([sessionId]) => sessionId)
       const mergedEnded = Array.from(
         new Set([...(result.ended_session_ids ?? []), ...worldEndedIds]),
-      ).filter((id) => !activeIds.has(id))
+      ).filter(
+        (id) => !activeIds.has(id) && !cleanedSessionOwners.has(id),
+      )
       const mergedResult: TerminalRegistrySnapshotV1 = {
         ...result,
         ended_session_ids: mergedEnded,
@@ -1383,6 +1464,7 @@ export function createExecutionWorld(input: {
       for (const id of pendingCleanedSet) {
         sessions.delete(id)
         endedSessionOwners.delete(id)
+        rememberCleanedSession(id, selectedCleanupDriver)
       }
 
       return {
@@ -1517,8 +1599,11 @@ export function createExecutionWorld(input: {
 
     // Now apply state mutations after all driver checks pass
     for (const id of pendingCleanedSet) {
+      const owner =
+        sessions.get(id) ?? endedSessionOwners.get(id) ?? defaultDriver
       sessions.delete(id)
       endedSessionOwners.delete(id)
+      rememberCleanedSession(id, owner)
     }
 
     return {

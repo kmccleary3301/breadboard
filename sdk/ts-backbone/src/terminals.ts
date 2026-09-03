@@ -827,12 +827,38 @@ export function createBackboneTerminalApi(options: {
         sessionIds: input.sessionIds,
         signal: input.signal ?? null,
       }
-      const worldResult = await executionWorld.execute({
-        kind: "terminal_cleanup",
-        capability,
-        placement,
-        input: cleanupInput,
-      })
+      let worldResult
+      try {
+        worldResult = await executionWorld.execute({
+          kind: "terminal_cleanup",
+          capability,
+          placement,
+          input: cleanupInput,
+        })
+      } catch (error) {
+        return {
+          supportClaim: buildTerminalSupportClaim({
+            workspace: options.workspace,
+            executionProfileId,
+            summary: `Terminal cleanup failed for ${executionProfileId}.`,
+            supported: false,
+            unsupportedFields: ["terminal_sessions"],
+          }),
+          unsupportedCase: buildUnsupportedTerminalCase({
+            profileId: executionProfileId,
+            reasonCode: "terminal_cleanup_failed",
+            summary:
+              error instanceof Error
+                ? error.message
+                : `Terminal cleanup failed for ${executionProfileId}.`,
+            metadata: {
+              scope: input.scope,
+              session_ids: input.sessionIds ?? [],
+            },
+          }),
+          result: null,
+        }
+      }
       const driverId = worldResult.driverId
       const supported = driverId !== null
       const supportClaim = buildTerminalSupportClaim({

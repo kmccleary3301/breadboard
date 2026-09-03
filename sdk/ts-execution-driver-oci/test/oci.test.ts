@@ -7,6 +7,7 @@ import {
   buildOciRuntimeInvocation,
   buildOciSandboxRequest,
   chooseOciPlacement,
+  defaultOciCommandExecutor,
   executeOciSandboxRequest,
   makeConfiguredOciExecutionDriver,
   makeOciExecutionDriver,
@@ -132,6 +133,38 @@ test("oci direct execution rejects a pre-aborted request before invoking the run
 })
 
 
+test("oci direct execution classifies standard timeout abort reasons", async () => {
+  const request = buildOciSandboxRequest({
+    requestId: "oci-timeout-abort",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-timeout-abort",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "1"],
+    imageRef: "docker://alpine:latest",
+  })
+  const controller = new AbortController()
+  controller.abort(new DOMException("The operation timed out", "TimeoutError"))
+  let executorCalls = 0
+
+  const result = await executeOciSandboxRequest(request, {
+    signal: controller.signal,
+    commandExecutor: async () => {
+      executorCalls++
+      return { exitCode: 0, stdout: "", stderr: "" }
+    },
+  })
+
+  assert.equal(executorCalls, 0)
+  assert.equal(result.status, "timed_out")
+  assert.equal(result.error?.reason, "deadline_exceeded")
+})
+
+
 
 test("oci driver can build a concrete runtime invocation", () => {
   const request = buildOciSandboxRequest({
@@ -182,6 +215,56 @@ test("oci driver can execute through an injected runtime adapter", async () => {
   assert.ok(result.stdout_ref?.startsWith("file://"))
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
 })
+
+test("defaultOciCommandExecutor removes abort listener after child close", async () => {
+  let registeredListener: unknown
+  let removals = 0
+  const signal = {
+    aborted: false,
+    reason: undefined,
+    addEventListener: (_type: string, listener: unknown) => {
+      registeredListener = listener
+    },
+    removeEventListener: (_type: string, listener: unknown) => {
+      if (listener === registeredListener) removals++
+    },
+  } as unknown as AbortSignal
+
+  await defaultOciCommandExecutor({
+    runtimeCommand: process.execPath,
+    runtimeArgs: ["-e", ""],
+    signal,
+  })
+
+  assert.equal(removals, 1)
+})
+
+
+test("defaultOciCommandExecutor removes abort listener after child error", async () => {
+  let registeredListener: unknown
+  let removals = 0
+  const signal = {
+    aborted: false,
+    reason: undefined,
+    addEventListener: (_type: string, listener: unknown) => {
+      registeredListener = listener
+    },
+    removeEventListener: (_type: string, listener: unknown) => {
+      if (listener === registeredListener) removals++
+    },
+  } as unknown as AbortSignal
+
+  await assert.rejects(
+    defaultOciCommandExecutor({
+      runtimeCommand: "/breadboard-command-that-does-not-exist",
+      runtimeArgs: [],
+      signal,
+    }),
+  )
+
+  assert.equal(removals, 1)
+})
+
 
 test("OCI direct execution classifies an ordinary abort as cancelled", async () => {
   const request = buildOciSandboxRequest({

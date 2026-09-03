@@ -429,6 +429,54 @@ test("defaultLocalCommandExecutor terminates isolated process group including sh
   }
 })
 
+test("defaultLocalCommandExecutor removes abort listener after child close", async () => {
+  let registeredListener: unknown
+  let removals = 0
+  const signal = {
+    aborted: false,
+    reason: undefined,
+    addEventListener: (_type: string, listener: unknown) => {
+      registeredListener = listener
+    },
+    removeEventListener: (_type: string, listener: unknown) => {
+      if (listener === registeredListener) removals++
+    },
+  } as unknown as AbortSignal
+
+  await defaultLocalCommandExecutor({
+    command: [process.execPath, "-e", ""],
+    signal,
+  })
+
+  assert.equal(removals, 1)
+})
+
+
+test("defaultLocalCommandExecutor removes abort listener after child error", async () => {
+  let registeredListener: unknown
+  let removals = 0
+  const signal = {
+    aborted: false,
+    reason: undefined,
+    addEventListener: (_type: string, listener: unknown) => {
+      registeredListener = listener
+    },
+    removeEventListener: (_type: string, listener: unknown) => {
+      if (listener === registeredListener) removals++
+    },
+  } as unknown as AbortSignal
+
+  await assert.rejects(
+    defaultLocalCommandExecutor({
+      command: ["/breadboard-command-that-does-not-exist"],
+      signal,
+    }),
+  )
+
+  assert.equal(removals, 1)
+})
+
+
 test("trusted local driver cleanup escalates to SIGKILL for SIGTERM-ignoring process and verifies exit", async () => {
   const start = await trustedLocalExecutionDriver.startTerminalSession?.({
     terminalSessionId: "term-local-sigterm-ignore-1",

@@ -336,6 +336,69 @@ test("execution world enforces timeout notification and bounded adapter terminat
   assert.equal(result.livenessEvidence.terminationObserved, (timeoutCallbackLiveness as ExecutionLivenessEvidenceV1 | undefined)?.terminationObserved)
   assert.equal(result.livenessEvidence.state, "timed_out")
 })
+test("execution world notifies timeout hook for adapter TimeoutError", async () => {
+  let timeoutNotifications = 0
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-adapter-timeout",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-adapter-timeout",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: capability.capability_id,
+  }
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "local-process",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    buildSandboxRequest: ({ requestId, capability: inputCapability, command }) => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: requestId,
+      capability_id: inputCapability.capability_id,
+      placement_class: "local_process",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: null,
+      snapshot_ref: null,
+      command: [command[0] ?? "", ...command.slice(1)],
+      network_policy: { allow: [] },
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: inputCapability.evidence_mode,
+      metadata: {},
+    }),
+    execute: async () => {
+      const error = new Error("adapter timed out")
+      error.name = "TimeoutError"
+      throw error
+    },
+    terminate: async () => {},
+  }
+  const world = createExecutionWorld({ drivers: [driver] })
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability,
+    placement,
+    requestId: "req-adapter-timeout",
+    command: ["sleep", "1"],
+    onTimeout: ({ liveness }) => {
+      timeoutNotifications++
+      assert.equal(liveness.state, "timed_out")
+      assert.equal(liveness.terminationRequested, true)
+    },
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "timed_out")
+  assert.equal(timeoutNotifications, 1)
+})
 test("execution world exercises real local and OCI adapter paths with provider-neutral equality under mask", async () => {
   const localDriver = makeTrustedLocalExecutionDriver(async ({ command, cwd }) => ({
     exitCode: 0,
@@ -578,6 +641,50 @@ test("execution world correctly normalizes cancelled status with distinct execut
   assert.equal(result.livenessEvidence.terminationRequested, true)
   assert.equal(result.livenessEvidence.terminationObserved, true)
 })
+
+test("execution world treats AbortSignal.timeout as a deadline", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-timeout-signal-1",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-timeout-signal-1",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: capability.capability_id,
+  }
+  const driver = makeTrustedLocalExecutionDriver(async ({ signal }) => {
+    return new Promise((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(new Error("aborted")))
+    })
+  })
+  const world = createExecutionWorld({ drivers: [driver] })
+  let timeoutNotifications = 0
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability,
+    placement,
+    requestId: "req-timeout-signal",
+    command: ["sleep", "60"],
+    signal: AbortSignal.timeout(10),
+    onTimeout: () => {
+      timeoutNotifications++
+    },
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "timed_out")
+  assert.equal(result.sandboxResult?.error?.reason, "deadline_exceeded")
+  assert.equal(result.livenessEvidence.state, "timed_out")
+  assert.equal(timeoutNotifications, 1)
+})
+
 
 test("execution world with missing terminate function marks terminationObserved false", async () => {
   const capability: ExecutionCapabilityV1 = {
@@ -1865,6 +1972,55 @@ test("execution world terminal_interact rejects mismatched interaction and outpu
   assert.equal(res.result, null)
   assert.equal(res.unsupportedCase?.reason_code, "terminal_interaction_failed")
   assert.match(res.unsupportedCase?.summary ?? "", /wrong-session-interact/)
+})
+
+
+test("execution world terminal_interact rejects mismatched interaction kind", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-interact-kind-mismatch",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-interact-kind-mismatch",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: capability.capability_id,
+  }
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "bad-interaction-kind",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    interactTerminalSession: async (input) => ({
+      interaction: {
+        schema_version: "bb.terminal_interaction.v1",
+        terminal_session_id: input.terminalSessionId,
+        interaction_kind: "poll",
+      },
+      outputDeltas: [],
+    }),
+  }
+  const world = createExecutionWorld({ drivers: [driver] })
+
+  const result = await world.execute({
+    kind: "terminal_interact",
+    capability,
+    placement,
+    input: {
+      terminalSessionId: "session-kind-mismatch",
+      interactionKind: "signal",
+      signal: "SIGTERM",
+    },
+  })
+
+  assert.equal(result.kind, "terminal_interact")
+  assert.equal(result.result, null)
+  assert.equal(result.unsupportedCase?.reason_code, "terminal_interaction_failed")
+  assert.match(result.unsupportedCase?.summary ?? "", /does not match requested/)
 })
 
 test("execution world returns cancelled for pre-aborted signal even with invalid/empty command or failing builder", async () => {
@@ -4413,6 +4569,177 @@ test("execution world snapshot sanitizes merged ended session IDs against active
   assert.equal(interactRes.kind, "terminal_interact")
   assert.ok(interactRes.result)
 })
+
+test("execution world ignores cleaned IDs in stale driver snapshots", async () => {
+  const sessionId = "term-cleaned-stale-snapshot"
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-cleaned-stale-snapshot",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-cleaned-stale-snapshot",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: cap.capability_id,
+  }
+  const staleEndedIds = new Set<string>()
+  let starts = 0
+  let malformedStart = false
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "cleaned-stale-snapshot-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    startTerminalSession: async (input) => {
+      starts++
+      staleEndedIds.add(input.terminalSessionId)
+      return {
+        descriptor: {
+          schema_version: "bb.terminal_session_descriptor.v1",
+          terminal_session_id: malformedStart ? "wrong-session-id" : input.terminalSessionId,
+          public_handles: [],
+          command: input.command,
+          cwd: null,
+          startup_call_id: null,
+          owner_task_id: null,
+          stream_mode: "pipes",
+          stream_split: "stdout_stderr",
+          capability_id: cap.capability_id,
+          placement_id: place.placement_id,
+          persistence_scope: "thread",
+          continuation_scope: "both",
+        },
+        outputDeltas: [],
+        end: {
+          schema_version: "bb.terminal_session_end.v1",
+          terminal_session_id: input.terminalSessionId,
+          startup_call_id: null,
+          causing_call_id: null,
+          terminal_state: "completed",
+          exit_code: 0,
+          duration_ms: 1,
+          artifact_refs: [],
+          evidence_refs: [],
+        },
+      }
+    },
+    snapshotTerminalRegistry: async () => ({
+      schema_version: "bb.terminal_registry_snapshot.v1",
+      snapshot_id: "stale-cleaned-snapshot",
+      active_sessions: [],
+      ended_session_ids: [...staleEndedIds],
+    }),
+    cleanupTerminalSessions: async (input) => ({
+      schema_version: "bb.terminal_cleanup_result.v1",
+      cleanup_id: input.cleanupId,
+      scope: input.scope,
+      cleaned_session_ids: input.sessionIds ?? [],
+      failed_session_ids: [],
+    }),
+  }
+  const world = createExecutionWorld({ drivers: [driver] })
+  const startOperation = {
+    kind: "terminal_start" as const,
+    capability: cap,
+    placement: place,
+    input: { terminalSessionId: sessionId, command: ["bash"] },
+  }
+
+  const firstStart = await world.execute(startOperation)
+  assert.equal(firstStart.kind, "terminal_start")
+  if (firstStart.kind !== "terminal_start") throw new Error("expected terminal start")
+  assert.ok(firstStart.result)
+  const cleanup = await world.execute({
+    kind: "terminal_cleanup",
+    capability: cap,
+    placement: place,
+    input: {
+      cleanupId: "clean-stale-snapshot",
+      scope: "single",
+      sessionIds: [sessionId],
+    },
+  })
+  assert.equal(cleanup.kind, "terminal_cleanup")
+  if (cleanup.kind !== "terminal_cleanup") throw new Error("expected terminal cleanup")
+  assert.deepEqual(cleanup.result?.cleaned_session_ids, [sessionId])
+  const snapshot = await world.execute({
+    kind: "terminal_snapshot",
+    capability: cap,
+    placement: place,
+  })
+  assert.equal(snapshot.kind, "terminal_snapshot")
+  if (snapshot.kind !== "terminal_snapshot") throw new Error("expected terminal snapshot")
+  assert.deepEqual(snapshot.result?.ended_session_ids, [])
+  const secondStart = await world.execute(startOperation)
+  assert.equal(secondStart.kind, "terminal_start")
+  if (secondStart.kind !== "terminal_start") throw new Error("expected terminal start")
+  assert.ok(secondStart.result)
+  const freshEndedSnapshot = await world.execute({
+    kind: "terminal_snapshot",
+    capability: cap,
+    placement: place,
+  })
+  assert.equal(freshEndedSnapshot.kind, "terminal_snapshot")
+  if (freshEndedSnapshot.kind !== "terminal_snapshot") {
+    throw new Error("expected terminal snapshot")
+  }
+  assert.deepEqual(freshEndedSnapshot.result?.ended_session_ids, [sessionId])
+  const cleanupFreshEnd = await world.execute({
+    kind: "terminal_cleanup",
+    capability: cap,
+    placement: place,
+    input: {
+      cleanupId: "clean-fresh-end",
+      scope: "single",
+      sessionIds: [sessionId],
+    },
+  })
+  assert.equal(cleanupFreshEnd.kind, "terminal_cleanup")
+  malformedStart = true
+  const malformedStartResult = await world.execute(startOperation)
+  assert.equal(malformedStartResult.kind, "terminal_start")
+  if (malformedStartResult.kind !== "terminal_start") {
+    throw new Error("expected terminal start")
+  }
+  assert.equal(malformedStartResult.result, null)
+  const staleAfterMalformedCleanup = await world.execute({
+    kind: "terminal_snapshot",
+    capability: cap,
+    placement: place,
+  })
+  assert.equal(staleAfterMalformedCleanup.kind, "terminal_snapshot")
+  if (staleAfterMalformedCleanup.kind !== "terminal_snapshot") {
+    throw new Error("expected terminal snapshot")
+  }
+  assert.deepEqual(staleAfterMalformedCleanup.result?.ended_session_ids, [])
+  staleEndedIds.clear()
+  await world.execute({
+    kind: "terminal_snapshot",
+    capability: cap,
+    placement: place,
+  })
+  staleEndedIds.add(sessionId)
+  const reintroducedAfterAcknowledgement = await world.execute({
+    kind: "terminal_snapshot",
+    capability: cap,
+    placement: place,
+  })
+  assert.equal(reintroducedAfterAcknowledgement.kind, "terminal_snapshot")
+  if (reintroducedAfterAcknowledgement.kind !== "terminal_snapshot") {
+    throw new Error("expected terminal snapshot")
+  }
+  assert.deepEqual(
+    reintroducedAfterAcknowledgement.result?.ended_session_ids,
+    [sessionId],
+  )
+  assert.equal(starts, 3)
+})
+
 
 test("execution world unpinned terminal select does not choose sandbox-only driver when supportsTerminalSessions returns true but no terminal operations are implemented", async () => {
   const cap: ExecutionCapabilityV1 = {
