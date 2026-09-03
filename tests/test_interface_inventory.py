@@ -122,9 +122,26 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
         "import { ApiError } from '@breadboard/sdk'\n"
         "export const eventKind = 'tool_result';\n"
         "function render(event: { type: string }) {\n"
-        "  switch (event.type) { case 'error': return event.type; case 'warning': return event.type; default: return 'ok'; }\n"
-        "}\n"
-        "void ApiError;\n",
+        "  switch (event.type) {\n"
+        + ("    // ignored braces '{}' and case 'error'\n" * 40)
+        + "    case 'error': return event.type;\n"
+        + "    case 'warning': return event.type;\n"
+        + "    default: return 'ok';\n"
+        + "  }\n"
+        + "}\n"
+        + "void ApiError;\n",
+        encoding="utf-8",
+    )
+    unrelated_switch = tui_source.parent / "unrelated-switch.ts"
+    unrelated_switch.write_text(
+        "export const eventKind = 'tool_result';\n"
+        "function render(other: { type: string }) {\n"
+        "  switch (other.type) {\n"
+        + ("    // ignored braces '{}' and case 'error'\n" * 40)
+        + "    case 'error': return other.type;\n"
+        + "    default: return 'ok';\n"
+        + "  }\n"
+        + "}\n",
         encoding="utf-8",
     )
     (tui_source.parent / "not-a-consumer.ts").write_text(
@@ -148,7 +165,6 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     engine, tui = _fixture_roots(tmp_path)
     first = inventory(engine, tui)
     second = inventory(engine, tui)
-
     assert canonical_bytes(first) == canonical_bytes(second)
     assert {key for key in first} >= {
         "owners",
@@ -162,10 +178,14 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     found = {(row["registry_id"], row["entry_id"]) for row in first["authoritative_registry_entries"]}
     assert SAMPLE <= found
     assert str(engine) not in canonical_bytes(first).decode()
-    assert first["tui_consumers"]["consumer_count"] == 1
+    assert first["tui_consumers"]["consumer_count"] == 2
     consumer_rows = first["tui_consumers"]["files"]
     consumer = next(row for row in consumer_rows if row["path"].endswith("consumer.ts"))
     assert {"ApiError", "tool_result", "error", "warning"} <= set(consumer["matched_tokens"])
+    consumer_text = (tui / "packages" / "coding-agent" / "src" / "consumer.ts").read_text()
+    assert len(consumer_text.split("case 'error':", 1)[0]) > 320
+    unrelated = next(row for row in consumer_rows if row["path"].endswith("unrelated-switch.ts"))
+    assert unrelated["matched_tokens"] == ["tool_result"]
     assert not any("generated/" in row["path"] for row in consumer_rows)
     assert not any(row["path"].startswith("engine_root/tests/") for row in first["compatibility_surfaces"]["reconfiguration"])
     deletion_ids = {

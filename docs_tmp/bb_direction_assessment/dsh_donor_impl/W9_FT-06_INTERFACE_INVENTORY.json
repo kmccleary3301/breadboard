@@ -19958,7 +19958,7 @@
     }
   },
   "tui_consumers": {
-    "consumer_count": 117,
+    "consumer_count": 118,
     "files": [
       {
         "matched_tokens": [
@@ -20038,6 +20038,7 @@
           "assistant.message.delta",
           "assistant.thought_summary.delta",
           "assistant_message",
+          "error",
           "reward_update",
           "tool.exec.start",
           "tool.exec.stderr.delta",
@@ -20057,6 +20058,7 @@
           "SessionEvent",
           "assistant_message",
           "completion",
+          "error",
           "reward_update",
           "tool_call",
           "tool_result",
@@ -21073,6 +21075,16 @@
         "matched_tokens": [
           "error"
         ],
+        "path": "tui_root/packages/coding-agent/src/live/controller.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "event-kind"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "error"
+        ],
         "path": "tui_root/packages/coding-agent/src/live/protocol.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -21395,7 +21407,7 @@
         "root_id": "paired-agent"
       },
       {
-        "consumer_count": 54,
+        "consumer_count": 55,
         "exists": true,
         "files_scanned": 1352,
         "root": "tui_root/packages/coding-agent/src",

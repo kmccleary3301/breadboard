@@ -528,11 +528,130 @@ def _event_pattern(token: str) -> re.Pattern[str]:
         rf"|"
         rf"\b(?:type|kind|event_type|eventType|event_kind|eventKind)\s*"
         rf"(?:===|!==|==|!=)\s*{quoted}"
-        rf"|"
-        rf"\bswitch\s*\(\s*{discriminator}\s*\)\s*\{{?"
-        rf"[\s\S]{{0,320}}?\bcase\s*{quoted}\s*:"
         rf")"
     )
+
+
+_EVENT_OBJECT_NAMES = frozenset({"event", "event_data", "eventData", "message", "payload"})
+_EVENT_DISCRIMINATOR_NAMES = frozenset(
+    {"type", "kind", "event_type", "eventType", "event_kind", "eventKind"}
+)
+
+
+def _lexical_tokens(text: str) -> list[tuple[str, str]]:
+    """Tokenize enough TypeScript syntax to balance switch braces safely."""
+    tokens: list[tuple[str, str]] = []
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if character.isspace():
+            index += 1
+            continue
+        if text.startswith("//", index):
+            newline = text.find("\n", index + 2)
+            index = len(text) if newline == -1 else newline + 1
+            continue
+        if text.startswith("/*", index):
+            comment_end = text.find("*/", index + 2)
+            index = len(text) if comment_end == -1 else comment_end + 2
+            continue
+        if character in "'\"`":
+            quote = character
+            index += 1
+            value: list[str] = []
+            while index < len(text):
+                character = text[index]
+                if character == "\\" and index + 1 < len(text):
+                    value.append(text[index + 1])
+                    index += 2
+                    continue
+                if character == quote:
+                    index += 1
+                    break
+                value.append(character)
+                index += 1
+            tokens.append(("string", "".join(value)))
+            continue
+        if character.isalnum() or character in "_$":
+            start = index
+            index += 1
+            while index < len(text) and (text[index].isalnum() or text[index] in "_$"):
+                index += 1
+            tokens.append(("identifier", text[start:index]))
+            continue
+        tokens.append(("punctuation", character))
+        index += 1
+    return tokens
+
+
+def _token_is(tokens: Sequence[tuple[str, str]], index: int, kind: str, value: str) -> bool:
+    return index < len(tokens) and tokens[index] == (kind, value)
+
+
+def _token_kind(tokens: Sequence[tuple[str, str]], index: int, kind: str) -> bool:
+    return index < len(tokens) and tokens[index][0] == kind
+
+
+def _event_discriminator_end(tokens: Sequence[tuple[str, str]], index: int) -> int | None:
+    if not _token_kind(tokens, index, "identifier"):
+        return None
+    if tokens[index][1] not in _EVENT_OBJECT_NAMES:
+        return None
+    if _token_is(tokens, index + 1, "punctuation", ".") and _token_kind(
+        tokens, index + 2, "identifier"
+    ):
+        if tokens[index + 2][1] in _EVENT_DISCRIMINATOR_NAMES:
+            return index + 3
+        return None
+    if (
+        _token_is(tokens, index + 1, "punctuation", "[")
+        and _token_kind(tokens, index + 2, "string")
+        and tokens[index + 2][1] in _EVENT_DISCRIMINATOR_NAMES
+        and _token_is(tokens, index + 3, "punctuation", "]")
+    ):
+        return index + 4
+    return None
+
+
+def _switch_case_event_matches(text: str, event_tokens: set[str]) -> set[str]:
+    wanted = AMBIGUOUS_EVENT_IDS.intersection(event_tokens)
+    if not wanted:
+        return set()
+    tokens = _lexical_tokens(text)
+    matches: set[str] = set()
+    for index, (kind, value) in enumerate(tokens):
+        if kind != "identifier" or value != "switch":
+            continue
+        if not _token_is(tokens, index + 1, "punctuation", "("):
+            continue
+        discriminator_end = _event_discriminator_end(tokens, index + 2)
+        if discriminator_end is None or not _token_is(
+            tokens, discriminator_end, "punctuation", ")"
+        ):
+            continue
+        body_start = discriminator_end + 1
+        if not _token_is(tokens, body_start, "punctuation", "{"):
+            continue
+        depth = 1
+        cursor = body_start + 1
+        while cursor < len(tokens) and depth:
+            token_kind, token_value = tokens[cursor]
+            if token_kind == "punctuation" and token_value == "{":
+                depth += 1
+            elif token_kind == "punctuation" and token_value == "}":
+                depth -= 1
+            elif depth == 1 and token_kind == "identifier" and token_value == "case":
+                label_index = cursor + 1
+                if (
+                    _token_kind(tokens, label_index, "string")
+                    and tokens[label_index][1] in wanted
+                    and _token_is(tokens, label_index + 1, "punctuation", ":")
+                ):
+                    matches.add(tokens[label_index][1])
+                    if matches == wanted:
+                        return matches
+            cursor += 1
+    return matches
 
 
 def _sdk_imported_exports(text: str, export_names: set[str]) -> set[str]:
@@ -606,9 +725,10 @@ def _tui_consumers(
                 root_row["files_scanned"] += 1
                 text = path.read_text(encoding="utf-8", errors="replace")
                 imported_exports = _sdk_imported_exports(text, sdk_export_names)
+                switch_events = _switch_case_event_matches(text, event_tokens)
                 matched_events = {
                     token for token, pattern in event_patterns.items() if pattern.search(text)
-                }
+                } | switch_events
                 matched_schemas = {
                     token for token, pattern in schema_patterns.items() if pattern.search(text)
                 }
