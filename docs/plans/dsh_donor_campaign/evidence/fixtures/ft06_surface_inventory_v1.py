@@ -14,7 +14,11 @@ from typing import Any, Iterable
 SCHEMA_VERSION = "breadboard.ft06_surface_inventory.v1"
 ENGINE_HEAD = "b3cacc7356244253305f8a6f84308a993485bfe2"
 TUI_HEAD = "73d6e6f55a238fc9ff0486bbcc9ecffe85705715"
-BASELINE_SHA256 = "c384bca85cb83d66246e0aa9fa9c00ca6294daabb03f64bc55a25bcaffcfea4d"
+PROJECTION_OWNERS = (
+    ("breadboard_engine/todo/projection.py", "project_store_snapshot_to_tui_envelope"),
+    ("breadboard_engine/state/session_state.py", "SessionState"),
+    ("breadboard_engine/orchestration/event_log.py", "EventLog"),
+)
 SOURCE_SUFFIXES = frozenset({".py", ".ts", ".tsx", ".js", ".jsx"})
 HTTP_METHODS = frozenset({"delete", "get", "head", "options", "patch", "post", "put", "route", "websocket"})
 TUI_EXCLUDED_PARTS = frozenset({"build", "dist", "generated", "node_modules", "vendor"})
@@ -125,6 +129,103 @@ def _class_string_values(engine: Path, relative: str, class_name: str) -> list[d
     return rows
 
 
+
+def _mapping_string_keys(
+    engine: Path, relative: str, assignment_name: str
+) -> list[str]:
+    tree = ast.parse(_text(engine, relative), filename=relative)
+    for node in tree.body:
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == assignment_name
+        ):
+            value = ast.literal_eval(node.value)
+            if not isinstance(value, dict) or not all(
+                isinstance(item, str) for item in value
+            ):
+                raise ValueError(f"{relative}:{assignment_name} is not a string-key mapping")
+            return sorted(value)
+    raise ValueError(f"{relative}:{assignment_name} not found")
+
+
+def _parser_node_count(parser: Any) -> int:
+    import argparse as argparse_module
+
+    children = [
+        child
+        for action in parser._actions
+        if isinstance(action, argparse_module._SubParsersAction)
+        for child in action.choices.values()
+    ]
+    return 1 + sum(_parser_node_count(child) for child in children)
+
+
+def _enabled_if_count(engine: Path, flag: str) -> int:
+    tree = ast.parse(_text(engine, "breadboard/product/cli/main.py"))
+    return sum(
+        isinstance(node, ast.If)
+        and any(
+            isinstance(value, ast.Constant) and value.value == flag
+            for value in ast.walk(node.test)
+        )
+        for node in ast.walk(tree)
+    )
+
+
+def _cli_inventory(engine: Path) -> dict[str, Any]:
+    import os
+    import sys
+
+    flags = (
+        "BREADBOARD_LEGACY_ROUTES",
+        "BREADBOARD_ENABLE_LOCAL_MIGRATIONS",
+        "BREADBOARD_ENABLE_E4_API",
+    )
+    saved = {flag: os.environ.get(flag) for flag in flags}
+    old_path = list(sys.path)
+    try:
+        sys.path.insert(0, str(engine))
+        for flag in flags:
+            os.environ.pop(flag, None)
+        from breadboard.product.cli.main import build_parser
+
+        default_nodes = _parser_node_count(build_parser())
+        os.environ["BREADBOARD_ENABLE_E4_API"] = "1"
+        e4_nodes = _parser_node_count(build_parser())
+    finally:
+        sys.path[:] = old_path
+        for flag, value in saved.items():
+            if value is None:
+                os.environ.pop(flag, None)
+            else:
+                os.environ[flag] = value
+    pyproject = _text(engine, "pyproject.toml")
+    entrypoint_count = len(
+        re.findall(r'(?m)^breadboard\s*=\s*"breadboard\.product\.cli:main"\s*$', pyproject)
+    )
+    if entrypoint_count != 1:
+        raise ValueError("expected one breadboard product CLI entry point")
+    return {
+        "default_parser_nodes": default_nodes,
+        "entrypoint_count": entrypoint_count,
+        "default_surface_count": default_nodes + entrypoint_count,
+        "legacy_conditional_declaration_count": _enabled_if_count(
+            engine, "BREADBOARD_LEGACY_ROUTES"
+        ),
+        "local_migration_conditional_declaration_count": _enabled_if_count(
+            engine, "BREADBOARD_ENABLE_LOCAL_MIGRATIONS"
+        ),
+        "e4_parser_declaration_count": e4_nodes - default_nodes,
+        "main_ast": _literal_parser_declarations(
+            engine, "breadboard/product/cli/main.py"
+        ),
+        "e4_ast": _literal_parser_declarations(
+            engine, "breadboard/product/cli/e4.py"
+        ),
+        "rule": "recursively count the argparse root and every registered subparser with all feature flags absent; add the single exact pyproject breadboard entry point; legacy/local counts are AST If declaration sites for their exact flags; E4 count is the recursive parser-node delta with only BREADBOARD_ENABLE_E4_API=1",
+    }
+
 def _python_all(engine: Path) -> list[str]:
     tree = ast.parse(_text(engine, "breadboard_sdk/__init__.py"))
     for node in tree.body:
@@ -220,96 +321,237 @@ def _durable_reconfigure(engine: Path, tui: Path, engine_files: list[str], tui_f
     }
 
 
-def inventory(engine: Path, tui: Path, baseline: Path) -> dict[str, Any]:
+def inventory(engine: Path, tui: Path) -> dict[str, Any]:
     engine = engine.resolve()
     tui = tui.resolve()
-    baseline = baseline.resolve()
     if _head(engine) != ENGINE_HEAD or _head(tui) != TUI_HEAD:
         raise ValueError("pinned head mismatch")
     if _status(engine) or _status(tui):
         raise ValueError("pinned root is not clean")
-    if _sha256(baseline) != BASELINE_SHA256:
-        raise ValueError("baseline digest mismatch")
     engine_files = _tracked(engine)
     tui_files = _tracked(tui)
-    operations = json.loads(_text(engine, "contracts/public/operations.v2.json"))["operations"]
-    event_registry = json.loads(_text(engine, "contracts/kernel/registries/kernel_event_kinds.v1.json"))["entries"]
-    tiers = json.loads(_text(engine, "contracts/kernel/registries/contract_tiers.v1.json"))
-    kernel_index = _text(engine, "sdk/ts-kernel-contracts/src/generated/index.ts")
+    operations = json.loads(
+        _text(engine, "contracts/public/operations.v2.json")
+    )["operations"]
+    event_registry = json.loads(
+        _text(engine, "contracts/kernel/registries/kernel_event_kinds.v1.json")
+    )["entries"]
+    tiers = json.loads(
+        _text(engine, "contracts/kernel/registries/contract_tiers.v1.json")
+    )
+    lifecycle = json.loads(
+        _text(engine, "contracts/kernel/registries/schema_lifecycle.v1.json")
+    )
+    kernel_index = _text(
+        engine, "sdk/ts-kernel-contracts/src/generated/index.ts"
+    )
+    event_type_values = _class_string_values(
+        engine, "breadboard_engine/api/cli_bridge/events.py", "EventType"
+    )
+    canonical_runtime = _mapping_string_keys(
+        engine,
+        "breadboard_engine/state/session_state.py",
+        "CANONICAL_KERNEL_EVENT_TYPES",
+    )
+    projection_only = _mapping_string_keys(
+        engine,
+        "breadboard_engine/state/session_state.py",
+        "PROJECTION_ONLY_RUNTIME_EVENT_TYPES",
+    )
+    audit_only = _mapping_string_keys(
+        engine,
+        "breadboard_engine/state/session_state.py",
+        "AUDIT_ONLY_RUNTIME_EVENT_TYPES",
+    )
+    projection_rows = []
+    for relative, symbol in PROJECTION_OWNERS:
+        text = _text(engine, relative)
+        matches = [
+            index
+            for index, line in enumerate(text.splitlines(), 1)
+            if re.search(rf"\b{re.escape(symbol)}\b", line)
+        ]
+        if not matches:
+            raise ValueError(f"projection owner missing: {relative}:{symbol}")
+        projection_rows.append(
+            {"path": relative, "symbol": symbol, "matching_lines": matches}
+        )
+    compat_path = "breadboard_sdk/compat.py"
+    compat_text = _text(engine, compat_path)
+    if not re.search(r"\bclass\s+CompatibilityBreadboardClient\b", compat_text):
+        raise ValueError("CompatibilityBreadboardClient missing")
+    pyproject = _text(engine, "pyproject.toml")
+    python_all = _python_all(engine)
+    tui_inventory = _tui_inventory(engine, tui, engine_files, tui_files)
     result = {
         "schema_version": SCHEMA_VERSION,
         "identity": {
-            "baseline_sha256": _sha256(baseline),
             "engine_head": _head(engine),
+            "engine_tracked_tree": _run(engine, "git", "rev-parse", "HEAD^{tree}"),
             "tui_head": _head(tui),
+            "tui_tracked_tree": _run(tui, "git", "rev-parse", "HEAD^{tree}"),
         },
-        "constants": {
+        "methods": {
             "http_methods": sorted(HTTP_METHODS),
             "sdk_import_pattern": SDK_IMPORT.pattern,
             "source_suffixes": sorted(SOURCE_SUFFIXES),
             "tui_excluded_parts": sorted(TUI_EXCLUDED_PARTS),
-            "tui_source_suffixes": [".js", ".jsx", ".ts", ".tsx"],
+            "deduplication": "tracked paths once; HTTP decorators once per AST node; durable token once per source line; registry and manifest rows once per array row",
         },
-        "http_routes": _http_routes(engine, engine_files),
-        "public_operations": {
-            "count": len(operations),
-            "operation_ids": sorted(
-                str(item["bindings"]["openapi"]["operation_id"]) for item in operations
+        "inventories": {
+            "http_routes": _http_routes(engine, engine_files),
+            "public_operations": {
+                "count": len(operations),
+                "operation_ids": sorted(
+                    str(item["bindings"]["openapi"]["operation_id"])
+                    for item in operations
+                ),
+                "rule": "every row in contracts/public/operations.v2.json operations",
+            },
+            "cli": _cli_inventory(engine),
+            "event_kinds": {
+                "event_type_value_count": len(event_type_values),
+                "event_type_values": event_type_values,
+                "canonical_runtime_count": len(canonical_runtime),
+                "canonical_runtime_ids": canonical_runtime,
+                "projection_only_runtime_count": len(projection_only),
+                "projection_only_runtime_ids": projection_only,
+                "audit_only_runtime_count": len(audit_only),
+                "audit_only_runtime_ids": audit_only,
+                "kernel_registry_count": len(event_registry),
+                "kernel_registry_ids": sorted(str(item["id"]) for item in event_registry),
+                "rule": "EventType string assignments in cli_bridge/events.py; exact keys of the three named session_state mappings; every kernel_event_kinds registry row",
+            },
+            "projections": {
+                "owners": projection_rows,
+                "rule": "each exact symbol must occur in its pinned tracked owner path",
+            },
+            "sdk_exports": {
+                "python_all_count": len(python_all),
+                "python_all": python_all,
+                "typescript_public_operation_count": len(operations),
+                "typescript_extra_invoke_count": len(
+                    re.findall(
+                        r"(?m)^\s*invokePublicAction\s*\(",
+                        _text(engine, "sdk/ts/src/public-client.ts"),
+                    )
+                ),
+                "kernel_generated_type_reexport_count": len(
+                    re.findall(r"^export type ", kernel_index, re.MULTILINE)
+                ),
+                "rule": "literal breadboard_sdk.__all__; operation manifest rows; public-client method declarations named invoke; exact generated-index lines beginning 'export type '",
+            },
+            "tui_consumers": tui_inventory,
+            "compatibility": {
+                "compatibility_client": compat_path
+                + ":CompatibilityBreadboardClient",
+                "contract_tier_entry_count": len(tiers["entries"]),
+                "schema_lifecycle_entry_count": len(lifecycle["entries"]),
+                "nondefault_lifecycle_schema_ids": sorted(
+                    str(row["schema_id"])
+                    for row in lifecycle["entries"]
+                    if not row.get("default_for_generation", False)
+                ),
+                "rule": "exact compatibility subclass plus every row in the two authoritative registries; nondefault IDs are lifecycle rows with default_for_generation false",
+            },
+            "repository_surfaces": {
+                "config_files": len(_under(engine_files, "config/")),
+                "script_files": len(_under(engine_files, "scripts/")),
+                "conformance_files": len(_under(engine_files, "conformance/")),
+                "test_files": len(_under(engine_files, "tests/")),
+                "generated_python_sdk_files": len(
+                    _under(engine_files, "breadboard_sdk/generated/")
+                ),
+                "generated_ts_public_files": len(
+                    _under(engine_files, "sdk/ts/src/generated/")
+                ),
+                "generated_kernel_ts_files": len(
+                    _under(engine_files, "sdk/ts-kernel-contracts/src/generated/")
+                ),
+                "rule": "git ls-files paths with exact prefix; each tracked path once",
+            },
+            "profiles_and_lanes": {
+                "agent_config_files": len(_under(engine_files, "agent_configs/")),
+                "agent_config_yaml": sum(
+                    path.startswith("agent_configs/")
+                    and Path(path).suffix in {".yaml", ".yml"}
+                    for path in engine_files
+                ),
+                "implementation_profiles": len(
+                    _under(engine_files, "implementations/profiles/")
+                ),
+                "e4_lane_files": len(_under(engine_files, "config/e4_lanes/")),
+                "e4_lane_yaml": sum(
+                    path.startswith("config/e4_lanes/")
+                    and Path(path).suffix in {".yaml", ".yml"}
+                    for path in engine_files
+                ),
+                "e4_lane_json": sum(
+                    path.startswith("config/e4_lanes/")
+                    and Path(path).suffix == ".json"
+                    for path in engine_files
+                ),
+                "rule": "git ls-files exact prefixes; YAML=.yaml/.yml; JSON=.json",
+            },
+            "omp_adapters": {
+                "engine_present": bool(_under(engine_files, ".omp/")),
+                "engine_paths": _under(engine_files, ".omp/"),
+                "tui_present": bool(_under(tui_files, ".omp/")),
+                "tui_count": len(_under(tui_files, ".omp/")),
+                "tui_paths": _under(tui_files, ".omp/"),
+                "rule": "all git ls-files paths under exact repository-root .omp/ prefix",
+            },
+            "binaries": {
+                "tracked_bb_or_bbh_paths": [
+                    path
+                    for path in engine_files
+                    if Path(path).name in {"bb", "bbh"}
+                ],
+                "breadboard_entrypoint_count": len(
+                    re.findall(
+                        r'(?m)^breadboard\s*=\s*"breadboard\.product\.cli:main"\s*$',
+                        pyproject,
+                    )
+                ),
+                "bbh_candidate_binding_count": len(operations),
+                "rule": "tracked basenames exactly bb/bbh; exact pyproject entrypoint; operation manifest rows",
+            },
+            "durable_reconfigure": _durable_reconfigure(
+                engine, tui, engine_files, tui_files
             ),
-            "rule": "every row in contracts/public/operations.v2.json operations; deduplicate only in operation_ids display",
         },
-        "cli": {
-            "main": _literal_parser_declarations(engine, "breadboard/product/cli/main.py"),
-            "e4": _literal_parser_declarations(engine, "breadboard/product/cli/e4.py"),
-        },
-        "event_kinds": {
-            "event_type_values": _class_string_values(engine, "breadboard_engine/state/session_state.py", "EventType"),
-            "canonical_kernel_registry_count": len(event_registry),
-            "canonical_kernel_registry_ids": sorted(str(item["id"]) for item in event_registry),
-            "rule": "EventType top-level string assignments plus every kernel_event_kinds.v1.json entry; no runtime-observed inference",
-        },
-        "sdk_exports": {
-            "python_all": _python_all(engine),
-            "public_operation_count": len(operations),
-            "kernel_generated_type_reexport_count": len(re.findall(r"^export type ", kernel_index, re.MULTILINE)),
-            "rule": "literal breadboard_sdk.__all__; public operation manifest rows; lines beginning exactly 'export type ' in generated index",
-        },
-        "tui_consumers": _tui_inventory(engine, tui, engine_files, tui_files),
-        "repository_surfaces": {
-            "config_files": len(_under(engine_files, "config/")),
-            "script_files": len(_under(engine_files, "scripts/")),
-            "conformance_files": len(_under(engine_files, "conformance/")),
-            "test_files": len(_under(engine_files, "tests/")),
-            "generated_python_sdk_files": len(_under(engine_files, "breadboard_sdk/generated/")),
-            "generated_ts_public_files": len(_under(engine_files, "sdk/ts/src/generated/")),
-            "generated_kernel_ts_files": len(_under(engine_files, "sdk/ts-kernel-contracts/src/generated/")),
-            "rule": "git ls-files paths with the exact prefix; each tracked path counted once, directories impossible",
-        },
-        "profiles_and_lanes": {
-            "agent_config_files": len(_under(engine_files, "agent_configs/")),
-            "agent_config_yaml": sum(path.startswith("agent_configs/") and Path(path).suffix in {".yaml", ".yml"} for path in engine_files),
-            "implementation_profiles": len(_under(engine_files, "implementations/profiles/")),
-            "e4_lane_files": len(_under(engine_files, "config/e4_lanes/")),
-            "e4_lane_yaml": sum(path.startswith("config/e4_lanes/") and Path(path).suffix in {".yaml", ".yml"} for path in engine_files),
-            "e4_lane_json": sum(path.startswith("config/e4_lanes/") and Path(path).suffix == ".json" for path in engine_files),
-            "rule": "git ls-files exact prefixes; YAML is .yaml/.yml and JSON is .json; each path counted once",
-        },
-        "omp_adapters": {
-            "engine_paths": _under(engine_files, ".omp/"),
-            "tui_paths": _under(tui_files, ".omp/"),
-            "rule": "all git ls-files paths under exact repository-root .omp/ prefix",
-        },
-        "durable_reconfigure": _durable_reconfigure(engine, tui, engine_files, tui_files),
         "schema_tiers": {
             "entry_count": len(tiers["entries"]),
             "by_tier_and_disposition": {
-                f"{tier}:{disposition}": sum(row.get("tier") == tier and row.get("disposition") == disposition for row in tiers["entries"])
-                for tier in sorted({str(row.get("tier")) for row in tiers["entries"]})
-                for disposition in sorted({str(row.get("disposition")) for row in tiers["entries"]})
+                f"{tier}:{disposition}": sum(
+                    row.get("tier") == tier
+                    and row.get("disposition") == disposition
+                    for row in tiers["entries"]
+                )
+                for tier in sorted(
+                    {str(row.get("tier")) for row in tiers["entries"]}
+                )
+                for disposition in sorted(
+                    {str(row.get("disposition")) for row in tiers["entries"]}
+                )
             },
-            "kernel_schema_files": len([path for path in engine_files if path.startswith("contracts/kernel/schemas/") and path.endswith(".json")]),
-            "public_schema_files": len([path for path in engine_files if path.startswith("contracts/public/") and path.endswith(".json")]),
-            "rule": "every contract_tiers.v1.json entry grouped by exact tier/disposition pair; schema files are tracked .json paths under exact roots",
+            "kernel_schema_files": len(
+                [
+                    path
+                    for path in engine_files
+                    if path.startswith("contracts/kernel/schemas/")
+                    and path.endswith(".json")
+                ]
+            ),
+            "public_schema_files": len(
+                [
+                    path
+                    for path in engine_files
+                    if path.startswith("contracts/public/schemas/")
+                    and path.endswith(".json")
+                ]
+            ),
+            "rule": "every contract_tiers entry grouped by exact pair; tracked .json paths under exact schema roots",
         },
     }
     return result
@@ -319,10 +561,24 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--engine-root", required=True, type=Path)
     parser.add_argument("--tui-root", required=True, type=Path)
-    parser.add_argument("--baseline", required=True, type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--check",
+        type=Path,
+        help="fail unless generated canonical bytes equal this committed baseline",
+    )
     args = parser.parse_args()
-    payload = json.dumps(inventory(args.engine_root, args.tui_root, args.baseline), indent=2, sort_keys=True) + "\n"
+    payload = (
+        json.dumps(
+            inventory(args.engine_root, args.tui_root),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    if args.check is not None and args.check.read_text(encoding="utf-8") != payload:
+        print(f"FT-06 baseline differs: {args.check}")
+        return 1
     if args.output:
         args.output.write_text(payload, encoding="utf-8")
     else:

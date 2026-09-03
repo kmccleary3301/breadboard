@@ -26,7 +26,7 @@ Status: COMPLETE — all nine children and map `bb-inj5` closed; post-contract F
 ## Evidence and review index
 
 - A: [donor pin](evidence/00_PROVENANCE_AND_REUSE.md), [independent review](evidence/00_PROVENANCE_AND_REUSE_REVIEW.md)
-- B: [current-state ledger](evidence/01_CURRENT_STATE_DONOR_LEDGER.md), [independent review](evidence/01_CURRENT_STATE_DONOR_REVIEW.md), [FT-06 inventory baseline](evidence/raw/bb-inj5.2/surface-inventory.json) at SHA-256 `c384bca85cb83d66246e0aa9fa9c00ca6294daabb03f64bc55a25bcaffcfea4d`
+- B: [current-state ledger](evidence/01_CURRENT_STATE_DONOR_LEDGER.md), [independent review](evidence/01_CURRENT_STATE_DONOR_REVIEW.md), preserved [historical FT-06 inventory](evidence/raw/bb-inj5.2/surface-inventory.json) at SHA-256 `c384bca85cb83d66246e0aa9fa9c00ca6294daabb03f64bc55a25bcaffcfea4d`, and separate [extractor-generated comparison baseline](evidence/raw/bb-inj5.2/surface-inventory-extracted-v1.json) at SHA-256 `7777d69a95236bdf57fdeb746dd4c2d3d89f6f96fc446dc97ce9f215284351d6`
 - C: [fault evidence](evidence/02_FAULT_BOUNDARY_EVIDENCE.md), [independent review](evidence/02_FAULT_BOUNDARY_REVIEW.md)
 - D: [evidence and approval contract](evidence/03_EVIDENCE_AND_APPROVAL_CONTRACT.md), [fresh-context read](evidence/reviews/bb-inj5.4-consistency-read.txt)
 - E: [semantic laws](evidence/04_NORMATIVE_SEMANTIC_LAWS.md), [fresh-context read](evidence/reviews/bb-inj5.5-consistency-read.txt)
@@ -36,25 +36,25 @@ Status: COMPLETE — all nine children and map `bb-inj5` closed; post-contract F
 
 ## Raw-store bindings
 
-Digest method: SHA-256 over each raw store's sorted `relative-path NUL file-SHA256 newline` records. These bind the local append-only stores without copying them wholesale. The sole copied raw input is B's `surface-inventory.json`, required for a clean-checkout FT-06 comparison and bound above by its file digest.
+Digest method: SHA-256 over each raw store's sorted `relative-path NUL file-SHA256 newline` records. These bind the local append-only stores without copying them wholesale. The copied raw inputs are B's preserved historical `surface-inventory.json` and the separate extractor-generated `surface-inventory-extracted-v1.json`; FT-06 compares current exact output first to the extracted fixed point and then explains every corresponding delta against the historical observation.
 
 | Ticket raw store | Files | SHA-256 tree v1 |
 | --- | ---: | --- |
 | `bb-inj5.1` | 2 | `1a6a51990ba5b34dec32f4807d99ce887edf1d93b01c0164636924bb1aa3ff1f` |
-| `bb-inj5.2` | 12 | `e768af68eb6145f852d346351e9cfb73c7e42db96ac2058a79a1af94801f9537` |
+| `bb-inj5.2` | 13 | `ad63dbec12bc074e6a08977f11b9dd539c173974a14ac5d78c7799b3f741bfc3` |
 | `bb-inj5.3` | 57 | `5fc4d48e91d93e4a510354000b99aba06c2418fbd213ad2627e0fd34c62f7983` |
 | `bb-inj5.4` | 4 | `97405c3815eba39021962705b9c152a95400c680a04a2d24efd69b0a52b648b3` |
 | `bb-inj5.5` | 7 | `911575b2f1a09fa434790389650be216614ab66d424852372f0433d7f76bc4f6` |
 | `bb-inj5.6` | 3 | `2424661ac0a7e124d155c204be2e7607eda1545276d60c61d15be0db44943706` |
 | `bb-inj5.7` | 8 | `8cb9dfe87bb86e2daf7d42d019e6697dceddc3e81d932fd004cc5c29fc28b3c4` |
 | `bb-inj5.8` | 6 | `73ef4c6a118bf0f0a4dedcec99005e1f42480bb5f2acc23af7aa27b90f0b1c82` |
-| `bb-inj5.9` | 3 | `315e689ed59593b02f11fa81a5990beaf99cc66c0b570e469cf4140d7ccf3e24` |
+| `bb-inj5.9` | 3 | `eb0c7a59aea4bffe29284531a4a028ace00a9645fc1a340959274488279899e8` |
 
 Workstream I's binding covers its provenance block, deterministic package validator, and final validator result.
 
 ## Gate status
 
-- G-I final package validation: PASS; 16/16 reviewed evidence, fixture, and escalated-review inputs are byte-exact, all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
+- G-I final package validation: PASS; 19/19 reviewed evidence, fixtures, and escalated-review inputs are byte-exact, all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
 - G-Score: PASS at 1000/1000 with every checked item linked and zero structural findings.
 - Phase 20 freeze checker: PASS at unchanged baseline `3b8d862f62ee9c2c421fe07758606b6973902c67`.
 - G-F/G-G/G-H escalation reviews: PASS. Corrected FT-03 oracle/history and FT-01 terminal routes are exact-artifact bound; P0/P1/P2/P3 = 0/0/0/0 for F/H and P0/P1 = 0/0 for G.
@@ -73,7 +73,7 @@ The specification contains mission/substrate, authorities and baseline heads, fr
 ## Finalization record
 
 - Package integrity: `/opt/homebrew/bin/python3.11 docs/plans/dsh_donor_campaign/check_package.py` → PASS, zero findings.
-- Source/package validator: PASS; 16 exact evidence/fixture/review copies, six packet sections/guard pairs, 13 valid relative links, zero findings.
+- Source/package validator: PASS; 19 exact evidence/fixture/review copies, six packet sections/guard pairs, 13 valid relative links, zero findings.
 - Freeze checker: PASS at baseline `3b8d862f62ee9c2c421fe07758606b6973902c67`.
 - Local commit: package introduced at `c30415263b74a11d1c57d42badb48ff91829d8de`; the final audit-only amendment is recorded in the workspace resolution log.
 - Original documentation finalization performed no production implementation, release, publication, or deployment. The later implementation campaign and this documentation PR are governed separately and do not retroactively expand this audit's authority.

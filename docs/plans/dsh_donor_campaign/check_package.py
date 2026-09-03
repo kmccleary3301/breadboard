@@ -16,10 +16,13 @@ PACKET_REVIEW = EVIDENCE / "05_FIRST_TRANCHE_PACKET_SET_REVIEW.md"
 PROTOTYPE = EVIDENCE / "07_CAMPAIGN_SPEC_PROTOTYPE.md"
 PROTOTYPE_REVIEW = EVIDENCE / "07_CAMPAIGN_SPEC_PROTOTYPE_REVIEW.md"
 SURFACE = EVIDENCE / "raw/bb-inj5.2/surface-inventory.json"
+EXTRACTED_SURFACE = (
+    EVIDENCE / "raw/bb-inj5.2/surface-inventory-extracted-v1.json"
+)
 FIXTURES = {
     EVIDENCE / "fixtures/ft03-request-fixture-v1.json": "76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3",
     EVIDENCE / "fixtures/ft03_openai_responses_capture_v1.py": "67346f2db2906107cde1684c9eec920bad43e471f1001825d080c9776682fbab",
-    EVIDENCE / "fixtures/ft06_surface_inventory_v1.py": "4e893118da1638949d937747bc15829424dd32f923fb2920ffdb4b85c815029b",
+    EVIDENCE / "fixtures/ft06_surface_inventory_v1.py": "d3025ad346b13b699dd315ea71375888a79c905dd31cd01d24ea6a3dd1037445",
 }
 HEADS = (
     "b3cacc7356244253305f8a6f84308a993485bfe2",
@@ -34,6 +37,7 @@ REQUIRED = (
     PROTOTYPE,
     PROTOTYPE_REVIEW,
     SURFACE,
+    EXTRACTED_SURFACE,
     *FIXTURES,
 )
 
@@ -105,6 +109,17 @@ def main() -> int:
             findings.append(
                 f"fixture digest is not bound by packet: {fixture.relative_to(ROOT)}"
             )
+    extracted_surface_digest = hashlib.sha256(
+        EXTRACTED_SURFACE.read_bytes()
+    ).hexdigest()
+    if extracted_surface_digest != "7777d69a95236bdf57fdeb746dd4c2d3d89f6f96fc446dc97ce9f215284351d6":
+        findings.append(
+            f"FT-06 extracted baseline digest differs: {extracted_surface_digest}"
+        )
+    if extracted_surface_digest not in packets or extracted_surface_digest not in audit:
+        findings.append(
+            "FT-06 extracted baseline digest is not bound by packet and completion audit"
+        )
 
     for document in (spec, packets):
         for target in set(re.findall(r"\[[^]]+\]\(([^)#]+)(?:#[^)]+)?\)", document)):
