@@ -606,7 +606,8 @@ def test_failed_live_role_switch_restores_prior_role_and_model() -> None:
     )
 
 
-def test_role_switch_rolls_back_when_registry_persistence_fails() -> None:
+@pytest.mark.parametrize("failure", [OSError, asyncio.CancelledError])
+def test_role_switch_rolls_back_when_registry_persistence_fails(failure) -> None:
     lock = compile_model_roles(_document())
     record = SessionRecord(
         session_id="role-persistence-rollback",
@@ -635,13 +636,13 @@ def test_role_switch_rolls_back_when_registry_persistence_fails() -> None:
 
     async def fail_persistence(_session_id: str, *, metadata: dict) -> None:
         record.metadata = metadata
-        raise OSError("state volume unavailable")
+        raise failure("state volume unavailable")
 
     runner._agent = ActiveAgent(runner.current_runtime_config())
     runner.registry.update_metadata = fail_persistence  # type: ignore[method-assign]
     durable_roles: list[str] = []
 
-    with pytest.raises(OSError, match="state volume unavailable"):
+    with pytest.raises(failure):
         asyncio.run(
             runner.handle_command(
                 "set_role",

@@ -2269,12 +2269,18 @@ class SessionService:
                 permission_mode=permission_mode,
             ),
         )
-        runtime_config = runner.prepare_runtime_config()
-        rebuilt_generation = self._runtime_lock(
-            record.session_id,
-            runtime_config,
-            runner.request.config_path,
-        ).as_dict()["graph_hash"]
+        try:
+            runtime_config = runner.prepare_runtime_config()
+            rebuilt_generation = self._runtime_lock(
+                record.session_id,
+                runtime_config,
+                runner.request.config_path,
+            ).as_dict()["graph_hash"]
+        except (ModelRoleResolutionError, OSError, TypeError, ValueError) as error:
+            raise ReplayError(
+                "generation_unavailable",
+                f"retained session {record.session_id!r} runtime generation cannot be restored",
+            ) from error
         if rebuilt_generation != record.product_session.pinned_generation_id:
             raise ReplayError(
                 "generation_mismatch",

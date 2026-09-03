@@ -278,7 +278,7 @@ class SessionControlController:
                 runner.session.session_id,
                 metadata=copy.deepcopy(metadata),
             )
-        except Exception:
+        except BaseException:
             self._rollback_runtime_mutation(
                 runner, snapshot, durable_reconfigure
             )
@@ -719,7 +719,7 @@ class SessionControlController:
                             runner.session.session_id,
                             metadata=dict(runner.session.metadata or {}),
                         )
-                    except Exception:
+                    except BaseException:
                         with runner._product_session_lock:
                             runner._active_model_role = previous_role
                             runner._model_override = previous_model

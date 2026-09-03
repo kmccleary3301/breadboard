@@ -2124,6 +2124,37 @@ async def test_retained_resume_refuses_runtime_generation_drift(
     assert deleted.value.status_code == 404
     assert tuple(record.product_session.events) == durable_events
 
+
+@pytest.mark.asyncio
+async def test_retained_resume_wraps_unavailable_generation_and_remains_deletable(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    state_root = tmp_path / "state"
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(config_path=CONFIG, task=""),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    await service.registry.persist(record)
+    await _stop(record)
+
+    monkeypatch.setattr(
+        RUNNER + "prepare_runtime_config",
+        lambda _runner: (_ for _ in ()).throw(FileNotFoundError("config removed")),
+    )
+    fresh = SessionService(state_root=state_root)
+    with pytest.raises(runtime_ports.ReplayError) as error:
+        await fresh.ensure_session(response.session_id)
+    assert error.value.code == "generation_unavailable"
+    await fresh.delete_session(response.session_id)
+    with pytest.raises(HTTPException) as deleted:
+        await fresh.ensure_session(response.session_id)
+    assert deleted.value.status_code == 404
+
 @pytest.mark.asyncio
 async def test_managed_retained_workspace_restores_attachments_without_binding(
     monkeypatch, tmp_path
@@ -2681,8 +2712,9 @@ async def test_start_refreshes_retained_writer_before_authorize(
         ("set_skills", {"allowlist": ["test-skill"]}),
     ],
 )
+@pytest.mark.parametrize("failure", [OSError, asyncio.CancelledError])
 async def test_runtime_reconfigure_metadata_failure_restores_authority(
-    monkeypatch, tmp_path, command, payload
+    monkeypatch, tmp_path, command, payload, failure
 ) -> None:
     service, response, record = await _create(
         monkeypatch,
@@ -2699,10 +2731,10 @@ async def test_runtime_reconfigure_metadata_failure_restores_authority(
     )
 
     async def fail_update_metadata(*_args, **_kwargs):
-        raise OSError("metadata persistence unavailable")
+        raise failure("metadata persistence unavailable")
 
     monkeypatch.setattr(service.registry, "update_metadata", fail_update_metadata)
-    with pytest.raises(OSError, match="metadata persistence unavailable"):
+    with pytest.raises(failure):
         await service.execute_command(
             response.session_id,
             SessionCommandRequest(command=command, payload=payload),
