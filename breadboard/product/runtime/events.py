@@ -227,6 +227,21 @@ class Session:
     def read_model(self) -> SessionView:
         with self._transition_lock: return self._view
     def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])
+    def input_digest(
+        self, content_hash: str, attachments: Iterable[ArtifactRef] = ()
+    ) -> SessionView:
+        """Append an accepted input when only its retained content hash is available."""
+        return self._append(
+            "accept input",
+            "input.accepted",
+            lambda: (
+                _sha256(content_hash, "content_hash"),
+                {
+                    "content_hash": content_hash,
+                    "attachments": [ref.as_dict() for ref in attachments],
+                },
+            )[1],
+        )
     def assistant_message(self, content: str) -> SessionView: return self._append("observe assistant", "assistant_message", lambda: (_check(type(content) is str, TypeError, "assistant content must be a string"), {"metadata": {"has_content": bool(content)}})[1])
     def tool_called(self, tool: str) -> SessionView: return self._append("observe tool call", "tool_call", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), {"tool": tool})[1])
     def tool_completed(self, tool: str, failed: bool) -> SessionView: return self._append("observe tool result", "tool_result", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), _check(type(failed) is bool, TypeError, "tool completion error flag must be boolean"), {"tool": tool, "error": failed})[2])

@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from fastapi import HTTPException
 
-from breadboard.product.runtime import ReplayError
+from breadboard.product.runtime import ReplayError, session_store
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest,
@@ -3335,3 +3335,166 @@ async def test_runner_stop_terminalizes_active_and_queued_turns_once(
     assert record.active_turn_id is None
     assert list(record.queued_turn_ids) == []
     assert record.status is SessionStatus.STOPPED
+
+@pytest.mark.asyncio
+async def test_retained_registry_first_input_reconciles_journal_before_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    state_root = tmp_path / "state"
+    session_id = "session-restart-admission-gap"
+    _seed_product_session_journal(monkeypatch, tmp_path, session_id)
+    event_root = tmp_path / "session-events"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("{}\n", encoding="utf-8")
+
+    from breadboard_engine.api.cli_bridge.session_artifacts import SessionArtifactStore
+
+    class Upload:
+        filename = "proof.txt"
+        content_type = "text/plain"
+
+        def __init__(self) -> None:
+            self.data = b"proof"
+
+        async def read(self, size: int = -1) -> bytes:
+            data = self.data if size < 0 else self.data[:size]
+            self.data = self.data[len(data) :]
+            return data
+
+    metadata = {
+        "config_path": str(config_path),
+        "permission_mode": "configured",
+        "session_event_root": str(event_root),
+        "workspace": str(workspace),
+    }
+    artifacts = SessionArtifactStore(session_id=session_id, metadata=metadata)
+    uploaded = await artifacts.upload([Upload()], workspace_dir=workspace)
+    attachment_id = uploaded.attachments[0].id
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id=session_id,
+        status=SessionStatus.RUNNING,
+        metadata=metadata,
+    )
+    turn = TurnRecord(
+        input_id="input-admission-gap",
+        turn_id="turn-admission-gap",
+        client_message_id="client-admission-gap",
+        content="recover this input",
+        attachments=(attachment_id,),
+        original_disposition="started",
+        state="active",
+        body_digest=submission_body_digest(
+            "recover this input", (attachment_id,)
+        ),
+        logical_event_count_before_admission=1,
+        logical_input_content_hash=(
+            "sha256:"
+            + hashlib.sha256("recover this input".encode("utf-8")).hexdigest()
+        ),
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.submissions_by_key[turn.client_message_id] = turn
+    record.submissions_by_key_digest[identity_digest(turn.client_message_id)] = turn
+    record.active_turn_id = turn.turn_id
+    await registry.create(record)
+    state_path = registry._state_path(session_id)
+    assert state_path is not None
+    retained_state = json.loads(state_path.read_text(encoding="utf-8"))
+    retained_turn_state = retained_state["turns"][0]
+    assert "recover this input" not in state_path.read_text(encoding="utf-8")
+    assert "content" not in retained_turn_state
+    assert retained_turn_state["content_hash"] == turn.logical_input_content_hash
+    assert retained_turn_state["attachments"] == [attachment_id]
+
+    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    restarted = SessionRegistry(state_root=state_root)
+    service = SessionService(registry=restarted)
+    restored = await service.ensure_session(session_id)
+    try:
+        assert restored.runner is not None
+        retained_turn = restored.turns_by_id[turn.turn_id]
+        assert retained_turn.content == ""
+        assert retained_turn.logical_input_content_hash == (
+            turn.logical_input_content_hash
+        )
+        assert retained_turn.attachments == (attachment_id,)
+        accepted_events = [
+            event
+            for event in restored.product_session.events
+            if event.kind == "input.accepted"
+        ]
+        assert len(accepted_events) == 1
+        assert dict(accepted_events[0].payload) == {
+            "content_hash": turn.logical_input_content_hash,
+            "attachments": (
+                restored.runner.artifacts.selected_artifacts((attachment_id,))[0].as_dict(),
+            ),
+        }
+
+        deferred: list[Any] = []
+        duplicate = await service.send_input(
+            session_id,
+            SessionInputRequest(
+                content=turn.content,
+                attachments=[attachment_id],
+                client_message_id=turn.client_message_id,
+            ),
+            defer_execution=deferred.append,
+        )
+        assert duplicate.disposition == "deduplicated"
+        assert deferred == []
+        assert len(
+            [
+                event
+                for event in restored.product_session.events
+                if event.kind == "input.accepted"
+            ]
+        ) == 1
+    finally:
+        if restored.runner is not None:
+            await restored.runner.stop()
+
+
+@pytest.mark.asyncio
+async def test_legacy_workspace_journal_binds_before_terminal_publication(
+    tmp_path: Path,
+) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+
+    workspace = tmp_path / "workspace"
+    session_id = "session-legacy-workspace-binding"
+    event_path = session_store.session_event_path(workspace, session_id)
+    event_path.parent.mkdir(parents=True, exist_ok=True)
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "b" * 64}),
+        "legacy workspace session",
+        session_id=session_id,
+        sink=JsonlEventSink(event_path),
+    )
+    product_session.complete()
+
+    state_root = tmp_path / "state"
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id=session_id,
+        status=SessionStatus.RUNNING,
+        metadata={"workspace": str(workspace)},
+    )
+    await registry.create(record)
+
+    restarted = SessionRegistry(state_root=state_root)
+    service = SessionService(registry=restarted)
+    restored = await service.ensure_session(session_id)
+
+    assert restored.metadata["durable_product_workspace"] == str(workspace)
+    projection, _ = session_store.load_session(workspace, session_id)
+    assert projection.read_model.status == "completed"
+    assert projection.read_model.session_id == session_id

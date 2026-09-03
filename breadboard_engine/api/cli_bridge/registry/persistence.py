@@ -420,8 +420,9 @@ class PersistenceMixin:
                     self._serialize_cancellation(key_digest, cancellation)
                 )
 
-        turns = [
-            {
+        turns = []
+        for turn in record.turns_by_id.values():
+            serialized_turn = {
                 "input_id": turn.input_id,
                 "turn_id": turn.turn_id,
                 "original_disposition": turn.original_disposition,
@@ -434,8 +435,21 @@ class PersistenceMixin:
                 "body_digest": turn.body_digest
                 or submission_body_digest(turn.content, turn.attachments),
             }
-            for turn in record.turns_by_id.values()
-        ]
+            if turn.logical_event_count_before_admission is not None:
+                content_hash = turn.logical_input_content_hash
+                if (
+                    not isinstance(content_hash, str)
+                    or len(content_hash) != 71
+                    or not content_hash.startswith("sha256:")
+                    or any(character not in "0123456789abcdef" for character in content_hash[7:])
+                ):
+                    raise ValueError("retained turn content hash is invalid")
+                serialized_turn["content_hash"] = content_hash
+                serialized_turn["attachments"] = list(turn.attachments)
+                serialized_turn["logical_event_count_before_admission"] = (
+                    turn.logical_event_count_before_admission
+                )
+            turns.append(serialized_turn)
         metadata = record.metadata if isinstance(record.metadata, dict) else {}
         role_lock = metadata.get("model_role_lock")
         if not isinstance(role_lock, dict):
@@ -676,12 +690,41 @@ class PersistenceMixin:
             loaded_from_retained_state=True,
         )
         for item in payload.get("turns") or []:
+            marker = item.get("logical_event_count_before_admission")
+            if marker is not None and (
+                type(marker) is not int or marker < 1
+            ):
+                raise ValueError("retained turn journal position is invalid")
+            if marker is not None and (
+                "content_hash" not in item or "attachments" not in item
+            ):
+                raise ValueError("retained turn admission payload is incomplete")
+            content_hash = item.get("content_hash")
+            if marker is not None and (
+                not isinstance(content_hash, str)
+                or len(content_hash) != 71
+                or not content_hash.startswith("sha256:")
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in content_hash[7:]
+                )
+            ):
+                raise ValueError("retained turn content hash is invalid")
+            content = ""
+            attachments = item.get("attachments", [])
+            if marker is None:
+                content_hash = None
+            if not isinstance(attachments, list) or any(
+                not isinstance(attachment, str) or not attachment.strip()
+                for attachment in attachments
+            ):
+                raise ValueError("retained turn attachments are invalid")
             turn = TurnRecord(
                 input_id=str(item["input_id"]),
                 turn_id=str(item["turn_id"]),
                 client_message_id="",
-                content="",
-                attachments=(),
+                content=content,
+                attachments=tuple(attachments),
                 original_disposition=str(item["original_disposition"]),
                 state=str(item["state"]),
                 cancellation_requested=bool(item.get("cancellation_requested")),
@@ -692,6 +735,8 @@ class PersistenceMixin:
                     item.get("terminal_resolution_committed")
                 ),
                 body_digest=str(item["body_digest"]),
+                logical_event_count_before_admission=marker,
+                logical_input_content_hash=content_hash,
             )
             record.turns_by_id[turn.turn_id] = turn
         for item in payload.get("submissions") or []:

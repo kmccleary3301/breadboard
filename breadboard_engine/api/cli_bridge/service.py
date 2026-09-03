@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -1303,6 +1304,7 @@ class SessionService:
             if isinstance(recorded_workspace, str) and recorded_workspace.strip()
             else None
         )
+        discovered_workspace_journal = False
         if (
             not isinstance(recorded_event_root, str)
             or not recorded_event_root.strip()
@@ -1313,6 +1315,7 @@ class SessionService:
             ).parent.parent.resolve()
             if (workspace_event_root / record.session_id / "session_events.jsonl").is_file():
                 retained_event_root = workspace_event_root
+                discovered_workspace_journal = True
             else:
                 retained_event_root = _event_root(self._managed_state_paths)
         else:
@@ -1322,6 +1325,19 @@ class SessionService:
                 and recorded_event_root.strip()
                 else _event_root(self._managed_state_paths)
             )
+        if discovered_workspace_journal and not (
+            isinstance(
+                metadata.get(_SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY),
+                str,
+            )
+            and str(
+                metadata.get(_SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY)
+            ).strip()
+        ):
+            metadata[_SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY] = str(
+                retained_workspace
+            )
+            record.metadata = metadata
         record.product_session = _restore_product_session(
             record.session_id,
             self._managed_state_paths,
@@ -1351,6 +1367,7 @@ class SessionService:
                 terminal_runner,
             )
             self._restore_retained_workspace_attachments(record, terminal_runner)
+            terminal_runner.reconcile_retained_input_admissions()
             terminal_outcome = {
                 SessionStatus.COMPLETED: "completed",
                 SessionStatus.FAILED: "failed",
@@ -1419,6 +1436,7 @@ class SessionService:
             runner,
         )
         self._restore_retained_workspace_attachments(record, runner)
+        runner.reconcile_retained_input_admissions()
         for turn in record.turns_by_id.values():
             if turn.terminal_outcome is not None:
                 continue
@@ -1940,6 +1958,23 @@ class SessionService:
                     )
                 accepted_content = runner.prepare_input_content(payload.content)
                 disposition = "started" if record.active_turn_id is None else "queued"
+                product_session = getattr(record, "product_session", None)
+                event_count = (
+                    getattr(
+                        getattr(product_session, "read_model", None),
+                        "event_count",
+                        None,
+                    )
+                    if product_session is not None
+                    else None
+                )
+                event_count_is_valid = type(event_count) is int and event_count >= 1
+                content_hash = (
+                    "sha256:"
+                    + hashlib.sha256(accepted_content.encode("utf-8")).hexdigest()
+                    if event_count_is_valid
+                    else None
+                )
                 turn = TurnRecord(
                     input_id=f"input-{uuid.uuid4().hex}",
                     turn_id=f"turn-{uuid.uuid4().hex}",
@@ -1949,6 +1984,10 @@ class SessionService:
                     original_disposition=disposition,
                     state="active" if disposition == "started" else "queued",
                     body_digest=body_digest,
+                    logical_input_content_hash=content_hash,
+                    logical_event_count_before_admission=(
+                        event_count if event_count_is_valid else None
+                    ),
                 )
                 record.turns_by_id[turn.turn_id] = turn
                 record.submissions_by_key[client_message_id] = turn

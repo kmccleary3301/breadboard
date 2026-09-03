@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence, List
 from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard.product.runtime import session_store
+from breadboard.product.runtime.events import ReplayError
 from breadboard_engine.model_roles import (
     ModelRoleProblem,
     ModelRoleResolutionError,
@@ -392,6 +393,76 @@ class SessionRunner:
             await self.registry.update_status(self.session.session_id, final_status)
             self._closed = True
             await self._enqueue_termination()
+    def reconcile_retained_input_admissions(self) -> None:
+        """Repair a registry-first admission that missed its journal append."""
+        with self._product_session_lock:
+            product_session = getattr(self.session, "product_session", None)
+            if product_session is None:
+                return
+            retained_turns = [
+                turn
+                for turn in self.session.turns_by_id.values()
+                if turn.logical_event_count_before_admission is not None
+            ]
+            if not retained_turns:
+                return
+            events = product_session.events
+            for turn in retained_turns:
+                before = turn.logical_event_count_before_admission
+                content_hash = turn.logical_input_content_hash
+                if (
+                    before is None
+                    or before < 1
+                    or not isinstance(content_hash, str)
+                ):
+                    raise ReplayError(
+                        "admission_journal_mismatch",
+                        "retained input admission payload is incomplete",
+                    )
+                try:
+                    selected_artifacts = self.artifacts.selected_artifacts(
+                        turn.attachments
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise ReplayError(
+                        "admission_journal_mismatch",
+                        "retained input admission references unavailable attachments",
+                    ) from exc
+                expected_payload = {
+                    "content_hash": content_hash,
+                    "attachments": [
+                        artifact.as_dict() for artifact in selected_artifacts
+                    ],
+                }
+                if before > len(events):
+                    raise ReplayError(
+                        "admission_journal_mismatch",
+                        "retained input admission journal position is missing",
+                    )
+                if before == len(events):
+                    if product_session.read_model.status != "running":
+                        raise ReplayError(
+                            "admission_journal_mismatch",
+                            "retained input admission cannot be appended to a terminal session",
+                        )
+                    product_session.input_digest(content_hash, selected_artifacts)
+                    events = product_session.events
+                    continue
+                event = events[before]
+                actual_payload = (
+                    {
+                        "content_hash": event.payload.get("content_hash"),
+                        "attachments": list(event.payload.get("attachments") or ()),
+                    }
+                    if isinstance(event.payload, Mapping)
+                    else None
+                )
+                if event.kind != "input.accepted" or actual_payload != expected_payload:
+                    raise ReplayError(
+                        "admission_journal_mismatch",
+                        "retained input admission does not match its journal event",
+                    )
+
 
     async def enqueue_input(
         self,
