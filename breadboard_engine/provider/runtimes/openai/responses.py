@@ -1114,6 +1114,9 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             tools=tools,
             context=context,
         )
+        extra_body = payload.pop("extra_body", None)
+        if isinstance(extra_body, dict):
+            payload.update(extra_body)
         if stream:
             payload["stream"] = True
         return payload

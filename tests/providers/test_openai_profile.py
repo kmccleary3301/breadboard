@@ -145,6 +145,21 @@ def test_profile_request_provenance_separates_requested_default_and_adapter_fact
     assert all(item.get("uncertainty") is None for item in provenance.values())
 
 
+def test_profile_provenance_distinguishes_explicit_n_from_default():
+    profile = _profile(sampling={"n": 1})
+
+    provenance = profile.chat_request_provenance([], None)
+
+    assert provenance["n"] == {
+        "status": "effective",
+        "source": "lock.provider_profile.sampling.n",
+        "effective": 1,
+        "uncertainty": None,
+    }
+
+
+
+
 def test_profile_projects_exact_sdk_stream_request(monkeypatch):
     profile = _profile(sampling={"temperature": 0.2})
     runtime = _runtime()

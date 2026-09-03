@@ -1358,6 +1358,30 @@ def retry_with_fallback(
                 exchange_recorder=recorder,
                 cancel_requested=runtime_context.cancel_requested,
             )
+            project_request_body = getattr(
+                fallback_runtime, "project_request_body", None
+            )
+            if callable(project_request_body):
+                fallback_request_body = project_request_body(
+                    model=fallback_model_resolved,
+                    messages=messages,
+                    tools=tools_schema,
+                    stream=False,
+                    context=fallback_runtime_context,
+                )
+                if not isinstance(fallback_request_body, dict):
+                    raise ProviderRuntimeError(
+                        "fallback request projection must be an object",
+                        details={"code": "provider_contract_error"},
+                        kind="protocol",
+                    )
+            else:
+                fallback_request_body = {
+                    "model": fallback_model_resolved,
+                    "messages": messages,
+                    "tools": tools_schema,
+                    "stream": False,
+                }
             try:
                 if getattr(
                     conductor.logger_v2,
@@ -1401,12 +1425,7 @@ def retry_with_fallback(
                             ),
                             model=fallback_model_resolved,
                             request_headers=headers_snapshot,
-                            request_body={
-                                "model": fallback_model_resolved,
-                                "messages": messages,
-                                "tools": tools_schema,
-                                "stream": False,
-                            },
+                            request_body=fallback_request_body,
                             stream=False,
                             tool_count=len(tools_schema or []),
                             endpoint=fallback_client_config.get("base_url"),

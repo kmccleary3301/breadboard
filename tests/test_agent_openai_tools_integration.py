@@ -203,6 +203,10 @@ def _make_conductor_for_policies(config=None):
 
 def test_retry_with_fallback_marks_degraded(monkeypatch):
     conductor = _make_conductor_for_retry()
+    structured_requests = []
+    conductor.structured_request_recorder = types.SimpleNamespace(
+        record_request=lambda *_args, **kwargs: structured_requests.append(kwargs)
+    )
     markdown_logger = _DummyMarkdownLogger()
     session_state = SessionState(workspace=".", image="img")
     session_state.set_provider_metadata("current_turn_index", 2)
@@ -247,6 +251,14 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
                 default_headers=config.get("default_headers"),
             )
 
+
+        def project_request_body(self, *, model, messages, tools, stream, context):
+            return {
+                "model": model,
+                "input": [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}],
+                "tools": [{"type": "function", "name": "run_shell"}],
+                "parallel_tool_calls": False,
+            }
         def invoke(self, *, client, model, messages, tools, stream, context):
             assert context.session_id == "session-1"
             assert context.input_id == "input-1"
@@ -363,6 +375,7 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
         input_id="input-1",
         turn_id="turn-1",
         exchange_recorder=recorder,
+        extra={"turn_index": 2},
     )
 
     result = conductor._retry_with_fallback(
@@ -403,6 +416,12 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
     }
     assert [event.kind for event in recorder.events] == ["response_start"]
     assert result.metadata["provider_exchange_identity"] == recorder.provider.as_dict()
+    assert structured_requests[-1]["request_body"] == {
+        "model": "gpt-4o-mini",
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}],
+        "tools": [{"type": "function", "name": "run_shell"}],
+        "parallel_tool_calls": False,
+    }
 
 
 def test_retry_with_fallback_stops_when_recorder_observes_output(monkeypatch):

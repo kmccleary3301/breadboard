@@ -134,9 +134,11 @@ def test_openrouter_responses_wire_surface_digest_uses_responses_converters():
     assert body["previous_response_id"] == "resp_previous"
     assert body["parallel_tool_calls"] is False
     assert body["max_output_tokens"] == 512
-    assert body["extra_body"] == {
-        "provider": {"order": ["openai"], "allow_fallbacks": False}
+    assert body["provider"] == {
+        "order": ["openai"],
+        "allow_fallbacks": False,
     }
+    assert "extra_body" not in body
     assert surface is not None
     assert surface["provider_request"] == {
         "messages_sha256": _surface_digest(actual_messages),

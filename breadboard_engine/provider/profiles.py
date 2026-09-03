@@ -307,6 +307,9 @@ class OpenAICompletionsProviderProfile:
     )
     provider_id: str = "openai"
     runtime_id: str = "openai_chat"
+    _sampling_explicit_fields: frozenset[str] = field(
+        init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         model = _text(self.model, "profile.model", max_length=256)
@@ -335,6 +338,14 @@ class OpenAICompletionsProviderProfile:
             raise ProviderContractError(
                 f"profile.max_output_tokens must be {_EXACT_MAX_OUTPUT_TOKENS}"
             )
+        sampling_explicit_fields = (
+            frozenset(str(key) for key in self.sampling)
+            if isinstance(self.sampling, Mapping)
+            else frozenset()
+        )
+        object.__setattr__(
+            self, "_sampling_explicit_fields", sampling_explicit_fields
+        )
         object.__setattr__(
             self, "sampling", OpenAICompletionsSampling.from_value(self.sampling)
         )
@@ -537,8 +548,16 @@ class OpenAICompletionsProviderProfile:
                 "uncertainty": None,
             },
             "n": {
-                "status": "default",
-                "source": "OpenAICompletionsSampling.n",
+                "status": (
+                    "effective"
+                    if "n" in self._sampling_explicit_fields
+                    else "default"
+                ),
+                "source": (
+                    "lock.provider_profile.sampling.n"
+                    if "n" in self._sampling_explicit_fields
+                    else "OpenAICompletionsSampling.n"
+                ),
                 "effective": request["n"],
                 "uncertainty": None,
             },
