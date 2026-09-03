@@ -621,6 +621,9 @@ async def events(
                 cursor = int(event["sequence"])
                 projected_event = public_session_event(event)
                 if projected_event is None:
+                    # Advance standards-compliant SSE resumability without
+                    # publishing an unamended internal event payload.
+                    yield f"id: {cursor}\n\n"
                     continue
                 terminal = event["kind"] in {
                     "session.completed",

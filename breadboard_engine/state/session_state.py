@@ -5,6 +5,7 @@ Session state management for agentic coding loops
 from collections.abc import Iterator
 from typing import Any, Callable, Dict, List, Optional
 from pathlib import Path
+import copy
 import json
 import time
 import threading
@@ -556,9 +557,9 @@ class SessionState:
             except Exception:
                 should_store_message = True
         if should_store_message:
-            self.messages.append(message)
+            self.messages.append(copy.deepcopy(message))
         if to_provider:
-            self.provider_messages.append(message.copy())
+            self.provider_messages.append(copy.deepcopy(message))
         if not isinstance(message, dict):
             return
 

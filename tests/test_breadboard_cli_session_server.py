@@ -436,6 +436,8 @@ def test_session_cli_accepts_running_snapshot_ending_in_hidden_compaction(
             calls.append((resume_token, limit, follow))
             if resume_token is None:
                 yield {"seq": 1, "kind": "session.started"}
+                return 2
+            return resume_token
 
     monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", HiddenTailClient)
     assert (
@@ -455,7 +457,7 @@ def test_session_cli_accepts_running_snapshot_ending_in_hidden_compaction(
     )
     output = json.loads(capsys.readouterr().out)
     assert [event["seq"] for event in output["data"]["events"]] == [1]
-    assert calls == [(None, 2, False), (1, 1, False)]
+    assert calls == [(None, 2, False)]
 
 @pytest.mark.parametrize(
     ("event_count", "events", "expected_error"),

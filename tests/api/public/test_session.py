@@ -425,6 +425,7 @@ def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
         "?resume_token=5&limit=1&follow=false"
     )
     assert resumed_after_compaction.status_code == 200
+    assert "id: 6\n\n" in resumed_after_compaction.text
     after_compaction = _stream_records(resumed_after_compaction)
     assert len(after_compaction) == 1
     assert after_compaction[0]["kind"] == "session.completed"

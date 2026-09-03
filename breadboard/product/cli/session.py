@@ -306,7 +306,7 @@ def _remote_event_snapshot(
             _REMOTE_EVENT_PAGE_SIZE,
             upper_sequence - resume_token,
         )
-        page = list(
+        stream = iter(
             client.events_session(
                 session_id,
                 resume_token=resume_token or None,
@@ -314,10 +314,23 @@ def _remote_event_snapshot(
                 follow=False,
             )
         )
+        page: list[dict[str, Any]] = []
+        consumed_cursor: int | None = None
+        while True:
+            try:
+                page.append(next(stream))
+            except StopIteration as stopped:
+                if stopped.value is not None:
+                    if type(stopped.value) is not int:
+                        raise ValueError(
+                            "server returned an invalid session event cursor"
+                        )
+                    consumed_cursor = stopped.value
+                break
         if len(page) > page_limit:
             raise ValueError("server returned an oversized session event page")
         if not page:
-            if events:
+            if consumed_cursor == upper_sequence and events:
                 return events
             raise ValueError(
                 "server event snapshot ended before its initial bound"
@@ -344,6 +357,13 @@ def _remote_event_snapshot(
                 terminal_sequence = sequence
             previous_sequence = sequence
         next_resume_token = page[-1]["seq"]
+        if consumed_cursor is not None:
+            if (
+                consumed_cursor < next_resume_token
+                or consumed_cursor > upper_sequence
+            ):
+                raise ValueError("server returned an invalid session event cursor")
+            next_resume_token = consumed_cursor
         events.extend(page)
         if next_resume_token == upper_sequence:
             return events

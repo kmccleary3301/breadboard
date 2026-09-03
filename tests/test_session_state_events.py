@@ -381,6 +381,28 @@ def test_compaction_snapshot_serializes_message_and_fact_mutation() -> None:
     ]
     assert len(after.raw_fact_ids) == 1
 
+def test_session_state_owns_nested_provider_message_values() -> None:
+    state = SessionState("ws", "image", {})
+    message = {
+        "role": "assistant",
+        "content": [
+            {
+                "type": "tool_call",
+                "arguments": {"path": "before.py"},
+            }
+        ],
+    }
+    state.add_message(message)
+    admitted = state.compaction_snapshot()
+
+    message["content"][0]["arguments"]["path"] = "caller-mutated.py"
+    state.messages[-1]["content"][0]["arguments"]["path"] = "history-mutated.py"
+
+    assert state.compaction_snapshot() == admitted
+    assert json.loads(admitted.effective_context)[0]["content"][0]["arguments"] == {
+        "path": "before.py"
+    }
+
 
 def test_session_state_builds_kernel_event_record_and_normalizes_transcript() -> None:
     collector = EventCollector()

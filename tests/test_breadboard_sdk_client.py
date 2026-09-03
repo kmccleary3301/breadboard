@@ -334,10 +334,12 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
         def close(self) -> None:
             self.closed = True
 
-        @staticmethod
-        def iter_lines(*, decode_unicode: bool) -> list[str]:
+        lines = ["id: 1", f"data: {json.dumps(expected)}", ""]
+
+        @classmethod
+        def iter_lines(cls, *, decode_unicode: bool) -> list[str]:
             assert decode_unicode is True
-            return ["id: 1", f"data: {json.dumps(expected)}", ""]
+            return cls.lines
 
     response = _StreamResponse()
 
@@ -377,6 +379,20 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
     )
     assert snapshot == [expected]
     assert requests[-1]["url"].endswith("?resume_token=3&limit=2&follow=false")
+    _StreamResponse.lines = [
+        "id: 1",
+        f"data: {json.dumps(expected)}",
+        "",
+        "id: 2",
+        "",
+    ]
+    cursor_stream = client.events_session(
+        "session id", resume_token=0, limit=2, follow=False
+    )
+    assert next(cursor_stream) == expected
+    with pytest.raises(StopIteration) as stopped:
+        next(cursor_stream)
+    assert stopped.value.value == 2
     forged = {**expected, "kind": "session.completed", "payload": {}}
     with pytest.raises(ValueError, match="lifecycle payload fields"):
         client_module._session_event(json.dumps(forged), "session id", "1")
