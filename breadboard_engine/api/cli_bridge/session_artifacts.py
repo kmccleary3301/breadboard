@@ -284,12 +284,14 @@ class SessionArtifactStore:
             candidates.append((len(restored), digest, manifest_ref, restored))
         if not candidates:
             return
-        _, _, manifest_ref, restored = max(candidates)
-        restored_names = set(restored)
-        if any(not set(candidate).issubset(restored_names) for *_, candidate in candidates):
+        _, _, selected_ref, selected = max(candidates)
+        if any(
+            any(selected.get(name) != ref for name, ref in candidate.items())
+            for *_, candidate in candidates
+        ):
             raise ValueError("retained attachment manifests do not form one history")
-        self.metadata["artifact_manifest_ref"] = manifest_ref.as_dict()
-        self._artifact_refs = restored
+        self.metadata["artifact_manifest_ref"] = selected_ref.as_dict()
+        self._artifact_refs = selected
 
 
     def authorize_manifest(
