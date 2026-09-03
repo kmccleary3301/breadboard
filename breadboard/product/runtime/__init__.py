@@ -1,6 +1,7 @@
 """Product-owned Session runtime facade."""
 from .artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
 from .events import (
+    AnnotationRecord,
     KernelEvent,
     Projected,
     ProjectionSource,
@@ -26,6 +27,7 @@ __all__ = [
     "AnchoredStorage",
     "ArtifactRef",
     "ArtifactStore",
+    "AnnotationRecord",
     "KernelEvent",
     "Projected",
     "ProjectionSource",
