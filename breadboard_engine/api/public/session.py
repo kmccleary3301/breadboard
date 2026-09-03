@@ -616,12 +616,17 @@ async def events(
                 continue
             for item in batch.events:
                 event = item.as_dict()
+                # Advance the durable cursor over internal events without exposing
+                # their unamended payload or consuming the public event limit.
+                cursor = int(event["sequence"])
+                projected_event = public_session_event(event)
+                if projected_event is None:
+                    continue
                 terminal = event["kind"] in {
                     "session.completed",
                     "session.failed",
                     "session.canceled",
                 }
-                projected_event = public_session_event(event)
                 public_payload = _scrub_event_payload(
                     event["kind"],
                     projected_event["payload"],
@@ -637,7 +642,6 @@ async def events(
                             "redaction_state": "redacted",
                         },
                     }
-                cursor = int(event["sequence"])
                 yield (
                     f"id: {cursor}\n"
                     f"event: {event['kind']}\n"

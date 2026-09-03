@@ -226,9 +226,8 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
         if event.kind == "assistant_message" and "message_id" in event.payload:
             message_id = event.payload["message_id"]
             trajectory_id = event.payload["trajectory_id"]
-            previous_trajectory = message_targets.get(message_id)
-            if previous_trajectory is not None and previous_trajectory != trajectory_id:
-                raise ValueError("message identity maps to multiple trajectories")
+            if message_id in message_targets:
+                raise ValueError("duplicate canonical message identity")
             message_targets[message_id] = trajectory_id
         elif event.kind == "annotation":
             annotation_id = event.payload["annotation_id"]
@@ -294,7 +293,16 @@ class Session:
     def read_model(self) -> SessionView:
         with self._transition_lock: return self._view
     def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])
-    def assistant_message(self, content: str, *, message_id: str | None = None, trajectory_id: str | None = None) -> SessionView: return self._append("observe assistant", "assistant_message", lambda: _assistant_payload(content, message_id, trajectory_id))
+    def assistant_message(self, content: str, *, message_id: str | None = None, trajectory_id: str | None = None) -> SessionView: return self._append("observe assistant", "assistant_message", lambda: self._assistant_event_payload(content, message_id, trajectory_id))
+    def _assistant_event_payload(self, content: str, message_id: str | None, trajectory_id: str | None) -> dict[str, Any]:
+        payload = _assistant_payload(content, message_id, trajectory_id)
+        if message_id is not None and any(
+            event.kind == "assistant_message"
+            and event.payload.get("message_id") == message_id
+            for event in self._events
+        ):
+            raise ValueError("duplicate canonical message identity")
+        return payload
     def tool_called(self, tool: str) -> SessionView: return self._append("observe tool call", "tool_call", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), {"tool": tool})[1])
     def annotate(self, record: AnnotationRecord) -> SessionView: return self._append("annotate", "annotation", lambda: self._annotation_payload(record))
     def tool_completed(self, tool: str, failed: bool) -> SessionView: return self._append("observe tool result", "tool_result", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), _check(type(failed) is bool, TypeError, "tool completion error flag must be boolean"), {"tool": tool, "error": failed})[2])

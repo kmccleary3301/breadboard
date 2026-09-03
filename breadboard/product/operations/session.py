@@ -17,7 +17,7 @@ from breadboard.product.operations.model import (
 )
 
 from breadboard.product.runtime.events import KernelEvent, Session, SessionView
-from breadboard.product.runtime.public_event_projection import public_session_event
+from breadboard.product.runtime.public_event_projection import public_session_events
 from breadboard.product.runtime.session_store import (
     load_session,
     session_artifact_rows,
@@ -468,7 +468,7 @@ class SessionRuntime:
             ["session", "events"],
             {
                 "session_id": request.session_id,
-                "events": [public_session_event(event) for event in batch.events],
+                "events": list(public_session_events(batch.events)),
             },
             refs,
             stage="session.events",

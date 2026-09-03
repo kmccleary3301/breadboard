@@ -239,6 +239,14 @@ def test_annotation_event_uses_registered_target_and_preserves_message_owner_byt
         message_id="message-a",
         trajectory_id="trajectory-a",
     )
+    before = session.events
+    with pytest.raises(ValueError, match="duplicate canonical message identity"):
+        session.assistant_message(
+            "same identity",
+            message_id="message-a",
+            trajectory_id="trajectory-a",
+        )
+    assert session.events == before
     record = AnnotationRecord(
         annotation_id="annotation-1",
         message_id="message-a",
@@ -325,4 +333,25 @@ def test_annotation_replay_is_stable_and_allows_post_terminal_labels() -> None:
     assert restored.events == session.events
     assert restored.read_model == session.read_model
     assert restored.events[-1].as_dict()["payload"] == record.as_dict()
+def test_replay_rejects_duplicate_canonical_message_identity() -> None:
+    session = Session.start(_lock(), "task")
+    session.assistant_message(
+        "candidate",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    duplicate = KernelEvent.create(
+        session.read_model.session_id,
+        3,
+        "assistant_message",
+        "later",
+        {
+            "metadata": {"has_content": True},
+            "message_id": "message-a",
+            "trajectory_id": "trajectory-a",
+        },
+    )
+
+    with pytest.raises(ValueError, match="duplicate canonical message identity"):
+        Session.restore((*session.events, duplicate))
  
