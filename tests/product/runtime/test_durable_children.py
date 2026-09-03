@@ -6,6 +6,7 @@ import json
 import os
 import signal
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -157,6 +158,32 @@ def test_process_adapter_reaps_natural_exit_and_reports_absent(tmp_path: Path) -
     assert target_ref not in adapter._processes
 
 
+def test_process_adapter_uses_activation_workspace_and_rejects_missing_cwd(tmp_path: Path) -> None:
+    adapter = ProcessExecutionAdapter(command=("/bin/sh", "-c", "pwd > relative-cwd.txt"))
+    workspace = tmp_path / "child-workspace"
+    activation = ChildActivation(
+        "parent-session",
+        "parent-session",
+        "parent-work",
+        "child-session",
+        "child-work",
+        "attempt",
+        "child://child-session/attempt/attempt",
+        "reserved:workspace",
+        adapter.family,
+        str(workspace),
+    )
+    with pytest.raises(ChildError, match="workspace is unavailable"):
+        adapter.start(activation, _spec(adapter.family, "missing cwd"))
+    assert adapter._processes == {}
+    workspace.mkdir()
+    target = adapter.start(activation, _spec(adapter.family, "relative cwd"))
+    process = adapter._processes[target.execution_target_ref]
+    assert process.wait(timeout=2) == 0
+    assert (workspace / "relative-cwd.txt").read_text().strip() == str(workspace)
+    assert adapter.observe(target.retained()) == "absent"
+
+
 def test_process_death_restarts_child_and_rejects_late_result(tmp_path: Path) -> None:
     repository = WorkItemRepository(tmp_path / "work-items.jsonl")
     workspace, repository, parent, registry = _running_parent(tmp_path, repository)
@@ -257,6 +284,59 @@ def test_process_launch_crash_window_is_recovered_or_terminated(tmp_path: Path, 
     recovered = restarted.reconcile(state.recovery_ref)
     assert recovered.launch_published is True
     restarted.cancel(recovered.child_session_id, expected_revision=recovered.revision)
+    process = restarted_adapter._processes[recovered.execution_target_ref]
+    assert process.wait(timeout=2) is not None
+    assert restarted_adapter._pending_pid(recovered.execution_target_ref) is None
+
+
+def test_process_cancel_escalates_sigkill_before_settlement(tmp_path: Path) -> None:
+    repository = WorkItemRepository(tmp_path / "work-items.jsonl")
+    workspace, repository, parent, registry = _running_parent(tmp_path, repository)
+    adapter = ProcessExecutionAdapter(command=("/bin/sh", "-c", "trap '' TERM; sleep 30"))
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "sigterm ignore"),
+    )
+    state = factory._record_state(activation.child_session_id)
+    canceled = factory.cancel(activation.child_session_id, expected_revision=state.revision)
+    process = adapter._processes[activation.execution_target_ref]
+    assert (canceled.status, canceled.terminal_outcome, canceled.terminal_count) == ("canceled", "canceled", 1)
+    assert process.poll() is not None
+    assert adapter.observe(canceled.execution_target) == "absent"
+    assert adapter._pending_pid(activation.execution_target_ref) is None
+
+
+def test_process_cancel_leaves_recovery_pending_when_exit_unverified(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = WorkItemRepository(tmp_path / "work-items.jsonl")
+    workspace, repository, parent, registry = _running_parent(tmp_path, repository)
+    adapter = ProcessExecutionAdapter(command=("/bin/sh", "-c", "sleep 30"))
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "unverified cancellation"),
+    )
+    monkeypatch.setattr(adapter, "_wait_for_exit", lambda target, timeout: False)
+    state = factory._record_state(activation.child_session_id)
+    requested = factory.cancel(activation.child_session_id, expected_revision=state.revision)
+    assert (requested.status, requested.terminal_outcome, requested.terminal_count) == (
+        "cancel_requested",
+        None,
+        0,
+    )
+    monkeypatch.undo()
+    settled = factory.reconcile(activation.recovery_ref)
+    assert (settled.status, settled.terminal_outcome, settled.terminal_count) == (
+        "canceled",
+        "canceled",
+        1,
+    )
 def test_process_start_publishes_pending_then_released_target(tmp_path: Path) -> None:
     repository = WorkItemRepository(tmp_path / "work-items.jsonl")
     workspace, repository, parent, registry = _running_parent(tmp_path, repository)
@@ -1384,6 +1464,130 @@ def test_ray_reserved_target_recovers_named_actor_without_duplicate_launch(tmp_p
     assert recovered.status == "running"
     assert launches == ["child task"]
 
+
+def test_ray_actor_submission_crash_is_resumed_once_after_claim_expiry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
+
+    class Actor:
+        def __init__(self) -> None:
+            self.invocations: dict[str, str] = {}
+
+        def submit_message_once(self, invocation_id: str, parts: list[dict[str, str]]) -> dict[str, str]:
+            state = self.invocations.setdefault(invocation_id, "accepted")
+            if state == "accepted":
+                self.invocations[invocation_id] = "running"
+            return {"state": self.invocations[invocation_id]}
+
+        def get_invocation_state(self, invocation_id: str) -> str:
+            return self.invocations.get(invocation_id, "missing")
+
+        def get_state(self) -> str:
+            return "running" if self.invocations else "accepted"
+
+    actors: dict[str, Actor] = {}
+    actor = Actor()
+
+    def create_then_crash(job_id: str, launch_workspace: Path, task: str) -> Actor:
+        actors[job_id] = actor
+        raise RuntimeError("crash after actor creation")
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    first_orchestrator = MultiAgentOrchestrator(TeamConfig("ray-submit-crash"))
+    first_adapter = RayJobAdapter(first_orchestrator, actor_launcher=create_then_crash)
+    monkeypatch.setattr(first_adapter, "_lookup_actor", lambda job_id: actors.get(job_id))
+    first_factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[first_adapter])
+    with pytest.raises(RuntimeError, match="crash after actor creation"):
+        first_factory.start(
+            parent_session_id="parent-session",
+            root_session_id="parent-session",
+            parent_work_item_id=parent.read_model.work_item_id,
+            spec=_spec(first_adapter.family, "ray submit crash"),
+        )
+    retained = next(record for record in asyncio_run(registry.records()) if record.metadata.get("durable_child"))
+    state = ChildState.from_retained(retained.metadata["durable_child"])
+    assert state.launch_claim_until is not None and state.launch_claim_until > time.time()
+    assert actor.invocations == {}
+
+    second_orchestrator = MultiAgentOrchestrator(TeamConfig("ray-submit-recovery"))
+    second_adapter = RayJobAdapter(
+        second_orchestrator,
+        actor_launcher=lambda *_args: pytest.fail("recovery must reuse named actor"),
+    )
+    monkeypatch.setattr(second_adapter, "_lookup_actor", lambda job_id: actors.get(job_id))
+    second_factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[second_adapter])
+    assert second_factory.reconcile(state.recovery_ref) == state
+    state = first_factory._cas(state, launch_claim_until=0.0)
+    recovered = second_factory.reconcile(state.recovery_ref)
+    invocation_id = second_adapter._invocation_id(state.execution_target_ref.removeprefix("job:"))
+    assert actor.invocations == {invocation_id: "running"}
+    assert recovered.status == "running"
+    assert second_factory.reconcile(state.recovery_ref) == recovered
+    assert actor.invocations == {invocation_id: "running"}
+
+
+def test_shared_ray_adapter_keeps_artifact_roots_isolated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
+
+    class Actor:
+        pass
+
+    barrier = threading.Barrier(2)
+    seen_workspaces: list[Path] = []
+
+    def launch(job_id: str, launch_workspace: Path, task: str) -> Actor:
+        seen_workspaces.append(launch_workspace)
+        barrier.wait(timeout=2)
+        return Actor()
+
+    adapter = RayJobAdapter(
+        MultiAgentOrchestrator(TeamConfig("ray-shared-root")),
+        actor_launcher=launch,
+    )
+    monkeypatch.setattr(adapter, "_lookup_actor", lambda job_id: None)
+    workspaces = (tmp_path / "workspace-a", tmp_path / "workspace-b")
+    roots = (workspaces[0] / "artifacts-a", workspaces[1] / "artifacts-b")
+    activations = tuple(
+        ChildActivation(
+            "parent-session",
+            "parent-session",
+            "parent-work",
+            f"child-session-{index}",
+            f"child-work-{index}",
+            f"attempt-{index}",
+            f"child://child-session-{index}/attempt/attempt-{index}",
+            f"job:child-{index}",
+            adapter.family,
+            str(workspace),
+            artifact_store_root=str(root),
+        )
+        for index, (workspace, root) in enumerate(zip(workspaces, roots), 1)
+    )
+    for workspace in workspaces:
+        workspace.mkdir()
+    results: list[ExecutionTarget | None] = [None, None]
+    errors: list[BaseException] = []
+
+    def run(index: int) -> None:
+        try:
+            results[index] = adapter.start(activations[index], _spec(adapter.family, f"shared root {index}"))
+        except BaseException as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=run, args=(index,)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=3)
+    assert errors == []
+    assert all(result is not None for result in results)
+    assert {result.metadata["job"]["artifact_store_root"] for result in results if result is not None} == {
+        str(root) for root in roots
+    }
+    assert set(seen_workspaces) == set(workspaces)
 
 
 def test_ray_adapter_launches_named_runtime_with_locked_task(tmp_path: Path) -> None:

@@ -136,6 +136,7 @@ class ChildActivation:
     adapter_family: str
     workspace: str | None = None
     publish_target: Callable[[ExecutionTarget], None] | None = field(default=None, compare=False, repr=False)
+    artifact_store_root: str | None = None
 @dataclass(frozen=True, slots=True)
 class ChildState:
     child_session_id: str
@@ -241,7 +242,7 @@ class ChildExecutionAdapter(Protocol):
     family: str
     def start(self, activation: ChildActivation, spec: ChildSpec) -> ExecutionTarget: ...
     def observe(self, target: Mapping[str, Any]) -> str: ...
-    def cancel(self, target: Mapping[str, Any]) -> None: ...
+    def cancel(self, target: Mapping[str, Any]) -> bool | None: ...
     def prepare_result(self, target: Mapping[str, Any], spec: ChildSpec) -> bytes | ArtifactRef | None: ...
 
 
@@ -296,7 +297,7 @@ class DurableChildFactory:
             if callable(binder) and adapter.family != "ray-agent-job":
                 binder(self.workspace)
             artifact_binder = getattr(adapter, "bind_artifact_store", None)
-            if callable(artifact_binder):
+            if callable(artifact_binder) and adapter.family != "ray-agent-job":
                 artifact_binder(self.artifacts)
         if not self.adapters:
             raise ValueError("at least one child execution adapter is required")
@@ -450,8 +451,12 @@ class DurableChildFactory:
             }.get(parent.read_model.status)
             if bridge_status is not None:
                 self._registry("update_status", parent_session_id, status=bridge_status)
+        unsettled = False
         for state in pending:
-            self.adapters[state.adapter_family].cancel(state.execution_target)
+            if self.adapters[state.adapter_family].cancel(state.execution_target) is False:
+                unsettled = True
+                settled.append(self._record_state(state.child_session_id))
+                continue
             child_events = self.repository.read(state.child_work_item_id)
             if child_events:
                 child = WorkItem.restore(self.repository, state.child_work_item_id, clock=self.clock, ids=self.ids)
@@ -463,11 +468,12 @@ class DurableChildFactory:
                 state = self._cas(state, status="canceled", terminal_outcome="canceled", terminal_count=1, settlement=None, joined=True)
                 self._repair_terminal_owners(state)
                 settled.append(state)
-        current_parent_record = self._registry("get", parent_session_id)
-        if current_parent_record is not None:
-            cleared_metadata = dict(current_parent_record.metadata or {})
-            cleared_metadata["durable_parent_cancellation"] = None
-            self._registry("update_metadata", parent_session_id, metadata=cleared_metadata)
+        if not unsettled:
+            current_parent_record = self._registry("get", parent_session_id)
+            if current_parent_record is not None:
+                cleared_metadata = dict(current_parent_record.metadata or {})
+                cleared_metadata["durable_parent_cancellation"] = None
+                self._registry("update_metadata", parent_session_id, metadata=cleared_metadata)
         return tuple(settled)
     @contextmanager
     def _owner_process_lock(self, key: str):
@@ -625,8 +631,8 @@ class DurableChildFactory:
     def _cancel_unpublished_start(self, state: ChildState, reason: str, *, signal: bool = True) -> ChildState:
         if not state.cancellation_requested:
             state = self._cas(state, status="cancel_requested", cancellation_requested=True, cancellation_reason=reason)
-        if signal:
-            self.adapters[state.adapter_family].cancel(state.execution_target)
+        if signal and self.adapters[state.adapter_family].cancel(state.execution_target) is False:
+            return state
         state = self._cas(state, status="canceled", terminal_outcome="canceled", terminal_count=1, settlement=None, joined=True)
         self._repair_terminal_owners(state)
         self._status(state)
@@ -760,6 +766,7 @@ class DurableChildFactory:
                 initial.execution_target_ref,
                 spec.adapter_family,
                 str(self.workspace),
+                artifact_store_root=str(self.artifacts._root),
             )
             state = self._launch(state, activation, spec)
             return ChildActivation(
@@ -773,6 +780,7 @@ class DurableChildFactory:
                 state.execution_target_ref,
                 spec.adapter_family,
                 str(self.workspace),
+                artifact_store_root=str(self.artifacts._root),
             )
 
     def prepare_result(
@@ -845,7 +853,8 @@ class DurableChildFactory:
                 cancellation_requested=True,
                 cancellation_reason=reason,
             )
-            self.adapters[state.adapter_family].cancel(state.execution_target)
+            if self.adapters[state.adapter_family].cancel(state.execution_target) is False:
+                return state
             return self._cancel_unpublished_start(state, reason, signal=False)
         state = self._cas(
             state,
@@ -853,7 +862,8 @@ class DurableChildFactory:
             cancellation_requested=True,
             cancellation_reason=reason,
         )
-        self.adapters[state.adapter_family].cancel(state.execution_target)
+        if self.adapters[state.adapter_family].cancel(state.execution_target) is False:
+            return state
         return self._settle(state, "canceled", (), allow_unprepared=True)
     def settle(
         self,
@@ -1085,6 +1095,7 @@ class DurableChildFactory:
             state.execution_target_ref,
             state.adapter_family,
             str(self.workspace),
+            artifact_store_root=str(self.artifacts._root),
         )
         adapter = self.adapters[state.adapter_family]
         recover = getattr(adapter, "recover", None)
@@ -1175,7 +1186,8 @@ class DurableChildFactory:
                     allow_cancellation_intent=True,
                 )
             if child.read_model.current_attempt is None:
-                self.adapters[state.adapter_family].cancel(state.execution_target)
+                if self.adapters[state.adapter_family].cancel(state.execution_target) is False:
+                    return state
                 return self._cancel_unpublished_start(
                     state,
                     state.cancellation_reason or "operator request",
@@ -1245,6 +1257,7 @@ class DurableChildFactory:
                     state.execution_target_ref,
                     state.adapter_family,
                     str(self.workspace),
+                    artifact_store_root=str(self.artifacts._root),
                 )
                 adapter = self.adapters[state.adapter_family]
                 if isinstance(adapter, UnavailableChildAdapter):
@@ -1288,6 +1301,7 @@ class DurableChildFactory:
                 state.execution_target_ref,
                 state.adapter_family,
                 str(self.workspace),
+                artifact_store_root=str(self.artifacts._root),
             )
             recover = getattr(adapter, "recover", None)
             target = recover(state.execution_target) if callable(recover) else None
@@ -1309,14 +1323,16 @@ class DurableChildFactory:
             payload = state.settlement
             return self._settle(state, str(payload["outcome"]), tuple(str(ref) for ref in payload.get("result_refs", ())), allow_unprepared=True)
         if state.cancellation_requested:
-            self.adapters[state.adapter_family].cancel(state.execution_target)
+            if self.adapters[state.adapter_family].cancel(state.execution_target) is False:
+                return state
             return self._settle(state, "canceled", (), allow_unprepared=True)
         observed = str(self.adapters[state.adapter_family].observe(state.execution_target)).lower()
         if observed in {"running", "started", "live", "accepted"}:
             adapter = self.adapters[state.adapter_family]
             release_pending = getattr(adapter, "release_pending", None)
             if callable(release_pending) and release_pending(state.execution_target):
-                adapter.cancel(state.execution_target)
+                if adapter.cancel(state.execution_target) is False:
+                    return state
                 state = self._cas(
                     state,
                     execution_target=self._reserved_execution_target(state, state.execution_target_ref),
@@ -1325,7 +1341,7 @@ class DurableChildFactory:
                     launch_claim_until=time.time() + 30.0,
                     launch_published=False,
                 )
-                activation = ChildActivation(state.parent_session_id, state.root_session_id, state.parent_work_item_id, state.child_session_id, state.child_work_item_id, state.attempt_id, state.recovery_ref, state.execution_target_ref, state.adapter_family, str(self.workspace))
+                activation = ChildActivation(state.parent_session_id, state.root_session_id, state.parent_work_item_id, state.child_session_id, state.child_work_item_id, state.attempt_id, state.recovery_ref, state.execution_target_ref, state.adapter_family, str(self.workspace), artifact_store_root=str(self.artifacts._root))
                 return self._launch(state, activation, self._spec(state))
             recover = getattr(adapter, "recover", None)
             if callable(recover):
@@ -1525,22 +1541,53 @@ class RayJobAdapter:
 
     def __init__(self, orchestrator: Any, *, actor_launcher: Any | None = None) -> None:
         self.orchestrator = orchestrator
-        self._actor_launcher = actor_launcher or self._launch_actor
+        self._default_actor_launcher = actor_launcher is None
+        self._actor_launcher = self._launch_actor if self._default_actor_launcher else actor_launcher
         self._actors: dict[str, Any] = {}
         self._workspace: Path | None = None
-        self._artifact_store_root: Path | None = None
 
     def bind_workspace(self, workspace: Path) -> None:
         self._workspace = workspace
-
-    def bind_artifact_store(self, artifact_store: ArtifactStore) -> None:
-        self._artifact_store_root = artifact_store._root
 
     @staticmethod
     def _actor_name(job_id: str) -> str:
         return "bb-child-" + job_id.replace(":", "_")
 
-    def _launch_actor(self, job_id: str, workspace: Path, task: str) -> Any:
+    @staticmethod
+    def _invocation_id(job_id: str) -> str:
+        return "child-invocation:" + job_id
+
+    @staticmethod
+    def _submit_invocation(actor: Any, invocation_id: str, task: str) -> bool:
+        submit = getattr(actor, "submit_message_once", None)
+        if submit is None:
+            return False
+        parts = [{"type": "text", "text": task}]
+        remote = getattr(submit, "remote", None)
+        if callable(remote):
+            remote(invocation_id, parts)
+        else:
+            submit(invocation_id, parts)
+        return True
+
+    @staticmethod
+    def _invocation_state(actor: Any, invocation_id: str) -> str | None:
+        getter = getattr(actor, "get_invocation_state", None)
+        if getter is None:
+            return None
+        remote = getattr(getter, "remote", None)
+        try:
+            value = remote(invocation_id) if callable(remote) else getter(invocation_id)
+            if callable(remote):
+                import ray
+                value = ray.get(value)
+        except BaseException:
+            return None
+        return str(value) if isinstance(value, str) else None
+
+    def _launch_actor(
+        self, job_id: str, workspace: Path, task: str, artifact_store_root: str | None = None
+    ) -> Any:
         import ray
         from breadboard_engine.orchestration.agent_session import OpenCodeAgent
 
@@ -1549,13 +1596,9 @@ class RayJobAdapter:
         try:
             actor = ray.get_actor(name)
         except ValueError:
-            artifact_store_root = (
-                str(self._artifact_store_root)
-                if self._artifact_store_root is not None
-                else None
-            )
+            root = artifact_store_root or str(workspace / ".breadboard" / "artifacts")
             actor = OpenCodeAgent.options(name=name, lifetime="detached").remote(
-                str(workspace), artifact_store_root=artifact_store_root
+                str(workspace), artifact_store_root=root
             )
             created = True
         if created:
@@ -1623,7 +1666,8 @@ class RayJobAdapter:
         job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
         root = job_data.get("artifact_store_root") if isinstance(job_data, Mapping) else None
         if not isinstance(root, str) or not root.strip():
-            root = str(self._artifact_store_root) if self._artifact_store_root is not None else ""
+            workspace = job_data.get("workspace") if isinstance(job_data, Mapping) else None
+            root = str(Path(workspace) / ".breadboard" / "artifacts") if isinstance(workspace, str) and workspace.strip() else ""
         if not root.strip():
             raise ChildError("Ray child target has no durable artifact store")
         return ArtifactStore(Path(root))
@@ -1654,6 +1698,7 @@ class RayJobAdapter:
         workspace = Path(activation.workspace) if activation.workspace is not None else self._workspace
         if workspace is None:
             raise ChildError("Ray child adapter is not bound to a workspace")
+        artifact_store_root = activation.artifact_store_root or str(workspace / ".breadboard" / "artifacts")
         task_descriptor = {
             "child_session_id": activation.child_session_id,
             "recovery_ref": activation.recovery_ref,
@@ -1671,7 +1716,12 @@ class RayJobAdapter:
         actor = self._lookup_actor(job_id)
         try:
             if actor is None:
-                actor = self._actor_launcher(job_id, workspace, spec.task)
+                if self._default_actor_launcher:
+                    actor = self._actor_launcher(job_id, workspace, spec.task, artifact_store_root)
+                else:
+                    actor = self._actor_launcher(job_id, workspace, spec.task)
+            else:
+                self._submit_invocation(actor, invocation_id, spec.task)
         except BaseException:
             self.orchestrator.job_manager.update_state(job_id, "failed")
             raise
@@ -1686,7 +1736,7 @@ class RayJobAdapter:
                 "seq": job.seq,
                 "task_descriptor": job.task_descriptor,
                 "workspace": str(workspace),
-                "artifact_store_root": str(self._artifact_store_root or (workspace / ".breadboard" / "artifacts")),
+                "artifact_store_root": artifact_store_root,
             }
         }
         return ExecutionTarget(target_ref, volatile_handle=actor, metadata=metadata)
@@ -1832,6 +1882,44 @@ class ProcessExecutionAdapter:
     def bind_workspace(self, workspace: Path) -> None:
         self._workspace = workspace
 
+    _TERM_TIMEOUT_SECONDS = 0.5
+    _KILL_TIMEOUT_SECONDS = 0.5
+
+    @staticmethod
+    def _group_alive(group: int) -> bool:
+        try:
+            output = subprocess.check_output(["ps", "-axo", "pgid=,stat="], text=True)
+        except (OSError, subprocess.CalledProcessError):
+            return False
+        for line in output.splitlines():
+            fields = line.strip().split()
+            if len(fields) < 2:
+                continue
+            try:
+                process_group = int(fields[0])
+            except ValueError:
+                continue
+            if process_group == group and not fields[1].startswith("Z"):
+                return True
+        return False
+
+    def _wait_for_exit(self, target: Mapping[str, Any], timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while self.observe(target) != "absent":
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.01)
+        return True
+
+    def _workspace_path(self, activation: ChildActivation) -> Path:
+        raw = activation.workspace if activation.workspace is not None else self._workspace
+        if raw is None or not str(raw).strip():
+            raise ChildError("process child adapter is not bound to a workspace")
+        workspace = Path(raw).expanduser().resolve()
+        if not workspace.is_dir():
+            raise ChildError(f"process child workspace is unavailable: {workspace}")
+        return workspace
+
 
     @staticmethod
     def _identity(pid: int) -> tuple[str, int]:
@@ -1864,9 +1952,10 @@ class ProcessExecutionAdapter:
         return None
 
     def start(self, activation: ChildActivation, spec: ChildSpec) -> ExecutionTarget:
+        workspace = self._workspace_path(activation)
         target_ref = activation.execution_target_ref
-        wrapper = "import os,sys\nos.read(0,1)\nos.execvpe(sys.argv[2],sys.argv[2:],os.environ.copy())\n"
-        process = subprocess.Popen((sys.executable, "-c", wrapper, target_ref, *self.command), stdin=subprocess.PIPE, start_new_session=True)
+        wrapper = "import os,sys\nif os.read(0,1) != b'1': os._exit(78)\nos.execvpe(sys.argv[2],sys.argv[2:],os.environ.copy())\n"
+        process = subprocess.Popen((sys.executable, "-c", wrapper, target_ref, *self.command), stdin=subprocess.PIPE, start_new_session=True, cwd=str(workspace))
         self._processes[target_ref] = process
         token, group = self._identity(process.pid)
         metadata: dict[str, Any] = {"launch_phase": "pending"}
@@ -1893,19 +1982,21 @@ class ProcessExecutionAdapter:
     def observe(self, target: Mapping[str, Any]) -> str:
         target_ref = str(target.get("ref", ""))
         process = self._processes.get(target_ref)
+        pid, token, group = target.get("pid"), target.get("start_token"), target.get("process_group_id")
         if process is not None and process.poll() is not None:
+            if type(group) is int and self._group_alive(group):
+                return "running"
             self._processes.pop(target_ref, None)
             return "absent"
-        pid, token, group = target.get("pid"), target.get("start_token"), target.get("process_group_id")
         if type(pid) is not int or type(token) is not str or type(group) is not int:
             return "absent"
         try:
             observed_token, observed_group = self._identity(pid)
             state = subprocess.check_output(["ps", "-p", str(pid), "-o", "stat="], text=True).strip()
         except (OSError, ProcessLookupError, subprocess.CalledProcessError):
-            return "absent"
+            return "running" if self._group_alive(group) else "absent"
         if not state or state.startswith("Z"):
-            return "absent"
+            return "running" if self._group_alive(group) else "absent"
         return "running" if observed_token == token and observed_group == group else "absent"
     def release_pending(self, target: Mapping[str, Any]) -> bool:
         metadata = target.get("metadata")
@@ -1931,10 +2022,23 @@ class ProcessExecutionAdapter:
                 if pending_pid is None:
                     return None
                 try:
-                    _, pending_group = self._identity(pending_pid)
-                    os.killpg(pending_group, 15)
+                    pending_token, pending_group = self._identity(pending_pid)
                 except ProcessLookupError:
-                    pass
+                    return None
+                pending_target = {
+                    "ref": str(target.get("ref", "")),
+                    "pid": pending_pid,
+                    "start_token": pending_token,
+                    "process_group_id": pending_group,
+                }
+                if self.cancel(pending_target) is False:
+                    return ExecutionTarget(
+                        str(target["ref"]),
+                        pending_pid,
+                        pending_token,
+                        pending_group,
+                        metadata=dict(target.get("metadata") or {}),
+                    )
                 return None
             try:
                 token, group = self._identity(pid)
@@ -1943,13 +2047,23 @@ class ProcessExecutionAdapter:
         if self.observe({"pid": pid, "start_token": token, "process_group_id": group}) != "running":
             return None
         return ExecutionTarget(str(target["ref"]), pid, token, group, metadata=dict(target.get("metadata") or {}))
-    def cancel(self, target: Mapping[str, Any]) -> None:
+    def cancel(self, target: Mapping[str, Any]) -> bool:
         if self.observe(target) != "running":
-            return
+            return True
+        group = target.get("process_group_id")
+        if type(group) is not int:
+            return True
         try:
-            os.killpg(int(target["process_group_id"]), 15)
-        except ProcessLookupError:
-            return
+            os.killpg(group, 15)
+        except (ProcessLookupError, PermissionError):
+            return True
+        if self._wait_for_exit(target, self._TERM_TIMEOUT_SECONDS):
+            return True
+        try:
+            os.killpg(group, 9)
+        except (ProcessLookupError, PermissionError):
+            return self._wait_for_exit(target, self._KILL_TIMEOUT_SECONDS)
+        return self._wait_for_exit(target, self._KILL_TIMEOUT_SECONDS)
 
     def prepare_result(self, target: Mapping[str, Any], spec: ChildSpec) -> bytes | None:
         return None
