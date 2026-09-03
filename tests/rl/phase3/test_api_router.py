@@ -63,18 +63,11 @@ def test_tenant_mismatch_returns_403(tmp_path) -> None:
     assert response.status_code == 403
 
 
-def test_cli_bridge_default_run_store_uses_sqlite_memory_dsn(tmp_path, monkeypatch) -> None:
-    from agentic_coder_prototype.api.cli_bridge.app import create_app
+def test_product_cli_bridge_does_not_mount_research_routes() -> None:
+    from breadboard_engine.api.cli_bridge.app import create_app
 
-    monkeypatch.delenv("BREADBOARD_RL_RUN_STORE", raising=False)
-    monkeypatch.chdir(tmp_path)
-
-    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     bridge = TestClient(create_app())
-    response = bridge.post("/v1/rl/runs", json=payload())
 
-    assert response.status_code == 200
-    assert bridge.get("/v1/rl/runs/run-1", params={"tenant_id": "tenant-a", "workspace_id": "ws"}).status_code == 200
-    assert bridge.get("/rl/runs/run-1", params={"tenant_id": "tenant-a", "workspace_id": "ws"}).status_code == 200
-    assert not (tmp_path / ":memory:").exists()
+    assert bridge.post("/v1/rl/runs", json=payload()).status_code == 404
+    assert bridge.post("/rl/runs", json=payload()).status_code == 404
 

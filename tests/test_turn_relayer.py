@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from breadboard_engine.turn_relayer import TurnRelayer
+from breadboard_engine.turns.relayer import TurnRelayer
 
 
 class StubLoggerV2:

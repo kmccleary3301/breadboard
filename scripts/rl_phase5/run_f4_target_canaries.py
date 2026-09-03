@@ -15,7 +15,7 @@ from typing import Any, Literal, Mapping, Protocol
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     COMPILED_CONFIG_SEMANTIC_SCHEMA_ID,
     canonical_json_bytes,
     canonical_json_loads,

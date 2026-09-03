@@ -20,8 +20,8 @@ from secrets import token_bytes
 from types import MappingProxyType
 from typing import Any, Literal, Mapping, Protocol, Sequence
 
-from agentic_coder_prototype.compilation.bundle import build_dependency_closure
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.bundle import build_dependency_closure
+from breadboard_engine.compilation.contracts import (
     ClosureMember,
     CompiledConfig,
     CompiledConfigManifest,
@@ -30,7 +30,7 @@ from agentic_coder_prototype.compilation.contracts import (
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from breadboard.rl.state.cas import ArtifactConflictError, FilesystemCAS
+from breadboard.artifacts.cas import ArtifactConflictError, FilesystemCAS
 
 from . import contracts as c
 from .api import create_app
@@ -1751,7 +1751,7 @@ class CASConfigRuntimeStore:
 def _verify_server_manifest(
     payload: bytes, expected_input_digest: str
 ) -> CompiledConfigManifest:
-    from agentic_coder_prototype.compilation.server_compiler import (
+    from breadboard_engine.compilation.server_compiler import (
         verify_cached_manifest,
     )
 

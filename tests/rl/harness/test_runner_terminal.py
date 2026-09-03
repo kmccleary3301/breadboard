@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation.contracts import canonical_sha256
+from breadboard_engine.compilation.contracts import canonical_sha256
 from breadboard.rl.phase5.bootstrap import BREADBOARD_BASELINE
 import breadboard.rl.harness.runners.base as runner_base
 from breadboard.rl.harness.runners import terminal as terminal_module

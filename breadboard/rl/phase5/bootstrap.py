@@ -285,14 +285,14 @@ _PACKET_CONTRACTS: dict[str, dict[str, tuple[str, ...]]] = {
         "rollback": ("Retain the rejected lineage and restore the last byte-identical validated WP0 artifact set.",),
     },
     "WP1": {
-        "bounded_paths": ("agentic_coder_prototype/compilation/contracts.py", "agentic_coder_prototype/compilation/bundle.py"),
+        "bounded_paths": ("breadboard_engine/compilation/contracts.py", "breadboard_engine/compilation/bundle.py"),
         "bounded_symbols": ("bundle manifest", "logical path", "CAS reader", "ingestion limits"),
         "non_goals": ("No server compilation, admission, lease, or runtime execution.",),
         "evidence_contract": ("Malicious bundle corpus plus canonical manifest and closure digests.",),
         "rollback": ("Revoke the candidate closure and return to the last approved bundle manifest without reinterpretation.",),
     },
     "WP2": {
-        "bounded_paths": ("agentic_coder_prototype/compilation/server_compiler.py", "agentic_coder_prototype/compilation/contracts.py"),
+        "bounded_paths": ("breadboard_engine/compilation/server_compiler.py", "breadboard_engine/compilation/contracts.py"),
         "bounded_symbols": ("deterministic IR", "compiler inputs", "prompt and tool compilation"),
         "non_goals": ("No runtime family dispatch, ambient reads, or admission lease.",),
         "evidence_contract": ("Repeated compile equality and ambient-read negative controls.",),

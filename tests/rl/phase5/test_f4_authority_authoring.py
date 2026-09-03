@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 import pytest
 from pydantic import ValidationError
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import (
     CASConfigRuntimeStore,
@@ -25,7 +25,7 @@ from breadboard.rl.phase5.f4_authority_authoring import (
     F4OptimizerReceiptAuthoring,
     build_f4_target_input,
 )
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 from scripts.rl_phase5.run_f4_target_canaries import (
     F4TargetCanaryInput,
     F4TargetIdentity,

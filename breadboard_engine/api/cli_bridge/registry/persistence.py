@@ -174,6 +174,21 @@ class PersistenceMixin:
         async with self._lock:
             return self._records.get(session_id)
 
+    async def resolve_session_id(self, candidate: str) -> str | None:
+        """Return the canonical stored id for a case-insensitive candidate."""
+
+        folded = candidate.casefold()
+        async with self._lock:
+            return next(
+                (
+                    session_id
+                    for session_id in self._records
+                    if session_id.casefold() == folded
+                ),
+                None,
+            )
+
+
     async def records(self) -> list[SessionRecord]:
         async with self._lock:
             return list(self._records.values())

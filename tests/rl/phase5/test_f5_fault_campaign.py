@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.phase5.f5_fault_campaign import (
     ENUMERATED_FAULT_NON_CLAIM,
     FAULT_CLASSES,

@@ -1,4 +1,5 @@
 
+import { GENERATED_EVENT_KIND_METADATA_BY_TYPE } from "./generated/session-event-bindings.js"
 declare const sessionIdBrand: unique symbol
 declare const inputIdBrand: unique symbol
 declare const turnIdBrand: unique symbol
@@ -1073,6 +1074,10 @@ export const decodeLoggedSessionEvent = (value: unknown): LoggedSessionEvent => 
   }
   const occurredAtMs = requiredInteger(own(value, "timestamp_ms"), "event_timestamp_ms")
   const type = requiredString(own(value, "type"), "event_type")
+  const metadata = GENERATED_EVENT_KIND_METADATA_BY_TYPE[type]
+  if (metadata === undefined || metadata.status !== "active") {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "unsupported_event_family", eventId, sequence })
+  }
   const payload = own(value, "payload")
   const base = { eventId, sequence, sessionId, inputId, turnId, occurredAtMs }
   const turnBase = () => {
@@ -1082,67 +1087,62 @@ export const decodeLoggedSessionEvent = (value: unknown): LoggedSessionEvent => 
     return { eventId, sequence, sessionId, inputId, turnId, occurredAtMs }
   }
   const jsonPayload = (field: string) => parseJsonObjectPayload(payload, field)
-  switch (type) {
-    case "user_message": return { ...turnBase(), kind: "input_observed", payload: parseTextPayload(payload, "input_observed") }
-    case "turn_start": return {
-      ...turnBase(),
-      kind: "turn_started",
-      payload: decodeExactEmptyPayload(payload),
-    }
-    case "conversation.compaction.start": return { ...turnBase(), kind: "conversation_compaction_started", payload: jsonPayload("conversation_compaction_started") }
-    case "conversation.compaction.end": return { ...turnBase(), kind: "conversation_compaction_completed", payload: jsonPayload("conversation_compaction_completed") }
-    case "assistant.message.start": return { ...turnBase(), kind: "assistant_message_started", payload: parseAssistantMessageStarted(payload) }
-    case "assistant.message.delta":
-    case "assistant_delta":
+  switch (metadata.decoder) {
+    case "input-text": return { ...turnBase(), kind: "input_observed", payload: parseTextPayload(payload, "input_observed") }
+    case "turn-start": return { ...turnBase(), kind: "turn_started", payload: decodeExactEmptyPayload(payload) }
+    case "compaction-start": return { ...turnBase(), kind: "conversation_compaction_started", payload: jsonPayload("conversation_compaction_started") }
+    case "compaction-end": return { ...turnBase(), kind: "conversation_compaction_completed", payload: jsonPayload("conversation_compaction_completed") }
+    case "assistant-start": return { ...turnBase(), kind: "assistant_message_started", payload: parseAssistantMessageStarted(payload) }
+    case "text":
+      if (metadata.eventType === "assistant.reasoning.delta") return { ...turnBase(), kind: "assistant_reasoning_delta", payload: parseTextPayload(payload, "assistant_reasoning_delta") }
+      if (metadata.eventType === "assistant.thought_summary.delta") return { ...turnBase(), kind: "assistant_thought_summary_delta", payload: parseTextPayload(payload, "assistant_thought_summary_delta") }
       return { ...turnBase(), kind: "assistant_text_delta", payload: parseTextPayload(payload, "assistant_text_delta") }
-    case "assistant.message.end":
-      return { ...turnBase(), kind: "assistant_text_completed", payload: parseOptionalTextPayload(payload, "assistant_text_completed") }
-    case "assistant_message":
+    case "optional-text": return { ...turnBase(), kind: "assistant_text_completed", payload: parseOptionalTextPayload(payload, "assistant_text_completed") }
+    case "assistant-message":
       return isToolCallOnlyAssistantMessage(payload)
         ? { ...turnBase(), kind: "assistant_message_started", payload: parseAssistantMessageStarted(payload) }
         : { ...turnBase(), kind: "assistant_text_completed", payload: parseOptionalTextPayload(payload, "assistant_text_completed") }
-    case "assistant.reasoning.delta": return { ...turnBase(), kind: "assistant_reasoning_delta", payload: parseTextPayload(payload, "assistant_reasoning_delta") }
-    case "assistant.thought_summary.delta": return { ...turnBase(), kind: "assistant_thought_summary_delta", payload: parseTextPayload(payload, "assistant_thought_summary_delta") }
-    case "assistant.tool_call.start": return { ...turnBase(), kind: "assistant_tool_call_started", payload: parseAssistantToolCallStarted(payload) }
-    case "assistant.tool_call.delta": return { ...turnBase(), kind: "assistant_tool_call_delta", payload: parseAssistantToolCallDelta(payload) }
-    case "assistant.tool_call.end": return { ...turnBase(), kind: "assistant_tool_call_completed", payload: parseAssistantToolCallCompleted(payload) }
-    case "tool.exec.start": return { ...turnBase(), kind: "tool_execution_started", payload: jsonPayload("tool_execution_started") }
-    case "tool.exec.stdout.delta": return { ...turnBase(), kind: "tool_execution_stdout_delta", payload: jsonPayload("tool_execution_stdout_delta") }
-    case "tool.exec.stderr.delta": return { ...turnBase(), kind: "tool_execution_stderr_delta", payload: jsonPayload("tool_execution_stderr_delta") }
-    case "tool.exec.end": return { ...turnBase(), kind: "tool_execution_completed", payload: jsonPayload("tool_execution_completed") }
-    case "tool_call": return { ...turnBase(), kind: "tool_called", payload: parseToolCalled(payload) }
-    case "stream.gap": return { ...base, kind: "stream_gap_observed", payload: jsonPayload("stream_gap_observed") }
-    case "session_control": return { ...base, kind: "session_control_observed", payload: jsonPayload("session_control_observed") }
-    case "todo_event": return { ...base, kind: "todo_updated", payload: jsonPayload("todo_updated") }
-    case "tool.result":
-    case "tool_result": {
-      if (isRawObject(payload) && isRawObject(own(payload, "todo"))) {
-        return { ...base, kind: "todo_updated", payload: jsonPayload("todo_updated") }
-      }
+    case "assistant-tool-start": return { ...turnBase(), kind: "assistant_tool_call_started", payload: parseAssistantToolCallStarted(payload) }
+    case "assistant-tool-delta": return { ...turnBase(), kind: "assistant_tool_call_delta", payload: parseAssistantToolCallDelta(payload) }
+    case "assistant-tool-end": return { ...turnBase(), kind: "assistant_tool_call_completed", payload: parseAssistantToolCallCompleted(payload) }
+    case "tool-exec-start": return { ...turnBase(), kind: "tool_execution_started", payload: jsonPayload("tool_execution_started") }
+    case "tool-exec-stdout": return { ...turnBase(), kind: "tool_execution_stdout_delta", payload: jsonPayload("tool_execution_stdout_delta") }
+    case "tool-exec-stderr": return { ...turnBase(), kind: "tool_execution_stderr_delta", payload: jsonPayload("tool_execution_stderr_delta") }
+    case "tool-exec-end": return { ...turnBase(), kind: "tool_execution_completed", payload: jsonPayload("tool_execution_completed") }
+    case "tool-called": return { ...turnBase(), kind: "tool_called", payload: parseToolCalled(payload) }
+    case "gap": return { ...base, kind: "stream_gap_observed", payload: jsonPayload("stream_gap_observed") }
+    case "session-control": return { ...base, kind: "session_control_observed", payload: jsonPayload("session_control_observed") }
+    case "todo": return { ...base, kind: "todo_updated", payload: jsonPayload("todo_updated") }
+    case "tool-result-or-todo":
+      if (isRawObject(payload) && isRawObject(own(payload, "todo"))) return { ...base, kind: "todo_updated", payload: jsonPayload("todo_updated") }
       return { ...turnBase(), kind: "tool_result_observed", payload: parseToolResultObserved(payload) }
-    }
-    case "permission_request": return { ...turnBase(), kind: "permission_requested", payload: parsePermissionRequested(payload) }
-    case "permission_response": return { ...turnBase(), kind: "permission_responded", payload: parsePermissionResponded(payload) }
-    case "checkpoint_list": return { ...base, kind: "checkpoint_list_observed", payload: jsonPayload("checkpoint_list_observed") }
-    case "checkpoint_restored": return { ...base, kind: "checkpoint_restored", payload: jsonPayload("checkpoint_restored") }
-    case "skills_catalog": return { ...base, kind: "skills_catalog_observed", payload: jsonPayload("skills_catalog_observed") }
-    case "skills_selection": return { ...base, kind: "skills_selection_observed", payload: jsonPayload("skills_selection_observed") }
-    case "ctree_node": return { ...base, kind: "ctree_node_observed", payload: jsonPayload("ctree_node_observed") }
-    case "ctree_snapshot": return { ...base, kind: "ctree_snapshot_observed", payload: jsonPayload("ctree_snapshot_observed") }
-    case "task_event": return { ...turnBase(), kind: "task_event_observed", payload: parseTaskEventObserved(payload) }
+    case "permission-requested": return { ...turnBase(), kind: "permission_requested", payload: parsePermissionRequested(payload) }
+    case "permission-responded": return { ...turnBase(), kind: "permission_responded", payload: parsePermissionResponded(payload) }
+    case "ctree-node": return { ...base, kind: "ctree_node_observed", payload: jsonPayload("ctree_node_observed") }
+    case "ctree-snapshot": return { ...base, kind: "ctree_snapshot_observed", payload: jsonPayload("ctree_snapshot_observed") }
+    case "checkpoint-list": return { ...base, kind: "checkpoint_list_observed", payload: jsonPayload("checkpoint_list_observed") }
+    case "checkpoint-restored": return { ...base, kind: "checkpoint_restored", payload: jsonPayload("checkpoint_restored") }
+    case "skills-catalog": return { ...base, kind: "skills_catalog_observed", payload: jsonPayload("skills_catalog_observed") }
+    case "skills-selection": return { ...base, kind: "skills_selection_observed", payload: jsonPayload("skills_selection_observed") }
+    case "task-observed": return { ...turnBase(), kind: "task_event_observed", payload: parseTaskEventObserved(payload) }
     case "warning": return { ...turnBase(), kind: "warning_observed", payload: jsonPayload("warning_observed") }
-    case "reward_update": return { ...turnBase(), kind: "reward_updated", payload: jsonPayload("reward_updated") }
-    case "limits_update": return { ...turnBase(), kind: "limits_updated", payload: jsonPayload("limits_updated") }
+    case "reward": return { ...turnBase(), kind: "reward_updated", payload: jsonPayload("reward_updated") }
+    case "limits": return { ...turnBase(), kind: "limits_updated", payload: jsonPayload("limits_updated") }
     case "completion": return { ...turnBase(), kind: "completion_observed", payload: jsonPayload("completion_observed") }
-    case "log_link": return { ...turnBase(), kind: "log_linked", payload: jsonPayload("log_linked") }
-    case "error": return inputId === null
-      ? { ...base, inputId: null, turnId: null, scope: "session", kind: "runtime_error_observed", payload: parseRuntimeFailure(payload) }
-      : { ...turnBase(), scope: "turn", kind: "runtime_error_observed", payload: parseRuntimeFailure(payload) }
-    case "run_finished": return { ...turnBase(), kind: "run_finished", payload: jsonPayload("run_finished") }
-    case "turn_completed": return { ...turnBase(), kind: "turn_completed", payload: parseTurnCompleted(payload) }
-    case "turn_failed": return { ...turnBase(), kind: "turn_failed", payload: parseTurnFailure(payload) }
-    case "turn_cancelled": return { ...turnBase(), kind: "turn_cancelled", payload: parseCancellationReason(payload) }
-    default: throw new CanonicalE4ClientError({ kind: "protocol", code: "unsupported_event_family", eventId, sequence })
+    case "log-link": return { ...turnBase(), kind: "log_linked", payload: jsonPayload("log_linked") }
+    case "runtime-error":
+      return inputId === null
+        ? { ...base, inputId: null, turnId: null, scope: "session", kind: "runtime_error_observed", payload: parseRuntimeFailure(payload) }
+        : { ...turnBase(), scope: "turn", kind: "runtime_error_observed", payload: parseRuntimeFailure(payload) }
+    case "run-finished": return { ...turnBase(), kind: "run_finished", payload: jsonPayload("run_finished") }
+    case "turn-completed": return { ...turnBase(), kind: "turn_completed", payload: parseTurnCompleted(payload) }
+    case "turn-failed": return { ...turnBase(), kind: "turn_failed", payload: parseTurnFailure(payload) }
+    case "turn-cancelled": return { ...turnBase(), kind: "turn_cancelled", payload: parseCancellationReason(payload) }
+    case "unsupported":
+    case "deprecated":
+      throw new CanonicalE4ClientError({ kind: "protocol", code: "unsupported_event_family", eventId, sequence })
+    default:
+      throw new CanonicalE4ClientError({ kind: "protocol", code: "unsupported_event_family", eventId, sequence })
   }
 }
 
@@ -1344,7 +1344,7 @@ const parseSafeErrorEnvelope = async (
 }
 
 const pathForSession = (sessionId: SessionId | string, suffix = ""): string =>
-  `/v1/sessions/${encodeURIComponent(String(sessionId))}${suffix}`
+  `/v1/internal/sessions/${encodeURIComponent(String(sessionId))}${suffix}`
 
 const isAbortError = (error: unknown): boolean =>
   typeof error === "object" && error !== null && "name" in error && (error as { readonly name?: unknown }).name === "AbortError"
@@ -1368,6 +1368,7 @@ const requestJson = async (
   method: "GET" | "POST",
   body: unknown,
   callerSignal?: AbortSignal,
+  notFoundSessionId?: SessionId,
 ): Promise<unknown> => {
   const controller = new AbortController()
   let timedOut = false
@@ -1393,9 +1394,8 @@ const requestJson = async (
           ? CANCELLATION_ERROR_CODES
           : []
       const safe = await parseSafeErrorEnvelope(response, controller, allowedCodes, INPUT_ERROR_CODES)
-      if (response.status === 404) {
-        const sessionId = path.split("/")[3] ?? "unknown"
-        throw new CanonicalE4ClientError({ kind: "session-not-found", sessionId: sessionId as SessionId })
+      if (response.status === 404 && notFoundSessionId !== undefined) {
+        throw new CanonicalE4ClientError({ kind: "session-not-found", sessionId: notFoundSessionId })
       }
       throw new CanonicalE4ClientError({ kind: "http", status: response.status, code: safe.code, body: REDACTED_VALUE, ...(safe.turnId === null ? {} : { turnId: safe.turnId }) })
     }
@@ -1771,7 +1771,14 @@ class RuntimeSession implements OpenedSession {
 
   async snapshot(): Promise<SessionSnapshot> {
     this.assertOpen()
-    const observed = await decodeSnapshot(await requestJson(this.context, pathForSession(this.sessionId), "GET", undefined))
+    const observed = await decodeSnapshot(await requestJson(
+      this.context,
+      pathForSession(this.sessionId),
+      "GET",
+      undefined,
+      undefined,
+      this.sessionId,
+    ))
     if (observed.sessionId !== this.sessionId) {
       throw new CanonicalE4ClientError({ kind: "protocol", code: "cross_session_snapshot" })
     }
@@ -1813,7 +1820,14 @@ class RuntimeSession implements OpenedSession {
       throw error
     }
     try {
-      const receipt = decodeSubmitReceipt(await requestJson(this.context, pathForSession(this.sessionId, "/input"), "POST", body))
+      const receipt = decodeSubmitReceipt(await requestJson(
+        this.context,
+        pathForSession(this.sessionId, "/input"),
+        "POST",
+        body,
+        undefined,
+        this.sessionId,
+      ))
       if (receipt.clientMessageId !== clientMessageId) {
         throw new CanonicalE4ClientError({ kind: "protocol", code: "submit_receipt_identity_mismatch" })
       }
@@ -1839,6 +1853,8 @@ class RuntimeSession implements OpenedSession {
         pathForSession(this.sessionId, `/turns/${encodeURIComponent(turnId)}/cancel`),
         "POST",
         { cancellation_request_key: cancellationRequestKey, reason: request.reason ?? "user_requested" },
+        undefined,
+        this.sessionId,
       ))
       if (receipt.cancellationRequestKey !== cancellationRequestKey || receipt.turnId !== turnId) {
         throw new CanonicalE4ClientError({ kind: "protocol", code: "cancellation_receipt_identity_mismatch" })
@@ -1859,7 +1875,7 @@ class RuntimeSession implements OpenedSession {
       await requestJson(this.context, pathForSession(this.sessionId, "/command"), "POST", {
         command: "respond_permission",
         payload: { request_id: requestId, response: decision },
-      }),
+      }, undefined, this.sessionId),
       requestId,
       decision,
     )
@@ -2146,7 +2162,7 @@ export const createCanonicalE4Client = (config: CanonicalE4ClientConfig): Canoni
   return {
     create: async (request) => {
       if (request.configPath !== undefined && !request.configPath) throw new CanonicalE4ClientError({ kind: "protocol", code: "missing_config_path" })
-      const response = await requestJson(context, "/v1/sessions", "POST", createRequestBody(request))
+      const response = await requestJson(context, "/v1/internal/sessions", "POST", createRequestBody(request))
       if (!isRawObject(response)) throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_create_response" })
       const sessionId = requiredString(own(response, "session_id"), "session_id") as SessionId
       return open(sessionId)

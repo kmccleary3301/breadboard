@@ -32,7 +32,8 @@ from ..provider.metrics import ProviderMetricsCollector
 from ..provider.capability_probe import ProviderCapabilityProbeRunner
 from ..provider.routing import provider_router
 from ..provider.registry import provider_registry
-from ..guardrail import GuardrailCoordinator, GuardrailOrchestrator
+from ..guardrails import GuardrailCoordinator
+from ..guardrails.orchestrator import GuardrailOrchestrator
 from .plan_bootstrapper import PlanBootstrapper
 from ..permissions import PermissionBroker
 from ..permissions.policy_pack import PolicyPack

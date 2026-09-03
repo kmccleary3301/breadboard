@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 
 BREADBOARD_MEMBERS = (
     "breadboard/rl",
-    "agentic_coder_prototype/compilation",
+    "breadboard_engine/compilation",
     "scripts/rl_phase5/f2_container_entry.py",
     "scripts/rl_phase5/run_f2_target_command.py",
     "scripts/rl_phase5/f2_private_broker_lifecycle_probe.py",

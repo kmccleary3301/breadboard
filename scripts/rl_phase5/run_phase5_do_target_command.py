@@ -22,7 +22,7 @@ from typing import Any, Mapping
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes, canonical_json_loads
+from breadboard_engine.compilation.contracts import canonical_json_bytes, canonical_json_loads
 
 _MANIFEST_SCHEMA = "bb.rl.phase5-do-target-command-manifest.v1"
 _METADATA_SCHEMA = "bb.rl.phase5-do-metadata.v1"

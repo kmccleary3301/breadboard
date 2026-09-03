@@ -386,14 +386,16 @@ def test_legacy_routes_can_be_explicitly_enabled(
     assert local_client.get("/v1/status").status_code == 200
     assert local_client.get("/sessions").status_code == 200
     assert local_client.get("/v1/sessions").status_code == 200
-    assert local_client.get("/rl/runs/probe").status_code == 400
-    assert local_client.get("/v1/rl/runs/probe").status_code == 400
+    assert local_client.get("/v1/internal/sessions").status_code == 404
+    assert local_client.get("/rl/runs/probe").status_code == 404
+    assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 
 def test_legacy_routes_default_off_removes_unversioned_aliases(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
 
     local_client = TestClient(create_app())
+    public_sessions = local_client.get("/v1/sessions")
 
     assert local_client.get("/status").status_code == 200
     assert local_client.get("/features").status_code == 404
@@ -404,6 +406,9 @@ def test_legacy_routes_default_off_removes_unversioned_aliases(monkeypatch: pyte
     assert local_client.get("/v1/status").status_code == 404
     assert local_client.get("/v1/features").status_code == 404
     assert local_client.get("/v1/system").status_code == 200
+    assert public_sessions.status_code == 404
+    assert public_sessions.json()["schema_version"] == "bb.cli.result.v1"
+    assert local_client.get("/v1/internal/sessions").status_code == 200
     assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 @pytest.mark.parametrize("flag_value", ["0", "false", "no", "off"])
@@ -413,6 +418,7 @@ def test_legacy_routes_flag_off_removes_unversioned_aliases(
     monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", flag_value)
 
     local_client = TestClient(create_app())
+    public_sessions = local_client.get("/v1/sessions")
 
     assert local_client.get("/status").status_code == 200
     assert local_client.get("/features").status_code == 404
@@ -423,6 +429,9 @@ def test_legacy_routes_flag_off_removes_unversioned_aliases(
     assert local_client.get("/v1/status").status_code == 404
     assert local_client.get("/v1/features").status_code == 404
     assert local_client.get("/v1/system").status_code == 200
+    assert public_sessions.status_code == 404
+    assert public_sessions.json()["schema_version"] == "bb.cli.result.v1"
+    assert local_client.get("/v1/internal/sessions").status_code == 200
     assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 
@@ -761,6 +770,55 @@ def test_session_records_endpoint_serves_runtime_jsonl_with_schema_filter(
     assert len(payload["records"]) == 1
     assert payload["records"][0]["schema_version"] == "bb.work_item.v2"
     assert payload["records"][0]["record"]["status"] == "running"
+
+
+def test_internal_sessions_require_loopback_or_api_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    monkeypatch.delenv("BREADBOARD_API_TOKEN", raising=False)
+    client = TestClient(create_app())
+
+    allowed = client.get(
+        "/v1/internal/sessions",
+        headers={"Host": "127.0.0.1:9099"},
+    )
+    rejected = client.get(
+        "/v1/internal/sessions",
+        headers={"Host": "attacker.example"},
+    )
+
+    assert allowed.status_code == 200
+    assert rejected.status_code == 403
+    assert rejected.json() == {
+        "error": "forbidden",
+        "detail": "credential control requires a loopback host or API bearer token",
+        "path": "/v1/internal/sessions",
+    }
+
+
+@pytest.mark.parametrize("path", ["/v1/sessions", "/sessions"])
+def test_legacy_sessions_require_loopback_or_api_token(
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+) -> None:
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
+    monkeypatch.delenv("BREADBOARD_API_TOKEN", raising=False)
+    client = TestClient(create_app())
+
+    allowed = client.get(
+        path,
+        headers={"Host": "127.0.0.1:9099"},
+    )
+    rejected = client.get(
+        path,
+        headers={"Host": "attacker.example"},
+    )
+
+    assert allowed.status_code == 200
+    assert rejected.status_code == 403
+    assert rejected.json()["path"] == path
 
 
 def test_api_error_envelope_covers_auth_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 import breadboard_engine.provider.runtime as runtime_module
-import breadboard_engine.provider_runtime as root_runtime
+import breadboard_engine.provider.runtime as root_runtime
 from breadboard_engine.provider.routing import provider_router
 
 from breadboard_engine.provider.sdk_bindings import provider_sdk_bindings
@@ -35,14 +35,6 @@ EXPECTED_DIRECT_RUNTIME_NAMES = EXPECTED_EXPORTS + (
     "CliMockRuntime",
 )
 
-# D-P0 inventory: these are the exact monkeypatch target paths found by grepping
-# tests/ before extraction. D-P3 migrates these consumers to ProviderSdkBindings.
-CURRENT_MONKEYPATCH_PATHS = (
-    "breadboard_engine.provider_runtime.Anthropic",
-    "breadboard_engine.provider_runtime.AnthropicOverloadedError",
-    "breadboard_engine.provider_runtime.OpenAI",
-    "breadboard_engine.provider_runtime.time.sleep",
-)
 EXPECTED_MOVED_RUNTIME_MODULES = {
     "OpenAIBaseRuntime": "breadboard_engine.provider.runtimes.openai",
     "OpenAIChatRuntime": "breadboard_engine.provider.runtimes.openai",
@@ -340,13 +332,6 @@ def test_retry_timing_uses_current_sleep_and_uniform_dependencies(monkeypatch: p
     ) == 3.25
 
 
-def test_current_monkeypatch_paths_are_recorded() -> None:
-    assert tuple(sorted(CURRENT_MONKEYPATCH_PATHS)) == (
-        "breadboard_engine.provider_runtime.Anthropic",
-        "breadboard_engine.provider_runtime.AnthropicOverloadedError",
-        "breadboard_engine.provider_runtime.OpenAI",
-        "breadboard_engine.provider_runtime.time.sleep",
-    )
 
 
 def test_representative_classes_pickle_round_trip() -> None:

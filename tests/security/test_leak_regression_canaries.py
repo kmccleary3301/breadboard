@@ -2071,7 +2071,7 @@ class TestPostInvocationBoundary:
         from types import SimpleNamespace
         from unittest.mock import Mock
 
-        from breadboard_engine.provider_runtime import (
+        from breadboard_engine.provider.runtime import (
             ProviderMessage,
             ProviderResult,
             ProviderRuntimeContext,
@@ -2182,7 +2182,7 @@ class TestPostInvocationBoundary:
         from types import SimpleNamespace
         from unittest.mock import Mock
 
-        from breadboard_engine.provider_runtime import (
+        from breadboard_engine.provider.runtime import (
             ProviderRuntimeContext,
             ProviderRuntimeError,
         )
@@ -2244,7 +2244,7 @@ class TestPostInvocationBoundary:
         from types import SimpleNamespace
         from unittest.mock import Mock
 
-        from breadboard_engine.provider_runtime import (
+        from breadboard_engine.provider.runtime import (
             ProviderRuntimeContext,
             ProviderRuntimeError,
         )

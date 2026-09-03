@@ -7,11 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .provider.runtime import (
-    ProviderMessage,
-    ProviderResult,
-    ProviderToolCall,
-)
+from .provider.contracts import ProviderMessage, ProviderResult, ProviderToolCall
 
 
 @dataclass

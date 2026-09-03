@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
-from breadboard_engine.runtime_context import bind_session_state
+from breadboard_engine.runtime.context import bind_session_state
 from breadboard_engine.state.session_state import SessionState
 
 

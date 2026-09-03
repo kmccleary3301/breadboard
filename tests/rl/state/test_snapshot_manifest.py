@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from breadboard.rl.state import InMemoryCAS, build_snapshot_manifest
+from breadboard.artifacts import InMemoryCAS
+from breadboard.rl.state import build_snapshot_manifest
 from tests.rl.session.helpers import build_successful_toy_session
 
 

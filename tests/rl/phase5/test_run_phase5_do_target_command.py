@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes, canonical_json_loads
+from breadboard_engine.compilation.contracts import canonical_json_bytes, canonical_json_loads
 
 from scripts.rl_phase5.scan_phase5_artifact_secrets import scan_artifact
 from scripts.rl_phase5.run_phase5_do_target_command import (

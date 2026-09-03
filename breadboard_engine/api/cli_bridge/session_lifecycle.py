@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol
 
 from breadboard_engine.checkpointing.checkpoint_manager import CheckpointManager
-from breadboard_engine.guardrail import GuardrailCoordinator
+from breadboard_engine.guardrails import GuardrailCoordinator
 
 from .events import EventType
 from .models import SessionStatus

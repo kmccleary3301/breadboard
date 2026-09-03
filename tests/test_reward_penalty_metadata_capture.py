@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from breadboard_engine.conductor_patching import record_diff_metrics
+from breadboard_engine.conductor.patching import record_diff_metrics
 from breadboard_engine.monitoring.reward_metrics import RewardMetricsRecorder
 
 

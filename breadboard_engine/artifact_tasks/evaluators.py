@@ -11,8 +11,7 @@ from typing import Any, Dict, Mapping, Sequence
 from ..security import (
     WorkspaceFilesystem,
     WorkspacePathError,
-    build_child_environment,
-    build_restricted_process_command,
+    ChildProcessPolicy,
     contains_provider_credential_value,
     provider_credential_values,
     protected_credential_paths,
@@ -307,11 +306,17 @@ def _run_evaluator(
                 finished_at=_utc_now(),
                 failure_reasons=("credential_in_environment",),
             )
+        process_policy = ChildProcessPolicy(
+            overrides=spec.env,
+            allowed_override_keys=tuple(spec.env),
+            workspace=root,
+            working_directory=cwd,
+            shell=spec.shell,
+            protected_paths=tuple(protected_paths),
+            trusted_launchers=() if spec.shell else tuple(command[:1]),
+        )
         try:
-            env = build_child_environment(
-                overrides=spec.env,
-                allowed_override_keys=spec.env,
-            )
+            environment = process_policy.environment_only()
         except ValueError:
             error_text = (
                 "evaluator environment rejected: override key is not allowlisted"
@@ -360,19 +365,14 @@ def _run_evaluator(
                 failure_reasons=("credential_in_argv",),
             )
         try:
-            isolated_command, env = build_restricted_process_command(
+            launch = process_policy.command_and_environment(
                 command,
-                workspace=root,
-                working_directory=cwd,
-                shell=spec.shell,
-                environment=env,
-                protected_paths=protected_paths,
-                trusted_launchers=() if spec.shell else command[:1],
+                environment=environment,
             )
             proc = subprocess.run(
-                isolated_command,
+                launch.argv,
                 cwd=str(cwd),
-                env=env,
+                env=launch.environment_dict(),
                 shell=False,
                 capture_output=True,
                 text=True,

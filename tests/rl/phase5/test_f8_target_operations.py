@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 
 from scripts.rl_phase3.target_verl_smoke_train import F8TargetTrainingInput
 from scripts.rl_phase5 import finalize_f8_target_input as finalizer

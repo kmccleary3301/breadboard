@@ -269,7 +269,7 @@
       "id": "turn_strategy",
       "metadata": {
         "classification": "operational",
-        "consumer": "breadboard_engine.conductor.execution",
+        "consumer": "breadboard_engine.conductor.turn_runtime",
         "dossiers_using": 1,
         "note": "Only oh_my_opencode uses top-level turn_strategy at breadboard_repo_integration_main_20260326/agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml:305.",
         "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Literal, Mapping
 from urllib.parse import urlsplit
 
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     CompiledConfigManifest,
     ConfigBundleManifest,
     canonical_json_bytes,
@@ -46,7 +46,7 @@ from breadboard.rl.harness.runners.terminal import (
     TERMINAL_RUNTIME_ABI,
 )
 from breadboard.rl.phase5.f3_authority_authoring import F3AuthorityBundleManifest
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 
 MAX_PINNED_ARTIFACT_BYTES = 128 * 1024 * 1024
 MAX_PINNED_FILE_AUTHORITY_BYTES = 4 * 1024 * 1024 * 1024

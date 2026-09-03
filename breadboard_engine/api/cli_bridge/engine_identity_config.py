@@ -35,7 +35,7 @@ P30_SESSION_CONTRACT_SCHEMA_VERSION = "bb.p30.e4_session.v1"
 # This value is intentionally fixed. A landed session-schema change makes readiness
 # false until the contract change is explicitly reviewed and this digest is updated.
 P30_SESSION_SCHEMA_SHA256 = (
-    "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
+    "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
 )
 P30_SESSION_REPLAY_CONTRACT_DIGEST = (
     "sha256:a107aea87bdc7075d68495d3c0bf2b68e85e38a2b2fef1000bf3f1eaee77f743"
@@ -47,32 +47,32 @@ _OPAQUE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
 P30_REQUIRED_SESSION_ROUTES: frozenset[tuple[str, str]] = frozenset(
     {
-        ("POST", "/v1/sessions"),
-        ("GET", "/v1/sessions/{session_id}"),
-        ("POST", "/v1/sessions/{session_id}/input"),
-        ("POST", "/v1/sessions/{session_id}/turns/{turn_id}/cancel"),
-        ("GET", "/v1/sessions/{session_id}/events"),
-        ("DELETE", "/v1/sessions/{session_id}"),
+        ("POST", "/v1/internal/sessions"),
+        ("GET", "/v1/internal/sessions/{session_id}"),
+        ("POST", "/v1/internal/sessions/{session_id}/input"),
+        ("POST", "/v1/internal/sessions/{session_id}/turns/{turn_id}/cancel"),
+        ("GET", "/v1/internal/sessions/{session_id}/events"),
+        ("DELETE", "/v1/internal/sessions/{session_id}"),
     }
 )
 
 P30_SESSION_ROUTE_BINDINGS: tuple[tuple[str, str, str, str], ...] = (
-    ("POST", "/v1/sessions", "create_session", "create_session"),
-    ("GET", "/v1/sessions/{session_id}", "get_session", "ensure_session"),
-    ("POST", "/v1/sessions/{session_id}/input", "post_input", "send_input"),
+    ("POST", "/v1/internal/sessions", "create_session", "create_session"),
+    ("GET", "/v1/internal/sessions/{session_id}", "get_session", "ensure_session"),
+    ("POST", "/v1/internal/sessions/{session_id}/input", "post_input", "send_input"),
     (
         "POST",
-        "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
+        "/v1/internal/sessions/{session_id}/turns/{turn_id}/cancel",
         "cancel_turn",
         "cancel_turn",
     ),
     (
         "GET",
-        "/v1/sessions/{session_id}/events",
+        "/v1/internal/sessions/{session_id}/events",
         "stream_events",
         "prepare_event_stream",
     ),
-    ("DELETE", "/v1/sessions/{session_id}", "delete_session", "stop_session"),
+    ("DELETE", "/v1/internal/sessions/{session_id}", "delete_session", "stop_session"),
 )
 
 P30_REQUIRED_SESSION_SERVICE_METHODS: tuple[str, ...] = (
@@ -725,7 +725,7 @@ P30_SESSION_BASELINE_HTTP = {
         {
             "method": "POST",
             "parameters": [],
-            "path": "/v1/sessions",
+            "path": "/v1/internal/sessions",
             "requestBody": {
                 "content": {
                     "application/json": {
@@ -775,7 +775,7 @@ P30_SESSION_BASELINE_HTTP = {
                     "schema": {"title": "Session Id", "type": "string"},
                 }
             ],
-            "path": "/v1/sessions/{session_id}",
+            "path": "/v1/internal/sessions/{session_id}",
             "requestBody": None,
             "responses": {
                 "200": {
@@ -816,7 +816,7 @@ P30_SESSION_BASELINE_HTTP = {
                     "schema": {"title": "Session Id", "type": "string"},
                 }
             ],
-            "path": "/v1/sessions/{session_id}/input",
+            "path": "/v1/internal/sessions/{session_id}/input",
             "requestBody": {
                 "content": {
                     "application/json": {
@@ -888,7 +888,7 @@ P30_SESSION_BASELINE_HTTP = {
                     "schema": {"title": "Turn Id", "type": "string"},
                 },
             ],
-            "path": "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
+            "path": "/v1/internal/sessions/{session_id}/turns/{turn_id}/cancel",
             "requestBody": {
                 "content": {
                     "application/json": {
@@ -980,7 +980,7 @@ P30_SESSION_BASELINE_HTTP = {
                     },
                 },
             ],
-            "path": "/v1/sessions/{session_id}/events",
+            "path": "/v1/internal/sessions/{session_id}/events",
             "requestBody": None,
             "responses": {
                 "200": {
@@ -1017,7 +1017,7 @@ P30_SESSION_BASELINE_HTTP = {
                     "schema": {"title": "Session Id", "type": "string"},
                 }
             ],
-            "path": "/v1/sessions/{session_id}",
+            "path": "/v1/internal/sessions/{session_id}",
             "requestBody": None,
             "responses": {
                 "204": {"description": "Successful Response"},

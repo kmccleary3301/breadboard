@@ -2,7 +2,7 @@ import types
 
 
 from breadboard_engine.provider.capability_probe import ProviderCapabilityProbeRunner
-from breadboard_engine.provider_runtime import ProviderResult, ProviderMessage
+from breadboard_engine.provider.runtime import ProviderResult, ProviderMessage
 from breadboard_engine.state.session_state import SessionState
 
 

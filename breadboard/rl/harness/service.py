@@ -11,7 +11,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, Callable, Generic, Mapping, Protocol, TypeVar
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 
 from breadboard.rl.harness.config_runtime import ConfigRuntime
 from breadboard.rl.harness.contracts import ArtifactRef as ContractArtifactRef
@@ -86,7 +86,7 @@ from breadboard.rl.harness.sandbox import (
     VerifierWorkspaceLease,
     build_sandbox_execution_plan,
 )
-from breadboard.rl.state.state_ref import ArtifactRef
+from breadboard.artifacts.references import ArtifactRef
 
 
 class EpisodeLifecycleState(str, Enum):

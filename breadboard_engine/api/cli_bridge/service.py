@@ -16,7 +16,6 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, S
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import (
     AnchoredStorage,
-    ArtifactStore,
     Session as ProductSession,
 )
 from breadboard.product.runtime.events import (
@@ -25,7 +24,7 @@ from breadboard.product.runtime.events import (
     ProcessLock,
 )
 from breadboard.product.runtime.session_store import (
-    authorize_session_artifact_manifest,
+    session_directory_identity,
     session_event_path,
 )
 from fastapi import HTTPException, UploadFile, status
@@ -48,7 +47,6 @@ from .models import (
     ATPReplRequest,
     ATPReplResponse,
     ATPReplSorry,
-    AttachmentHandle,
     AttachmentUploadResponse,
     ModelCatalogResponse,
     SkillCatalogResponse,
@@ -100,7 +98,7 @@ from .engine_identity_config import (
     get_launch_bootstrap_verifier,
     p30_session_schema_sha256,
 )
-from .session_runner import MAX_ATTACHMENT_BYTES, SessionRunner
+from .session_runner import SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
 from .model_catalog import build_model_catalog
 from .runtime_emission import (
@@ -182,66 +180,6 @@ def _sync_tree(root: Path) -> None:
         AnchoredStorage.sync_directory(path)
 
 
-def _open_workspace_breadboard(
-    workspace_dir: Path,
-) -> tuple[Path, Path, int | None, list[int]]:
-    workspace_root = workspace_dir.resolve()
-    logical = workspace_root / ".breadboard"
-    if os.name == "nt":
-        handles: list[int] = []
-        try:
-            handles.append(
-                AnchoredStorage.windows_handle(
-                    workspace_root, directory=True, create=False
-                )
-            )
-            handles.append(AnchoredStorage.windows_handle(logical, directory=True))
-            return logical, workspace_root, None, handles
-        except OSError as exc:
-            for handle in reversed(handles):
-                AnchoredStorage.close_windows_handle(handle)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="invalid workspace metadata path",
-            ) from exc
-    try:
-        expected = workspace_root.stat(follow_symlinks=False)
-        root_fd = os.open(
-            workspace_root,
-            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-        )
-    except OSError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="invalid workspace root"
-        ) from exc
-    actual = os.fstat(root_fd)
-    if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino):
-        os.close(root_fd)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="workspace root changed"
-        )
-    metadata_fd = None
-    try:
-        try:
-            os.mkdir(".breadboard", dir_fd=root_fd)
-        except FileExistsError:
-            pass
-        metadata_fd = os.open(
-            ".breadboard",
-            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-            dir_fd=root_fd,
-        )
-        os.fsync(root_fd)
-        return logical, workspace_root, metadata_fd, []
-    except OSError as exc:
-        if metadata_fd is not None:
-            os.close(metadata_fd)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="invalid workspace metadata path",
-        ) from exc
-    finally:
-        os.close(root_fd)
 
 
 def _start_active(path: Path) -> bool:
@@ -712,14 +650,7 @@ class SessionService:
     ) -> SessionCreateResponse:
         selected_session_id = session_id or str(uuid.uuid4())
         async with self._session_lock(selected_session_id):
-            collision = next(
-                (
-                    existing
-                    for existing in self.registry._records
-                    if existing.casefold() == selected_session_id.casefold()
-                ),
-                None,
-            )
+            collision = await self.registry.resolve_session_id(selected_session_id)
             if collision is not None:
                 raise ValueError(f"session already exists: {selected_session_id}")
             return await self._create_session(
@@ -749,14 +680,6 @@ class SessionService:
         if await self.registry.get(session_id) is not None:
             raise ValueError(f"session already exists: {session_id}")
         durable_product_workspace: Path | None = None
-        if request.workspace is not None and event_root is not None:
-            candidate_workspace = Path(request.workspace).expanduser().resolve()
-            requested_event_root = event_root.expanduser().resolve()
-            durable_event_root = (
-                session_event_path(candidate_workspace, session_id).parent.parent.resolve()
-            )
-            if requested_event_root == durable_event_root:
-                durable_product_workspace = candidate_workspace
         default_profile: DefaultProfileResolution | None = None
         if request.config_path is None:
             default_profile = resolve_default_profile()
@@ -831,6 +754,14 @@ class SessionService:
             metadata["workspace"] = str(
                 Path(runner.request.workspace).expanduser().resolve()
             )
+        if runner.request.workspace is not None:
+            candidate_workspace = Path(runner.request.workspace).expanduser().resolve()
+            requested_event_root = (event_root or _event_root()).expanduser().resolve()
+            durable_event_root = (
+                session_event_path(candidate_workspace, session_id).parent.parent.resolve()
+            )
+            if requested_event_root == durable_event_root:
+                durable_product_workspace = candidate_workspace
         runtime_providers = (
             runtime_config.get("providers")
             if isinstance(runtime_config, dict)
@@ -919,7 +850,7 @@ class SessionService:
         )
         if emit_primitives:
             metadata.setdefault("runtime_record_dir", str(runtime_record_dir))
-        record.runner, record.product_artifacts, published = runner, {}, False
+        record.runner, published = runner, False
         try:
             if emit_primitives:
                 staged_paths = emit_session_start_records(
@@ -946,8 +877,7 @@ class SessionService:
             )
             record.product_session = product_session
             metadata["session_contract"] = product_session.read_model.as_dict()
-            async with self.registry._lock:
-                await runner.prepare_start(admission_serialized=True)
+            async with self.registry.publish_session(record, runner):
                 runner.schedule_start()
                 self._publish_start_bundle(
                     session_id,
@@ -959,10 +889,15 @@ class SessionService:
                     emit_primitives,
                 )
                 event_sink.path = event_dir / "session_events.jsonl"
-                self.registry._records[session_id] = record
-                if durable_product_workspace is not None:
-                    runner.bind_durable_product_session(durable_product_workspace)
-            published = True
+                published = True
+            if durable_product_workspace is not None:
+                runner.bind_durable_product_session(
+                    durable_product_workspace,
+                    session_directory_identity(
+                        durable_product_workspace,
+                        create=True,
+                    ),
+                )
             await self._ensure_dispatcher(record)
             await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)
             runner.authorize_start()
@@ -1000,7 +935,6 @@ class SessionService:
                 await record.event_queue.put(None)
                 await asyncio.gather(record.dispatcher_task, return_exceptions=True)
             if not published:
-                self.registry._records.pop(session_id, None)
                 for path in (
                     runtime_record_dir,
                     staging_record_root,
@@ -2042,287 +1976,27 @@ class SessionService:
         metadata: Optional[dict[str, Any]] = None,
     ) -> AttachmentUploadResponse:
         async with self._session_lock(session_id):
-            return await self._upload_attachments_locked(session_id, files, metadata)
-
-    async def _upload_attachments_locked(
-        self,
-        session_id: str,
-        files: Sequence[UploadFile],
-        metadata: Optional[dict[str, Any]] = None,
-    ) -> AttachmentUploadResponse:
-        if not files:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="no files provided"
-            )
-        record = await self._ensure_session_locked(session_id)
-        runner: Optional[SessionRunner] = getattr(record, "runner", None)
-        if not runner:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="session not active"
-            )
-        workspace_dir = runner.get_workspace_dir()
-        if not workspace_dir:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="workspace not ready"
-            )
-        staged_uploads = []
-        staged_bytes = 0
-        for index, upload in enumerate(files, start=1):
-            data = bytearray()
-            try:
-                while True:
-                    chunk = await upload.read(
-                        MAX_ATTACHMENT_BYTES - staged_bytes - len(data) + 1
-                    )
-                    if not chunk:
-                        break
-                    data.extend(chunk)
-                    if staged_bytes + len(data) > MAX_ATTACHMENT_BYTES:
-                        raise HTTPException(
-                            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                            detail=f"attachments exceed {MAX_ATTACHMENT_BYTES}-byte handoff limit",
-                        )
-            except HTTPException:
-                raise
-            except Exception as exc:
+            if not files:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"failed to read upload: {exc}",
-                ) from exc
-            if data:
-                staged_uploads.append((index, upload, bytes(data)))
-                staged_bytes += len(data)
-        if not staged_uploads:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="no attachment data found",
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="no files provided"
+                )
+            record = await self._ensure_session_locked(session_id)
+            runner: Optional[SessionRunner] = getattr(record, "runner", None)
+            if not runner:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="session not active"
+                )
+            workspace_dir = runner.get_workspace_dir()
+            if not workspace_dir:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="workspace not ready"
+                )
+            return await runner.artifacts.upload(
+                files,
+                workspace_dir=workspace_dir,
+                metadata=metadata,
             )
-        attachment_entries: list[dict[str, Any]] = []
-        handles: list[AttachmentHandle] = []
-        created_dirs: list[str] = []
-        created_refs = set()
-        anchor, workspace_root, descriptor, windows_handles = (
-            _open_workspace_breadboard(workspace_dir)
-        )
-        artifact_fd = attachment_fd = None
-        artifact_root, attachment_root = anchor / "artifacts", anchor / "attachments"
-        artifact_refs = dict(getattr(record, "product_artifacts", {}))
-        manifest_path: Path | None = None
-        manifest_fd = None
-        manifest_name = None
-        transaction = None
-        registered_before = dict(getattr(runner, "_attachment_store", {}))
-        try:
-            if descriptor is not None:
-                artifact_fd = AnchoredStorage.open_directory(descriptor, "artifacts")
-                try:
-                    attachment_fd = AnchoredStorage.open_directory(
-                        descriptor, "attachments"
-                    )
-                except BaseException:
-                    os.close(artifact_fd)
-                    artifact_fd = None
-                    raise
-                os.fsync(descriptor)
-            artifact_store = ArtifactStore(artifact_root, descriptor=artifact_fd)
-            candidate_transaction = artifact_store.transaction()
-            candidate_transaction.__enter__()
-            transaction = candidate_transaction
-            if attachment_fd is None:
-                attachment_root.mkdir(parents=True, exist_ok=True)
-            if os.name == "nt":
-                windows_handles.append(
-                    AnchoredStorage.windows_handle(artifact_root, directory=True)
-                )
-                windows_handles.append(
-                    AnchoredStorage.windows_handle(attachment_root, directory=True)
-                )
-            try:
-                for index, upload, data in staged_uploads:
-                    attachment_id = f"att-{uuid.uuid4().hex[:10]}"
-                    filename = self._sanitize_filename(
-                        upload.filename or f"attachment-{index}.bin"
-                    )
-                    created_dirs.append(attachment_id)
-                    if attachment_fd is not None:
-                        target_fd = AnchoredStorage.open_directory(
-                            attachment_fd, attachment_id
-                        )
-                    else:
-                        target_fd = None
-                        (attachment_root / attachment_id).mkdir(
-                            parents=True, exist_ok=True
-                        )
-                    try:
-                        artifact_ref = artifact_store.put(
-                            data,
-                            media_type=upload.content_type
-                            or "application/octet-stream",
-                            created=created_refs,
-                        )
-                        if target_fd is not None:
-                            artifact_store.materialize_at(
-                                artifact_ref, target_fd, filename
-                            )
-                        else:
-                            artifact_store.materialize(
-                                artifact_ref, attachment_root / attachment_id / filename
-                            )
-                        artifact_refs[attachment_id] = artifact_ref
-                    finally:
-                        if target_fd is not None:
-                            os.close(target_fd)
-                    logical_target = (
-                        workspace_root
-                        / ".breadboard"
-                        / "attachments"
-                        / attachment_id
-                        / filename
-                    )
-                    handles.append(
-                        AttachmentHandle(
-                            id=attachment_id,
-                            filename=filename,
-                            mime=upload.content_type,
-                            size_bytes=len(data),
-                        )
-                    )
-                    attachment_entries.append(
-                        {
-                            "id": attachment_id,
-                            "filename": filename,
-                            "absolute_path": str(logical_target),
-                            "relative_path": str(
-                                logical_target.relative_to(workspace_root)
-                            ),
-                            "metadata": metadata or {},
-                        }
-                    )
-                manifest = artifact_store.manifest(session_id, artifact_refs)
-                manifest_ref = artifact_store.put_json(manifest, created=created_refs)
-                manifest_name = (
-                    f"{session_id}.{manifest_ref.digest.removeprefix('sha256:')}.json"
-                )
-                if artifact_fd is not None:
-                    manifest_fd = AnchoredStorage.open_directory(
-                        artifact_fd, "manifests"
-                    )
-                    artifact_store.materialize_at(
-                        manifest_ref, manifest_fd, manifest_name
-                    )
-                    os.fsync(artifact_fd)
-                else:
-                    manifest_path = artifact_root / "manifests" / manifest_name
-                    artifact_store.materialize(manifest_ref, manifest_path)
-                if (
-                    descriptor is not None
-                    and (workspace_root / ".breadboard").resolve()
-                    != AnchoredStorage.descriptor_path(descriptor).resolve()
-                ):
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="workspace metadata path changed",
-                    )
-                runner.register_attachments(attachment_entries)
-            except BaseException:
-                if attachment_fd is not None:
-                    for name in created_dirs:
-                        try:
-                            target_fd = AnchoredStorage.open_directory(
-                                attachment_fd, name, create=False
-                            )
-                        except FileNotFoundError:
-                            continue
-                        try:
-                            for child in os.listdir(target_fd):
-                                os.unlink(child, dir_fd=target_fd)
-                        finally:
-                            os.close(target_fd)
-                        os.rmdir(name, dir_fd=attachment_fd)
-                    if manifest_fd is not None and manifest_name is not None:
-                        try:
-                            os.unlink(manifest_name, dir_fd=manifest_fd)
-                        except FileNotFoundError:
-                            pass
-                        os.fsync(manifest_fd)
-                        os.fsync(artifact_fd)
-                    os.fsync(attachment_fd)
-                else:
-                    for name in created_dirs:
-                        target = attachment_root / name
-                        target_lock = (
-                            AnchoredStorage.windows_handle(
-                                target, directory=True, create=False
-                            )
-                            if os.name == "nt"
-                            else None
-                        )
-                        try:
-                            if target_lock is None:
-                                shutil.rmtree(target, ignore_errors=True)
-                            else:
-                                for child in target.iterdir():
-                                    child.unlink()
-                        finally:
-                            AnchoredStorage.close_windows_handle(target_lock)
-                        if target_lock is not None:
-                            target.rmdir()
-                    if manifest_path is not None:
-                        manifest_lock = (
-                            AnchoredStorage.windows_handle(
-                                manifest_path.parent, directory=True, create=False
-                            )
-                            if os.name == "nt"
-                            else None
-                        )
-                        try:
-                            manifest_path.unlink(missing_ok=True)
-                        finally:
-                            AnchoredStorage.close_windows_handle(manifest_lock)
-                    for parent in {
-                        attachment_root,
-                        manifest_path.parent
-                        if manifest_path is not None
-                        else artifact_root,
-                    }:
-                        AnchoredStorage.sync_directory(
-                            parent
-                        ) if parent.is_dir() else None
-                for artifact_ref in created_refs:
-                    artifact_store.discard(artifact_ref)
-                if hasattr(runner, "_attachment_store"):
-                    runner._attachment_store = registered_before
-                raise
-        finally:
-            if transaction is not None:
-                transaction.__exit__(None, None, None)
-            for open_descriptor in (
-                manifest_fd,
-                artifact_fd,
-                attachment_fd,
-                descriptor,
-            ):
-                if open_descriptor is not None:
-                    os.close(open_descriptor)
-            for handle in reversed(windows_handles):
-                AnchoredStorage.close_windows_handle(handle)
-        if manifest_name is None:
-            raise RuntimeError("attachment manifest was not published")
-        try:
-            authorize_session_artifact_manifest(
-                workspace_root,
-                session_id,
-                manifest_name,
-            )
-        except FileNotFoundError:
-            # Live bridge sessions have no durable product projection yet.
-            pass
-        record.product_artifacts = artifact_refs
-        (
-            record.metadata["artifact_manifest"],
-            record.metadata["artifact_manifest_ref"],
-        ) = manifest, manifest_ref.as_dict()
-        return AttachmentUploadResponse(attachments=handles)
+
 
     @staticmethod
     def _resolve_workspace_path(workspace_dir: Path, requested_path: str) -> Path:
@@ -2839,8 +2513,3 @@ class SessionService:
             parts.extend(tail_list)
         return "\n".join(parts), len(head_raw) + len(tail_raw)
 
-    @staticmethod
-    def _sanitize_filename(filename: str) -> str:
-        candidate = filename.strip() or "attachment.bin"
-        candidate = candidate.replace("\\", "/")
-        return os.path.basename(candidate)

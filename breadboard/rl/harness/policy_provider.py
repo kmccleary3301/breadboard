@@ -10,7 +10,7 @@ import re
 import threading
 from typing import Any
 
-from agentic_coder_prototype.compilation.contracts import canonical_sha256
+from breadboard_engine.compilation.contracts import canonical_sha256
 import yaml
 
 from breadboard_engine.e4_targets import load_e4_target

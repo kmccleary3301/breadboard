@@ -1,4 +1,50 @@
 """Product-owned Session runtime facade."""
 from .artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
-from .events import GenerationAdoptionError, KernelEvent, Session, SessionView, rebuild
-__all__ = ["AnchoredStorage", "ArtifactRef", "ArtifactStore", "GenerationAdoptionError", "KernelEvent", "Session", "SessionView", "rebuild"]
+from .events import (
+    AnnotationRecord,
+    GenerationAdoptionError,
+    KernelEvent,
+    Projected,
+    ProjectionSource,
+    Session,
+    SessionProjectionAsOfError,
+    SessionProjectionError,
+    SessionProjectionVersionError,
+    SessionView,
+    SESSION_PROJECTOR_VERSION,
+    project_session,
+    project_session_live,
+    project_session_replay,
+    project_session_snapshot,
+    rebuild,
+)
+from .public_event_projection import (
+    PUBLIC_PAYLOAD_SCHEMAS,
+    PUBLIC_SESSION_EVENT_SCHEMA_VERSION,
+    public_session_event,
+)
+
+__all__ = [
+    "AnchoredStorage",
+    "ArtifactRef",
+    "ArtifactStore",
+    "AnnotationRecord",
+    "GenerationAdoptionError",
+    "KernelEvent",
+    "Projected",
+    "ProjectionSource",
+    "Session",
+    "SessionProjectionAsOfError",
+    "SessionProjectionError",
+    "SessionProjectionVersionError",
+    "SessionView",
+    "SESSION_PROJECTOR_VERSION",
+    "project_session",
+    "project_session_live",
+    "project_session_replay",
+    "project_session_snapshot",
+    "rebuild",
+    "PUBLIC_PAYLOAD_SCHEMAS",
+    "PUBLIC_SESSION_EVENT_SCHEMA_VERSION",
+    "public_session_event",
+]

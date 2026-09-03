@@ -47,7 +47,7 @@ P31_GRAPH_HASH = "sha256:3a5699fc84dde3cd78dd7116400650f17ded5a4b4d0af1f415afd19
 def test_compiler_module_check_uses_canonical_package_with_legacy_evidence_ref() -> None:
     assert compiler.HELPER_MODULE_PATH == ROOT / "breadboard_engine/compilation/effective_config_graph.py"
     assert compiler.HELPER_MODULE_PATH.is_file()
-    assert compiler.HELPER_MODULE_REF == ROOT / "agentic_coder_prototype/compilation/effective_config_graph.py"
+    assert compiler.HELPER_MODULE_REF == ROOT / "breadboard_engine/compilation/effective_config_graph.py"
 
 
 def _load_json(path: Path) -> Any:

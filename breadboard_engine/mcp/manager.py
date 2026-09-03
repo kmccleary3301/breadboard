@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from ..security import build_child_environment, build_restricted_process_command
+from ..security import ChildProcessPolicy
 
 try:
     from mcp.client.session import ClientSession
@@ -88,22 +88,17 @@ class MCPManager:
         env: Dict[str, Any] | None,
         cwd: str | None,
     ) -> Any:
-        child_environment = build_child_environment(
+        launch = ChildProcessPolicy(
             overrides=env,
-            allowed_override_keys=() if env is None else env.keys(),
-        )
-        isolated_command, child_environment = build_restricted_process_command(
-            (command, *args),
+            allowed_override_keys=() if env is None else tuple(env),
             workspace=self._workspace,
             working_directory=cwd or self._workspace,
-            shell=False,
-            environment=child_environment,
-            protected_paths=self._protected_paths,
-        )
+            protected_paths=tuple(self._protected_paths),
+        ).command_and_environment((command, *args))
         return StdioServerParameters(
-            command=isolated_command[0],
-            args=list(isolated_command[1:]),
-            env=child_environment,
+            command=launch.argv[0],
+            args=list(launch.argv[1:]),
+            env=launch.environment_dict(),
             cwd=str(cwd or self._workspace),
         )
 

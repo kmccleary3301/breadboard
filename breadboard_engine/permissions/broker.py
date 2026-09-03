@@ -5,7 +5,19 @@ import re
 import shlex
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+
+from .authority import (
+    CanonicalPermission,
+    PermissionResolution,
+    normalize_permission_response,
+    normalize_permission_responses,
+    permission_item_ids,
+    resolve_permission_decision,
+    resolve_permission_responses,
+)
+from .policy_pack import PolicyPack
 
 
 @dataclass
@@ -30,15 +42,130 @@ class PermissionBroker:
 
     STATE_KEY = "permission_broker_state"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, *, policy_pack: Any | None = None) -> None:
-        raw = config or {}
+    def __init__(
+        self, config: Optional[Mapping[str, Any]] = None, *, policy_pack: Any | None = None
+    ) -> None:
+        self._policy_pack = policy_pack
+        self.configure(config, policy_pack=policy_pack)
+
+    def configure(
+        self, config: Mapping[str, Any] | None = None, *, policy_pack: Any | None = None
+    ) -> None:
+        raw = dict(config or {})
         self._policy_pack = policy_pack
         self._options = self._extract_options(raw)
-        self._ask_mode = str(self._options.get("mode") or self._options.get("ask_mode") or "auto_allow").strip().lower()
-        self._auto_allow = self._ask_mode in {"auto", "auto_allow", "allow", "yes", "true", "1"}
-        self._decision_timeout_s = self._coerce_timeout(self._options.get("timeout_s") or self._options.get("timeout"))
-        self._default_response = self._coerce_response(self._options.get("default_response") or self._options.get("default"))
+        self._ask_mode = str(
+            self._options.get("mode") or self._options.get("ask_mode") or "auto_allow"
+        ).strip().lower()
+        self._auto_allow = self._ask_mode in {
+            "auto",
+            "auto_allow",
+            "allow",
+            "yes",
+            "true",
+            "1",
+        }
+        self._decision_timeout_s = self._coerce_timeout(
+            self._options.get("timeout_s") or self._options.get("timeout")
+        )
+        self._default_response = self._coerce_response(
+            self._options.get("default_response") or self._options.get("default")
+        )
         self._rules = self._normalize_config(raw)
+
+    def normalize_response(
+        self, value: Any, *, fallback: CanonicalPermission = "reject"
+    ) -> CanonicalPermission:
+        return normalize_permission_response(value, fallback=fallback)
+
+    def resolve_decision(self, value: Any) -> PermissionResolution:
+        return resolve_permission_decision(value)
+
+    def resolve_responses(
+        self,
+        response: Any,
+        responses: Any,
+        requested_ids: Sequence[str] = (),
+        missing_response: CanonicalPermission = "reject",
+    ) -> CanonicalPermission:
+        return resolve_permission_responses(
+            response, responses, requested_ids, missing_response
+        )
+
+    def normalize_responses(self, responses: Mapping[str, Any]) -> dict[str, Any]:
+        return normalize_permission_responses(responses)
+
+    def request_item_ids(self, request: Any) -> tuple[str, ...]:
+        return permission_item_ids(request)
+
+    def default_response(
+        self, config: Mapping[str, Any] | None = None
+    ) -> CanonicalPermission:
+        if config is None:
+            return self._default_response  # type: ignore[return-value]
+        raw = dict(config)
+        permissions = raw.get("permissions")
+        if isinstance(permissions, Mapping):
+            raw = dict(permissions)
+        options = self._extract_options(raw)
+        return self._coerce_response(
+            options.get("default_response") or options.get("default")
+        )  # type: ignore[return-value]
+
+    def permission_mode_overrides(self, mode: str) -> dict[str, Any]:
+        if self.is_interactive_mode(mode):
+            return {
+                "permissions.options.mode": "prompt",
+                "permissions.options.default_response": "reject",
+                "permissions.edit.default": "ask",
+                "permissions.shell.default": "ask",
+                "permissions.webfetch.default": "ask",
+                "permissions.read.default": "ask",
+            }
+        return {}
+
+    def is_interactive_mode(self, mode: str) -> bool:
+        return str(mode or "").strip().lower() in {"prompt", "ask", "interactive"}
+
+    def load_rules(self, workspace_dir: Path) -> list[Any]:
+        from .rules_store import load_permission_rules
+
+        return load_permission_rules(workspace_dir)
+
+    def build_rule_overrides(
+        self, config: Mapping[str, Any], rules: Iterable[Any]
+    ) -> dict[str, Any]:
+        from .rules_store import build_permission_overrides
+
+        return build_permission_overrides(dict(config), list(rules))
+
+    def update_rule(
+        self,
+        workspace_dir: Path | str,
+        *,
+        category: str,
+        pattern: str,
+        decision: str,
+        scope: str = "project",
+    ) -> bool:
+        from .rules_store import upsert_permission_rule
+
+        try:
+            return upsert_permission_rule(
+                Path(workspace_dir),
+                category=category,
+                pattern=pattern,
+                decision=decision,
+                scope=scope,
+            )
+        except OSError:
+            return False
+
+    def allows(self, call: Any) -> bool:
+        action = self.decide(call)
+        return action is None or action == "allow" or (
+            action == "ask" and self._auto_allow
+        )
 
     @staticmethod
     def _extract_options(raw: Dict[str, Any]) -> Dict[str, Any]:
@@ -64,14 +191,11 @@ class PermissionBroker:
 
     @staticmethod
     def _coerce_response(value: Any) -> str:
-        text = str(value or "").strip().lower()
-        if text in {"allow", "approve", "approved", "ok", "okay", "yes", "y"}:
-            return "once"
-        if text in {"deny", "denied", "no", "n"}:
-            return "reject"
-        if text in {"once", "always", "reject"}:
-            return text
-        return "reject"
+        return normalize_permission_response(value)
+
+    def normalize_request(self, call: Any) -> Optional[PermissionRequest]:
+        return self._build_request(call)
+
 
     @staticmethod
     def _wildcard_match(value: str, pattern: str) -> bool:

@@ -91,11 +91,11 @@
       "sha256": "sha256:0ea7a122ae37ea35ef3c575dfa23418fe45a75b29f063bebce105098a0a24716"
     },
     {
-      "bytes": 241946,
+      "bytes": 236753,
       "exists": true,
       "path": "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:d7c709776a7bb8e2629e6816f6e7121d760db5b8a2c181c14e874a376b2f4bfd"
+      "sha256": "sha256:bd3ddd143958d19266855c49d4cdfbdf7275fed63215a8aede44e65337121099"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json",

@@ -27,7 +27,7 @@ try:
     from scripts.e4_parity import catalog_refs
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     import catalog_refs
-from agentic_coder_prototype.conformance.catalog_binding import stable_entries
+from breadboard_engine.conformance.catalog_binding import stable_entries
 
 
 
