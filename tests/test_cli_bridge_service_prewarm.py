@@ -1448,7 +1448,7 @@ async def test_failed_durable_reconfigure_rolls_back_runtime_mutation(
 ) -> None:
     service, response, record = await _create(monkeypatch, tmp_path, task="")
     runner = record.runner
-    calls = []
+    calls, replacements = [], []
     runtime_config = runner.current_runtime_config()
     runtime_config["providers"].pop("default_model", None)
     runtime_config.pop("mode", None)
@@ -1462,6 +1462,12 @@ async def test_failed_durable_reconfigure_rolls_back_runtime_mutation(
             updated = apply_dotted_overrides(self.config, overrides)
             self.config.clear()
             self.config.update(updated)
+            return True
+
+        def replace_runtime_config(self, config):
+            replacements.append(copy.deepcopy(config))
+            self.config.clear()
+            self.config.update(copy.deepcopy(config))
             return True
 
     runner._agent = ActiveAgent(runtime_config)
@@ -1483,10 +1489,10 @@ async def test_failed_durable_reconfigure_rolls_back_runtime_mutation(
     assert [event.kind for event in record.product_session.events] == [
         "session.started"
     ]
-    assert len(calls) == 2
+    assert len(calls) == 1
+    assert replacements == [before_config]
+    assert runner._agent.config == before_config
     if command == "set_model":
-        assert calls[-1]["providers"] == before_config["providers"]
-        assert "providers.default_model" not in calls[-1]
         assert "default_model" not in runner._agent.config["providers"]
     if command == "set_mode":
         record.product_session._sink = sink

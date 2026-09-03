@@ -196,10 +196,16 @@ class SessionControlController:
         if isinstance(agent_config, Mapping) and isinstance(
             current_agent_config, dict
         ):
+            replace_runtime_config = getattr(
+                runner._agent, "replace_runtime_config", None
+            )
             apply_runtime_overrides = getattr(
                 runner._agent, "apply_runtime_overrides", None
             )
-            if callable(apply_runtime_overrides):
+            if callable(replace_runtime_config):
+                if replace_runtime_config(copy.deepcopy(dict(agent_config))) is False:
+                    raise RuntimeError("failed to restore live runtime configuration")
+            elif callable(apply_runtime_overrides):
                 previous_config = snapshot["runtime_config"]
                 previous_skills = previous_config.get("skills")
                 previous_providers = previous_config.get("providers")
@@ -233,7 +239,7 @@ class SessionControlController:
                 previous_role = previous_config.get("active_model_role")
                 if isinstance(previous_role, str) and previous_role.strip():
                     runtime_rollback["active_model_role"] = previous_role
-                try:
+                if (
                     runner._rollback_runtime_overrides(
                         runtime_rollback,
                         (
@@ -242,8 +248,9 @@ class SessionControlController:
                             previous_skills,
                         ),
                     )
-                except Exception:
-                    logger.exception("Failed to restore live runtime configuration")
+                    is False
+                ):
+                    raise RuntimeError("failed to restore live runtime configuration")
             current_agent_config.clear()
             current_agent_config.update(copy.deepcopy(agent_config))
         runner.request.overrides = copy.deepcopy(snapshot["request_overrides"])

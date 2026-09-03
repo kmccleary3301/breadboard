@@ -686,6 +686,21 @@ def test_conductor_refreshes_cached_lock_and_role_on_runtime_override() -> None:
     assert conductor._active_model_role == "slow"
     assert conductor._locked_target_for_role()["route_id"] == "mock/slow-new"
 
+def test_conductor_runtime_config_replacement_removes_absent_keys() -> None:
+    conductor = _conductor(
+        {
+            "mode": "plan",
+            "providers": {"default_model": "mock/new"},
+            "active_model_role": "slow",
+        }
+    )
+    replacement = {"providers": {}}
+
+    assert conductor.replace_config(replacement) is True
+    assert conductor.config == replacement
+    assert conductor._model_role_lock is None
+    assert conductor._active_model_role == ""
+
 
 def test_subagent_dispatch_uses_explicit_task_or_inherits_active_role() -> None:
     inherited_document = _document()
