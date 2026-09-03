@@ -177,6 +177,7 @@ class SessionRunner:
             workspace,
             product_session,
             expected_session_directory_identity=expected_session_directory_identity,
+            allow_existing=True,
         )
         self.artifacts.authorize_manifest(
             workspace,
@@ -440,7 +441,6 @@ class SessionRunner:
             raise RuntimeError("attachments do not match the admitted turn")
         with self._product_session_lock:
             selected_artifacts = self.artifacts.selected_artifacts(attachment_ids)
-            content = self._sanitize_interactive_input_content(content)
             payload = {
                 "content": content,
                 "attachments": attachment_ids,

@@ -1677,6 +1677,7 @@ def create_session(
     event_path: Path | None = None,
     *,
     expected_session_directory_identity: SessionDirectoryIdentity | None = None,
+    allow_existing: bool = False,
 ) -> tuple[Session, Path]:
     """Atomically claim a new session id and publish its first projection."""
     session_id = session.read_model.session_id
@@ -1695,11 +1696,25 @@ def create_session(
         if collision is not None:
             raise ValueError(f"session id collides with existing session: {collision}")
         try:
-            _load_anchored(root, session_id)
+            existing_session, existing_event_path = _load_anchored(root, session_id)
         except FileNotFoundError:
             pass
         else:
-            raise ValueError(f"session already exists: {session_id}")
+            if not allow_existing:
+                raise ValueError(f"session already exists: {session_id}")
+            if (
+                expected_session_directory_identity is not None
+                and session_directory_identity(root)
+                != expected_session_directory_identity
+            ):
+                raise OSError("durable session directory identity changed")
+            if (
+                existing_session.events != session.events
+                or existing_session.read_model.as_dict()
+                != session.read_model.as_dict()
+            ):
+                raise ValueError("durable session projection diverges")
+            return existing_session, existing_event_path
         published_path = _persist_session_locked(
             root,
             session,

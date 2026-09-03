@@ -1046,6 +1046,47 @@ async def test_sanitized_input_is_staged_before_registry_persistence(
         "sha256:" + hashlib.sha256(b"world").hexdigest()
     )
     assert len(deferred) == 1
+@pytest.mark.asyncio
+async def test_input_normalization_is_applied_once_for_two_prior_prefixes(
+    tmp_path: Path,
+) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-two-prefix-admission",
+        status=SessionStatus.RUNNING,
+    )
+    record.product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}),
+        "two-prefix admission",
+        session_id=record.session_id,
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    runner._accepted_task_texts = ["alpha", "beta"]
+    record.runner = runner
+    await registry.create(record)
+    deferred: list[Any] = []
+
+    receipt = await SessionService(registry=registry).send_input(
+        record.session_id,
+        SessionInputRequest(
+            content="alphabeta new",
+            client_message_id="client-two-prefix",
+        ),
+        defer_execution=deferred.append,
+    )
+
+    assert record.turns_by_id[receipt.turn_id].content == "beta new"
+    assert len(deferred) == 1
+    await deferred[0]()
+    queued = await runner._input_queue.get()
+    assert queued["content"] == "beta new"
 
 @pytest.mark.asyncio
 async def test_terminal_product_session_rejects_before_durable_admission(

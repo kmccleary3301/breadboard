@@ -1315,6 +1315,188 @@ async def test_image_attachment_becomes_first_class_model_input(
 
     await service.stop_session(response.session_id)
     await _stop(record)
+
+@pytest.mark.asyncio
+async def test_terminal_recovery_accepts_identical_projection_and_rejects_divergence(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    event_root = workspace / ".breadboard" / "sessions"
+    state_root = tmp_path / "state"
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    initial_service = SessionService(state_root=state_root)
+    response = await initial_service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="publish the terminal projection",
+            workspace=str(workspace),
+        ),
+        session_id="idempotent-terminal-publication",
+        event_root=event_root,
+    )
+    initial = await initial_service.ensure_session(response.session_id)
+    initial.product_session.complete()
+    initial.runner._commit_terminal_product_session_locked()
+    await initial_service.registry.persist(initial)
+
+    recovered_service = SessionService(state_root=state_root)
+    recovered = await recovered_service.ensure_session(response.session_id)
+
+    assert recovered.status is SessionStatus.COMPLETED
+    durable, _ = session_store.load_session(workspace, response.session_id)
+    assert durable.read_model.status == "completed"
+    divergent = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}),
+        "different task",
+        session_id=response.session_id,
+    )
+    divergent.complete("different summary")
+    with pytest.raises(ValueError, match="durable session projection diverges"):
+        session_store.create_session(
+            workspace,
+            divergent,
+            allow_existing=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_legacy_retained_record_derives_workspace_event_root(
+    monkeypatch, tmp_path
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    event_root = workspace / ".breadboard" / "sessions"
+    state_root = tmp_path / "state"
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    initial_service = SessionService(state_root=state_root)
+    response = await initial_service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="legacy workspace journal",
+            workspace=str(workspace),
+        ),
+        session_id="legacy-workspace-root",
+        event_root=event_root,
+    )
+    initial = await initial_service.ensure_session(response.session_id)
+    initial.metadata.pop("session_event_root", None)
+    await initial_service.registry.persist(initial)
+    await _stop(initial)
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "wrong-root"))
+
+    recovered = await SessionService(state_root=state_root).ensure_session(
+        response.session_id
+    )
+
+    assert recovered.product_session.read_model.status == "running"
+    assert recovered.loaded_from_retained_state is False
+
+
+@pytest.mark.asyncio
+async def test_recovered_attachment_restores_descriptor_and_media(
+    monkeypatch, tmp_path
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    event_root = workspace / ".breadboard" / "sessions"
+    state_root = tmp_path / "state"
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    initial_service = SessionService(state_root=state_root)
+    response = await initial_service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="retain attachment descriptor",
+            workspace=str(workspace),
+        ),
+        session_id="retained-attachment-descriptor",
+        event_root=event_root,
+    )
+    initial = await initial_service.ensure_session(response.session_id)
+    upload = _Upload()
+    upload.filename = "retained.png"
+    upload.content_type = "image/png"
+    upload.data = b"\x89PNG\r\n\x1a\nretained"
+    uploaded = await initial_service.upload_attachments(
+        response.session_id,
+        [upload],
+    )
+    await initial_service.registry.persist(initial)
+    await _stop(initial)
+
+    recovered = await SessionService(state_root=state_root).ensure_session(
+        response.session_id
+    )
+    attachment_id = uploaded.attachments[0].id
+    helper = recovered.runner._format_attachment_helper([attachment_id])
+
+    assert "retained.png" in helper
+    assert recovered.runner._active_input_media == [
+        {
+            "type": "media",
+            "kind": "image",
+            "uri": (
+                f"attachment://"
+                f"{recovered.runner.artifacts.artifact_refs()[attachment_id].digest}"
+            ),
+            "mime": "image/png",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_upload_rolls_back_when_registry_persistence_fails(
+    monkeypatch, tmp_path
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state_root = tmp_path / "state"
+    event_root = tmp_path / "events"
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(event_root))
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="rollback failed upload",
+            workspace=str(workspace),
+        ),
+        session_id="rollback-upload",
+        event_root=event_root,
+    )
+    record = await service.ensure_session(response.session_id)
+    metadata_before = dict(record.metadata)
+    real_persist = service.registry.persist
+
+    async def fail_persist(_record) -> None:
+        raise OSError("registry persistence unavailable")
+
+    monkeypatch.setattr(service.registry, "persist", fail_persist)
+    with pytest.raises(OSError, match="registry persistence unavailable"):
+        await service.upload_attachments(response.session_id, [_Upload()])
+
+    attachments_root = workspace / ".breadboard" / "attachments"
+    manifests_root = workspace / ".breadboard" / "artifacts" / "manifests"
+    assert record.metadata == metadata_before
+    assert dict(record.runner.artifacts.artifact_refs()) == {}
+    assert not list(attachments_root.iterdir()) if attachments_root.exists() else True
+    assert not list(manifests_root.iterdir()) if manifests_root.exists() else True
+    restored = await service.registry.get(response.session_id)
+    assert restored is not None
+    assert "artifact_manifest_ref" not in restored.metadata
+    monkeypatch.setattr(service.registry, "persist", real_persist)
+
+    retry = await service.upload_attachments(response.session_id, [_Upload()])
+    assert len(retry.attachments) == 1
+    assert len(record.runner.artifacts.artifact_refs()) == 1
+    await _stop(record)
 @pytest.mark.asyncio
 async def test_attachment_size_limit_is_rejected_before_durable_input(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(monkeypatch, tmp_path, workspace=str(tmp_path / "workspace"))

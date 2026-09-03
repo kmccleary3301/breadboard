@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import uuid
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Dict, Mapping, Optional, Sequence
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence
 
 from fastapi import HTTPException, UploadFile, status
 
@@ -290,9 +291,35 @@ class SessionArtifactStore:
             for *_, candidate in candidates
         ):
             raise ValueError("retained attachment manifests do not form one history")
+        workspace_root = workspace.resolve()
+        attachment_root = workspace_root / ".breadboard" / "attachments"
+        attachment_entries: Dict[str, Dict[str, Any]] = {}
+        for attachment_id in selected:
+            attachment_dir = attachment_root / attachment_id
+            try:
+                directory_stat = attachment_dir.stat(follow_symlinks=False)
+                children = tuple(attachment_dir.iterdir())
+            except FileNotFoundError as exc:
+                raise ValueError("retained attachment materialization is missing") from exc
+            if not stat.S_ISDIR(directory_stat.st_mode) or len(children) != 1:
+                raise ValueError("invalid retained attachment materialization")
+            materialized = children[0]
+            try:
+                materialized_stat = materialized.stat(follow_symlinks=False)
+            except FileNotFoundError as exc:
+                raise ValueError("retained attachment materialization is missing") from exc
+            if not stat.S_ISREG(materialized_stat.st_mode):
+                raise ValueError("invalid retained attachment materialization")
+            attachment_entries[attachment_id] = {
+                "id": attachment_id,
+                "filename": materialized.name,
+                "absolute_path": str(materialized),
+                "relative_path": str(materialized.relative_to(workspace_root)),
+                "metadata": {},
+            }
+        self._attachment_entries = attachment_entries
         self.metadata["artifact_manifest_ref"] = selected_ref.as_dict()
         self._artifact_refs = selected
-
 
     def authorize_manifest(
         self,
@@ -319,6 +346,7 @@ class SessionArtifactStore:
         *,
         workspace_dir: Path,
         metadata: Optional[dict[str, Any]] = None,
+        persist: Callable[[], Awaitable[None]] | None = None,
     ) -> AttachmentUploadResponse:
         if not files:
             raise HTTPException(
@@ -366,6 +394,11 @@ class SessionArtifactStore:
         artifact_fd = attachment_fd = None
         artifact_root, attachment_root = anchor / "artifacts", anchor / "attachments"
         artifact_refs = dict(self._artifact_refs)
+        artifact_refs_before = dict(self._artifact_refs)
+        metadata_before = {
+            key: (key in self.metadata, self.metadata.get(key))
+            for key in ("artifact_manifest", "artifact_manifest_ref")
+        }
         manifest_path: Path | None = None
         manifest_fd = None
         manifest_name = None
@@ -483,6 +516,11 @@ class SessionArtifactStore:
                         detail="workspace metadata path changed",
                     )
                 self.register_attachments(attachment_entries)
+                self._artifact_refs = artifact_refs
+                self.metadata["artifact_manifest"] = manifest
+                self.metadata["artifact_manifest_ref"] = manifest_ref.as_dict()
+                if persist is not None:
+                    await persist()
             except BaseException:
                 if attachment_fd is not None:
                     for name in created_dirs:
@@ -549,6 +587,12 @@ class SessionArtifactStore:
                         ) if parent.is_dir() else None
                 for artifact_ref in created_refs:
                     artifact_store.discard(artifact_ref)
+                self._artifact_refs = artifact_refs_before
+                for key, (present, value) in metadata_before.items():
+                    if present:
+                        self.metadata[key] = value
+                    else:
+                        self.metadata.pop(key, None)
                 self._attachment_entries = registered_before
                 raise
         finally:
@@ -575,9 +619,4 @@ class SessionArtifactStore:
         except FileNotFoundError:
             # Live bridge sessions have no durable product projection yet.
             pass
-        self._artifact_refs = artifact_refs
-        (
-            self.metadata["artifact_manifest"],
-            self.metadata["artifact_manifest_ref"],
-        ) = manifest, manifest_ref.as_dict()
         return AttachmentUploadResponse(attachments=handles)

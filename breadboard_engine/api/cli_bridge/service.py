@@ -1284,11 +1284,31 @@ class SessionService:
             return
         metadata = dict(record.metadata or {})
         recorded_event_root = metadata.get(_SESSION_EVENT_ROOT_METADATA_KEY)
-        retained_event_root = (
-            Path(recorded_event_root).expanduser().resolve()
-            if isinstance(recorded_event_root, str) and recorded_event_root.strip()
-            else _event_root(self._managed_state_paths)
+        recorded_workspace = metadata.get("workspace")
+        retained_workspace = (
+            Path(recorded_workspace).expanduser().resolve()
+            if isinstance(recorded_workspace, str) and recorded_workspace.strip()
+            else None
         )
+        if (
+            not isinstance(recorded_event_root, str)
+            or not recorded_event_root.strip()
+        ) and retained_workspace is not None:
+            workspace_event_root = session_event_path(
+                retained_workspace,
+                record.session_id,
+            ).parent.parent.resolve()
+            if (workspace_event_root / record.session_id / "session_events.jsonl").is_file():
+                retained_event_root = workspace_event_root
+            else:
+                retained_event_root = _event_root(self._managed_state_paths)
+        else:
+            retained_event_root = (
+                Path(recorded_event_root).expanduser().resolve()
+                if isinstance(recorded_event_root, str)
+                and recorded_event_root.strip()
+                else _event_root(self._managed_state_paths)
+            )
         record.product_session = _restore_product_session(
             record.session_id,
             self._managed_state_paths,
@@ -2092,10 +2112,14 @@ class SessionService:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, detail="workspace not ready"
                 )
+            async def persist_upload() -> None:
+                await self.registry.persist(record)
+
             return await runner.artifacts.upload(
                 files,
                 workspace_dir=workspace_dir,
                 metadata=metadata,
+                persist=persist_upload,
             )
 
 
