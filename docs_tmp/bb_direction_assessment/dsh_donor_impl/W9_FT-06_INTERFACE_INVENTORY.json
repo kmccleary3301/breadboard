@@ -7783,223 +7783,6 @@
     },
     "source_signals": [
       {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/attr/_compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/charset_normalizer/legacy.py",
-        "signals": [
-          "compat",
-          "deprecated",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/click/_compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/fastapi/_compat/__init__.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/fastapi/_compat/shared.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/fastapi/_compat/v2.py",
-        "signals": [
-          "compat",
-          "deprecated"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/idna/compat.py",
-        "signals": [
-          "compat",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/jsonschema/_legacy_keywords.py",
-        "signals": [
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/openai/_compat.py",
-        "signals": [
-          "compat",
-          "deprecated"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/openai/_legacy_response.py",
-        "signals": [
-          "deprecated",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/openai/_utils/_compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/__init__.py",
-        "signals": [
-          "deprecated"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/class_validators.py",
-        "signals": [
-          "deprecated"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/config.py",
-        "signals": [
-          "compat",
-          "deprecated"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/copy_internals.py",
-        "signals": [
-          "deprecated"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/decorator.py",
-        "signals": [
-          "deprecated"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/json.py",
-        "signals": [
-          "deprecated"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/parse.py",
-        "signals": [
-          "deprecated"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/tools.py",
-        "signals": [
-          "deprecated"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_common/pydantic_compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/async_compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/protobuf_compat.py",
-        "signals": [
-          "compat",
-          "deprecated"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/runtime_env/agent/thirdparty_files/attr/_compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/runtime_env/agent/thirdparty_files/idna/compat.py",
-        "signals": [
-          "compat",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/runtime_env/agent/thirdparty_files/multidict/_compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/thirdparty/pathspec/compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/autoscaler/_private/legacy_info_string.py",
-        "signals": [
-          "compat",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/cloudpickle/compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/data/_internal/datasource/_lerobot_compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/rllib/env/wrappers/multi_agent_env_compatibility.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/rllib/utils/metrics/legacy_stats.py",
-        "signals": [
-          "compat",
-          "deprecated",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/requests/compat.py",
-        "signals": [
-          "compat",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/.venv/lib/python3.13/site-packages/uvicorn/_compat.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
         "path": "engine_root/breadboard/lsp_manager_basic_legacy.py",
         "signals": [
           "legacy"
@@ -9054,16 +8837,20 @@
       ".hg",
       ".mypy_cache",
       ".next",
+      ".nox",
       ".pytest_cache",
       ".ruff_cache",
       ".svn",
+      ".tox",
+      ".venv",
       "__pycache__",
       "build",
       "dist",
       "generated",
       "node_modules",
       "target",
-      "vendor"
+      "vendor",
+      "venv"
     ],
     "owner_sources": "registry consumer references plus static top-level declarations",
     "schema_sources": "kernel and public schema JSON files with schema_lifecycle and contract_tiers references",
@@ -20237,8 +20024,18 @@
     }
   },
   "tui_consumers": {
-    "consumer_count": 118,
+    "consumer_count": 124,
     "files": [
+      {
+        "matched_tokens": [
+          "SessionSummary"
+        ],
+        "path": "engine_root/tui_skeleton/src/cache/sessionCache.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
+        ]
+      },
       {
         "matched_tokens": [
           "assistant.message.delta",
@@ -20279,6 +20076,7 @@
       {
         "matched_tokens": [
           "ApiError",
+          "ProviderAuthStatusResponse",
           "createApiClient"
         ],
         "path": "engine_root/tui_skeleton/src/commands/auth.ts",
@@ -20292,6 +20090,26 @@
           "ApiError"
         ],
         "path": "engine_root/tui_skeleton/src/commands/commandRuntime.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "HealthResponse"
+        ],
+        "path": "engine_root/tui_skeleton/src/commands/doctor.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "SessionFileInfo"
+        ],
+        "path": "engine_root/tui_skeleton/src/commands/files.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "sdk-export"
@@ -20335,6 +20153,7 @@
       {
         "matched_tokens": [
           "SessionEvent",
+          "SessionSummary",
           "assistant_message",
           "completion",
           "error",
@@ -20389,8 +20208,7 @@
       {
         "matched_tokens": [
           "completion",
-          "ctree_node",
-          "error"
+          "ctree_node"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerCtreeTranscriptNotice.test.ts",
         "root_id": "engine-tui-skeleton",
@@ -20630,7 +20448,13 @@
       {
         "matched_tokens": [
           "ApiError",
+          "CTreeTreeResponse",
+          "CTreeTreeSource",
+          "CTreeTreeStage",
+          "ReadSessionFileOptions",
           "SessionEvent",
+          "SessionFileContent",
+          "SessionFileInfo",
           "task_event"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controller.ts",
@@ -20653,7 +20477,10 @@
       },
       {
         "matched_tokens": [
-          "ApiError"
+          "ApiError",
+          "CTreeTreeResponse",
+          "CTreeTreeSource",
+          "CTreeTreeStage"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controllerEventCtree.ts",
         "root_id": "engine-tui-skeleton",
@@ -20664,6 +20491,8 @@
       {
         "matched_tokens": [
           "ApiError",
+          "CTreeNode",
+          "CTreeSnapshotSummary",
           "SessionEvent",
           "assistant.message.delta",
           "assistant.message.end",
@@ -20724,6 +20553,7 @@
         "matched_tokens": [
           "ApiError",
           "SessionEvent",
+          "SessionFileInfo",
           "task_event"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controllerStateMethods.ts",
@@ -20735,9 +20565,23 @@
       },
       {
         "matched_tokens": [
-          "ApiError"
+          "ApiError",
+          "ReadSessionFileOptions",
+          "SessionFileContent",
+          "SessionFileInfo",
+          "SessionSummary"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controllerUserMethods.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "CTreeSnapshotSummary"
+        ],
+        "path": "engine_root/tui_skeleton/src/commands/repl/controllerUtils.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "sdk-export"
@@ -20768,16 +20612,6 @@
           "tool_result"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/toolArtifactRef.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/workingTreeDiff.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "event-kind"
@@ -20822,6 +20656,17 @@
       },
       {
         "matched_tokens": [
+          "SessionSummary"
+        ],
+        "path": "engine_root/tui_skeleton/src/commands/sessions.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "AttachmentUploadPayload",
           "BreadboardClient",
           "EventStreamHandle",
           "EventStreamHandlers",
@@ -20838,7 +20683,8 @@
       },
       {
         "matched_tokens": [
-          "ApiError"
+          "ApiError",
+          "ModelCatalogEntry"
         ],
         "path": "engine_root/tui_skeleton/src/providers/modelCatalog.ts",
         "root_id": "engine-tui-skeleton",
@@ -20878,18 +20724,30 @@
       },
       {
         "matched_tokens": [
-          "error"
+          "SessionFileInfo"
         ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/useReplCommands.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
-          "event-kind"
+          "sdk-export"
         ]
       },
       {
         "matched_tokens": [
-          "completion",
-          "error"
+          "CTreeTreeNode",
+          "CTreeTreeResponse",
+          "SessionFileContent",
+          "SessionFileInfo"
+        ],
+        "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/useReplViewController.tsx",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "completion"
         ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/useReplViewScrollback.tsx",
         "root_id": "engine-tui-skeleton",
@@ -20899,23 +20757,89 @@
       },
       {
         "matched_tokens": [
-          "error"
+          "SessionFileInfo"
         ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/renderers/toolRenderer.tsx",
+        "path": "engine_root/tui_skeleton/src/repl/components/replView/features/filePicker/atCommands.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
-          "event-kind"
+          "sdk-export"
         ]
       },
       {
         "matched_tokens": [
+          "SessionFileInfo"
+        ],
+        "path": "engine_root/tui_skeleton/src/repl/components/replView/features/filePicker/types.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "SessionFileInfo"
+        ],
+        "path": "engine_root/tui_skeleton/src/repl/components/replView/features/filePicker/useFilePickerController.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "CTreeTreeResponse",
+          "SessionFileContent",
+          "SessionFileInfo"
+        ],
+        "path": "engine_root/tui_skeleton/src/repl/components/replView/replViewTypes.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "SessionFileInfo"
+        ],
+        "path": "engine_root/tui_skeleton/src/repl/components/replView/utils/format.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "CTreeNode",
+          "CTreeSnapshotSummary",
           "ctree_node",
           "ctree_snapshot"
         ],
         "path": "engine_root/tui_skeleton/src/repl/ctrees/reducer.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
-          "event-kind"
+          "event-kind",
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "CTreeTreeNode",
+          "CTreeTreeResponse"
+        ],
+        "path": "engine_root/tui_skeleton/src/repl/ctrees/treeView.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "SessionFileInfo"
+        ],
+        "path": "engine_root/tui_skeleton/src/repl/fileRanking.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "sdk-export"
         ]
       },
       {
@@ -20994,7 +20918,6 @@
           "completion",
           "ctree_node",
           "ctree_snapshot",
-          "error",
           "log_link",
           "reward_update",
           "run_finished",
@@ -21084,6 +21007,38 @@
       },
       {
         "matched_tokens": [
+          "OpenedSession",
+          "SessionId"
+        ],
+        "path": "tui_root/packages/coding-agent/src/breadboard/canonical-e4-session-port.test.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "CanonicalE4Client",
+          "CanonicalE4ClientError",
+          "OpenedSession"
+        ],
+        "path": "tui_root/packages/coding-agent/src/breadboard/canonical-e4-session-port.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "CancellationReceipt",
+          "CanonicalE4ClientError",
+          "ClientMessageId",
+          "LifecycleE4ClientError",
+          "LoggedSessionEvent",
+          "PermissionDecisionReceipt",
+          "StructuredSubmit",
+          "SubmitInput",
+          "SubmitReceipt",
           "assistant.message.delta",
           "assistant.message.end",
           "assistant.message.start",
@@ -21092,6 +21047,7 @@
           "assistant.tool_call.end",
           "assistant.tool_call.start",
           "ctree_node",
+          "decodeLoggedSessionEvent",
           "permission_request",
           "session_control",
           "stream.gap",
@@ -21106,14 +21062,21 @@
         "path": "tui_root/packages/coding-agent/src/breadboard/e4-agent-stream.test.ts",
         "root_id": "paired-coding-agent",
         "signals": [
-          "event-kind"
+          "event-kind",
+          "sdk-export"
         ]
       },
       {
         "matched_tokens": [
+          "CanonicalE4ClientError",
+          "CanonicalJsonObject",
+          "LifecycleE4ClientError",
+          "StructuredSubmit",
+          "SubmitReceipt",
           "checkpoint_restored",
-          "error",
+          "deterministicSerialize",
           "run_finished",
+          "sha256Bytes",
           "turn_cancelled",
           "turn_completed",
           "turn_failed"
@@ -21121,23 +21084,26 @@
         "path": "tui_root/packages/coding-agent/src/breadboard/e4-agent-stream.ts",
         "root_id": "paired-coding-agent",
         "signals": [
-          "event-kind"
+          "event-kind",
+          "sdk-export"
         ]
       },
       {
         "matched_tokens": [
-          "error"
+          "decodeLoggedSessionEvent"
         ],
         "path": "tui_root/packages/coding-agent/src/breadboard/engine-port.test.ts",
         "root_id": "paired-coding-agent",
         "signals": [
-          "event-kind"
+          "sdk-export"
         ]
       },
       {
         "matched_tokens": [
           "BreadboardClient",
-          "createBreadboardClient"
+          "LifecycleEngineBinding",
+          "createBreadboardClient",
+          "createCanonicalE4Client"
         ],
         "path": "tui_root/packages/coding-agent/src/breadboard/engine-port.ts",
         "root_id": "paired-coding-agent",
@@ -21180,6 +21146,64 @@
       },
       {
         "matched_tokens": [
+          "LifecycleE4Client",
+          "LifecycleE4ClientError",
+          "P30_SESSION_CONTRACT_ID",
+          "P30_SESSION_SCHEMA_SHA256",
+          "createLifecycleE4Client"
+        ],
+        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/lifecycle-production.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "BoundLifecycleE4Client",
+          "LifecycleEngineBinding"
+        ],
+        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/lifecycle-state.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "BoundLifecycleE4Client",
+          "CommitHardSignalInput",
+          "GracefulControlInput",
+          "HardSignalPermitResponse",
+          "LifecycleE4Client",
+          "LifecycleE4ClientError",
+          "LifecycleEngineBinding",
+          "PrepareHardSignalInput"
+        ],
+        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/lifecycle-supervisor.test.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "BoundLifecycleE4Client",
+          "ClientRegistrationResponse",
+          "HardSignalOutcome",
+          "HardSignalPermitResponse",
+          "LifecycleE4Client",
+          "LifecycleE4ClientError",
+          "LifecycleEngineBinding"
+        ],
+        "path": "tui_root/packages/coding-agent/src/breadboard/lifecycle/lifecycle-supervisor.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
           "ApiError",
           "BreadboardClient"
         ],
@@ -21191,22 +21215,79 @@
       },
       {
         "matched_tokens": [
-          "error"
+          "EventId",
+          "InputId",
+          "REPLAY_RETENTION_MAX_AGE_MS",
+          "REPLAY_RETENTION_MAX_EVENTS",
+          "ReplayContractDigest",
+          "SessionId",
+          "SessionSnapshot",
+          "TurnId"
         ],
         "path": "tui_root/packages/coding-agent/src/breadboard/runtime-lifecycle.test.ts",
         "root_id": "paired-coding-agent",
         "signals": [
-          "event-kind"
+          "sdk-export"
         ]
       },
       {
         "matched_tokens": [
+          "REDACTED_VALUE",
+          "detectSensitiveValues",
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/breadboard/runtime.ts",
         "root_id": "paired-coding-agent",
         "signals": [
-          "event-kind"
+          "event-kind",
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "EventId",
+          "REPLAY_RETENTION_MAX_AGE_MS",
+          "REPLAY_RETENTION_MAX_EVENTS",
+          "ReplayContractDigest",
+          "SessionId",
+          "SessionSnapshot"
+        ],
+        "path": "tui_root/packages/coding-agent/src/breadboard/session-binding.test.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "SessionSnapshot"
+        ],
+        "path": "tui_root/packages/coding-agent/src/breadboard/session-binding.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "AttachSessionRequest",
+          "CancelReceipt",
+          "CancelTurnRequest",
+          "CreateSessionRequest",
+          "LoggedSessionEvent",
+          "ObserveEvents",
+          "PermissionDecisionReceipt",
+          "RespondPermissionRequest",
+          "SessionId",
+          "SessionSnapshot",
+          "SubmitReceipt",
+          "SubmitTextTurn",
+          "TurnId"
+        ],
+        "path": "tui_root/packages/coding-agent/src/breadboard/session-port.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "sdk-export"
         ]
       },
       {
@@ -21224,16 +21305,6 @@
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/cli/dry-balance-cli.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/debug/log-viewer.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21262,8 +21333,7 @@
       {
         "matched_tokens": [
           "tool_call",
-          "tool_result",
-          "warning"
+          "tool_result"
         ],
         "path": "tui_root/packages/coding-agent/src/extensibility/extensions/runner.ts",
         "root_id": "paired-coding-agent",
@@ -21330,9 +21400,7 @@
       },
       {
         "matched_tokens": [
-          "error",
-          "tool_result",
-          "warning"
+          "tool_result"
         ],
         "path": "tui_root/packages/coding-agent/src/extensibility/legacy-pi-coding-agent-shim.ts",
         "root_id": "paired-coding-agent",
@@ -21366,57 +21434,7 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/live/protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/live/transport.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/main.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mnemopi/embed-protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/mnemopi/embed-worker.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/acp/acp-agent.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21434,31 +21452,9 @@
       },
       {
         "matched_tokens": [
-          "completion",
-          "error"
+          "completion"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/controllers/event-controller.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "warning"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/controllers/extension-ui-controller.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/print-mode.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21530,36 +21526,6 @@
       },
       {
         "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/stt/asr-protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/stt/asr-worker.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/subprocess/worker-client.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "tool_call",
           "turn_start"
         ],
@@ -21591,8 +21557,7 @@
       },
       {
         "matched_tokens": [
-          "completion",
-          "error"
+          "completion"
         ],
         "path": "tui_root/packages/coding-agent/src/tiny/title-protocol.ts",
         "root_id": "paired-coding-agent",
@@ -21602,8 +21567,7 @@
       },
       {
         "matched_tokens": [
-          "completion",
-          "error"
+          "completion"
         ],
         "path": "tui_root/packages/coding-agent/src/tiny/worker.ts",
         "root_id": "paired-coding-agent",
@@ -21635,36 +21599,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/tts/tts-protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tts/tts-worker.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/codex.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/web/search/providers/perplexity.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -21674,7 +21608,7 @@
     ],
     "roots": [
       {
-        "consumer_count": 58,
+        "consumer_count": 69,
         "exists": true,
         "files_scanned": 365,
         "root": "engine_root/tui_skeleton/src",
@@ -21688,7 +21622,7 @@
         "root_id": "paired-agent"
       },
       {
-        "consumer_count": 55,
+        "consumer_count": 50,
         "exists": true,
         "files_scanned": 1352,
         "root": "tui_root/packages/coding-agent/src",

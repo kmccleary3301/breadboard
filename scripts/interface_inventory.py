@@ -31,6 +31,10 @@ EXCLUDED_PARTS = frozenset(
         ".pytest_cache",
         ".mypy_cache",
         ".ruff_cache",
+        ".nox",
+        ".tox",
+        ".venv",
+        "venv",
         "node_modules",
         "vendor",
         "dist",
@@ -521,14 +525,7 @@ def _event_pattern(token: str) -> re.Pattern[str]:
         r"|\s*\[\s*['\"](?:type|kind|event_type|eventType|event_kind|eventKind)['\"]\s*\])"
     )
     return re.compile(
-        rf"(?:"
-        rf"\b(?:type|kind|event|event_type|eventType|event_kind|eventKind)\s*[:=]\s*{quoted}"
-        rf"|"
         rf"\b{discriminator}\s*(?:===|!==|==|!=)\s*{quoted}"
-        rf"|"
-        rf"\b(?:type|kind|event_type|eventType|event_kind|eventKind)\s*"
-        rf"(?:===|!==|==|!=)\s*{quoted}"
-        rf")"
     )
 
 
@@ -687,7 +684,7 @@ def _switch_case_event_matches(text: str, event_tokens: set[str]) -> set[str]:
     return matches
 
 
-def _sdk_imported_exports(text: str, export_names: set[str]) -> set[str]:
+def _sdk_imported_exports(text: str) -> set[str]:
     imported: set[str] = set()
     import_pattern = re.compile(
         r"\b(?:import|export)\s+(?:type\s+)?\{(?P<body>.*?)\}\s+from\s+"
@@ -703,7 +700,7 @@ def _sdk_imported_exports(text: str, export_names: set[str]) -> set[str]:
                 continue
             imported_name = re.split(r"\s+as\s+", fragment)[0].strip()
             imported_name = imported_name.removeprefix("type ").strip()
-            if imported_name in export_names:
+            if re.fullmatch(r"[A-Za-z_$][\w$]*", imported_name):
                 imported.add(imported_name)
     namespace_pattern = re.compile(
         r"\bimport\s+\*\s+as\s+(?P<alias>[A-Za-z_$][\w$]*)\s+from\s+"
@@ -713,7 +710,11 @@ def _sdk_imported_exports(text: str, export_names: set[str]) -> set[str]:
         if SDK_MODULE_RE.match(match.group("module")):
             alias = re.escape(match.group("alias"))
             imported.update(
-                name for name in export_names if re.search(rf"\b{alias}\.{re.escape(name)}\b", text)
+                member.group(1)
+                for member in re.finditer(
+                    rf"\b{alias}\.([A-Za-z_$][\w$]*)",
+                    text,
+                )
             )
     return imported
 
@@ -723,18 +724,12 @@ def _tui_consumers(
     tui_root: Path,
     event_rows: Sequence[Mapping[str, Any]],
     schema_rows: Sequence[Mapping[str, Any]],
-    sdk_exports: Mapping[str, Any],
 ) -> dict[str, Any]:
     event_tokens = {
         str(row["id"]) for row in event_rows if isinstance(row.get("id"), str)
     }
     schema_tokens = {
         str(row["id"]) for row in schema_rows if isinstance(row.get("id"), str)
-    }
-    sdk_export_names = {
-        str(row["name"])
-        for row in sdk_exports["typescript"]["exports"]
-        if isinstance(row.get("name"), str)
     }
     schema_patterns = {
         token: re.compile(rf"""['"`]{re.escape(token)}['"`]""")
@@ -757,7 +752,7 @@ def _tui_consumers(
             for path in _iter_files(root, TS_SUFFIXES):
                 root_row["files_scanned"] += 1
                 text = path.read_text(encoding="utf-8", errors="replace")
-                imported_exports = _sdk_imported_exports(text, sdk_export_names)
+                imported_exports = _sdk_imported_exports(text)
                 switch_events = _switch_case_event_matches(text, event_tokens)
                 matched_events = {
                     token for token, pattern in event_patterns.items() if pattern.search(text)
@@ -978,7 +973,7 @@ def inventory(engine_root: str | Path, tui_root: str | Path) -> dict[str, Any]:
     events = _event_rows(registry_entries, engine)
     owners = _owner_rows(engine, registry_entries)
     sdk_exports = _sdk_exports(engine)
-    tui_consumers = _tui_consumers(engine, tui, events, schemas, sdk_exports)
+    tui_consumers = _tui_consumers(engine, tui, events, schemas)
     compatibility_surfaces = _compatibility(engine, tui, registry_entries)
     projections = [
         {

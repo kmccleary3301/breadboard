@@ -129,7 +129,7 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
     tui_source = tui / "packages" / "coding-agent" / "src" / "consumer.ts"
     tui_source.parent.mkdir(parents=True)
     tui_source.write_text(
-        "import { ApiError } from '@breadboard/sdk'\n"
+        "import { ApiError, SessionSummary } from '@breadboard/sdk'\n"
         "export const eventKind = 'tool_result';\n"
         "function render(event: { type: string }) {\n"
         "  switch (event.type) {\n"
@@ -139,7 +139,7 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
         + "    default: return 'ok';\n"
         + "  }\n"
         + "}\n"
-        + "void ApiError;\n",
+        + "void ApiError;\nvoid SessionSummary;\n",
         encoding="utf-8",
     )
     unrelated_switch = tui_source.parent / "unrelated-switch.ts"
@@ -175,12 +175,27 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
         "}\n",
         encoding="utf-8",
     )
+    (tui_source.parent / "unrelated-kind.ts").write_text(
+        "const result = { kind: 'error' };\n"
+        "if (result.kind === 'error') throw new Error('failed');\n",
+        encoding="utf-8",
+    )
     generated_source = tui_source.parent / "generated" / "generated.ts"
     generated_source.parent.mkdir(parents=True)
     generated_source.write_text(
         "export const generatedEvent = 'tool_result';\n",
         encoding="utf-8",
     )
+    virtual_source = (
+        engine
+        / ".venv"
+        / "lib"
+        / "python3.13"
+        / "site-packages"
+        / "legacy_dependency.py"
+    )
+    virtual_source.parent.mkdir(parents=True)
+    virtual_source.write_text("legacy compatibility shim\n", encoding="utf-8")
     test_source = engine / "tests" / "test_reconfigure.py"
     test_source.parent.mkdir(parents=True)
     test_source.write_text("durable_reconfigure = None\n", encoding="utf-8")
@@ -207,7 +222,9 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     assert first["tui_consumers"]["consumer_count"] == 3
     consumer_rows = first["tui_consumers"]["files"]
     consumer = next(row for row in consumer_rows if row["path"].endswith("consumer.ts"))
-    assert {"ApiError", "tool_result", "error", "warning"} <= set(consumer["matched_tokens"])
+    assert {"ApiError", "SessionSummary", "tool_result", "error", "warning"} <= set(
+        consumer["matched_tokens"]
+    )
     consumer_text = (tui / "packages" / "coding-agent" / "src" / "consumer.ts").read_text()
     assert len(consumer_text.split("case 'error':", 1)[0]) > 320
     unrelated = next(row for row in consumer_rows if row["path"].endswith("unrelated-switch.ts"))
@@ -215,8 +232,13 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     alias = next(row for row in consumer_rows if row["path"].endswith("alias-switch.ts"))
     assert alias["matched_tokens"] == ["error", "warning"]
     assert not any(row["path"].endswith("sdk-tools.ts") for row in consumer_rows)
+    assert not any(row["path"].endswith("unrelated-kind.ts") for row in consumer_rows)
     assert not any("generated/" in row["path"] for row in consumer_rows)
     assert not any(row["path"].startswith("engine_root/tests/") for row in first["compatibility_surfaces"]["reconfiguration"])
+    assert not any(
+        ".venv/" in row["path"]
+        for row in first["compatibility_surfaces"]["source_signals"]
+    )
     frozen = next(
         row
         for row in first["compatibility_surfaces"]["public_catalogs"]
