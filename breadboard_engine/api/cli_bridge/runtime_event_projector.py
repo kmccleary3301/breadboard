@@ -257,7 +257,12 @@ def _validate_replay_event_payload(
         count = normalized.get("eventCount")
         if not isinstance(count, int) or isinstance(count, bool) or count < 0:
             raise RuntimeProtocolError("runtime_protocol_error")
-    for field in ("message_id", "item_id", "call_id", "exec_id", "name"):
+    for field in ("message_id", "item_id", "trajectory_id"):
+        if field in normalized and (
+            not isinstance(normalized[field], str) or not normalized[field]
+        ):
+            raise RuntimeProtocolError("runtime_protocol_error")
+    for field in ("call_id", "exec_id", "name"):
         if field in normalized and not isinstance(normalized[field], str):
             raise RuntimeProtocolError("runtime_protocol_error")
     index = normalized.get("index")
@@ -809,6 +814,9 @@ class RuntimeEventProjector:
                 candidate_text = message.get("content")
             text = _assistant_visible_text(candidate_text)
             normalized_payload = {"text": text, "message": message}
+            for field in ("message_id", "trajectory_id", "source"):
+                if field in payload:
+                    normalized_payload[field] = payload[field]
         elif evt is EventType.ASSISTANT_DELTA:
             candidate_text = normalized_payload.get(
                 "text", normalized_payload.get("delta")

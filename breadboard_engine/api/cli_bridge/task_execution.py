@@ -287,7 +287,7 @@ class TaskExecutionOwner:
         published_events = 0
         replay_assistant_content: dict[tuple[str, str], list[str]] = {}
         registered_assistant_ids: set[str] = set()
-        completed_stream_message_ids: set[str] = set()
+        completed_stream_targets: dict[str, str] = {}
         seen_stream_message_ids: set[str] = set()
         active_replay_stream: tuple[str, str] | None = None
         anonymous_stream_count = 0
@@ -332,7 +332,15 @@ class TaskExecutionOwner:
                     )
                 )
             else:
-                raw_message_id = payload.get("message_id") or payload.get("item_id")
+                supplied_message_id = payload.get("message_id")
+                supplied_item_id = payload.get("item_id")
+                if (
+                    supplied_message_id is not None
+                    and supplied_item_id is not None
+                    and supplied_message_id != supplied_item_id
+                ):
+                    raise RuntimeProtocolError("runtime_protocol_error")
+                raw_message_id = supplied_message_id or supplied_item_id
                 message_id = (
                     raw_message_id
                     if isinstance(raw_message_id, str) and raw_message_id
@@ -412,6 +420,9 @@ class TaskExecutionOwner:
                                 else stream_key[1]
                             )
                         )
+                        observed_trajectory_id = payload.get("trajectory_id")
+                        if not isinstance(observed_trajectory_id, str):
+                            observed_trajectory_id = str(correlation["turn_id"])
                         if observed_message_id in registered_assistant_ids:
                             raise RuntimeProtocolError("runtime_protocol_error")
                         observed_payload: dict[str, Any] = {
@@ -423,27 +434,45 @@ class TaskExecutionOwner:
                                 )
                             ),
                             "message_id": observed_message_id,
-                            "trajectory_id": str(correlation["turn_id"]),
+                            "trajectory_id": observed_trajectory_id,
                         }
                         runner._record_product_observation(
                             "message.assistant",
                             observed_payload,
-                            trajectory_id=str(correlation["turn_id"]),
+                            trajectory_id=observed_trajectory_id,
                         )
                         registered_assistant_ids.add(observed_message_id)
-                        completed_stream_message_ids.add(observed_message_id)
+                        completed_stream_targets[observed_message_id] = (
+                            observed_trajectory_id
+                        )
                         payload["message_id"] = observed_message_id
                         payload["trajectory_id"] = observed_payload["trajectory_id"]
                         active_replay_stream = None
                 elif event_type is EventType.ASSISTANT_MESSAGE:
                     message = payload.get("message")
-                    nested_message_id = (
-                        message.get("message_id") or message.get("id")
-                        if isinstance(message, dict)
-                        else None
+                    raw_nested_message_id = (
+                        message.get("message_id")
+                        if isinstance(message, dict) and "message_id" in message
+                        else (
+                            message.get("id")
+                            if isinstance(message, dict) and "id" in message
+                            else None
+                        )
                     )
+                    if raw_nested_message_id is not None and (
+                        not isinstance(raw_nested_message_id, str)
+                        or not raw_nested_message_id
+                    ):
+                        raise RuntimeProtocolError("runtime_protocol_error")
+                    nested_message_id = raw_nested_message_id
+                    if (
+                        message_id is not None
+                        and nested_message_id is not None
+                        and message_id != nested_message_id
+                    ):
+                        raise RuntimeProtocolError("runtime_protocol_error")
                     observed_message_id = message_id or nested_message_id
-                    if not isinstance(observed_message_id, str) or not observed_message_id:
+                    if observed_message_id is None:
                         observed_message_id = identity_digest(
                             "\0".join(
                                 (
@@ -453,15 +482,32 @@ class TaskExecutionOwner:
                                 )
                             )
                         )
+                    supplied_trajectory_id = payload.get("trajectory_id")
+                    completed_trajectory_id = completed_stream_targets.get(
+                        observed_message_id
+                    )
+                    if completed_trajectory_id is not None:
+                        if supplied_trajectory_id is None:
+                            observed_trajectory_id = completed_trajectory_id
+                        elif supplied_trajectory_id != completed_trajectory_id:
+                            raise RuntimeProtocolError("runtime_protocol_error")
+                        else:
+                            observed_trajectory_id = supplied_trajectory_id
+                    else:
+                        observed_trajectory_id = (
+                            supplied_trajectory_id
+                            if isinstance(supplied_trajectory_id, str)
+                            else str(correlation["turn_id"])
+                        )
                     payload["message_id"] = observed_message_id
-                    payload["trajectory_id"] = str(correlation["turn_id"])
-                    if observed_message_id not in completed_stream_message_ids:
+                    payload["trajectory_id"] = observed_trajectory_id
+                    if completed_trajectory_id is None:
                         if observed_message_id in registered_assistant_ids:
                             raise RuntimeProtocolError("runtime_protocol_error")
                         runner._record_product_observation(
                             "message.assistant",
                             payload,
-                            trajectory_id=str(correlation["turn_id"]),
+                            trajectory_id=observed_trajectory_id,
                         )
                         registered_assistant_ids.add(observed_message_id)
                 await runner.publish_event_async(

@@ -372,7 +372,8 @@ async def test_replay_stream_end_promotes_identity_without_losing_deltas(
             (
                 '{"type":"assistant.message.start","payload":{}}',
                 '{"type":"assistant.message.delta","payload":{"delta":"hello"}}',
-                '{"type":"assistant.message.end","payload":{"item_id":"late-id","trajectory_id":"turn-test"}}',
+                '{"type":"assistant.message.end","payload":{"item_id":"late-id","trajectory_id":"captured-stream"}}',
+                '{"type":"assistant_message","payload":{"text":"hello","message_id":"late-id"}}',
             )
         )
         + "\n",
@@ -393,6 +394,13 @@ async def test_replay_stream_end_promotes_identity_without_losing_deltas(
     )
     assert product_event.payload["message_id"] == "late-id"
     assert product_event.payload["metadata"]["has_content"] is True
+    assert product_event.payload["trajectory_id"] == "captured-stream"
+    canonical_event = next(
+        event
+        for event in runner.session.event_queue._queue
+        if event is not None and event.type is EventType.ASSISTANT_MESSAGE
+    )
+    assert canonical_event.payload["trajectory_id"] == "captured-stream"
 
 
 @pytest.mark.asyncio
@@ -454,8 +462,8 @@ async def test_direct_replay_assistant_remains_valid_without_product_session(
         for event in runner.session.event_queue._queue
         if event is not None and event.type is EventType.ASSISTANT_MESSAGE
     )
-    assert public_message.payload["message_id"]
-    assert public_message.payload["trajectory_id"] == "turn-test"
+    assert public_message.payload["message_id"] == "replayed-id"
+    assert public_message.payload["trajectory_id"] == "prior-turn"
 
 
 @pytest.mark.asyncio
@@ -565,6 +573,31 @@ async def test_replay_rejects_reused_canonical_message_identity(
             input_id=turn.input_id,
             turn_id=turn.turn_id,
         )
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "row",
+    [
+        '{"type":"assistant_message","payload":{"text":"bad","message_id":""}}',
+        '{"type":"assistant_message","payload":{"text":"bad","message_id":"top","message":{"id":"nested"}}}',
+    ],
+)
+async def test_replay_rejects_invalid_or_conflicting_message_identity(
+    tmp_path, row
+) -> None:
+    fixture = tmp_path / "invalid-assistant-identity.jsonl"
+    fixture.write_text(row + "\n", encoding="utf-8")
+    runner, _session = _product_runner("replay-invalid-assistant-identity")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
+        await runner._execute_replay_task(
+            f"replay:{fixture}",
+            input_id=turn.input_id,
+            turn_id=turn.turn_id,
+        )
+
 
 
 def test_product_observations_pair_canonical_and_message_tool_results() -> None:
