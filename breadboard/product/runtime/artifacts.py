@@ -77,7 +77,7 @@ class ArtifactStore:
     @property
     def _root(self) -> Path: return _descriptor_path(self._descriptor) if self._descriptor is not None else self._root_path
     def __init__(self, root: str | Path, *, descriptor: int | None = None) -> None:
-        self._root_path, self._descriptor, self._transaction_depth, self._transaction_stream, self._transaction_owner = Path(root), descriptor, 0, None, None
+        self._root_path, self._descriptor, self._transaction_depth, self._transaction_stream, self._transaction_owner = Path(root).resolve(), descriptor, 0, None, None
         if descriptor is None: self._root.mkdir(parents=True, exist_ok=True)
     @contextmanager
     def transaction(self) -> Iterator[None]:

@@ -11,6 +11,7 @@ from typing import (
     Any,
     Dict,
     Iterable,
+    Mapping,
     Optional,
 )
 
@@ -366,6 +367,62 @@ class PersistenceMixin:
                         self._replace_metadata(record, previous_metadata)
                         record.last_activity_at = previous_activity
                         raise
+    async def close_admission_for_parent_cancellation(
+        self,
+        session_id: str,
+        *,
+        work_item_id: str,
+        reason: str,
+        child_recovery_refs: Iterable[str],
+    ) -> None:
+        async with self._lock:
+            record = self._records.get(session_id)
+            if record is None:
+                return
+            with self._record_file_lock(session_id):
+                record = self._refresh_record_from_disk_locked(
+                    session_id,
+                    record,
+                    require_disk=True,
+                )
+                previous_closed = record.admission_closed
+                previous_metadata = dict(record.metadata or {})
+                previous_activity = record.last_activity_at
+                metadata = dict(previous_metadata)
+                marker = metadata.get("durable_parent_cancellation")
+                raw_requests = marker.get("requests") if isinstance(marker, Mapping) else None
+                if raw_requests is None:
+                    candidates = [marker] if isinstance(marker, Mapping) else []
+                elif isinstance(raw_requests, list):
+                    candidates = list(raw_requests)
+                else:
+                    raise RuntimeError(
+                        "durable parent cancellation marker is invalid"
+                    )
+                requests = {
+                    str(candidate["work_item_id"]): dict(candidate)
+                    for candidate in candidates
+                    if isinstance(candidate, Mapping)
+                    and isinstance(candidate.get("work_item_id"), str)
+                }
+                requests[work_item_id] = {
+                    "work_item_id": work_item_id,
+                    "reason": reason,
+                    "child_recovery_refs": sorted(set(child_recovery_refs)),
+                }
+                metadata["durable_parent_cancellation"] = {
+                    "requests": [requests[key] for key in sorted(requests)]
+                }
+                record.admission_closed = True
+                self._replace_metadata(record, metadata)
+                record.last_activity_at = _utcnow()
+                try:
+                    self._persist_record_locked(record)
+                except Exception:
+                    record.admission_closed = previous_closed
+                    self._replace_metadata(record, previous_metadata)
+                    record.last_activity_at = previous_activity
+                    raise
     async def update_metadata(
         self,
         session_id: str,
@@ -404,16 +461,21 @@ class PersistenceMixin:
                     replacement_metadata = dict(metadata)
                     if isinstance(durable_child, dict):
                         replacement_metadata["durable_child"] = dict(durable_child)
-                    if (
-                        "durable_parent_cancellation" not in replacement_metadata
-                        and isinstance(durable_parent_cancellation, dict)
-                    ):
+                    if isinstance(durable_parent_cancellation, dict):
                         replacement_metadata["durable_parent_cancellation"] = dict(
                             durable_parent_cancellation
                         )
-                    if replacement_metadata.get("durable_parent_cancellation") is None:
-                        replacement_metadata.pop("durable_parent_cancellation", None)
-                    record.metadata = replacement_metadata
+                    elif record.admission_closed:
+                        replacement_metadata.pop(
+                            "durable_parent_cancellation", None
+                        )
+                    elif replacement_metadata.get(
+                        "durable_parent_cancellation"
+                    ) is None:
+                        replacement_metadata.pop(
+                            "durable_parent_cancellation", None
+                        )
+                    self._replace_metadata(record, replacement_metadata)
                 record.last_activity_at = _utcnow()
                 try:
                     self._persist_record_locked(record)
@@ -426,6 +488,102 @@ class PersistenceMixin:
                         record.last_activity_at,
                     ) = previous
                     raise
+    async def compare_and_swap_durable_parent_cancellation(
+        self,
+        session_id: str,
+        *,
+        expected: Mapping[str, Any],
+        replacement: Mapping[str, Any] | None = None,
+    ) -> bool:
+        async with self._lock:
+            record = self._records.get(session_id)
+            if record is None:
+                return False
+            with self._record_file_lock(session_id):
+                record = self._refresh_record_from_disk_locked(
+                    session_id,
+                    record,
+                    require_disk=True,
+                )
+                metadata = dict(record.metadata or {})
+                current = metadata.get("durable_parent_cancellation")
+                if not isinstance(current, Mapping) or dict(current) != dict(expected):
+                    return False
+                previous_metadata = dict(metadata)
+                previous_activity = record.last_activity_at
+                if replacement is None:
+                    metadata.pop("durable_parent_cancellation", None)
+                else:
+                    metadata["durable_parent_cancellation"] = dict(replacement)
+                self._replace_metadata(record, metadata)
+                record.last_activity_at = _utcnow()
+                try:
+                    self._persist_record_locked(record)
+                except Exception:
+                    self._replace_metadata(record, previous_metadata)
+                    record.last_activity_at = previous_activity
+                    raise
+                return True
+
+    async def remove_durable_parent_cancellation_request(
+        self,
+        session_id: str,
+        *,
+        work_item_id: str,
+    ) -> None:
+        async with self._lock:
+            record = self._records.get(session_id)
+            if record is None:
+                return
+            with self._record_file_lock(session_id):
+                record = self._refresh_record_from_disk_locked(
+                    session_id,
+                    record,
+                    require_disk=True,
+                )
+                metadata = dict(record.metadata or {})
+                marker = metadata.get("durable_parent_cancellation")
+                if not isinstance(marker, Mapping):
+                    return
+                raw_requests = marker.get("requests")
+                if raw_requests is None:
+                    candidates = [marker]
+                elif isinstance(raw_requests, list):
+                    candidates = list(raw_requests)
+                else:
+                    raise RuntimeError(
+                        "durable parent cancellation marker is invalid"
+                    )
+                requests: dict[str, dict[str, Any]] = {}
+                for candidate in candidates:
+                    if (
+                        not isinstance(candidate, Mapping)
+                        or type(candidate.get("work_item_id")) is not str
+                        or not candidate["work_item_id"]
+                    ):
+                        raise RuntimeError(
+                            "durable parent cancellation marker is invalid"
+                        )
+                    requests[candidate["work_item_id"]] = dict(candidate)
+                if requests.pop(work_item_id, None) is None:
+                    return
+                previous_metadata = dict(metadata)
+                previous_activity = record.last_activity_at
+                if requests:
+                    metadata["durable_parent_cancellation"] = {
+                        "requests": [requests[key] for key in sorted(requests)]
+                    }
+                else:
+                    metadata.pop("durable_parent_cancellation", None)
+                self._replace_metadata(record, metadata)
+                record.last_activity_at = _utcnow()
+                try:
+                    self._persist_record_locked(record)
+                except Exception:
+                    self._replace_metadata(record, previous_metadata)
+                    record.last_activity_at = previous_activity
+                    raise
+
     async def update_durable_child(
         self,
         session_id: str,
@@ -668,7 +826,10 @@ class PersistenceMixin:
             metadata["durable_parent_cancellation"] = dict(disk_parent_cancellation)
         elif "durable_parent_cancellation" in metadata:
             metadata.pop("durable_parent_cancellation", None)
-        record.metadata = metadata
+        record.admission_closed = (
+            record.admission_closed or disk_record.admission_closed
+        )
+        self._replace_metadata(record, metadata)
 
 
     def _refresh_record_from_disk_locked(

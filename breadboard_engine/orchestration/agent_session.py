@@ -100,6 +100,8 @@ class OpenCodeAgent:
     @ray.method(concurrency_group="control")
     def cancel(self) -> str:
         with self._state_lock:
+            if self.state in {"completed", "failed", "killed"}:
+                return self.state
             self.state = "killed"
             return self.state
 

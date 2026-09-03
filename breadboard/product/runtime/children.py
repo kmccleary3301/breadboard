@@ -10,6 +10,7 @@ import asyncio
 import ctypes
 import hashlib
 import json
+import math
 import os
 import struct
 import subprocess
@@ -54,6 +55,57 @@ from breadboard.product.runtime.session_store import (
 
 _TERMINAL = frozenset({"completed", "failed", "canceled"})
 _CHILD_SCHEMA = "bb.durable_child.v1"
+
+
+def _parent_cancellation_requests(
+    value: object,
+) -> tuple[dict[str, Any], ...]:
+    if not isinstance(value, Mapping):
+        return ()
+    raw_requests = value.get("requests")
+    candidates: Sequence[object]
+    if raw_requests is None:
+        candidates = (value,)
+    elif isinstance(raw_requests, (list, tuple)):
+        candidates = raw_requests
+    else:
+        raise ValueError("durable parent cancellation requests are invalid")
+    requests: dict[str, dict[str, Any]] = {}
+    for candidate in candidates:
+        if not isinstance(candidate, Mapping):
+            raise ValueError("durable parent cancellation request is invalid")
+        work_item_id = candidate.get("work_item_id")
+        reason = candidate.get("reason")
+        child_refs = candidate.get("child_recovery_refs")
+        if (
+            not isinstance(child_refs, (list, tuple))
+            or any(type(ref) is not str or not ref.strip() for ref in child_refs)
+        ):
+            raise ValueError(
+                "durable parent cancellation child references are invalid"
+            )
+        if (
+            type(work_item_id) is not str
+            or not work_item_id.strip()
+            or type(reason) is not str
+            or not reason.strip()
+        ):
+            raise ValueError("durable parent cancellation request is invalid")
+        requests[work_item_id] = {
+            "work_item_id": work_item_id,
+            "reason": reason,
+            "child_recovery_refs": sorted(set(child_refs)),
+        }
+    return tuple(requests[key] for key in sorted(requests))
+
+
+def _parent_cancellation_marker(
+    requests: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    normalized = _parent_cancellation_requests(
+        {"requests": [dict(request) for request in requests]}
+    )
+    return {"requests": [dict(request) for request in normalized]}
 
 def _reserved_target_ref(adapter_family: str, suffix: str) -> str:
     return f"job:reserved:{suffix}" if adapter_family == "ray-agent-job" else f"reserved:{suffix}"
@@ -175,7 +227,6 @@ class ChildState:
     launch_claim_until: float | None = None
     launch_published: bool = False
     startup_phase: str = "unknown"
-    startup_lease_until: float | None = None
     cancellation_reason: str | None = None
     result_prepared: bool = False
     result_refs: tuple[str, ...] = ()
@@ -210,7 +261,6 @@ class ChildState:
             "launch_claim_until": self.launch_claim_until,
             "launch_published": self.launch_published,
             "startup_phase": self.startup_phase,
-            "startup_lease_until": self.startup_lease_until,
             "cancellation_reason": self.cancellation_reason,
             "result_prepared": self.result_prepared,
             "result_refs": list(self.result_refs),
@@ -226,6 +276,58 @@ class ChildState:
     def from_retained(cls, value: Mapping[str, Any]) -> "ChildState":
         if value.get("schema_version") != _CHILD_SCHEMA:
             raise ValueError("unsupported durable child state")
+        identity_fields = (
+            "child_session_id",
+            "child_work_item_id",
+            "parent_session_id",
+            "root_session_id",
+            "parent_work_item_id",
+            "attempt_id",
+            "recovery_ref",
+            "adapter_family",
+        )
+        if any(
+            type(value.get(field_name)) is not str
+            or not value[field_name].strip()
+            for field_name in identity_fields
+        ):
+            raise ValueError("durable child identity is invalid")
+        child_session_id = value["child_session_id"]
+        attempt_id = value["attempt_id"]
+        recovery_prefix = f"child://{child_session_id}/attempt/"
+        recovery_ref = value["recovery_ref"]
+        if (
+            not recovery_ref.startswith(recovery_prefix)
+            or not recovery_ref.removeprefix(recovery_prefix)
+        ):
+            raise ValueError("durable child recovery identity is invalid")
+        revision = value.get("revision")
+        if type(revision) is not int or revision < 0:
+            raise ValueError("durable child revision is invalid")
+        launch_claim_owner = value.get("launch_claim_owner")
+        if launch_claim_owner is not None and (
+            type(launch_claim_owner) is not str or not launch_claim_owner.strip()
+        ):
+            raise ValueError("durable child launch claim owner is invalid")
+        launch_claim_until = value.get("launch_claim_until")
+        if launch_claim_until is not None and (
+            type(launch_claim_until) not in {int, float}
+            or not math.isfinite(launch_claim_until)
+            or launch_claim_until < 0
+        ):
+            raise ValueError("durable child launch claim expiry is invalid")
+        cancellation_reason = value.get("cancellation_reason")
+        if cancellation_reason is not None and (
+            type(cancellation_reason) is not str or not cancellation_reason.strip()
+        ):
+            raise ValueError("durable child cancellation reason is invalid")
+        if value.get("startup_phase", "unknown") not in {
+            "unknown",
+            "recorded",
+            "delegated",
+            "product_published",
+        }:
+            raise ValueError("durable child startup phase is invalid")
         boolean_fields = (
             "cancellation_requested",
             "launch_claimed",
@@ -284,31 +386,91 @@ class ChildState:
                 )
             ):
                 raise ValueError("durable child settlement is invalid")
+        child_spec_value = value.get("child_spec")
+        if not isinstance(child_spec_value, Mapping):
+            raise ValueError("durable child specification is invalid")
+        child_spec = dict(child_spec_value)
+        required_spec_strings = (
+            "title",
+            "task_hash",
+            "task_ref",
+            "lock_hash",
+            "worker_id",
+            "adapter_family",
+        )
+        if any(
+            type(child_spec.get(field_name)) is not str
+            or not child_spec[field_name].strip()
+            for field_name in required_spec_strings
+        ):
+            raise ValueError("durable child specification is invalid")
+        if (
+            child_spec["adapter_family"] != value.get("adapter_family")
+            or child_spec["task_ref"] != "child-task://" + child_spec["task_hash"]
+        ):
+            raise ValueError("durable child specification identity is invalid")
+        policy_fields = ("retry_policy", "resume_policy", "cancellation_policy")
+        if any(
+            not isinstance(child_spec.get(field_name), Mapping)
+            for field_name in policy_fields
+        ):
+            raise ValueError("durable child specification policies are invalid")
+        adapter_config = child_spec.get("adapter_config", {})
+        if not isinstance(adapter_config, Mapping):
+            raise ValueError("durable child adapter config is invalid")
+        try:
+            RetryPolicy.from_dict(child_spec["retry_policy"])
+            ResumePolicy.from_dict(child_spec["resume_policy"])
+            CancellationPolicy.from_dict(child_spec["cancellation_policy"])
+            EffectiveHarnessLock._from_record(
+                {"graph_hash": child_spec["lock_hash"]}
+            )
+            task_artifact = child_spec.get("task_artifact_ref")
+            if task_artifact is not None:
+                if not isinstance(task_artifact, Mapping):
+                    raise ValueError("task artifact must be a mapping")
+                ArtifactRef(
+                    str(task_artifact["digest"]),
+                    int(task_artifact["size_bytes"]),
+                    str(task_artifact["media_type"]),
+                )
+            json.dumps(child_spec)
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("durable child specification is invalid") from error
+        for field_name in (
+            "task_artifact_store",
+            "artifact_store_root",
+            "work_item_repository_path",
+        ):
+            path_value = child_spec.get(field_name)
+            if path_value is not None and (
+                type(path_value) is not str
+                or not path_value
+                or not Path(path_value).is_absolute()
+            ):
+                raise ValueError("durable child specification path is invalid")
         return cls(
-            child_session_id=str(value["child_session_id"]),
-            child_work_item_id=str(value["child_work_item_id"]),
-            parent_session_id=str(value["parent_session_id"]),
-            root_session_id=str(value["root_session_id"]),
-            parent_work_item_id=str(value["parent_work_item_id"]),
-            attempt_id=str(value["attempt_id"]),
-            recovery_ref=str(value["recovery_ref"]),
+            child_session_id=child_session_id,
+            child_work_item_id=value["child_work_item_id"],
+            parent_session_id=value["parent_session_id"],
+            root_session_id=value["root_session_id"],
+            parent_work_item_id=value["parent_work_item_id"],
+            attempt_id=attempt_id,
+            recovery_ref=value["recovery_ref"],
             execution_target_ref=execution_target_ref,
-            adapter_family=str(value["adapter_family"]),
-            status=str(status),
-            revision=int(value["revision"]),
+            adapter_family=value["adapter_family"],
+            status=status,
+            revision=revision,
             cancellation_requested=value.get("cancellation_requested", False),
             launch_claimed=value.get("launch_claimed", False),
-            launch_claim_owner=str(value["launch_claim_owner"])
-            if value.get("launch_claim_owner") is not None
-            else None,
-            launch_claim_until=float(value["launch_claim_until"])
-            if value.get("launch_claim_until") is not None
-            else None,
+            launch_claim_owner=launch_claim_owner,
+            launch_claim_until=(
+                float(launch_claim_until)
+                if launch_claim_until is not None
+                else None
+            ),
             launch_published=value.get("launch_published", False),
             startup_phase=str(value.get("startup_phase") or "unknown"),
-            startup_lease_until=float(value["startup_lease_until"])
-            if value.get("startup_lease_until") is not None
-            else None,
             cancellation_reason=value.get("cancellation_reason"),
             result_prepared=value.get("result_prepared", False),
             result_refs=result_refs,
@@ -316,7 +478,7 @@ class ChildState:
             terminal_count=terminal_count,
             joined=value.get("joined", False),
             settlement=settlement,
-            child_spec=value.get("child_spec") or {},
+            child_spec=child_spec,
             execution_target=execution_target,
         )
 
@@ -373,7 +535,12 @@ class DurableChildFactory:
         self.ids = ids or UUIDSource()
         self._owner_id = self.ids.new_id()
         self._lifecycle_lock = threading.RLock()
+        self._product_transition_state = threading.local()
         self.artifacts = artifact_store or ArtifactStore(self.workspace / ".breadboard" / "artifacts")
+        if getattr(self.artifacts, "_descriptor", None) is not None:
+            raise ChildError(
+                "durable children require an artifact store with a stable path"
+            )
         self.adapters = {adapter.family: adapter for adapter in adapters}
         for adapter in self.adapters.values():
             binder = getattr(adapter, "bind_workspace", None)
@@ -391,7 +558,8 @@ class DurableChildFactory:
     def cancel_tree(self, *, parent_session_id: str, parent_work_item_id: str, reason: str = "operator request") -> tuple[ChildState, ...]:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
-        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(parent_session_id, parent_session_id):
+        transition_ids = self._root_transition_session_ids(parent_session_id)
+        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(*transition_ids):
             return self._cancel_tree(parent_session_id=parent_session_id, parent_work_item_id=parent_work_item_id, reason=reason)
     def _cancel_tree(self, *, parent_session_id: str, parent_work_item_id: str, reason: str = "operator request") -> tuple[ChildState, ...]:
         """Persist parent intent and every descendant intent before signaling."""
@@ -455,8 +623,6 @@ class DurableChildFactory:
                 and current_attempt.checkpoint_ref is None
             ):
                 raise ValueError("checkpoint_then_stop requires a current checkpoint")
-        if any(state.settlement is not None for state in descendants if not state.terminal_count):
-            raise ExpectedRevisionConflict("child settlement is already reserved")
         for state in descendants:
             if state.terminal_count or state.cancellation_requested:
                 continue
@@ -488,6 +654,44 @@ class DurableChildFactory:
                     raise ValueError(
                         "checkpoint_then_stop requires a current checkpoint"
                     )
+        parent_record = self._registry("get", parent_session_id)
+        if parent_record is None:
+            from breadboard_engine.api.cli_bridge.models import SessionStatus
+            from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+            retained_status = {
+                "completed": SessionStatus.COMPLETED,
+                "failed": SessionStatus.FAILED,
+                "canceled": SessionStatus.STOPPED,
+            }.get(product_status, SessionStatus.RUNNING)
+            self._registry(
+                "create",
+                SessionRecord(
+                    session_id=parent_session_id,
+                    status=retained_status,
+                    metadata={"workspace": str(self.workspace)},
+                    product_session=parent,
+                ),
+            )
+            parent_record = self._registry("get", parent_session_id)
+        if parent_record is None:
+            raise ChildError("parent SessionRecord could not be retained")
+        parent_metadata = dict(parent_record.metadata or {})
+        try:
+            _parent_cancellation_requests(
+                parent_metadata.get("durable_parent_cancellation")
+            )
+        except ValueError as error:
+            raise ChildError("durable parent cancellation marker is invalid") from error
+        self._registry(
+            "close_admission_for_parent_cancellation",
+            parent_session_id,
+            work_item_id=parent_work_item_id,
+            reason=reason,
+            child_recovery_refs=[
+                state.recovery_ref for state in descendants
+            ],
+        )
         if product_status in _TERMINAL and work_status not in _TERMINAL:
             try:
                 if product_status == "completed":
@@ -539,27 +743,6 @@ class DurableChildFactory:
                     "Work Item terminal outcome cannot reconcile Product Session"
                 ) from error
             parent, _ = load_session(self.workspace, parent_session_id)
-        elif (
-            product_status in _TERMINAL
-            and work_status in _TERMINAL
-            and product_status != work_status
-        ):
-            raise ChildError(
-                "parent Product Session and Work Item terminal outcomes disagree"
-            )
-        parent_record = self._registry("get", parent_session_id)
-        parent_metadata = dict(parent_record.metadata or {}) if parent_record is not None else {}
-        parent_metadata["durable_parent_cancellation"] = {
-            "work_item_id": parent_work_item_id,
-            "reason": reason,
-            "child_recovery_refs": [state.recovery_ref for state in descendants],
-        }
-        if parent_record is not None:
-            self._registry(
-                "close_admission",
-                parent_session_id,
-                metadata=parent_metadata,
-            )
         adopted: list[ChildState] = []
         remaining_descendants: list[ChildState] = []
         for state in descendants:
@@ -575,6 +758,30 @@ class DurableChildFactory:
                 clock=self.clock,
                 ids=self.ids,
             )
+            if state.settlement is not None:
+                payload = state.settlement
+                child_product, _ = load_session(
+                    self.workspace, state.child_session_id
+                )
+                if (
+                    child.read_model.status in _TERMINAL
+                    or child_product.read_model.status in _TERMINAL
+                ):
+                    adopted.append(
+                        self._settle(
+                            state,
+                            str(payload["outcome"]),
+                            tuple(
+                                str(ref)
+                                for ref in payload.get("result_refs", ())
+                            ),
+                            allow_unprepared=str(payload["outcome"])
+                            != "completed",
+                            allow_parent_terminal=True,
+                        )
+                    )
+                    continue
+                state = self._cas(state, settlement=None)
             if child.read_model.status in _TERMINAL and not state.cancellation_requested:
                 if child.read_model.status == "canceled":
                     state = self._cas(
@@ -590,6 +797,7 @@ class DurableChildFactory:
                             state,
                             child,
                             allow_cancellation_intent=True,
+                            allow_parent_terminal=True,
                         )
                     )
             else:
@@ -643,11 +851,11 @@ class DurableChildFactory:
                 self._status(state)
                 settled.append(state)
         if not unsettled:
-            current_parent_record = self._registry("get", parent_session_id)
-            if current_parent_record is not None:
-                cleared_metadata = dict(current_parent_record.metadata or {})
-                cleared_metadata["durable_parent_cancellation"] = None
-                self._registry("update_metadata", parent_session_id, metadata=cleared_metadata)
+            self._registry(
+                "remove_durable_parent_cancellation_request",
+                parent_session_id,
+                work_item_id=parent_work_item_id,
+            )
         return tuple(settled)
     @contextmanager
     def _owner_process_lock(self, key: str):
@@ -659,12 +867,39 @@ class DurableChildFactory:
     def _registry(self, method: str, *args: Any, **kwargs: Any) -> Any:
         return _sync(getattr(self.registry, method)(*args, **kwargs))
 
+    def _root_transition_session_ids(self, root_session_id: str) -> tuple[str, ...]:
+        session_ids = {root_session_id}
+        for record in self._registry("records"):
+            metadata = record.metadata if isinstance(record.metadata, dict) else {}
+            retained = metadata.get("durable_child")
+            if (
+                isinstance(retained, Mapping)
+                and retained.get("root_session_id") == root_session_id
+            ):
+                session_ids.add(record.session_id)
+        return tuple(sorted(session_ids))
+
     @contextmanager
-    def _product_transition_guard(self, parent_session_id: str, root_session_id: str):
+    def _product_transition_guard(self, *session_ids: str):
+        ordered = tuple(sorted(set(session_ids)))
         with ExitStack() as stack:
-            for session_id in sorted({parent_session_id, root_session_id}):
+            for session_id in ordered:
                 stack.enter_context(_session_transition_guard(self.workspace, session_id))
-            yield
+            previous = getattr(self._product_transition_state, "session_ids", ())
+            self._product_transition_state.session_ids = (*previous, *ordered)
+            try:
+                yield
+            finally:
+                self._product_transition_state.session_ids = previous
+
+    def _mutate_child_product(
+        self,
+        child_session_id: str,
+        transition: Callable[[Session], None],
+    ) -> None:
+        held = getattr(self._product_transition_state, "session_ids", ())
+        mutate = _mutate_session_locked if child_session_id in held else mutate_session
+        mutate(self.workspace, child_session_id, transition)
 
     def _record_state(self, child_session_id: str) -> ChildState:
         record = self._registry("get", child_session_id)
@@ -878,7 +1113,11 @@ class DurableChildFactory:
         config = config_fn() if callable(config_fn) else {}
         if not isinstance(config, Mapping):
             raise ChildError("child adapter config is not durable")
-        child_spec["adapter_config"] = dict(config)
+        try:
+            durable_config = json.loads(json.dumps(dict(config)))
+        except (TypeError, ValueError) as error:
+            raise ChildError("child adapter config is not durable") from error
+        child_spec["adapter_config"] = durable_config
         created_artifacts: set[ArtifactRef] = set()
         with self.artifacts.transaction():
             task_artifact = self.artifacts.put(
@@ -922,7 +1161,6 @@ class DurableChildFactory:
                 "starting",
                 0,
                 startup_phase="recorded",
-                startup_lease_until=time.time() + 30.0,
                 child_spec=child_spec,
                 execution_target=execution_target,
             )
@@ -999,7 +1237,11 @@ class DurableChildFactory:
             launch_claim_until=time.time() + 30.0,
         )
         self._status(state)
-        with self._product_transition_guard(parent_session_id, root_session_id):
+        with self._product_transition_guard(
+            parent_session_id,
+            root_session_id,
+            child_session_id,
+        ):
             try:
                 self._require_start_active(child_session_id)
                 self._require_parent_start_active(parent_session_id, root_session_id)
@@ -1087,8 +1329,8 @@ class DurableChildFactory:
     def cancel(self, child_session_id: str, *, expected_revision: int, reason: str = "operator request") -> ChildState:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
-        parent_work_item_id = self._record_state(child_session_id).parent_work_item_id
-        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id):
+        state = self._record_state(child_session_id)
+        with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id), self._owner_process_lock(state.parent_work_item_id), self._product_transition_guard(state.parent_session_id, state.root_session_id, state.child_session_id):
             return self._cancel(child_session_id, expected_revision=expected_revision, reason=reason)
     def _cancel(self, child_session_id: str, *, expected_revision: int, reason: str = "operator request") -> ChildState:
         state = self._record_state(child_session_id)
@@ -1149,6 +1391,37 @@ class DurableChildFactory:
         attempt_id: str | None = None,
         _allow_cancellation_intent: bool = False,
     ) -> ChildState:
+        state = self._record_state(child_session_id)
+        with (
+            self._lifecycle_lock,
+            self._owner_lock(state.parent_work_item_id),
+            self._owner_process_lock(state.parent_work_item_id),
+            self._product_transition_guard(
+                state.parent_session_id,
+                state.root_session_id,
+                state.child_session_id,
+            ),
+        ):
+            return self._settle_request(
+                child_session_id,
+                expected_revision=expected_revision,
+                outcome=outcome,
+                result_refs=result_refs,
+                attempt_id=attempt_id,
+                _allow_cancellation_intent=_allow_cancellation_intent,
+            )
+
+    def _settle_request(
+        self,
+        child_session_id: str,
+        *,
+        expected_revision: int,
+        outcome: str,
+        result_refs: Sequence[str] | None = None,
+        attempt_id: str | None = None,
+        _allow_cancellation_intent: bool = False,
+        _allow_parent_terminal: bool = False,
+    ) -> ChildState:
         if attempt_id is None:
             raise ExpectedRevisionConflict("settlement requires an attempt identity")
         state = self._record_state(child_session_id)
@@ -1179,11 +1452,85 @@ class DurableChildFactory:
             raise ExpectedRevisionConflict(f"stale child revision: expected {expected_revision}, actual {state.revision}")
         if result_refs is not None and tuple(result_refs) != state.result_refs:
             raise ExpectedRevisionConflict("settlement result refs do not match prepared refs")
-        reserved = self._cas(state, settlement={"outcome": outcome, "result_refs": list(state.result_refs)})
-        return self._settle(reserved, outcome, state.result_refs, allow_unprepared=outcome != "completed")
+        reserved = self._cas(
+            state,
+            settlement={
+                "outcome": outcome,
+                "result_refs": list(state.result_refs),
+            },
+        )
+        try:
+            return self._settle(
+                reserved,
+                outcome,
+                state.result_refs,
+                allow_unprepared=outcome != "completed",
+                allow_parent_terminal=_allow_parent_terminal,
+            )
+        except (LateResultRejected, ChildError, ValueError):
+            current = self._record_state(child_session_id)
+            if current.settlement == reserved.settlement:
+                self._cas(current, settlement=None)
+            raise
 
-    def _settle(self, state: ChildState, outcome: str, result_refs: Sequence[str], *, allow_unprepared: bool) -> ChildState:
-        if outcome != "canceled":
+    def _cancel_late_settlement(self, state: ChildState) -> ChildState:
+        current = self._record_state(state.child_session_id)
+        if current.terminal_count:
+            return current
+        if current.settlement is not None:
+            current = self._cas(current, settlement=None)
+        if not current.cancellation_requested:
+            current = self._cas(
+                current,
+                status="cancel_requested",
+                cancellation_requested=True,
+                cancellation_reason="parent owner terminated before child settlement",
+            )
+        if self.adapters[current.adapter_family].cancel(current.execution_target) is False:
+            return current
+        return self._settle(current, "canceled", (), allow_unprepared=True)
+
+    def _adopt_terminal_target_after_cancel(
+        self, state: ChildState
+    ) -> ChildState:
+        adapter = self.adapters[state.adapter_family]
+        observed = str(adapter.observe(state.execution_target)).lower()
+        if observed not in {"completed", "failed"}:
+            return self._record_state(state.child_session_id)
+        current = self._record_state(state.child_session_id)
+        if observed == "completed" and not current.result_prepared:
+            current = self.prepare_result(
+                current.child_session_id,
+                expected_revision=current.revision,
+                attempt_id=current.attempt_id,
+                _allow_cancellation_intent=True,
+            )
+        if current.settlement is None:
+            current = self._cas(
+                current,
+                settlement={
+                    "outcome": observed,
+                    "result_refs": list(current.result_refs),
+                },
+            )
+        return self._settle(
+            current,
+            observed,
+            current.result_refs,
+            allow_unprepared=observed != "completed",
+            allow_parent_terminal=True,
+        )
+
+    def _settle(
+        self,
+        state: ChildState,
+        outcome: str,
+        result_refs: Sequence[str],
+        *,
+        allow_unprepared: bool,
+        allow_parent_terminal: bool = False,
+    ) -> ChildState:
+        if outcome != "canceled" and not allow_parent_terminal:
             parent_product, _ = load_session(
                 self.workspace, state.parent_session_id
             )
@@ -1193,10 +1540,14 @@ class DurableChildFactory:
                 clock=self.clock,
                 ids=self.ids,
             )
-            parent_attempt = parent_work.read_model.current_attempt
+            parent_attempt = (
+                parent_work.read_model.attempts[-1]
+                if parent_work.read_model.attempts
+                else None
+            )
             if (
-                parent_product.read_model.status != "running"
-                or parent_work.read_model.status != "running"
+                parent_product.read_model.status in _TERMINAL
+                or parent_work.read_model.status in _TERMINAL
                 or parent_attempt is None
                 or parent_attempt.session_ref != state.parent_session_id
             ):
@@ -1222,30 +1573,68 @@ class DurableChildFactory:
         if work_status in _TERMINAL and work_status != outcome:
             raise ChildError("Work Item terminal outcome disagrees with settlement")
         if work_status not in _TERMINAL and child.read_model.current_attempt is None:
+            if state.settlement is not None:
+                self._cas(state, settlement=None)
             raise ChildError("child Work Item has no active attempt")
         session, _ = load_session(self.workspace, state.child_session_id)
         product_status = session.read_model.status
         if product_status in _TERMINAL and product_status != outcome:
             raise ChildError("Product Session terminal outcome disagrees with settlement")
         if product_status not in _TERMINAL:
-            if outcome == "completed":
-                mutate_session(self.workspace, state.child_session_id, lambda current: current.complete("child result prepared"))
-            elif outcome == "failed":
-                mutate_session(self.workspace, state.child_session_id, lambda current: current.fail("child_failed", "execution target exited"))
-            else:
-                mutate_session(self.workspace, state.child_session_id, lambda current: current.cancel(state.cancellation_reason or "operator request"))
+            try:
+                if outcome == "completed":
+                    self._mutate_child_product(
+                        state.child_session_id,
+                        lambda current: current.complete("child result prepared"),
+                    )
+                elif outcome == "failed":
+                    self._mutate_child_product(
+                        state.child_session_id,
+                        lambda current: current.fail(
+                            "child_failed", "execution target exited"
+                        ),
+                    )
+                else:
+                    self._mutate_child_product(
+                        state.child_session_id,
+                        lambda current: current.cancel(
+                            state.cancellation_reason or "operator request"
+                        ),
+                    )
+            except RuntimeError as error:
+                refreshed_session, _ = load_session(
+                    self.workspace, state.child_session_id
+                )
+                if refreshed_session.read_model.status != "running":
+                    raise ChildError(
+                        "Product Session state cannot accept child settlement"
+                    ) from error
+                raise
         session, _ = load_session(self.workspace, state.child_session_id)
         record = self._registry("get", state.child_session_id)
         if record is not None:
             record.product_session = session
         if work_status not in _TERMINAL:
             attempt = child.read_model.current_attempt
-            if outcome == "completed":
-                child.complete("child result prepared", attempt_id=attempt.attempt_id)  # type: ignore[union-attr]
-            elif outcome == "failed":
-                child.fail_attempt("execution target exited", attempt_id=attempt.attempt_id, retryable=False)  # type: ignore[union-attr]
-            else:
-                child.cancel("operator", state.cancellation_reason or "operator request")
+            try:
+                if outcome == "completed":
+                    child.complete("child result prepared", attempt_id=attempt.attempt_id)  # type: ignore[union-attr]
+                elif outcome == "failed":
+                    child.fail_attempt("execution target exited", attempt_id=attempt.attempt_id, retryable=False)  # type: ignore[union-attr]
+                else:
+                    child.cancel("operator", state.cancellation_reason or "operator request")
+            except RuntimeError as error:
+                refreshed = WorkItem.restore(
+                    self.repository,
+                    state.child_work_item_id,
+                    clock=self.clock,
+                    ids=self.ids,
+                )
+                if refreshed.read_model.status in _TERMINAL:
+                    raise ChildError(
+                        "Work Item terminal outcome disagrees with settlement"
+                    ) from error
+                raise
         parent_work = WorkItem.restore(self.repository, state.parent_work_item_id, clock=self.clock, ids=self.ids)
         parent_work.join_child(state.child_work_item_id, state.child_session_id, outcome, result_refs)
         state = self._cas(state, status=outcome, terminal_outcome=outcome, terminal_count=1, result_refs=tuple(result_refs), settlement=None, joined=True)
@@ -1259,6 +1648,7 @@ class DurableChildFactory:
         *,
         allow_cancellation_intent: bool = False,
         execution_stopped: bool = False,
+        allow_parent_terminal: bool = False,
     ) -> ChildState:
         """Join an already-terminal Work Item after cancellation cleanup."""
         outcome = child.read_model.status
@@ -1297,13 +1687,14 @@ class DurableChildFactory:
                 attempt_id=state.attempt_id,
                 _allow_cancellation_intent=allow_cancellation_intent,
             )
-        return self.settle(
+        return self._settle_request(
             state.child_session_id,
             expected_revision=state.revision,
             outcome=outcome,
             result_refs=state.result_refs,
             attempt_id=state.attempt_id,
             _allow_cancellation_intent=allow_cancellation_intent,
+            _allow_parent_terminal=allow_parent_terminal,
         )
     def _reserved_execution_target(self, state: ChildState, target_ref: str) -> dict[str, Any]:
         target: dict[str, Any] = {"ref": target_ref}
@@ -1453,11 +1844,24 @@ class DurableChildFactory:
                 raise ChildError("Product Session terminal outcome disagrees with retained child")
             if product_status not in _TERMINAL:
                 if outcome == "completed":
-                    mutate_session(self.workspace, state.child_session_id, lambda current: current.complete("child result prepared"))
+                    self._mutate_child_product(
+                        state.child_session_id,
+                        lambda current: current.complete("child result prepared"),
+                    )
                 elif outcome == "failed":
-                    mutate_session(self.workspace, state.child_session_id, lambda current: current.fail("child_failed", "execution target exited"))
+                    self._mutate_child_product(
+                        state.child_session_id,
+                        lambda current: current.fail(
+                            "child_failed", "execution target exited"
+                        ),
+                    )
                 else:
-                    mutate_session(self.workspace, state.child_session_id, lambda current: current.cancel(state.cancellation_reason or "operator request"))
+                    self._mutate_child_product(
+                        state.child_session_id,
+                        lambda current: current.cancel(
+                            state.cancellation_reason or "operator request"
+                        ),
+                    )
             session, _ = load_session(self.workspace, state.child_session_id)
             record = self._registry("get", state.child_session_id)
             if record is not None:
@@ -1484,8 +1888,17 @@ class DurableChildFactory:
             parent_work.join_child(state.child_work_item_id, state.child_session_id, outcome, state.result_refs)
     def reconcile(self, recovery_ref: str) -> ChildState:
         child_session_id = recovery_ref.split("/attempt/", 1)[0].removeprefix("child://")
-        parent_work_item_id = self._record_state(child_session_id).parent_work_item_id
-        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id):
+        state = self._record_state(child_session_id)
+        with (
+            self._lifecycle_lock,
+            self._owner_lock(state.parent_work_item_id),
+            self._owner_process_lock(state.parent_work_item_id),
+            self._product_transition_guard(
+                state.parent_session_id,
+                state.root_session_id,
+                state.child_session_id,
+            ),
+        ):
             return self._reconcile(recovery_ref)
     def _reconcile(self, recovery_ref: str) -> ChildState:
         child_session_id = recovery_ref.split("/attempt/", 1)[0].removeprefix("child://")
@@ -1541,8 +1954,6 @@ class DurableChildFactory:
                         state.cancellation_reason or "operator request",
                         signal=False,
                     )
-                if state.startup_phase == "recorded" and state.startup_lease_until is not None and state.startup_lease_until > time.time():
-                    return state
                 return self._abort_startup(state)
             try:
                 load_session(self.workspace, child_session_id)
@@ -1683,31 +2094,39 @@ class DurableChildFactory:
                         raise ChildError(
                             "completed child Product Session has no prepared result"
                         )
-                    if (
-                        self.adapters[state.adapter_family].cancel(
-                            state.execution_target
-                        )
-                        is False
-                    ):
-                        return state
+                    canceled = self.adapters[state.adapter_family].cancel(
+                        state.execution_target
+                    )
+                    if canceled is False:
+                        observed = str(
+                            self.adapters[state.adapter_family].observe(
+                                state.execution_target
+                            )
+                        ).lower()
+                        if observed != product_outcome:
+                            return state
                     return self._settle(
                         state,
                         product_outcome,
                         state.result_refs,
                         allow_unprepared=product_outcome != "completed",
+                        allow_parent_terminal=True,
                     )
                 self._status(state)
         if state.settlement:
             payload = state.settlement
-            return self._settle(
-                state,
-                str(payload["outcome"]),
-                tuple(str(ref) for ref in payload.get("result_refs", ())),
-                allow_unprepared=str(payload["outcome"]) != "completed",
-            )
+            try:
+                return self._settle(
+                    state,
+                    str(payload["outcome"]),
+                    tuple(str(ref) for ref in payload.get("result_refs", ())),
+                    allow_unprepared=str(payload["outcome"]) != "completed",
+                )
+            except LateResultRejected:
+                return self._cancel_late_settlement(state)
         if state.cancellation_requested:
             if self.adapters[state.adapter_family].cancel(state.execution_target) is False:
-                return state
+                return self._adopt_terminal_target_after_cancel(state)
             return self._settle(state, "canceled", (), allow_unprepared=True)
         observed = str(self.adapters[state.adapter_family].observe(state.execution_target)).lower()
         if observed == "pending":
@@ -1751,13 +2170,25 @@ class DurableChildFactory:
                 acknowledge(state.execution_target)
             if not state.result_prepared:
                 state = self.prepare_result(child_session_id, expected_revision=state.revision, attempt_id=state.attempt_id)
-            return self.settle(child_session_id, expected_revision=state.revision, outcome="completed", result_refs=state.result_refs, attempt_id=state.attempt_id)
+            try:
+                return self._settle_request(
+                    child_session_id,
+                    expected_revision=state.revision,
+                    outcome="completed",
+                    result_refs=state.result_refs,
+                    attempt_id=state.attempt_id,
+                )
+            except LateResultRejected:
+                return self._cancel_late_settlement(state)
         child = WorkItem.restore(self.repository, state.child_work_item_id, clock=self.clock, ids=self.ids)
         adapter = self.adapters[state.adapter_family]
         if observed == "absent" and getattr(adapter, "absence_is_terminal", False):
             if child.read_model.status in _TERMINAL:
                 return self._adopt_terminal_work_item(state, child)
-            return self._settle(state, "failed", (), allow_unprepared=True)
+            try:
+                return self._settle(state, "failed", (), allow_unprepared=True)
+            except LateResultRejected:
+                return self._cancel_late_settlement(state)
         return self._retry(state, child)
     def _spec(self, state: ChildState) -> ChildSpec:
         value = state.child_spec
@@ -1984,6 +2415,16 @@ class RayJobAdapter:
         remote = getattr(submit, "remote", None)
         if callable(remote):
             remote(invocation_id, parts)
+            deadline = time.monotonic() + 30.0
+            while True:
+                state = RayJobAdapter._invocation_state(actor, invocation_id)
+                if state not in {None, "missing"}:
+                    break
+                if time.monotonic() >= deadline:
+                    raise ChildError(
+                        "Ray child invocation was not durably accepted"
+                    )
+                time.sleep(0.01)
         else:
             submit(invocation_id, parts)
         return True
@@ -2245,6 +2686,8 @@ class RayJobAdapter:
                 return "pending"
             if job is not None and job.state == "completed":
                 return "completed"
+            if isinstance(job_data, Mapping) and job_data.get("seq") == 0:
+                return "absent"
             if job is not None and job.state not in {"failed", "killed"}:
                 self.orchestrator.job_manager.update_state(job_id, "failed")
             return "absent"
@@ -2302,6 +2745,8 @@ class RayJobAdapter:
             if isinstance(job_data, dict):
                 job_data["state"] = "completed"
                 job_data["result_payload"] = dict(durable_payload)
+        if state == "failed":
+            self._mark_job_failed(target, job_id)
         return state
 
     def acknowledge_result(self, target: Mapping[str, Any]) -> None:
@@ -2335,7 +2780,9 @@ class RayJobAdapter:
         )
         self._restore_job(target, job_id)
         job = self.orchestrator.job_manager.get(job_id)
-        if job is not None and job.state in {"completed", "failed", "killed"}:
+        if job is not None and job.state in {"completed", "failed"}:
+            return False
+        if job is not None and job.state == "killed":
             return True
         actor = self._lookup_actor(job_id)
         if actor is None:
@@ -2346,13 +2793,21 @@ class RayJobAdapter:
             )
         try:
             cancel = getattr(actor, "cancel", None)
-            if cancel is not None and not hasattr(cancel, "remote"):
-                if cancel() is False:
-                    return False
-            else:
+            if cancel is None:
                 import ray
 
                 ray.kill(actor, no_restart=True)
+                cancellation_state = "killed"
+            else:
+                cancellation_state = self._ray_get(cancel)
+                if cancellation_state is False:
+                    return False
+                cancellation_state = str(cancellation_state).lower()
+                if cancellation_state in {"completed", "failed"}:
+                    observed = self.observe(target)
+                    if observed == "completed":
+                        self.acknowledge_result(target)
+                    return False
         except BaseException:
             return False
         marked = self.orchestrator.job_manager.update_state(job_id, "killed")

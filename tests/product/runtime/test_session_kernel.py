@@ -167,6 +167,15 @@ def test_same_path_sink_failure_cannot_rollback_overlapping_success(monkeypatch:
     assert "success" not in errors and isinstance(errors.get("fault"), OSError) and [json.loads(row)["sequence"] for row in path.read_text().splitlines()] == [1, 2]
 @pytest.mark.parametrize("values", [("bad", 0, "text/plain"), (HASH + "\n", 0, "text/plain"), (HASH, -1, "text/plain"), (HASH, 1.5, "text/plain"), (HASH, 0, "")])
 def test_invalid_artifact_refs(values: tuple[object, ...]) -> None: pytest.raises(ValueError, ArtifactRef, *values)  # type: ignore[arg-type]
+def test_artifact_store_normalizes_relative_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    store = ArtifactStore("relative-artifacts")
+
+    assert store._root == tmp_path / "relative-artifacts"
+
 @pytest.mark.parametrize("name", ["..", "../escape", "/tmp/escape", "a/b", "a\\b", "C:escape", "bad\nname"])
 def test_anchored_storage_rejects_path_components(tmp_path: Path, name: str) -> None:
     pytest.skip("dir_fd operations are POSIX-only") if os.name == "nt" else None; descriptor, store = os.open(tmp_path, os.O_RDONLY), ArtifactStore(tmp_path / "objects"); ref = store.put(b"proof")

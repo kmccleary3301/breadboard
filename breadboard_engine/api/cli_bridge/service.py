@@ -35,6 +35,7 @@ from breadboard.product.runtime.children import (
     LateResultRejected,
     ProcessExecutionAdapter,
     RayJobAdapter,
+    _parent_cancellation_requests,
 )
 from breadboard.product.coordination.work_items import WorkItem, WorkItemRepository
 from breadboard.product.runtime.session_store import (
@@ -2225,63 +2226,74 @@ class SessionService:
                 "durable parent cancellation requires an authoritative WorkItemRepository"
             )
         if isinstance(parent_cancellation, Mapping) and repository is not None:
-            work_item_id = str(parent_cancellation.get("work_item_id") or "").strip()
-            reason_value = parent_cancellation.get("reason")
-            workspace = str(metadata.get("workspace") or "").strip()
-            if not work_item_id:
+            try:
+                cancellation_requests = _parent_cancellation_requests(
+                    parent_cancellation
+                )
+            except ValueError as error:
+                if "child references" in str(error):
+                    raise RuntimeError(str(error)) from error
+                raise RuntimeError(
+                    "durable parent cancellation marker is invalid"
+                ) from error
+            if not cancellation_requests:
                 raise RuntimeError(
                     "durable parent cancellation has no parent Work Item"
                 )
+            workspace = str(metadata.get("workspace") or "").strip()
             if not workspace:
                 raise RuntimeError("durable parent cancellation has no workspace")
-            if not isinstance(reason_value, str) or not reason_value.strip():
-                raise RuntimeError("durable parent cancellation reason is invalid")
-            reason = reason_value.strip()
-            child_refs = parent_cancellation.get("child_recovery_refs")
-            if not isinstance(child_refs, (list, tuple)) or any(
-                not isinstance(ref, str) or not ref.strip() for ref in child_refs
-            ):
-                raise RuntimeError(
-                    "durable parent cancellation child references are invalid"
-                )
-            if work_item_id and workspace:
-                cancel_child = getattr(self._durable_child_reconciler, "cancel", None)
-                reconcile_child = getattr(
-                    self._durable_child_reconciler, "__call__", None
-                )
-                for child_ref in child_refs:
-                    if not callable(cancel_child):
-                        if not callable(reconcile_child):
-                            raise RuntimeError(
-                                "durable parent cancellation cannot replay child cancellation"
-                            )
-                        repaired = reconcile_child(child_ref)
-                        if inspect.isawaitable(repaired):
-                            repaired = await repaired
-                        if getattr(repaired, "terminal_count", 0) != 1:
-                            raise RuntimeError(
-                                "durable parent cancellation replay did not settle child"
-                            )
-                        continue
-                    try:
-                        result = cancel_child(child_ref, reason=reason)
-                        if inspect.isawaitable(result):
-                            result = await result
-                        if getattr(result, "terminal_count", 0) != 1:
-                            raise RuntimeError(
-                                "durable parent cancellation replay did not settle child"
-                            )
-                    except (ExpectedRevisionConflict, LateResultRejected):
-                        if not callable(reconcile_child):
-                            raise
-                        repaired = reconcile_child(child_ref)
-                        if inspect.isawaitable(repaired):
-                            repaired = await repaired
-                        if getattr(repaired, "terminal_count", 0) != 1:
-                            raise RuntimeError(
-                                "durable parent cancellation replay did not settle child"
-                            )
-                parent_product, _ = load_session(workspace, record.session_id)
+            cancel_child = getattr(
+                self._durable_child_reconciler, "cancel", None
+            )
+            reconcile_child = getattr(
+                self._durable_child_reconciler, "__call__", None
+            )
+            child_reasons: dict[str, str] = {}
+            for cancellation_request in cancellation_requests:
+                for child_ref in cancellation_request[
+                    "child_recovery_refs"
+                ]:
+                    child_reasons.setdefault(
+                        child_ref, cancellation_request["reason"]
+                    )
+            for child_ref, reason in child_reasons.items():
+                if not callable(cancel_child):
+                    if not callable(reconcile_child):
+                        raise RuntimeError(
+                            "durable parent cancellation cannot replay child cancellation"
+                        )
+                    repaired = reconcile_child(child_ref)
+                    if inspect.isawaitable(repaired):
+                        repaired = await repaired
+                    if getattr(repaired, "terminal_count", 0) != 1:
+                        raise RuntimeError(
+                            "durable parent cancellation replay did not settle child"
+                        )
+                    continue
+                try:
+                    result = cancel_child(child_ref, reason=reason)
+                    if inspect.isawaitable(result):
+                        result = await result
+                    if getattr(result, "terminal_count", 0) != 1:
+                        raise RuntimeError(
+                            "durable parent cancellation replay did not settle child"
+                        )
+                except (ExpectedRevisionConflict, LateResultRejected):
+                    if not callable(reconcile_child):
+                        raise
+                    repaired = reconcile_child(child_ref)
+                    if inspect.isawaitable(repaired):
+                        repaired = await repaired
+                    if getattr(repaired, "terminal_count", 0) != 1:
+                        raise RuntimeError(
+                            "durable parent cancellation replay did not settle child"
+                        )
+            parent_product, _ = load_session(workspace, record.session_id)
+            parent_works: list[WorkItem] = []
+            for cancellation_request in cancellation_requests:
+                work_item_id = cancellation_request["work_item_id"]
+                reason = cancellation_request["reason"]
                 parent_work = WorkItem.restore(repository, work_item_id)
                 product_status = parent_product.read_model.status
                 work_status = parent_work.read_model.status
@@ -2308,7 +2320,8 @@ class SessionService:
                                 workspace,
                                 record.session_id,
                                 lambda current: current.fail(
-                                    "work_item", "replayed Work Item failure"
+                                    "work_item",
+                                    "replayed Work Item failure",
                                 ),
                             )
                         else:
@@ -2338,7 +2351,8 @@ class SessionService:
                             )
                         elif product_status == "failed":
                             parent_work.fail(
-                                "product_session", "replayed Product Session failure"
+                                "product_session",
+                                "replayed Product Session failure",
                             )
                         else:
                             parent_work.cancel("operator", reason)
@@ -2357,63 +2371,90 @@ class SessionService:
                     raise RuntimeError(
                         "durable parent cancellation cannot reconcile owners"
                     ) from error
-                parent_product, _ = load_session(workspace, record.session_id)
-                parent_work = WorkItem.restore(repository, work_item_id)
-                if (
-                    parent_product.read_model.status
+                parent_product, _ = load_session(
+                    workspace, record.session_id
+                )
+                parent_works.append(
+                    WorkItem.restore(repository, work_item_id)
+                )
+            if (
+                parent_product.read_model.status
+                not in {"canceled", "completed", "failed"}
+                or any(
+                    parent_work.read_model.status
                     not in {"canceled", "completed", "failed"}
                     or parent_work.read_model.status
-                    not in {"canceled", "completed", "failed"}
-                    or parent_product.read_model.status != parent_work.read_model.status
-                ):
+                    != parent_product.read_model.status
+                    for parent_work in parent_works
+                )
+            ):
+                raise RuntimeError(
+                    "durable parent cancellation did not settle owners"
+                )
+            bridge_status = {
+                "completed": SessionStatus.COMPLETED,
+                "failed": SessionStatus.FAILED,
+                "canceled": SessionStatus.STOPPED,
+            }[parent_product.read_model.status]
+            record.product_session = parent_product
+            terminal_runner = SessionRunner(
+                session=record,
+                registry=self.registry,
+                request=SessionCreateRequest(
+                    task="", metadata=dict(record.metadata or {})
+                ),
+            )
+            self._bind_restored_durable_product_session(
+                record,
+                terminal_runner,
+            )
+            self._restore_retained_workspace_attachments(record, terminal_runner)
+            terminal_runner.reconcile_retained_input_admissions()
+            async with record.admission_lock:
+                record.admission_closed = True
+            await terminal_runner._terminalize_admitted_turns(
+                outcome={
+                    "completed": "completed",
+                    "failed": "failed",
+                    "canceled": "cancelled",
+                }[parent_product.read_model.status],
+                reason="restored_parent_cancellation",
+                error_code=(
+                    "runtime_failure"
+                    if parent_product.read_model.status == "failed"
+                    else None
+                ),
+            )
+            terminal_runner._commit_terminal_product_session_locked()
+            await self.registry.update_status(record.session_id, bridge_status)
+            async with record.dispatch_lock:
+                setattr(record, "_dispatcher_complete", True)
+            clear_marker = getattr(
+                self.registry,
+                "compare_and_swap_durable_parent_cancellation",
+                None,
+            )
+            if not callable(clear_marker):
+                raise RuntimeError(
+                    "registry cannot atomically clear parent cancellation"
+                )
+            cleared = clear_marker(
+                record.session_id,
+                expected=dict(parent_cancellation),
+            )
+            if inspect.isawaitable(cleared):
+                cleared = await cleared
+            if not cleared:
+                refreshed = await self.registry.get(record.session_id)
+                if refreshed is None:
                     raise RuntimeError(
-                        "durable parent cancellation did not settle owners"
+                        "parent SessionRecord disappeared during cancellation replay"
                     )
-                bridge_status = {
-                    "completed": SessionStatus.COMPLETED,
-                    "failed": SessionStatus.FAILED,
-                    "canceled": SessionStatus.STOPPED,
-                }[parent_product.read_model.status]
-                record.product_session = parent_product
-                terminal_runner = SessionRunner(
-                    session=record,
-                    registry=self.registry,
-                    request=SessionCreateRequest(
-                        task="", metadata=dict(record.metadata or {})
-                    ),
-                )
-                self._bind_restored_durable_product_session(
-                    record,
-                    terminal_runner,
-                )
-                self._restore_retained_workspace_attachments(record, terminal_runner)
-                terminal_runner.reconcile_retained_input_admissions()
-                async with record.admission_lock:
-                    record.admission_closed = True
-                await terminal_runner._terminalize_admitted_turns(
-                    outcome={
-                        "completed": "completed",
-                        "failed": "failed",
-                        "canceled": "cancelled",
-                    }[parent_product.read_model.status],
-                    reason="restored_parent_cancellation",
-                    error_code=(
-                        "runtime_failure"
-                        if parent_product.read_model.status == "failed"
-                        else None
-                    ),
-                )
-                terminal_runner._commit_terminal_product_session_locked()
-                await self.registry.update_status(record.session_id, bridge_status)
-                async with record.dispatch_lock:
-                    setattr(record, "_dispatcher_complete", True)
-                metadata["durable_parent_cancellation"] = None
-                await self.registry.update_metadata(
-                    record.session_id, metadata=metadata
-                )
-                record.runner = None
-                record.loaded_from_retained_state = False
+                await self._resume_retained_session(refreshed)
                 return
+            record.runner = None
+            record.loaded_from_retained_state = False
+            return
         metadata = dict(record.metadata or {})
         recorded_event_root = metadata.get(_SESSION_EVENT_ROOT_METADATA_KEY)
         recorded_workspace = metadata.get("workspace")
