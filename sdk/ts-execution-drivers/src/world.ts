@@ -225,6 +225,13 @@ function selectWorldDriver(
     if (!directMatch.supportsCapability(input.capability, input.placement.placement_class)) {
       return null
     }
+    if (
+      input.terminal &&
+      typeof directMatch.supportsTerminalSessions === "function" &&
+      !directMatch.supportsTerminalSessions(input.capability, input.placement.placement_class)
+    ) {
+      return null
+    }
     if (input.terminal) {
       if (input.terminalOperation === "start" && typeof directMatch.startTerminalSession !== "function") {
         return null
@@ -398,6 +405,7 @@ export function createExecutionWorld(input: {
   const defaultTerminationGraceMs = input.terminationGraceMs ?? 2000
   const sessions = new Map<string, TerminalSessionDriverV1>()
   const endedSessionOwners = new Map<string, TerminalSessionDriverV1>()
+  const startingSessionIds = new Set<string>()
   function rememberEndedSessionOwner(sessionId: string, driver: TerminalSessionDriverV1): void {
     if (endedSessionOwners.has(sessionId)) {
       endedSessionOwners.delete(sessionId)
@@ -802,13 +810,14 @@ export function createExecutionWorld(input: {
   }
 
   async function executeTerminalStart(operation: ExecutionWorldTerminalStartOperationV1): Promise<ExecutionWorldTerminalStartResultV1> {
+    const terminalSessionId = operation.input.terminalSessionId
     const existingOwner =
-      sessions.get(operation.input.terminalSessionId) ??
-      endedSessionOwners.get(operation.input.terminalSessionId)
-    if (existingOwner) {
+      sessions.get(terminalSessionId) ??
+      endedSessionOwners.get(terminalSessionId)
+    if (existingOwner || startingSessionIds.has(terminalSessionId)) {
       return {
         kind: "terminal_start",
-        driverId: existingOwner.driverId ?? null,
+        driverId: existingOwner?.driverId ?? operation.driverId ?? null,
         capability: operation.capability,
         placement: operation.placement,
         result: null,
@@ -843,6 +852,7 @@ export function createExecutionWorld(input: {
         ),
       }
     }
+    startingSessionIds.add(terminalSessionId)
     try {
       const rawResult = await driver.startTerminalSession(operation.input)
       if (!rawResult || !rawResult.descriptor) {
@@ -952,11 +962,31 @@ export function createExecutionWorld(input: {
           "terminal_start_failed",
         ),
       }
+    } finally {
+      startingSessionIds.delete(terminalSessionId)
     }
   }
 
   async function executeTerminalInteract(operation: ExecutionWorldTerminalInteractionOperationV1): Promise<ExecutionWorldTerminalInteractionResultV1> {
     const selected = sessions.get(operation.input.terminalSessionId) ?? endedSessionOwners.get(operation.input.terminalSessionId)
+    if (selected && operation.driverId && selected.driverId !== operation.driverId) {
+      return {
+        kind: "terminal_interact",
+        driverId: selected.driverId,
+        result: null,
+        unsupportedCase: buildTerminalUnsupportedCase(
+          operation.capability,
+          operation.placement,
+          `Terminal session '${operation.input.terminalSessionId}' is owned by '${selected.driverId}', not pinned driver '${operation.driverId}'.`,
+          "unsupported_terminal_driver",
+          {
+            terminal_session_id: operation.input.terminalSessionId,
+            owner_driver_id: selected.driverId,
+            pinned_driver_id: operation.driverId,
+          },
+        ),
+      }
+    }
     const driver =
       selected ??
       selectWorldDriver(drivers, {

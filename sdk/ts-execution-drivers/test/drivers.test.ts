@@ -3101,6 +3101,10 @@ test("execution world rejects start for already active terminal session without 
   }
 
   let startCallCount = 0
+  let releaseStart: (() => void) | undefined
+  const startGate = new Promise<void>((resolve) => {
+    releaseStart = resolve
+  })
   const driver: TerminalSessionDriverV1 = {
     driverId: "dup-test-driver",
     supportedPlacements: ["local_process"],
@@ -3108,6 +3112,7 @@ test("execution world rejects start for already active terminal session without 
     supportsTerminalSessions: () => true,
     startTerminalSession: async (input) => {
       startCallCount++
+      await startGate
       return {
         descriptor: {
           schema_version: "bb.terminal_session_descriptor.v1",
@@ -3130,8 +3135,7 @@ test("execution world rejects start for already active terminal session without 
 
   const world = createExecutionWorld({ drivers: [driver] })
 
-  // First start succeeds
-  const start1 = await world.execute({
+  const firstStartPromise = world.execute({
     kind: "terminal_start",
     capability: cap,
     placement: place,
@@ -3140,12 +3144,28 @@ test("execution world rejects start for already active terminal session without 
       command: ["bash"],
     },
   })
-  assert.equal(start1.kind, "terminal_start")
-  assert.ok(start1.result !== null)
   assert.equal(startCallCount, 1)
 
-  // Second start for same active session ID is rejected before second adapter launch
-  const start2 = await world.execute({
+  const overlappingStart = await world.execute({
+    kind: "terminal_start",
+    capability: cap,
+    placement: place,
+    input: {
+      terminalSessionId: "term-active-dup-1",
+      command: ["bash", "-c", "echo overlapping"],
+    },
+  })
+  assert.equal(overlappingStart.kind, "terminal_start")
+  assert.equal(overlappingStart.result, null)
+  assert.equal(overlappingStart.unsupportedCase?.reason_code, "terminal_session_already_active")
+  assert.equal(startCallCount, 1)
+
+  releaseStart?.()
+  const firstStart = await firstStartPromise
+  assert.equal(firstStart.kind, "terminal_start")
+  assert.ok(firstStart.result !== null)
+
+  const activeDuplicate = await world.execute({
     kind: "terminal_start",
     capability: cap,
     placement: place,
@@ -3154,11 +3174,10 @@ test("execution world rejects start for already active terminal session without 
       command: ["bash", "-c", "echo second"],
     },
   })
-  assert.equal(start2.kind, "terminal_start")
-  assert.equal(start2.result, null)
-  assert.ok(start2.unsupportedCase !== null)
-  assert.equal(start2.unsupportedCase?.reason_code, "terminal_session_already_active")
-  assert.equal(startCallCount, 1, "adapter.startTerminalSession was not called a second time")
+  assert.equal(activeDuplicate.kind, "terminal_start")
+  assert.equal(activeDuplicate.result, null)
+  assert.equal(activeDuplicate.unsupportedCase?.reason_code, "terminal_session_already_active")
+  assert.equal(startCallCount, 1, "adapter start ran only once")
 })
 
 test("execution world raw pinned driverId rejects sandbox-only driver for terminal start", async () => {
@@ -3801,6 +3820,16 @@ test("execution world reserved pinned driver bypasses later mutable predicate fl
   assert.equal(startNew.kind, "terminal_start")
   assert.equal(startNew.result, null)
   assert.ok(startNew.unsupportedCase !== null)
+  const pinnedStart = await world.execute({
+    kind: "terminal_start",
+    capability: cap,
+    placement: place,
+    driverId: driver.driverId,
+    input: { terminalSessionId: "term-mutable-pinned", command: ["bash"] },
+  })
+  assert.equal(pinnedStart.kind, "terminal_start")
+  assert.equal(pinnedStart.result, null)
+  assert.ok(pinnedStart.unsupportedCase !== null)
 })
 
 test("execution world cleanup with explicit pin and scope all rejects invalid pin without fan-out", async () => {
@@ -4448,7 +4477,7 @@ test("execution world generic terminal selection requires a complete terminal dr
   assert.equal(world.select({ capability, placement, terminal: true }).driverId, null)
 })
 
-test("execution world rejects an explicit cleanup pin that differs from the session owner", async () => {
+test("execution world rejects explicit interaction and cleanup pins that differ from the session owner", async () => {
   const capability: ExecutionCapabilityV1 = {
     schema_version: "bb.execution_capability.v1",
     capability_id: "cap-owner-pin",
@@ -4465,6 +4494,7 @@ test("execution world rejects an explicit cleanup pin that differs from the sess
     capability_id: capability.capability_id,
   }
   const cleanupCalls: string[] = []
+  const interactionCalls: string[] = []
   const makeDriver = (driverId: string): TerminalSessionDriverV1 => ({
     driverId,
     supportedPlacements: ["local_process"],
@@ -4484,6 +4514,17 @@ test("execution world rejects an explicit cleanup pin that differs from the sess
       },
       outputDeltas: [],
     }),
+    interactTerminalSession: async (input) => {
+      interactionCalls.push(driverId)
+      return {
+        interaction: {
+          schema_version: "bb.terminal_interaction.v1",
+          terminal_session_id: input.terminalSessionId,
+          interaction_kind: input.interactionKind,
+        },
+        outputDeltas: [],
+      }
+    },
     cleanupTerminalSessions: async (input) => {
       cleanupCalls.push(driverId)
       return {
@@ -4503,6 +4544,16 @@ test("execution world rejects an explicit cleanup pin that differs from the sess
     driverId: "owner-driver",
     input: { terminalSessionId: "term-owner-pin", command: ["bash"] },
   })
+  const interaction = await world.execute({
+    kind: "terminal_interact",
+    capability,
+    placement,
+    driverId: "pinned-driver",
+    input: { terminalSessionId: "term-owner-pin", interactionKind: "poll" },
+  })
+  assert.equal(interaction.kind, "terminal_interact")
+  assert.equal(interaction.result, null)
+  assert.deepEqual(interactionCalls, [])
   const result = await world.execute({
     kind: "terminal_cleanup",
     capability,

@@ -175,7 +175,7 @@ export async function executeRemoteSandboxRequest(
         })
       : null
   try {
-    const fetchPromise = Promise.resolve(
+    const responseAndPayloadPromise = Promise.resolve(
       fetchImpl(options.endpointUrl, {
         method: "POST",
         headers: {
@@ -185,9 +185,13 @@ export async function executeRemoteSandboxRequest(
         body: JSON.stringify(envelope),
         signal: internalController.signal,
       }),
-    )
-    const response = timeoutPromise ? await Promise.race([fetchPromise, timeoutPromise]) : await fetchPromise
-    const payload = (await response.json()) as RemoteExecutionResponseEnvelopeV1 | SandboxResultV1
+    ).then(async (response) => ({
+      response,
+      payload: (await response.json()) as RemoteExecutionResponseEnvelopeV1 | SandboxResultV1,
+    }))
+    const { response, payload } = timeoutPromise
+      ? await Promise.race([responseAndPayloadPromise, timeoutPromise])
+      : await responseAndPayloadPromise
     if (!response.ok) {
       throw new Error(buildRemoteExecutionErrorSummary(payload, response.status))
     }

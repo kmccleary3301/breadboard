@@ -209,6 +209,28 @@ test("remote driver turns timeout aborts into a stable timeout error", async () 
   )
 })
 
+test("remote driver keeps the timeout active while parsing the response body", async () => {
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:remote:body-timeout",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  await assert.rejects(
+    () =>
+      executeRemoteSandboxRequest(request, {
+        endpointUrl: "https://example.test/remote-body-timeout",
+        timeoutMs: 5,
+        fetchImpl: async () =>
+          ({
+            ok: true,
+            status: 200,
+            json: async () => new Promise<never>(() => {}),
+          }) as unknown as Response,
+      }),
+    /timed out after 5ms/,
+  )
+})
+
 test("remote error-summary helper falls back cleanly", () => {
   assert.equal(buildRemoteExecutionErrorSummary({ message: "oops" }, 500), "oops")
   assert.equal(buildRemoteExecutionErrorSummary({}, 502), "Remote execution endpoint returned HTTP 502")
