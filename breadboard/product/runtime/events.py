@@ -27,8 +27,8 @@ class _SinkState:
     def __init__(self) -> None: self.lock, self.poisoned = RLock(), set()
 _STATES = tuple(_SinkState() for _ in range(256))
 class JsonlEventSink:
-    def __init__(self, path: str | Path) -> None:
-        self.path = Path(path).resolve(); path, state = self.path, _STATES[hash(self.path) % len(_STATES)]
+    def __init__(self, path: str | Path, *, max_bytes: int | None = None) -> None:
+        self.path = Path(path).resolve(); self._max_bytes = max_bytes; path, state = self.path, _STATES[hash(self.path) % len(_STATES)]
         with state.lock: self._mkdir_parent(path.parent)
         with state.lock, ProcessLock(path): self._recover(path, state)
     def _mkdir_parent(self, path: Path) -> None:
@@ -71,6 +71,7 @@ class JsonlEventSink:
             except FileExistsError: stream = path.open("a+b", buffering=0); created = False
             try:
                 stream.seek(0, os.SEEK_END); offset = stream.tell()
+                if self._max_bytes is not None and offset + len(payload) > self._max_bytes: raise RuntimeError("event journal exceeds byte limit")
                 try:
                     self._begin(path, offset)
                     if stream.write(payload) != len(payload): raise OSError("short event sink write")

@@ -1947,6 +1947,121 @@ async def test_retained_event_journal_rejects_oversized_file_before_read(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="POSIX FIFO semantics")
+async def test_retained_event_journal_rejects_fifo_without_blocking(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard.product.runtime import ReplayError
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    journal.unlink()
+    os.mkfifo(journal)
+
+    with pytest.raises(ReplayError, match="unsafe logical event journal"):
+        _restore_product_session(response.session_id, event_root=event_root)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="POSIX hard-link containment")
+async def test_retained_event_journal_rejects_hard_link(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard.product.runtime import ReplayError
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    outside = tmp_path / "outside-events.jsonl"
+    outside.write_bytes(journal.read_bytes())
+    outside_before = outside.read_bytes()
+    journal.unlink()
+    os.link(outside, journal)
+
+    with pytest.raises(ReplayError, match="unsafe logical event journal"):
+        _restore_product_session(response.session_id, event_root=event_root)
+
+    assert outside.read_bytes() == outside_before
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor recovery")
+async def test_retained_recovery_preserves_journal_and_wal_for_hard_link(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge.service import _RetainedEventSink
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    session_directory = event_root / response.session_id
+    journal = session_directory / "session_events.jsonl"
+    before = journal.read_bytes()
+    transaction = session_directory / ".session_events.jsonl.txn"
+    transaction.write_text("0", encoding="ascii")
+    outside = tmp_path / "outside-events.jsonl"
+    os.link(journal, outside)
+    directory_stat = session_directory.stat(follow_symlinks=False)
+    journal_stat = journal.stat(follow_symlinks=False)
+    sink = _RetainedEventSink(
+        None,
+        event_root,
+        response.session_id,
+        (
+            (directory_stat.st_dev, directory_stat.st_ino),
+            (journal_stat.st_dev, journal_stat.st_ino),
+        ),
+    )
+    session_descriptor = os.open(session_directory, os.O_RDONLY)
+    event_descriptor = os.open(journal, os.O_RDWR)
+    try:
+        with pytest.raises(OSError, match="exactly one hard link"):
+            sink._recover_transaction_posix(
+                session_descriptor,
+                event_descriptor,
+            )
+    finally:
+        os.close(event_descriptor)
+        os.close(session_descriptor)
+
+    assert journal.read_bytes() == before
+    assert outside.read_bytes() == before
+    assert transaction.read_text(encoding="ascii") == "0"
+
+
+@pytest.mark.asyncio
+async def test_restored_event_sink_rejects_append_past_byte_limit(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge import service as service_module
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    restored = service_module._restore_product_session(
+        response.session_id,
+        event_root=event_root,
+    )
+    before = journal.read_bytes()
+    monkeypatch.setattr(
+        service_module,
+        "_MAX_RETAINED_EVENT_JOURNAL_BYTES",
+        len(before),
+    )
+
+    with pytest.raises(RuntimeError, match="exceeds byte limit"):
+        restored.complete()
+
+    assert journal.read_bytes() == before
+
+
+@pytest.mark.asyncio
 async def test_restored_event_sink_revalidates_identity_before_every_append(
     monkeypatch, tmp_path
 ) -> None:

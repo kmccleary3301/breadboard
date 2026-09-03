@@ -169,6 +169,14 @@ def _read_bounded_event_journal(stream: Any, size: int) -> bytes:
         raise OSError("retained event journal exceeds byte limit")
     return payload
 
+def _validate_retained_event_journal_stat(file_stat: os.stat_result) -> None:
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise OSError("retained event journal is not a regular file")
+    if file_stat.st_nlink != 1:
+        raise OSError("retained event journal must have exactly one hard link")
+
+
+
 
 def _event_root(state_paths: ManagedStatePaths | None = None) -> Path:
     managed = state_paths if state_paths is not None else managed_state_paths()
@@ -212,6 +220,7 @@ def _read_retained_event_journal(
             )
             directory_stat = event_path.parent.stat(follow_symlinks=False)
             file_stat = event_path.stat(follow_symlinks=False)
+            _validate_retained_event_journal_stat(file_stat)
             with event_path.open("rb") as stream:
                 payload = _read_bounded_event_journal(stream, file_stat.st_size)
         finally:
@@ -235,12 +244,13 @@ def _read_retained_event_journal(
             directory_stat = os.fstat(session_descriptor)
             event_descriptor = os.open(
                 "session_events.jsonl",
-                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                os.O_RDONLY
+                | getattr(os, "O_NONBLOCK", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
                 dir_fd=session_descriptor,
             )
             file_stat = os.fstat(event_descriptor)
-            if not stat.S_ISREG(file_stat.st_mode):
-                raise OSError("retained event journal is not a regular file")
+            _validate_retained_event_journal_stat(file_stat)
             with os.fdopen(event_descriptor, "rb") as stream:
                 event_descriptor = None
                 payload = _read_bounded_event_journal(stream, file_stat.st_size)
@@ -287,6 +297,7 @@ def _retained_event_journal_identity(
             )
             directory_stat = event_path.parent.stat(follow_symlinks=False)
             file_stat = event_path.stat(follow_symlinks=False)
+            _validate_retained_event_journal_stat(file_stat)
         finally:
             for handle in reversed(handles):
                 AnchoredStorage.close_windows_handle(handle)
@@ -308,12 +319,13 @@ def _retained_event_journal_identity(
             directory_stat = os.fstat(session_descriptor)
             event_descriptor = os.open(
                 "session_events.jsonl",
-                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                os.O_RDONLY
+                | getattr(os, "O_NONBLOCK", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
                 dir_fd=session_descriptor,
             )
             file_stat = os.fstat(event_descriptor)
-            if not stat.S_ISREG(file_stat.st_mode):
-                raise OSError("retained event journal is not a regular file")
+            _validate_retained_event_journal_stat(file_stat)
         finally:
             if event_descriptor is not None:
                 os.close(event_descriptor)
@@ -352,6 +364,8 @@ class _RetainedEventSink:
         directory_stat: os.stat_result,
         file_stat: os.stat_result,
     ) -> None:
+        if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_nlink != 1:
+            raise RuntimeError("retained event journal identity changed")
         current_identity = (
             (directory_stat.st_dev, directory_stat.st_ino),
             (file_stat.st_dev, file_stat.st_ino),
@@ -408,11 +422,28 @@ class _RetainedEventSink:
             recovered_offset = int(raw_offset.decode("ascii"))
         finally:
             os.close(transaction_descriptor)
-        current_size = os.fstat(event_descriptor).st_size
+        event_stat = os.fstat(event_descriptor)
+        current_size = event_stat.st_size
         if recovered_offset < 0 or recovered_offset > current_size:
             raise OSError("invalid retained event transaction offset")
-        os.ftruncate(event_descriptor, recovered_offset)
-        os.fsync(event_descriptor)
+        retained_tail = os.pread(
+            event_descriptor,
+            current_size - recovered_offset,
+            recovered_offset,
+        )
+        _validate_retained_event_journal_stat(event_stat)
+        truncated = False
+        try:
+            os.ftruncate(event_descriptor, recovered_offset)
+            truncated = True
+            os.fsync(event_descriptor)
+            _validate_retained_event_journal_stat(os.fstat(event_descriptor))
+        except BaseException:
+            if truncated:
+                os.lseek(event_descriptor, recovered_offset, os.SEEK_SET)
+                self._write_all(event_descriptor, retained_tail)
+                os.fsync(event_descriptor)
+            raise
         self._unlink_regular_at(session_descriptor, transaction_name)
         os.fsync(session_descriptor)
 
@@ -443,6 +474,7 @@ class _RetainedEventSink:
                 "session_events.jsonl",
                 os.O_RDWR
                 | os.O_APPEND
+                | getattr(os, "O_NONBLOCK", 0)
                 | getattr(os, "O_NOFOLLOW", 0),
                 dir_fd=session_descriptor,
             )
@@ -460,6 +492,8 @@ class _RetainedEventSink:
             transaction_name = ".session_events.jsonl.txn"
             temporary_name = f"{transaction_name}.tmp"
             original_offset = os.lseek(event_descriptor, 0, os.SEEK_END)
+            if original_offset + len(payload) > _MAX_RETAINED_EVENT_JOURNAL_BYTES:
+                raise RuntimeError("retained event journal exceeds byte limit")
             transaction_descriptor = os.open(
                 temporary_name,
                 os.O_WRONLY
@@ -553,7 +587,10 @@ class _RetainedEventSink:
                     event_path.parent.stat(follow_symlinks=False),
                     event_path.stat(follow_symlinks=False),
                 )
-                delegate = JsonlEventSink(event_path)
+                delegate = JsonlEventSink(
+                    event_path,
+                    max_bytes=_MAX_RETAINED_EVENT_JOURNAL_BYTES,
+                )
                 with ProcessLock(event_path):
                     retained = _read_retained_event_journal(
                         self._event_root,
@@ -602,7 +639,9 @@ class _RetainedEventSink:
             fcntl.flock(process_lock_descriptor, fcntl.LOCK_EX)
             event_descriptor = os.open(
                 "session_events.jsonl",
-                os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+                os.O_RDWR
+                | getattr(os, "O_NONBLOCK", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
                 dir_fd=session_descriptor,
             )
             self._verify_identity(
