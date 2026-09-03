@@ -2396,6 +2396,37 @@ async def test_durable_terminal_envelope_commits_resolution_before_drain(
 
 
 @pytest.mark.asyncio
+async def test_disk_refresh_preserves_live_admission_payload_identity(
+    tmp_path: Path,
+) -> None:
+    registry, _, _, _ = registry_fixture(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="live-admission-refresh",
+        status=SessionStatus.RUNNING,
+        active_turn_id="turn-live-admission",
+    )
+    turn = TurnRecord(
+        input_id="input-live-admission",
+        turn_id="turn-live-admission",
+        client_message_id="message-live-admission",
+        content="execute this exact request",
+        attachments=("artifact-live-admission",),
+        original_disposition="started",
+        state="active",
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    await registry.create(record)
+
+    refreshed = await registry.get(record.session_id)
+
+    assert refreshed is record
+    assert refreshed.turns_by_id[turn.turn_id] is turn
+    assert turn.client_message_id == "message-live-admission"
+    assert turn.content == "execute this exact request"
+    assert turn.attachments == ("artifact-live-admission",)
+
+
+@pytest.mark.asyncio
 async def test_initial_task_is_retained_before_session_becomes_runnable(
     tmp_path: Path,
 ) -> None:

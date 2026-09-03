@@ -757,12 +757,9 @@ class PersistenceMixin:
 
     @staticmethod
     def _copy_turn_fields(target: TurnRecord, source: TurnRecord) -> None:
+        if (target.input_id, target.turn_id) != (source.input_id, source.turn_id):
+            raise ValueError("retained turn identity changed during refresh")
         for field_name in (
-            "input_id",
-            "turn_id",
-            "client_message_id",
-            "content",
-            "attachments",
             "original_disposition",
             "state",
             "cancellation_requested",
