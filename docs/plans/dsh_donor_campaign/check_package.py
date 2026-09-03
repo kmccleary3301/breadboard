@@ -12,10 +12,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 EVIDENCE = ROOT / "evidence"
 SPEC = ROOT / "DSH_DONOR_CAMPAIGN_SPEC.md"
-SPEC_DIGEST = "5490f2120d63abb0f2bd3e90bbb5d3d66676f90612f37faae71632337a370b70"
+SPEC_DIGEST = "54b78fc2b896561bfaed216a26883928346aa27f8e108ba80288bffe968b95a0"
 AUDIT = ROOT / "COMPLETION_AUDIT.md"
 FINAL_SPEC_REVIEW = EVIDENCE / "FINAL_SPEC_REVIEW.json"
-FINAL_SPEC_REVIEW_DIGEST = "59c530dec85381bc583a04419053a3de8321bbb5cd9edbcf44f3ce3a73c3386c"
+FINAL_SPEC_REVIEW_DIGEST = "74a4113485a69b8dae8433e4e93349c7dd8568d2ee4fee3d5f77715bf51e9811"
 PACKETS = EVIDENCE / "05_FIRST_TRANCHE_PACKET_SET.md"
 PACKETS_DIGEST = "8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69"
 DONOR_INVENTORY = EVIDENCE / "DONOR_ITEMS.yaml"
@@ -40,12 +40,19 @@ DAG_ROOT = EVIDENCE / "raw/bb-inj5.7"
 DAG_VALIDATOR = DAG_ROOT / "validate_dag_prototype.py"
 DAG_GRAPH = DAG_ROOT / "dag-prototype.json"
 DAG_ROUTING = DAG_ROOT / "row-routing.json"
+DAG_JOIN_FIXTURES = DAG_ROOT / "join-semantics.json"
+DAG_JOIN_TEST = DAG_ROOT / "test_join_semantics.py"
 DAG_INPUT_DIGESTS = {
-    DAG_VALIDATOR: "5c66d588cd7eeaa6af493dafe88da5cca6dce2581abf1252943dc8bef7037021",
-    DAG_GRAPH: "4e0cf4b3a776a767f1b3a4ea6d3ba76b808f92c857fcf1adba55855188297a57",
+    DAG_VALIDATOR: "04f471da5821d1dac8e576dd997f68571464d8ef4e1d53425acc04c66981f41d",
+    DAG_GRAPH: "1b71d68d4eb533f5dc62e1256489a28759ce7be115caa5df2b43ba64166a2f0d",
     DAG_ROUTING: "b43ded4b1b69dc4c77857af00c951697f550b7d3005f64c7319dab1607df5fb1",
+    DAG_JOIN_FIXTURES: "07edfd730a92990520f00ea58c5f33464093a3431006e949eb0eba54b5c08d5e",
+    DAG_JOIN_TEST: "b16aeb364a0d1bb533889c80fd7a6d9577ff10d47c394c935a4e495770b62c1e",
 }
-DAG_ARTIFACT_DIGEST = "be5f0ef5e4c0705bf37ffdf76faa328784c6afaa5357f7c3053327d150de68c6"
+DAG_ARTIFACT_DIGEST = "33c1f89ebf6e44dbf3ba5226236026c6d49a7b084f69eb90360d5127b464231d"
+DONOR_ARCHIVE = EVIDENCE / "raw/bb-inj5.1/deepseek-harness-dsh-v0.1.0-rc.8.tar.gz"
+DONOR_RESEARCH = EVIDENCE / "raw/bb-inj5.1/primary-source-research.md"
+DONOR_ARCHIVE_SHA256 = "f232ba127ad9120308436655c7c89ed1c81680c8eda0ff70d22c86c4331dfbdc"
 SPEC_FIXTURES = {
     EVIDENCE / "fixtures/ft01-cli-mock-reference-config-v1.yaml": "bb66d855ca17e04b61dcd3264faf4a7ee5d67144a26bf60a6942c9d980e9fd5b",
 }
@@ -63,12 +70,16 @@ REQUIRED = (
     AUDIT,
     FINAL_SPEC_REVIEW,
     DONOR_INVENTORY,
+    DONOR_ARCHIVE,
+    DONOR_RESEARCH,
     *(path for _, candidate, review, _ in REVIEWED_GATES for path in (candidate, review)),
     SURFACE,
     EXTRACTED_SURFACE,
     DAG_VALIDATOR,
     DAG_GRAPH,
     DAG_ROUTING,
+    DAG_JOIN_FIXTURES,
+    DAG_JOIN_TEST,
     *FIXTURES,
     *SPEC_FIXTURES,
 )
@@ -87,6 +98,22 @@ def main() -> int:
     spec = SPEC.read_text(encoding="utf-8")
     audit = AUDIT.read_text(encoding="utf-8")
     packets = PACKETS.read_text(encoding="utf-8")
+    provenance = (EVIDENCE / "00_PROVENANCE_AND_REUSE.md").read_text(encoding="utf-8")
+    archive_digest = hashlib.sha256(DONOR_ARCHIVE.read_bytes()).hexdigest()
+    if archive_digest != DONOR_ARCHIVE_SHA256 or DONOR_ARCHIVE.stat().st_size != 14390053:
+        findings.append(
+            "preserved donor archive bytes differ: "
+            f"{archive_digest} ({DONOR_ARCHIVE.stat().st_size} bytes)"
+        )
+    for required_provenance in (
+        "evidence/raw/bb-inj5.1/deepseek-harness-dsh-v0.1.0-rc.8.tar.gz",
+        DONOR_ARCHIVE_SHA256,
+        "archive_path: docs/plans/dsh_donor_campaign/evidence/raw/bb-inj5.1/"
+        "deepseek-harness-dsh-v0.1.0-rc.8.tar.gz",
+        "archive_sha256: " + DONOR_ARCHIVE_SHA256,
+    ):
+        if required_provenance not in provenance:
+            findings.append(f"provenance missing exact archive binding: {required_provenance}")
     specification_digest = hashlib.sha256(SPEC.read_bytes()).hexdigest()
     packets_digest = hashlib.sha256(PACKETS.read_bytes()).hexdigest()
     if specification_digest != SPEC_DIGEST:
@@ -161,6 +188,18 @@ def main() -> int:
                     "superseded": 4,
                 },
                 "dsh_phases": list(range(13)),
+                "join_semantics": {
+                    "rq_ablation_pass": True,
+                    "rq_ablation_reconstructed": True,
+                    "rq_ablation_zero": False,
+                    "rt_replay_all": True,
+                    "rt_replay_one": False,
+                    "rt_replay_two": False,
+                    "strict_two_both": True,
+                    "strict_two_one": False,
+                    "strict_two_other": False,
+                    "strict_two_zero": False,
+                },
                 "unconditionally_promoted_new_seams": 0,
             }
             for key, expected in expected_dag_result.items():
@@ -169,6 +208,18 @@ def main() -> int:
                         f"committed DAG {key} differs: "
                         f"{dag_result.get(key)!r} != {expected!r}"
                     )
+    join_test = subprocess.run(
+        [sys.executable, str(DAG_JOIN_TEST)],
+        cwd=DAG_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if join_test.returncode != 0:
+        findings.append(
+            "DAG join semantics test failed: "
+            + (join_test.stderr.strip() or join_test.stdout.strip())
+        )
     for path, expected_digest in DAG_INPUT_DIGESTS.items():
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         if digest != expected_digest:

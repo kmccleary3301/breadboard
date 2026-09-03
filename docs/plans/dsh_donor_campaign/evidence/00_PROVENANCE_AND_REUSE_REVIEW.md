@@ -50,13 +50,13 @@ Renewal verdict: **APPROVED**. Gate G-A and A5 pass.
 
 ## Final exact-artifact review binding
 
-Reviewed candidate SHA-256: `dedb845e461b26af9c954d82de417cbb48562ffb3dfc704b5b2d4f8259784431`.
+Reviewed candidate SHA-256: `f992487953aaa321e573791b3e72e191d4ad6c262acb412a4f658c67f6e81e3b`.
 
 Independent verdict: **APPROVED**. Gate G-A passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.
 
 ## Final exact-artifact review binding — donor inventory
 
-Reviewed candidate SHA-256: `dedb845e461b26af9c954d82de417cbb48562ffb3dfc704b5b2d4f8259784431`.
+Reviewed candidate SHA-256: `f992487953aaa321e573791b3e72e191d4ad6c262acb412a4f658c67f6e81e3b`.
 
 Reviewed donor inventory `DONOR_ITEMS.yaml` SHA-256: `ddc3fab450d7ac2feeedf99dc7e23a5e54b95eb2db9aa2b8a888a99db17dd818`.
 

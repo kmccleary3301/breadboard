@@ -10,9 +10,9 @@ Status: COMPLETE — all nine children and map `bb-inj5` closed; post-contract F
 - TUI evidence baseline: `/Users/kylemccleary/projects/breadboard-tui-dsh-baseline-73d6e6f5` at `73d6e6f55a238fc9ff0486bbcc9ecffe85705715`
 - Donor: first-party `deepseek-ai/deepseek-harness`, tag `dsh-v0.1.0-rc.8`, commit `141eb6fef83422698aef7a981029e843e8161534`; [frozen inventory](evidence/DONOR_ITEMS.yaml)
 - Local tracker: map `bb-inj5`; children `bb-inj5.1` through `bb-inj5.9`
-- Post-contract escalation bindings: packet `8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69`; promoted DAG `be5f0ef5e4c0705bf37ffdf76faa328784c6afaa5357f7c3053327d150de68c6`; prototype `bad477f33f4c13f37ab3619eb37aa2db9079efe0fa898777b25b00a40c7cf0df`; FT-01 route fixture `bb66d855ca17e04b61dcd3264faf4a7ee5d67144a26bf60a6942c9d980e9fd5b`; FT-03 request fixture `a817d3b243f0f9c0e67d51dddf8dfe04ae3b04dffc13afc03f484dc8299c4af8`; FT-03 capture fixture `67346f2db2906107cde1684c9eec920bad43e471f1001825d080c9776682fbab`; FT-06 extractor `d3025ad346b13b699dd315ea71375888a79c905dd31cd01d24ea6a3dd1037445`.
-- Committed DAG fixed-point inputs: validator `5c66d588cd7eeaa6af493dafe88da5cca6dce2581abf1252943dc8bef7037021`; graph `4e0cf4b3a776a767f1b3a4ea6d3ba76b808f92c857fcf1adba55855188297a57`; routing ledger `b43ded4b1b69dc4c77857af00c951697f550b7d3005f64c7319dab1607df5fb1`.
-- Final implementation specification exact-artifact review: APPROVED on SHA-256 `5490f2120d63abb0f2bd3e90bbb5d3d66676f90612f37faae71632337a370b70` together with synchronized FT-02 packet SHA-256 `8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69`; separate review artifact `evidence/FINAL_SPEC_REVIEW.json` SHA-256 `59c530dec85381bc583a04419053a3de8321bbb5cd9edbcf44f3ce3a73c3386c` records independent P0/P1/P2/P3 `0/0/0/0`, confidence `0.99`.
+- Post-contract escalation bindings: packet `8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69`; promoted DAG `33c1f89ebf6e44dbf3ba5226236026c6d49a7b084f69eb90360d5127b464231d`; prototype `8cbdbfbdeba61e37af992f1cfac401d934dfa8be7b50984f1a9602e198984584`; FT-01 route fixture `bb66d855ca17e04b61dcd3264faf4a7ee5d67144a26bf60a6942c9d980e9fd5b`; FT-03 request fixture `a817d3b243f0f9c0e67d51dddf8dfe04ae3b04dffc13afc03f484dc8299c4af8`; FT-03 capture fixture `67346f2db2906107cde1684c9eec920bad43e471f1001825d080c9776682fbab`; FT-06 extractor `d3025ad346b13b699dd315ea71375888a79c905dd31cd01d24ea6a3dd1037445`; preserved DSH archive `evidence/raw/bb-inj5.1/deepseek-harness-dsh-v0.1.0-rc.8.tar.gz` SHA-256 `f232ba127ad9120308436655c7c89ed1c81680c8eda0ff70d22c86c4331dfbdc`.
+- Committed DAG fixed-point inputs: validator `04f471da5821d1dac8e576dd997f68571464d8ef4e1d53425acc04c66981f41d`; graph `1b71d68d4eb533f5dc62e1256489a28759ce7be115caa5df2b43ba64166a2f0d`; routing ledger `b43ded4b1b69dc4c77857af00c951697f550b7d3005f64c7319dab1607df5fb1`; join fixtures `07edfd730a92990520f00ea58c5f33464093a3431006e949eb0eba54b5c08d5e`; join test `b16aeb364a0d1bb533889c80fd7a6d9577ff10d47c394c935a4e495770b62c1e`.
+- Final implementation specification exact-artifact review: APPROVED on SHA-256 `54b78fc2b896561bfaed216a26883928346aa27f8e108ba80288bffe968b95a0` together with synchronized FT-02 packet SHA-256 `8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69`; separate review artifact `evidence/FINAL_SPEC_REVIEW.json` SHA-256 `74a4113485a69b8dae8433e4e93349c7dd8568d2ee4fee3d5f77715bf51e9811` records independent P0/P1/P2/P3 `0/0/0/0`, confidence `0.99`.
 
 ## Coverage and decisions
 
@@ -48,7 +48,7 @@ Digest method: SHA-256 over each raw store's sorted `relative-path NUL file-SHA2
 | `bb-inj5.4` | 4 | `97405c3815eba39021962705b9c152a95400c680a04a2d24efd69b0a52b648b3` |
 | `bb-inj5.5` | 7 | `911575b2f1a09fa434790389650be216614ab66d424852372f0433d7f76bc4f6` |
 | `bb-inj5.6` | 3 | `2424661ac0a7e124d155c204be2e7607eda1545276d60c61d15be0db44943706` |
-| `bb-inj5.7` | 8 | `8cb9dfe87bb86e2daf7d42d019e6697dceddc3e81d932fd004cc5c29fc28b3c4` |
+| `bb-inj5.7` | 5 | `7477356d72c90775b03cfb0bb4a3861625206bf107c094241ba00a66c78c7eaa` |
 | `bb-inj5.8` | 6 | `73ef4c6a118bf0f0a4dedcec99005e1f42480bb5f2acc23af7aa27b90f0b1c82` |
 | `bb-inj5.9` | 3 | `04167df24a890033d80e7e84613621d5c12bc36ff32b4cd83101c88d704fe256` |
 

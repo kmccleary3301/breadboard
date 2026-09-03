@@ -10,6 +10,21 @@ ROOT = Path(__file__).resolve().parent
 GRAPH = json.loads((ROOT / "dag-prototype.json").read_text(encoding="utf-8"))
 ROUTING = json.loads((ROOT / "row-routing.json").read_text(encoding="utf-8"))
 NODES = GRAPH["nodes"]
+JOIN_FIXTURES = ROOT / "join-semantics.json"
+JOIN_SEMANTICS = json.loads(JOIN_FIXTURES.read_text(encoding="utf-8"))
+
+def node_is_unlocked(node: dict[str, object], terminal_predecessors: set[str]) -> bool:
+    """Return whether a node's declared terminal-predecessor join is satisfied."""
+    dependencies = node["deps"]
+    if not dependencies:
+        return True
+    join = node.get("join", "all")
+    if join == "any":
+        return any(dependency in terminal_predecessors for dependency in dependencies)
+    if join == "all":
+        return all(dependency in terminal_predecessors for dependency in dependencies)
+    raise SystemExit(f"unsupported join policy: {join!r}")
+
 
 required_metadata = {
     "size",
@@ -33,6 +48,11 @@ for node_id, node in NODES.items():
     for dependency in node["deps"]:
         if dependency not in NODES:
             raise SystemExit(f"{node_id}: unknown dependency {dependency}")
+    join = node.get("join", "all")
+    if join not in {"all", "any"}:
+        raise SystemExit(f"{node_id}: unsupported join policy {join!r}")
+    if join == "any" and node_id != "RQ-ABLATION":
+        raise SystemExit(f"{node_id}: only RQ-ABLATION may use an ANY join")
 
 indegree = {node_id: 0 for node_id in NODES}
 outgoing = {node_id: [] for node_id in NODES}
@@ -91,6 +111,26 @@ if NODES["RT-REPLAY"]["deps"] != ["EVIDENCE-GATE", "FT-04", "RT-REPAIR"]:
     raise SystemExit("RT-REPLAY must join EVIDENCE-GATE, FT-04, and RT-REPAIR")
 if NODES["RT-REPLAY"]["condition"] != expected_rt_replay_condition:
     raise SystemExit("RT-REPLAY must exclude PRODUCT_RED and terminal defects")
+if NODES["RQ-ABLATION"].get("join") != "any":
+    raise SystemExit("RQ-ABLATION must declare join:any")
+if NODES["RQ-ABLATION"]["deps"] != ["RQ-PASS", "RQ-RECONSTRUCTED"]:
+    raise SystemExit("RQ-ABLATION must have exactly the two alternative predecessors")
+if NODES["RT-REPLAY"].get("join", "all") != "all":
+    raise SystemExit("RT-REPLAY must retain strict all-dependency semantics")
+if JOIN_SEMANTICS.get("schema_version") != "breadboard.dsh_join_semantics_fixtures.v1":
+    raise SystemExit("invalid DAG join-semantics fixture schema")
+join_results = {}
+for case in JOIN_SEMANTICS.get("cases", []):
+    case_id = case["id"]
+    node_id = case["node"]
+    if node_id not in NODES:
+        raise SystemExit(f"{case_id}: unknown fixture node {node_id}")
+    terminal_predecessors = set(case["terminal_predecessors"])
+    actual = node_is_unlocked(NODES[node_id], terminal_predecessors)
+    if actual != case["unlocks"]:
+        raise SystemExit(f"{case_id}: join result {actual!r} != {case['unlocks']!r}")
+    join_results[case_id] = actual
+
 
 if GRAPH["unconditionally_promoted_new_seams"] != 0:
     raise SystemExit("a new seam was promoted without evidence")
@@ -133,4 +173,5 @@ print(json.dumps({
     "dsh_phases": sorted({row["dsh_phase"] for row in rows}),
     "decision_counts": dict(sorted(Counter(row["decision"] for row in rows).items())),
     "unconditionally_promoted_new_seams": GRAPH["unconditionally_promoted_new_seams"],
+    "join_semantics": join_results,
 }, indent=2, sort_keys=True))

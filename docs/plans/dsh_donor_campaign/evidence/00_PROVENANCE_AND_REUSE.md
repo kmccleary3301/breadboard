@@ -17,7 +17,7 @@ Session: 1
 DECISION THIS STAGE CAN MOVE: what exact donor corpus and reuse boundary downstream work may cite.
 EVIDENCE THAT WOULD MOVE IT: a first-party source/revision/license, an archived digest, corpus fingerprints, and an independently reproducible extraction of every required assessment family.
 EVIDENCE PRODUCED SO FAR: exact first-party tag and commit; archived source snapshot; MIT license text; matching corpus fingerprints; 615-item deterministic inventory.
-PROVENANCE-ONLY ARTIFACTS PRODUCED SO FAR: the archived DSH tag under `raw/bb-inj5.1/` and the primary-source research record in that raw store.
+PROVENANCE-ONLY ARTIFACTS PRODUCED SO FAR: the archived DSH tag under `evidence/raw/bb-inj5.1/` and the primary-source research record in that raw store.
 
 ## Gate card
 
@@ -41,7 +41,7 @@ PROVENANCE-ONLY ARTIFACTS PRODUCED SO FAR: the archived DSH tag under `raw/bb-in
 | Commit date | `2026-08-19T15:11:50Z` |
 | npm corroboration | `@deepseek-ai/dsh@0.1.0-rc.8`, published `2026-08-19T15:41:29.655Z` |
 | First-party archive URL | `https://api.github.com/repos/deepseek-ai/deepseek-harness/tarball/refs/tags/dsh-v0.1.0-rc.8` |
-| Preserved archive | `raw/bb-inj5.1/deepseek-harness-dsh-v0.1.0-rc.8.tar.gz` |
+| Preserved archive | `evidence/raw/bb-inj5.1/deepseek-harness-dsh-v0.1.0-rc.8.tar.gz` |
 | Retrieved | `2026-09-02` |
 | Archive SHA-256 | `f232ba127ad9120308436655c7c89ed1c81680c8eda0ff70d22c86c4331dfbdc` |
 | Archive size | `14,390,053` bytes |
@@ -121,7 +121,7 @@ Every DSH archive extraction cited later repeats:
 source_url: https://github.com/deepseek-ai/deepseek-harness
 tag: dsh-v0.1.0-rc.8
 commit: 141eb6fef83422698aef7a981029e843e8161534
-archive_path: docs_tmp/bb_direction_assessment/dsh_donor_campaign/raw/bb-inj5.1/deepseek-harness-dsh-v0.1.0-rc.8.tar.gz
+archive_path: docs/plans/dsh_donor_campaign/evidence/raw/bb-inj5.1/deepseek-harness-dsh-v0.1.0-rc.8.tar.gz
 archive_sha256: f232ba127ad9120308436655c7c89ed1c81680c8eda0ff70d22c86c4331dfbdc
 retrieved: 2026-09-02
 ```

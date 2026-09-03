@@ -63,7 +63,7 @@ The desired composition has seven pieces:
 2. exact provider-request reconstruction with requested/effective/default provenance;
 3. immutable Lock-compatible generations pinned by Sessions, with explicit quiescent adoption;
 4. local/container/Ray/Slurm execution worlds preserving Session semantics modulo declared world fields;
-5. immutable annotation sidecars bound to message and trajectory identity;
+5. internal immutable Product Session annotation events/sidecars, with canonical identity, trajectory binding, and public exposure still conditional;
 6. durable child Sessions and workflows surviving process death with exactly one settlement;
 7. lossless compaction preserving exact effective context after any number of compactions.
 
@@ -73,9 +73,9 @@ Target acceptance shape, not an approved public interface:
 bb research compare --definition EXPERIMENT.json --world WORLD.json --generation GENERATION.json --projection PROJECTION.json --compare E,E_PRIME
 ```
 
-Acceptance requires Definition/Lock digest equality, declared world-mask event equivalence, quiescent generation adoption, replay-versus-durable-state equality, held-out provider-request byte equality, immutable annotation identity, exactly-one child settlement, and pre/post-compaction exact reconstruction.
+Acceptance requires Definition/Lock digest equality, declared world-mask event equivalence, quiescent generation adoption, replay-versus-durable-state equality, held-out provider-request byte equality, immutable annotation identity, exactly-one child settlement, and pre/post-compaction exact reconstruction. Annotation identity and public sidecar acceptance remain W11-gated even though the internal Product Session annotation owner is implemented.
 
-**Current state: NOT RUNNABLE.** Definition/Lock owners exist; request reconstruction, event truth, generation behavior, and expressiveness have first-tranche evidence packets. General projection ownership, execution-world equivalence, annotation ownership, durable children/workflows, compaction, and the command owner remain gated fog. The specification plans toward the vertical slice; it does not manufacture missing owners.
+**Current state: NOT RUNNABLE.** Definition/Lock owners exist; request reconstruction, event truth, generation behavior, and expressiveness have first-tranche evidence packets. W6 now supplies the internal immutable Product Session annotation owner, but canonical message/trajectory identity acceptance, public annotation projection, general projection ownership, execution-world equivalence, durable children/workflows, compaction, and the command owner remain gated fog. The specification plans toward the vertical slice; it does not manufacture missing owners.
 
 ## 3. Frozen donor source and reuse
 
@@ -156,7 +156,7 @@ The implementation supervisor must preserve these controlling laws:
 - Candidate setup precedes publication; drain closes admission before teardown; lifecycle owners prove idempotent quiescence.
 - Session pins an exact Lock-compatible generation by default. Explicit adoption occurs only at a quiescent turn boundary, emits old/new identity, reason, and effective sequence, and starts a new trajectory segment.
 - Execution worlds preserve Session semantics modulo declared world fields.
-- Annotations are immutable sidecars citing message/trajectory identity, author, generation, and payload.
+- W6's Product Session owner may append immutable internal annotation events; canonical message/trajectory identity, complete sidecar acceptance, and public exposure remain W11-gated.
 - Durable children are ordinary durable Sessions with parent/root lineage and one terminal settlement.
 - In-process implementation reload is REJECTED.
 
@@ -185,7 +185,7 @@ No primitive verdict creates a module or seam.
 | Lease/lifecycle protocol | vocabulary; each resource owner proves cleanup |
 | Message/delivery protocol | vocabulary; timing semantics remain Session/coordination-owned |
 
-Existing deep seams: public Session events/restore; provider exchange/adapters; permission authority; Definition compiler/effective Lock. Execution-world, projection-registry, annotation, child, and workflow seams remain conditional and each has a design-it-twice predecessor.
+Existing deep seams: public Session events/restore; provider exchange/adapters; permission authority; Definition compiler/effective Lock. The internal Product Session annotation owner is implemented in W6; canonical identity/trajectory acceptance, public projection, execution-world, projection-registry, child, and workflow seams remain conditional and each has a design-it-twice predecessor.
 
 ## 8. Evidence, review, and approval contract
 
@@ -388,7 +388,7 @@ First-tranche completion reaches one evidence gate. Only observed predicates ope
 - `EVIDENCE-GATE` waits for FT-06, and FT-06 waits for FT-01 + FT-02 + FT-03 + FT-04 + FT-05.
 - `KNOWN_DIVERGENCE` on the FT-01 journal branch opens `RT-REPAIR`; a coherent journal result records that repair as evidence-backed `NOT-TAKEN` and may join FT-04 directly at `RT-REPLAY`. `PRODUCT_RED` or any other terminal defect outcome stops at PROC-DEFECT: it opens neither `RT-REPAIR` nor `RT-REPLAY`. Only an explicitly successful `RT-REPAIR` outcome that proves the journal divergence no longer reproduces may join FT-04 to open `RT-REPLAY`; exhausted attempts, `UNKNOWN`, `KILLED`, or any typed red terminate the repair branch with every downstream replay/projection/compaction/world node closed. A coherent FT-01 result plus FT-04 remains the direct no-repair route.
 - `RT-REPLAY + FT-06 → PROJ-CHAR → DIT-PROJECTION`; only approved DIT may open `PROJ-IMPLEMENT`.
-- FT-03 exact branch (`RQ-PASS`) or repaired branch (`RQ-INTERNAL → RQ-RECONSTRUCTED`) may feed the `ANY` join `RQ-ABLATION`.
+- FT-03 exact branch (`RQ-PASS`) or repaired branch (`RQ-INTERNAL → RQ-RECONSTRUCTED`) may feed `RQ-ABLATION`, whose explicit `join: "any"` opens when either one terminal predecessor is present. All other nodes use strict `join: "all"` semantics, including `RT-REPLAY` and ordinary two-dependency joins.
 - `FT-02 + FT-06 → DIT-GENERATION`. After FT-02 evidence, `GEN-INTERNAL` must terminate as a current-owner repair or evidence-backed `NOT-TAKEN`. DIT-GENERATION must compare three designs when activation is needed or terminate `NOT-TAKEN`; it always drives `GEN-ACTIVATION` to approved implementation or evidence-backed `NOT-TAKEN`.
 - `RT-REPLAY → CP-CHAR`; `RT-REPLAY + FT-06 → EW-CHAR`; `RT-REPLAY + FT-05 → ANN-CHAR` and `CH-CHAR`.
 - Characterization precedes its DIT and internal pilot. `CH-PILOT → WF-CHAR → DIT-WORKFLOW → WF-IMPLEMENT`. Distributed-teams research additionally requires both `CH-PILOT` and `WF-CHAR`.
@@ -399,7 +399,7 @@ Every DIT gate requires a common caller, at least two real adapters/foundations,
 
 ### Explicit fog
 
-Execution worlds beyond characterization, generic Capability Runtime, universal Operation, projection registry, annotation owner, durable children, workflows, compaction, advanced clients, Code Mode, dynamic packages, and distributed teams remain unpromoted. Each has a named characterization/metric and kill threshold in G. Negative evidence closes the branch; it never creates a product fallback.
+Execution worlds beyond characterization, generic Capability Runtime, universal Operation, projection registry, canonical annotation identity/trajectory and public sidecar acceptance, durable children, workflows, compaction, advanced clients, Code Mode, dynamic packages, and distributed teams remain unpromoted. W6's internal immutable Product Session annotation owner is not a public or full-canonical acceptance decision. Each remaining branch has a named characterization/metric and kill threshold in G. Negative evidence closes the branch; it never creates a product fallback.
 
 ## 12. Cross-repository packet boundaries
 

@@ -49,16 +49,17 @@ Independent verdict: **PASS**. Gate G-G passes. P0/P1/P2/P3 = 0/0/0/0. Confidenc
 ## Final exact-artifact review binding — repair-success predicate
 
 Reviewed candidate SHA-256: `2ec09f94b1a79954e963d7beee4af66b38892ae38724a7aa141060b8d02d2532`.
-Reviewed raw DAG SHA-256: `4e0cf4b3a776a767f1b3a4ea6d3ba76b808f92c857fcf1adba55855188297a57`.
-Reviewed validator SHA-256: `5c66d588cd7eeaa6af493dafe88da5cca6dce2581abf1252943dc8bef7037021`.
+Reviewed raw DAG SHA-256: `1b71d68d4eb533f5dc62e1256489a28759ce7be115caa5df2b43ba64166a2f0d`.
+Reviewed validator SHA-256: `04f471da5821d1dac8e576dd997f68571464d8ef4e1d53425acc04c66981f41d`.
 Reviewed routing SHA-256: `b43ded4b1b69dc4c77857af00c951697f550b7d3005f64c7319dab1607df5fb1`.
+Reviewed join fixtures SHA-256: `07edfd730a92990520f00ea58c5f33464093a3431006e949eb0eba54b5c08d5e`; join test SHA-256: `b16aeb364a0d1bb533889c80fd7a6d9577ff10d47c394c935a4e495770b62c1e`.
 
-Independent result: PASS; `RT-REPAIR` terminates evidence-backed `NOT-TAKEN` for coherent FT-01 evidence and performs repair only for `KNOWN_DIVERGENCE`; therefore its required predecessor state is terminal on both replay-eligible routes. `RT-REPLAY` requires either coherent FT-01 evidence or an explicitly successful repair proving the divergence absent. Unknown, killed, exhausted, product-red, and every other typed-red repair outcome closes replay and all dependent nodes. Validator rerun: PASS; 50/50 nodes acyclic, 623/623 routes unique, phases 0–12, six first-tranche packets, zero unconditionally promoted new seams.
+Independent result: PASS; `RT-REPAIR` terminates evidence-backed `NOT-TAKEN` for coherent FT-01 evidence and performs repair only for `KNOWN_DIVERGENCE`; therefore its required predecessor state is terminal on both replay-eligible routes. `RT-REPLAY` requires either coherent FT-01 evidence or an explicitly successful repair proving the divergence absent. Unknown, killed, exhausted, product-red, and every other typed-red repair outcome closes replay and all dependent nodes. Validator rerun: PASS; 50/50 nodes acyclic, 623/623 routes unique, phases 0–12, zero unconditionally promoted new seams, with explicit join fixture coverage.
 
 ## Final exact-artifact review binding — committed validator path
 
-Reviewed candidate SHA-256: `be5f0ef5e4c0705bf37ffdf76faa328784c6afaa5357f7c3053327d150de68c6`.
+Reviewed candidate SHA-256: `33c1f89ebf6e44dbf3ba5226236026c6d49a7b084f69eb90360d5127b464231d`.
 
-Independent result: PASS; the deterministic command resolves to the committed validator, and the candidate/raw DAG/validator/routing digests remain exact. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.
+Independent result: PASS; the deterministic command resolves to the committed validator, and the candidate/raw DAG/validator/routing/join-fixture digests remain exact. `RQ-ABLATION` unlocks from either one terminal predecessor, while `RT-REPLAY` and ordinary joins require all predecessors. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.
 
 Independent verdict: **PASS**. Gate G-G passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.

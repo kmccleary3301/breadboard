@@ -240,6 +240,7 @@
         "FT-02",
         "FT-06"
       ],
+      "join": "all",
       "failure_branch": "retain strongest bounded claim and route typed red",
       "freeze": "none until explicit amendment node",
       "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
@@ -945,6 +946,7 @@
         "FT-04",
         "RT-REPAIR"
       ],
+      "join": "all",
       "failure_branch": "retain strongest bounded claim and route typed red",
       "freeze": "none until explicit amendment node",
       "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",

@@ -80,7 +80,7 @@ Final exact verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-
 
 ## Post-contract escalation review — held-turn and restart sequencing closure
 
-Final exact review date: 2026-09-03. Exact specification SHA-256 `5490f2120d63abb0f2bd3e90bbb5d3d66676f90612f37faae71632337a370b70`; exact packet SHA-256 `8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69`; pinned heads unchanged.
+Final exact review date: 2026-09-03. Exact specification SHA-256 `54b78fc2b896561bfaed216a26883928346aa27f8e108ba80288bffe968b95a0`; exact packet SHA-256 `8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69`; pinned heads unchanged.
 
 The independent combined read verified one coherent FT-02 sequence across the implementation specification and packet. Invalid input, mid-turn reconfiguration, and provider swap act while the deterministic provider invocation remains barrier-held and release it only after the action. Restart durability alone releases the barrier, completes the original turn, requires the Session to become quiescent, then applies `set_mode`, restarts through existing owners, and compares durable effective identity.
 
