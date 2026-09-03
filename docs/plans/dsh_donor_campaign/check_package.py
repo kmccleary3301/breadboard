@@ -160,6 +160,12 @@ def main() -> int:
                     "G-A exact-artifact review does not bind donor inventory "
                     f"SHA-256 {inventory_digest}"
                 )
+    packet_digest = hashlib.sha256(PACKETS.read_bytes()).hexdigest()
+    if packet_digest not in audit:
+        findings.append(
+            "completion audit does not bind current first-tranche packet "
+            f"SHA-256 {packet_digest}"
+        )
     for required_text in (
         "effective adapter payload bytes",
         "started:false",
