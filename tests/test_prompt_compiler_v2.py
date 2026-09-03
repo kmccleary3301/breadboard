@@ -81,6 +81,12 @@ def test_final_model_surface_hashes_transformed_provider_request() -> None:
         {"role": "system", "content": final_system},
         {"role": "user", "content": "request"},
     ]
+    request_body = {
+        "model": "provider/model-a",
+        "messages": messages,
+        "tools": [],
+        "stream": False,
+    }
     surface = _finalize_model_surface(
         {
             "prompt_sections": {"system": [], "per_turn": []},
@@ -89,6 +95,7 @@ def test_final_model_surface_hashes_transformed_provider_request() -> None:
         messages,
         [],
         "",
+        request_body,
     )
 
     assert surface is not None
@@ -98,4 +105,16 @@ def test_final_model_surface_hashes_transformed_provider_request() -> None:
     )
     assert surface["provider_request"]["messages_sha256"]
     assert surface["provider_request"]["request_sha256"]
+    changed_model_surface = _finalize_model_surface(
+        {"prompt_sections": {"system": [], "per_turn": []}, "tools": []},
+        messages,
+        [],
+        "",
+        {**request_body, "model": "provider/model-b"},
+    )
+    assert changed_model_surface is not None
+    assert (
+        surface["provider_request"]["request_sha256"]
+        != changed_model_surface["provider_request"]["request_sha256"]
+    )
 

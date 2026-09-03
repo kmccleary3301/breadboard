@@ -989,16 +989,14 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             blocks.append({"type": "text", "text": value})
         return "".join(block["text"] for block in blocks)
 
-    def invoke(
+    def _request_payload(
         self,
         *,
-        client: Any,
         model: str,
         messages: List[Dict[str, Any]],
         tools: Optional[List[Dict[str, Any]]],
-        stream: bool,
         context: ProviderRuntimeContext,
-    ) -> ProviderResult:
+    ) -> Dict[str, Any]:
         instructions, input_messages = self._split_messages_for_responses(
             messages, context
         )
@@ -1051,8 +1049,6 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             )
             payload["extra_body"] = extra_body
 
-        # provider_cfg already resolved above
-
         include_items: List[str] = list(provider_cfg.get("include", []))
         if (
             provider_cfg.get("include_reasoning", True)
@@ -1065,8 +1061,6 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         if "store" in provider_cfg:
             payload["store"] = bool(provider_cfg.get("store"))
 
-        # Pass provider-tools reasoning config (e.g. {"effort": "high"})
-        # through to the Responses API verbatim.
         reasoning_cfg = provider_cfg.get("reasoning")
         if isinstance(reasoning_cfg, dict) and reasoning_cfg:
             payload["reasoning"] = dict(reasoning_cfg)
@@ -1076,7 +1070,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             resolved_choice: Any = tool_choice_cfg
             if isinstance(tool_choice_cfg, str):
                 lowered = tool_choice_cfg.strip().lower()
-                if lowered in {"auto"}:
+                if lowered == "auto":
                     resolved_choice = "auto"
                 elif lowered in {"required", "force", "any"}:
                     resolved_choice = "required"
@@ -1085,7 +1079,6 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             if resolved_choice is not None:
                 payload["tool_choice"] = resolved_choice
 
-        responses_stateful = bool(provider_cfg.get("responses_stateful", True))
         if responses_stateful:
             conversation_id = context.session_state.get_provider_metadata(
                 "conversation_id"
@@ -1103,6 +1096,43 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         if isinstance(extra_payload, dict):
             payload.update(extra_payload)
         payload.update(openai_responses_role_options(context))
+        return payload
+
+    def project_request_body(
+        self,
+        *,
+        model: str,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        stream: bool,
+        context: ProviderRuntimeContext,
+    ) -> Dict[str, Any]:
+        """Project the complete secret-free HTTP request body for evidence."""
+        payload = self._request_payload(
+            model=model,
+            messages=messages,
+            tools=tools,
+            context=context,
+        )
+        if stream:
+            payload["stream"] = True
+        return payload
+    def invoke(
+        self,
+        *,
+        client: Any,
+        model: str,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        stream: bool,
+        context: ProviderRuntimeContext,
+    ) -> ProviderResult:
+        payload = self._request_payload(
+            model=model,
+            messages=messages,
+            tools=tools,
+            context=context,
+        )
 
         response: Any = None
         if stream:

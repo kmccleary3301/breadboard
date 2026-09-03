@@ -468,6 +468,7 @@ def test_model_surface_digest_matches_profile_wire_projection(tmp_path: Path) ->
         wire["messages"],
         wire["tools"],
         "",
+        wire,
     )
 
     assert surface is not None

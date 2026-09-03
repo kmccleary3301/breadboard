@@ -746,6 +746,7 @@ def test_unbound_openai_surface_digest_matches_runtime_wire_projection(tmp_path)
         body["messages"],
         body["tools"],
         "",
+        body,
     )
 
     assert body["messages"] == runtime._convert_messages_to_chat(
@@ -756,11 +757,66 @@ def test_unbound_openai_surface_digest_matches_runtime_wire_projection(tmp_path)
     assert surface["provider_request"] == {
         "messages_sha256": _surface_digest(body["messages"]),
         "tools_sha256": _surface_digest(body["tools"]),
-        "request_sha256": _surface_digest(
-            {"messages": body["messages"], "tools": body["tools"]}
-        ),
+        "request_sha256": _surface_digest(body),
     }
+def test_unbound_openai_wire_evidence_includes_role_and_provider_options():
+    runtime = OpenAIChatRuntime(
+        ProviderDescriptor(
+            provider_id="openrouter",
+            runtime_id="openai_chat",
+            default_api_variant="chat",
+            supports_native_tools=True,
+            supports_streaming=True,
+            supports_reasoning_traces=True,
+            supports_cache_control=False,
+            tool_schema_format="openai",
+            base_url="https://openrouter.ai/api/v1",
+            api_key_env=None,
+            default_headers={},
+        )
+    )
+    context = ProviderRuntimeContext(
+        types.SimpleNamespace(set_provider_metadata=lambda *_args: None),
+        {
+            "active_model_role": "worker",
+            "model_role_lock": {
+                "roles": {
+                    "worker": {
+                        "generation": {
+                            "temperature": 0.25,
+                            "max_output_tokens": 321,
+                        },
+                        "reasoning": {"mode": "disabled"},
+                    }
+                }
+            },
+        },
+        stream=True,
+    )
+
+    body, _, _, _ = _provider_wire_evidence(
+        profile=None,
+        runtime=runtime,
+        provider_id="openrouter",
+        model="openai/gpt-5-mini",
+        messages=[{"role": "user", "content": "hello"}],
+        tools=None,
+        stream=True,
+        client_config={},
+        context=context,
+    )
+
+    assert body["temperature"] == 0.25
+    assert body["max_completion_tokens"] == 321
+    assert body["reasoning"] == {"effort": "none"}
+    assert body["provider"] == {
+        "order": ["openai"],
+        "allow_fallbacks": False,
+    }
+
+
 def test_rejected_episode_does_not_retain_provider_profile():
+
     conductor_class = OpenAIConductor.__ray_metadata__.modified_class
     conductor = object.__new__(conductor_class)
     conductor._active_session_state = None

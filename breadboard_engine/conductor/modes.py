@@ -47,6 +47,7 @@ def _finalize_model_surface(
     messages: List[Dict[str, Any]],
     tools_schema: Optional[List[Dict[str, Any]]],
     per_turn_text: str,
+    request_body: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     if not isinstance(compiled_surface, dict):
         return None
@@ -91,9 +92,7 @@ def _finalize_model_surface(
     surface["provider_request"] = {
         "messages_sha256": _surface_digest(messages),
         "tools_sha256": _surface_digest(tools_schema),
-        "request_sha256": _surface_digest(
-            {"messages": messages, "tools": tools_schema}
-        ),
+        "request_sha256": _surface_digest(request_body),
     }
     return surface
 
@@ -182,31 +181,26 @@ def _provider_wire_evidence(
             f"sha256:{profile_identity['base_url_sha256']}",
             profile_identity,
         )
-    wire_messages = messages
-    wire_tools = tools
-    runtime_id = getattr(getattr(runtime, "descriptor", None), "runtime_id", None)
-    if runtime_id == "openai_chat":
-        convert_messages = getattr(runtime, "_convert_messages_to_chat", None)
-        convert_tools = getattr(runtime, "_convert_tools_to_openai", None)
-        if callable(convert_messages) and callable(convert_tools):
-            wire_messages = convert_messages(messages, context=context)
-            wire_tools = convert_tools(tools)
-    elif runtime_id == "openai_responses":
-        split_messages = getattr(runtime, "_split_messages_for_responses", None)
-        convert_messages = getattr(runtime, "_convert_messages_to_input", None)
-        convert_tools = getattr(runtime, "_convert_tools_to_responses", None)
-        if (
-            callable(split_messages)
-            and callable(convert_messages)
-            and callable(convert_tools)
-        ):
-            _, input_messages = split_messages(messages, context)
-            wire_messages = convert_messages(
-                input_messages,
-                include_tool_calls=True,
-                context=context,
+    project_request_body = getattr(runtime, "project_request_body", None)
+    if callable(project_request_body):
+        request_body = project_request_body(
+            model=model,
+            messages=messages,
+            tools=tools,
+            stream=stream,
+            context=context,
+        )
+        if not isinstance(request_body, dict):
+            raise ProviderContractError(
+                "runtime request evidence must be an object"
             )
-            wire_tools = convert_tools(tools)
+    else:
+        request_body = {
+            "model": model,
+            "messages": messages,
+            "tools": tools,
+            "stream": stream,
+        }
     try:
         request_headers = dict(client_config.get("default_headers") or {})
         if provider_id == "openrouter":
@@ -217,12 +211,7 @@ def _provider_wire_evidence(
         request_headers = {}
         endpoint = None
     return (
-        {
-            "model": model,
-            "messages": wire_messages,
-            "tools": wire_tools,
-            "stream": stream,
-        },
+        request_body,
         request_headers,
         endpoint,
         None,
@@ -510,11 +499,11 @@ def get_model_response(
         context=runtime_context,
     )
     try:
-        wire_messages = wire_request_body.get("messages")
+        wire_messages = wire_request_body.get(
+            "messages", wire_request_body.get("input")
+        )
         if not isinstance(wire_messages, list):
-            raise ProviderContractError(
-                "provider wire request is missing messages"
-            )
+            raise ProviderContractError("provider wire request is missing messages")
         wire_tools = wire_request_body.get("tools")
         if wire_tools is not None and not isinstance(wire_tools, list):
             raise ProviderContractError("provider wire request has invalid tools")
@@ -526,6 +515,7 @@ def get_model_response(
             wire_messages,
             wire_tools,
             per_turn_written_text,
+            wire_request_body,
         )
         if final_surface is not None:
             session_state.set_provider_metadata(
