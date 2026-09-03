@@ -4,6 +4,7 @@ import hashlib, json, os
 from collections.abc import Callable, Iterable, Mapping; from dataclasses import dataclass; from datetime import datetime, timezone; from pathlib import Path; from threading import RLock; from types import MappingProxyType; from typing import Any, Protocol; from uuid import uuid4
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from .artifacts import ArtifactRef
+from breadboard.product.projection import Projected, ProjectionSource
 def _sync(stream: Any) -> None: stream.flush(); os.fsync(stream.fileno())
 class ProcessLock:
     def __init__(self, path: Path) -> None: self.stream = os.fdopen(os.open(path.with_name(f".{path.name}.lock"), os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600), "a+b", buffering=0)
@@ -251,6 +252,42 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
         elif event.kind.startswith("session."):
             pending, status, outcome = None, event.kind.removeprefix("session."), event.payload
     return SessionView(start.session_id, status, lock_hash, start.payload["task_hash"], len(rows), pending, outcome)
+SESSION_PROJECTOR_VERSION = "bb.session.projector.v1"
+class SessionProjectionError(ValueError):
+    """A Session projection request cannot be satisfied."""
+class SessionProjectionAsOfError(SessionProjectionError):
+    """A requested Session source sequence is outside the stream."""
+    def __init__(self, as_of: int, available: int) -> None:
+        super().__init__(f"Session as_of {as_of!r} is outside source range 1..{available}")
+        self.as_of, self.available = as_of, available
+class SessionProjectionVersionError(SessionProjectionError):
+    """A caller requested a projector version this owner does not provide."""
+    def __init__(self, expected: str) -> None:
+        super().__init__(f"unsupported Session projector version {expected!r}")
+        self.expected = expected
+def _session_projection_limit(rows: tuple[KernelEvent, ...], as_of: int | None) -> int:
+    if not rows:
+        raise ValueError("event stream must begin with session.started")
+    limit = len(rows) if as_of is None else as_of
+    if type(limit) is not int or limit < 1 or limit > len(rows):
+        raise SessionProjectionAsOfError(limit, len(rows))
+    return limit
+def _check_session_projection_version(expected: str | None) -> None:
+    if expected is not None and expected != SESSION_PROJECTOR_VERSION:
+        raise SessionProjectionVersionError(expected)
+def project_session_replay(events: Iterable[KernelEvent], *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
+    _check_session_projection_version(expected_projector_version)
+    rows = tuple(events); limit = _session_projection_limit(rows, as_of); value = rebuild(rows[:limit])
+    return Projected(value, SESSION_PROJECTOR_VERSION, ProjectionSource(f"session:{value.session_id}", 1, limit), limit)
+def project_session(events: Iterable[KernelEvent], *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
+    return project_session_replay(events, as_of=as_of, expected_projector_version=expected_projector_version)
+def project_session_snapshot(view: SessionView, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
+    _check_session_projection_version(expected_projector_version)
+    if not isinstance(view, SessionView):
+        raise TypeError("Session snapshot projection requires a SessionView")
+    if as_of is not None and (type(as_of) is not int or as_of != view.event_count):
+        raise SessionProjectionAsOfError(as_of, view.event_count)
+    return Projected(view, SESSION_PROJECTOR_VERSION, ProjectionSource(f"session:{view.session_id}", 1, view.event_count), view.event_count)
 _SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "annotate": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
 def _graph_hash(lock: EffectiveHarnessLock) -> str:
     graph_hash = lock.as_dict().get("graph_hash")
@@ -292,6 +329,8 @@ class Session:
     @property
     def read_model(self) -> SessionView:
         with self._transition_lock: return self._view
+    def projected_read_model(self, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
+        return project_session_live(self, as_of=as_of, expected_projector_version=expected_projector_version)
     def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])
     def assistant_message(self, content: str, *, message_id: str | None = None, trajectory_id: str | None = None) -> SessionView: return self._append("observe assistant", "assistant_message", lambda: self._assistant_event_payload(content, message_id, trajectory_id))
     def _assistant_event_payload(self, content: str, message_id: str | None, trajectory_id: str | None) -> dict[str, Any]:
@@ -367,3 +406,7 @@ class Session:
                 body = payload(); event = KernelEvent.create(self._view.session_id, len(self._events) + 1, kind, self._clock.now(), body); next_events = [*self._events, event]; next_view = rebuild(next_events); self._sink.append(event)
                 self._events, self._view = next_events, next_view; return next_view
             finally: self._appending = False
+def project_session_live(session: Session, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
+    if not isinstance(session, Session):
+        raise TypeError("live Session projection requires a Session")
+    return project_session_replay(session.events, as_of=as_of, expected_projector_version=expected_projector_version)
