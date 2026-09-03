@@ -1253,3 +1253,159 @@ test("OCI cleanup with scope all filters foreign returned IDs and does not poiso
   assert.deepEqual(snapshot?.ended_session_ids, ["term-oci-owned-1"])
   assert.equal(snapshot?.ended_session_ids.includes("foreign-rogue-session-999"), false)
 })
+
+test("OCI manager retains and cleans >32 ended sessions without cap failure", async () => {
+  const adapter: OciTerminalSessionAdapter = {
+    startSession: async () => ({ outputDeltas: [] }),
+    interactSession: async ({ descriptor }) => ({
+      outputDeltas: [],
+      end: {
+        schema_version: "bb.terminal_session_end.v1",
+        terminal_session_id: descriptor.terminal_session_id,
+        startup_call_id: null,
+        causing_call_id: null,
+        terminal_state: "completed",
+        exit_code: 0,
+        duration_ms: 10,
+        artifact_refs: [],
+        evidence_refs: [],
+      },
+    }),
+    cleanupSessions: async ({ sessionIds }) => ({
+      cleaned_session_ids: sessionIds ? [...sessionIds] : [],
+      failed_session_ids: [],
+    }),
+  }
+
+  const driver = makeOciExecutionDriver(adapter)
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-oci-40",
+    security_tier: "single_tenant",
+    isolation_class: "oci",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-oci-40",
+    placement_class: "local_oci",
+    runtime_id: "oci",
+    capability_id: cap.capability_id,
+  }
+
+  // Start and end 40 sessions
+  for (let i = 1; i <= 40; i++) {
+    await driver.startTerminalSession?.({
+      terminalSessionId: `term-oci-40-${i}`,
+      command: ["bash"],
+      capability: cap,
+      placement: place,
+    })
+    await driver.interactTerminalSession?.({
+      terminalSessionId: `term-oci-40-${i}`,
+      interactionKind: "poll",
+    })
+  }
+
+  // Cleanup scope all must clean all 40 ended sessions
+  const cleanupResult = await driver.cleanupTerminalSessions?.({
+    cleanupId: "clean-oci-40",
+    scope: "all",
+  })
+
+  assert.ok(cleanupResult)
+  assert.equal(cleanupResult.cleaned_session_ids.length, 40)
+  assert.deepEqual(cleanupResult.failed_session_ids, [])
+  for (let i = 1; i <= 40; i++) {
+    assert.ok(cleanupResult.cleaned_session_ids.includes(`term-oci-40-${i}`))
+  }
+})
+
+test("OCI manager same-ID successful restart removes ID from ended_session_ids in registry snapshot", async () => {
+  let endedOnStart = false
+  const adapter: OciTerminalSessionAdapter = {
+    startSession: async () => ({
+      outputDeltas: [],
+      end: endedOnStart
+        ? {
+            schema_version: "bb.terminal_session_end.v1",
+            terminal_session_id: "term-oci-restart-id",
+            startup_call_id: null,
+            causing_call_id: null,
+            terminal_state: "completed",
+            exit_code: 0,
+            duration_ms: 10,
+            artifact_refs: [],
+            evidence_refs: [],
+          }
+        : undefined,
+    }),
+    interactSession: async ({ descriptor }) => ({
+      outputDeltas: [],
+      end: {
+        schema_version: "bb.terminal_session_end.v1",
+        terminal_session_id: descriptor.terminal_session_id,
+        startup_call_id: null,
+        causing_call_id: null,
+        terminal_state: "completed",
+        exit_code: 0,
+        duration_ms: 10,
+        artifact_refs: [],
+        evidence_refs: [],
+      },
+    }),
+    cleanupSessions: async ({ sessionIds }) => ({
+      cleaned_session_ids: sessionIds ? [...sessionIds] : [],
+      failed_session_ids: [],
+    }),
+  }
+
+  const driver = makeOciExecutionDriver(adapter)
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-oci-restart",
+    security_tier: "single_tenant",
+    isolation_class: "oci",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-oci-restart",
+    placement_class: "local_oci",
+    runtime_id: "oci",
+    capability_id: cap.capability_id,
+  }
+
+  // 1. Start and end session
+  await driver.startTerminalSession?.({
+    terminalSessionId: "term-oci-restart-id",
+    command: ["bash"],
+    capability: cap,
+    placement: place,
+  })
+  await driver.interactTerminalSession?.({
+    terminalSessionId: "term-oci-restart-id",
+    interactionKind: "poll",
+  })
+
+  let snap = await driver.snapshotTerminalRegistry?.()
+  assert.equal(snap?.active_sessions.length, 0)
+  assert.deepEqual(snap?.ended_session_ids, ["term-oci-restart-id"])
+
+  // 2. Restart with same ID (active)
+  const restartRes = await driver.startTerminalSession?.({
+    terminalSessionId: "term-oci-restart-id",
+    command: ["bash"],
+    capability: cap,
+    placement: place,
+  })
+  assert.ok(restartRes?.descriptor)
+
+  // 3. Registry must show exactly 1 active and 0 ended for that ID
+  snap = await driver.snapshotTerminalRegistry?.()
+  assert.equal(snap?.active_sessions.length, 1)
+  assert.equal(snap?.active_sessions[0]?.terminal_session_id, "term-oci-restart-id")
+  assert.equal(Boolean(snap?.ended_session_ids?.includes("term-oci-restart-id")), false)
+})

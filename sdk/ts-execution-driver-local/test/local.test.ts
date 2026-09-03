@@ -1,8 +1,8 @@
 import fs from "node:fs"
+import { spawn } from "node:child_process"
 import test from "node:test"
 import assert from "node:assert/strict"
 import { setTimeout as sleep } from "node:timers/promises"
-
 import {
   buildLocalProcessSandboxRequest,
   chooseTrustedLocalPlacement,
@@ -753,14 +753,14 @@ test("trusted local manager retains >32 ended sessions with live descendants wit
   const livePgids = new Set<number>()
   const manager = new LocalTerminalSessionManager({
     isGroupAlive: (pgid: number | null | undefined) => (pgid != null ? livePgids.has(pgid) : false),
+    isProcessAlive: () => false,
+    getProcessStartToken: () => null,
     killProcessTree: (child: unknown, pgid: number | null | undefined, signal: NodeJS.Signals) => {
       if (pgid != null) {
         livePgids.delete(pgid)
       }
     },
   })
-
-  // Start 40 sessions whose descendant groups are simulated live
   for (let i = 1; i <= 40; i++) {
     livePgids.add(1000 + i)
   }
@@ -824,9 +824,9 @@ test("trusted local driver rejects start reuse of session ID with uncleaned ende
     terminalSessionId: "term-reuse-descendant-1",
     command: ["node", "-e", "process.exit(0)"],
   })
+  await sleep(60)
 
   // Simulate parent exit with live descendant by verifying state
-  // Attempting to restart with the same ID must throw pending cleanup error
   await assert.rejects(
     async () => {
       await manager.startSession({
@@ -852,4 +852,145 @@ test("trusted local driver rejects start reuse of session ID with uncleaned ende
   })
   assert.ok(restarted.descriptor)
   assert.equal(restarted.descriptor.terminal_session_id, "term-reuse-descendant-1")
+})
+
+test("trusted local manager retains and cleans >32 immediate inert ended sessions without cap failure", async () => {
+  const manager = new LocalTerminalSessionManager({
+    isGroupAlive: () => false,
+  })
+
+  // Start and immediate-exit 40 sessions
+  for (let i = 1; i <= 40; i++) {
+    await manager.startSession({
+      terminalSessionId: `term-inert-40-${i}`,
+      command: ["node", "-e", "process.exit(0)"],
+    })
+    await manager.interactSession({
+      terminalSessionId: `term-inert-40-${i}`,
+      interactionKind: "poll",
+    })
+  }
+
+  // Cleanup scope all must clean all 40 inert ended sessions
+  const cleanupResult = await manager.cleanupSessions({
+    cleanupId: "clean-40-inert",
+    scope: "all",
+  })
+
+  assert.equal(cleanupResult.cleaned_session_ids.length, 40)
+  assert.deepEqual(cleanupResult.failed_session_ids, [])
+  for (let i = 1; i <= 40; i++) {
+    assert.ok(cleanupResult.cleaned_session_ids.includes(`term-inert-40-${i}`))
+  }
+})
+
+test("trusted local manager refuses to kill reused PGID when identity cannot be validated", async () => {
+  const killedPgids: Array<number | null | undefined> = []
+  const manager = new LocalTerminalSessionManager({
+    isGroupAlive: (pgid) => pgid === 9999, // Unrelated process group exists with PGID 9999
+    killProcessTree: (_child, pgid) => {
+      killedPgids.push(pgid)
+    },
+    validateGroupOwnership: (identity, pgid) => {
+      // Refuse ownership because PGID 9999 belongs to an unrelated new process
+      return false
+    },
+  })
+
+  // Simulate ended session with PGID 9999
+  ;(manager as any).rememberEndedSession("term-reused-pgid", 9999, {
+    sessionId: "term-reused-pgid",
+    leaderPid: 9999,
+    startToken: null,
+    startedAtMs: Date.now() - 10000,
+    command: ["node", "-e", "process.exit(0)"],
+  })
+
+  // Cleanup targeting the session
+  const cleanRes = await manager.cleanupSessions({
+    cleanupId: "clean-reused-pgid",
+    scope: "single",
+    sessionIds: ["term-reused-pgid"],
+  })
+
+  // Crucial: killProcessTree must NEVER have been called for the unvalidated PGID
+  assert.equal(killedPgids.length, 0, "unrelated process group 9999 was protected from false kill signal")
+  assert.deepEqual(cleanRes.failed_session_ids, ["term-reused-pgid"], "reported failed/unconfirmed to protect reused group")
+})
+
+test("trusted local manager same-ID successful restart removes ID from ended_session_ids in registry snapshot", async () => {
+  const manager = new LocalTerminalSessionManager({
+    isGroupAlive: () => false,
+  })
+
+  // 1. Start and end session
+  await manager.startSession({
+    terminalSessionId: "term-local-restart-id",
+    command: ["node", "-e", "process.exit(0)"],
+  })
+  await sleep(60)
+  await manager.interactSession({
+    terminalSessionId: "term-local-restart-id",
+    interactionKind: "poll",
+  })
+  let snap = await manager.snapshotRegistry()
+  assert.equal(snap.active_sessions.length, 0)
+  assert.deepEqual(snap.ended_session_ids, ["term-local-restart-id"])
+
+  // 2. Restart with same ID
+  const restartRes = await manager.startSession({
+    terminalSessionId: "term-local-restart-id",
+    command: ["node", "-e", "process.exit(0)"],
+  })
+  assert.ok(restartRes.descriptor)
+
+  // 3. Registry must show exactly 1 active and 0 ended for that ID (never 2 total for one ID)
+  snap = await manager.snapshotRegistry()
+  assert.equal(snap.active_sessions.length, 1)
+  assert.equal(snap.active_sessions[0]?.terminal_session_id, "term-local-restart-id")
+  assert.equal(Boolean(snap.ended_session_ids?.includes("term-local-restart-id")), false)
+})
+
+test("shared default local manager detects PID reuse and protects unrelated process without injected validator", async () => {
+  // Use default manager (no validateGroupOwnership option provided)
+  // Spawn an unrelated process whose PID is alive
+  const unrelatedChild = spawn("node", ["-e", "setInterval(() => {}, 1000)"])
+  const unrelatedPid = unrelatedChild.pid!
+  assert.ok(unrelatedPid > 0)
+
+  try {
+    const defaultManager = new LocalTerminalSessionManager({
+      isGroupAlive: () => true, // Group probe returns true for live unrelated process
+      // Notice: NO validateGroupOwnership injected! Tests the concrete default validator.
+    })
+
+    // Simulate an ended session whose recorded leaderPid matches the unrelated live process PID
+    ;(defaultManager as any).rememberEndedSession("term-default-reuse-check", unrelatedPid, {
+      sessionId: "term-default-reuse-check",
+      leaderPid: unrelatedPid,
+      startToken: "expired-start-token-123",
+      startedAtMs: Date.now() - 60000,
+      command: ["node", "-e", "process.exit(0)"],
+    })
+
+    // Cleanup session on default manager
+    const cleanRes = await defaultManager.cleanupSessions({
+      cleanupId: "clean-default-reuse",
+      scope: "single",
+      sessionIds: ["term-default-reuse-check"],
+    })
+
+    assert.deepEqual(cleanRes.failed_session_ids, ["term-default-reuse-check"], "unconfirmed cleanup reported failed")
+    // The unrelated process MUST still be alive and running (was NOT killed by the default manager)
+    let isAlive = false
+    try {
+      process.kill(unrelatedPid, 0)
+      isAlive = true
+    } catch {}
+    assert.equal(isAlive, true, "unrelated process remained alive and unharmed by default manager")
+  } finally {
+    try {
+      unrelatedChild.kill("SIGKILL")
+    } catch {}
+  }
 })

@@ -101,9 +101,6 @@ export class OciTerminalSessionManager {
       this.endedSessionIds.splice(existingIndex, 1)
     }
     this.endedSessionIds.push(sessionId)
-    if (this.endedSessionIds.length > 32) {
-      this.endedSessionIds.splice(0, this.endedSessionIds.length - 32)
-    }
   }
 
   constructor(private readonly adapter: OciTerminalSessionAdapter) {}
@@ -149,6 +146,11 @@ export class OciTerminalSessionManager {
     if (result.end) {
       this.sessions.delete(descriptor.terminal_session_id)
       this.rememberEndedSession(descriptor.terminal_session_id)
+    } else {
+      const endedIdx = this.endedSessionIds.indexOf(descriptor.terminal_session_id)
+      if (endedIdx >= 0) {
+        this.endedSessionIds.splice(endedIdx, 1)
+      }
     }
     return {
       descriptor,

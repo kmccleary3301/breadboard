@@ -150,9 +150,6 @@ export class RemoteTerminalSessionManager {
       this.endedSessionIds.splice(existingIndex, 1)
     }
     this.endedSessionIds.push(sessionId)
-    if (this.endedSessionIds.length > 32) {
-      this.endedSessionIds.splice(0, this.endedSessionIds.length - 32)
-    }
   }
 
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
@@ -185,6 +182,10 @@ export class RemoteTerminalSessionManager {
       }
     }
     if (!end) {
+      const endedIdx = this.endedSessionIds.indexOf(descriptor.terminal_session_id)
+      if (endedIdx >= 0) {
+        this.endedSessionIds.splice(endedIdx, 1)
+      }
       this.sessions.set(descriptor.terminal_session_id, { descriptor })
     } else {
       this.rememberEndedSession(descriptor.terminal_session_id)
@@ -247,16 +248,24 @@ export class RemoteTerminalSessionManager {
     })
     const snapshot = response.payload.snapshot as TerminalRegistrySnapshotV1 | undefined
     if (snapshot) {
-      for (const sessionId of snapshot.ended_session_ids ?? []) {
-        this.rememberEndedSession(sessionId)
+      const activeSet = new Set(snapshot.active_sessions.map((s) => s.terminal_session_id))
+      const sanitizedEnded = (snapshot.ended_session_ids ?? []).filter((id) => !activeSet.has(id))
+      for (const sessionId of sanitizedEnded) {
+        if (!this.sessions.has(sessionId)) {
+          this.rememberEndedSession(sessionId)
+        }
       }
-      return assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", snapshot)
+      return assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", {
+        ...snapshot,
+        ended_session_ids: sanitizedEnded,
+      })
     }
+    const activeIds = new Set(this.sessions.keys())
     return assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", {
       schema_version: "bb.terminal_registry_snapshot.v1",
       snapshot_id: `remote-term-reg:${Date.now()}`,
       active_sessions: [...this.sessions.values()].map((record) => record.descriptor),
-      ended_session_ids: [...this.endedSessionIds],
+      ended_session_ids: this.endedSessionIds.filter((id) => !activeIds.has(id)),
     })
   }
 

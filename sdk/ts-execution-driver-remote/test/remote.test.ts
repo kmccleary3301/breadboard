@@ -1294,3 +1294,248 @@ test("remote execution driver direct execute enforces bounded deadline when fetc
   const durationMs = Date.now() - startMs
   assert.ok(durationMs < 2000, `execute rejected boundedly in ${durationMs}ms despite abort-ignoring transport`)
 })
+
+test("remote terminal manager retains and cleans >32 ended sessions without cap failure", async () => {
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "http://remote-backend:8080/terminals",
+    fetchImpl: async (_input, init) => {
+      const body = JSON.parse(init?.body as string)
+      if (body.action === "start") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              descriptor: {
+                schema_version: "bb.terminal_session_descriptor.v1",
+                terminal_session_id: body.payload.terminal_session_id,
+                public_handles: [],
+                command: ["python", "worker.py"],
+                cwd: null,
+                startup_call_id: null,
+                owner_task_id: null,
+                stream_mode: "pipes",
+                stream_split: "stdout_stderr",
+                capability_id: remoteCapability.capability_id,
+                placement_id: "place-term-rem-40",
+                persistence_scope: "thread",
+                continuation_scope: "both",
+              },
+            },
+          }),
+        } as Response
+      }
+      if (body.action === "interact") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              output_deltas: [],
+              end: {
+                schema_version: "bb.terminal_session_end.v1",
+                terminal_session_id: body.payload.descriptor?.terminal_session_id ?? body.payload.interaction?.terminal_session_id ?? "unknown",
+                startup_call_id: null,
+                causing_call_id: null,
+                terminal_state: "completed",
+                exit_code: 0,
+                duration_ms: 10,
+                artifact_refs: [],
+                evidence_refs: [],
+              },
+            },
+          }),
+        } as Response
+      }
+      if (body.action === "cleanup") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              cleaned_session_ids: body.payload.session_ids ? [...body.payload.session_ids] : [],
+              failed_session_ids: [],
+            },
+          }),
+        } as Response
+      }
+      return { ok: true, status: 200, json: async () => ({}) } as Response
+    },
+  })
+
+  // Start and end 40 sessions
+  for (let i = 1; i <= 40; i++) {
+    await driver.startTerminalSession?.({
+      terminalSessionId: `term-rem-40-${i}`,
+      command: ["python", "worker.py"],
+      capability: remoteCapability,
+      placement: {
+        schema_version: "bb.execution_placement.v1",
+        placement_id: "place-term-rem-40",
+        placement_class: "remote_worker",
+        runtime_id: "remote",
+        capability_id: remoteCapability.capability_id,
+      },
+    })
+    await driver.interactTerminalSession?.({
+      terminalSessionId: `term-rem-40-${i}`,
+      interactionKind: "poll",
+    })
+  }
+
+  // Cleanup scope all must clean all 40 ended sessions
+  const cleanupResult = await driver.cleanupTerminalSessions?.({
+    cleanupId: "clean-rem-40",
+    scope: "all",
+  })
+
+  assert.ok(cleanupResult)
+  assert.equal(cleanupResult.cleaned_session_ids.length, 40)
+  assert.deepEqual(cleanupResult.failed_session_ids, [])
+  for (let i = 1; i <= 40; i++) {
+    assert.ok(cleanupResult.cleaned_session_ids.includes(`term-rem-40-${i}`))
+  }
+})
+
+test("remote terminal manager same-ID successful restart removes ID from ended_session_ids in registry snapshot", async () => {
+  let ended = false
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "http://remote-backend:8080/terminals",
+    fetchImpl: async (_input, init) => {
+      const body = JSON.parse(init?.body as string)
+      if (body.action === "start") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              descriptor: {
+                schema_version: "bb.terminal_session_descriptor.v1",
+                terminal_session_id: body.payload.terminal_session_id,
+                public_handles: [],
+                command: ["python", "worker.py"],
+                cwd: null,
+                startup_call_id: null,
+                owner_task_id: null,
+                stream_mode: "pipes",
+                stream_split: "stdout_stderr",
+                capability_id: remoteCapability.capability_id,
+                placement_id: "place-term-rem-restart",
+                persistence_scope: "thread",
+                continuation_scope: "both",
+              },
+            },
+          }),
+        } as Response
+      }
+      if (body.action === "interact") {
+        ended = true
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              output_deltas: [],
+              end: {
+                schema_version: "bb.terminal_session_end.v1",
+                terminal_session_id: body.payload.descriptor?.terminal_session_id ?? "term-rem-restart-id",
+                startup_call_id: null,
+                causing_call_id: null,
+                terminal_state: "completed",
+                exit_code: 0,
+                duration_ms: 10,
+                artifact_refs: [],
+                evidence_refs: [],
+              },
+            },
+          }),
+        } as Response
+      }
+      if (body.action === "snapshot") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              snapshot: {
+                schema_version: "bb.terminal_registry_snapshot.v1",
+                snapshot_id: "snap-remote-1",
+                active_sessions: ended
+                  ? []
+                  : [
+                      {
+                        schema_version: "bb.terminal_session_descriptor.v1",
+                        terminal_session_id: "term-rem-restart-id",
+                        public_handles: [],
+                        command: ["python", "worker.py"],
+                        cwd: null,
+                        startup_call_id: null,
+                        owner_task_id: null,
+                        stream_mode: "pipes",
+                        stream_split: "stdout_stderr",
+                        capability_id: remoteCapability.capability_id,
+                        placement_id: "place-term-rem-restart",
+                        persistence_scope: "thread",
+                        continuation_scope: "both",
+                      },
+                    ],
+                ended_session_ids: ended ? ["term-rem-restart-id"] : [],
+              },
+            },
+          }),
+        } as Response
+      }
+      return { ok: true, status: 200, json: async () => ({}) } as Response
+    },
+  })
+
+  // 1. Start and end session
+  await driver.startTerminalSession?.({
+    terminalSessionId: "term-rem-restart-id",
+    command: ["python", "worker.py"],
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-term-rem-restart",
+      placement_class: "remote_worker",
+      runtime_id: "remote",
+      capability_id: remoteCapability.capability_id,
+    },
+  })
+  await driver.interactTerminalSession?.({
+    terminalSessionId: "term-rem-restart-id",
+    interactionKind: "poll",
+  })
+
+  let snap = await driver.snapshotTerminalRegistry?.()
+  assert.equal(snap?.active_sessions.length, 0)
+  assert.deepEqual(snap?.ended_session_ids, ["term-rem-restart-id"])
+
+  // 2. Restart with same ID (active)
+  ended = false
+  const restartRes = await driver.startTerminalSession?.({
+    terminalSessionId: "term-rem-restart-id",
+    command: ["python", "worker.py"],
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-term-rem-restart",
+      placement_class: "remote_worker",
+      runtime_id: "remote",
+      capability_id: remoteCapability.capability_id,
+    },
+  })
+  assert.ok(restartRes?.descriptor)
+
+  // 3. Registry must show exactly 1 active and 0 ended for that ID
+  snap = await driver.snapshotTerminalRegistry?.()
+  assert.equal(snap?.active_sessions.length, 1)
+  assert.equal(snap?.active_sessions[0]?.terminal_session_id, "term-rem-restart-id")
+  assert.equal(Boolean(snap?.ended_session_ids?.includes("term-rem-restart-id")), false)
+})

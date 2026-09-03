@@ -2229,6 +2229,121 @@ test("execution world retains all ended session owners without arbitrary evictio
   }
 })
 
+test("execution world >32 ended sessions reconciliation handles filtered and all scopes without cap omission", async () => {
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-reconcile-50",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-reconcile-50",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: cap.capability_id,
+  }
+  const endedInDriver = new Set<string>()
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "reconcile-50-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    startTerminalSession: async (input) => {
+      endedInDriver.add(input.terminalSessionId)
+      return {
+        descriptor: {
+          schema_version: "bb.terminal_session_descriptor.v1",
+          terminal_session_id: input.terminalSessionId,
+          public_handles: [],
+          command: ["bash"],
+          cwd: null,
+          startup_call_id: null,
+          owner_task_id: null,
+          stream_mode: "pipes",
+          stream_split: "stdout_stderr",
+          capability_id: cap.capability_id,
+          placement_id: place.placement_id,
+          persistence_scope: "thread",
+          continuation_scope: "both",
+        },
+        outputDeltas: [],
+        end: {
+          schema_version: "bb.terminal_session_end.v1",
+          terminal_session_id: input.terminalSessionId,
+          startup_call_id: null,
+          causing_call_id: null,
+          terminal_state: "completed",
+          exit_code: 0,
+          duration_ms: 5,
+          artifact_refs: [],
+          evidence_refs: [],
+        },
+      }
+    },
+    cleanupTerminalSessions: async (input) => {
+      const targets = input.scope === "all" ? [...endedInDriver] : input.sessionIds ?? []
+      for (const id of targets) {
+        endedInDriver.delete(id)
+      }
+      return {
+        schema_version: "bb.terminal_cleanup_result.v1",
+        cleanup_id: input.cleanupId,
+        scope: input.scope,
+        cleaned_session_ids: targets,
+        failed_session_ids: [],
+        metadata: {},
+      }
+    },
+  }
+  const world = createExecutionWorld({ drivers: [driver] })
+
+  // Start 50 immediately-ending sessions
+  for (let i = 1; i <= 50; i++) {
+    await world.execute({
+      kind: "terminal_start",
+      capability: cap,
+      placement: place,
+      input: {
+        terminalSessionId: `session-rec-${i}`,
+        command: ["bash"],
+      },
+    })
+  }
+
+  // Clean up subset: early IDs (1..10) and late IDs (40..50)
+  const subset = ["session-rec-1", "session-rec-5", "session-rec-10", "session-rec-45", "session-rec-50"]
+  const filteredCleanup = await world.execute({
+    kind: "terminal_cleanup",
+    capability: cap,
+    placement: place,
+    input: {
+      cleanupId: "clean-rec-subset",
+      scope: "filtered",
+      sessionIds: subset,
+    },
+  })
+  assert.equal(filteredCleanup.kind, "terminal_cleanup")
+  assert.deepEqual(filteredCleanup.result?.cleaned_session_ids.sort(), subset.sort())
+  assert.deepEqual(filteredCleanup.result?.failed_session_ids, [])
+
+  // Clean up remaining sessions via scope: all
+  const allCleanup = await world.execute({
+    kind: "terminal_cleanup",
+    capability: cap,
+    placement: place,
+    input: {
+      cleanupId: "clean-rec-remaining",
+      scope: "all",
+    },
+  })
+  assert.equal(allCleanup.kind, "terminal_cleanup")
+  assert.equal(allCleanup.result?.cleaned_session_ids.length, 45)
+  assert.deepEqual(allCleanup.result?.failed_session_ids, [])
+})
+
 test("execution world classifies arbitrary adapter error message containing 'abort' as failed, not cancelled", async () => {
   const cap: ExecutionCapabilityV1 = {
     schema_version: "bb.execution_capability.v1",
