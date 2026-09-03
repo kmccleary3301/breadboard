@@ -277,6 +277,29 @@ test("trusted local driver rejects interaction with an exited terminal session",
   )
 })
 
+
+test("trusted local snapshot excludes an exited session before poll delivery", async () => {
+  const manager = new LocalTerminalSessionManager()
+  await manager.startSession({
+    terminalSessionId: "term-local-snapshot-exit",
+    command: ["node", "-e", "process.exit(0)"],
+    cwd: "/tmp",
+  })
+  await sleep(75)
+
+  const snapshot = await manager.snapshotRegistry()
+
+  assert.equal(
+    snapshot.active_sessions.some(
+      (session) => session.terminal_session_id === "term-local-snapshot-exit",
+    ),
+    false,
+  )
+  assert.ok((snapshot.ended_session_ids ?? []).includes("term-local-snapshot-exit"))
+})
+
+
+
 test("trusted local driver cleanup is stable for missing or already cleaned sessions", async () => {
   const cleanedMissing = await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
     cleanupId: "cleanup-missing-1",
@@ -1025,7 +1048,7 @@ test("trusted local manager same-ID successful restart removes ID from ended_ses
   // 2. Restart with same ID
   const restartRes = await manager.startSession({
     terminalSessionId: "term-local-restart-id",
-    command: ["node", "-e", "process.exit(0)"],
+    command: ["node", "-e", "setTimeout(() => {}, 1000)"],
   })
   assert.ok(restartRes.descriptor)
 
@@ -1034,6 +1057,11 @@ test("trusted local manager same-ID successful restart removes ID from ended_ses
   assert.equal(snap.active_sessions.length, 1)
   assert.equal(snap.active_sessions[0]?.terminal_session_id, "term-local-restart-id")
   assert.equal(Boolean(snap.ended_session_ids?.includes("term-local-restart-id")), false)
+  await manager.cleanupSessions({
+    cleanupId: "cleanup-restarted-local-id",
+    scope: "single",
+    sessionIds: ["term-local-restart-id"],
+  })
 })
 
 test("shared default local manager detects PID reuse and protects unrelated process without injected validator", async () => {

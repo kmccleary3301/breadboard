@@ -4815,3 +4815,67 @@ test("execution world scope-all adopts selected-driver snapshot sessions and ign
   assert.equal(foreignInteraction.driverId, foreignDriver.driverId)
   assert.ok(foreignInteraction.result)
 })
+
+test("execution world does not retain a session ID after an empty-command start rejection", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-prelaunch-validation",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-prelaunch-validation",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: capability.capability_id,
+  }
+  let startCalls = 0
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "prelaunch-validation",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    startTerminalSession: async (input) => {
+      startCalls++
+      return {
+        descriptor: {
+          schema_version: "bb.terminal_session_descriptor.v1",
+          terminal_session_id: input.terminalSessionId,
+          capability_id: capability.capability_id,
+          placement_id: placement.placement_id,
+          command: input.command,
+          stream_mode: "pipes",
+          persistence_scope: "until_cleanup",
+          continuation_scope: "model",
+        },
+        outputDeltas: [],
+      }
+    },
+  }
+  const world = createExecutionWorld({ drivers: [driver] })
+
+  const rejected = await world.execute({
+    kind: "terminal_start",
+    capability,
+    placement,
+    input: { terminalSessionId: "term-prelaunch-validation", command: [] },
+  })
+  const accepted = await world.execute({
+    kind: "terminal_start",
+    capability,
+    placement,
+    input: {
+      terminalSessionId: "term-prelaunch-validation",
+      command: ["sh"],
+    },
+  })
+
+  assert.equal(rejected.kind, "terminal_start")
+  assert.equal(rejected.result, null)
+  assert.equal(rejected.unsupportedCase?.reason_code, "terminal_start_failed")
+  assert.equal(accepted.kind, "terminal_start")
+  assert.equal(accepted.result?.descriptor.terminal_session_id, "term-prelaunch-validation")
+  assert.equal(startCalls, 1)
+})

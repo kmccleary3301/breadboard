@@ -99,6 +99,40 @@ test("oci driver can build an OCI sandbox request", () => {
   assert.equal(built?.placement_class, "local_oci")
 })
 
+
+test("oci direct execution rejects a pre-aborted request before invoking the runtime", async () => {
+  const request = buildOciSandboxRequest({
+    requestId: "oci-pre-aborted",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-pre-aborted",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["touch", "/tmp/should-not-exist"],
+    imageRef: "docker://alpine:latest",
+  })
+  const controller = new AbortController()
+  controller.abort("deadline")
+  let executorCalls = 0
+
+  const result = await executeOciSandboxRequest(request, {
+    signal: controller.signal,
+    commandExecutor: async () => {
+      executorCalls++
+      return { exitCode: 0, stdout: "", stderr: "" }
+    },
+  })
+
+  assert.equal(executorCalls, 0)
+  assert.equal(result.status, "timed_out")
+  assert.equal(result.error?.reason, "deadline_exceeded")
+})
+
+
+
 test("oci driver can build a concrete runtime invocation", () => {
   const request = buildOciSandboxRequest({
     requestId: "oci-runtime-1",
@@ -480,6 +514,43 @@ test("oci driver terminate triggers signal and awaits runtime exit", async () =>
   assert.ok(issuedCommands.some((c) => c.runtimeArgs.includes("--name") && c.runtimeArgs.some((a) => a.startsWith("bb-oci-req-oci-term-verify"))))
   assert.ok(issuedCommands.some((c) => c.runtimeArgs[0] === "stop" && c.runtimeArgs.some((a) => a.startsWith("bb-oci-req-oci-term-verify"))))
 })
+
+
+test("oci driver rejects termination when runtime exit is not observed", async () => {
+  const customExecutor: OciCommandExecutor = async ({ runtimeArgs }) => {
+    if (runtimeArgs[0] === "run") {
+      return new Promise(() => {})
+    }
+    return { exitCode: 0, stdout: "", stderr: "" }
+  }
+  const driver = makeConfiguredOciExecutionDriver({ commandExecutor: customExecutor })
+  const request = buildOciSandboxRequest({
+    requestId: "req-oci-unobserved-exit",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-unobserved-exit",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "60"],
+    imageRef: "docker://alpine:latest",
+  })
+  void driver.execute!(request)
+  await assert.rejects(
+    async () => {
+      await driver.terminate!(request, {
+        reason: "cancelled",
+        signal: new AbortController().signal,
+        deadlineAtMs: null,
+      })
+    },
+    /OCI termination was not observed/,
+  )
+})
+
+
 
 test("oci driver handles stubborn container that resists normal stop and forces kill/rm", async () => {
   const recordedArgs: string[][] = []
@@ -932,7 +1003,7 @@ test("OCI cleanup response omitting cleaned_session_ids but reporting failed_ses
   )
 })
 
-test("OCI driver termination advances through stop/kill/rm and settles boundedly when injected commandExecutor ignores signal and never settles", async () => {
+test("OCI driver termination rejects boundedly when execution and cleanup never settle", async () => {
   const invokedCommands: string[] = []
   const neverSettlingExecutor: OciCommandExecutor = async ({ runtimeArgs }) => {
     invokedCommands.push(runtimeArgs[0])
@@ -983,13 +1054,18 @@ test("OCI driver termination advances through stop/kill/rm and settles boundedly
   })
 
   const startMs = Date.now()
-  await driver.terminate!(request, {
-    reason: "cancelled",
-    signal: controller.signal,
-    deadlineAtMs: null,
-  })
+  await assert.rejects(
+    async () => {
+      await driver.terminate!(request, {
+        reason: "cancelled",
+        signal: controller.signal,
+        deadlineAtMs: null,
+      })
+    },
+    /OCI termination was not observed/,
+  )
   const durationMs = Date.now() - startMs
-  assert.ok(durationMs < 10000, `terminate resolved boundedly in ${durationMs}ms`)
+  assert.ok(durationMs < 10000, `terminate rejected boundedly in ${durationMs}ms`)
   assert.ok(invokedCommands.includes("stop"), "stop was invoked")
   assert.ok(invokedCommands.includes("kill"), "kill was invoked after stop timed out")
   assert.ok(invokedCommands.includes("rm"), "rm was invoked")

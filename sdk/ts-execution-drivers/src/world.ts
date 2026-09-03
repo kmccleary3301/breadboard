@@ -875,6 +875,21 @@ export function createExecutionWorld(input: {
         ),
       }
     }
+    if (operation.input.command.length === 0) {
+      return {
+        kind: "terminal_start",
+        driverId: driver.driverId,
+        capability: operation.capability,
+        placement: operation.placement,
+        result: null,
+        unsupportedCase: buildTerminalUnsupportedCase(
+          operation.capability,
+          operation.placement,
+          "Terminal sessions require a non-empty command.",
+          "terminal_start_failed",
+        ),
+      }
+    }
     startingSessionIds.add(terminalSessionId)
     try {
       const rawResult = await driver.startTerminalSession(operation.input)

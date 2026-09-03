@@ -462,11 +462,16 @@ export class LocalTerminalSessionManager {
   }
 
   async snapshotRegistry(): Promise<TerminalRegistrySnapshotV1> {
-    const activeIds = new Set(this.sessions.keys())
+    const activeRecords = [...this.sessions.values()].filter(
+      (record) => record.pendingEnd === null,
+    )
+    const activeIds = new Set(
+      activeRecords.map((record) => record.descriptor.terminal_session_id),
+    )
     return assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", {
       schema_version: "bb.terminal_registry_snapshot.v1",
       snapshot_id: `term-reg:${Date.now()}`,
-      active_sessions: [...this.sessions.values()].map((record) => record.descriptor),
+      active_sessions: activeRecords.map((record) => record.descriptor),
       ended_session_ids: this.endedSessionIds.filter((id) => !activeIds.has(id)),
     })
   }

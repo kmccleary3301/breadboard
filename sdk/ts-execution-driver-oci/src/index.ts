@@ -198,18 +198,27 @@ export async function executeOciSandboxRequest(
     workspaceMountTarget: options.workspaceMountTarget,
     containerName: options.containerName,
   })
-  const result = await commandExecutor({
-    runtimeCommand: invocation.runtimeCommand,
-    runtimeArgs: invocation.runtimeArgs,
-    signal: options.signal,
-  })
+  const preAborted = options.signal?.aborted === true
+  const deadlineBeforeExecution = preAborted && options.signal?.reason === "deadline"
+  const result = preAborted
+    ? {
+        exitCode: deadlineBeforeExecution ? 124 : 130,
+        stdout: "",
+        stderr: "",
+      }
+    : await commandExecutor({
+        runtimeCommand: invocation.runtimeCommand,
+        runtimeArgs: invocation.runtimeArgs,
+        signal: options.signal,
+      })
   const captureDir = await mkdtemp(join(options.tempDirRoot ?? tmpdir(), "breadboard-oci-exec-"))
   const stdoutPath = join(captureDir, "stdout.log")
   const stderrPath = join(captureDir, "stderr.log")
   await writeFile(stdoutPath, result.stdout, "utf8")
   await writeFile(stderrPath, result.stderr, "utf8")
-  const isAborted = options.signal?.aborted === true
-  const isDeadline = isAborted && options.signal?.reason === "deadline"
+  const isAborted = preAborted || options.signal?.aborted === true
+  const isDeadline =
+    deadlineBeforeExecution || (isAborted && options.signal?.reason === "deadline")
   const status: SandboxResultV1["status"] = isAborted
     ? isDeadline
       ? "timed_out"
@@ -367,14 +376,20 @@ function createOciExecutionDriver(options: {
         2000,
       )
 
-      const boundedCompletion = new Promise<void>((resolve) => {
-        const t = setTimeout(resolve, 2000)
-        active.completion.catch(() => {}).finally(() => {
-          clearTimeout(t)
-          resolve()
-        })
-      })
-      await boundedCompletion
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const completionObserved = await Promise.race([
+        active.completion.then(
+          () => true,
+          () => true,
+        ),
+        new Promise<false>((resolve) => {
+          timer = setTimeout(() => resolve(false), 2000)
+        }),
+      ])
+      clearTimeout(timer)
+      if (!completionObserved) {
+        throw new Error("OCI termination was not observed within 2000ms")
+      }
     },
     ...(terminalDriver
       ? {
