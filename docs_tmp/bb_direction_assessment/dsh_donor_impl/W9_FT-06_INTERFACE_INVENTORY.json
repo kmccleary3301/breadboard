@@ -8833,7 +8833,7 @@
   "generated_by": "scripts/interface_inventory.py",
   "inputs": {
     "engine_root": {
-      "content_digest": "sha256:8053df1ca21ceb8e8b55349a3defa9706e3b6944d84bca2e561164ff362f25c7",
+      "content_digest": "sha256:0b48cc6b28d46a452484959164b60ff8f679012be264abecd257e61f152f54ec",
       "file_count": 4732
     },
     "tui_root": {
@@ -20683,6 +20683,7 @@
       {
         "matched_tokens": [
           "assistant_message",
+          "ctree_node",
           "log_link"
         ],
         "path": "engine_root/tui_skeleton/src/repl/transcript/__tests__/visibilityContract.test.ts",

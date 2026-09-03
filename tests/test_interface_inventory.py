@@ -41,6 +41,8 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
                 {"id": "error", "status": "active"},
                 {"id": "completion", "status": "active"},
                 {"id": "tool_result", "status": "active"},
+                {"id": "assistant_message", "status": "active"},
+                {"id": "ctree_node", "status": "active"},
                 {"id": "tool_call", "status": "active"},
                 {"id": "warning", "status": "active"},
             ],
@@ -140,6 +142,14 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
                 "artifact": ["artifact.list"],
             },
         },
+    )
+    _json(
+        engine / "contracts" / "public" / "operations-empty.v1.json",
+        {"operations": [], "operation_count": 99},
+    )
+    _json(
+        engine / "contracts" / "public" / "operations-declared.v1.json",
+        {"operation_count": 3},
     )
     (engine / "breadboard_engine" / "api" / "cli_bridge").mkdir(parents=True)
     (engine / "breadboard_engine" / "api" / "cli_bridge" / "events.py").write_text("class EventType:\n    TOOL_RESULT = 'tool_result'\n", encoding="utf-8")
@@ -249,8 +259,29 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
         encoding="utf-8",
     )
     (tui_source.parent / "typed-event-literal.ts").write_text(
-        "const events: NormalizedEvent[] = [{ type: 'warning', data: {} }];\n"
+        "const events: NormalizedEvent[] = [\n"
+        "  { type: 'warning', data: {} },\n"
+        "  { type: 'assistant_message', data: {} },\n"
+        "  { type: 'ctree_node', data: {} },\n"
+        "];\n"
         "buildTranscriptFromEvents(events);\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "typed-event-factory.ts").write_text(
+        "function record(label: string, type: SessionEvent['type']) {}\n"
+        "record('ignored label', 'assistant_message');\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "untyped-event-factory.ts").write_text(
+        "function record(label: string, type: string) {}\n"
+        "record('assistant_message', 'ctree_node');\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "unrelated-object-array.ts").write_text(
+        "const records: object[] = [\n"
+        "  { type: 'assistant_message' },\n"
+        "  { type: 'ctree_node' },\n"
+        "];\n",
         encoding="utf-8",
     )
     (tui_source.parent / "called-event-literal.ts").write_text(
@@ -341,7 +372,7 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     found = {(row["registry_id"], row["entry_id"]) for row in first["authoritative_registry_entries"]}
     assert SAMPLE <= found
     assert str(engine) not in canonical_bytes(first).decode()
-    assert first["tui_consumers"]["consumer_count"] == 10
+    assert first["tui_consumers"]["consumer_count"] == 11
     assert set(first["inputs"]) == {"engine_root", "tui_root"}
     for root_identity in first["inputs"].values():
         assert root_identity["content_digest"].startswith("sha256:")
@@ -369,7 +400,21 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
         for row in consumer_rows
         if row["path"].endswith("typed-event-literal.ts")
     )
-    assert typed["matched_tokens"] == ["warning"]
+    assert typed["matched_tokens"] == ["assistant_message", "ctree_node", "warning"]
+    typed_factory = next(
+        row
+        for row in consumer_rows
+        if row["path"].endswith("typed-event-factory.ts")
+    )
+    assert typed_factory["matched_tokens"] == ["assistant_message"]
+    assert not any(
+        row["path"].endswith("untyped-event-factory.ts")
+        for row in consumer_rows
+    )
+    assert not any(
+        row["path"].endswith("unrelated-object-array.ts")
+        for row in consumer_rows
+    )
     called = next(
         row
         for row in consumer_rows
@@ -442,6 +487,18 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
         for row in first["compatibility_surfaces"]["public_catalogs"]
         if row["path"].endswith("frozen_public_surface.v1.json")
     )
+    empty_catalog = next(
+        row
+        for row in first["compatibility_surfaces"]["public_catalogs"]
+        if row["path"].endswith("operations-empty.v1.json")
+    )
+    assert empty_catalog["operation_count"] == 0
+    declared_catalog = next(
+        row
+        for row in first["compatibility_surfaces"]["public_catalogs"]
+        if row["path"].endswith("operations-declared.v1.json")
+    )
+    assert declared_catalog["operation_count"] == 3
     manifest = next(
         row for row in first["schemas"] if row["id"] == "bb.engine_manifest.v1"
     )
@@ -497,8 +554,9 @@ def test_inventory_cli_writes_and_checks_fixed_point(tmp_path: Path) -> None:
     engine, tui = _fixture_roots(tmp_path)
     output = (
         engine
-        / "breadboard_sdk"
-        / "generated"
+        / "contracts"
+        / "kernel"
+        / "registries"
         / "interface_inventory_manifest.json"
     )
     script = Path(__file__).resolve().parents[1] / "scripts" / "interface_inventory.py"

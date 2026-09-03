@@ -62,7 +62,12 @@ def _relative(path: Path, root: Path, label: str) -> str:
     return f"{label}/{path.relative_to(root).as_posix()}"
 
 
-def _iter_files(root: Path, suffixes: Iterable[str]) -> list[Path]:
+def _iter_files(
+    root: Path,
+    suffixes: Iterable[str],
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
+) -> list[Path]:
     allowed = frozenset(suffixes)
     files: list[Path] = []
     for directory, directory_names, file_names in os.walk(
@@ -79,13 +84,26 @@ def _iter_files(root: Path, suffixes: Iterable[str]) -> list[Path]:
         )
         for name in sorted(file_names):
             path = directory_path / name
-            if path.suffix in allowed and path.is_file() and not path.is_symlink():
+            if (
+                path.suffix in allowed
+                and path.is_file()
+                and not path.is_symlink()
+                and path.resolve() not in excluded_paths
+            ):
                 files.append(path)
     return files
+
+
 def _root_identity(
-    root: Path, *, excluded_paths: Sequence[Path] = ()
+    root: Path, *, excluded_paths: frozenset[Path] = frozenset()
 ) -> dict[str, Any]:
-    files = set(_iter_files(root, TEXT_SUFFIXES | {".json"}))
+    files = set(
+        _iter_files(
+            root,
+            TEXT_SUFFIXES | {".json"},
+            excluded_paths=excluded_paths,
+        )
+    )
     for generated_root in (
         root / "breadboard_sdk" / "generated",
         root / "sdk" / "ts" / "src" / "generated",
@@ -95,17 +113,16 @@ def _root_identity(
             files.update(
                 path
                 for path in generated_root.glob("*manifest*.json")
-                if path.is_file() and not path.is_symlink()
+                if (
+                    path.is_file()
+                    and not path.is_symlink()
+                    and path.resolve() not in excluded_paths
+                )
             )
-    excluded = {path.resolve() for path in excluded_paths}
     selected_files = []
     for path in files:
         relative = path.relative_to(root)
-        if (
-            relative.parts
-            and relative.parts[0] == "docs_tmp"
-            or path.resolve() in excluded
-        ):
+        if relative.parts and relative.parts[0] == "docs_tmp":
             continue
         selected_files.append(path)
     selected_files.sort(key=lambda path: path.relative_to(root).as_posix())
@@ -198,13 +215,19 @@ def _registry_entry(entry: Mapping[str, Any], registry_id: str, path: str) -> di
     return row
 
 
-def _registries(engine_root: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _registries(
+    engine_root: Path,
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     registry_root = engine_root / "contracts" / "kernel" / "registries"
     if not registry_root.is_dir():
         raise ValueError(f"missing registry root: {registry_root}")
     registry_rows: list[dict[str, Any]] = []
     entries: list[dict[str, Any]] = []
     for path in sorted(registry_root.glob("*.json")):
+        if path.resolve() in excluded_paths:
+            continue
         document = _load_json(path)
         registry_id = document.get("registry_id")
         if not isinstance(registry_id, str) or not registry_id:
@@ -247,6 +270,8 @@ def _schema_id(path: Path, document: Mapping[str, Any]) -> str:
 def _schema_rows(
     engine_root: Path,
     registry_entries: Sequence[Mapping[str, Any]],
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
 ) -> list[dict[str, Any]]:
     lifecycle = {
         str(row["schema_id"]): row
@@ -269,6 +294,8 @@ def _schema_rows(
         if not root.is_dir():
             continue
         for path in sorted(root.glob("*.schema.json")):
+            if path.resolve() in excluded_paths:
+                continue
             document = _load_json(path)
             identifier = _schema_id(path, document)
             properties = document.get("properties")
@@ -307,7 +334,13 @@ def _parse_python(path: Path) -> ast.Module | None:
         return None
 
 
-def _python_declarations(path: Path) -> list[dict[str, str]]:
+def _python_declarations(
+    path: Path,
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
+) -> list[dict[str, str]]:
+    if path.resolve() in excluded_paths:
+        return []
     tree = _parse_python(path)
     if tree is None:
         return []
@@ -333,9 +366,12 @@ def _module_path_from_reference(reference: str) -> str | None:
     if "/" in module:
         return f"{module}.py"
     return f"{module.replace('.', '/')}.py"
-
-
-def _owner_rows(engine_root: Path, registry_entries: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _owner_rows(
+    engine_root: Path,
+    registry_entries: Sequence[Mapping[str, Any]],
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
+) -> list[dict[str, Any]]:
     references: dict[str, set[str]] = defaultdict(set)
     for row in registry_entries:
         registry_id = str(row.get("registry_id", ""))
@@ -378,16 +414,28 @@ def _owner_rows(engine_root: Path, registry_entries: Sequence[Mapping[str, Any]]
         row: dict[str, Any] = {
             "path": display_path,
             "exists": source_path.is_file(),
+            "symbols": (
+                _python_declarations(source_path, excluded_paths=excluded_paths)
+                if source_path.is_file()
+                else []
+            ),
             "evidence": sorted(references[display_path]),
-            "symbols": _python_declarations(source_path) if source_path.is_file() else [],
         }
         rows.append(row)
     return rows
 
 
-def _event_code_rows(engine_root: Path) -> list[dict[str, str]]:
+def _event_code_rows(
+    engine_root: Path,
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
+) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    for path in _iter_files(engine_root / "breadboard_engine", PY_SUFFIXES):
+    for path in _iter_files(
+        engine_root / "breadboard_engine",
+        PY_SUFFIXES,
+        excluded_paths=excluded_paths,
+    ):
         tree = _parse_python(path)
         if tree is None:
             continue
@@ -415,10 +463,11 @@ def _event_code_rows(engine_root: Path) -> list[dict[str, str]]:
                             }
                         )
     return sorted(rows, key=lambda item: (item["id"], item["owner_path"], item["owner_symbol"]))
-
-
 def _event_rows(
-    registry_entries: Sequence[Mapping[str, Any]], engine_root: Path
+    registry_entries: Sequence[Mapping[str, Any]],
+    engine_root: Path,
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for entry in registry_entries:
@@ -438,7 +487,7 @@ def _event_rows(
         rows.append(row)
     rows.extend(
         {"id": row["id"], "source": "engine-runtime-declaration", **row}
-        for row in _event_code_rows(engine_root)
+        for row in _event_code_rows(engine_root, excluded_paths=excluded_paths)
     )
     return sorted(
         rows,
@@ -451,7 +500,13 @@ def _event_rows(
     )
 
 
-def _python_exports(path: Path) -> list[dict[str, str]]:
+def _python_exports(
+    path: Path,
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
+) -> list[dict[str, str]]:
+    if path.resolve() in excluded_paths:
+        return []
     tree = _parse_python(path)
     if tree is None:
         return []
@@ -467,7 +522,13 @@ def _python_exports(path: Path) -> list[dict[str, str]]:
     return []
 
 
-def _ts_export_names(path: Path) -> list[dict[str, str]]:
+def _ts_export_names(
+    path: Path,
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
+) -> list[dict[str, str]]:
+    if path.resolve() in excluded_paths:
+        return []
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
@@ -507,20 +568,19 @@ def _ts_export_names(path: Path) -> list[dict[str, str]]:
 def _generated_manifests(
     engine_root: Path,
     *,
-    excluded_paths: Sequence[Path] = (),
+    excluded_paths: frozenset[Path] = frozenset(),
 ) -> list[dict[str, Any]]:
     roots = (
         engine_root / "breadboard_sdk" / "generated",
         engine_root / "sdk" / "ts" / "src" / "generated",
         engine_root / "tui_skeleton" / "src" / "generated",
     )
-    excluded = {path.resolve() for path in excluded_paths}
     rows: list[dict[str, Any]] = []
     for root in roots:
         if not root.is_dir():
             continue
         for path in sorted(root.glob("*manifest*.json")):
-            if path.resolve() in excluded:
+            if path.resolve() in excluded_paths:
                 continue
             document = _load_json(path)
             operations = document.get("operations")
@@ -542,12 +602,20 @@ def _generated_manifests(
 def _sdk_exports(
     engine_root: Path,
     *,
-    excluded_paths: Sequence[Path] = (),
+    excluded_paths: frozenset[Path] = frozenset(),
 ) -> dict[str, Any]:
     python_root = engine_root / "breadboard_sdk" / "__init__.py"
     ts_root = engine_root / "sdk" / "ts" / "src" / "index.ts"
-    python_rows = _python_exports(python_root) if python_root.is_file() else []
-    ts_rows = _ts_export_names(ts_root) if ts_root.is_file() else []
+    python_rows = (
+        _python_exports(python_root, excluded_paths=excluded_paths)
+        if python_root.is_file()
+        else []
+    )
+    ts_rows = (
+        _ts_export_names(ts_root, excluded_paths=excluded_paths)
+        if ts_root.is_file()
+        else []
+    )
     for row in python_rows:
         row["path"] = _relative(python_root, engine_root, "engine_root")
     for row in ts_rows:
@@ -591,6 +659,242 @@ _EVENT_OBJECT_NAMES = frozenset({"event", "event_data", "eventData", "message", 
 _EVENT_DISCRIMINATOR_NAMES = frozenset(
     {"type", "kind", "event_type", "eventType", "event_kind", "eventKind"}
 )
+_EVENT_TYPE_NAMES = frozenset(
+    {"Event", "EventType", "EventKind", "NormalizedEvent", "SessionEvent"}
+)
+
+
+def _matching_delimiter(
+    tokens: Sequence[tuple[str, str]], opening: int
+) -> int | None:
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    opener = tokens[opening][1] if opening < len(tokens) else ""
+    closer = pairs.get(opener)
+    if closer is None:
+        return None
+    depth = 0
+    for index in range(opening, len(tokens)):
+        value = tokens[index][1]
+        if value == opener:
+            depth += 1
+        elif value == closer:
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _known_event_type_annotation(tokens: Sequence[tuple[str, str]]) -> bool:
+    if len(tokens) == 1:
+        return tokens[0] == ("identifier", "Event") or (
+            tokens[0][0] == "identifier" and tokens[0][1] in _EVENT_TYPE_NAMES
+        )
+    return (
+        len(tokens) == 4
+        and tokens[0][0] == "identifier"
+        and tokens[0][1] in _EVENT_TYPE_NAMES
+        and tokens[1] == ("punctuation", "[")
+        and tokens[2][0] == "string"
+        and tokens[2][1] in _EVENT_DISCRIMINATOR_NAMES
+        and tokens[3] == ("punctuation", "]")
+    )
+
+
+def _known_event_array_annotation(tokens: Sequence[tuple[str, str]]) -> bool:
+    return (
+        len(tokens) == 3
+        and tokens[0][0] == "identifier"
+        and tokens[0][1] in _EVENT_TYPE_NAMES
+        and tokens[1:] == [("punctuation", "["), ("punctuation", "]")]
+    )
+
+
+def _object_event_literals(
+    tokens: Sequence[tuple[str, str]],
+    opening: int,
+    closing: int,
+    event_tokens: set[str],
+) -> set[str]:
+    matches: set[str] = set()
+    depth = 0
+    for index in range(opening + 1, closing):
+        kind, value = tokens[index]
+        if kind == "punctuation" and value in "([{":
+            depth += 1
+        elif kind == "punctuation" and value in ")]}":
+            depth = max(0, depth - 1)
+        elif (
+            depth == 0
+            and kind == "identifier"
+            and value in _EVENT_DISCRIMINATOR_NAMES
+            and _token_is(tokens, index + 1, "punctuation", ":")
+            and _token_kind(tokens, index + 2, "string")
+            and tokens[index + 2][1] in event_tokens
+        ):
+            matches.add(tokens[index + 2][1])
+    return matches
+
+
+def _typed_event_array_matches(
+    tokens: Sequence[tuple[str, str]], event_tokens: set[str]
+) -> set[str]:
+    matches: set[str] = set()
+    for index in range(len(tokens) - 3):
+        if (
+            tokens[index][0] not in {"identifier"}
+            or tokens[index][1] not in {"const", "let", "var"}
+            or not _token_kind(tokens, index + 1, "identifier")
+            or not _token_is(tokens, index + 2, "punctuation", ":")
+        ):
+            continue
+        equals = index + 3
+        while equals < len(tokens) and not _token_is(tokens, equals, "punctuation", "="):
+            if _token_is(tokens, equals, "punctuation", ";"):
+                break
+            equals += 1
+        if equals >= len(tokens) or not _known_event_array_annotation(
+            tokens[index + 3 : equals]
+        ):
+            continue
+        array_start = equals + 1
+        if not _token_is(tokens, array_start, "punctuation", "["):
+            continue
+        array_end = _matching_delimiter(tokens, array_start)
+        if array_end is None:
+            continue
+        cursor = array_start + 1
+        depth = 0
+        while cursor < array_end:
+            if (
+                depth == 0
+                and _token_is(tokens, cursor, "punctuation", "{")
+                and (
+                    cursor == array_start + 1
+                    or _token_is(tokens, cursor - 1, "punctuation", ",")
+                )
+            ):
+                object_end = _matching_delimiter(tokens, cursor)
+                if object_end is None or object_end > array_end:
+                    break
+                matches.update(
+                    _object_event_literals(tokens, cursor, object_end, event_tokens)
+                )
+                cursor = object_end + 1
+                continue
+            value = tokens[cursor][1]
+            if value in "([{":
+                depth += 1
+            elif value in ")]}":
+                depth = max(0, depth - 1)
+            cursor += 1
+    return matches
+
+
+def _top_level_segments(
+    tokens: Sequence[tuple[str, str]], opening: int, closing: int
+) -> list[tuple[int, int]]:
+    segments: list[tuple[int, int]] = []
+    start = opening + 1
+    depth = 0
+    for index in range(start, closing):
+        value = tokens[index][1]
+        if value in "([{":
+            depth += 1
+        elif value in ")]}":
+            depth = max(0, depth - 1)
+        elif value == "," and depth == 0:
+            segments.append((start, index))
+            start = index + 1
+    segments.append((start, closing))
+    return segments
+
+
+def _typed_parameter_indexes(
+    tokens: Sequence[tuple[str, str]], opening: int, closing: int
+) -> set[int]:
+    indexes: set[int] = set()
+    for parameter_index, (start, end) in enumerate(
+        _top_level_segments(tokens, opening, closing)
+    ):
+        colon = next(
+            (
+                index
+                for index in range(start, end)
+                if _token_is(tokens, index, "punctuation", ":")
+            ),
+            None,
+        )
+        if colon is None:
+            continue
+        annotation_end = next(
+            (
+                index
+                for index in range(colon + 1, end)
+                if _token_is(tokens, index, "punctuation", "=")
+            ),
+            end,
+        )
+        if _known_event_type_annotation(tokens[colon + 1 : annotation_end]):
+            indexes.add(parameter_index)
+    return indexes
+
+
+def _typed_event_factory_matches(
+    tokens: Sequence[tuple[str, str]], event_tokens: set[str]
+) -> set[str]:
+    typed_parameters: dict[str, set[int]] = {}
+    for index, token in enumerate(tokens):
+        if token != ("identifier", "function") or not _token_kind(
+            tokens, index + 1, "identifier"
+        ):
+            continue
+        name = tokens[index + 1][1]
+        opening = index + 2
+        if not _token_is(tokens, opening, "punctuation", "("):
+            continue
+        closing = _matching_delimiter(tokens, opening)
+        if closing is not None:
+            typed_parameters.setdefault(name, set()).update(
+                _typed_parameter_indexes(tokens, opening, closing)
+            )
+    for opening, token in enumerate(tokens):
+        if token != ("punctuation", "("):
+            continue
+        closing = _matching_delimiter(tokens, opening)
+        if closing is None or not _token_is(tokens, closing + 1, "punctuation", "="):
+            continue
+        if not _token_is(tokens, closing + 2, "punctuation", ">"):
+            continue
+        equals = opening - 1
+        if not _token_is(tokens, equals, "punctuation", "=") or not _token_kind(
+            tokens, equals - 1, "identifier"
+        ):
+            continue
+        typed_parameters.setdefault(tokens[equals - 1][1], set()).update(
+            _typed_parameter_indexes(tokens, opening, closing)
+        )
+    matches: set[str] = set()
+    for index, token in enumerate(tokens):
+        if token[0] != "identifier" or token[1] not in typed_parameters:
+            continue
+        if index and _token_is(tokens, index - 1, "punctuation", "."):
+            continue
+        if not _token_is(tokens, index + 1, "punctuation", "("):
+            continue
+        if index and tokens[index - 1] == ("identifier", "function"):
+            continue
+        closing = _matching_delimiter(tokens, index + 1)
+        if closing is None:
+            continue
+        for parameter_index, (start, end) in enumerate(
+            _top_level_segments(tokens, index + 1, closing)
+        ):
+            if parameter_index not in typed_parameters[token[1]]:
+                continue
+            if end == start + 1 and tokens[start][0] == "string":
+                if tokens[start][1] in event_tokens:
+                    matches.add(tokens[start][1])
+    return matches
 
 
 def _lexical_tokens(text: str) -> list[tuple[str, str]]:
@@ -841,10 +1145,8 @@ def _event_literal_is_consumed(
         for index in range(declaration + 1, equals)
         if _token_is(tokens, index, "punctuation", ":")
     ]
-    return bool(colons) and any(
-        _token_kind(tokens, index, "identifier")
-        and "event" in tokens[index][1].lower()
-        for index in range(colons[-1] + 1, equals)
+    return bool(colons) and _known_event_type_annotation(
+        tokens[colons[-1] + 1 : equals]
     )
 
 
@@ -854,6 +1156,8 @@ def _consumed_event_literal_matches(
 ) -> set[str]:
     tokens = _lexical_tokens(text)
     matches: set[str] = set()
+    matches.update(_typed_event_array_matches(tokens, event_tokens))
+    matches.update(_typed_event_factory_matches(tokens, event_tokens))
     for index in range(len(tokens) - 2):
         if not (
             _token_kind(tokens, index, "identifier")
@@ -1012,6 +1316,8 @@ def _tui_consumers(
     tui_root: Path,
     event_rows: Sequence[Mapping[str, Any]],
     schema_rows: Sequence[Mapping[str, Any]],
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
 ) -> dict[str, Any]:
     event_tokens = {
         str(row["id"]) for row in event_rows if isinstance(row.get("id"), str)
@@ -1033,7 +1339,11 @@ def _tui_consumers(
             "consumer_count": 0,
         }
         if root.is_dir():
-            for path in _iter_files(root, TS_SUFFIXES):
+            for path in _iter_files(
+                root,
+                TS_SUFFIXES,
+                excluded_paths=excluded_paths,
+            ):
                 root_row["files_scanned"] += 1
                 text = path.read_text(encoding="utf-8", errors="replace")
                 imported_exports = _sdk_imported_exports(text)
@@ -1077,10 +1387,16 @@ def _tui_consumers(
     return {"roots": roots, "files": files, "consumer_count": len(files)}
 
 
-def _public_catalogs(engine_root: Path) -> list[dict[str, Any]]:
+def _public_catalogs(
+    engine_root: Path,
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
+) -> list[dict[str, Any]]:
     public_root = engine_root / "contracts" / "public"
     rows: list[dict[str, Any]] = []
     for path in sorted(public_root.glob("*.json")):
+        if path.resolve() in excluded_paths:
+            continue
         if path.name in {"frozen_public_surface.v1.json"} or path.name.startswith("operations"):
             document = _load_json(path)
             operations = document.get("operations")
@@ -1111,8 +1427,13 @@ def _public_catalogs(engine_root: Path) -> list[dict[str, Any]]:
                     "status": document.get("status"),
                     "operation_count": (
                         len(operation_ids)
-                        if operation_ids
-                        else document.get("operation_count")
+                        if isinstance(operations, list)
+                        else (
+                            document.get("operation_count")
+                            if type(document.get("operation_count")) is int
+                            and document.get("operation_count") >= 0
+                            else None
+                        )
                     ),
                     "operation_ids": operation_ids,
                 }
@@ -1120,11 +1441,16 @@ def _public_catalogs(engine_root: Path) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda item: str(item["path"]))
 
 
-def _source_signals(engine_root: Path, tui_root: Path) -> list[dict[str, Any]]:
+def _source_signals(
+    engine_root: Path,
+    tui_root: Path,
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
+) -> list[dict[str, Any]]:
     signals = ("compat", "deprecated", "supersed", "frozen_legacy", "legacy")
     rows: list[dict[str, Any]] = []
     for root, label in ((engine_root, "engine_root"), (tui_root, "tui_root")):
-        for path in _iter_files(root, TEXT_SUFFIXES):
+        for path in _iter_files(root, TEXT_SUFFIXES, excluded_paths=excluded_paths):
             if path.relative_to(root).parts[0] == "docs_tmp":
                 continue
             relative = _relative(path, root, label)
@@ -1144,10 +1470,14 @@ def _source_signals(engine_root: Path, tui_root: Path) -> list[dict[str, Any]]:
                 rows.append({"path": relative, "signals": matched})
     return sorted(rows, key=lambda item: str(item["path"]))
 
-def _reconfiguration(engine_root: Path) -> list[dict[str, Any]]:
+def _reconfiguration(
+    engine_root: Path,
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for root in (engine_root / "breadboard_engine", engine_root / "breadboard"):
-        for path in _iter_files(root, PY_SUFFIXES):
+        for path in _iter_files(root, PY_SUFFIXES, excluded_paths=excluded_paths):
             text = path.read_text(encoding="utf-8", errors="replace")
             line_numbers = [
                 index
@@ -1169,6 +1499,8 @@ def _compatibility(
     engine_root: Path,
     tui_root: Path,
     registry_entries: Sequence[Mapping[str, Any]],
+    *,
+    excluded_paths: frozenset[Path] = frozenset(),
 ) -> dict[str, Any]:
     lifecycle = [
         {
@@ -1248,9 +1580,19 @@ def _compatibility(
             "entries": lifecycle,
             "entry_count": len(lifecycle),
         },
-        "public_catalogs": _public_catalogs(engine_root),
-        "source_signals": _source_signals(engine_root, tui_root),
-        "reconfiguration": _reconfiguration(engine_root),
+        "public_catalogs": _public_catalogs(
+            engine_root,
+            excluded_paths=excluded_paths,
+        ),
+        "source_signals": _source_signals(
+            engine_root,
+            tui_root,
+            excluded_paths=excluded_paths,
+        ),
+        "reconfiguration": _reconfiguration(
+            engine_root,
+            excluded_paths=excluded_paths,
+        ),
         "deletion_candidates": deletion_candidates,
     }
 
@@ -1264,16 +1606,40 @@ def inventory(
     """Return a deterministic advisory inventory for an ENGINE/TUI pair."""
     engine = _root(engine_root, "engine_root")
     tui = _root(tui_root, "tui_root")
-    registries, registry_entries = _registries(engine)
-    schemas = _schema_rows(engine, registry_entries)
-    events = _event_rows(registry_entries, engine)
-    owners = _owner_rows(engine, registry_entries)
-    sdk_exports = _sdk_exports(
+    excluded_paths = frozenset(path.resolve() for path in identity_excluded_paths)
+    registries, registry_entries = _registries(
         engine,
-        excluded_paths=identity_excluded_paths,
+        excluded_paths=excluded_paths,
     )
-    tui_consumers = _tui_consumers(engine, tui, events, schemas)
-    compatibility_surfaces = _compatibility(engine, tui, registry_entries)
+    schemas = _schema_rows(
+        engine,
+        registry_entries,
+        excluded_paths=excluded_paths,
+    )
+    events = _event_rows(
+        registry_entries,
+        engine,
+        excluded_paths=excluded_paths,
+    )
+    owners = _owner_rows(
+        engine,
+        registry_entries,
+        excluded_paths=excluded_paths,
+    )
+    sdk_exports = _sdk_exports(engine, excluded_paths=excluded_paths)
+    tui_consumers = _tui_consumers(
+        engine,
+        tui,
+        events,
+        schemas,
+        excluded_paths=excluded_paths,
+    )
+    compatibility_surfaces = _compatibility(
+        engine,
+        tui,
+        registry_entries,
+        excluded_paths=excluded_paths,
+    )
     projections = [
         {
             "kind": "schema",
@@ -1300,12 +1666,8 @@ def inventory(
         "event_kinds": events,
         "generated_by": SCRIPT_ID,
         "inputs": {
-            "engine_root": _root_identity(
-                engine, excluded_paths=identity_excluded_paths
-            ),
-            "tui_root": _root_identity(
-                tui, excluded_paths=identity_excluded_paths
-            ),
+            "engine_root": _root_identity(engine, excluded_paths=excluded_paths),
+            "tui_root": _root_identity(tui, excluded_paths=excluded_paths),
         },
         "method": {
             "owner_sources": "registry consumer references plus static top-level declarations",
