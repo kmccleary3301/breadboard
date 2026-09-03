@@ -6,8 +6,19 @@
     "outDir": "dist",
     "strict": true,
     "declaration": true,
+    "baseUrl": ".",
+    "paths": {
+      "@breadboard/kernel-contracts": ["../ts-kernel-contracts/src/index.ts"],
+      "@breadboard/execution-drivers": ["../ts-execution-drivers/src/index.ts"],
+      "@breadboard/execution-driver-local": ["../ts-execution-driver-local/src/index.ts"],
+      "@breadboard/execution-driver-oci": ["../ts-execution-driver-oci/src/index.ts"],
+      "@breadboard/execution-driver-remote": ["../ts-execution-driver-remote/src/index.ts"],
+      "@breadboard/kernel-core": ["../ts-kernel-core/src/index.ts"],
+      "@breadboard/workspace": ["../ts-workspace/src/index.ts"]
+    },
     "types": ["node"],
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["dist"]
 }

@@ -25,7 +25,25 @@ export interface ExecutionDriverV1 {
     imageRef?: string | null
     metadata?: Record<string, unknown>
   }): SandboxRequestV1
-  execute?(request: SandboxRequestV1): Promise<SandboxResultV1>
+  execute?(
+    request: SandboxRequestV1,
+    context?: {
+      signal: AbortSignal
+      deadlineAtMs: number | null
+      terminationGraceMs: number
+      capability: ExecutionCapabilityV1
+      placement: ExecutionPlacementV1
+      driverId: string
+    },
+  ): Promise<SandboxResultV1>
+  terminate?(
+    request: SandboxRequestV1,
+    context: {
+      reason: "deadline" | "cancelled"
+      signal: AbortSignal
+      deadlineAtMs: number | null
+    },
+  ): Promise<void> | void
 }
 
 export interface TerminalSessionStartInputV1 {
@@ -96,7 +114,15 @@ export function selectTerminalSessionDriver(input: {
       if (typeof driver.supportsTerminalSessions === "function") {
         return driver.supportsTerminalSessions(input.capability, input.placement.placement_class)
       }
-      return driver.supportsCapability(input.capability, input.placement.placement_class)
+      const hasTerminalMethod =
+        typeof driver.startTerminalSession === "function" ||
+        typeof driver.interactTerminalSession === "function" ||
+        typeof driver.snapshotTerminalRegistry === "function" ||
+        typeof driver.cleanupTerminalSessions === "function"
+      return (
+        hasTerminalMethod &&
+        driver.supportsCapability(input.capability, input.placement.placement_class)
+      )
     }) ?? null
   )
 }
@@ -148,11 +174,12 @@ export function buildExecutionDriverUnsupportedCase(input: {
   fallbackAllowed?: boolean
   fallbackTaken?: boolean
   summary?: string
+  reasonCode?: string
   metadata?: Record<string, unknown>
 }): UnsupportedCaseV1 {
   return {
     schema_version: "bb.unsupported_case.v1",
-    reason_code: "unsupported_execution_driver",
+    reason_code: input.reasonCode ?? (typeof input.metadata?.reason_code === "string" ? input.metadata.reason_code : "unsupported_execution_driver"),
     summary:
       input.summary ??
       `No execution driver supports ${input.placementClass} for isolation ${input.capability.isolation_class}`,
@@ -310,3 +337,4 @@ export function buildPlannedExecution(input: {
     evidenceExpectation,
   }
 }
+export * from "./world.js"

@@ -535,3 +535,49 @@ test("openclaw bridge throws when no BreadBoard executor is provided for a suppo
     },
   )
 })
+
+test("openclaw bridge passes execution context controls to executeSandbox callback", async () => {
+  const fixture = loadSingleToolRunFixture()
+  const controller = new AbortController()
+  let receivedSignal: AbortSignal | undefined
+  let receivedDeadlineAtMs: number | null | undefined
+  let receivedGraceMs: number | undefined
+  let receivedTool: OpenClawClientToolDefinition | undefined
+
+  const invocation = await runOpenClawEmbeddedViaBreadboard(
+    {
+      ...fixture.inputParams,
+      abortSignal: controller.signal,
+      timeoutMs: 8000,
+    },
+    {
+      toolSlice: {
+        command: ["npm", "run", "lint"],
+        executeSandbox: async (request, context) => {
+          receivedSignal = context.signal
+          receivedDeadlineAtMs = context.deadlineAtMs
+          receivedGraceMs = context.terminationGraceMs
+          receivedTool = context.tool
+          return {
+            schema_version: "bb.sandbox_result.v1",
+            request_id: request.request_id,
+            status: "completed",
+            placement_id: "place-openclaw-tool-ctx",
+            stdout_ref: "artifact://stdout/openclaw-tool-ctx",
+            stderr_ref: "artifact://stderr/openclaw-tool-ctx",
+            artifact_refs: ["artifact://report/openclaw-tool-ctx"],
+            side_effect_digest: "sha256:openclawtoolctx",
+            usage: { wall_ms: 55 },
+            evidence_refs: ["evidence://openclaw/tool/ctx"],
+            error: null,
+          }
+        },
+      },
+    },
+  )
+
+  assert.equal(invocation.mode, "breadboard")
+  assert.ok(receivedSignal !== undefined)
+  assert.equal(typeof receivedDeadlineAtMs, "number")
+  assert.equal(receivedTool?.function.name, "repo_linter")
+})

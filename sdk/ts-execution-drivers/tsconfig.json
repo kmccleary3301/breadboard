@@ -4,14 +4,19 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "dist",
+    "rootDir": "..",
     "strict": true,
     "declaration": true,
     "baseUrl": ".",
     "paths": {
-      "@breadboard/kernel-contracts": ["../ts-kernel-contracts/src/index.ts"]
+      "@breadboard/kernel-contracts": ["../ts-kernel-contracts/src/index.ts"],
+      "@breadboard/execution-drivers": ["./src/index.ts"],
+      "@breadboard/execution-driver-local": ["../ts-execution-driver-local/src/index.ts"],
+      "@breadboard/execution-driver-oci": ["../ts-execution-driver-oci/src/index.ts"]
     },
     "types": ["node"],
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["dist"]
 }
