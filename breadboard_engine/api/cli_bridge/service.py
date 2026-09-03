@@ -2972,8 +2972,12 @@ class SessionService:
     async def _stop_session_locked(
         self, session_id: str, *, reason: str | None = None
     ) -> None:
-        record = await self._ensure_session_locked(session_id)
-        initial_metadata = record.metadata if isinstance(record.metadata, Mapping) else {}
+        record = await self.registry.get(session_id)
+        initial_metadata = (
+            record.metadata
+            if record is not None and isinstance(record.metadata, Mapping)
+            else {}
+        )
         if isinstance(initial_metadata.get("durable_child"), Mapping) and not callable(
             getattr(self._durable_child_reconciler, "cancel", None)
         ):
@@ -3024,6 +3028,7 @@ class SessionService:
                     retry = cancel_tree(session_id, reason=reason or "operator request")
                     if inspect.isawaitable(retry):
                         await retry
+        record = await self._ensure_session_locked(session_id)
         metadata = dict(record.metadata or {})
         durable_child = metadata.get("durable_child")
         recovery_ref = (
