@@ -106,7 +106,7 @@ The full seed matrix is defined for F3. Cell notation: `C` characterized here, `
 
 | Fault \\ timing | before submit | after client dispatch / before receipt | after admission / before terminal | after terminal |
 | --- | --- | --- | --- | --- |
-| kill process | `C`: authenticated idle engine killed, then submit | `P`: kill during submit | `P`: kill active turn | `P`: kill after terminal before projection commit |
+| kill process | `P`: authenticated idle-engine kill is setup for the characterized replacement-authority cell, not a second characterized cell | `P`: kill during submit | `P`: kill active turn | `P`: kill after terminal before projection commit |
 | abort client stream | `L`: abort before submit | `L`: ambiguous submit recovery tests | `L`: cancel active turn tests | `P`: abort after terminal before commit |
 | reject permission | `P`: policy pre-deny | `C`: Escape at `run_shell` permission wait | `P`: reject after partial tool batch | `P`: late/duplicate rejection |
 | replace authority | `C`: replacement observed before retry readiness | `P`: identity change during dispatch | `P`: replacement with active admitted turn | `P`: replacement after terminal before client commit |

@@ -170,9 +170,11 @@ graph TD
   AI --> SA
   HP --> SA
   CI --> SA
+  GI --> SA
+  GA --> SA
 ```
 
-The machine graph contains the same dependencies plus bounded research leaves. `RQ-ABLATION` is an `ANY` join: either an exact FT-03 pass or a later repaired reconstruction may feed it. No other join is disjunctive.
+The machine graph contains the same dependencies plus bounded research leaves. `RQ-ABLATION` is an `ANY` join: either an exact FT-03 pass or a later repaired reconstruction may feed it. No other join is disjunctive. The final audit therefore requires both the current-owner generation result and the terminal generation-activation decision; `GEN-ACTIVATION` may finish as an approved implementation or an evidence-backed not-taken decision.
 
 ## First tranche execution windows
 
@@ -273,7 +275,7 @@ bb research compare --definition EXPERIMENT.json --world WORLD.json --generation
 
 It must create or resume one durable run, preserve exact Definition/Lock/generation/world identities, emit replayable logical events, reconstruct held provider requests without captured-request input, materialize the named projection, compare E to E′, attach immutable annotations, settle child work exactly once, compact without fact loss, and return an artifact/report identity. Its independent oracle is the conjunction of: Definition/Lock digest equality; world-mask event equivalence; generation adoption at quiescent boundaries; event replay versus durable owned state; held-out request-byte equality; immutable annotation identity; exactly-one child settlement; and pre/post-compaction reconstruction equality.
 
-**Current verdict: NOT RUNNABLE and not authorized for implementation.** Definition and reconstruction have evidence packets; execution-world ownership, general projection, annotation, durable-child/workflow, compaction, and the command owner remain gated fog. `SEVEN-PIECE-AUDIT` may pass only after all four conditional pilot branches and the substrate command have exact observed evidence. This is the required honest negative; declaring the command now would invent a public API and a supervisor owner.
+**Current verdict: NOT RUNNABLE and not authorized for implementation.** Definition and reconstruction have evidence packets; execution-world ownership, general projection, annotation, durable-child/workflow, compaction, generation outcome, and the command owner remain gated fog. `SEVEN-PIECE-AUDIT` may pass only after all four conditional pilot branches, both terminal generation outcomes, and the substrate command have exact observed evidence. This is the required honest negative; declaring the command now would invent a public API and a supervisor owner.
 
 ## Decision options
 
