@@ -32,7 +32,9 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
             "registry_id": "kernel_event_kinds",
             "entries": [
                 {"id": "error", "status": "active"},
+                {"id": "completion", "status": "active"},
                 {"id": "tool_result", "status": "active"},
+                {"id": "tool_call", "status": "active"},
                 {"id": "warning", "status": "active"},
             ],
         },
@@ -180,6 +182,16 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
         "if (result.kind === 'error') throw new Error('failed');\n",
         encoding="utf-8",
     )
+    (tui_source.parent / "unrelated-collisions.ts").write_text(
+        "const wait = { for: 'completion' };\n"
+        "function render(activityState: string) {\n"
+        "  switch (activityState) {\n"
+        "    case 'tool_call': return wait.for;\n"
+        "    default: return 'idle';\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
     generated_source = tui_source.parent / "generated" / "generated.ts"
     generated_source.parent.mkdir(parents=True)
     generated_source.write_text(
@@ -233,6 +245,9 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     assert alias["matched_tokens"] == ["error", "warning"]
     assert not any(row["path"].endswith("sdk-tools.ts") for row in consumer_rows)
     assert not any(row["path"].endswith("unrelated-kind.ts") for row in consumer_rows)
+    assert not any(
+        row["path"].endswith("unrelated-collisions.ts") for row in consumer_rows
+    )
     assert not any("generated/" in row["path"] for row in consumer_rows)
     assert not any(row["path"].startswith("engine_root/tests/") for row in first["compatibility_surfaces"]["reconfiguration"])
     assert not any(

@@ -20024,7 +20024,7 @@
     }
   },
   "tui_consumers": {
-    "consumer_count": 124,
+    "consumer_count": 79,
     "files": [
       {
         "matched_tokens": [
@@ -20034,22 +20034,6 @@
         "root_id": "engine-tui-skeleton",
         "signals": [
           "sdk-export"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.message.delta",
-          "assistant.thought_summary.delta",
-          "assistant_message",
-          "tool.exec.start",
-          "tool.exec.stdout.delta",
-          "tool_call",
-          "tool_result"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/__tests__/oneshotRender.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
         ]
       },
       {
@@ -20171,118 +20155,9 @@
       },
       {
         "matched_tokens": [
-          "assistant.reasoning.delta",
-          "assistant.thought_summary.delta",
-          "tool_call"
+          "assistant.thought_summary.delta"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerActivityRuntime.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.message.delta",
-          "assistant.message.end",
-          "assistant.message.start",
-          "assistant.reasoning.delta",
-          "assistant.thought_summary.delta",
-          "assistant_delta",
-          "assistant_message",
-          "completion",
-          "conversation.compaction.end",
-          "conversation.compaction.start",
-          "stream.gap",
-          "task_event",
-          "tool.result",
-          "tool_call",
-          "turn_start"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerActivitySequence.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion",
-          "ctree_node"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerCtreeTranscriptNotice.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.thought_summary.delta",
-          "turn_start"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerReasoningNormalization.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.message.start",
-          "completion",
-          "conversation.compaction.end",
-          "conversation.compaction.start",
-          "stream.gap",
-          "tool_call",
-          "turn_start"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerRuntimeScenarioValidation.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.message.start",
-          "completion"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerRuntimeTelemetryCommand.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "task_event"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerSubagentRouting.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.message.start",
-          "assistant.reasoning.delta",
-          "assistant.thought_summary.delta",
-          "turn_start"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerThinkingPolicy.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.reasoning.delta",
-          "turn_start"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerThinkingViewer.test.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "event-kind"
@@ -20300,113 +20175,9 @@
       },
       {
         "matched_tokens": [
-          "task_event",
-          "tool_call"
+          "task_event"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerWorkGraphRuntime.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant_message",
-          "completion",
-          "log_link"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/eventVisibilityContract.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/renderText.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.message.delta",
-          "assistant.message.end",
-          "assistant.message.start",
-          "assistant.reasoning.delta",
-          "assistant.tool_call.start",
-          "assistant_delta",
-          "assistant_message",
-          "completion",
-          "run_finished",
-          "tool.exec.end",
-          "tool.exec.start",
-          "tool.exec.stderr.delta",
-          "tool.exec.stdout.delta",
-          "tool.result",
-          "tool_call",
-          "tool_result",
-          "turn_start",
-          "user_message"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/replayHarness.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.message.delta",
-          "assistant.message.start",
-          "assistant.reasoning.delta",
-          "assistant.thought_summary.delta",
-          "completion",
-          "tool_call",
-          "turn_start"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/runtimeSafetyGate.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.message.delta",
-          "assistant.message.start",
-          "completion",
-          "conversation.compaction.end",
-          "conversation.compaction.start",
-          "stream.gap"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/runtimeTransitionGate.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_result"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/todoAutoFollowScope.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.message.delta",
-          "assistant_message",
-          "tool_call",
-          "tool_result"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/todoPreviewDeterminism.test.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "event-kind"
@@ -20425,28 +20196,6 @@
       },
       {
         "matched_tokens": [
-          "tool_result"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/toolArtifactRef.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.message.delta",
-          "assistant.message.start",
-          "completion"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/transcriptNoiseGate.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "ApiError",
           "CTreeTreeResponse",
           "CTreeTreeSource",
@@ -20454,25 +20203,12 @@
           "ReadSessionFileOptions",
           "SessionEvent",
           "SessionFileContent",
-          "SessionFileInfo",
-          "task_event"
+          "SessionFileInfo"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controller.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
-          "event-kind",
           "sdk-export"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_call",
-          "tool_result"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/controllerActivityRuntime.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
         ]
       },
       {
@@ -20553,13 +20289,11 @@
         "matched_tokens": [
           "ApiError",
           "SessionEvent",
-          "SessionFileInfo",
-          "task_event"
+          "SessionFileInfo"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controllerStateMethods.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
-          "event-kind",
           "sdk-export"
         ]
       },
@@ -20585,36 +20319,6 @@
         "root_id": "engine-tui-skeleton",
         "signals": [
           "sdk-export"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/renderText.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/scriptRunner.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_result"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/toolArtifactRef.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
         ]
       },
       {
@@ -20694,36 +20398,6 @@
       },
       {
         "matched_tokens": [
-          "log_link"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/__tests__/transcriptBuilderDedupe.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant.thought_summary.delta"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/composer/__tests__/ComposerPanel.todoPreview.test.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_call"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/runtimeStatusChip.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "SessionFileInfo"
         ],
         "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/useReplCommands.ts",
@@ -20743,16 +20417,6 @@
         "root_id": "engine-tui-skeleton",
         "signals": [
           "sdk-export"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/components/replView/controller/useReplViewScrollback.tsx",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
         ]
       },
       {
@@ -20810,14 +20474,11 @@
       {
         "matched_tokens": [
           "CTreeNode",
-          "CTreeSnapshotSummary",
-          "ctree_node",
-          "ctree_snapshot"
+          "CTreeSnapshotSummary"
         ],
         "path": "engine_root/tui_skeleton/src/repl/ctrees/reducer.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
-          "event-kind",
           "sdk-export"
         ]
       },
@@ -20844,27 +20505,12 @@
       },
       {
         "matched_tokens": [
-          "SessionEvent",
-          "assistant.tool_call.delta",
-          "assistant.tool_call.end"
+          "SessionEvent"
         ],
         "path": "engine_root/tui_skeleton/src/repl/transcript/__tests__/normalizeSessionEvent.test.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
-          "event-kind",
           "sdk-export"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "assistant_message",
-          "ctree_node",
-          "log_link"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/transcript/__tests__/visibilityContract.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
         ]
       },
       {
@@ -20913,18 +20559,10 @@
           "assistant.message.start",
           "assistant_delta",
           "assistant_message",
-          "checkpoint_list",
-          "checkpoint_restored",
-          "completion",
-          "ctree_node",
-          "ctree_snapshot",
           "log_link",
           "reward_update",
-          "run_finished",
-          "task_event",
           "tool.result",
-          "tool_result",
-          "turn_start"
+          "tool_result"
         ],
         "path": "engine_root/tui_skeleton/src/repl/transcriptBuilder.ts",
         "root_id": "engine-tui-skeleton",
@@ -20934,20 +20572,7 @@
       },
       {
         "matched_tokens": [
-          "completion",
-          "tool_call",
-          "tool_result"
-        ],
-        "path": "engine_root/tui_skeleton/src/repl/types.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error",
-          "turn_start"
+          "error"
         ],
         "path": "tui_root/packages/agent/src/agent-loop.ts",
         "root_id": "paired-agent",
@@ -20970,26 +20595,6 @@
           "error"
         ],
         "path": "tui_root/packages/agent/src/proxy.ts",
-        "root_id": "paired-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_call"
-        ],
-        "path": "tui_root/packages/agent/src/telemetry.ts",
-        "root_id": "paired-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "turn_start"
-        ],
-        "path": "tui_root/packages/agent/src/types.ts",
         "root_id": "paired-agent",
         "signals": [
           "event-kind"
@@ -21039,30 +20644,11 @@
           "StructuredSubmit",
           "SubmitInput",
           "SubmitReceipt",
-          "assistant.message.delta",
-          "assistant.message.end",
-          "assistant.message.start",
-          "assistant.reasoning.delta",
-          "assistant.tool_call.delta",
-          "assistant.tool_call.end",
-          "assistant.tool_call.start",
-          "ctree_node",
-          "decodeLoggedSessionEvent",
-          "permission_request",
-          "session_control",
-          "stream.gap",
-          "todo_event",
-          "tool.result",
-          "tool_call",
-          "turn_cancelled",
-          "turn_completed",
-          "turn_failed",
-          "turn_start"
+          "decodeLoggedSessionEvent"
         ],
         "path": "tui_root/packages/coding-agent/src/breadboard/e4-agent-stream.test.ts",
         "root_id": "paired-coding-agent",
         "signals": [
-          "event-kind",
           "sdk-export"
         ]
       },
@@ -21312,28 +20898,7 @@
       },
       {
         "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/completion-bridge.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/eval/js/shared/runtime.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_call",
-          "tool_result"
+          "tool_call"
         ],
         "path": "tui_root/packages/coding-agent/src/extensibility/extensions/runner.ts",
         "root_id": "paired-coding-agent",
@@ -21355,32 +20920,9 @@
       },
       {
         "matched_tokens": [
-          "tool_call",
-          "tool_result"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/extensions/wrapper.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_call",
           "tool_result"
         ],
         "path": "tui_root/packages/coding-agent/src/extensibility/hooks/runner.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_call",
-          "tool_result"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/hooks/tool-wrapper.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21393,28 +20935,6 @@
           "turn_start"
         ],
         "path": "tui_root/packages/coding-agent/src/extensibility/hooks/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_result"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/legacy-pi-coding-agent-shim.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_call",
-          "tool_result",
-          "turn_start"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/shared-events.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21442,38 +20962,7 @@
       },
       {
         "matched_tokens": [
-          "tool_call"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/acp/acp-event-mapper.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/controllers/event-controller.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "turn_start"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/rpc/rpc-client.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "permission_request",
-          "tool_result"
+          "permission_request"
         ],
         "path": "tui_root/packages/coding-agent/src/modes/warp-events.ts",
         "root_id": "paired-coding-agent",
@@ -21484,31 +20973,9 @@
       {
         "matched_tokens": [
           "error",
-          "tool_call",
-          "tool_result",
           "turn_start"
         ],
         "path": "tui_root/packages/coding-agent/src/session/agent-session.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_result"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/claude-session-store.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "user_message"
-        ],
-        "path": "tui_root/packages/coding-agent/src/session/codex-session-store.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21526,60 +20993,9 @@
       },
       {
         "matched_tokens": [
-          "tool_call",
-          "turn_start"
-        ],
-        "path": "tui_root/packages/coding-agent/src/task/executor.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_call"
-        ],
-        "path": "tui_root/packages/coding-agent/src/task/persisted-revive.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "completion"
         ],
         "path": "tui_root/packages/coding-agent/src/tiny/title-client.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tiny/title-protocol.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tiny/worker.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "completion"
-        ],
-        "path": "tui_root/packages/coding-agent/src/tools/eval-render.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21599,6 +21015,16 @@
         "matched_tokens": [
           "error"
         ],
+        "path": "tui_root/packages/coding-agent/src/web/search/providers/codex.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "event-kind"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "error"
+        ],
         "path": "tui_root/packages/coding-agent/src/web/search/providers/perplexity.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -21608,21 +21034,21 @@
     ],
     "roots": [
       {
-        "consumer_count": 69,
+        "consumer_count": 41,
         "exists": true,
         "files_scanned": 365,
         "root": "engine_root/tui_skeleton/src",
         "root_id": "engine-tui-skeleton"
       },
       {
-        "consumer_count": 5,
+        "consumer_count": 3,
         "exists": true,
         "files_scanned": 28,
         "root": "tui_root/packages/agent/src",
         "root_id": "paired-agent"
       },
       {
-        "consumer_count": 50,
+        "consumer_count": 35,
         "exists": true,
         "files_scanned": 1352,
         "root": "tui_root/packages/coding-agent/src",

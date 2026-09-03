@@ -511,21 +511,27 @@ def _consumer_roots(engine_root: Path, tui_root: Path) -> list[tuple[str, Path, 
     ]
 
 
-AMBIGUOUS_EVENT_IDS = frozenset({"error", "warning"})
+EVENT_DISCRIMINATOR_IDS = frozenset(
+    {"event", "event_type", "eventType", "event_kind", "eventKind"}
+)
 SDK_MODULE_RE = re.compile(r"^@breadboard/sdk(?:/|$)")
 
 
 def _event_pattern(token: str) -> re.Pattern[str]:
     quoted = rf"""['"`]{re.escape(token)}['"`]"""
-    if token not in AMBIGUOUS_EVENT_IDS:
-        return re.compile(quoted)
-    discriminator = (
+    object_discriminator = (
         r"(?:event|event_data|eventData|message|payload)"
         r"(?:\s*\.\s*(?:type|kind|event_type|eventType|event_kind|eventKind)"
         r"|\s*\[\s*['\"](?:type|kind|event_type|eventType|event_kind|eventKind)['\"]\s*\])"
     )
+    named_discriminator = r"(?:event|event_type|eventType|event_kind|eventKind)"
     return re.compile(
-        rf"\b{discriminator}\s*(?:===|!==|==|!=)\s*{quoted}"
+        rf"(?:"
+        rf"\b{named_discriminator}\s*[:=]\s*{quoted}"
+        rf"|"
+        rf"\b(?:{object_discriminator}|{named_discriminator})\s*"
+        rf"(?:===|!==|==|!=)\s*{quoted}"
+        rf")"
     )
 
 
@@ -638,7 +644,7 @@ def _event_discriminator_aliases(
 
 
 def _switch_case_event_matches(text: str, event_tokens: set[str]) -> set[str]:
-    wanted = AMBIGUOUS_EVENT_IDS.intersection(event_tokens)
+    wanted = set(event_tokens)
     if not wanted:
         return set()
     tokens = _lexical_tokens(text)
@@ -670,7 +676,11 @@ def _switch_case_event_matches(text: str, event_tokens: set[str]) -> set[str]:
                 depth += 1
             elif token_kind == "punctuation" and token_value == "}":
                 depth -= 1
-            elif depth == 1 and token_kind == "identifier" and token_value == "case":
+            elif (
+                depth == 1
+                and token_kind == "identifier"
+                and token_value == "case"
+            ):
                 label_index = cursor + 1
                 if (
                     _token_kind(tokens, label_index, "string")
