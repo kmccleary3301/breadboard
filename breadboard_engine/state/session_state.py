@@ -197,6 +197,9 @@ class SessionState:
     ) -> None:
         self._event_emitter = emitter
 
+    def can_persist_compaction(self) -> bool:
+        return self._event_emitter is not None
+
     def set_turn_context(
         self,
         *,

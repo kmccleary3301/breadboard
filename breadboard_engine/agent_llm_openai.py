@@ -425,7 +425,22 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         self._stop_requested = False
         # Runtime-only reference used for streaming task events (e.g., async subagent completions).
         self._active_session_state: Optional[SessionState] = None
+        self._retained_ctree_session_id: Optional[str] = None
+        self._retained_ctree_events: Optional[List[Dict[str, Any]]] = None
         self._multi_agent_last_wakeup_event_id = 0
+
+    def _restore_retained_ctree(
+        self, session_state: SessionState, session_id: str
+    ) -> None:
+        if (
+            self._retained_ctree_session_id == session_id
+            and self._retained_ctree_events is not None
+        ):
+            session_state.restore_ctree_events(self._retained_ctree_events)
+
+    def _retain_ctree(self, session_state: SessionState, session_id: str) -> None:
+        self._retained_ctree_session_id = session_id
+        self._retained_ctree_events = copy.deepcopy(session_state.ctree_store.events)
 
     def request_stop(self) -> None:
         """Best-effort interrupt: stop the current run at the next safe boundary."""
@@ -6319,6 +6334,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if ctree_events is not None:
                 session_state.restore_ctree_events(ctree_events)
             session_state.set_provider_metadata("resume_snapshot_applied", True)
+        self._restore_retained_ctree(session_state, provider_session_id)
         # Resume snapshots are subordinate to the owning product session.
         session_state.set_provider_metadata("session_id", provider_session_id)
         # Resume metadata is session-scoped, but these fields are turn-scoped.
@@ -6567,6 +6583,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         pass
                 finally:
                     session_state._episode_provider_client = None
+            self._retain_ctree(session_state, provider_session_id)
             self._persist_final_workspace()
             try:
                 self._persist_multi_agent_log()

@@ -45,6 +45,8 @@ class ContextWindowGuard:
         payload = self.maybe_warn(session_state, messages)
         if payload is None:
             return None
+        if not session_state.can_persist_compaction():
+            return payload
         session_state.emit_compaction_snapshot(
             session_state.compaction_snapshot(messages)
         )

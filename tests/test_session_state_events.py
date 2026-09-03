@@ -46,6 +46,7 @@ from breadboard_engine.provider.contracts import (
     strip_public_completion_sentinel_tree,
 )
 from breadboard_engine.conductor.context_window_guard import ContextWindowGuard
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.state.session_state import SessionState
 
 
@@ -379,6 +380,34 @@ def test_session_snapshot_restores_ctree_identity_before_new_facts() -> None:
         "ctn_000002",
     )
 
+
+
+def test_product_turns_retain_ctree_identity_sequence() -> None:
+    conductor_type = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = object.__new__(conductor_type)
+    conductor._retained_ctree_session_id = None
+    conductor._retained_ctree_events = None
+    first = SessionState("ws", "image", {})
+    assert first.ctree_store.record("message", {"role": "user"}, turn=1) == (
+        "ctn_000001"
+    )
+    conductor._retain_ctree(first, "product-session")
+
+    second = SessionState("ws", "image", {})
+    conductor._restore_retained_ctree(second, "product-session")
+
+    assert second.ctree_store.record("message", {"role": "user"}, turn=2) == (
+        "ctn_000002"
+    )
+    assert [node["id"] for node in second.ctree_store.nodes] == [
+        "ctn_000001",
+        "ctn_000002",
+    ]
+    unrelated = SessionState("ws", "image", {})
+    conductor._restore_retained_ctree(unrelated, "other-session")
+    assert unrelated.ctree_store.nodes == []
+
+
 def test_context_threshold_emits_exact_effective_provider_context() -> None:
     collector = EventCollector()
     state = SessionState("ws", "image", {}, event_emitter=collector)
@@ -400,16 +429,16 @@ def test_context_threshold_emits_exact_effective_provider_context() -> None:
     assert json.loads(base64.b64decode(encoded)) == effective_messages
     assert json.loads(base64.b64decode(encoded)) != state.provider_messages
 
-def test_context_threshold_requires_durable_compaction_emitter() -> None:
+def test_context_threshold_without_durable_owner_remains_warning_only() -> None:
     state = SessionState("ws", "image", {})
 
-    with pytest.raises(
-        RuntimeError, match="compaction persistence emitter unavailable"
-    ):
-        ContextWindowGuard(max_tokens=1, warn_ratio=1.0).maybe_compact(
-            state,
-            [{"role": "user", "content": "x" * 20}],
-        )
+    payload = ContextWindowGuard(max_tokens=1, warn_ratio=1.0).maybe_compact(
+        state,
+        [{"role": "user", "content": "x" * 20}],
+    )
+
+    assert payload is not None
+    assert state.can_persist_compaction() is False
 
 
 def test_runtime_projector_commits_internal_compaction_without_leaking_context() -> None:
