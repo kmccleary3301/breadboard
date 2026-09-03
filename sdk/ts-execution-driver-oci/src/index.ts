@@ -43,7 +43,7 @@ export function buildOciSandboxRequest(input: {
     rootfs_ref: null,
     image_ref: input.imageRef,
     snapshot_ref: null,
-    command: input.command,
+    command: [input.command[0] ?? "", ...input.command.slice(1)],
     network_policy: { allow: input.capability.allow_net_hosts ?? [] },
     secret_refs: [],
     timeout_seconds: null,
@@ -61,6 +61,7 @@ export interface OciCommandExecutionResult {
 export type OciCommandExecutor = (input: {
   runtimeCommand: string
   runtimeArgs: string[]
+  signal?: AbortSignal
 }) => Promise<OciCommandExecutionResult>
 
 export function buildOciRuntimeInvocation(
@@ -93,8 +94,10 @@ export function buildOciRuntimeInvocation(
 export function defaultOciCommandExecutor(input: {
   runtimeCommand: string
   runtimeArgs: string[]
+  signal?: AbortSignal
 }): Promise<OciCommandExecutionResult> {
   return new Promise((resolve, reject) => {
+    let killed = false
     const child = spawn(input.runtimeCommand, input.runtimeArgs, {
       stdio: ["ignore", "pipe", "pipe"],
     })
@@ -106,7 +109,9 @@ export function defaultOciCommandExecutor(input: {
     child.stderr?.on("data", (chunk) => {
       stderr += String(chunk)
     })
-    child.on("error", reject)
+    child.on("error", (err) => {
+      if (!killed) reject(err)
+    })
     child.on("close", (exitCode) => {
       resolve({
         exitCode: exitCode ?? 1,
@@ -114,6 +119,26 @@ export function defaultOciCommandExecutor(input: {
         stderr,
       })
     })
+
+    if (input.signal) {
+      const onAbort = () => {
+        killed = true
+        child.kill("SIGTERM")
+        const escalateTimer = setTimeout(() => {
+          try {
+            child.kill("SIGKILL")
+          } catch {}
+        }, 500)
+        child.once("close", () => {
+          clearTimeout(escalateTimer)
+        })
+      }
+      if (input.signal.aborted) {
+        onAbort()
+      } else {
+        input.signal.addEventListener("abort", onAbort, { once: true })
+      }
+    }
   })
 }
 
@@ -139,6 +164,7 @@ export async function executeOciSandboxRequest(
     runtimeCommand?: string
     workspaceMountTarget?: string
     tempDirRoot?: string
+    signal?: AbortSignal
   } = {},
 ): Promise<SandboxResultV1> {
   const commandExecutor = options.commandExecutor ?? defaultOciCommandExecutor
@@ -146,16 +172,17 @@ export async function executeOciSandboxRequest(
     runtimeCommand: options.runtimeCommand,
     workspaceMountTarget: options.workspaceMountTarget,
   })
-  const result = await commandExecutor(invocation)
+  const result = await commandExecutor({ ...invocation, signal: options.signal })
   const captureDir = await mkdtemp(join(options.tempDirRoot ?? tmpdir(), "breadboard-oci-exec-"))
   const stdoutPath = join(captureDir, "stdout.log")
   const stderrPath = join(captureDir, "stderr.log")
   await writeFile(stdoutPath, result.stdout, "utf8")
   await writeFile(stderrPath, result.stderr, "utf8")
+  const timedOut = options.signal?.aborted === true
   return {
     schema_version: "bb.sandbox_result.v1",
     request_id: request.request_id,
-    status: result.exitCode === 0 ? "completed" : "failed",
+    status: timedOut ? "timed_out" : result.exitCode === 0 ? "completed" : "failed",
     placement_id: `oci:${request.request_id}`,
     stdout_ref: `file://${stdoutPath}`,
     stderr_ref: `file://${stderrPath}`,
@@ -164,51 +191,102 @@ export async function executeOciSandboxRequest(
     usage: { exit_code: result.exitCode, runtime: invocation.runtimeCommand },
     evidence_refs: [],
     error:
-      result.exitCode === 0
-        ? null
-        : {
-            message: `OCI runtime exited with code ${result.exitCode}`,
-            exit_code: result.exitCode,
-          },
+      timedOut
+        ? { message: "OCI runtime exceeded its deadline", reason: "deadline_exceeded", exit_code: result.exitCode }
+        : result.exitCode === 0
+          ? null
+          : {
+              message: `OCI runtime exited with code ${result.exitCode}`,
+              exit_code: result.exitCode,
+            },
   }
 }
 
-export const ociExecutionDriver: TerminalSessionDriverV1 = {
-  driverId: "oci",
-  supportedPlacements: ["local_oci", "local_oci_gvisor", "local_oci_kata"],
-  supportsCapability(capability, placementClass) {
-    return isPlacementCompatible(capability, placementClass)
-  },
-  buildSandboxRequest({ requestId, capability, command, workspaceRef, imageRef }) {
-    if (!imageRef) {
-      throw new Error("ociExecutionDriver requires imageRef for OCI-backed execution")
-    }
-    if (command.length === 0) {
-      throw new Error("ociExecutionDriver requires a non-empty command")
-    }
-    return buildOciSandboxRequest({
-      requestId,
-      capability,
-      command,
-      workspaceRef,
-      imageRef,
-    })
-  },
-  execute(request) {
-    return executeOciSandboxRequest(request)
-  },
+function createOciExecutionDriver(options: {
+  commandExecutor?: OciCommandExecutor
+  runtimeCommand?: string
+  workspaceMountTarget?: string
+  terminalAdapter?: OciTerminalSessionAdapter
+} = {}): TerminalSessionDriverV1 {
+  const terminalDriver = options.terminalAdapter ? makeOciTerminalSessionDriver(options.terminalAdapter) : null
+  interface ActiveOciExecution {
+    controller: AbortController
+    completion: Promise<SandboxResultV1>
+  }
+  const activeExecutions = new Map<string, ActiveOciExecution>()
+  return {
+    driverId: "oci",
+    supportedPlacements: ["local_oci", "local_oci_gvisor", "local_oci_kata"],
+    supportsCapability(capability, placementClass) {
+      return isPlacementCompatible(capability, placementClass)
+    },
+    buildSandboxRequest({ requestId, capability, command, workspaceRef, imageRef }) {
+      if (!imageRef) {
+        throw new Error("ociExecutionDriver requires imageRef for OCI-backed execution")
+      }
+      if (command.length === 0) {
+        throw new Error("ociExecutionDriver requires a non-empty command")
+      }
+      return buildOciSandboxRequest({ requestId, capability, command, workspaceRef, imageRef })
+    },
+    execute(request, context) {
+      const controller = new AbortController()
+      const forwardAbort = () => controller.abort(context?.signal.reason)
+      if (context?.signal) {
+        if (context.signal.aborted) {
+          forwardAbort()
+        } else {
+          context.signal.addEventListener("abort", forwardAbort, { once: true })
+        }
+      }
+      const executionPromise = executeOciSandboxRequest(request, {
+        commandExecutor: options.commandExecutor,
+        runtimeCommand: options.runtimeCommand,
+        workspaceMountTarget: options.workspaceMountTarget,
+        signal: controller.signal,
+      })
+      activeExecutions.set(request.request_id, {
+        controller,
+        completion: executionPromise,
+      })
+      return executionPromise.finally(() => {
+        activeExecutions.delete(request.request_id)
+        context?.signal.removeEventListener("abort", forwardAbort)
+      })
+    },
+    async terminate(request, context) {
+      const active = activeExecutions.get(request.request_id)
+      if (!active) return
+      active.controller.abort(
+        context.signal.reason ?? new Error(`OCI runtime ${context.reason} termination requested`),
+      )
+      await active.completion.catch(() => {})
+    },
+    ...(terminalDriver
+      ? {
+          supportsTerminalSessions: terminalDriver.supportsTerminalSessions,
+          startTerminalSession: terminalDriver.startTerminalSession,
+          interactTerminalSession: terminalDriver.interactTerminalSession,
+          snapshotTerminalRegistry: terminalDriver.snapshotTerminalRegistry,
+          cleanupTerminalSessions: terminalDriver.cleanupTerminalSessions,
+        }
+      : {}),
+  }
+}
+
+export const ociExecutionDriver: TerminalSessionDriverV1 = createOciExecutionDriver()
+
+export function makeConfiguredOciExecutionDriver(options: {
+  commandExecutor?: OciCommandExecutor
+  runtimeCommand?: string
+  workspaceMountTarget?: string
+  terminalAdapter?: OciTerminalSessionAdapter
+} = {}): TerminalSessionDriverV1 {
+  return createOciExecutionDriver(options)
 }
 
 export function makeOciExecutionDriver(adapter?: OciTerminalSessionAdapter): TerminalSessionDriverV1 {
-  const terminalDriver = adapter ? makeOciTerminalSessionDriver(adapter) : null
-  return {
-    ...ociExecutionDriver,
-    supportsTerminalSessions: terminalDriver?.supportsTerminalSessions,
-    startTerminalSession: terminalDriver?.startTerminalSession,
-    interactTerminalSession: terminalDriver?.interactTerminalSession,
-    snapshotTerminalRegistry: terminalDriver?.snapshotTerminalRegistry,
-    cleanupTerminalSessions: terminalDriver?.cleanupTerminalSessions,
-  }
+  return createOciExecutionDriver({ terminalAdapter: adapter })
 }
 
 export * from "./terminals.js"

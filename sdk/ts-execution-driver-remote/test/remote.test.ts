@@ -598,3 +598,162 @@ test("unsupported case helper still models delegated gaps honestly", () => {
   assert.equal(unsupported.reason_code, "unsupported_execution_driver")
   assert.equal(unsupported.unavailable_placement, "delegated_microvm")
 })
+
+test("remote driver injected executor receives world context signal and aborts on cancellation", async () => {
+  const abortController = new AbortController()
+  let receivedSignal: AbortSignal | undefined
+  const driver = makeRemoteExecutionDriver(async (request, context) => {
+    receivedSignal = context?.signal
+    return new Promise((_resolve, reject) => {
+      context?.signal?.addEventListener("abort", () => {
+        reject(new Error("injected executor cancelled"))
+      })
+    })
+  })
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:remote:injected:cancel",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  const executePromise = driver.execute!(request, {
+    signal: abortController.signal,
+    deadlineAtMs: null,
+    terminationGraceMs: 100,
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:remote:cancel",
+      placement_class: "remote_worker",
+      runtime_id: "remote",
+      capability_id: remoteCapability.capability_id,
+    },
+    driverId: "remote",
+  })
+  assert.equal(receivedSignal?.aborted, false)
+  abortController.abort(new Error("world cancelled"))
+  await assert.rejects(() => executePromise, /injected executor cancelled/)
+  assert.equal(receivedSignal?.aborted, true)
+})
+
+test("remote driver injected executor aborts on driver.terminate", async () => {
+  let receivedSignal: AbortSignal | undefined
+  const driver = makeRemoteExecutionDriver(async (request, context) => {
+    receivedSignal = context?.signal
+    return new Promise((_resolve, reject) => {
+      context?.signal?.addEventListener("abort", () => {
+        reject(new Error("injected executor terminated"))
+      })
+    })
+  })
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:remote:injected:term",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  const executePromise = driver.execute!(request)
+  assert.ok(receivedSignal)
+  assert.equal(receivedSignal?.aborted, false)
+  driver.terminate!(request, {
+    reason: "cancelled",
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+  })
+  await assert.rejects(() => executePromise, /injected executor terminated/)
+  assert.equal(receivedSignal?.aborted, true)
+})
+
+test("remote driver direct execute with httpOptions.timeoutMs enforces timeout without hanging", async () => {
+  const driver = makeRemoteExecutionDriver(undefined, {
+    endpointUrl: "https://example.test/remote-direct-timeout",
+    timeoutMs: 10,
+    fetchImpl: async (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(init.signal?.reason ?? new Error("aborted"))
+        })
+      }),
+  })
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:remote:direct:timeout",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  await assert.rejects(
+    () => driver.execute!(request),
+    /timed out after 10ms/,
+  )
+})
+
+test("remote driver combines caller signal, world signal, and timeout without replacing each other", async () => {
+  const callerController = new AbortController()
+  const driverWithCaller = makeRemoteExecutionDriver(undefined, {
+    endpointUrl: "https://example.test/remote-caller-signal",
+    signal: callerController.signal,
+    fetchImpl: async (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new Error("fetch aborted by caller"))
+        })
+      }),
+  })
+  const req1 = buildRemoteSandboxRequest({
+    requestId: "req:remote:caller:1",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  const call1 = driverWithCaller.execute!(req1)
+  callerController.abort(new Error("caller aborted"))
+  await assert.rejects(() => call1, /caller aborted/)
+  const worldController = new AbortController()
+  const driverForWorld = makeRemoteExecutionDriver(undefined, {
+    endpointUrl: "https://example.test/remote-world-signal",
+    timeoutMs: 5000,
+    fetchImpl: async (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(init.signal?.reason ?? new Error("fetch aborted by world"))
+        })
+      }),
+  })
+  const req2 = buildRemoteSandboxRequest({
+    requestId: "req:remote:world:1",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  const call2 = driverForWorld.execute!(req2, {
+    signal: worldController.signal,
+    deadlineAtMs: Date.now() + 5000,
+    terminationGraceMs: 100,
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:remote:world",
+      placement_class: "remote_worker",
+      runtime_id: "remote",
+      capability_id: remoteCapability.capability_id,
+    },
+    driverId: "remote",
+  })
+  worldController.abort(new Error("world aborted"))
+  await assert.rejects(() => call2, /world aborted/)
+
+  const driverForTimeout = makeRemoteExecutionDriver(undefined, {
+    endpointUrl: "https://example.test/remote-timeout-signal",
+    timeoutMs: 15,
+    fetchImpl: async (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(init.signal?.reason ?? new Error("aborted"))
+        })
+      }),
+  })
+  const req3 = buildRemoteSandboxRequest({
+    requestId: "req:remote:timeout:1",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  await assert.rejects(
+    () => driverForTimeout.execute!(req3),
+    /timed out after 15ms/,
+  )
+})

@@ -71,9 +71,10 @@ test("kernel core transcript normalization maps legacy entries", () => {
   const normalized = normalizeTranscriptContractItem({ assistant: "hello" })
   assert.deepEqual(normalized, {
     kind: "assistant_message",
-    visibility: "model",
+    visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
     content: "hello",
-    provenance: { source: "legacy_transcript_entry", legacy_key: "assistant" },
+    content_schema_version: null,
+    provenance: { source: "import", source_ref: "legacy_transcript_entry:assistant" },
   })
 })
 
@@ -89,18 +90,20 @@ test("kernel core transcript normalization maps arrays of mixed items", () => {
   assert.deepEqual(normalized, [
     {
       kind: "user_message",
-      visibility: "model",
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       content: "seed user",
-      provenance: { source: "legacy_transcript_entry", legacy_key: "user" },
+      content_schema_version: null,
+      provenance: { source: "import", source_ref: "legacy_transcript_entry:user" },
     },
     {
       kind: "assistant_message",
-      visibility: "model",
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       content: { text: "seed assistant" },
+      content_schema_version: null,
+      provenance: { source: "import", source_ref: null },
     },
   ])
 })
-
 test("kernel core lineage and checkpoint helpers stay deterministic", () => {
   const lineage = buildTaskLineage(
     {
@@ -1149,14 +1152,17 @@ test("kernel core can continue from an existing transcript during a provider-awa
   assert.deepEqual(result.transcript.items.slice(0, 2), [
     {
       kind: "user_message",
-      visibility: "model",
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       content: "seed user",
-      provenance: { source: "legacy_transcript_entry", legacy_key: "user" },
+      content_schema_version: null,
+      provenance: { source: "import", source_ref: "legacy_transcript_entry:user" },
     },
     {
       kind: "assistant_message",
-      visibility: "model",
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       content: { text: "seed assistant" },
+      content_schema_version: null,
+      provenance: { source: "import", source_ref: null },
     },
   ])
   assert.equal(result.transcript.items[4]?.kind, "assistant_message")
@@ -1175,13 +1181,23 @@ test("kernel core can continue from an existing transcript during a provider-awa
 test("kernel core can build transcript continuation patches and unsupported cases", () => {
   const patch = buildTranscriptContinuationPatch(
     {
-      schemaVersion: "bb.session_transcript.v1",
-      sessionId: "sess-1",
+      schema_version: "bb.session_transcript.v2",
+      session_id: "sess-1",
       items: [
-        { kind: "user_message", visibility: "model", content: { text: "hi" } },
-        { kind: "assistant_message", visibility: "model", content: { text: "hello" } },
+        {
+          kind: "user_message",
+          visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
+          content: { text: "hi" },
+          content_schema_version: null,
+        },
+        {
+          kind: "assistant_message",
+          visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
+          content: { text: "hello" },
+          content_schema_version: null,
+        },
       ],
-      eventCursor: 2,
+      event_cursor: 2,
     },
     {
       patchId: "patch-1",

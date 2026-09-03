@@ -13,28 +13,19 @@ import type {
 } from "@breadboard/kernel-contracts"
 import { assertValid } from "@breadboard/kernel-contracts"
 import {
-  selectTerminalSessionDriver,
+  chooseExecutionPlacementClass,
+  type ExecutionWorldV1,
   type TerminalSessionCleanupInputV1,
-  type TerminalSessionDriverV1,
-  type TerminalSessionInteractionInputV1,
-  type TerminalSessionInteractionResultV1,
   type TerminalSessionStartInputV1,
-  type TerminalSessionStartResultV1,
 } from "@breadboard/execution-drivers"
-import { buildTerminalCleanupResult, reduceTerminalRegistry } from "@breadboard/kernel-core"
-import { buildExecutionPlacement } from "@breadboard/kernel-core"
 import {
-  chooseTrustedLocalPlacement,
-  makeTrustedLocalExecutionDriver,
-  trustedLocalExecutionDriver,
-} from "@breadboard/execution-driver-local"
-import { chooseOciPlacement, makeOciExecutionDriver, type OciTerminalSessionAdapter } from "@breadboard/execution-driver-oci"
-import {
-  chooseRemotePlacement,
-  makeRemoteExecutionDriver,
-  type RemoteExecutionHttpOptions,
-  type RemoteSandboxExecutor,
-} from "@breadboard/execution-driver-remote"
+  buildTerminalCleanupResult,
+  reduceTerminalRegistry,
+  buildExecutionPlacement,
+  createKernelExecutionWorld,
+} from "@breadboard/kernel-core"
+import type { RemoteExecutionHttpOptions, RemoteSandboxExecutor } from "@breadboard/execution-driver-remote"
+import type { OciTerminalSessionAdapter } from "@breadboard/execution-driver-oci"
 import type { ExecutionProfileId, Workspace } from "@breadboard/workspace"
 import type {
   BackboneTerminalApi,
@@ -313,19 +304,15 @@ function buildTerminalCapability(input: {
 }
 
 function chooseTerminalPlacement(capability: ExecutionCapabilityV1, profileId: ExecutionProfileId): ExecutionPlacementV1 {
-  const placementClass =
-    profileId === "remote_isolated"
-      ? chooseRemotePlacement(capability)
-      : profileId === "sandboxed_local"
-        ? chooseOciPlacement(capability)
-        : chooseTrustedLocalPlacement(capability)
+  const driverIdHint = profileId === "remote_isolated" ? "remote" : profileId === "sandboxed_local" ? "oci" : "trusted_local"
+  const placementClass = chooseExecutionPlacementClass(capability, driverIdHint)
   return buildExecutionPlacement(capability, {
     placementId: `term-place:${capability.capability_id}`,
     placementClass,
     runtimeId:
-      profileId === "remote_isolated"
+      driverIdHint === "remote"
         ? "breadboard.ts-execution-driver-remote"
-        : profileId === "sandboxed_local"
+        : driverIdHint === "oci"
           ? "breadboard.ts-execution-driver-oci"
           : "breadboard.ts-execution-driver-local",
   })
@@ -359,7 +346,7 @@ function buildTerminalSupportClaim(options: {
       canPoll: true,
       canList: true,
       canCleanup: true,
-      streamMode: options.executionProfileId === "trusted_local" ? "pipes" : "pipes",
+      streamMode: "pipes",
     },
     unsupportedFields: [...(options.unsupportedFields ?? [])],
   }
@@ -387,16 +374,11 @@ function resolveTerminalDriver(options: {
   workspace: Workspace
   executionProfileId: ExecutionProfileId
   terminalSessionId?: string
-  remoteExecutor?: RemoteSandboxExecutor
-  remoteHttp?: RemoteExecutionHttpOptions
-  ociTerminalAdapter?: OciTerminalSessionAdapter
-  localDriver?: TerminalSessionDriverV1
-  ociDriver?: TerminalSessionDriverV1
-  remoteDriver?: TerminalSessionDriverV1
+  executionWorld: ExecutionWorldV1
 }): {
   capability: ExecutionCapabilityV1
   placement: ExecutionPlacementV1
-  driver: TerminalSessionDriverV1 | null
+  driverId: string | null
   claim: SupportClaim
 } {
   const capability = buildTerminalCapability({
@@ -405,42 +387,38 @@ function resolveTerminalDriver(options: {
     workspace: options.workspace,
   })
   const placement = chooseTerminalPlacement(capability, options.executionProfileId)
-  const drivers: TerminalSessionDriverV1[] = [
-    options.localDriver ?? trustedLocalExecutionDriver,
-    options.ociDriver ?? makeOciExecutionDriver(options.ociTerminalAdapter),
-    options.remoteDriver ?? makeRemoteExecutionDriver(options.remoteExecutor, options.remoteHttp),
-  ]
-  const driver = selectTerminalSessionDriver({
-    capability,
-    placement,
-    drivers,
-  })
-  const summary = driver
-    ? `Terminal sessions supported on ${options.executionProfileId} via ${driver.driverId}.`
+  const driverId = options.executionWorld.select({ capability, placement, terminal: true }).driverId
+  const summary = driverId
+    ? `Terminal sessions supported on ${options.executionProfileId} via ${driverId}.`
     : `Terminal sessions are not supported on ${options.executionProfileId}.`
   return {
     capability,
     placement,
-    driver,
+    driverId,
     claim: buildTerminalSupportClaim({
       workspace: options.workspace,
       executionProfileId: options.executionProfileId,
       summary,
-      unsupportedFields: driver ? [] : ["terminal_sessions"],
+      unsupportedFields: driverId ? [] : ["terminal_sessions"],
     }),
   }
 }
 
 export function createBackboneTerminalApi(options: {
   workspace: Workspace
+  executionWorld?: ExecutionWorldV1
   remoteExecutor?: RemoteSandboxExecutor
   remoteHttp?: RemoteExecutionHttpOptions
   ociTerminalAdapter?: OciTerminalSessionAdapter
 }): BackboneTerminalApi {
   const sessionViews = new Map<string, InternalTerminalSessionView>()
-  const localDriver = makeTrustedLocalExecutionDriver()
-  const ociDriver = makeOciExecutionDriver(options.ociTerminalAdapter)
-  const remoteDriver = makeRemoteExecutionDriver(options.remoteExecutor, options.remoteHttp)
+  const executionWorld =
+    options.executionWorld ??
+    createKernelExecutionWorld({
+      remoteExecutor: options.remoteExecutor,
+      remoteHttp: options.remoteHttp,
+      ociTerminalAdapter: options.ociTerminalAdapter,
+    })
 
   function buildSyntheticEndedState(
     descriptor: TerminalSessionDescriptorV1,
@@ -468,31 +446,16 @@ export function createBackboneTerminalApi(options: {
     descriptor: TerminalSessionDescriptorV1
     supportClaim: SupportClaim
     executionProfileId: ExecutionProfileId
-    workspace?: Workspace
     initialOutputDeltas?: readonly TerminalOutputDeltaV1[]
     initialEnd?: TerminalSessionEndV1 | undefined
   }): InternalTerminalSessionView {
-    const existing = sessionViews.get(viewOptions.descriptor.terminal_session_id)
-    if (existing) {
-      if (viewOptions.initialOutputDeltas?.length) {
-        existing.applyInteractionResult({
-          supportClaim: viewOptions.supportClaim,
-          interaction: null,
-          outputDeltas: viewOptions.initialOutputDeltas,
-          end: viewOptions.initialEnd,
-        })
-      } else if (viewOptions.initialEnd) {
-        existing.mergeEnd(viewOptions.initialEnd)
-      }
-      return rememberSessionView(existing)
-    }
     return rememberSessionView(
       createTerminalSessionView({
         api,
         descriptor: viewOptions.descriptor,
         supportClaim: viewOptions.supportClaim,
         executionProfileId: viewOptions.executionProfileId,
-        workspace: viewOptions.workspace ?? options.workspace,
+        workspace: options.workspace,
         initialOutputDeltas: viewOptions.initialOutputDeltas,
         initialEnd: viewOptions.initialEnd,
       }),
@@ -504,23 +467,20 @@ export function createBackboneTerminalApi(options: {
     supportClaim: SupportClaim,
     executionProfileId: ExecutionProfileId,
   ): void {
-    if (!snapshot) {
-      return
-    }
-    const activeIds = new Set(snapshot.active_sessions.map((session) => session.terminal_session_id))
+    if (!snapshot) return
+    const activeIds = new Set<string>()
     for (const descriptor of snapshot.active_sessions) {
-      const view =
-        sessionViews.get(descriptor.terminal_session_id) ??
-        rememberSessionView(
-          createTerminalSessionView({
-            api,
-            descriptor,
-            supportClaim,
-            executionProfileId,
-            workspace: options.workspace,
-          }),
-        )
-      view.applySnapshot(snapshot)
+      activeIds.add(descriptor.terminal_session_id)
+      const existing = sessionViews.get(descriptor.terminal_session_id)
+      if (existing) {
+        existing.applySnapshot(snapshot)
+      } else {
+        buildSessionView({
+          descriptor,
+          supportClaim,
+          executionProfileId,
+        }).applySnapshot(snapshot)
+      }
     }
     const endedSessionIds = snapshot.ended_session_ids ?? []
     for (const endedSessionId of endedSessionIds) {
@@ -550,12 +510,7 @@ export function createBackboneTerminalApi(options: {
         workspace: options.workspace,
         executionProfileId: input.executionProfileId ?? options.workspace.defaultExecutionProfileId,
         terminalSessionId: "term-support",
-        remoteExecutor: options.remoteExecutor,
-        remoteHttp: options.remoteHttp,
-        ociTerminalAdapter: options.ociTerminalAdapter,
-        localDriver,
-        ociDriver,
-        remoteDriver,
+        executionWorld,
       }).claim
     },
     async start(input) {
@@ -565,14 +520,9 @@ export function createBackboneTerminalApi(options: {
         workspace: options.workspace,
         executionProfileId,
         terminalSessionId,
-        remoteExecutor: options.remoteExecutor,
-        remoteHttp: options.remoteHttp,
-        ociTerminalAdapter: options.ociTerminalAdapter,
-        localDriver,
-        ociDriver,
-        remoteDriver,
+        executionWorld,
       })
-      if (!resolved.driver?.startTerminalSession) {
+      if (!resolved.driverId) {
         return {
           supportClaim: resolved.claim,
           unsupportedCase: buildUnsupportedTerminalCase({
@@ -598,7 +548,29 @@ export function createBackboneTerminalApi(options: {
         streamMode: input.streamMode ?? "pipes",
         streamSplit: input.streamSplit ?? "stdout_stderr",
       }
-      const result = await resolved.driver.startTerminalSession(startInput)
+      const worldResult = await executionWorld.execute({
+        kind: "terminal_start",
+        capability: resolved.capability,
+        placement: resolved.placement,
+        input: startInput,
+      })
+      if (worldResult.kind !== "terminal_start" || !worldResult.result) {
+        const unsupportedCase =
+          worldResult.kind === "terminal_start" && worldResult.unsupportedCase
+            ? worldResult.unsupportedCase
+            : buildUnsupportedTerminalCase({
+                profileId: executionProfileId,
+                summary: `Terminal start failed for ${executionProfileId}.`,
+              })
+        return {
+          supportClaim: resolved.claim,
+          unsupportedCase,
+          descriptor: null,
+          outputDeltas: [],
+          session: null,
+        }
+      }
+      const result = worldResult.result
       const session = buildSessionView({
         descriptor: result.descriptor,
         supportClaim: resolved.claim,
@@ -619,14 +591,9 @@ export function createBackboneTerminalApi(options: {
       const resolved = resolveTerminalDriver({
         workspace: options.workspace,
         executionProfileId,
-        remoteExecutor: options.remoteExecutor,
-        remoteHttp: options.remoteHttp,
-        ociTerminalAdapter: options.ociTerminalAdapter,
-        localDriver,
-        ociDriver,
-        remoteDriver,
+        executionWorld,
       })
-      if (!resolved.driver?.interactTerminalSession) {
+      if (!resolved.driverId) {
         return {
           supportClaim: resolved.claim,
           unsupportedCase: buildUnsupportedTerminalCase({
@@ -638,9 +605,11 @@ export function createBackboneTerminalApi(options: {
           end: undefined,
         }
       }
-      let result
-      try {
-        result = await resolved.driver.interactTerminalSession({
+      const worldResult = await executionWorld.execute({
+        kind: "terminal_interact",
+        capability: resolved.capability,
+        placement: resolved.placement,
+        input: {
           terminalSessionId: input.terminalSessionId,
           interactionKind: input.interactionKind,
           causingCallId: input.causingCallId ?? null,
@@ -648,27 +617,30 @@ export function createBackboneTerminalApi(options: {
           inputB64: input.inputB64 ?? null,
           signal: input.signal ?? null,
           settleMs: input.settleMs,
-        })
-      } catch (error) {
+        },
+      })
+      if (worldResult.kind !== "terminal_interact" || !worldResult.result) {
+        const unsupportedCase =
+          worldResult.kind === "terminal_interact" && worldResult.unsupportedCase
+            ? worldResult.unsupportedCase
+            : buildUnsupportedTerminalCase({
+                profileId: executionProfileId,
+                reasonCode: "terminal_interaction_failed",
+                summary: `Terminal interaction failed for ${input.terminalSessionId}.`,
+                metadata: {
+                  terminal_session_id: input.terminalSessionId,
+                  interaction_kind: input.interactionKind,
+                },
+              })
         return {
           supportClaim: resolved.claim,
-          unsupportedCase: buildUnsupportedTerminalCase({
-            profileId: executionProfileId,
-            reasonCode: "terminal_interaction_failed",
-            summary:
-              error instanceof Error
-                ? error.message
-                : `Terminal interaction failed for ${input.terminalSessionId}.`,
-            metadata: {
-              terminal_session_id: input.terminalSessionId,
-              interaction_kind: input.interactionKind,
-            },
-          }),
+          unsupportedCase,
           interaction: null,
           outputDeltas: [],
           end: undefined,
         }
       }
+      const result = worldResult.result
       const sessionView = sessionViews.get(input.terminalSessionId)
       sessionView?.applyInteractionResult({
         supportClaim: resolved.claim,
@@ -729,14 +701,9 @@ export function createBackboneTerminalApi(options: {
       const resolved = resolveTerminalDriver({
         workspace: options.workspace,
         executionProfileId,
-        remoteExecutor: options.remoteExecutor,
-        remoteHttp: options.remoteHttp,
-        ociTerminalAdapter: options.ociTerminalAdapter,
-        localDriver,
-        ociDriver,
-        remoteDriver,
+        executionWorld,
       })
-      if (!resolved.driver?.snapshotTerminalRegistry) {
+      if (!resolved.driverId) {
         return {
           supportClaim: resolved.claim,
           unsupportedCase: buildUnsupportedTerminalCase({
@@ -746,7 +713,26 @@ export function createBackboneTerminalApi(options: {
           snapshot: null,
         }
       }
-      const snapshot = await resolved.driver.snapshotTerminalRegistry()
+      const worldResult = await executionWorld.execute({
+        kind: "terminal_snapshot",
+        capability: resolved.capability,
+        placement: resolved.placement,
+      })
+      if (worldResult.kind !== "terminal_snapshot" || !worldResult.result) {
+        const unsupportedCase =
+          worldResult.kind === "terminal_snapshot" && worldResult.unsupportedCase
+            ? worldResult.unsupportedCase
+            : buildUnsupportedTerminalCase({
+                profileId: executionProfileId,
+                summary: `Terminal snapshot failed for ${executionProfileId}.`,
+              })
+        return {
+          supportClaim: resolved.claim,
+          unsupportedCase,
+          snapshot: null,
+        }
+      }
+      const snapshot = worldResult.result
       syncSessionViews(snapshot, resolved.claim, executionProfileId)
       return {
         supportClaim: resolved.claim,
@@ -795,14 +781,9 @@ export function createBackboneTerminalApi(options: {
       const resolved = resolveTerminalDriver({
         workspace: options.workspace,
         executionProfileId,
-        remoteExecutor: options.remoteExecutor,
-        remoteHttp: options.remoteHttp,
-        ociTerminalAdapter: options.ociTerminalAdapter,
-        localDriver,
-        ociDriver,
-        remoteDriver,
+        executionWorld,
       })
-      if (!resolved.driver?.cleanupTerminalSessions) {
+      if (!resolved.driverId) {
         return {
           supportClaim: resolved.claim,
           unsupportedCase: buildUnsupportedTerminalCase({
@@ -818,31 +799,38 @@ export function createBackboneTerminalApi(options: {
         sessionIds: input.sessionIds,
         signal: input.signal ?? null,
       }
-      try {
+      const worldResult = await executionWorld.execute({
+        kind: "terminal_cleanup",
+        capability: resolved.capability,
+        placement: resolved.placement,
+        input: cleanupInput,
+      })
+      if (worldResult.kind !== "terminal_cleanup" || !worldResult.result) {
+        const unsupportedCase =
+          worldResult.kind === "terminal_cleanup" && worldResult.unsupportedCase
+            ? worldResult.unsupportedCase
+            : buildUnsupportedTerminalCase({
+                profileId: executionProfileId,
+                reasonCode: "terminal_cleanup_failed",
+                summary: `Terminal cleanup failed for ${executionProfileId}.`,
+                metadata: {
+                  scope: input.scope,
+                  session_ids: input.sessionIds ?? [],
+                },
+              })
         return {
           supportClaim: resolved.claim,
-          result: await resolved.driver.cleanupTerminalSessions(cleanupInput),
-        }
-      } catch (error) {
-        return {
-          supportClaim: resolved.claim,
-          unsupportedCase: buildUnsupportedTerminalCase({
-            profileId: executionProfileId,
-            reasonCode: "terminal_cleanup_failed",
-            summary:
-              error instanceof Error
-                ? error.message
-                : `Terminal cleanup failed for ${executionProfileId}.`,
-            metadata: {
-              scope: input.scope,
-              session_ids: input.sessionIds ?? [],
-            },
-          }),
+          unsupportedCase,
           result: null,
         }
       }
+      return {
+        supportClaim: resolved.claim,
+        result: worldResult.result,
+      }
     },
   }
+
   const originalCleanup = api.cleanup
   api.cleanup = async (input) => {
     const result = await originalCleanup(input)

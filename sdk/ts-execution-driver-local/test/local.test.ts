@@ -6,7 +6,9 @@ import {
   buildLocalProcessSandboxRequest,
   chooseTrustedLocalPlacement,
   executeLocalProcessSandboxRequest,
+  makeTrustedLocalExecutionDriver,
   trustedLocalExecutionDriver,
+  type LocalCommandExecutor,
 } from "../src/index.js"
 
 test("trusted local driver chooses inline vs local process cleanly", () => {
@@ -140,7 +142,7 @@ test("trusted local driver can manage a persistent terminal session lifecycle", 
   assert.ok(start)
   assert.equal(start?.descriptor.terminal_session_id, "term-local-1")
 
-  await sleep(25)
+  await sleep(75)
 
   const firstPoll = await trustedLocalExecutionDriver.interactTerminalSession?.({
     terminalSessionId: "term-local-1",
@@ -190,7 +192,7 @@ test("trusted local driver rejects interaction with an exited terminal session",
   })
   assert.ok(start)
 
-  await sleep(25)
+  await sleep(75)
   const polled = await trustedLocalExecutionDriver.interactTerminalSession?.({
     terminalSessionId: "term-local-exit-1",
     interactionKind: "poll",
@@ -266,4 +268,43 @@ test("trusted local driver cleanup is stable for missing or already cleaned sess
   assert.ok(cleanedAgain)
   assert.deepEqual(cleanedAgain?.cleaned_session_ids, ["term-local-cleanup-1"])
   assert.deepEqual(cleanedAgain?.failed_session_ids, [])
+})
+
+test("trusted local driver terminate triggers signal and awaits process exit", async () => {
+  let processExited = false
+  const customExecutor: LocalCommandExecutor = async ({ signal }) => {
+    return new Promise((resolve) => {
+      signal?.addEventListener("abort", () => {
+        processExited = true
+        resolve({
+          exitCode: 130,
+          stdout: "",
+          stderr: "terminated",
+        })
+      })
+    })
+  }
+  const driver = makeTrustedLocalExecutionDriver(customExecutor)
+  const request = buildLocalProcessSandboxRequest({
+    requestId: "req-term-verify",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-term-v",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "60"],
+  })
+  const execPromise = driver.execute!(request)
+  assert.equal(processExited, false)
+  await driver.terminate!(request, {
+    reason: "deadline",
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now(),
+  })
+  assert.equal(processExited, true)
+  const result = await execPromise
+  assert.equal(result.status, "timed_out")
 })

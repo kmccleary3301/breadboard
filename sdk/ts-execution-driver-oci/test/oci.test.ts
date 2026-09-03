@@ -6,8 +6,10 @@ import {
   buildOciSandboxRequest,
   chooseOciPlacement,
   executeOciSandboxRequest,
+  makeConfiguredOciExecutionDriver,
   makeOciExecutionDriver,
   ociExecutionDriver,
+  type OciCommandExecutor,
 } from "../src/index.js"
 
 test("oci driver chooses placement from capability isolation class", () => {
@@ -390,4 +392,44 @@ test("oci terminal driver keeps multi-session listing and no-output poll semanti
   assert.equal(finalSnapshot?.active_sessions.length, 0)
   assert.ok((finalSnapshot?.ended_session_ids ?? []).includes("term-oci-keepalive"))
   assert.ok((finalSnapshot?.ended_session_ids ?? []).includes("term-oci-fast-exit"))
+})
+
+test("oci driver terminate triggers signal and awaits runtime exit", async () => {
+  let runtimeExited = false
+  const customExecutor: OciCommandExecutor = async ({ signal }) => {
+    return new Promise((resolve) => {
+      signal?.addEventListener("abort", () => {
+        runtimeExited = true
+        resolve({
+          exitCode: 137,
+          stdout: "",
+          stderr: "killed",
+        })
+      })
+    })
+  }
+  const driver = makeConfiguredOciExecutionDriver({ commandExecutor: customExecutor })
+  const request = buildOciSandboxRequest({
+    requestId: "req-oci-term-verify",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-term-v",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "60"],
+    imageRef: "docker://alpine:latest",
+  })
+  const execPromise = driver.execute!(request)
+  assert.equal(runtimeExited, false)
+  await driver.terminate!(request, {
+    reason: "deadline",
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now(),
+  })
+  assert.equal(runtimeExited, true)
+  const result = await execPromise
+  assert.equal(result.status, "timed_out")
 })

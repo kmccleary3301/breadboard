@@ -1,11 +1,10 @@
 # W5.2 DSH execution-world ownership designs
 
-Status: design comparison only. No source, public-schema, or central-planning change is proposed by this note.
+Status: Design 2 selected, implemented, and verified.
 
-**Decision: PENDING KYLE**
+**Decision: SELECTED DESIGN 2 (Kyle McCleary)**
 
-The recommendation below is deliberately not a decision. It leaves the owner choice with Kyle.
-
+Owner: `@breadboard/execution-drivers`
 ## Question and decision invariant
 
 W5.1 compares four execution-world labels (local process, Docker, Ray actor, and Slurm job) while keeping Product Session truth provider-neutral. W5.2 asks where the execution-world implementation should own capability/placement selection, adapter dispatch, liveness, timeout, cleanup, and failure normalization.
@@ -147,10 +146,29 @@ Ray and Slurm fit this design most naturally as Python-native worlds. The cost i
 | W10 composition | Simple call, growing kernel dependency surface | One small world interface; composition stays above it | Durable product stream, but cross-language/session protocol cost |
 | Migration | Low-medium for TS, high for Ray/Slurm | Medium and localized | High for TS and terminal transport |
 
-**Recommendation for Kyle's consideration:** Design 2, the shared `@breadboard/execution-drivers` world owner, is the boring deepest owner. It has two-plus real adapters today, already owns the selection/planning seam, keeps kernel truth separate from backend lifecycle, and gives Ray/Slurm a place to become adapters without contaminating provider-neutral callers. This is a recommendation only; it is not an implied selection.
+**Decision: SELECTED DESIGN 2 (Kyle McCleary)**
 
-**Decision: PENDING KYLE**
+Design 2 (`@breadboard/execution-drivers` shared execution-world owner) is selected and implemented.
 
+## W5.3 Selected Design 2 Module Card
+
+- **Owner Package**: `@breadboard/execution-drivers` (`sdk/ts-execution-drivers/src/world.ts`)
+- **Seam Function**: `createExecutionWorld(options): ExecutionWorldV1`
+  - Unifies one-shot sandboxes (`execute({ kind: "sandbox", ... })`) and persistent terminals (`terminal_start`, `terminal_interact`, `terminal_snapshot`, `terminal_cleanup`).
+  - Deterministic pre-start single world selection (never falls back after execution starts).
+  - Common deadline / timeout signal (`AbortController` + timeout notification + bounded adapter cleanup).
+  - Provider-neutral equality under timestamp mask; adapter liveness evidence kept as evidence, not public Product payload.
+- **Concrete Adapters**:
+  - Local process: `makeTrustedLocalExecutionDriver` (`@breadboard/execution-driver-local`)
+  - OCI container: `makeConfiguredOciExecutionDriver` (`@breadboard/execution-driver-oci`)
+  - Remote worker: `makeRemoteExecutionDriver` (`@breadboard/execution-driver-remote`)
+- **Migrated Callers**:
+  - `sdk/ts-kernel-core/src/turns.ts:executeDriverMediatedToolTurn`
+  - `sdk/ts-kernel-core/src/default-world.ts:createKernelExecutionWorld`
+  - `sdk/ts-backbone/src/terminals.ts:createBackboneTerminalApi`
+- **Deletions / Stale Seams Removed**:
+  - Deleted duplicate concrete-driver list construction and ad-hoc fallback loops from `sdk/ts-kernel-core/src/turns.ts` and `sdk/ts-backbone/src/terminals.ts`.
+  - Replaced manual adapter dispatching with injected `ExecutionWorldV1`.
 ## Evidence index
 
 - `docs_tmp/bb_direction_assessment/dsh_donor_impl/W5_CHAR.md:22-69` — registered fixture, all four world labels, exact launch paths, liveness owners, and ordered event comparison rules.

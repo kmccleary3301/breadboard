@@ -17,6 +17,7 @@ import type {
 import type {
   ExecutionDriverEvidenceExpectationV1,
   ExecutionDriverSideEffectExpectationV1,
+  ExecutionWorldV1,
 } from "@breadboard/execution-drivers"
 import type { LocalCommandExecutor } from "@breadboard/execution-driver-local"
 import type { OciCommandExecutor } from "@breadboard/execution-driver-oci"
@@ -89,11 +90,12 @@ export interface DriverMediatedToolTurnOptions {
   allowRunPrograms?: string[]
   allowNetHosts?: string[]
   driverIdHint?: "trusted_local" | "oci" | "remote"
-  assistantText?: string | null
   executeSandbox?: (
     request: SandboxRequestV1,
     context: { capability: ExecutionCapabilityV1; placement: ExecutionPlacementV1; driverId: string },
   ) => Promise<SandboxResultV1>
+  executionWorld?: ExecutionWorldV1
+  assistantText?: string | null
   localCommandExecutor?: LocalCommandExecutor
   ociCommandExecutor?: OciCommandExecutor
   ociRuntimeCommand?: string
