@@ -1,8 +1,8 @@
 """Event-sourced Work Item lifecycle and policy owner."""
 from __future__ import annotations
-import json; from datetime import datetime; from collections.abc import Callable, Iterable, Mapping
+import hashlib; import json; import os; from datetime import datetime; from pathlib import Path; from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace; from threading import RLock; from types import MappingProxyType; from typing import Any
-from breadboard.product.runtime.events import Clock, IdSource, SystemClock, UUIDSource; from .placement import WorkPlacement
+from breadboard.product.runtime.events import Clock, IdSource, ProcessLock, SystemClock, UUIDSource; from .placement import WorkPlacement
 from breadboard.product.projection import Projected, ProjectionSource
 STATUSES = frozenset({"blocked", "ready", "leased", "running", "waiting", "paused", "completed", "failed", "canceled"}); TERMINAL_STATUSES = frozenset({"completed", "failed", "canceled"})
 _RULES = MappingProxyType({
@@ -137,20 +137,88 @@ class WorkItemEvent:
         object.__setattr__(self, "payload", _freeze(self.payload))
     def as_dict(self) -> dict[str, Any]: return {"work_item_id": self.work_item_id, "sequence": self.sequence, "kind": self.kind, "occurred_at": self.occurred_at, "payload": _plain(self.payload)}
 class WorkItemRepository:
-    def __init__(self) -> None: self._lock, self._streams = RLock(), {}
+    """Existing Work Item owner with optional durable JSONL backing."""
+    def __init__(self, path: str | Path | None = None) -> None:
+        self._lock, self._streams, self._path = RLock(), {}, Path(path).resolve() if path is not None else None
+        if self._path is not None:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._reload()
+
+    @staticmethod
+    def _frame(event: WorkItemEvent) -> bytes:
+        payload = json.dumps(event.as_dict(), sort_keys=True, separators=(",", ":")).encode()
+        checksum = "sha256:" + hashlib.sha256(payload).hexdigest()
+        return json.dumps({"checksum": checksum, "payload": json.loads(payload)}, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+
+    def _reload(self) -> None:
+        if self._path is None or not self._path.exists():
+            return
+        streams: dict[str, list[WorkItemEvent]] = {}
+        raw = self._path.read_bytes()
+        valid_end = 0
+        for index, line in enumerate(raw.splitlines(keepends=True)):
+            complete = line.endswith(b"\n")
+            body = line[:-1] if complete else line
+            try:
+                record = json.loads(body)
+                if isinstance(record, dict) and "payload" in record and "checksum" in record:
+                    encoded = json.dumps(record["payload"], sort_keys=True, separators=(",", ":")).encode()
+                    expected = "sha256:" + hashlib.sha256(encoded).hexdigest()
+                    if record["checksum"] != expected:
+                        raise ValueError("Work Item journal checksum mismatch")
+                    record = record["payload"]
+                event = WorkItemEvent(record["work_item_id"], int(record["sequence"]), record["kind"], record["occurred_at"], record.get("payload", {}))
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                if complete and index != len(raw.splitlines(keepends=True)) - 1:
+                    raise
+                break
+            streams.setdefault(event.work_item_id, []).append(event)
+            valid_end += len(line)
+            if not complete:
+                break
+        if valid_end != len(raw):
+            with self._path.open("r+b") as stream:
+                stream.truncate(valid_end)
+                stream.flush()
+                os.fsync(stream.fileno())
+        for events in streams.values():
+            rebuild_work_item(events)
+        self._streams = streams
+
     def read(self, work_item_id: str) -> tuple[WorkItemEvent, ...]:
-        with self._lock: return tuple(self._streams.get(_required(work_item_id, "work_item_id"), ()))
-    def append(self, expected_revisions: Mapping[str, int], events: Iterable[WorkItemEvent]) -> None:
-        grouped: dict[str, list[WorkItemEvent]] = {}
-        for event in events: grouped.setdefault(event.work_item_id, []).append(event)
-        if not grouped: raise ValueError("append requires at least one event")
         with self._lock:
-            for work_item_id, rows in grouped.items():
-                current = self._streams.get(work_item_id, [])
-                if expected_revisions.get(work_item_id) != len(current): raise RuntimeError(f"stale Work Item revision for {work_item_id}")
-                if any(row.sequence != len(current) + offset for offset, row in enumerate(rows, 1)): raise ValueError("appended event sequence is not contiguous")
-                rebuild_work_item((*current, *rows))
-            for work_item_id, rows in grouped.items(): self._streams.setdefault(work_item_id, []).extend(rows)
+            if self._path is not None:
+                with ProcessLock(self._path):
+                    self._reload()
+            return tuple(self._streams.get(_required(work_item_id, "work_item_id"), ()))
+
+    def _append_locked(self, expected_revisions: Mapping[str, int], rows: tuple[WorkItemEvent, ...]) -> None:
+        grouped: dict[str, list[WorkItemEvent]] = {}
+        for event in rows:
+            grouped.setdefault(event.work_item_id, []).append(event)
+        for work_item_id, group in grouped.items():
+            current = self._streams.get(work_item_id, [])
+            if expected_revisions.get(work_item_id) != len(current): raise RuntimeError(f"stale Work Item revision for {work_item_id}")
+            if any(row.sequence != len(current) + offset for offset, row in enumerate(group, 1)): raise ValueError("appended event sequence is not contiguous")
+            rebuild_work_item((*current, *group))
+        if self._path is not None:
+            with self._path.open("ab") as stream:
+                for event in rows:
+                    stream.write(self._frame(event))
+                stream.flush(); os.fsync(stream.fileno())
+        for work_item_id, group in grouped.items():
+            self._streams.setdefault(work_item_id, []).extend(group)
+
+    def append(self, expected_revisions: Mapping[str, int], events: Iterable[WorkItemEvent]) -> None:
+        rows = tuple(events)
+        if not rows: raise ValueError("append requires at least one event")
+        with self._lock:
+            if self._path is None:
+                self._append_locked(expected_revisions, rows)
+            else:
+                with ProcessLock(self._path):
+                    self._reload()
+                    self._append_locked(expected_revisions, rows)
 @dataclass(frozen=True, slots=True)
 class WorkItemSnapshot:
     work_item_id: str; title: str; status: str; parent_work_item_id: str | None

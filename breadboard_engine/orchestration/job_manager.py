@@ -17,6 +17,7 @@ class JobRef:
     state: str = "accepted"  # accepted|running|completed|failed|killed
     seq: int = 0
     task_descriptor: Optional[Dict[str, Any]] = None
+    result_payload: Optional[Dict[str, Any]] = None
 
 
 class JobManager:
@@ -58,12 +59,16 @@ class JobManager:
         with self._lock:
             return self._jobs.get(job_id)
 
-    def update_state(self, job_id: str, state: str) -> Optional[JobRef]:
+    def update_state(self, job_id: str, state: str, *, result_payload: Optional[Dict[str, Any]] = None) -> Optional[JobRef]:
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
                 return None
+            if job.state in {"completed", "failed", "killed"} and state != job.state:
+                return None
             job.state = state
+            if result_payload is not None:
+                job.result_payload = dict(result_payload)
             return job
 
     def all_jobs(self) -> Dict[str, JobRef]:

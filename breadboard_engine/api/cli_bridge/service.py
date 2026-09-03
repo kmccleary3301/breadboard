@@ -3,6 +3,7 @@
 from __future__ import annotations
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -31,6 +32,7 @@ from breadboard.product.runtime.events import (
 from breadboard.product.runtime.session_store import (
     authorize_session_artifact_manifest,
     event_from_record,
+    load_session,
     session_directory_identity,
     session_event_path,
 )
@@ -1102,6 +1104,7 @@ class SessionService:
         *,
         state_root: str | Path | None = None,
         subscriber_queue_maxsize: int | None = None,
+        durable_child_reconciler: Callable[[str], Any] | None = None,
     ) -> None:
         self._managed_state_paths = prepare_managed_state()
         if self._managed_state_paths is not None:
@@ -1129,6 +1132,7 @@ class SessionService:
             process_identity=get_engine_process_identity(),
             bootstrap_verifier=get_launch_bootstrap_verifier(),
         )
+        self._durable_child_reconciler = durable_child_reconciler
         self._subscriber_queue_maxsize = max(
             1,
             subscriber_queue_maxsize
@@ -2122,6 +2126,37 @@ class SessionService:
         )
 
     async def _resume_retained_session(self, record: SessionRecord) -> None:
+        metadata = dict(record.metadata or {})
+        durable_child = metadata.get("durable_child")
+        if isinstance(durable_child, Mapping):
+            recovery_ref = str(durable_child.get("recovery_ref") or "").strip()
+            reconciler = self._durable_child_reconciler
+            if callable(reconciler) and recovery_ref:
+                result = reconciler(recovery_ref)
+                if inspect.isawaitable(result):
+                    await result
+            recorded_workspace = metadata.get("workspace")
+            workspace = (
+                str(recorded_workspace).strip()
+                if isinstance(recorded_workspace, str) and recorded_workspace.strip()
+                else None
+            )
+            if workspace is None:
+                raise RuntimeError("durable child retained state has no workspace")
+            try:
+                product, _ = load_session(workspace, record.session_id)
+            except FileNotFoundError:
+                if record.status not in {
+                    SessionStatus.COMPLETED,
+                    SessionStatus.FAILED,
+                    SessionStatus.STOPPED,
+                }:
+                    raise
+            else:
+                record.product_session = product
+            record.runner = None
+            record.loaded_from_retained_state = False
+            return
         if record.status in {
             SessionStatus.COMPLETED,
             SessionStatus.FAILED,

@@ -299,6 +299,38 @@ class PersistenceMixin:
                     record.last_activity_at,
                 ) = previous
                 raise
+    async def update_durable_child(
+        self,
+        session_id: str,
+        *,
+        expected_revision: int,
+        child_state: Dict[str, Any],
+    ) -> None:
+        """CAS-update private child coordination retained on a SessionRecord."""
+        async with self._lock:
+            record = self._records.get(session_id)
+            if record is None:
+                raise KeyError(f"session {session_id} is not retained")
+            metadata = dict(record.metadata or {})
+            current = metadata.get("durable_child")
+            actual_revision = (
+                int(current.get("revision", 0))
+                if isinstance(current, dict)
+                else 0
+            )
+            if actual_revision != expected_revision:
+                raise RuntimeError(
+                    f"stale durable child revision: expected {expected_revision}, actual {actual_revision}"
+                )
+            metadata["durable_child"] = dict(child_state)
+            previous = record.metadata
+            record.metadata = metadata
+            record.last_activity_at = _utcnow()
+            try:
+                self._persist_record_locked(record)
+            except Exception:
+                record.metadata = previous
+                raise
 
     async def delete(self, session_id: str) -> None:
         async with self._lock:
@@ -501,6 +533,9 @@ class PersistenceMixin:
         if not isinstance(role_lock, dict):
             role_lock = None
         active_role = metadata.get("active_model_role")
+        durable_child = metadata.get("durable_child")
+        if not isinstance(durable_child, dict):
+            durable_child = None
         durable_head_sequence, durable_head_event_id = self._durable_replay_head(record)
         return {
             "schema_version": _STATE_SCHEMA_VERSION,
@@ -542,6 +577,7 @@ class PersistenceMixin:
                 "skills_selection": _retained_skills_selection(
                     metadata.get("skills_selection")
                 ),
+                **({"durable_child": durable_child} if durable_child is not None else {}),
             },
             "turns": turns,
             "submissions": submissions,
@@ -675,6 +711,11 @@ class PersistenceMixin:
             raise ValueError("retained replay head has no identity")
         model = _retained_model_id(session.get("model"))
         metadata: Dict[str, Any] = {}
+        durable_child = session.get("durable_child")
+        if durable_child is not None:
+            if not isinstance(durable_child, dict):
+                raise ValueError("retained durable child metadata is invalid")
+            metadata["durable_child"] = dict(durable_child)
         if model is not None:
             metadata["model"] = model
         mode = session.get("mode")

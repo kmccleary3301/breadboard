@@ -99,10 +99,10 @@ class MultiAgentOrchestrator:
         return SpawnResult(job=job, ack_payload=ack_payload)
 
     def mark_job_completed(self, job_id: str, *, result_payload: Optional[Dict[str, Any]] = None) -> Optional[JobRef]:
-        job = self.job_manager.update_state(job_id, "completed")
+        payload = dict(result_payload or {})
+        job = self.job_manager.update_state(job_id, "completed", result_payload=payload)
         if job is None:
             return None
-        payload = dict(result_payload or {})
         payload.setdefault("job_id", job.job_id)
         payload.setdefault("agent_id", job.agent_id)
         payload.setdefault("state", job.state)
