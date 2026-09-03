@@ -26,7 +26,7 @@ Status: COMPLETE — all nine children and map `bb-inj5` closed; post-contract F
 ## Evidence and review index
 
 - A: [donor pin](evidence/00_PROVENANCE_AND_REUSE.md), [independent review](evidence/00_PROVENANCE_AND_REUSE_REVIEW.md)
-- B: [current-state ledger](evidence/01_CURRENT_STATE_DONOR_LEDGER.md), [independent review](evidence/01_CURRENT_STATE_DONOR_REVIEW.md), [FT-06 inventory baseline](evidence/raw/bb-inj5.2/surface-inventory.json) at SHA-256 `7a6737557f4bfad619e55e0b605c84cac8521d8bbb6a56061609b4dd07ed0257`
+- B: [current-state ledger](evidence/01_CURRENT_STATE_DONOR_LEDGER.md), [independent review](evidence/01_CURRENT_STATE_DONOR_REVIEW.md), [FT-06 inventory baseline](evidence/raw/bb-inj5.2/surface-inventory.json) at SHA-256 `c384bca85cb83d66246e0aa9fa9c00ca6294daabb03f64bc55a25bcaffcfea4d`
 - C: [fault evidence](evidence/02_FAULT_BOUNDARY_EVIDENCE.md), [independent review](evidence/02_FAULT_BOUNDARY_REVIEW.md)
 - D: [evidence and approval contract](evidence/03_EVIDENCE_AND_APPROVAL_CONTRACT.md), [fresh-context read](evidence/reviews/bb-inj5.4-consistency-read.txt)
 - E: [semantic laws](evidence/04_NORMATIVE_SEMANTIC_LAWS.md), [fresh-context read](evidence/reviews/bb-inj5.5-consistency-read.txt)
@@ -41,14 +41,14 @@ Digest method: SHA-256 over each raw store's sorted `relative-path NUL file-SHA2
 | Ticket raw store | Files | SHA-256 tree v1 |
 | --- | ---: | --- |
 | `bb-inj5.1` | 2 | `1a6a51990ba5b34dec32f4807d99ce887edf1d93b01c0164636924bb1aa3ff1f` |
-| `bb-inj5.2` | 12 | `7c10025d1a7f0d9026d2a57926ded1320202b9121a0650014e52db59ad24e2bf` |
+| `bb-inj5.2` | 12 | `e768af68eb6145f852d346351e9cfb73c7e42db96ac2058a79a1af94801f9537` |
 | `bb-inj5.3` | 57 | `5fc4d48e91d93e4a510354000b99aba06c2418fbd213ad2627e0fd34c62f7983` |
 | `bb-inj5.4` | 4 | `97405c3815eba39021962705b9c152a95400c680a04a2d24efd69b0a52b648b3` |
 | `bb-inj5.5` | 7 | `911575b2f1a09fa434790389650be216614ab66d424852372f0433d7f76bc4f6` |
 | `bb-inj5.6` | 3 | `2424661ac0a7e124d155c204be2e7607eda1545276d60c61d15be0db44943706` |
 | `bb-inj5.7` | 8 | `8cb9dfe87bb86e2daf7d42d019e6697dceddc3e81d932fd004cc5c29fc28b3c4` |
 | `bb-inj5.8` | 6 | `73ef4c6a118bf0f0a4dedcec99005e1f42480bb5f2acc23af7aa27b90f0b1c82` |
-| `bb-inj5.9` | 3 | `c2671ee460c8b3bfa3375dcb4f5013e2a6e71fc2aac2fa5445e4c9666faf0d38` |
+| `bb-inj5.9` | 3 | `315e689ed59593b02f11fa81a5990beaf99cc66c0b570e469cf4140d7ccf3e24` |
 
 Workstream I's binding covers its provenance block, deterministic package validator, and final validator result.
 
@@ -72,8 +72,8 @@ The specification contains mission/substrate, authorities and baseline heads, fr
 
 ## Finalization record
 
-- Plan integrity: `/opt/homebrew/bin/python3.11 .../check_plan.py` → PASS, 1000/1000, zero findings.
-- Package validator: PASS; 16 exact evidence/fixture/review copies, six packet sections/guard pairs, 13 valid relative links, zero findings.
+- Package integrity: `/opt/homebrew/bin/python3.11 docs/plans/dsh_donor_campaign/check_package.py` → PASS, zero findings.
+- Source/package validator: PASS; 16 exact evidence/fixture/review copies, six packet sections/guard pairs, 13 valid relative links, zero findings.
 - Freeze checker: PASS at baseline `3b8d862f62ee9c2c421fe07758606b6973902c67`.
 - Local commit: package introduced at `c30415263b74a11d1c57d42badb48ff91829d8de`; the final audit-only amendment is recorded in the workspace resolution log.
 - Original documentation finalization performed no production implementation, release, publication, or deployment. The later implementation campaign and this documentation PR are governed separately and do not retroactively expand this audit's authority.
