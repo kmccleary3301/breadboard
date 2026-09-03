@@ -204,6 +204,34 @@ def test_assistant_observation_registers_canonical_message_target() -> None:
 
     assert session.events[-1].payload["message_id"] == "provider-message-1"
     assert session.events[-1].payload["trajectory_id"] == "turn-1"
+def test_fallback_assistant_registers_canonical_message_target() -> None:
+    runner, session = _product_runner("fallback-assistant")
+    runner._agent = type(
+        "Agent",
+        (),
+        {
+            "_local_mode": True,
+            "config": {},
+            "run_task": lambda *_args, **_kwargs: {
+                "messages": [{"role": "assistant", "content": "fallback"}],
+                "completion_summary": {"completed": True},
+            },
+        },
+    )()
+
+    _execute_task(runner)
+
+    product_payload = session.events[-1].payload
+    public_event = next(
+        event
+        for event in runner.session.event_queue._queue
+        if event is not None and event.type is EventType.ASSISTANT_MESSAGE
+    )
+    assert public_event.payload["message_id"] == product_payload["message_id"]
+    assert public_event.payload["trajectory_id"] == product_payload["trajectory_id"]
+    assert product_payload["trajectory_id"] == "turn-test"
+
+
 
 
 def test_product_observations_pair_canonical_and_message_tool_results() -> None:

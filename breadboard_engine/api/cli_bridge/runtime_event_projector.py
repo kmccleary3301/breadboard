@@ -493,6 +493,8 @@ class RuntimeEventProjector:
                             )
                         )
                     )
+                payload["message_id"] = message_id
+                payload["trajectory_id"] = trajectory_id
                 product_session.assistant_message(
                     text if isinstance(text, str) else "",
                     message_id=message_id,

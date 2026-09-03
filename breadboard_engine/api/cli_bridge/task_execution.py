@@ -784,13 +784,19 @@ class TaskExecutionOwner:
                 if isinstance(entry, dict) and entry.get("role") == "assistant":
                     content = _strip_completion_sentinels(entry.get("content", ""))
                     text = _assistant_visible_text(content)
+                    fallback_payload = {
+                        "text": text,
+                        "message": {**entry, "content": content},
+                        "source": "fallback",
+                    }
+                    runner._record_product_observation(
+                        "message.assistant",
+                        fallback_payload,
+                        trajectory_id=str(correlation["turn_id"]),
+                    )
                     runner.publish_event(
                         EventType.ASSISTANT_MESSAGE,
-                        {
-                            "text": text,
-                            "message": {**entry, "content": content},
-                            "source": "fallback",
-                        },
+                        fallback_payload,
                         **correlation,
                     )
                     fallback_assistant_emitted = True
@@ -802,17 +808,23 @@ class TaskExecutionOwner:
                 else None
             )
             if isinstance(final_message, str) and final_message:
-                runner.publish_event(
-                    EventType.ASSISTANT_MESSAGE,
-                    {
-                        "text": final_message,
-                        "message": {
-                            "role": "assistant",
-                            "content": final_message,
-                            "source": "completion_summary",
-                        },
+                fallback_payload = {
+                    "text": final_message,
+                    "message": {
+                        "role": "assistant",
+                        "content": final_message,
                         "source": "completion_summary",
                     },
+                    "source": "completion_summary",
+                }
+                runner._record_product_observation(
+                    "message.assistant",
+                    fallback_payload,
+                    trajectory_id=str(correlation["turn_id"]),
+                )
+                runner.publish_event(
+                    EventType.ASSISTANT_MESSAGE,
+                    fallback_payload,
                     **correlation,
                     visibility="transcript",
                 )
