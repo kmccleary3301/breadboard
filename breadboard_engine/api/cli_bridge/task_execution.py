@@ -82,6 +82,39 @@ class TaskExecutionHost(Protocol):
 PermissionProjection = Callable[[str, Dict[str, Any]], Optional[List[Dict[str, Any]]]]
 
 
+def _first_assistant_visible_text(
+    payload: Dict[str, Any],
+    fields: tuple[str, ...],
+) -> str | None:
+    for field in fields:
+        if field not in payload:
+            continue
+        value = payload[field]
+        if not isinstance(value, (str, list)):
+            continue
+        text = _assistant_visible_text(value)
+        if text:
+            return text
+    return None
+
+
+def _assistant_payload_message_id(payload: Dict[str, Any]) -> str | None:
+    message = payload.get("message")
+    values: list[Any] = []
+    for field in ("message_id", "item_id"):
+        if field in payload:
+            values.append(payload[field])
+    if isinstance(message, dict):
+        for field in ("message_id", "id"):
+            if field in message:
+                values.append(message[field])
+    if any(not isinstance(value, str) or not value for value in values):
+        raise RuntimeProtocolError("runtime_protocol_error")
+    if len(set(values)) > 1:
+        raise RuntimeProtocolError("runtime_protocol_error")
+    return values[0] if values else None
+
+
 class TaskExecutionOwner:
     """Owns replay/task execution and durable turn terminalization."""
 
@@ -322,6 +355,8 @@ class TaskExecutionOwner:
                         metadata=runner.session.metadata,
                     )
             if event_type in {EventType.COMPLETION, EventType.RUN_FINISHED}:
+                if active_replay_stream is not None:
+                    raise RuntimeProtocolError("runtime_protocol_error")
                 payload = strip_public_completion_sentinel_tree(payload)
                 terminal_events.append(
                     (
@@ -382,6 +417,18 @@ class TaskExecutionOwner:
                             )
                             seen_stream_message_ids.add(message_id)
                             active_replay_stream = promoted_key
+                    if active_replay_stream is None and message_id is not None:
+                        if (
+                            message_id in seen_stream_message_ids
+                            or message_id in registered_assistant_ids
+                        ):
+                            raise RuntimeProtocolError("runtime_protocol_error")
+                        active_replay_stream = ("provider", message_id)
+                        seen_stream_message_ids.add(message_id)
+                        replay_assistant_content.setdefault(
+                            active_replay_stream,
+                            [],
+                        )
                     stream_key = (
                         active_replay_stream
                         if active_replay_stream is not None
@@ -391,19 +438,12 @@ class TaskExecutionOwner:
                             else None
                         )
                     )
+                    if stream_key is None:
+                        raise RuntimeProtocolError("runtime_protocol_error")
                     if stream_key is not None:
-                        fragment_value = next(
-                            (
-                                payload[field]
-                                for field in ("delta", "text", "content")
-                                if field in payload
-                            ),
-                            None,
-                        )
-                        fragment = (
-                            _assistant_visible_text(fragment_value)
-                            if fragment_value is not None
-                            else None
+                        fragment = _first_assistant_visible_text(
+                            payload,
+                            ("delta", "text", "content"),
                         )
                         if fragment is not None:
                             replay_assistant_content.setdefault(
@@ -424,65 +464,57 @@ class TaskExecutionOwner:
                             if message_id is not None
                             else None
                         )
-                    if stream_key is not None:
-                        final_value = next(
-                            (
-                                payload[field]
-                                for field in ("text", "content")
-                                if field in payload
-                            ),
-                            None,
-                        )
-                        final_text = (
-                            _assistant_visible_text(final_value)
-                            if final_value is not None
-                            else None
-                        )
-                        observed_message_id = (
-                            message_id
-                            if message_id is not None
-                            else (
-                                identity_digest(
-                                    "\0".join(
-                                        (
-                                            str(runner.session.session_id),
-                                            str(correlation["turn_id"]),
-                                            stream_key[1],
-                                        )
+                    if stream_key is None:
+                        raise RuntimeProtocolError("runtime_protocol_error")
+                    final_text = _first_assistant_visible_text(
+                        payload,
+                        ("text", "content"),
+                    )
+                    observed_message_id = (
+                        message_id
+                        if message_id is not None
+                        else (
+                            identity_digest(
+                                "\0".join(
+                                    (
+                                        str(runner.session.session_id),
+                                        str(correlation["turn_id"]),
+                                        stream_key[1],
                                     )
                                 )
-                                if stream_key[0] == "anonymous"
-                                else stream_key[1]
                             )
+                            if stream_key[0] == "anonymous"
+                            else stream_key[1]
                         )
-                        observed_trajectory_id = payload.get("trajectory_id")
-                        if not isinstance(observed_trajectory_id, str):
-                            observed_trajectory_id = str(correlation["turn_id"])
-                        if observed_message_id in registered_assistant_ids:
-                            raise RuntimeProtocolError("runtime_protocol_error")
-                        observed_payload: dict[str, Any] = {
-                            "text": (
-                                final_text
-                                if final_text is not None
-                                else "".join(
-                                    replay_assistant_content.get(stream_key, ())
-                                )
-                            ),
-                            "message_id": observed_message_id,
-                            "trajectory_id": observed_trajectory_id,
-                        }
-                        runner._record_product_observation(
-                            "message.assistant",
-                            observed_payload,
-                            trajectory_id=observed_trajectory_id,
-                        )
-                        registered_assistant_ids.add(observed_message_id)
-                        completed_stream_targets[observed_message_id] = (
-                            observed_trajectory_id
-                        )
-                        payload["message_id"] = observed_message_id
-                        payload["trajectory_id"] = observed_payload["trajectory_id"]
-                        active_replay_stream = None
+                    )
+                    observed_trajectory_id = payload.get("trajectory_id")
+                    if not isinstance(observed_trajectory_id, str):
+                        observed_trajectory_id = str(correlation["turn_id"])
+                    if observed_message_id in registered_assistant_ids:
+                        raise RuntimeProtocolError("runtime_protocol_error")
+                    observed_payload: dict[str, Any] = {
+                        "text": (
+                            final_text
+                            if final_text is not None
+                            else "".join(
+                                replay_assistant_content.get(stream_key, ())
+                            )
+                        ),
+                        "message_id": observed_message_id,
+                        "trajectory_id": observed_trajectory_id,
+                    }
+                    runner._record_product_observation(
+                        "message.assistant",
+                        observed_payload,
+                        trajectory_id=observed_trajectory_id,
+                    )
+                    registered_assistant_ids.add(observed_message_id)
+                    completed_stream_targets[observed_message_id] = (
+                        observed_trajectory_id
+                    )
+                    payload["message_id"] = observed_message_id
+                    payload["trajectory_id"] = observed_payload["trajectory_id"]
+                    active_replay_stream = None
                 elif event_type is EventType.ASSISTANT_MESSAGE:
                     if active_replay_stream is not None:
                         raise RuntimeProtocolError("runtime_protocol_error")
@@ -557,6 +589,8 @@ class TaskExecutionOwner:
                 )
             published_events += 1
 
+        if active_replay_stream is not None and not runner._stop_event.is_set():
+            raise RuntimeProtocolError("runtime_protocol_error")
         if not seen_completion:
             terminal_events.append(
                 (
@@ -640,6 +674,7 @@ class TaskExecutionOwner:
         live_stream_ids: set[str] = set()
         live_stream_sequence = 0
         active_live_stream: tuple[str, str] | None = None
+        completed_live_stream_targets: list[tuple[str, str, str | None]] = []
 
         def finish_live_assistant_stream(
             evt_type: EventType,
@@ -663,18 +698,9 @@ class TaskExecutionOwner:
             if len(set(supplied_ids)) > 1:
                 raise RuntimeProtocolError("runtime_protocol_error")
             message_id = supplied_ids[0] if supplied_ids else None
-            fragment_value = next(
-                (
-                    evt_payload[field]
-                    for field in ("delta", "text", "content")
-                    if field in evt_payload
-                ),
-                None,
-            )
-            fragment = (
-                _assistant_visible_text(fragment_value)
-                if fragment_value is not None
-                else None
+            fragment = _first_assistant_visible_text(
+                evt_payload,
+                ("delta", "text", "content"),
             )
             with live_stream_lock:
                 if evt_type is EventType.ASSISTANT_MESSAGE_START:
@@ -740,13 +766,24 @@ class TaskExecutionOwner:
                         )
                     )
                 )
+                supplied_trajectory_id = evt_payload.get("trajectory_id")
+                if supplied_trajectory_id is not None and (
+                    not isinstance(supplied_trajectory_id, str)
+                    or not supplied_trajectory_id
+                ):
+                    raise RuntimeProtocolError("runtime_protocol_error")
+                observed_trajectory_id = (
+                    supplied_trajectory_id
+                    if supplied_trajectory_id is not None
+                    else str(correlation["turn_id"])
+                )
                 live_stream_ids.add(observed_message_id)
                 live_stream_content.pop(stream_key, None)
                 active_live_stream = None
                 return {
                     "text": text,
                     "message_id": observed_message_id,
-                    "trajectory_id": str(correlation["turn_id"]),
+                    "trajectory_id": observed_trajectory_id,
                 }
 
         def claim_terminal(
@@ -818,6 +855,9 @@ class TaskExecutionOwner:
                     EventType.ASSISTANT_MESSAGE_DELTA,
                     EventType.ASSISTANT_MESSAGE_END,
                 }:
+                    if evt_type is EventType.ASSISTANT_MESSAGE_START:
+                        with live_stream_lock:
+                            completed_live_stream_targets.clear()
                     completed_stream = finish_live_assistant_stream(
                         evt_type,
                         evt_payload,
@@ -826,48 +866,109 @@ class TaskExecutionOwner:
                         runner._record_product_observation(
                             "message.assistant",
                             completed_stream,
-                            trajectory_id=str(correlation["turn_id"]),
+                            trajectory_id=completed_stream["trajectory_id"],
                         )
                         evt_payload["message_id"] = completed_stream["message_id"]
                         evt_payload["trajectory_id"] = completed_stream[
                             "trajectory_id"
                         ]
+                        with live_stream_lock:
+                            completed_live_stream_targets.append(
+                                (
+                                    completed_stream["message_id"],
+                                    completed_stream["trajectory_id"],
+                                    _first_assistant_visible_text(completed_stream, ("text",)),
+                                )
+                            )
                 else:
+                    skip_product_observation = False
+                    observation_trajectory_id = str(correlation["turn_id"])
                     if (
                         event_family == "message.assistant"
                         and evt_type is EventType.ASSISTANT_MESSAGE
                     ):
+                        direct_message_id = _assistant_payload_message_id(
+                            evt_payload
+                        )
+                        supplied_trajectory_id = evt_payload.get("trajectory_id")
+                        if supplied_trajectory_id is not None and (
+                            not isinstance(supplied_trajectory_id, str)
+                            or not supplied_trajectory_id
+                        ):
+                            raise RuntimeProtocolError("runtime_protocol_error")
+                        if supplied_trajectory_id is not None:
+                            observation_trajectory_id = supplied_trajectory_id
                         with live_stream_lock:
                             if active_live_stream is not None:
                                 raise RuntimeProtocolError(
                                     "runtime_protocol_error"
                                 )
-                    runner._record_product_observation(
-                        event_family,
-                        evt_payload,
-                        message_projection=(
-                            event_family == "tool.completed"
-                            and isinstance(payload.get("message"), dict)
-                            and not any(
-                                key in payload
-                                for key in (
-                                    "call_id",
-                                    "error",
-                                    "result",
-                                    "status",
-                                    "success",
-                                    "tool",
-                                )
+                            direct_text = _first_assistant_visible_text(
+                                evt_payload, ("text",)
                             )
-                        ),
-                        trajectory_id=str(correlation["turn_id"]),
-                    )
+                            matched_target: tuple[str, str, str | None] | None = None
+                            for target in completed_live_stream_targets:
+                                completed_message_id, _, completed_text = target
+                                if (
+                                    direct_message_id == completed_message_id
+                                    or (
+                                        direct_message_id is None
+                                        and direct_text is not None
+                                        and direct_text == completed_text
+                                    )
+                                ):
+                                    matched_target = target
+                                    break
+                            if matched_target is not None:
+                                completed_message_id, completed_trajectory_id, _ = (
+                                    matched_target
+                                )
+                                if (
+                                    supplied_trajectory_id is not None
+                                    and supplied_trajectory_id
+                                    != completed_trajectory_id
+                                ):
+                                    raise RuntimeProtocolError(
+                                        "runtime_protocol_error"
+                                    )
+                                completed_live_stream_targets.remove(matched_target)
+                                evt_payload["message_id"] = completed_message_id
+                                evt_payload["trajectory_id"] = (
+                                    completed_trajectory_id
+                                )
+                                skip_product_observation = True
+                            elif completed_live_stream_targets:
+                                completed_live_stream_targets.clear()
+                    if not skip_product_observation:
+                        runner._record_product_observation(
+                            event_family,
+                            evt_payload,
+                            message_projection=(
+                                event_family == "tool.completed"
+                                and isinstance(payload.get("message"), dict)
+                                and not any(
+                                    key in payload
+                                    for key in (
+                                        "call_id",
+                                        "error",
+                                        "result",
+                                        "status",
+                                        "success",
+                                        "tool",
+                                    )
+                                )
+                            ),
+                            trajectory_id=observation_trajectory_id,
+                        )
             except BaseException as error:
                 with runtime_event_lock:
                     if not observation_errors:
                         observation_errors.append(error)
                 raise
             if evt_type in {EventType.COMPLETION, EventType.RUN_FINISHED}:
+                with live_stream_lock:
+                    if active_live_stream is not None:
+                        raise RuntimeProtocolError("runtime_protocol_error")
                 claim_terminal(evt_type, evt_payload, evt_turn, evt_contract)
                 return
             if (
@@ -1141,9 +1242,52 @@ class TaskExecutionOwner:
             completion = {}
         reward = result.get("reward_metrics_payload") or {}
         messages = result.get("messages")
+        fallback_entries = messages
+        if isinstance(messages, list):
+            last_user_index = next(
+                (
+                    index
+                    for index in range(len(messages) - 1, -1, -1)
+                    if isinstance(messages[index], dict)
+                    and messages[index].get("role") == "user"
+                ),
+                None,
+            )
+            if last_user_index is not None:
+                fallback_entries = messages[last_user_index + 1 :]
+        fallback_message_available = (
+            isinstance(fallback_entries, list)
+            and any(
+                isinstance(entry, dict)
+                and entry.get("role") == "assistant"
+                for entry in fallback_entries
+            )
+        ) or (
+            isinstance(completion.get("final_message"), str)
+            and bool(completion.get("final_message"))
+        )
+        unfinished_stream_needs_fallback = False
+        with live_stream_lock:
+            if active_live_stream is not None:
+                if runner._stop_event.is_set():
+                    live_stream_content.pop(active_live_stream, None)
+                    active_live_stream = None
+                elif not fallback_message_available:
+                    raise RuntimeProtocolError("runtime_protocol_error")
+                else:
+                    live_stream_content.pop(active_live_stream, None)
+                    active_live_stream = None
+                    unfinished_stream_needs_fallback = True
         fallback_assistant_emitted = False
-        if not emitted_flags["assistant"] and isinstance(messages, list):
-            for entry in reversed(messages):
+        if (
+            not runner._stop_event.is_set()
+            and (
+                not emitted_flags["assistant"]
+                or unfinished_stream_needs_fallback
+            )
+            and isinstance(fallback_entries, list)
+        ):
+            for entry in reversed(fallback_entries):
                 if isinstance(entry, dict) and entry.get("role") == "assistant":
                     content = _strip_completion_sentinels(entry.get("content", ""))
                     text = _assistant_visible_text(content)
@@ -1164,7 +1308,14 @@ class TaskExecutionOwner:
                     )
                     fallback_assistant_emitted = True
                     break
-        if not emitted_flags["assistant"] and not fallback_assistant_emitted:
+        if (
+            not runner._stop_event.is_set()
+            and (
+                not emitted_flags["assistant"]
+                or unfinished_stream_needs_fallback
+            )
+            and not fallback_assistant_emitted
+        ):
             final_message = _strip_completion_sentinels(
                 completion.get("final_message")
                 if isinstance(completion, dict)

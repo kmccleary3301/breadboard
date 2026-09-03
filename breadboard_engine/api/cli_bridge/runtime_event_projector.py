@@ -496,6 +496,7 @@ class RuntimeEventProjector:
                 supplied_message_ids: list[str] = []
                 for value in (
                     payload.get("message_id"),
+                    payload.get("item_id"),
                     message.get("message_id") if isinstance(message, dict) else None,
                     message.get("id") if isinstance(message, dict) else None,
                 ):
@@ -823,11 +824,11 @@ class RuntimeEventProjector:
         elif evt is EventType.ASSISTANT_MESSAGE:
             message = _strip_completion_sentinels(normalized_payload.get("message"))
             candidate_text = normalized_payload.get("text")
-            if not isinstance(candidate_text, str) and isinstance(message, dict):
+            if (not isinstance(candidate_text, str) or not candidate_text) and isinstance(message, dict):
                 candidate_text = message.get("content")
             text = _assistant_visible_text(candidate_text)
             normalized_payload = {"text": text, "message": message}
-            for field in ("message_id", "trajectory_id", "source"):
+            for field in ("message_id", "item_id", "trajectory_id", "source"):
                 if field in payload:
                     normalized_payload[field] = payload[field]
         elif evt is EventType.ASSISTANT_DELTA:

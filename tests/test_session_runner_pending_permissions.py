@@ -251,17 +251,58 @@ def test_fallback_assistant_registers_canonical_message_target() -> None:
     assert product_payload["trajectory_id"] == "turn-test"
 
 
-def test_live_assistant_stream_registers_delta_identity_and_content() -> None:
-    runner, session = _product_runner("live-assistant-stream")
+def test_fallback_ignores_prior_assistant_before_current_user() -> None:
+    runner, session = _product_runner("fallback-current-turn-only")
+    session.assistant_message(
+        "prior",
+        message_id="prior-message",
+        trajectory_id="prior-turn",
+    )
+    runner._agent = type(
+        "Agent",
+        (),
+        {
+            "_local_mode": True,
+            "config": {},
+            "run_task": lambda *_args, **_kwargs: {
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": "prior",
+                        "message_id": "prior-message",
+                    },
+                    {"role": "user", "content": "current"},
+                ],
+                "completion_summary": {"completed": True},
+            },
+        },
+    )()
+
+    _execute_task(runner)
+
+    assistant_targets = [
+        event.payload["message_id"]
+        for event in session.events
+        if event.kind == "assistant_message"
+    ]
+    assert assistant_targets == ["prior-message"]
+
+
+def test_live_canonical_message_uses_nested_content_when_text_empty() -> None:
+    runner, session = _product_runner("live-canonical-nested-content")
 
     def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
-        emit = kwargs["event_emitter"]
-        emit("assistant.message.start", {})
-        emit(
-            "assistant.message.delta",
-            {"message_id": "live-message-1", "delta": "hello"},
+        kwargs["event_emitter"](
+            "assistant_message",
+            {
+                "text": "",
+                "message": {
+                    "role": "assistant",
+                    "content": "visible",
+                    "message_id": "nested-content-message",
+                },
+            },
         )
-        emit("assistant.message.end", {})
         return {"completion_summary": {"completed": True}}
 
     runner._agent = type(
@@ -272,17 +313,126 @@ def test_live_assistant_stream_registers_delta_identity_and_content() -> None:
 
     _execute_task(runner)
 
-    product_event = next(
+    assistant_event = next(
         event for event in session.events if event.kind == "assistant_message"
     )
+    assert assistant_event.payload["message_id"] == "nested-content-message"
+    assert assistant_event.payload["metadata"]["has_content"] is True
+
+
+def test_live_canonical_message_rejects_explicit_null_nested_identity() -> None:
+    runner, session = _product_runner("live-canonical-null-identity")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        kwargs["event_emitter"](
+            "assistant_message",
+            {
+                "text": "visible",
+                "message": {"content": "visible", "message_id": None},
+            },
+        )
+        return {"completion_summary": {"completed": True}}
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
+        _execute_task(runner)
+
+    assert all(event.kind != "assistant_message" for event in session.events)
+
+
+def test_live_canonical_message_matches_only_its_completed_stream() -> None:
+    runner, session = _product_runner("live-canonical-current-stream")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        emit = kwargs["event_emitter"]
+        emit("assistant.message.start", {"message_id": "first-stream"})
+        emit(
+            "assistant.message.end",
+            {"message_id": "first-stream", "text": "same output"},
+        )
+        emit("assistant.message.start", {"message_id": "second-stream"})
+        emit(
+            "assistant.message.end",
+            {"message_id": "second-stream", "text": "same output"},
+        )
+        emit("assistant_message", {"text": "same output"})
+        return {"completion_summary": {"completed": True}}
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    _execute_task(runner)
+
+    assistant_events = [
+        event for event in session.events if event.kind == "assistant_message"
+    ]
+    assert [event.payload["message_id"] for event in assistant_events] == [
+        "first-stream",
+        "second-stream",
+    ]
+    canonical_event = next(
+        event
+        for event in runner.session.event_queue._queue
+        if event is not None and event.type is EventType.ASSISTANT_MESSAGE
+    )
+    assert canonical_event.payload["message_id"] == "second-stream"
+
+
+def test_live_assistant_stream_registers_delta_identity_and_content() -> None:
+    runner, session = _product_runner("live-assistant-stream")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        emit = kwargs["event_emitter"]
+        emit("assistant.message.start", {})
+        emit(
+            "assistant.message.delta",
+            {"message_id": "live-message-1", "delta": None, "text": "hello"},
+        )
+        emit("assistant.message.end", {})
+        emit(
+            "assistant_message",
+            {
+                "text": "hello",
+                "message": {"role": "assistant", "content": "hello"},
+            },
+        )
+        return {"completion_summary": {"completed": True}}
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    _execute_task(runner)
+
+    product_events = [
+        event for event in session.events if event.kind == "assistant_message"
+    ]
+    assert len(product_events) == 1
+    product_event = product_events[0]
     public_end = next(
         event
         for event in runner.session.event_queue._queue
         if event is not None and event.type is EventType.ASSISTANT_MESSAGE_END
     )
+    public_canonical = next(
+        event
+        for event in runner.session.event_queue._queue
+        if event is not None and event.type is EventType.ASSISTANT_MESSAGE
+    )
     assert product_event.payload["message_id"] == "live-message-1"
     assert product_event.payload["metadata"]["has_content"] is True
     assert public_end.payload["message_id"] == "live-message-1"
+    assert public_canonical.payload["message_id"] == "live-message-1"
 
 
 def test_live_stream_end_normalizes_content_blocks() -> None:
@@ -295,6 +445,8 @@ def test_live_stream_end_normalizes_content_blocks() -> None:
             "assistant.message.end",
             {
                 "message_id": "live-block",
+                "text": None,
+                "trajectory_id": "provider-trajectory",
                 "content": [{"type": "text", "text": "done"}],
             },
         )
@@ -312,6 +464,7 @@ def test_live_stream_end_normalizes_content_blocks() -> None:
         event for event in session.events if event.kind == "assistant_message"
     )
     assert product_event.payload["message_id"] == "live-block"
+    assert product_event.payload["trajectory_id"] == "provider-trajectory"
     assert product_event.payload["metadata"]["has_content"] is True
 
 
@@ -335,6 +488,28 @@ def test_live_stream_rejects_canonical_message_before_end() -> None:
 
     assert all(event.kind != "assistant_message" for event in session.events)
 
+
+
+def test_live_stream_rejects_terminal_before_end() -> None:
+    runner, session = _product_runner("live-assistant-terminal-overlap")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        emit = kwargs["event_emitter"]
+        emit("assistant.message.start", {})
+        emit("assistant.message.delta", {"delta": "partial"})
+        emit("completion", {"summary": {}})
+        return {"completion_summary": {"completed": True}}
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
+        _execute_task(runner)
+
+    assert all(event.kind != "assistant_message" for event in session.events)
 
 def test_legacy_assistant_delta_remains_forwarded() -> None:
     runner, _session = _product_runner("legacy-assistant-delta")
@@ -391,6 +566,48 @@ def test_aborted_live_stream_allows_result_message_fallback_target() -> None:
     )
 
 
+def test_later_aborted_stream_forces_fallback_after_completed_stream() -> None:
+    runner, session = _product_runner("later-aborted-live-assistant-stream")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        emit = kwargs["event_emitter"]
+        emit("assistant.message.start", {"message_id": "complete-first"})
+        emit(
+            "assistant.message.end",
+            {"message_id": "complete-first", "text": "first"},
+        )
+        emit("assistant.message.start", {"message_id": "partial-second"})
+        emit(
+            "assistant.message.delta",
+            {"message_id": "partial-second", "delta": "partial"},
+        )
+        return {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": "complete second",
+                    "message_id": "complete-second",
+                }
+            ],
+            "completion_summary": {"completed": True},
+        }
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    _execute_task(runner)
+
+    assistant_targets = [
+        event.payload["message_id"]
+        for event in session.events
+        if event.kind == "assistant_message"
+    ]
+    assert assistant_targets == ["complete-first", "complete-second"]
+
+
 @pytest.mark.asyncio
 async def test_replay_stream_end_normalizes_content_blocks(tmp_path) -> None:
     fixture = tmp_path / "assistant-replay-content-block.jsonl"
@@ -398,7 +615,7 @@ async def test_replay_stream_end_normalizes_content_blocks(tmp_path) -> None:
         "\n".join(
             (
                 '{"type":"assistant.message.start","payload":{"item_id":"replay-block"}}',
-                '{"type":"assistant.message.end","payload":{"item_id":"replay-block","content":[{"type":"text","text":"done"}]}}',
+                '{"type":"assistant.message.end","payload":{"item_id":"replay-block","text":null,"content":[{"type":"text","text":"done"}]}}',
             )
         )
         + "\n",
@@ -786,6 +1003,24 @@ async def test_anonymous_stream_identity_cannot_collide_with_provider_id(
             '{"type":"assistant.message.delta","payload":{"delta":"hello"}}',
             '{"type":"assistant_message","payload":{"text":"hello"}}',
             '{"type":"assistant.message.end","payload":{}}',
+        ),
+        (
+            '{"type":"assistant.message.delta","payload":{"delta":"orphan"}}',
+        ),
+        (
+            '{"type":"assistant.message.end","payload":{"text":"orphan"}}',
+        ),
+        (
+            '{"type":"assistant.message.start","payload":{}}',
+            '{"type":"assistant.message.delta","payload":{"delta":"partial"}}',
+            '{"type":"completion","payload":{"summary":{}}}',
+        ),
+        (
+            '{"type":"assistant.message.delta","payload":{"message_id":"m","delta":"partial"}}',
+        ),
+        (
+            '{"type":"assistant_message","payload":{"text":"first","item_id":"item-duplicate"}}',
+            '{"type":"assistant_message","payload":{"text":"second","item_id":"item-duplicate"}}',
         ),
     ],
 )

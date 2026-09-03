@@ -1,5 +1,6 @@
 from __future__ import annotations
 import hashlib, json, os, threading, multiprocessing, pytest
+import shutil
 from pathlib import Path; from typing import Any
 from jsonschema import Draft202012Validator
 from breadboard.product.harness.lock import EffectiveHarnessLock
@@ -366,6 +367,50 @@ def test_post_terminal_annotation_updates_durable_projection_atomically(
 
     assert restored.events == session.events
     assert restored.read_model == session.read_model
+
+
+def test_post_terminal_annotation_rejects_replaced_session_directory(
+    tmp_path: Path,
+) -> None:
+    event_path = session_store.session_event_path(
+        tmp_path,
+        "terminal-annotation-replaced-directory",
+    )
+    session = Session.start(
+        _lock(),
+        "task",
+        session_id="terminal-annotation-replaced-directory",
+        sink=JsonlEventSink(event_path),
+    )
+    session.assistant_message(
+        "candidate",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    session.complete("done")
+    expected_identity = session_store.session_directory_identity(tmp_path)
+    session_store.create_session(
+        tmp_path,
+        session,
+        event_path,
+        expected_session_directory_identity=expected_identity,
+    )
+    session_directory = event_path.parent.parent
+    retained_directory = session_directory.with_name("retained-sessions")
+    session_directory.rename(retained_directory)
+    shutil.copytree(retained_directory, session_directory)
+
+    with pytest.raises(OSError, match="session directory identity changed"):
+        session.annotate(
+            AnnotationRecord(
+                annotation_id="annotation-1",
+                message_id="message-a",
+                trajectory_id="trajectory-a",
+                label="preferred",
+                author="reviewer-1",
+                generation="generation-a",
+            )
+        )
 
 
 def test_replay_rejects_duplicate_canonical_message_identity() -> None:
