@@ -86,7 +86,7 @@ Historical fresh-context dry-read renewal: **PASS**, P0/P1/P2/P3 = **0/0/0/0**, 
 
 This is not a second renewal. The single renewal budget ended at line 83. Later automated PR review identified publication-blocking executable-contract defects after Gate G-H had closed. Section D §114 requires a split or escalation instead of a third round. Kyle's later DSH donor implementation mandate authorizes correcting every substantive review finding and requires a new exact-artifact independent review before merge; this section records that bounded escalation and reopens only the affected incorporated packet and routing clauses.
 
-Escalation review date: 2026-09-03. Reviewed prototype SHA-256 `43cd4ef77886ee852f27bbb907759d3c5b0ada5a135ec4f4e8e47d6934d94958`; pinned ENGINE/TUI heads unchanged.
+Escalation review date: 2026-09-03. Reviewed prototype SHA-256 `f69d100faaa4bd63a0e4c88080ccffdd9e003ddb8aba82f3e38723db64dec6d0`; pinned ENGINE/TUI heads unchanged.
 
 The escalation review independently verified that the prototype preserves FT-01's qualifying L2 exception, incorporates the corrected FT-03 contract by normative exact-section link, opens `RT-REPAIR` only for `KNOWN_DIVERGENCE`, joins coherent evidence with FT-04 at `RT-REPLAY`, and closes both RT nodes for `PRODUCT_RED` or another terminal defect. Raw DAG validation passes 50 acyclic nodes and 623 unique routes; prototype validation passes 19 checks; package validation passes 16 exact evidence, fixture, and escalated-review copies, 13 links, six guard pairs, and no findings.
 

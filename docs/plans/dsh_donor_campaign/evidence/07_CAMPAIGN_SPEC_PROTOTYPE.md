@@ -10,7 +10,7 @@ Version: prototype 0.1
 - Current claim: the draft composes all approved A–G decisions; deterministic trace validation, no-context dry read, the permitted independent review renewal, and the later bounded route-correction escalation pass; Kyle approved it for documentation-only versioning in I.
 - Latest product signal: permission cancellation is coherent; engine replacement yielded one generic transport failure with no observed duplicate admission, while one recovered durable turn was absent from the selected logical Session journal.
 - Current red class: none. The corrected terminal routes, raw machine predicates, and incorporated FT-03 contract passed the exact-artifact post-contract escalation with zero residual findings.
-- Next cheapest discriminator: Workstream I creates the separate spec worktree, copies reviewed evidence, resolves links, runs integrity/freeze checks, and commits locally.
+- Next cheapest discriminator: execute FT-01's bounded evidence packet under the completed H/I handoff, then route its typed result without widening scope.
 - Active external blocker: none. G-H is revalidated on the corrected prototype binding.
 - Stop or escalation: any P0/P1 blocks; P2 is fixed or Kyle-accepted; product defects use PROC-DEFECT; surface/seam/freeze changes use PROC-AMEND.
 
@@ -485,10 +485,10 @@ Reviewed decision artifacts:
 | C `bb-inj5.3` | `02_FAULT_BOUNDARY_EVIDENCE.md` | G-C PASS |
 | D `bb-inj5.4` | `03_EVIDENCE_AND_APPROVAL_CONTRACT.md` | G-D PASS |
 | E `bb-inj5.5` | `04_NORMATIVE_SEMANTIC_LAWS.md` | G-D/E PASS |
-| F `bb-inj5.6` | `05_FIRST_TRANCHE_PACKET_SET.md` | G-F PASS |
-| G `bb-inj5.7` | `06_PROMOTED_WORKSTREAM_DAG.md` | G-G PASS; guarded conditional |
-| H `bb-inj5.8` | this prototype + review | pending G-H |
-| I `bb-inj5.9` | committed specification + completion audit | pending G-I/G-Score |
+| F `bb-inj5.6` | `05_FIRST_TRANCHE_PACKET_SET.md` | G-F PASS; post-contract escalation |
+| G `bb-inj5.7` | `06_PROMOTED_WORKSTREAM_DAG.md` | G-G PASS; post-contract route escalation; guarded conditional |
+| H `bb-inj5.8` | this prototype + review | G-H PASS; post-contract escalation |
+| I `bb-inj5.9` | committed specification + completion audit | G-I/G-Score PASS |
 
 ## 16. Completion and implementation handoff
 
