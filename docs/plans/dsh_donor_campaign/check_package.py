@@ -12,8 +12,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 EVIDENCE = ROOT / "evidence"
 SPEC = ROOT / "DSH_DONOR_CAMPAIGN_SPEC.md"
+SPEC_DIGEST = "5490f2120d63abb0f2bd3e90bbb5d3d66676f90612f37faae71632337a370b70"
 AUDIT = ROOT / "COMPLETION_AUDIT.md"
+FINAL_SPEC_REVIEW = EVIDENCE / "FINAL_SPEC_REVIEW.json"
+FINAL_SPEC_REVIEW_DIGEST = "59c530dec85381bc583a04419053a3de8321bbb5cd9edbcf44f3ce3a73c3386c"
 PACKETS = EVIDENCE / "05_FIRST_TRANCHE_PACKET_SET.md"
+PACKETS_DIGEST = "8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69"
 DONOR_INVENTORY = EVIDENCE / "DONOR_ITEMS.yaml"
 PACKET_REVIEW = EVIDENCE / "05_FIRST_TRANCHE_PACKET_SET_REVIEW.md"
 PROTOTYPE = EVIDENCE / "07_CAMPAIGN_SPEC_PROTOTYPE.md"
@@ -37,9 +41,13 @@ DAG_VALIDATOR = DAG_ROOT / "validate_dag_prototype.py"
 DAG_GRAPH = DAG_ROOT / "dag-prototype.json"
 DAG_ROUTING = DAG_ROOT / "row-routing.json"
 DAG_INPUT_DIGESTS = {
-    DAG_VALIDATOR: "f9735440c53b197d1f421148d6cd0d05c5595377a695c40b8cf949c7c69ada89",
-    DAG_GRAPH: "b475dba4b961f6eba610554f1f4a8312f9227448941b596a1cf2e3be81a50867",
+    DAG_VALIDATOR: "5c66d588cd7eeaa6af493dafe88da5cca6dce2581abf1252943dc8bef7037021",
+    DAG_GRAPH: "4e0cf4b3a776a767f1b3a4ea6d3ba76b808f92c857fcf1adba55855188297a57",
     DAG_ROUTING: "b43ded4b1b69dc4c77857af00c951697f550b7d3005f64c7319dab1607df5fb1",
+}
+DAG_ARTIFACT_DIGEST = "be5f0ef5e4c0705bf37ffdf76faa328784c6afaa5357f7c3053327d150de68c6"
+SPEC_FIXTURES = {
+    EVIDENCE / "fixtures/ft01-cli-mock-reference-config-v1.yaml": "bb66d855ca17e04b61dcd3264faf4a7ee5d67144a26bf60a6942c9d980e9fd5b",
 }
 FIXTURES = {
     EVIDENCE / "fixtures/ft03-request-fixture-v1.json": "a817d3b243f0f9c0e67d51dddf8dfe04ae3b04dffc13afc03f484dc8299c4af8",
@@ -53,6 +61,7 @@ HEADS = (
 REQUIRED = (
     SPEC,
     AUDIT,
+    FINAL_SPEC_REVIEW,
     DONOR_INVENTORY,
     *(path for _, candidate, review, _ in REVIEWED_GATES for path in (candidate, review)),
     SURFACE,
@@ -61,6 +70,7 @@ REQUIRED = (
     DAG_GRAPH,
     DAG_ROUTING,
     *FIXTURES,
+    *SPEC_FIXTURES,
 )
 
 
@@ -77,6 +87,45 @@ def main() -> int:
     spec = SPEC.read_text(encoding="utf-8")
     audit = AUDIT.read_text(encoding="utf-8")
     packets = PACKETS.read_text(encoding="utf-8")
+    specification_digest = hashlib.sha256(SPEC.read_bytes()).hexdigest()
+    packets_digest = hashlib.sha256(PACKETS.read_bytes()).hexdigest()
+    if specification_digest != SPEC_DIGEST:
+        findings.append(
+            "final implementation specification digest differs: "
+            f"{specification_digest} != {SPEC_DIGEST}"
+        )
+    if (
+        SPEC_DIGEST not in audit
+        or "Final implementation specification exact-artifact review: APPROVED"
+        not in audit
+        or "P0/P1/P2/P3 `0/0/0/0`" not in audit
+    ):
+        findings.append(
+            "completion audit does not bind an approved exact final "
+            f"implementation specification SHA-256 {SPEC_DIGEST}"
+        )
+    if DAG_ARTIFACT_DIGEST not in audit:
+        findings.append(
+            "completion audit does not bind the current promoted DAG "
+            f"SHA-256 {DAG_ARTIFACT_DIGEST}"
+        )
+    final_spec_review_bytes = FINAL_SPEC_REVIEW.read_bytes()
+    final_spec_review_digest = hashlib.sha256(final_spec_review_bytes).hexdigest()
+    final_spec_review = json.loads(final_spec_review_bytes)
+    if (
+        final_spec_review_digest != FINAL_SPEC_REVIEW_DIGEST
+        or final_spec_review.get("reviewed_spec_sha256") != SPEC_DIGEST
+        or packets_digest != PACKETS_DIGEST
+        or final_spec_review.get("reviewed_packet_sha256") != PACKETS_DIGEST
+        or final_spec_review.get("verdict") != "APPROVED"
+        or final_spec_review.get("findings")
+        != {"P0": 0, "P1": 0, "P2": 0, "P3": 0}
+        or final_spec_review.get("confidence") != 0.99
+    ):
+        findings.append(
+            "separate final-spec review artifact does not bind the approved "
+            f"specification SHA-256 {SPEC_DIGEST}"
+        )
 
     dag_validation = subprocess.run(
         [sys.executable, str(DAG_VALIDATOR)],
@@ -193,6 +242,17 @@ def main() -> int:
         if expected_digest not in packets:
             findings.append(
                 f"fixture digest is not bound by packet: {fixture.relative_to(ROOT)}"
+            )
+    for fixture, expected_digest in SPEC_FIXTURES.items():
+        digest = hashlib.sha256(fixture.read_bytes()).hexdigest()
+        if digest != expected_digest:
+            findings.append(
+                f"fixture digest differs for {fixture.relative_to(ROOT)}: {digest}"
+            )
+        if expected_digest not in spec:
+            findings.append(
+                "fixture digest is not bound by final specification: "
+                f"{fixture.relative_to(ROOT)}"
             )
     extracted_surface_digest = hashlib.sha256(
         EXTRACTED_SURFACE.read_bytes()

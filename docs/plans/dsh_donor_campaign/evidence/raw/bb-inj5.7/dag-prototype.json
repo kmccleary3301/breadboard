@@ -917,7 +917,7 @@
     "RT-REPAIR": {
       "approval": "none for evidence; Kyle for new seam/public surface",
       "attempts": 3,
-      "condition": "FT-01 primary_classification is KNOWN_DIVERGENCE; repair only the reproduced logical-journal divergence at the existing Session event sink",
+      "condition": "FT-01 KNOWN_DIVERGENCE opens repair only for the reproduced logical-journal divergence at the existing Session event sink; FT-01 COHERENT records evidence-backed NOT-TAKEN as this node's terminal outcome",
       "deps": [
         "EVIDENCE-GATE"
       ],
@@ -939,10 +939,11 @@
     "RT-REPLAY": {
       "approval": "none for evidence; Kyle for new seam/public surface",
       "attempts": 3,
-      "condition": "FT-01 is COHERENT, or FT-01 was KNOWN_DIVERGENCE and RT-REPAIR is terminal; PRODUCT_RED and every other terminal defect close replay",
+      "condition": "FT-01 is COHERENT, or FT-01 was KNOWN_DIVERGENCE and RT-REPAIR explicitly succeeded and proved the divergence absent; UNKNOWN, KILLED, exhausted, PRODUCT_RED, and every other typed red close replay",
       "deps": [
         "EVIDENCE-GATE",
-        "FT-04"
+        "FT-04",
+        "RT-REPAIR"
       ],
       "failure_branch": "retain strongest bounded claim and route typed red",
       "freeze": "none until explicit amendment node",

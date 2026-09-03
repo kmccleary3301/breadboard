@@ -74,19 +74,21 @@ for node_id, expected_risk in expected_risks.items():
         raise SystemExit(f"{node_id}: risk drift {NODES[node_id]['risk']} != {expected_risk}")
 
 expected_rt_repair_condition = (
-    "FT-01 primary_classification is KNOWN_DIVERGENCE; repair only the "
-    "reproduced logical-journal divergence at the existing Session event sink"
+    "FT-01 KNOWN_DIVERGENCE opens repair only for the reproduced "
+    "logical-journal divergence at the existing Session event sink; FT-01 "
+    "COHERENT records evidence-backed NOT-TAKEN as this node's terminal outcome"
 )
 if NODES["RT-REPAIR"]["deps"] != ["EVIDENCE-GATE"]:
     raise SystemExit("RT-REPAIR must depend only on EVIDENCE-GATE")
 if NODES["RT-REPAIR"]["condition"] != expected_rt_repair_condition:
-    raise SystemExit("RT-REPAIR must open only for KNOWN_DIVERGENCE")
+    raise SystemExit("RT-REPAIR must repair KNOWN_DIVERGENCE or terminate NOT-TAKEN for COHERENT")
 expected_rt_replay_condition = (
-    "FT-01 is COHERENT, or FT-01 was KNOWN_DIVERGENCE and RT-REPAIR is "
-    "terminal; PRODUCT_RED and every other terminal defect close replay"
+    "FT-01 is COHERENT, or FT-01 was KNOWN_DIVERGENCE and RT-REPAIR "
+    "explicitly succeeded and proved the divergence absent; UNKNOWN, KILLED, "
+    "exhausted, PRODUCT_RED, and every other typed red close replay"
 )
-if NODES["RT-REPLAY"]["deps"] != ["EVIDENCE-GATE", "FT-04"]:
-    raise SystemExit("RT-REPLAY must join EVIDENCE-GATE and FT-04")
+if NODES["RT-REPLAY"]["deps"] != ["EVIDENCE-GATE", "FT-04", "RT-REPAIR"]:
+    raise SystemExit("RT-REPLAY must join EVIDENCE-GATE, FT-04, and RT-REPAIR")
 if NODES["RT-REPLAY"]["condition"] != expected_rt_replay_condition:
     raise SystemExit("RT-REPLAY must exclude PRODUCT_RED and terminal defects")
 

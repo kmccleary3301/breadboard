@@ -105,3 +105,13 @@ The independent final read verified the exact FT-01 2/16 schedule and retry scop
 Independent final escalation verdict: **APPROVED**. P0/P1/P2/P3: **0/0/0/0**. Confidence: 0.99.
 
 Gate G-H remains **PASS** on the exact prototype digest above.
+
+## Post-contract escalation review — repair-success predicate
+
+Final exact review date: 2026-09-03. Reviewed prototype SHA-256 `bad477f33f4c13f37ab3619eb37aa2db9079efe0fa898777b25b00a40c7cf0df`; pinned ENGINE/TUI heads unchanged.
+
+The independent exact read verified that the prototype now matches the machine DAG: `RT-REPLAY` opens after `KNOWN_DIVERGENCE` only when `RT-REPAIR` explicitly succeeds and proves the divergence absent. Unknown, killed, exhausted, product-red, and every other typed-red repair outcome leaves replay and every dependent node closed. The exact machine validator passes 50 acyclic nodes and 623 unique routes.
+
+Independent final escalation verdict: **APPROVED**. P0/P1/P2/P3: **0/0/0/0**. Confidence: 0.99.
+
+Gate G-H remains **PASS** on the exact prototype digest above.

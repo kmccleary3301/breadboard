@@ -77,3 +77,11 @@ Final exact review date: 2026-09-03. Exact packet SHA-256 `8fa3d6705a63f636feed6
 The independent exact read verified that FT-02 removes only the copied helper's `schedule_start` and `authorize_start` no-op patches, asserts the unpatched product owners, and requires the runner plus barrier-wrapped `MockRuntime.invoke` to become active before interpreting a case. It also verified that the specification admits `RT-REPLAY` after a divergence only when `RT-REPAIR` explicitly succeeds and proves the divergence absent; exhausted, unknown, killed, or red repair outcomes keep every dependent node closed.
 
 Final exact verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F passes on the exact packet digest above.
+
+## Post-contract escalation review — held-turn and restart sequencing closure
+
+Final exact review date: 2026-09-03. Exact specification SHA-256 `5490f2120d63abb0f2bd3e90bbb5d3d66676f90612f37faae71632337a370b70`; exact packet SHA-256 `8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69`; pinned heads unchanged.
+
+The independent combined read verified one coherent FT-02 sequence across the implementation specification and packet. Invalid input, mid-turn reconfiguration, and provider swap act while the deterministic provider invocation remains barrier-held and release it only after the action. Restart durability alone releases the barrier, completes the original turn, requires the Session to become quiescent, then applies `set_mode`, restarts through existing owners, and compares durable effective identity.
+
+Final exact verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F passes on both exact digests above.

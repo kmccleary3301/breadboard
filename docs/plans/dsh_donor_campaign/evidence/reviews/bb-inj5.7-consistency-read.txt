@@ -1,6 +1,6 @@
 Fresh-context consistency read — Workstream G
 
-Artifact: docs_tmp/bb_direction_assessment/dsh_donor_campaign/06_PROMOTED_WORKSTREAM_DAG.md
+Artifact: docs/plans/dsh_donor_campaign/evidence/06_PROMOTED_WORKSTREAM_DAG.md
 Reviewed SHA-256: bcf5b18ff22ee3471ce0ac918caed01ecdb374bb9848140bd68909b655329a7e
 Scope: P0/P1 consistency only; G1-G10, approved FT-01..06 contracts, current raw row routing/DAG, and guarded-conditional owner policy.
 
@@ -43,5 +43,22 @@ Independent result: PASS; P0=0, P1=0.
 ## Final exact-artifact review binding
 
 Reviewed candidate SHA-256: `958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab`.
+
+Independent verdict: **PASS**. Gate G-G passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.
+
+## Final exact-artifact review binding — repair-success predicate
+
+Reviewed candidate SHA-256: `2ec09f94b1a79954e963d7beee4af66b38892ae38724a7aa141060b8d02d2532`.
+Reviewed raw DAG SHA-256: `4e0cf4b3a776a767f1b3a4ea6d3ba76b808f92c857fcf1adba55855188297a57`.
+Reviewed validator SHA-256: `5c66d588cd7eeaa6af493dafe88da5cca6dce2581abf1252943dc8bef7037021`.
+Reviewed routing SHA-256: `b43ded4b1b69dc4c77857af00c951697f550b7d3005f64c7319dab1607df5fb1`.
+
+Independent result: PASS; `RT-REPAIR` terminates evidence-backed `NOT-TAKEN` for coherent FT-01 evidence and performs repair only for `KNOWN_DIVERGENCE`; therefore its required predecessor state is terminal on both replay-eligible routes. `RT-REPLAY` requires either coherent FT-01 evidence or an explicitly successful repair proving the divergence absent. Unknown, killed, exhausted, product-red, and every other typed-red repair outcome closes replay and all dependent nodes. Validator rerun: PASS; 50/50 nodes acyclic, 623/623 routes unique, phases 0–12, six first-tranche packets, zero unconditionally promoted new seams.
+
+## Final exact-artifact review binding — committed validator path
+
+Reviewed candidate SHA-256: `be5f0ef5e4c0705bf37ffdf76faa328784c6afaa5357f7c3053327d150de68c6`.
+
+Independent result: PASS; the deterministic command resolves to the committed validator, and the candidate/raw DAG/validator/routing digests remain exact. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.
 
 Independent verdict: **PASS**. Gate G-G passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.

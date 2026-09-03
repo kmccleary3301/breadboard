@@ -34,7 +34,7 @@ PROVENANCE-ONLY ARTIFACTS PRODUCED SO FAR: `raw/bb-inj5.7/` contains session pro
 One command:
 
 ```console
-/opt/homebrew/bin/python3.11 docs_tmp/bb_direction_assessment/dsh_donor_campaign/raw/bb-inj5.7/validate_dag_prototype.py
+/opt/homebrew/bin/python3.11 docs/plans/dsh_donor_campaign/evidence/raw/bb-inj5.7/validate_dag_prototype.py
 ```
 
 Result: `PASS`; 50/50 nodes topologically ordered; 623/623 unique ledger rows routed; DSH phases 0–12 represented; six first-tranche packets present; zero unconditionally promoted new seams. Machine inputs and captured result live in `raw/bb-inj5.7/`.
@@ -176,7 +176,7 @@ graph TD
   GA --> SA
 ```
 
-The machine graph contains the same dependencies plus bounded research leaves. `RQ-ABLATION` is an `ANY` join: either an exact FT-03 pass or a later repaired reconstruction may feed it. No other join is disjunctive. `RT-REPAIR` opens only for FT-01 `KNOWN_DIVERGENCE`; coherent FT-01 evidence records repair as `NOT-TAKEN` and may join FT-04 at `RT-REPLAY`; `PRODUCT_RED` or another terminal defect stops at PROC-DEFECT and closes both RT nodes. `GEN-INTERNAL` is a required terminal outcome after FT-02 evidence: repair a current-owner gap or record evidence-backed `NOT-TAKEN`. Public work remains a separate chain.
+The machine graph contains the same dependencies plus bounded research leaves. `RQ-ABLATION` is an `ANY` join: either an exact FT-03 pass or a later repaired reconstruction may feed it. No other join is disjunctive. `RT-REPAIR` opens only for FT-01 `KNOWN_DIVERGENCE`; coherent FT-01 evidence records repair as `NOT-TAKEN` and may join FT-04 at `RT-REPLAY`; only an explicitly successful repair proving the divergence absent may take the repair route to replay. `PRODUCT_RED`, `UNKNOWN`, `KILLED`, exhausted repair attempts, or another typed red closes replay and every dependent node. `GEN-INTERNAL` is a required terminal outcome after FT-02 evidence: repair a current-owner gap or record evidence-backed `NOT-TAKEN`. Public work remains a separate chain.
 
 ## First tranche execution windows
 
