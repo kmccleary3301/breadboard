@@ -307,9 +307,7 @@ def project_session_snapshot(view: SessionView, *, as_of: int | None = None, exp
     return Projected(view, SESSION_PROJECTOR_VERSION, ProjectionSource(f"session:{view.session_id}", 1, view.event_count), view.event_count)
 _SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "annotate": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
 def _graph_hash(lock: EffectiveHarnessLock) -> str:
-    graph_hash = lock.as_dict().get("graph_hash")
-    if not isinstance(graph_hash, str) or not graph_hash.startswith("sha256:"): raise ValueError("EffectiveHarnessLock has no canonical graph_hash")
-    return graph_hash
+    return _sha256(lock.as_dict().get("graph_hash"), "graph_hash")
 def _hash(value: str) -> str: return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
 class ReplayError(ValueError):
     """A durable event stream cannot be rebuilt into a valid Session."""
@@ -322,6 +320,15 @@ class ReplayError(ValueError):
 
 def _check(condition: bool, error: type[Exception], message: str) -> None:
     if not condition: raise error(message)
+class GenerationAdoptionError(RuntimeError):
+    """Typed refusal for an invalid or non-quiescent generation adoption."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
 def _assistant_payload(
     content: str,
     message_id: str | None,
@@ -359,6 +366,64 @@ class Session:
     @property
     def read_model(self) -> SessionView:
         with self._transition_lock: return self._view
+    @property
+    def pinned_generation_id(self) -> str:
+        """The immutable Lock identity pinned by this Session."""
+        with self._transition_lock:
+            return self._view.effective_lock_hash
+    @property
+    def generation_sequence(self) -> tuple[str, ...]:
+        """Ordered Lock identities that have governed this Session."""
+        with self._transition_lock:
+            return tuple(
+                event.payload["effective_lock_hash"]
+                for event in self._events
+                if event.kind in {"session.started", "session.reconfigured"}
+            )
+    @property
+    def trajectory_segments(self) -> tuple[Mapping[str, Any], ...]:
+        with self._transition_lock:
+            session_id = self._view.session_id
+            boundaries = tuple(
+                event
+                for event in self._events
+                if event.kind in {"session.started", "session.reconfigured"}
+            )
+            return tuple(
+                MappingProxyType(
+                    {
+                        "segment_id": f"{session_id}:segment:{index}:{boundary.payload['effective_lock_hash'].removeprefix('sha256:')}",
+                        "segment_index": index,
+                        "generation_id": boundary.payload["effective_lock_hash"],
+                        "start_sequence": boundary.sequence,
+                    }
+                )
+                for index, boundary in enumerate(boundaries)
+            )
+    @property
+    def adoption_history(self) -> tuple[Mapping[str, Any], ...]:
+        with self._transition_lock:
+            session_id = self._view.session_id
+            prior = None
+            history = []
+            for event in self._events:
+                if event.kind not in {"session.started", "session.reconfigured"}:
+                    continue
+                generation = event.payload["effective_lock_hash"]
+                if event.kind == "session.reconfigured":
+                    history.append(
+                        MappingProxyType(
+                            {
+                                "old_generation_id": prior,
+                                "new_generation_id": generation,
+                                "reason": event.payload["reason"],
+                                "effective_sequence": event.sequence,
+                                "trajectory_segment_id": f"{session_id}:segment:{len(history) + 1}:{generation.removeprefix('sha256:')}",
+                            }
+                        )
+                    )
+                prior = generation
+            return tuple(history)
     def projected_read_model(self, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
         return project_session_live(self, as_of=as_of, expected_projector_version=expected_projector_version)
     def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])
@@ -417,7 +482,23 @@ class Session:
     def tool_completed(self, tool: str, failed: bool) -> SessionView: return self._append("observe tool result", "tool_result", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), _check(type(failed) is bool, TypeError, "tool completion error flag must be boolean"), {"tool": tool, "error": failed})[2])
     def request_approval(self, request_id: str, operation: str) -> SessionView: return self._append("request approval", "approval.requested", lambda: (_check(bool(request_id and operation), ValueError, "approval request fields must be populated"), {"request_id": request_id, "operation": operation})[1])
     def resolve_approval(self, request_id: str, decision: str) -> SessionView: return self._append("resolve approval", "approval.resolved", lambda: (_check(bool(request_id and decision in _DECISIONS), ValueError, "invalid approval decision"), {"request_id": request_id, "decision": decision})[1])
-    def reconfigure(self, lock: EffectiveHarnessLock, reason: str) -> SessionView: return self._append("reconfigure", "session.reconfigured", lambda: (_check(isinstance(lock, EffectiveHarnessLock), TypeError, "reconfigure requires an EffectiveHarnessLock"), {"effective_lock_hash": _graph_hash(lock), "reason": reason})[1])
+    def adopt_generation(self, lock: EffectiveHarnessLock, reason: str) -> SessionView:
+        if not isinstance(lock, EffectiveHarnessLock):
+            raise GenerationAdoptionError("incompatible", "generation must be an EffectiveHarnessLock")
+        if not isinstance(reason, str):
+            raise GenerationAdoptionError("incompatible", "adoption reason must be a string")
+        try:
+            generation_id = _graph_hash(lock)
+        except (TypeError, ValueError) as error:
+            raise GenerationAdoptionError(
+                "incompatible", "generation Lock has no canonical identity"
+            ) from error
+        return self._append(
+            "reconfigure",
+            "session.reconfigured",
+            lambda: {"effective_lock_hash": generation_id, "reason": reason},
+        )
+    def reconfigure(self, lock: EffectiveHarnessLock, reason: str) -> SessionView: return self.adopt_generation(lock, reason)
     def pause(self, reason: str) -> SessionView: return self._append("pause", "session.paused", lambda: {"reason": reason})
     def resume(self) -> SessionView: return self._append("resume", "session.resumed", lambda: {})
     def cancel(self, reason: str = "operator request") -> SessionView: return self._append("cancel", "session.canceled", lambda: {"outcome": "canceled", "reason": reason})
@@ -450,7 +531,10 @@ class Session:
             try:
                 body = payload(); event = KernelEvent.create(self._view.session_id, len(self._events) + 1, kind, self._clock.now(), body); next_events = [*self._events, event]; next_view = rebuild(next_events); self._sink.append(event)
                 self._events, self._view = next_events, next_view; return next_view
-            finally: self._appending = False
+            finally:
+                self._appending = False
+
+
 def project_session_live(session: Session, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
     if not isinstance(session, Session):
         raise TypeError("live Session projection requires a Session")

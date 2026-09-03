@@ -21,6 +21,7 @@ from ..models import (
     SessionSummary,
     TurnAdmission,
 )
+from ..runtime_emission import retained_runtime_overrides as _retained_runtime_overrides
 
 from .records import (
     _STATE_SCHEMA_VERSION,
@@ -53,6 +54,35 @@ _PROVIDER_USAGE_FIELDS = {
     "reasoningTokens",
     "extensions",
 }
+
+
+def _retained_skills_selection(value: Any) -> Dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    mode = value.get("mode")
+    allowlist = value.get("allowlist")
+    blocklist = value.get("blocklist")
+    profile = value.get("profile")
+    if mode not in {"allowlist", "blocklist"}:
+        return None
+    if not isinstance(allowlist, list) or not all(
+        isinstance(item, str) and item.strip() for item in allowlist
+    ):
+        return None
+    if not isinstance(blocklist, list) or not all(
+        isinstance(item, str) and item.strip() for item in blocklist
+    ):
+        return None
+    if profile is not None and (
+        not isinstance(profile, str) or not profile.strip()
+    ):
+        return None
+    return {
+        "mode": mode,
+        "allowlist": [item.strip() for item in allowlist],
+        "blocklist": [item.strip() for item in blocklist],
+        "profile": profile.strip() if isinstance(profile, str) else None,
+    }
 
 
 def _retained_artifact_manifest_ref(value: Any) -> Dict[str, Any] | None:
@@ -506,6 +536,12 @@ class PersistenceMixin:
                     in {"prompt", "ask", "interactive", "configured"}
                     else None
                 ),
+                "runtime_overrides": _retained_runtime_overrides(
+                    metadata.get("runtime_overrides")
+                ),
+                "skills_selection": _retained_skills_selection(
+                    metadata.get("skills_selection")
+                ),
             },
             "turns": turns,
             "submissions": submissions,
@@ -671,6 +707,16 @@ class PersistenceMixin:
         permission_mode = str(session.get("permission_mode") or "").strip().lower()
         if permission_mode in {"prompt", "ask", "interactive", "configured"}:
             metadata["permission_mode"] = permission_mode
+        runtime_overrides = _retained_runtime_overrides(
+            session.get("runtime_overrides")
+        )
+        if runtime_overrides:
+            metadata["runtime_overrides"] = runtime_overrides
+        skills_selection = _retained_skills_selection(
+            session.get("skills_selection")
+        )
+        if skills_selection is not None:
+            metadata["skills_selection"] = skills_selection
         role_lock = session.get("model_role_lock")
         if role_lock is not None:
             if not isinstance(role_lock, dict):

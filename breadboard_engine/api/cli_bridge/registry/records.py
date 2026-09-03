@@ -237,6 +237,7 @@ class SessionRecord:
     cancellations_by_key_digest: Dict[str, CancellationRecord] = field(default_factory=dict, repr=False)
     lifecycle_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
     deleting: bool = field(default=False, repr=False)
+    admission_closed: bool = field(default=False, repr=False)
     admission_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
     loaded_from_retained_state: bool = field(default=False, repr=False)
 
