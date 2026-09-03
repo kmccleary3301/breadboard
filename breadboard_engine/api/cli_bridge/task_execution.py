@@ -285,6 +285,8 @@ class TaskExecutionOwner:
 
         terminal_events: list[TranslatedRuntimeEvent] = []
         published_events = 0
+        replay_assistant_content: dict[str, list[str]] = {}
+        registered_assistant_ids: set[str] = set()
         for (
             event_type,
             raw_payload,
@@ -326,12 +328,44 @@ class TaskExecutionOwner:
                     )
                 )
             else:
-                if event_type is EventType.ASSISTANT_MESSAGE:
+                message_id = payload.get("message_id")
+                if event_type is EventType.ASSISTANT_MESSAGE_START:
+                    if isinstance(message_id, str) and message_id:
+                        replay_assistant_content.setdefault(message_id, [])
+                elif event_type is EventType.ASSISTANT_MESSAGE_DELTA:
+                    if isinstance(message_id, str) and message_id:
+                        fragment = payload.get("delta")
+                        if isinstance(fragment, str):
+                            replay_assistant_content.setdefault(message_id, []).append(
+                                fragment
+                            )
+                elif event_type is EventType.ASSISTANT_MESSAGE_END:
+                    if (
+                        isinstance(message_id, str)
+                        and message_id
+                        and message_id not in registered_assistant_ids
+                    ):
+                        observed_payload = {
+                            "text": "".join(
+                                replay_assistant_content.get(message_id, ())
+                            ),
+                            "message_id": message_id,
+                        }
+                        runner._record_product_observation(
+                            "message.assistant",
+                            observed_payload,
+                            trajectory_id=str(correlation["turn_id"]),
+                        )
+                        registered_assistant_ids.add(message_id)
+                elif event_type is EventType.ASSISTANT_MESSAGE:
                     runner._record_product_observation(
                         "message.assistant",
                         payload,
                         trajectory_id=str(correlation["turn_id"]),
                     )
+                    observed_message_id = payload.get("message_id")
+                    if isinstance(observed_message_id, str):
+                        registered_assistant_ids.add(observed_message_id)
                 await runner.publish_event_async(
                     event_type,
                     payload,

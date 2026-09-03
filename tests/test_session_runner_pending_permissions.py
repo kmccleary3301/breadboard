@@ -270,6 +270,51 @@ async def test_replay_assistant_registers_canonical_message_target(tmp_path) -> 
     assert public_event.payload["trajectory_id"] == "turn-test"
 
 
+@pytest.mark.asyncio
+async def test_replay_assistant_stream_registers_canonical_message_target(
+    tmp_path,
+) -> None:
+    fixture = tmp_path / "assistant-stream-replay.jsonl"
+    fixture.write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in (
+                {
+                    "type": "assistant.message.start",
+                    "payload": {"message_id": "replay-message-1"},
+                },
+                {
+                    "type": "assistant.message.delta",
+                    "payload": {
+                        "message_id": "replay-message-1",
+                        "delta": "hello",
+                    },
+                },
+                {
+                    "type": "assistant.message.end",
+                    "payload": {"message_id": "replay-message-1"},
+                },
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner, session = _product_runner("replay-assistant-stream")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    await runner._execute_replay_task(
+        f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    product_payload = session.events[-1].payload
+    assert product_payload["message_id"] == "replay-message-1"
+    assert product_payload["trajectory_id"] == "turn-test"
+    assert product_payload["metadata"]["has_content"] is True
+
+
 def test_product_observations_pair_canonical_and_message_tool_results() -> None:
     runner, session = _product_runner("paired-observations")
     runner._agent = type(
