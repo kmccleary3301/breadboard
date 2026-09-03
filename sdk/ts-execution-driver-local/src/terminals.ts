@@ -454,7 +454,7 @@ export class LocalTerminalSessionManager {
       end = record.pendingEnd
       record.deliveredEnd = true
       this.sessions.delete(record.descriptor.terminal_session_id)
-      this.rememberEndedSession(record.descriptor.terminal_session_id, record.pgid)
+      this.rememberEndedSession(record.descriptor.terminal_session_id, record.pgid, record.identity)
     }
     return { interaction, outputDeltas, end }
   }
@@ -492,18 +492,27 @@ export class LocalTerminalSessionManager {
 
       if (record) {
         const isLeaderAlive = this.probeProcessAlive(record.identity.leaderPid)
+        let isOwned = false
         if (isLeaderAlive) {
           const currentToken = this.probeStartToken(record.identity.leaderPid)
-          if (record.identity.startToken != null && currentToken !== null && currentToken !== record.identity.startToken) {
-            // PID was recycled by an unrelated process!
+          isOwned =
+            record.identity.startToken != null && currentToken != null
+              ? currentToken === record.identity.startToken
+              : record.identity.startToken == null
+        } else {
+          isOwned = this.validateGroupOwnership(record.identity, pgid ?? record.identity.leaderPid)
+        }
+
+        if (pgid != null && this.probeGroupAlive(pgid)) {
+          if (!isOwned) {
+            // Refuse to signal unvalidated group!
             this.sessions.delete(sessionId)
             this.endedSessionPgids.delete(sessionId)
             this.endedSessionIdentities.delete(sessionId)
             failed.push(sessionId)
             continue
           }
-        }
-        if (pgid != null && this.probeGroupAlive(pgid)) {
+
           const exited = await terminateChildProcessTree(
             isLeaderAlive ? child : undefined,
             initialSignal,

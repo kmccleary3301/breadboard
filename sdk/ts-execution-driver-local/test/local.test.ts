@@ -765,11 +765,16 @@ test("trusted local manager retains >32 ended sessions with live descendants wit
     livePgids.add(1000 + i)
   }
 
-  // Remember 40 ended sessions each with a live group
+  // Remember 40 ended sessions each with a live group and captured identity
   for (let i = 1; i <= 40; i++) {
-    ;(manager as any).rememberEndedSession(`term-descendant-${i}`, 1000 + i)
+    ;(manager as any).rememberEndedSession(`term-descendant-${i}`, 1000 + i, {
+      sessionId: `term-descendant-${i}`,
+      leaderPid: 1000 + i,
+      startToken: `start-token-${i}`,
+      startedAtMs: Date.now() - 10000,
+      command: ["node", "-e", "process.exit(0)"],
+    })
   }
-
   // Cleanup scope all must target all 40 un-evicted live-descendant sessions
   const cleanupResult = await manager.cleanupSessions({
     cleanupId: "clean-40-descendants",
