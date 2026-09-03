@@ -9,6 +9,7 @@ from pathlib import Path
 from scripts.interface_inventory import (
     EXCLUDED_PARTS,
     _iter_files,
+    _sdk_imported_exports,
     canonical_bytes,
     inventory,
 )
@@ -143,6 +144,13 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
     (engine / "breadboard_engine" / "api" / "cli_bridge").mkdir(parents=True)
     (engine / "breadboard_engine" / "api" / "cli_bridge" / "events.py").write_text("class EventType:\n    TOOL_RESULT = 'tool_result'\n", encoding="utf-8")
     (engine / "breadboard_sdk").mkdir(parents=True)
+    _json(
+        engine
+        / "breadboard_sdk"
+        / "generated"
+        / "public_surface_manifest.v1.json",
+        {"operations": []},
+    )
     (engine / "breadboard_sdk" / "__init__.py").write_text("__all__ = ['SessionEvent']\n", encoding="utf-8")
     (engine / "sdk" / "ts" / "src").mkdir(parents=True)
     (engine / "sdk" / "ts" / "src" / "index.ts").write_text(
@@ -214,6 +222,55 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
         "}\n",
         encoding="utf-8",
     )
+    (tui_source.parent / "commented-comparison.ts").write_text(
+        "// if (event.type === 'error') return true;\n"
+        "// const schema = 'bb.context_resource_pack.v1';\n"
+        "const schemaExample = `bb.context_resource_pack.v1`;\n"
+        "const example = \"if (event.type === 'warning') return true;\";\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "reassigned-alias.ts").write_text(
+        "function render(event: { type: string }, mode: string) {\n"
+        "  let eventType = String(event.type);\n"
+        "  eventType = mode;\n"
+        "  switch (eventType) {\n"
+        "    case 'error': return false;\n"
+        "    default: return true;\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "applied-event-literal.ts").write_text(
+        "controller.applyEvent({ type: 'completion', data: {} });\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "unapplied-event-literal.ts").write_text(
+        "const example = { type: 'completion', data: {} };\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "typed-event-literal.ts").write_text(
+        "const events: NormalizedEvent[] = [{ type: 'warning', data: {} }];\n"
+        "buildTranscriptFromEvents(events);\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "called-event-literal.ts").write_text(
+        "reduceWorkGraphEvent(state, { eventType: 'tool_call', data: {} });\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "callback-unrelated-event-literal.ts").write_text(
+        "it('keeps local results', () => {\n"
+        "  const result = { kind: 'error' };\n"
+        "  consume(result);\n"
+        "});\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "called-unrelated-event-literal.ts").write_text(
+        "renderResult({ kind: 'error' });\n",
+        encoding="utf-8",
+    )
+    docs_tmp_source = engine / "docs_tmp" / "legacy-example.py"
+    docs_tmp_source.parent.mkdir(parents=True)
+    docs_tmp_source.write_text("legacy compatibility example\n", encoding="utf-8")
     generated_source = tui_source.parent / "generated" / "generated.ts"
     generated_source.parent.mkdir(parents=True)
     generated_source.write_text(
@@ -234,6 +291,17 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
     test_source.parent.mkdir(parents=True)
     test_source.write_text("durable_reconfigure = None\n", encoding="utf-8")
     return engine, tui
+def test_sdk_import_extraction_ignores_comments_and_string_bodies() -> None:
+    text = """
+// import { Commented } from '@breadboard/sdk'
+const example = `export { Templated } from "@breadboard/sdk"`;
+import type { LiveType as Alias } from '@breadboard/sdk';
+import * as SDK from '@breadboard/sdk';
+void SDK.LiveMember;
+"""
+    assert _sdk_imported_exports(text) == {"LiveMember", "LiveType"}
+
+
 
 
 def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path) -> None:
@@ -253,7 +321,12 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     found = {(row["registry_id"], row["entry_id"]) for row in first["authoritative_registry_entries"]}
     assert SAMPLE <= found
     assert str(engine) not in canonical_bytes(first).decode()
-    assert first["tui_consumers"]["consumer_count"] == 3
+    assert first["tui_consumers"]["consumer_count"] == 6
+    assert set(first["inputs"]) == {"engine_root", "tui_root"}
+    for root_identity in first["inputs"].values():
+        assert root_identity["content_digest"].startswith("sha256:")
+        assert len(root_identity["content_digest"]) == len("sha256:") + 64
+        assert root_identity["file_count"] > 0
     consumer_rows = first["tui_consumers"]["files"]
     consumer = next(row for row in consumer_rows if row["path"].endswith("consumer.ts"))
     assert {"ApiError", "SessionSummary", "tool_result", "error", "warning"} <= set(
@@ -265,10 +338,50 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     assert unrelated["matched_tokens"] == ["tool_result"]
     alias = next(row for row in consumer_rows if row["path"].endswith("alias-switch.ts"))
     assert alias["matched_tokens"] == ["error", "warning"]
+    applied = next(
+        row
+        for row in consumer_rows
+        if row["path"].endswith("applied-event-literal.ts")
+    )
+    assert applied["matched_tokens"] == ["completion"]
+    typed = next(
+        row
+        for row in consumer_rows
+        if row["path"].endswith("typed-event-literal.ts")
+    )
+    assert typed["matched_tokens"] == ["warning"]
+    called = next(
+        row
+        for row in consumer_rows
+        if row["path"].endswith("called-event-literal.ts")
+    )
+    assert called["matched_tokens"] == ["tool_call"]
+    assert not any(
+        row["path"].endswith("callback-unrelated-event-literal.ts")
+        for row in consumer_rows
+    )
+    assert not any(
+        row["path"].endswith("called-unrelated-event-literal.ts")
+        for row in consumer_rows
+    )
     assert not any(row["path"].endswith("sdk-tools.ts") for row in consumer_rows)
     assert not any(row["path"].endswith("unrelated-kind.ts") for row in consumer_rows)
     assert not any(
         row["path"].endswith("unrelated-collisions.ts") for row in consumer_rows
+    )
+    assert not any(
+        row["path"].endswith("commented-comparison.ts") for row in consumer_rows
+    )
+    assert not any(
+        row["path"].startswith("engine_root/docs_tmp/")
+        for row in first["compatibility_surfaces"]["source_signals"]
+    )
+    assert not any(
+        row["path"].endswith("reassigned-alias.ts") for row in consumer_rows
+    )
+    assert not any(
+        row["path"].endswith("unapplied-event-literal.ts")
+        for row in consumer_rows
     )
     assert not any("generated/" in row["path"] for row in consumer_rows)
     assert not any(row["path"].startswith("engine_root/tests/") for row in first["compatibility_surfaces"]["reconfiguration"])
@@ -310,9 +423,31 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     assert lifecycle_keep["tier_disposition"] == "keep"
 
 
+def test_engine_identity_tracks_scanned_generated_manifests(tmp_path: Path) -> None:
+    engine, tui = _fixture_roots(tmp_path)
+    before = inventory(engine, tui)
+    manifest = (
+        engine
+        / "breadboard_sdk"
+        / "generated"
+        / "public_surface_manifest.v1.json"
+    )
+    _json(manifest, {"operations": [{"operation_id": "session.start"}]})
+
+    after = inventory(engine, tui)
+
+    assert (
+        before["inputs"]["engine_root"]["content_digest"]
+        != after["inputs"]["engine_root"]["content_digest"]
+    )
+    assert before["sdk_exports"]["generated_manifests"] != after["sdk_exports"][
+        "generated_manifests"
+    ]
+
+
 def test_inventory_cli_writes_and_checks_fixed_point(tmp_path: Path) -> None:
     engine, tui = _fixture_roots(tmp_path)
-    output = tmp_path / "inventory.json"
+    output = engine / "reports" / "inventory.json"
     script = Path(__file__).resolve().parents[1] / "scripts" / "interface_inventory.py"
     command = [sys.executable, str(script), "--engine-root", str(engine), "--tui-root", str(tui), "--output", str(output)]
     written = subprocess.run(command, check=False, capture_output=True, text=True)

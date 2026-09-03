@@ -8831,6 +8831,16 @@
     }
   ],
   "generated_by": "scripts/interface_inventory.py",
+  "inputs": {
+    "engine_root": {
+      "content_digest": "sha256:4442e6956cf26f13ec5503f1f00f69822fa9e97c227c5f80bdd9c8213f8811ed",
+      "file_count": 4732
+    },
+    "tui_root": {
+      "content_digest": "sha256:93b66e5aba0c430b70fa3334aed8ac7380194b3dac9e821ea81ddff858548478",
+      "file_count": 5093
+    }
+  },
   "method": {
     "excluded_path_parts": [
       ".git",
@@ -20124,7 +20134,7 @@
     }
   },
   "tui_consumers": {
-    "consumer_count": 79,
+    "consumer_count": 78,
     "files": [
       {
         "matched_tokens": [
@@ -20255,29 +20265,62 @@
       },
       {
         "matched_tokens": [
-          "assistant.thought_summary.delta"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerActivityRuntime.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "conversation.compaction.end"
-        ],
-        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerTransitionTimeline.test.ts",
-        "root_id": "engine-tui-skeleton",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "task_event"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/controllerWorkGraphRuntime.test.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "event-kind"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "assistant_message",
+          "completion",
+          "log_link"
+        ],
+        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/eventVisibilityContract.test.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "event-kind"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "assistant.message.delta",
+          "assistant.message.end",
+          "assistant.message.start",
+          "assistant.reasoning.delta",
+          "assistant.tool_call.start",
+          "assistant_delta",
+          "assistant_message",
+          "completion",
+          "tool.exec.end",
+          "tool.exec.start",
+          "tool.exec.stderr.delta",
+          "tool.exec.stdout.delta",
+          "tool.result",
+          "tool_call",
+          "tool_result",
+          "turn_start",
+          "user_message"
+        ],
+        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/replayHarness.test.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "event-kind"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "assistant.message.delta",
+          "assistant.message.start",
+          "completion",
+          "conversation.compaction.end",
+          "conversation.compaction.start",
+          "stream.gap"
+        ],
+        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/runtimeTransitionGate.test.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
           "event-kind"
@@ -20292,6 +20335,18 @@
         "root_id": "engine-tui-skeleton",
         "signals": [
           "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "assistant.message.delta",
+          "assistant.message.start",
+          "completion"
+        ],
+        "path": "engine_root/tui_skeleton/src/commands/repl/__tests__/transcriptNoiseGate.test.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "event-kind"
         ]
       },
       {
@@ -20611,6 +20666,17 @@
         "root_id": "engine-tui-skeleton",
         "signals": [
           "sdk-export"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "assistant_message",
+          "log_link"
+        ],
+        "path": "engine_root/tui_skeleton/src/repl/transcript/__tests__/visibilityContract.test.ts",
+        "root_id": "engine-tui-skeleton",
+        "signals": [
+          "event-kind"
         ]
       },
       {
@@ -21008,33 +21074,9 @@
       },
       {
         "matched_tokens": [
-          "tool_call",
-          "tool_result",
-          "turn_start"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/extensions/types.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
           "tool_result"
         ],
         "path": "tui_root/packages/coding-agent/src/extensibility/hooks/runner.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "tool_call",
-          "tool_result",
-          "turn_start"
-        ],
-        "path": "tui_root/packages/coding-agent/src/extensibility/hooks/types.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21055,16 +21097,6 @@
           "error"
         ],
         "path": "tui_root/packages/coding-agent/src/live/transport.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "permission_request"
-        ],
-        "path": "tui_root/packages/coding-agent/src/modes/warp-events.ts",
         "root_id": "paired-coding-agent",
         "signals": [
           "event-kind"
@@ -21115,16 +21147,6 @@
         "matched_tokens": [
           "error"
         ],
-        "path": "tui_root/packages/coding-agent/src/web/search/providers/codex.ts",
-        "root_id": "paired-coding-agent",
-        "signals": [
-          "event-kind"
-        ]
-      },
-      {
-        "matched_tokens": [
-          "error"
-        ],
         "path": "tui_root/packages/coding-agent/src/web/search/providers/perplexity.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -21134,7 +21156,7 @@
     ],
     "roots": [
       {
-        "consumer_count": 41,
+        "consumer_count": 44,
         "exists": true,
         "files_scanned": 365,
         "root": "engine_root/tui_skeleton/src",
@@ -21148,7 +21170,7 @@
         "root_id": "paired-agent"
       },
       {
-        "consumer_count": 35,
+        "consumer_count": 31,
         "exists": true,
         "files_scanned": 1352,
         "root": "tui_root/packages/coding-agent/src",

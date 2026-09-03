@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
 import os
 import re
@@ -81,6 +82,47 @@ def _iter_files(root: Path, suffixes: Iterable[str]) -> list[Path]:
             if path.suffix in allowed and path.is_file() and not path.is_symlink():
                 files.append(path)
     return files
+def _root_identity(
+    root: Path, *, excluded_paths: Sequence[Path] = ()
+) -> dict[str, Any]:
+    files = set(_iter_files(root, TEXT_SUFFIXES | {".json"}))
+    for generated_root in (
+        root / "breadboard_sdk" / "generated",
+        root / "sdk" / "ts" / "src" / "generated",
+        root / "tui_skeleton" / "src" / "generated",
+    ):
+        if generated_root.is_dir():
+            files.update(
+                path
+                for path in generated_root.glob("*manifest*.json")
+                if path.is_file() and not path.is_symlink()
+            )
+    excluded = {path.resolve() for path in excluded_paths}
+    selected_files = []
+    for path in files:
+        relative = path.relative_to(root)
+        if (
+            relative.parts
+            and relative.parts[0] == "docs_tmp"
+            or path.resolve() in excluded
+        ):
+            continue
+        selected_files.append(path)
+    selected_files.sort(key=lambda path: path.relative_to(root).as_posix())
+    digest = hashlib.sha256()
+    for path in selected_files:
+        relative = path.relative_to(root).as_posix().encode("utf-8")
+        content = path.read_bytes()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return {
+        "content_digest": f"sha256:{digest.hexdigest()}",
+        "file_count": len(selected_files),
+    }
+
+
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -529,22 +571,6 @@ EVENT_DISCRIMINATOR_IDS = frozenset(
 SDK_MODULE_RE = re.compile(r"^@breadboard/sdk(?:/|$)")
 
 
-def _event_pattern(token: str) -> re.Pattern[str]:
-    quoted = rf"""['"`]{re.escape(token)}['"`]"""
-    object_discriminator = (
-        r"(?:event|event_data|eventData|message|payload)"
-        r"(?:\s*\.\s*(?:type|kind|event_type|eventType|event_kind|eventKind)"
-        r"|\s*\[\s*['\"](?:type|kind|event_type|eventType|event_kind|eventKind)['\"]\s*\])"
-    )
-    named_discriminator = r"(?:event|event_type|eventType|event_kind|eventKind)"
-    return re.compile(
-        rf"(?:"
-        rf"\b{named_discriminator}\s*[:=]\s*{quoted}"
-        rf"|"
-        rf"\b(?:{object_discriminator}|{named_discriminator})\s*"
-        rf"(?:===|!==|==|!=)\s*{quoted}"
-        rf")"
-    )
 
 
 _EVENT_OBJECT_NAMES = frozenset({"event", "event_data", "eventData", "message", "payload"})
@@ -585,7 +611,9 @@ def _lexical_tokens(text: str) -> list[tuple[str, str]]:
                     break
                 value.append(character)
                 index += 1
-            tokens.append(("string", "".join(value)))
+            tokens.append(
+                ("template" if quote == "`" else "string", "".join(value))
+            )
             continue
         if character.isalnum() or character in "_$":
             start = index
@@ -626,33 +654,165 @@ def _event_discriminator_end(tokens: Sequence[tuple[str, str]], index: int) -> i
     ):
         return index + 4
     return None
-def _event_discriminator_aliases(
+def _event_expression_end(
     tokens: Sequence[tuple[str, str]],
-) -> dict[str, int]:
-    aliases: dict[str, int] = {}
-    for index in range(len(tokens) - 3):
-        if (
-            tokens[index] not in {("identifier", "const"), ("identifier", "let")}
-            or not _token_kind(tokens, index + 1, "identifier")
-            or not _token_is(tokens, index + 2, "punctuation", "=")
+    index: int,
+) -> int | None:
+    wrapped = (
+        _token_is(tokens, index, "identifier", "String")
+        and _token_is(tokens, index + 1, "punctuation", "(")
+    )
+    source_index = index + 2 if wrapped else index
+    source_end = _event_discriminator_end(tokens, source_index)
+    if source_end is None:
+        return None
+    if wrapped:
+        if not _token_is(tokens, source_end, "punctuation", ")"):
+            return None
+        return source_end + 1
+    return source_end
+
+
+def _event_discriminator_assignments(
+    tokens: Sequence[tuple[str, str]],
+) -> dict[str, list[tuple[int, bool]]]:
+    assignments: dict[str, list[tuple[int, bool]]] = {}
+    for index in range(len(tokens) - 2):
+        if not _token_kind(tokens, index, "identifier"):
+            continue
+        if not _token_is(tokens, index + 1, "punctuation", "="):
+            continue
+        if _token_is(tokens, index + 2, "punctuation", "=") or _token_is(
+            tokens, index + 2, "punctuation", ">"
         ):
             continue
-        source_index = index + 3
-        wrapped = (
-            _token_is(tokens, source_index, "identifier", "String")
-            and _token_is(tokens, source_index + 1, "punctuation", "(")
+        if index and _token_is(tokens, index - 1, "punctuation", "."):
+            continue
+        name = tokens[index][1]
+        assignments.setdefault(name, []).append(
+            (index, _event_expression_end(tokens, index + 2) is not None)
         )
-        if wrapped:
-            source_index += 2
-        source_end = _event_discriminator_end(tokens, source_index)
-        if source_end is None:
-            continue
-        if wrapped and not _token_is(tokens, source_end, "punctuation", ")"):
-            continue
-        aliases.setdefault(tokens[index + 1][1], index)
-    return aliases
+    return assignments
 
 
+def _live_event_alias(
+    assignments: Mapping[str, Sequence[tuple[int, bool]]],
+    name: str,
+    before: int,
+) -> bool:
+    preceding = [assignment for assignment in assignments.get(name, ()) if assignment[0] < before]
+    return bool(preceding and preceding[-1][1])
+
+
+def _comparison_event_matches(text: str, event_tokens: set[str]) -> set[str]:
+    tokens = _lexical_tokens(text)
+    matches: set[str] = set()
+    for index, (kind, value) in enumerate(tokens):
+        if kind != "identifier":
+            continue
+        discriminator_end = _event_discriminator_end(tokens, index)
+        if discriminator_end is None and value in EVENT_DISCRIMINATOR_IDS:
+            discriminator_end = index + 1
+        if discriminator_end is None:
+            continue
+        cursor = discriminator_end
+        if _token_is(tokens, cursor, "punctuation", "!"):
+            cursor += 1
+        equals = 0
+        while _token_is(tokens, cursor, "punctuation", "="):
+            equals += 1
+            cursor += 1
+        if not _token_kind(tokens, cursor, "string"):
+            continue
+        token = tokens[cursor][1]
+        declaration = (
+            equals == 1
+            and index > 0
+            and tokens[index - 1] in {("identifier", "const"), ("identifier", "let")}
+        )
+        if (equals >= 2 or declaration) and token in event_tokens:
+            matches.add(token)
+    return matches
+
+
+
+
+def _event_literal_is_consumed(
+    tokens: Sequence[tuple[str, str]],
+    property_index: int,
+) -> bool:
+    stack: list[tuple[str, int]] = []
+    matching = {")": "(", "]": "[", "}": "{"}
+    for index in range(property_index):
+        if not _token_kind(tokens, index, "punctuation"):
+            continue
+        value = tokens[index][1]
+        if value in {"(", "[", "{"}:
+            stack.append((value, index))
+        elif value in matching and stack and stack[-1][0] == matching[value]:
+            stack.pop()
+    for stack_index, (delimiter, opener) in enumerate(stack):
+        if delimiter != "(" or not _token_kind(tokens, opener - 1, "identifier"):
+            continue
+        callee = tokens[opener - 1][1]
+        nested_delimiters = [item[0] for item in stack[stack_index + 1 :]]
+        if "event" in callee.lower() and nested_delimiters == ["{"]:
+            return True
+    statement_start = 0
+    for index in range(property_index - 1, -1, -1):
+        if tokens[index] in {("punctuation", ";"), ("punctuation", "}")}:
+            statement_start = index + 1
+            break
+    equals = next(
+        (
+            index
+            for index in range(property_index - 1, statement_start - 1, -1)
+            if _token_is(tokens, index, "punctuation", "=")
+        ),
+        None,
+    )
+    if equals is None:
+        return False
+    declaration = next(
+        (
+            index
+            for index in range(statement_start, equals)
+            if _token_kind(tokens, index, "identifier")
+            and tokens[index][1] in {"const", "let", "var"}
+        ),
+        None,
+    )
+    if declaration is None:
+        return False
+    colons = [
+        index
+        for index in range(declaration + 1, equals)
+        if _token_is(tokens, index, "punctuation", ":")
+    ]
+    return bool(colons) and any(
+        _token_kind(tokens, index, "identifier")
+        and "event" in tokens[index][1].lower()
+        for index in range(colons[-1] + 1, equals)
+    )
+
+
+def _consumed_event_literal_matches(
+    text: str,
+    event_tokens: set[str],
+) -> set[str]:
+    tokens = _lexical_tokens(text)
+    matches: set[str] = set()
+    for index in range(len(tokens) - 2):
+        if (
+            _token_kind(tokens, index, "identifier")
+            and tokens[index][1] in _EVENT_DISCRIMINATOR_NAMES
+            and _token_is(tokens, index + 1, "punctuation", ":")
+            and _token_kind(tokens, index + 2, "string")
+            and tokens[index + 2][1] in event_tokens
+            and _event_literal_is_consumed(tokens, index)
+        ):
+            matches.add(tokens[index + 2][1])
+    return matches
 
 
 def _switch_case_event_matches(text: str, event_tokens: set[str]) -> set[str]:
@@ -660,7 +820,7 @@ def _switch_case_event_matches(text: str, event_tokens: set[str]) -> set[str]:
     if not wanted:
         return set()
     tokens = _lexical_tokens(text)
-    aliases = _event_discriminator_aliases(tokens)
+    assignments = _event_discriminator_assignments(tokens)
     matches: set[str] = set()
     for index, (kind, value) in enumerate(tokens):
         if kind != "identifier" or value != "switch":
@@ -670,7 +830,7 @@ def _switch_case_event_matches(text: str, event_tokens: set[str]) -> set[str]:
         discriminator_end = (
             index + 3
             if _token_kind(tokens, index + 2, "identifier")
-            and aliases.get(tokens[index + 2][1], index) < index
+            and _live_event_alias(assignments, tokens[index + 2][1], index)
             else _event_discriminator_end(tokens, index + 2)
         )
         if discriminator_end is None or not _token_is(
@@ -707,37 +867,67 @@ def _switch_case_event_matches(text: str, event_tokens: set[str]) -> set[str]:
 
 
 def _sdk_imported_exports(text: str) -> set[str]:
+    tokens = _lexical_tokens(text)
     imported: set[str] = set()
-    import_pattern = re.compile(
-        r"\b(?:import|export)\s+(?:type\s+)?\{(?P<body>.*?)\}\s+from\s+"
-        r"(?P<quote>['\"])(?P<module>[^'\"]+)(?P=quote)",
-        re.DOTALL,
-    )
-    for match in import_pattern.finditer(text):
-        if not SDK_MODULE_RE.match(match.group("module")):
+    namespace_aliases: set[str] = set()
+    index = 0
+    while index < len(tokens):
+        if tokens[index] not in {
+            ("identifier", "import"),
+            ("identifier", "export"),
+        }:
+            index += 1
             continue
-        for fragment in match.group("body").split(","):
-            fragment = fragment.split("//", 1)[0].strip()
-            if not fragment:
+        cursor = index + 1
+        if _token_is(tokens, cursor, "identifier", "type"):
+            cursor += 1
+        if _token_is(tokens, cursor, "punctuation", "{"):
+            cursor += 1
+            expect_imported_name = True
+            names: set[str] = set()
+            while cursor < len(tokens) and not _token_is(
+                tokens, cursor, "punctuation", "}"
+            ):
+                if expect_imported_name and _token_is(
+                    tokens, cursor, "identifier", "type"
+                ):
+                    cursor += 1
+                    continue
+                if expect_imported_name and _token_kind(tokens, cursor, "identifier"):
+                    names.add(tokens[cursor][1])
+                    expect_imported_name = False
+                elif _token_is(tokens, cursor, "punctuation", ","):
+                    expect_imported_name = True
+                cursor += 1
+            if (
+                _token_is(tokens, cursor, "punctuation", "}")
+                and _token_is(tokens, cursor + 1, "identifier", "from")
+                and _token_kind(tokens, cursor + 2, "string")
+                and SDK_MODULE_RE.match(tokens[cursor + 2][1])
+            ):
+                imported.update(names)
+                index = cursor + 3
                 continue
-            imported_name = re.split(r"\s+as\s+", fragment)[0].strip()
-            imported_name = imported_name.removeprefix("type ").strip()
-            if re.fullmatch(r"[A-Za-z_$][\w$]*", imported_name):
-                imported.add(imported_name)
-    namespace_pattern = re.compile(
-        r"\bimport\s+\*\s+as\s+(?P<alias>[A-Za-z_$][\w$]*)\s+from\s+"
-        r"(?P<quote>['\"])(?P<module>[^'\"]+)(?P=quote)"
-    )
-    for match in namespace_pattern.finditer(text):
-        if SDK_MODULE_RE.match(match.group("module")):
-            alias = re.escape(match.group("alias"))
-            imported.update(
-                member.group(1)
-                for member in re.finditer(
-                    rf"\b{alias}\.([A-Za-z_$][\w$]*)",
-                    text,
-                )
-            )
+        elif (
+            _token_is(tokens, cursor, "punctuation", "*")
+            and _token_is(tokens, cursor + 1, "identifier", "as")
+            and _token_kind(tokens, cursor + 2, "identifier")
+            and _token_is(tokens, cursor + 3, "identifier", "from")
+            and _token_kind(tokens, cursor + 4, "string")
+            and SDK_MODULE_RE.match(tokens[cursor + 4][1])
+        ):
+            namespace_aliases.add(tokens[cursor + 2][1])
+            index = cursor + 5
+            continue
+        index += 1
+    for index in range(len(tokens) - 2):
+        if (
+            _token_kind(tokens, index, "identifier")
+            and tokens[index][1] in namespace_aliases
+            and _token_is(tokens, index + 1, "punctuation", ".")
+            and _token_kind(tokens, index + 2, "identifier")
+        ):
+            imported.add(tokens[index + 2][1])
     return imported
 
 
@@ -753,11 +943,7 @@ def _tui_consumers(
     schema_tokens = {
         str(row["id"]) for row in schema_rows if isinstance(row.get("id"), str)
     }
-    schema_patterns = {
-        token: re.compile(rf"""['"`]{re.escape(token)}['"`]""")
-        for token in schema_tokens
-    }
-    event_patterns = {token: _event_pattern(token) for token in event_tokens}
+    event_tokens = set(event_tokens)
     roots: list[dict[str, Any]] = []
     files: list[dict[str, Any]] = []
     for root_id, root, label in _consumer_roots(engine_root, tui_root):
@@ -776,12 +962,17 @@ def _tui_consumers(
                 text = path.read_text(encoding="utf-8", errors="replace")
                 imported_exports = _sdk_imported_exports(text)
                 switch_events = _switch_case_event_matches(text, event_tokens)
-                matched_events = {
-                    token for token, pattern in event_patterns.items() if pattern.search(text)
-                } | switch_events
-                matched_schemas = {
-                    token for token, pattern in schema_patterns.items() if pattern.search(text)
+                matched_events = (
+                    _comparison_event_matches(text, event_tokens)
+                    | _consumed_event_literal_matches(text, event_tokens)
+                    | switch_events
+                )
+                string_tokens = {
+                    value
+                    for kind, value in _lexical_tokens(text)
+                    if kind == "string"
                 }
+                matched_schemas = schema_tokens & string_tokens
                 matched = sorted(matched_events | matched_schemas | imported_exports)
                 if not matched:
                     continue
@@ -858,6 +1049,8 @@ def _source_signals(engine_root: Path, tui_root: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for root, label in ((engine_root, "engine_root"), (tui_root, "tui_root")):
         for path in _iter_files(root, TEXT_SUFFIXES):
+            if path.relative_to(root).parts[0] == "docs_tmp":
+                continue
             relative = _relative(path, root, label)
             path_text = relative.lower()
             # Compatibility evidence is intentionally path-scoped.  Searching
@@ -986,7 +1179,12 @@ def _compatibility(
     }
 
 
-def inventory(engine_root: str | Path, tui_root: str | Path) -> dict[str, Any]:
+def inventory(
+    engine_root: str | Path,
+    tui_root: str | Path,
+    *,
+    identity_excluded_paths: Sequence[Path] = (),
+) -> dict[str, Any]:
     """Return a deterministic advisory inventory for an ENGINE/TUI pair."""
     engine = _root(engine_root, "engine_root")
     tui = _root(tui_root, "tui_root")
@@ -1022,6 +1220,14 @@ def inventory(engine_root: str | Path, tui_root: str | Path) -> dict[str, Any]:
         "contract_id": "bb.interface_inventory.v1",
         "event_kinds": events,
         "generated_by": SCRIPT_ID,
+        "inputs": {
+            "engine_root": _root_identity(
+                engine, excluded_paths=identity_excluded_paths
+            ),
+            "tui_root": _root_identity(
+                tui, excluded_paths=identity_excluded_paths
+            ),
+        },
         "method": {
             "owner_sources": "registry consumer references plus static top-level declarations",
             "schema_sources": "kernel and public schema JSON files with schema_lifecycle and contract_tiers references",
@@ -1052,7 +1258,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="fail when --output is not the deterministic fixed point")
     args = parser.parse_args(argv)
     try:
-        content = canonical_bytes(inventory(args.engine_root, args.tui_root))
+        identity_excluded_paths = (
+            (args.output.resolve(),) if args.output is not None else ()
+        )
+        content = canonical_bytes(
+            inventory(
+                args.engine_root,
+                args.tui_root,
+                identity_excluded_paths=identity_excluded_paths,
+            )
+        )
     except ValueError as exc:
         parser.error(str(exc))
     if args.check:
