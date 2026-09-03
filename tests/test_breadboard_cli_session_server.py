@@ -459,14 +459,59 @@ def test_session_cli_accepts_running_snapshot_ending_in_hidden_compaction(
     assert [event["seq"] for event in output["data"]["events"]] == [1]
     assert calls == [(None, 2, False)]
 
+
+def test_session_cli_stops_before_event_appended_after_initial_bound(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    class ConcurrentAppendClient:
+        def __init__(self, base_url: str, *, timeout_s: float) -> None:
+            pass
+
+        @staticmethod
+        def get_session(session_id: str) -> dict[str, Any]:
+            result = _result(["session", "get"])
+            result["data"] = {
+                "session": {"session_id": session_id, "event_count": 2}
+            }
+            return result
+
+        @staticmethod
+        def events_session(
+            session_id: str,
+            *,
+            resume_token: int | None = None,
+            limit: int = 256,
+            follow: bool = True,
+        ) -> Iterator[dict[str, Any]]:
+            assert (resume_token, limit, follow) == (None, 2, False)
+            yield {"seq": 1, "kind": "session.started"}
+            yield {"seq": 3, "kind": "assistant_message"}
+
+    monkeypatch.setattr(
+        breadboard_sdk, "BreadBoardClient", ConcurrentAppendClient
+    )
+    assert (
+        main(
+            [
+                "--json",
+                "session",
+                "--workspace",
+                str(tmp_path),
+                "--server",
+                "http://breadboard.test",
+                "events",
+                "running-compacted-session",
+            ]
+        )
+        == 0
+    )
+    output = json.loads(capsys.readouterr().out)
+    assert [event["seq"] for event in output["data"]["events"]] == [1]
+
+
 @pytest.mark.parametrize(
     ("event_count", "events", "expected_error"),
     [
-        (
-            2,
-            [(1, "assistant_message"), (3, "session.completed")],
-            "exceeded its initial bound",
-        ),
         (
             2,
             [(1, "assistant_message")],

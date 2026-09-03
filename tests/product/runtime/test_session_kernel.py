@@ -13,7 +13,7 @@ def _lock(digest: str = HASH) -> EffectiveHarnessLock: return EffectiveHarnessLo
 _PAYLOADS = {
     "session.started": {"effective_lock_hash": HASH, "task_hash": HASH}, "input.accepted": {"content_hash": HASH, "attachments": []},
     "assistant_message": {"metadata": {"has_content": True}}, "tool_call": {"tool": "list_dir"}, "tool_result": {"tool": "list_dir", "error": False},
-    "context.compacted": {"compaction_index": 1, "source_sequence_start": 1, "source_sequence_end": 1, "context_encoding": "base64", "effective_context": "", "context_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "raw_fact_ids": []},
+    "context.compacted": {"compaction_index": 1, "source_sequence_start": 1, "source_sequence_end": 1, "context_encoding": "base64", "effective_context": "", "context_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "raw_fact_ids": [], "shadowed_raw_fact_ids": []},
     "approval.requested": {"request_id": "r", "operation": "write"}, "approval.resolved": {"request_id": "r", "decision": "allow"},
     "session.reconfigured": {"effective_lock_hash": OTHER_HASH, "reason": ""}, "session.paused": {"reason": ""}, "session.resumed": {},
     "session.completed": {"outcome": "completed", "summary": ""}, "session.failed": {"outcome": "failed", "error": "error", "detail": "detail"}, "session.canceled": {"outcome": "canceled", "reason": ""}}
@@ -323,7 +323,10 @@ def test_replay_differential_compares_live_owner_snapshot_to_durable_replay() ->
 @pytest.mark.parametrize(
     "patch",
     [
-        {"raw_fact_ids": ["ctn_000002", "ctn_000003"]},
+        {
+            "raw_fact_ids": ["ctn_000002", "ctn_000003"],
+            "shadowed_raw_fact_ids": ["ctn_000002"],
+        },
         {"source_sequence_start": 1},
         {"compaction_index": 7},
     ],
@@ -332,13 +335,17 @@ def test_compaction_replay_rejects_fact_loss_and_invalid_boundaries(
     patch: dict[str, Any],
 ) -> None:
     session = Session.start(_lock(), "task")
-    session.compact(CompactionSnapshot(b"one", ("ctn_000001", "ctn_000002")))
-    session.compact(
+    first = session.compact(
+        CompactionSnapshot(b"one", ("ctn_000001", "ctn_000002"))
+    )
+    second = session.compact(
         CompactionSnapshot(
             b"two",
             ("ctn_000001", "ctn_000002", "ctn_000003"),
         )
     )
+    assert first.shadowed_raw_fact_ids == ()
+    assert second.shadowed_raw_fact_ids == ("ctn_000001", "ctn_000002")
     rows = list(session.events)
     replacement = rows[-1].as_dict()
     replacement["payload"].update(patch)
@@ -346,6 +353,23 @@ def test_compaction_replay_rejects_fact_loss_and_invalid_boundaries(
 
     with pytest.raises(ReplayError, match="compaction"):
         Session.restore(rows)
+
+
+def test_compaction_replay_rejects_incorrect_shadow_chain() -> None:
+    session = Session.start(_lock(), "task")
+    session.compact(CompactionSnapshot(b"one", ("ctn_000001",)))
+    session.compact(
+        CompactionSnapshot(b"two", ("ctn_000001", "ctn_000002"))
+    )
+    rows = list(session.events)
+    replacement = rows[-1].as_dict()
+    replacement["payload"]["shadowed_raw_fact_ids"] = ["ctn_000002"]
+    rows[-1] = KernelEvent(**replacement)
+
+    with pytest.raises(ReplayError, match="shadow"):
+        Session.restore(rows)
+
+
 
 
 @pytest.mark.parametrize(

@@ -337,6 +337,8 @@ def _remote_event_snapshot(
             )
         terminal_sequence = None
         previous_sequence = resume_token
+        bounded_page: list[dict[str, Any]] = []
+        crossed_bound = False
         for event in page:
             sequence = event["seq"]
             if type(sequence) is not int or sequence <= previous_sequence:
@@ -344,9 +346,8 @@ def _remote_event_snapshot(
                     "server returned a non-increasing session event page"
                 )
             if sequence > upper_sequence:
-                raise ValueError(
-                    "server event snapshot exceeded its initial bound"
-                )
+                crossed_bound = True
+                break
             if terminal_sequence is not None:
                 raise ValueError("server returned an event after termination")
             if event["kind"] in _TERMINAL_EVENT_KINDS:
@@ -356,16 +357,16 @@ def _remote_event_snapshot(
                     )
                 terminal_sequence = sequence
             previous_sequence = sequence
+            bounded_page.append(event)
+        events.extend(bounded_page)
+        if crossed_bound:
+            return events
         next_resume_token = page[-1]["seq"]
         if consumed_cursor is not None:
-            if (
-                consumed_cursor < next_resume_token
-                or consumed_cursor > upper_sequence
-            ):
+            if consumed_cursor < next_resume_token:
                 raise ValueError("server returned an invalid session event cursor")
             next_resume_token = consumed_cursor
-        events.extend(page)
-        if next_resume_token == upper_sequence:
+        if next_resume_token >= upper_sequence:
             return events
         resume_token = next_resume_token
     return events

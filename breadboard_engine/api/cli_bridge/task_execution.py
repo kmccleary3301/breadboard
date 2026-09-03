@@ -1065,24 +1065,39 @@ class TaskExecutionOwner:
         )
         if runner._model_override:
             runner._apply_model_override()
-        if not is_local_agent and (
-            interactive_permissions or (runner.request.stream and remote_stream_enabled)
-        ):
+        publish_remote_runtime_events = interactive_permissions or (
+            runner.request.stream and remote_stream_enabled
+        )
+
+        def handle_remote_runtime_event(
+            event_type: str,
+            payload: Dict[str, Any],
+            *,
+            turn: Optional[int] = None,
+        ) -> None:
+            if (
+                publish_remote_runtime_events
+                or event_type == "conversation.compaction.end"
+            ):
+                handle_runtime_event(event_type, payload, turn=turn)
+
+        if not is_local_agent:
             try:
                 from ray.util.queue import Queue
-            except ImportError:  # pragma: no cover
-                Queue = None  # type: ignore[misc]
-            if Queue is not None:
-                event_queue = Queue()
-                queue_stop, queue_thread = self.start_queue_pump(
-                    event_queue,
-                    handle_runtime_event,
-                    errors=queue_errors,
-                )
-                logger.info(
-                    "session(%s) remote event queue initialized",
-                    runner.session.session_id,
-                )
+            except ImportError as exc:  # pragma: no cover
+                raise RuntimeError(
+                    "Ray Queue required for remote runtime durability"
+                ) from exc
+            event_queue = Queue()
+            queue_stop, queue_thread = self.start_queue_pump(
+                event_queue,
+                handle_remote_runtime_event,
+                errors=queue_errors,
+            )
+            logger.info(
+                "session(%s) remote durability queue initialized",
+                runner.session.session_id,
+            )
         if interactive_permissions:
             if is_local_agent:
                 import queue as pyqueue
@@ -1206,7 +1221,7 @@ class TaskExecutionOwner:
                 queue_thread.join()
             if event_queue is not None:
                 try:
-                    self.drain_event_queue(event_queue, handle_runtime_event)
+                    self.drain_event_queue(event_queue, handle_remote_runtime_event)
                 except BaseException:
                     if run_task_error is None:
                         raise

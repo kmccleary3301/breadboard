@@ -250,6 +250,21 @@ def compute_tool_prompt_mode(tool_prompt_mode: str, will_use_native_tools: bool,
         suppress_prompts = bool((config or {}).get("provider_tools", {}).get("suppress_prompts", False))
         return "none" if suppress_prompts else "per_turn_append"
     return tool_prompt_mode
+def _queue_event_emitter(
+    event_queue: Any,
+) -> Callable[[str, Dict[str, Any], Optional[int]], None]:
+    def emit(
+        event_type: str, payload: Dict[str, Any], turn: Optional[int] = None
+    ) -> None:
+        try:
+            event_queue.put((event_type, payload, turn))
+        except Exception:
+            if event_type == "conversation.compaction.end":
+                raise
+
+    return emit
+
+
 
 
 def build_shell_timeout_diagnostic(command: str, exit_code: Any, stdout: str = "", stderr: str = "") -> str:
@@ -5598,12 +5613,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         # Initialize components
         emitter = event_emitter
         if emitter is None and event_queue is not None:
-            def queue_emitter(event_type: str, payload: Dict[str, Any], turn: Optional[int] = None) -> None:
-                try:
-                    event_queue.put((event_type, payload, turn))
-                except Exception:
-                    pass
-            emitter = queue_emitter
+            emitter = _queue_event_emitter(event_queue)
         self.todo_manager = None
         kernel_emitter = None
         if kernel_emitter_run_dir:
@@ -6278,16 +6288,36 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if isinstance(seed_messages, list):
                 cleaned = [msg for msg in seed_messages if isinstance(msg, dict)]
                 if cleaned:
+                    seed_provider_messages = resume_snapshot.get(
+                        "provider_messages", cleaned
+                    )
+                    provider_cleaned = (
+                        [
+                            msg
+                            for msg in seed_provider_messages
+                            if isinstance(msg, dict)
+                        ]
+                        if isinstance(seed_provider_messages, list)
+                        else cleaned
+                    )
                     with session_state.context_mutation():
-                        session_state.messages = list(cleaned)
-                        session_state.provider_messages = list(cleaned)
-                    resume_has_system = any(m.get("role") == "system" for m in cleaned if isinstance(m, dict))
+                        session_state.messages = copy.deepcopy(cleaned)
+                        session_state.provider_messages = copy.deepcopy(
+                            provider_cleaned
+                        )
+                    resume_has_system = any(
+                        message.get("role") == "system"
+                        for message in provider_cleaned
+                    )
             seed_transcript = resume_snapshot.get("transcript")
             if isinstance(seed_transcript, list):
                 session_state.transcript = [entry for entry in seed_transcript if isinstance(entry, dict)]
             meta = resume_snapshot.get("provider_metadata")
             if isinstance(meta, dict):
                 session_state.provider_metadata.update(meta)
+            ctree_events = resume_snapshot.get("ctree_events")
+            if ctree_events is not None:
+                session_state.restore_ctree_events(ctree_events)
             session_state.set_provider_metadata("resume_snapshot_applied", True)
         # Resume snapshots are subordinate to the owning product session.
         session_state.set_provider_metadata("session_id", provider_session_id)

@@ -35,3 +35,17 @@ class ContextWindowGuard:
                 pass
             return payload
         return None
+
+    def maybe_compact(
+        self,
+        session_state,
+        messages: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Persist the exact effective context when the live threshold is crossed."""
+        payload = self.maybe_warn(session_state, messages)
+        if payload is None:
+            return None
+        session_state.emit_compaction_snapshot(
+            session_state.compaction_snapshot(messages)
+        )
+        return payload

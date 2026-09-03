@@ -147,6 +147,7 @@ def _validate_compaction_payload(payload: Mapping[str, Any]) -> None:
         "effective_context",
         "context_sha256",
         "raw_fact_ids",
+        "shadowed_raw_fact_ids",
     }
     if set(payload) != required:
         raise ValueError("context.compacted payload must contain only stable compaction fields")
@@ -163,6 +164,19 @@ def _validate_compaction_payload(payload: Mapping[str, Any]) -> None:
         raise ValueError("raw_fact_ids must contain non-empty strings")
     if len(set(raw_fact_ids)) != len(raw_fact_ids):
         raise ValueError("raw_fact_ids must not contain duplicates")
+    shadowed_raw_fact_ids = payload.get("shadowed_raw_fact_ids")
+    if not isinstance(shadowed_raw_fact_ids, (list, tuple)):
+        raise ValueError("shadowed_raw_fact_ids must be an array")
+    if any(
+        type(value) is not str or not value for value in shadowed_raw_fact_ids
+    ):
+        raise ValueError(
+            "shadowed_raw_fact_ids must contain non-empty strings"
+        )
+    if len(set(shadowed_raw_fact_ids)) != len(shadowed_raw_fact_ids):
+        raise ValueError("shadowed_raw_fact_ids must not contain duplicates")
+    if not set(shadowed_raw_fact_ids).issubset(raw_fact_ids):
+        raise ValueError("shadowed_raw_fact_ids must cite retained raw facts")
     _sha256(payload.get("context_sha256"), "context_sha256")
     _decode_compaction_context(payload)
 def _validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
@@ -279,6 +293,7 @@ class CompactionEvent:
     source_sequence_end: int
     effective_context: bytes
     raw_fact_ids: tuple[str, ...]
+    shadowed_raw_fact_ids: tuple[str, ...]
 
 def _compaction_event(event: KernelEvent) -> CompactionEvent:
     if event.kind != "context.compacted":
@@ -291,6 +306,7 @@ def _compaction_event(event: KernelEvent) -> CompactionEvent:
         source_sequence_end=event.payload["source_sequence_end"],
         effective_context=_decode_compaction_context(event.payload),
         raw_fact_ids=tuple(event.payload["raw_fact_ids"]),
+        shadowed_raw_fact_ids=tuple(event.payload["shadowed_raw_fact_ids"]),
     )
 @dataclass(frozen=True, slots=True)
 class SessionView:
@@ -319,6 +335,8 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
     compaction_count = 0
     last_compaction_sequence: int | None = None
     retained_raw_facts: set[str] = set()
+    retained_raw_fact_order: tuple[str, ...] = ()
+    last_compaction_context_hash: str | None = None
     for expected, event in enumerate(rows, 1):
         if event.session_id != start.session_id or event.sequence != expected:
             raise ValueError("event stream is not contiguous for one session")
@@ -348,12 +366,26 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
                 or event.payload["source_sequence_end"] != event.sequence - 1
             ):
                 raise ValueError("compaction source range does not match durable event order")
-            current_raw_facts = set(event.payload["raw_fact_ids"])
+            current_raw_fact_order = tuple(event.payload["raw_fact_ids"])
+            current_raw_facts = set(current_raw_fact_order)
             if not retained_raw_facts.issubset(current_raw_facts):
                 raise ValueError("compaction cannot discard retained raw facts")
+            expected_shadowed = (
+                retained_raw_fact_order
+                if last_compaction_context_hash is not None
+                and event.payload["context_sha256"]
+                != last_compaction_context_hash
+                else ()
+            )
+            if tuple(event.payload["shadowed_raw_fact_ids"]) != expected_shadowed:
+                raise ValueError(
+                    "compaction shadow chain does not cite the replaced surface"
+                )
             compaction_count += 1
             last_compaction_sequence = event.sequence
             retained_raw_facts = current_raw_facts
+            retained_raw_fact_order = current_raw_fact_order
+            last_compaction_context_hash = event.payload["context_sha256"]
         if event.kind == "approval.requested":
             pending, status = event.payload["request_id"], "awaiting_approval"
         elif event.kind == "approval.resolved":
@@ -575,14 +607,22 @@ class Session:
         )
         if not set(self.raw_fact_ids).issubset(snapshot.raw_fact_ids):
             raise ValueError("compaction cannot discard retained raw facts")
+        context_sha256 = _hash_bytes(snapshot.effective_context)
+        shadowed_raw_fact_ids = (
+            list(previous.payload["raw_fact_ids"])
+            if previous is not None
+            and previous.payload["context_sha256"] != context_sha256
+            else []
+        )
         return {
             "compaction_index": 1 if previous is None else previous.payload["compaction_index"] + 1,
             "source_sequence_start": 1 if previous is None else previous.sequence,
             "source_sequence_end": len(self._events),
             "context_encoding": "base64",
             "effective_context": base64.b64encode(snapshot.effective_context).decode("ascii"),
-            "context_sha256": _hash_bytes(snapshot.effective_context),
+            "context_sha256": context_sha256,
             "raw_fact_ids": list(snapshot.raw_fact_ids),
+            "shadowed_raw_fact_ids": shadowed_raw_fact_ids,
         }
     def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])
     def input_digest(

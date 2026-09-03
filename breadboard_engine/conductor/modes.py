@@ -367,16 +367,13 @@ def get_model_response(
         }
     )
 
-    try:
-        context_payload = conductor.context_guard.maybe_warn(
-            session_state, send_messages
+    context_payload = conductor.context_guard.maybe_compact(
+        session_state, send_messages
+    )
+    if context_payload:
+        session_state.set_provider_metadata(
+            "context_window_warning", context_payload
         )
-        if context_payload:
-            session_state.set_provider_metadata(
-                "context_window_warning", context_payload
-            )
-    except Exception:
-        pass
 
     provider_tools_cfg = getattr(conductor, "_provider_tools_effective", None) or dict(
         (conductor.config.get("provider_tools") or {})

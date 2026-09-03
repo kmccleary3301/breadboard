@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import copy
 import json
 import queue
 import threading
@@ -12,10 +14,10 @@ import pytest
 from fastapi import HTTPException
 
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.events import Session, replay_differential
 from breadboard.product.runtime import ReplayError, session_store
 from breadboard.product.coordination.work_items import WorkItemRepository
 from breadboard.product.runtime.children import DurableChildReconciler
+from breadboard.product.runtime.events import Session, replay_differential
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest,
@@ -35,6 +37,7 @@ from breadboard_engine.api.cli_bridge.runtime_event_projector import (
     BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES,
     BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES,
     KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES,
+    RuntimeEventProjector,
     RuntimeProtocolError,
     _strip_completion_sentinels,
 )
@@ -42,6 +45,7 @@ from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.provider.contracts import (
     strip_public_completion_sentinel_tree,
 )
+from breadboard_engine.conductor.context_window_guard import ContextWindowGuard
 from breadboard_engine.state.session_state import SessionState
 
 
@@ -328,6 +332,7 @@ def test_session_state_compaction_snapshot_reconstructs_after_three_boundaries()
         session_id="compaction-long-horizon",
     )
     retained: set[str] = set()
+    previous_raw_fact_ids: tuple[str, ...] = ()
 
     for trigger in range(1, 4):
         state.add_message(
@@ -346,12 +351,161 @@ def test_session_state_compaction_snapshot_reconstructs_after_three_boundaries()
         retained.update(node["id"] for node in state.ctree_store.nodes)
 
         event = session.compact(snapshot)
+        assert event.shadowed_raw_fact_ids == previous_raw_fact_ids
+        previous_raw_fact_ids = event.raw_fact_ids
         restored = Session.restore(session.events)
 
         assert event.compaction_index == trigger
         assert restored.effective_context == owner_bytes
         assert set(restored.raw_fact_ids) == retained
         assert replay_differential(session) == {}
+
+
+def test_session_snapshot_restores_ctree_identity_before_new_facts() -> None:
+    original = SessionState("ws", "image", {})
+    original.add_message({"role": "user", "content": "before restart"})
+    retained = original.create_snapshot("mock")
+
+    restarted = SessionState("ws", "image", {})
+    restarted.restore_ctree_events(retained["ctree_events"])
+    restarted.add_message({"role": "assistant", "content": "after restart"})
+
+    assert [node["id"] for node in restarted.ctree_store.nodes] == [
+        "ctn_000001",
+        "ctn_000002",
+    ]
+    assert restarted.compaction_snapshot().raw_fact_ids == (
+        "ctn_000001",
+        "ctn_000002",
+    )
+
+def test_context_threshold_emits_exact_effective_provider_context() -> None:
+    collector = EventCollector()
+    state = SessionState("ws", "image", {}, event_emitter=collector)
+    state.add_message({"role": "user", "content": "historical"})
+    effective_messages = [
+        {"role": "user", "content": "historical"},
+        {"role": "system", "content": "per-turn-" + "x" * 20},
+    ]
+
+    payload = ContextWindowGuard(max_tokens=1, warn_ratio=1.0).maybe_compact(
+        state,
+        effective_messages,
+    )
+
+    assert payload is not None
+    event = collector.of_type("conversation.compaction.end")
+    assert len(event) == 1
+    encoded = event[0][1]["effective_context"]
+    assert json.loads(base64.b64decode(encoded)) == effective_messages
+    assert json.loads(base64.b64decode(encoded)) != state.provider_messages
+
+def test_context_threshold_requires_durable_compaction_emitter() -> None:
+    state = SessionState("ws", "image", {})
+
+    with pytest.raises(
+        RuntimeError, match="compaction persistence emitter unavailable"
+    ):
+        ContextWindowGuard(max_tokens=1, warn_ratio=1.0).maybe_compact(
+            state,
+            [{"role": "user", "content": "x" * 20}],
+        )
+
+
+def test_runtime_projector_commits_internal_compaction_without_leaking_context() -> None:
+    product = Session.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}),
+        "project compaction",
+        session_id="project-compaction",
+    )
+    holder = SimpleNamespace(product_session=product)
+    projector = RuntimeEventProjector(
+        holder,
+        lambda: None,
+        observation_tool_name=lambda _payload: None,
+        product_session_lock=threading.RLock(),
+        product_tool_completions={},
+    )
+    effective_context = b'[{"role":"user","content":"exact"}]'
+
+    translated = projector.translate(
+        "conversation.compaction.end",
+        {
+            "context_encoding": "base64",
+            "effective_context": base64.b64encode(effective_context).decode("ascii"),
+            "raw_fact_ids": ["ctn_000001"],
+        },
+        None,
+    )
+
+    assert translated is not None
+    assert product.effective_context == effective_context
+    assert product.raw_fact_ids == ("ctn_000001",)
+    assert "effective_context" not in translated[1]
+
+
+def test_session_snapshot_rejects_non_exact_ctree_event_reconstruction() -> None:
+    original = SessionState("ws", "image", {})
+    original.add_message({"role": "user", "content": "retained"})
+    retained = original.create_snapshot("mock")["ctree_events"]
+
+    without_node = copy.deepcopy(retained)
+    without_node[0].pop("node")
+    with pytest.raises(ValueError, match="round-trip exactly"):
+        SessionState("ws", "image", {}).restore_ctree_events(without_node)
+
+    duplicate_identity = copy.deepcopy(retained)
+    duplicate_identity.append(copy.deepcopy(duplicate_identity[0]))
+    with pytest.raises(ValueError, match="duplicate retained identities"):
+        SessionState("ws", "image", {}).restore_ctree_events(duplicate_identity)
+
+
+def test_session_snapshot_preserves_distinct_provider_context() -> None:
+    state = SessionState("ws", "image", {})
+    generic_tool_result = {
+        "role": "tool",
+        "tool_call_id": "call-1",
+        "content": "generic",
+    }
+    provider_tool_result = {
+        "role": "user",
+        "content": [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call-1",
+                "content": "provider-native",
+            }
+        ],
+    }
+    with state.context_mutation():
+        state.messages.append(generic_tool_result)
+        state.provider_messages.append(provider_tool_result)
+
+    snapshot = state.create_snapshot("mock")
+    generic_tool_result["content"] = "mutated"
+    provider_tool_result["content"][0]["content"] = "mutated"
+
+    assert snapshot["messages"] == [
+        {
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "content": "generic",
+        }
+    ]
+    assert snapshot["provider_messages"] == [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "call-1",
+                    "content": "provider-native",
+                }
+            ],
+        }
+    ]
+
+
 
 
 def test_compaction_snapshot_serializes_message_and_fact_mutation() -> None:
@@ -380,6 +534,46 @@ def test_compaction_snapshot_serializes_message_and_fact_mutation() -> None:
         {"content": "after-boundary", "role": "user"}
     ]
     assert len(after.raw_fact_ids) == 1
+
+def test_persistent_snapshot_waits_for_message_fact_transaction() -> None:
+    state = SessionState("ws", "image", {})
+    record_started = threading.Event()
+    allow_record = threading.Event()
+    snapshot_finished = threading.Event()
+    captured: dict[str, object] = {}
+    original_record = state._record_ctree
+
+    def paused_record(*args: object, **kwargs: object) -> object:
+        record_started.set()
+        assert allow_record.wait(timeout=1)
+        return original_record(*args, **kwargs)
+
+    state._record_ctree = paused_record  # type: ignore[method-assign]
+    writer = threading.Thread(
+        target=lambda: state.add_message(
+            {"role": "user", "content": "transactional"}
+        )
+    )
+
+    def take_snapshot() -> None:
+        captured.update(state.create_snapshot("mock"))
+        snapshot_finished.set()
+
+    writer.start()
+    assert record_started.wait(timeout=1)
+    snapshotter = threading.Thread(target=take_snapshot)
+    snapshotter.start()
+    assert not snapshot_finished.wait(timeout=0.05)
+    allow_record.set()
+    writer.join(timeout=1)
+    snapshotter.join(timeout=1)
+
+    assert snapshot_finished.is_set()
+    assert captured["messages"] == [
+        {"role": "user", "content": "transactional"}
+    ]
+    assert len(captured["ctree_events"]) == 1
+
 
 def test_session_state_owns_nested_provider_message_values() -> None:
     state = SessionState("ws", "image", {})
@@ -2995,6 +3189,103 @@ def test_remote_observation_sink_failure_prevents_task_success(
     assert isinstance(failure.value.__cause__, OSError)
     assert product_session.read_model.status == "running"
     assert product_session.read_model.event_count == 1
+
+
+def test_remote_nonstreaming_compaction_reaches_product_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from breadboard.product.runtime import Session as ProductSession
+    from ray.util import queue as ray_queue
+
+    effective_context = b'[{"content":"exact remote context","role":"user"}]'
+
+    class FakeQueue:
+        def __init__(self) -> None:
+            self.queue: "queue.Queue[Tuple[Any, Any, Any]]" = queue.Queue()
+
+        def put(self, item: Tuple[Any, Any, Any]) -> None:
+            self.queue.put(item)
+
+        def get(self, timeout: float | None = None) -> Tuple[Any, Any, Any]:
+            raise queue.Empty
+
+        def get_nowait(self) -> Tuple[Any, Any, Any]:
+            return self.queue.get_nowait()
+
+    class RemoteAgent:
+        _local_mode = False
+        config: Dict[str, Any] = {"modes": [{"tools_enabled": []}]}
+        _active_tool_names: list[str] = []
+
+        def run_task(self, _task_text: str, **kwargs: Any) -> Dict[str, Any]:
+            assert kwargs["event_emitter"] is None
+            kwargs["event_queue"].put(
+                (
+                    "assistant_message",
+                    {"message": {"role": "assistant", "content": "must stay private"}},
+                    1,
+                )
+            )
+            kwargs["event_queue"].put(
+                (
+                    "conversation.compaction.end",
+                    {
+                        "context_encoding": "base64",
+                        "effective_context": base64.b64encode(
+                            effective_context
+                        ).decode("ascii"),
+                        "raw_fact_ids": ["ctn_000001"],
+                    },
+                    1,
+                )
+            )
+            return {
+                "completion_summary": {"completed": True},
+                "reward_metrics_payload": {},
+                "messages": [],
+                "logging_dir": None,
+            }
+
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}),
+        "task",
+        session_id="remote-compaction",
+    )
+    record = SessionRecord(
+        session_id="remote-compaction",
+        status=SessionStatus.RUNNING,
+    )
+    record.product_session = product_session
+    turn = TurnRecord(
+        input_id="input-remote-compaction",
+        turn_id="turn-remote-compaction",
+        client_message_id="message-remote-compaction",
+        content="task",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(
+            config_path="cfg.yaml",
+            task="task",
+            stream=False,
+        ),
+    )
+    runner._agent = RemoteAgent()
+    monkeypatch.setattr(ray_queue, "Queue", FakeQueue)
+    monkeypatch.delenv("BREADBOARD_ENABLE_REMOTE_STREAM", raising=False)
+
+    runner._execute_task("task", input_id=turn.input_id, turn_id=turn.turn_id)
+
+    assert product_session.effective_context == effective_context
+    assert product_session.raw_fact_ids == ("ctn_000001",)
+    assert all(event.kind != "message.assistant" for event in product_session.events)
+    assert runner._published_events == 1
 
 
 @pytest.mark.asyncio

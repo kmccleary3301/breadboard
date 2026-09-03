@@ -14,7 +14,7 @@ TOOLS_ROOT = os.path.join(PROJECT_ROOT, "tool_calling")
 if TOOLS_ROOT not in sys.path:
     sys.path.insert(0, TOOLS_ROOT)
 
-from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.agent_llm_openai import OpenAIConductor, _queue_event_emitter
 from breadboard_engine.provider.capability_probe import ProviderCapabilityProbeRunner
 from breadboard_engine.provider.health import RouteHealthManager
 from breadboard_engine.provider.contracts import (
@@ -32,6 +32,17 @@ from breadboard_engine.provider.runtime import (
 from breadboard_engine.provider.routing import ProviderDescriptor
 from breadboard_engine.state.session_state import SessionState
 from breadboard_engine.provider.metrics import ProviderMetricsCollector
+def test_compaction_event_queue_failure_is_not_silenced() -> None:
+    class FailingQueue:
+        def put(self, _event: object) -> None:
+            raise RuntimeError("queue disconnected")
+
+    emit = _queue_event_emitter(FailingQueue())
+    emit("assistant_message", {"message": "best effort"})
+    with pytest.raises(RuntimeError, match="queue disconnected"):
+        emit("conversation.compaction.end", {"reason": "threshold"})
+
+
 
 
 def test_provider_schema_names_roundtrip():
