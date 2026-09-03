@@ -1396,6 +1396,7 @@ async def test_legacy_retained_record_derives_workspace_event_root(
 
     assert recovered.product_session.read_model.status == "running"
     assert recovered.loaded_from_retained_state is False
+    await _stop(recovered)
 
 
 @pytest.mark.asyncio
