@@ -35,3 +35,35 @@ def test_projection_owner_preserves_public_envelope() -> None:
     assert projected["schema_version"] == "bb.public_session_event.v1"
     assert projected["event_id"] == "session:session-1:3"
     assert projected["payload_schema_version"] == "bb.payload.message.assistant.v1"
+def test_projection_omits_internal_annotation_and_identity_only_fields() -> None:
+    annotation = {
+        "session_id": "session-1",
+        "sequence": 4,
+        "kind": "annotation",
+        "occurred_at": "2026-09-02T00:00:00Z",
+        "payload": {
+            "annotation_id": "annotation-1",
+            "message_id": "message-a",
+            "trajectory_id": "trajectory-a",
+            "label": "preferred",
+            "author": "reviewer-1",
+            "generation": "generation-a",
+        },
+    }
+    assistant = {
+        "session_id": "session-1",
+        "sequence": 3,
+        "kind": "assistant_message",
+        "occurred_at": "2026-09-02T00:00:00Z",
+        "payload": {
+            "metadata": {"has_content": True},
+            "message_id": "message-a",
+            "trajectory_id": "trajectory-a",
+        },
+    }
+
+    assert public_session_event(annotation) is None
+    assert public_session_event(assistant)["payload"] == {
+        "metadata": {"has_content": True},
+    }
+    assert assistant["payload"]["message_id"] == "message-a"
