@@ -8870,6 +8870,18 @@
         },
         {
           "kind": "class",
+          "name": "CoordinationProjectionAsOfError"
+        },
+        {
+          "kind": "class",
+          "name": "CoordinationProjectionError"
+        },
+        {
+          "kind": "class",
+          "name": "CoordinationProjectionVersionError"
+        },
+        {
+          "kind": "class",
           "name": "CoordinationProjector"
         },
         {
@@ -8879,6 +8891,22 @@
         {
           "kind": "class",
           "name": "DelegationEdge"
+        },
+        {
+          "kind": "function",
+          "name": "project_coordination"
+        },
+        {
+          "kind": "function",
+          "name": "project_coordination_live"
+        },
+        {
+          "kind": "function",
+          "name": "project_coordination_replay"
+        },
+        {
+          "kind": "function",
+          "name": "project_coordination_snapshot"
         }
       ]
     },
@@ -9431,6 +9459,18 @@
         },
         {
           "kind": "class",
+          "name": "SessionProjectionAsOfError"
+        },
+        {
+          "kind": "class",
+          "name": "SessionProjectionError"
+        },
+        {
+          "kind": "class",
+          "name": "SessionProjectionVersionError"
+        },
+        {
+          "kind": "class",
           "name": "SessionView"
         },
         {
@@ -9440,6 +9480,22 @@
         {
           "kind": "class",
           "name": "UUIDSource"
+        },
+        {
+          "kind": "function",
+          "name": "project_session"
+        },
+        {
+          "kind": "function",
+          "name": "project_session_live"
+        },
+        {
+          "kind": "function",
+          "name": "project_session_replay"
+        },
+        {
+          "kind": "function",
+          "name": "project_session_snapshot"
         },
         {
           "kind": "function",
@@ -10856,6 +10912,18 @@
         },
         {
           "kind": "class",
+          "name": "CoordinationProjectionAsOfError"
+        },
+        {
+          "kind": "class",
+          "name": "CoordinationProjectionError"
+        },
+        {
+          "kind": "class",
+          "name": "CoordinationProjectionVersionError"
+        },
+        {
+          "kind": "class",
           "name": "CoordinationProjector"
         },
         {
@@ -10865,6 +10933,22 @@
         {
           "kind": "class",
           "name": "DelegationEdge"
+        },
+        {
+          "kind": "function",
+          "name": "project_coordination"
+        },
+        {
+          "kind": "function",
+          "name": "project_coordination_live"
+        },
+        {
+          "kind": "function",
+          "name": "project_coordination_replay"
+        },
+        {
+          "kind": "function",
+          "name": "project_coordination_snapshot"
         }
       ]
     },
