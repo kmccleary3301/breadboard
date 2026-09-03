@@ -5,7 +5,7 @@ from pathlib import Path; from typing import Any
 from jsonschema import Draft202012Validator
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
-from breadboard.product.runtime.events import AnnotationRecord, GenerationAdoptionError, JsonlEventSink, KernelEvent, Session, SessionView, rebuild
+from breadboard.product.runtime.events import AnnotationRecord, CompactionSnapshot, GenerationAdoptionError, JsonlEventSink, KernelEvent, ReplayError, Session, SessionView, rebuild, replay_differential
 from breadboard.product.runtime.session_store import validate_session_id
 from breadboard.product.runtime import session_store
 HASH, OTHER_HASH, PORTS, ARTIFACTS = "sha256:" + "a" * 64, "sha256:" + "b" * 64, "breadboard.product.runtime.events.os.", "breadboard.product.runtime.artifacts.os."
@@ -13,6 +13,7 @@ def _lock(digest: str = HASH) -> EffectiveHarnessLock: return EffectiveHarnessLo
 _PAYLOADS = {
     "session.started": {"effective_lock_hash": HASH, "task_hash": HASH}, "input.accepted": {"content_hash": HASH, "attachments": []},
     "assistant_message": {"metadata": {"has_content": True}}, "tool_call": {"tool": "list_dir"}, "tool_result": {"tool": "list_dir", "error": False},
+    "context.compacted": {"compaction_index": 1, "source_sequence_start": 1, "source_sequence_end": 1, "context_encoding": "base64", "effective_context": "", "context_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "raw_fact_ids": []},
     "approval.requested": {"request_id": "r", "operation": "write"}, "approval.resolved": {"request_id": "r", "decision": "allow"},
     "session.reconfigured": {"effective_lock_hash": OTHER_HASH, "reason": ""}, "session.paused": {"reason": ""}, "session.resumed": {},
     "session.completed": {"outcome": "completed", "summary": ""}, "session.failed": {"outcome": "failed", "error": "error", "detail": "detail"}, "session.canceled": {"outcome": "canceled", "reason": ""}}
@@ -30,8 +31,8 @@ def test_session_view_deeply_freezes_terminal_outcome() -> None:
     with pytest.raises(TypeError): view.terminal_outcome["nested"]["code"] = 3  # type: ignore[index]
     assert view.as_dict()["terminal_outcome"]["nested"]["code"] == 1; Changing = type("Changing", (dict,), {"items": lambda self: {"outcome": "failed", "summary": 7}.items()})
     with pytest.raises(ValueError): SessionView("s-1", "completed", HASH, HASH, 2, terminal_outcome=Changing(outcome="completed", summary="ok"))
-_ACTIONS = {"input": lambda s: s.input("content"), "assistant": lambda s: s.assistant_message("content"), "tool_call": lambda s: s.tool_called("list_dir"), "tool_result": lambda s: s.tool_completed("list_dir", False), "request": lambda s: s.request_approval("r", "write"), "resolve": lambda s: s.resolve_approval("r", "allow"), "reconfigure": lambda s: s.reconfigure(_lock(OTHER_HASH), ""), "pause": lambda s: s.pause(""), "resume": lambda s: s.resume(), "cancel": lambda s: s.cancel(""), "complete": lambda s: s.complete(""), "fail": lambda s: s.fail("error", "detail")}
-_FACADE_ALLOWED = {"input": {"running"}, "assistant": {"running"}, "tool_call": {"running"}, "tool_result": {"running"}, "request": {"running"}, "resolve": {"awaiting_approval"}, "reconfigure": {"running", "awaiting_approval", "paused"}, "pause": {"running"}, "resume": {"paused"}, "cancel": {"running", "awaiting_approval", "paused"}, "complete": {"running"}, "fail": {"running", "awaiting_approval", "paused"}}
+_ACTIONS = {"input": lambda s: s.input("content"), "assistant": lambda s: s.assistant_message("content"), "tool_call": lambda s: s.tool_called("list_dir"), "tool_result": lambda s: s.tool_completed("list_dir", False), "compact": lambda s: s.compact(CompactionSnapshot(b"context", ())), "request": lambda s: s.request_approval("r", "write"), "resolve": lambda s: s.resolve_approval("r", "allow"), "reconfigure": lambda s: s.reconfigure(_lock(OTHER_HASH), ""), "pause": lambda s: s.pause(""), "resume": lambda s: s.resume(), "cancel": lambda s: s.cancel(""), "complete": lambda s: s.complete(""), "fail": lambda s: s.fail("error", "detail")}
+_FACADE_ALLOWED = {"input": {"running"}, "assistant": {"running"}, "tool_call": {"running"}, "tool_result": {"running"}, "compact": {"running"}, "request": {"running"}, "resolve": {"awaiting_approval"}, "reconfigure": {"running", "awaiting_approval", "paused"}, "pause": {"running"}, "resume": {"paused"}, "cancel": {"running", "awaiting_approval", "paused"}, "complete": {"running"}, "fail": {"running", "awaiting_approval", "paused"}}
 def _session(status: str) -> Session:
     session = Session.start(_lock(), "task"); {"awaiting_approval": lambda: session.request_approval("r", "write"), "paused": lambda: session.pause(""), "completed": lambda: session.complete(""), "failed": lambda: session.fail("error", "detail"), "canceled": lambda: session.cancel("")}[status]() if status != "running" else None; return session
 @pytest.mark.parametrize("status", ["running", "awaiting_approval", "paused", "completed", "failed", "canceled"])
@@ -41,8 +42,9 @@ def test_facade_transition_table_is_exhaustive(status: str, action: str) -> None
     if status not in _FACADE_ALLOWED[action]:
         with pytest.raises(RuntimeError): _ACTIONS[action](session)
         assert (session.events, session.read_model) == before; return
-    view = _ACTIONS[action](session); expected = status if action in {"input", "assistant", "tool_call", "tool_result", "reconfigure"} else {"request": "awaiting_approval", "resolve": "running", "pause": "paused", "resume": "running", "cancel": "canceled", "complete": "completed", "fail": "failed"}[action]
-    assert view == session.read_model == rebuild(session.events) and view.status == expected and view.event_count == before[1].event_count + 1
+    result = _ACTIONS[action](session); expected = status if action in {"input", "assistant", "tool_call", "tool_result", "compact", "reconfigure"} else {"request": "awaiting_approval", "resolve": "running", "pause": "paused", "resume": "running", "cancel": "canceled", "complete": "completed", "fail": "failed"}[action]
+    view = session.read_model
+    assert (result == view or action == "compact") and view == rebuild(session.events) and view.status == expected and view.event_count == before[1].event_count + 1
     if expected in {"completed", "failed", "canceled"}: assert view.pending_approval is None
 def test_runtime_observations_persist_only_stable_secret_free_projections() -> None:
     session = Session.start(_lock(), "task")
@@ -242,7 +244,7 @@ def test_portable_session_ids_remain_valid(session_id: str) -> None:
 def test_public_session_schema_matches_projection_invariants() -> None:
     validator = Draft202012Validator(json.loads((Path(__file__).resolve().parents[3] / "contracts/public/schemas/bb.session.v1.schema.json").read_text())); valid = _session("running").read_model.as_dict(); validator.validate(valid)
     for patch in ({"effective_lock_hash": HASH + "\n"}, {"task_hash": valid["task_hash"] + "\n"}, {"pending_approval": "r"}, {"status": "awaiting_approval"}, {"status": "completed", "event_count": 1, "terminal_outcome": {"outcome": "completed", "summary": ""}}, {"status": "completed", "event_count": 2}, {"status": "completed", "event_count": 2, "terminal_outcome": {"outcome": "failed", "error": "x", "detail": "y"}}): assert list(validator.iter_errors({**valid, **patch})), patch
-_EVENT_KINDS = {"input": "input.accepted", "assistant": "assistant_message", "tool_call": "tool_call", "tool_result": "tool_result", "request": "approval.requested", "resolve": "approval.resolved", "reconfigure": "session.reconfigured", "pause": "session.paused", "resume": "session.resumed", "cancel": "session.canceled", "complete": "session.completed", "fail": "session.failed"}
+_EVENT_KINDS = {"input": "input.accepted", "assistant": "assistant_message", "tool_call": "tool_call", "tool_result": "tool_result", "compact": "context.compacted", "request": "approval.requested", "resolve": "approval.resolved", "reconfigure": "session.reconfigured", "pause": "session.paused", "resume": "session.resumed", "cancel": "session.canceled", "complete": "session.completed", "fail": "session.failed"}
 _REPLAY_DENIED = [(status, action) for status in ("running", "awaiting_approval", "paused", "completed", "failed", "canceled") for action in _ACTIONS if status not in _FACADE_ALLOWED[action]]
 @pytest.mark.parametrize(("status", "action"), _REPLAY_DENIED)
 def test_replay_transition_table_rejects_every_disallowed_pair(status: str, action: str) -> None: events = list(_session(status).events); events.append(_event(len(events) + 1, _EVENT_KINDS[action])); pytest.raises(ValueError, rebuild, events)
@@ -272,6 +274,70 @@ def test_generation_adoption_rejects_incompatible_lock_as_typed_refusal(
         session.adopt_generation(_lock(invalid_hash), "invalid")
     assert error.value.code == "incompatible"
     assert session.generation_sequence == (HASH,)
+
+
+def test_session_compaction_reconstructs_exact_context_and_raw_facts() -> None:
+    session = Session.start(_lock(), "task", session_id="compaction-session")
+    snapshot = CompactionSnapshot(
+        effective_context=b'[{\"role\":\"user\",\"content\":\"exact bytes\"}]',
+        raw_fact_ids=("ctn_000001", "ctn_000002"),
+    )
+
+    compacted = session.compact(snapshot)
+    restored = Session.restore(session.events)
+
+    assert compacted.sequence == 2
+    assert restored.effective_context == snapshot.effective_context
+    assert restored.raw_fact_ids == snapshot.raw_fact_ids
+    assert replay_differential(session) == {}
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"raw_fact_ids": ["ctn_000002", "ctn_000003"]},
+        {"source_sequence_start": 1},
+        {"compaction_index": 7},
+    ],
+)
+def test_compaction_replay_rejects_fact_loss_and_invalid_boundaries(
+    patch: dict[str, Any],
+) -> None:
+    session = Session.start(_lock(), "task")
+    session.compact(CompactionSnapshot(b"one", ("ctn_000001", "ctn_000002")))
+    session.compact(
+        CompactionSnapshot(
+            b"two",
+            ("ctn_000001", "ctn_000002", "ctn_000003"),
+        )
+    )
+    rows = list(session.events)
+    replacement = rows[-1].as_dict()
+    replacement["payload"].update(patch)
+    rows[-1] = KernelEvent(**replacement)
+
+    with pytest.raises(ReplayError, match="compaction"):
+        Session.restore(rows)
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"effective_context": "not base64"},
+        {"context_sha256": "sha256:" + "0" * 64},
+        {"raw_fact_ids": ["ctn_000001", "ctn_000001"]},
+    ],
+)
+def test_compaction_event_rejects_corrupt_context_and_fact_identity(
+    patch: dict[str, Any],
+) -> None:
+    session = Session.start(_lock(), "task")
+    session.compact(CompactionSnapshot(b"exact", ("ctn_000001",)))
+    record = session.events[-1].as_dict()
+    record["payload"].update(patch)
+
+    with pytest.raises(ValueError):
+        KernelEvent(**record)
 def test_annotation_event_uses_registered_target_and_preserves_message_owner_bytes() -> None:
 
     session = Session.start(_lock(), "task")

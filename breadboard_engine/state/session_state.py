@@ -11,6 +11,7 @@ import threading
 from dataclasses import asdict
 
 from ..runtime.reasoning_trace_store import ReasoningTraceStore
+from breadboard.product.runtime.events import CompactionSnapshot
 from ..ctrees.store import CTreeStore
 from ..monitoring.reward_metrics import RewardMetricsRecorder, RewardMetricsRecord
 from ..provider.ir import (
@@ -518,6 +519,20 @@ class SessionState:
         except Exception:
             return None
     
+    def compaction_snapshot(self) -> CompactionSnapshot:
+        """Snapshot model-facing bytes and cumulative C-Tree identities at a quiescent boundary."""
+        effective_context = json.dumps(
+            self.provider_messages,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        return CompactionSnapshot(
+            effective_context=effective_context,
+            raw_fact_ids=tuple(node["id"] for node in self.ctree_store.nodes),
+        )
+
     def add_message(self, message: Dict[str, Any], to_provider: bool = True):
         """Add a message to the session state"""
         should_store_message = True

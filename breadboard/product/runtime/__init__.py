@@ -3,6 +3,8 @@ from .artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
 from .events import (
     AnnotationRecord,
     GenerationAdoptionError,
+    CompactionEvent,
+    CompactionSnapshot,
     KernelEvent,
     Projected,
     ProjectionSource,
@@ -18,6 +20,7 @@ from .events import (
     project_session_replay,
     project_session_snapshot,
     rebuild,
+    replay_differential,
 )
 from .public_event_projection import (
     PUBLIC_PAYLOAD_SCHEMAS,
@@ -31,6 +34,8 @@ __all__ = [
     "ArtifactStore",
     "AnnotationRecord",
     "GenerationAdoptionError",
+    "CompactionEvent",
+    "CompactionSnapshot",
     "KernelEvent",
     "Projected",
     "ProjectionSource",
@@ -48,5 +53,6 @@ __all__ = [
     "rebuild",
     "PUBLIC_PAYLOAD_SCHEMAS",
     "PUBLIC_SESSION_EVENT_SCHEMA_VERSION",
+    "replay_differential",
     "public_session_event",
 ]

@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from fastapi import HTTPException
 
+from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.product.runtime.events import Session, replay_differential
 from breadboard.product.runtime import ReplayError, session_store
 from breadboard.product.coordination.work_items import WorkItemRepository
 from breadboard.product.runtime.children import DurableChildReconciler
@@ -316,6 +318,40 @@ def test_session_state_emits_ctree_node_events() -> None:
     snapshot = payload.get("snapshot") or {}
     assert node.get("id")
     assert snapshot.get("node_count")
+
+
+def test_session_state_compaction_snapshot_reconstructs_after_three_boundaries() -> None:
+    state = SessionState("ws", "image", {})
+    session = Session.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}),
+        "long horizon",
+        session_id="compaction-long-horizon",
+    )
+    retained: set[str] = set()
+
+    for trigger in range(1, 4):
+        state.add_message(
+            {"role": "user", "content": f"request-{trigger}"},
+            to_provider=True,
+        )
+        state.add_transcript_entry({"checkpoint": trigger})
+        owner_bytes = json.dumps(
+            state.provider_messages,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        snapshot = state.compaction_snapshot()
+        retained.update(node["id"] for node in state.ctree_store.nodes)
+
+        event = session.compact(snapshot)
+        restored = Session.restore(session.events)
+
+        assert event.compaction_index == trigger
+        assert restored.effective_context == owner_bytes
+        assert set(restored.raw_fact_ids) == retained
+        assert replay_differential(session) == {}
 
 
 def test_session_state_builds_kernel_event_record_and_normalizes_transcript() -> None:

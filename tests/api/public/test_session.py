@@ -29,7 +29,7 @@ from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
 from breadboard.product.runtime import session_store
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.events import AnnotationRecord, KernelEvent, ReplayError, Session
+from breadboard.product.runtime.events import AnnotationRecord, CompactionSnapshot, KernelEvent, ReplayError, Session
 
 
 @pytest.fixture(autouse=True)
@@ -406,6 +406,7 @@ def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
         )
     )
     session.resume()
+    session.compact(CompactionSnapshot(b"compacted", ("fact-a",)))
     session.complete("done")
     session_store.create_session(tmp_path, session)
 
@@ -419,6 +420,15 @@ def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
     assert len(records) == 1
     assert records[0]["kind"] == "session.resumed"
     assert records[0]["seq"] == 5
+    resumed_after_compaction = client.get(
+        f"/v1/sessions/{session_id}/events"
+        "?resume_token=5&limit=1&follow=false"
+    )
+    assert resumed_after_compaction.status_code == 200
+    after_compaction = _stream_records(resumed_after_compaction)
+    assert len(after_compaction) == 1
+    assert after_compaction[0]["kind"] == "session.completed"
+    assert after_compaction[0]["seq"] == 7
 
 
 def test_live_event_limit_fetches_visible_row_after_hidden_annotation(
