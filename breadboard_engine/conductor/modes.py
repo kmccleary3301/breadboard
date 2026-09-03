@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.core import ToolDefinition
@@ -26,6 +28,74 @@ from .components import (
 from ..surface import record_tool_schema_snapshot
 from ..security import redaction
 
+
+def _surface_digest(value: Any) -> str:
+    if isinstance(value, str):
+        payload = value.encode("utf-8")
+    else:
+        payload = json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _finalize_model_surface(
+    compiled_surface: Any,
+    messages: List[Dict[str, Any]],
+    tools_schema: Optional[List[Dict[str, Any]]],
+    per_turn_text: str,
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(compiled_surface, dict):
+        return None
+    surface = copy.deepcopy(compiled_surface)
+    system_messages = [
+        (index, message.get("content"))
+        for index, message in enumerate(messages)
+        if isinstance(message, dict) and message.get("role") == "system"
+    ]
+    surface["prompt_sections"] = {
+        "system": [
+            {
+                "order": order,
+                "source_ref": f"provider_request.messages[{index}]",
+                "content_sha256": _surface_digest(content),
+                "uncertainty": None,
+            }
+            for order, (index, content) in enumerate(system_messages)
+        ],
+        "per_turn": (
+            [
+                {
+                    "order": 0,
+                    "source_ref": "provider_request.per_turn",
+                    "content_sha256": _surface_digest(per_turn_text),
+                    "uncertainty": None,
+                }
+            ]
+            if per_turn_text
+            else []
+        ),
+    }
+    surface["tools"] = [
+        {
+            "order": index,
+            "source_ref": f"provider_request.tools[{index}]",
+            "schema_sha256": _surface_digest(tool),
+            "uncertainty": None,
+        }
+        for index, tool in enumerate(tools_schema or [])
+    ]
+    surface["provider_request"] = {
+        "messages_sha256": _surface_digest(messages),
+        "tools_sha256": _surface_digest(tools_schema),
+        "request_sha256": _surface_digest(
+            {"messages": messages, "tools": tools_schema}
+        ),
+    }
+    return surface
 
 def _record_raw_provider_response(
     conductor: Any,
@@ -112,6 +182,31 @@ def _provider_wire_evidence(
             f"sha256:{profile_identity['base_url_sha256']}",
             profile_identity,
         )
+    wire_messages = messages
+    wire_tools = tools
+    runtime_id = getattr(getattr(runtime, "descriptor", None), "runtime_id", None)
+    if runtime_id == "openai_chat":
+        convert_messages = getattr(runtime, "_convert_messages_to_chat", None)
+        convert_tools = getattr(runtime, "_convert_tools_to_openai", None)
+        if callable(convert_messages) and callable(convert_tools):
+            wire_messages = convert_messages(messages, context=context)
+            wire_tools = convert_tools(tools)
+    elif runtime_id == "openai_responses":
+        split_messages = getattr(runtime, "_split_messages_for_responses", None)
+        convert_messages = getattr(runtime, "_convert_messages_to_input", None)
+        convert_tools = getattr(runtime, "_convert_tools_to_responses", None)
+        if (
+            callable(split_messages)
+            and callable(convert_messages)
+            and callable(convert_tools)
+        ):
+            _, input_messages = split_messages(messages, context)
+            wire_messages = convert_messages(
+                input_messages,
+                include_tool_calls=True,
+                context=context,
+            )
+            wire_tools = convert_tools(tools)
     try:
         request_headers = dict(client_config.get("default_headers") or {})
         if provider_id == "openrouter":
@@ -124,8 +219,8 @@ def _provider_wire_evidence(
     return (
         {
             "model": model,
-            "messages": messages,
-            "tools": tools,
+            "messages": wire_messages,
+            "tools": wire_tools,
             "stream": stream,
         },
         request_headers,
@@ -414,6 +509,45 @@ def get_model_response(
         client_config=client_config,
         context=runtime_context,
     )
+    try:
+        wire_messages = wire_request_body.get("messages")
+        if not isinstance(wire_messages, list):
+            raise ProviderContractError(
+                "provider wire request is missing messages"
+            )
+        wire_tools = wire_request_body.get("tools")
+        if wire_tools is not None and not isinstance(wire_tools, list):
+            raise ProviderContractError("provider wire request has invalid tools")
+        compiled_surface = session_state.get_provider_metadata(
+            "compiled_model_surface"
+        )
+        final_surface = _finalize_model_surface(
+            compiled_surface,
+            wire_messages,
+            wire_tools,
+            per_turn_written_text,
+        )
+        if final_surface is not None:
+            session_state.set_provider_metadata(
+                "current_model_surface", final_surface
+            )
+        final_system_text = next(
+            (
+                message.get("content")
+                for message in wire_messages
+                if isinstance(message, dict)
+                and message.get("role") == "system"
+                and isinstance(message.get("content"), str)
+            ),
+            None,
+        )
+        conductor._register_prompt_hash("system", final_system_text)
+        if per_turn_written_text:
+            conductor._register_prompt_hash(
+                "per_turn", per_turn_written_text, turn_index
+            )
+    except Exception:
+        pass
     request_provenance: Optional[Dict[str, Any]] = None
     if provider_profile is not None:
         request_provenance = provider_profile.chat_request_provenance(

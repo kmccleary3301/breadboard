@@ -1,5 +1,10 @@
 import types
 import pytest
+from breadboard_engine.conductor.modes import (
+    _finalize_model_surface,
+    _provider_wire_evidence,
+    _surface_digest,
+)
 
 from breadboard_engine.provider.contracts import (
     ProviderCorrelation,
@@ -33,6 +38,75 @@ def test_responses_message_conversion_simple_string():
             "content": [{"type": "input_text", "text": "hello"}],
         }
     ]
+
+
+def test_openrouter_responses_wire_surface_digest_uses_responses_converters():
+    runtime = OpenAIResponsesRuntime(
+        types.SimpleNamespace(provider_id="openrouter", runtime_id="openai_responses")
+    )
+    context = ProviderRuntimeContext(
+        types.SimpleNamespace(get_provider_metadata=lambda *_args: None),
+        {},
+    )
+    messages = [
+        {
+            "role": "tool_result",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "call_id": "call_1",
+                    "content": {"status": "ok"},
+                }
+            ],
+        }
+    ]
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read",
+                "description": "Read",
+                "parameters": {"type": "object"},
+            },
+        }
+    ]
+
+    body, _, _, _ = _provider_wire_evidence(
+        profile=None,
+        runtime=runtime,
+        provider_id="openrouter",
+        model="openai/gpt-5-nano",
+        messages=messages,
+        tools=tools,
+        stream=False,
+        client_config={},
+        context=context,
+    )
+    _, input_messages = runtime._split_messages_for_responses(messages, context)
+    actual_messages = runtime._convert_messages_to_input(
+        input_messages,
+        include_tool_calls=True,
+        context=context,
+    )
+    actual_tools = runtime._convert_tools_to_responses(tools)
+    surface = _finalize_model_surface(
+        {"prompt_sections": {}, "tools": []},
+        actual_messages,
+        actual_tools,
+        "",
+    )
+
+    assert body["messages"] == actual_messages
+    assert body["tools"] == actual_tools
+    assert surface is not None
+    assert surface["provider_request"] == {
+        "messages_sha256": _surface_digest(actual_messages),
+        "tools_sha256": _surface_digest(actual_tools),
+        "request_sha256": _surface_digest(
+            {"messages": actual_messages, "tools": actual_tools}
+        ),
+    }
+    assert body["messages"][0]["type"] == "function_call_output"
 
 
 def test_responses_message_conversion_chat_blocks():

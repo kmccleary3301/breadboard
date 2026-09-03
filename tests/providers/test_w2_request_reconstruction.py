@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from breadboard_engine.conductor.modes import _finalize_model_surface, _surface_digest
 from breadboard_engine.compilation.system_prompt_compiler import SystemPromptCompiler
 from breadboard_engine.core.core import ToolDefinition, ToolParameter
 from breadboard_engine.provider.contract_messages import ProviderMessage, ProviderResult
@@ -435,3 +436,47 @@ def test_ft03_reconstructs_exact_request_bytes_at_profile_interface(tmp_path: Pa
     )
 
     assert oracle_path.read_bytes() == canonical_json(reconstructed).encode("utf-8")
+
+
+def test_model_surface_digest_matches_profile_wire_projection(tmp_path: Path) -> None:
+    fixture = _load_fixture()
+    compiler = SystemPromptCompiler(cache_dir=str(tmp_path / "compiler-cache"))
+    messages, raw_tools = _fixture_messages(fixture, compiler)
+    profile = _profile(fixture["lock"]["provider_profile"])
+    state = SessionState(workspace=".", image="ft03", config={})
+    context = ProviderRuntimeContext(
+        session_state=state,
+        agent_config={},
+        stream=True,
+        provider_profile=profile,
+    )
+    runtime = OpenAIChatRuntime(_descriptor(profile))
+    wire = runtime.profile_chat_request(
+        profile,
+        messages,
+        raw_tools,
+        context=context,
+    )
+
+    surface = _finalize_model_surface(
+        compiler.compile_v2_prompts(
+            fixture["prompt"]["config"],
+            mode_name=fixture["prompt"]["mode_name"],
+            tools=_tool_definitions(raw_tools),
+            dialects=fixture["prompt"]["dialects"],
+        )["model_surface"],
+        wire["messages"],
+        wire["tools"],
+        "",
+    )
+
+    assert surface is not None
+    assert surface["provider_request"]["messages_sha256"] == _surface_digest(
+        wire["messages"]
+    )
+    assert surface["provider_request"]["tools_sha256"] == _surface_digest(
+        wire["tools"]
+    )
+    assert all(
+        tool["function"]["strict"] is False for tool in wire["tools"]
+    )

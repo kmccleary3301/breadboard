@@ -6081,7 +6081,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 model_surface = v2.get("model_surface")
                 if isinstance(model_surface, dict):
                     session_state.set_provider_metadata(
-                        "current_model_surface", model_surface
+                        "compiled_model_surface", model_surface
                     )
                 if user_prompt_extra:
                     user_prompt = (

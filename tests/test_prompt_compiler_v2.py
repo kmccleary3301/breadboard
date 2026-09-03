@@ -1,4 +1,7 @@
 from breadboard_engine.compilation.system_prompt_compiler import get_compiler
+import hashlib
+
+from breadboard_engine.conductor.modes import _finalize_model_surface
 from breadboard_engine.core.core import ToolDefinition, ToolParameter
 
 
@@ -70,4 +73,29 @@ def test_compile_v2_prompts_records_ordered_model_surface_contributions():
         (item["order"], item["source_ref"])
         for item in result["model_surface"]["tools"]
     ] == [(0, "tool_registry[0]"), (1, "tool_registry[1]")]
+
+
+def test_final_model_surface_hashes_transformed_provider_request() -> None:
+    final_system = "compiled system\n\nruntime environment"
+    messages = [
+        {"role": "system", "content": final_system},
+        {"role": "user", "content": "request"},
+    ]
+    surface = _finalize_model_surface(
+        {
+            "prompt_sections": {"system": [], "per_turn": []},
+            "tools": [],
+        },
+        messages,
+        [],
+        "",
+    )
+
+    assert surface is not None
+    assert surface["prompt_sections"]["per_turn"] == []
+    assert surface["prompt_sections"]["system"][0]["content_sha256"] == (
+        hashlib.sha256(final_system.encode("utf-8")).hexdigest()
+    )
+    assert surface["provider_request"]["messages_sha256"]
+    assert surface["provider_request"]["request_sha256"]
 

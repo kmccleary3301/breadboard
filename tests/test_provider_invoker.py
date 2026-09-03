@@ -135,7 +135,12 @@ def test_provider_invoker_records_cache_observation_as_independent_facts() -> No
                 )
             ],
             raw_response=None,
-            usage={"cache_read_tokens": 11, "cache_write_tokens": 3},
+            usage={
+                "prompt_tokens": 20,
+                "prompt_tokens_details": {"cached_tokens": 17},
+                "cache_read_tokens": 11,
+                "cache_write_tokens": 3,
+            },
             metadata={},
         )
     )
@@ -432,6 +437,10 @@ def test_provider_invoker_leases_by_route_id_not_resolved_model():
 
 def test_provider_invoker_stream_failure_falls_back_to_retry():
     fallback_result = _provider_result("fallback")
+    fallback_result.usage = {
+        "prompt_tokens": 30,
+        "prompt_tokens_details": {"cached_tokens": 19},
+    }
     fallback_result.metadata["provider_exchange_identity"] = {
         "provider_id": "openai",
         "runtime_id": "openai_responses",
@@ -442,8 +451,20 @@ def test_provider_invoker_stream_failure_falls_back_to_retry():
     retry_with_fallback = Mock(return_value=fallback_result)
     invoker = _make_invoker(retry_with_fallback)
     invoker.route_health.is_circuit_open.return_value = False
+    observations = []
+    original_observe = invoker._cache_observation
+
+    def observe_once(*args, **kwargs):
+        observation = original_observe(*args, **kwargs)
+        observations.append(observation)
+        return observation
+
+    invoker._cache_observation = observe_once
 
     session_state = _session_state()
+    session_state.set_provider_metadata(
+        "last_cache_observation", {"stale": True}
+    )
     result, used_streaming = invoker.invoke(
         runtime=runtime,
         client=object(),
@@ -463,11 +484,18 @@ def test_provider_invoker_stream_failure_falls_back_to_retry():
     retry_with_fallback.assert_called_once()
     invoker.route_health.record_failure.assert_called()
     assert retry_with_fallback.call_args.kwargs["route_id"] == "cli_mock/dev"
+    observation = session_state.get_provider_metadata("last_cache_observation")
+    assert observation["provider_tokens"] == {
+        "cache_read": 19,
+        "cache_write": None,
+    }
+    assert observation["route_id"] == "openai/gpt-5.2"
     exchange = session_state.get_provider_metadata("last_provider_exchange")
     assert exchange["provider"] == fallback_result.metadata[
         "provider_exchange_identity"
     ]
     assert exchange["request"]["stream"] is False
+    assert len(observations) == 1
 
 
 def test_provider_invoker_resets_lifecycle_only_events_before_safe_retry():
@@ -483,7 +511,11 @@ def test_provider_invoker_resets_lifecycle_only_events_before_safe_retry():
                 kind="transport",
                 details={"code": "stream_unavailable"},
             )
-        return _provider_result()
+        result = _provider_result()
+        result.usage = {
+            "prompt_tokens_details": {"cached_tokens": 23},
+        }
+        return result
 
     runtime.invoke.side_effect = invoke
     invoker = _make_invoker(Mock(return_value=None))
@@ -512,6 +544,9 @@ def test_provider_invoker_resets_lifecycle_only_events_before_safe_retry():
     exchange = session_state.get_provider_metadata("last_provider_exchange")
     assert [event["kind"] for event in exchange["events"]] == ["response_start"]
     assert exchange["request"]["stream"] is False
+    assert session_state.get_provider_metadata("last_cache_observation")[
+        "provider_tokens"
+    ] == {"cache_read": 23, "cache_write": None}
 
 
 def test_provider_invoker_never_replays_after_recorder_observes_output():
@@ -745,6 +780,7 @@ def test_provider_invoker_accepts_canonical_tool_use_finish_reason():
 def test_provider_invoker_rejects_unknown_finish_with_error_terminal():
     result = _provider_result()
     result.messages[0].finish_reason = "unknown_finish"
+    result.usage = {"prompt_tokens_details": {"cached_tokens": 7}}
     runtime = _mk_runtime(result)
     invoker = _make_invoker(Mock(return_value=None))
     invoker.route_health.is_circuit_open.return_value = False
@@ -771,6 +807,38 @@ def test_provider_invoker_rejects_unknown_finish_with_error_terminal():
     exchange = session_state.get_provider_metadata("last_provider_exchange")
     assert exchange["terminal"]["kind"] == "error"
     assert exchange["terminal"]["code"] == "provider_contract_error"
+    assert session_state.get_provider_metadata("last_cache_observation") is None
+
+
+def test_provider_invoker_persistence_failure_does_not_record_cache_observation():
+    result = _provider_result()
+    result.usage = {"prompt_tokens_details": {"cached_tokens": 13}}
+    runtime = _mk_runtime(result)
+    invoker = _make_invoker(Mock(return_value=None))
+    invoker.route_health.is_circuit_open.return_value = False
+    session_state = _session_state()
+    session_state.record_provider_exchange = Mock(
+        side_effect=[RuntimeError("persist failed"), None]
+    )
+
+    with pytest.raises(ProviderRuntimeError):
+        invoker.invoke(
+            runtime=runtime,
+            client=object(),
+            model="cli_mock/dev",
+            send_messages=[],
+            tools_schema=None,
+            stream_responses=False,
+            runtime_context=ProviderRuntimeContext(
+                session_state=session_state, agent_config={}
+            ),
+            session_state=session_state,
+            markdown_logger=_markdown_logger(),
+            turn_index=1,
+            route_id="cli_mock/dev",
+        )
+
+    assert session_state.get_provider_metadata("last_cache_observation") is None
 
 
 def test_provider_invoker_requires_exact_correlation():

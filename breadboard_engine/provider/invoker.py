@@ -100,6 +100,34 @@ class ProviderInvoker:
         runtime_context.session_id = correlation.session_id
         runtime_context.input_id = correlation.input_id
         runtime_context.turn_id = correlation.turn_id
+        cache_observation_recorded = False
+        pending_success_metric: Optional[Tuple[str, bool, float]] = None
+        runtime_context.extra.pop("cache_observation", None)
+        try:
+            session_state.provider_metadata.pop("last_cache_observation", None)
+        except Exception:
+            pass
+
+        def _observe_success(result_value: ProviderResult) -> Dict[str, Any]:
+            nonlocal cache_observation_recorded
+            if cache_observation_recorded:
+                existing = runtime_context.extra.get("cache_observation")
+                return existing if isinstance(existing, dict) else {}
+            observation = self._cache_observation(
+                result_value,
+                route_id=recorder.provider.route_id or route_id or model,
+                model=recorder.provider.model,
+                context=runtime_context,
+            )
+            runtime_context.extra["cache_observation"] = observation
+            try:
+                session_state.set_provider_metadata(
+                    "last_cache_observation", observation
+                )
+            except Exception:
+                pass
+            cache_observation_recorded = True
+            return observation
 
         def _terminalize_error(exc: ProviderRuntimeError) -> None:
             details = exc.details if isinstance(exc.details, dict) else {}
@@ -171,8 +199,8 @@ class ProviderInvoker:
                 kind="protocol",
                 output_emitted=recorder.output_emitted,
             )
-
         def _persist_success(result_value: ProviderResult) -> None:
+            nonlocal pending_success_metric
             try:
                 sanitize_provider_result(result_value)
                 _adopt_result_provider(result_value)
@@ -196,7 +224,19 @@ class ProviderInvoker:
                     session_state, recorder, terminal, result=result_value
                 )
                 result_value.metadata["provider_exchange"] = exchange
+                cache_observation = _observe_success(result_value)
+                if pending_success_metric is not None:
+                    metric_model, metric_stream, metric_elapsed = pending_success_metric
+                    self.provider_metrics.add_call(
+                        metric_model,
+                        stream=metric_stream,
+                        elapsed=metric_elapsed,
+                        outcome="success",
+                        details={"cache_observation": cache_observation},
+                    )
+                    pending_success_metric = None
             except Exception:
+                pending_success_metric = None
                 failure = _contract_failure()
                 _terminalize_error(failure)
                 raise failure from None
@@ -287,6 +327,7 @@ class ProviderInvoker:
 
         def _call_runtime(target_model: str, use_stream: bool) -> ProviderResult:
             start_time = time.time()
+            nonlocal pending_success_metric
             try:
                 if self.client_lease is None or profile_bound:
                     call_result = sanitize_provider_result(
@@ -315,26 +356,7 @@ class ProviderInvoker:
                             )
                         )
                 elapsed = time.time() - start_time
-                cache_observation = self._cache_observation(
-                    call_result,
-                    route_id=route_id or target_model,
-                    model=target_model,
-                    context=runtime_context,
-                )
-                runtime_context.extra["cache_observation"] = cache_observation
-                try:
-                    session_state.set_provider_metadata(
-                        "last_cache_observation", cache_observation
-                    )
-                except Exception:
-                    pass
-                self.provider_metrics.add_call(
-                    target_model,
-                    stream=use_stream,
-                    elapsed=elapsed,
-                    outcome="success",
-                    details={"cache_observation": cache_observation},
-                )
+                pending_success_metric = (target_model, use_stream, elapsed)
                 self.set_last_latency(elapsed)
                 self.set_html_detected(False)
                 return call_result
@@ -770,6 +792,15 @@ class ProviderInvoker:
                     return value
             return None
 
+        def _nested_token(*names: str) -> int | None:
+            for name in names:
+                details = usage.get(name)
+                if isinstance(details, Mapping):
+                    value = details.get("cached_tokens")
+                    if type(value) is int and value >= 0:
+                        return value
+            return None
+
         prefix_digest = (context.extra or {}).get("cache_prefix_digest")
         divergence_reason = (context.extra or {}).get("cache_divergence_reason")
         if not isinstance(prefix_digest, str):
@@ -779,9 +810,14 @@ class ProviderInvoker:
         cache_read_tokens = _token(
             "cache_read_tokens", "cache_read", "cache_read_input_tokens"
         )
+        if cache_read_tokens is None:
+            cache_read_tokens = _nested_token(
+                "prompt_tokens_details", "input_tokens_details"
+            )
         cache_write_tokens = _token(
             "cache_write_tokens", "cache_write", "cache_creation_input_tokens"
         )
+
         return {
             "observed": cache_read_tokens is not None or cache_write_tokens is not None,
             "prefix_digest": prefix_digest,

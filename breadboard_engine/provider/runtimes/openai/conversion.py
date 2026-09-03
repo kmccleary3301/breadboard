@@ -321,12 +321,30 @@ class OpenAIConversionMixin:
         usage_obj = getattr(response, "usage", None)
         if usage_obj is None:
             return None
-        if isinstance(usage_obj, dict):
-            return dict(usage_obj)
-        model_dump = getattr(usage_obj, "model_dump", None)
-        if callable(model_dump):
-            value = model_dump()
+
+        def _normalize(value: Any, *, field_name: Optional[str] = None) -> Any:
             if isinstance(value, dict):
-                return value
+                return {
+                    key: _normalize(item, field_name=str(key))
+                    for key, item in value.items()
+                }
+            for method_name in ("model_dump", "to_dict", "dict"):
+                method = getattr(value, method_name, None)
+                if callable(method):
+                    converted = method()
+                    if isinstance(converted, dict):
+                        return _normalize(converted, field_name=field_name)
+            if hasattr(value, "__dict__"):
+                attributes = vars(value)
+                if isinstance(attributes, dict):
+                    return _normalize(attributes, field_name=field_name)
+            if field_name in {"prompt_tokens_details", "input_tokens_details"}:
+                cached_tokens = getattr(value, "cached_tokens", None)
+                if cached_tokens is not None:
+                    return {"cached_tokens": cached_tokens}
+            return value
+        normalized = _normalize(usage_obj)
+        if isinstance(normalized, dict):
+            return normalized
         raise ProviderContractError("provider usage must be an object")
 

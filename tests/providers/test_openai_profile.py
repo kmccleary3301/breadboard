@@ -9,7 +9,9 @@ from breadboard.product.runtime.artifacts import ArtifactStore
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.conductor.modes import (
     _bind_episode_provider_profile,
+    _finalize_model_surface,
     _provider_wire_evidence,
+    _surface_digest,
 )
 from breadboard_engine.provider import sdk_bindings
 from breadboard_engine.provider.runtimes.openai import chat as chat_module
@@ -678,6 +680,86 @@ def test_profile_wire_evidence_matches_media_and_tool_result_projection(tmp_path
     }
 
 
+
+
+def test_unbound_openai_surface_digest_matches_runtime_wire_projection(tmp_path):
+    workspace = tmp_path / "workspace"
+    artifact = ArtifactStore(workspace / ".breadboard" / "artifacts").put(
+        b"\x89PNG\r\n\x1a\nunbound-surface",
+        media_type="image/png",
+    )
+    uri = f"attachment://{artifact.digest}"
+    metadata = {"attachment_capabilities": {uri: artifact.as_dict()}}
+    session_state = types.SimpleNamespace(
+        workspace=str(workspace),
+        get_provider_metadata=lambda key, default=None: metadata.get(key, default),
+    )
+    context = ProviderRuntimeContext(session_state, {}, provider_profile=None)
+    runtime = _runtime()
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "media",
+                    "kind": "image",
+                    "uri": uri,
+                    "mime": "image/png",
+                }
+            ],
+        },
+        {
+            "role": "tool_result",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "call_id": "call_1",
+                    "content": {"status": "ok"},
+                }
+            ],
+        },
+    ]
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read",
+                "description": "Read a file",
+                "parameters": {"type": "object"},
+            },
+        }
+    ]
+
+    body, _, _, _ = _provider_wire_evidence(
+        profile=None,
+        runtime=runtime,
+        provider_id="openai",
+        model=MODEL,
+        messages=messages,
+        tools=tools,
+        stream=True,
+        client_config={},
+        context=context,
+    )
+    surface = _finalize_model_surface(
+        {"prompt_sections": {}, "tools": []},
+        body["messages"],
+        body["tools"],
+        "",
+    )
+
+    assert body["messages"] == runtime._convert_messages_to_chat(
+        messages, context=context
+    )
+    assert body["tools"] == runtime._convert_tools_to_openai(tools)
+    assert surface is not None
+    assert surface["provider_request"] == {
+        "messages_sha256": _surface_digest(body["messages"]),
+        "tools_sha256": _surface_digest(body["tools"]),
+        "request_sha256": _surface_digest(
+            {"messages": body["messages"], "tools": body["tools"]}
+        ),
+    }
 def test_rejected_episode_does_not_retain_provider_profile():
     conductor_class = OpenAIConductor.__ray_metadata__.modified_class
     conductor = object.__new__(conductor_class)
