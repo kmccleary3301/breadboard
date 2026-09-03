@@ -655,8 +655,12 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
 
     event_root = tmp_path / "session-events"
     monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(event_root))
-    lock = EffectiveHarnessLock._from_record(
-        {"graph_hash": "sha256:" + "a" * 64}
+    state_root = tmp_path / "session-state"
+    first_registry = SessionRegistry(state_root=state_root)
+    first_service = SessionService(registry=first_registry)
+    runtime_config = {"providers": {"default_model": "test/restart"}}
+    lock = first_service._runtime_lock(
+        session_id, runtime_config, str(config)
     )
     Session.start(
         lock,
@@ -664,8 +668,6 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
         session_id=session_id,
         sink=JsonlEventSink(event_root / session_id / "session_events.jsonl"),
     )
-    state_root = tmp_path / "session-state"
-    first_registry = SessionRegistry(state_root=state_root)
     record = SessionRecord(
         session_id=session_id,
         status=SessionStatus.RUNNING,
@@ -673,6 +675,7 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
             "config_path": str(config),
             "workspace": str(tmp_path),
             "permission_mode": "configured",
+            "session_event_root": str(event_root),
         },
     )
     failed_turn = TurnRecord(
@@ -704,11 +707,14 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
     record.event_seq = 10
     record.replay_head_sequence = 10
     record.replay_head_event_id = "event-before-restart"
-    first_service = SessionService(registry=first_registry)
     with TestClient(create_app(service=first_service, include_atp_routes=False)) as first:
         first.portal.call(first_registry.create, record)
 
-    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    monkeypatch.setattr(
+        SessionRunner,
+        "prepare_runtime_config",
+        lambda self: runtime_config,
+    )
     monkeypatch.setattr(SessionRunner, "schedule_start", lambda self: None)
     monkeypatch.setattr(SessionRunner, "authorize_start", lambda self: None)
     monkeypatch.setattr(

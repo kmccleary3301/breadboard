@@ -60,21 +60,27 @@ def _seed_product_session_journal(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     session_id: str,
-) -> None:
-    from breadboard.product.harness.lock import EffectiveHarnessLock
+    *,
+    config_path: Path | None = None,
+) -> tuple[Path, dict[str, Any]]:
     from breadboard.product.runtime import Session as ProductSession
     from breadboard.product.runtime.events import JsonlEventSink
 
     event_root = tmp_path / "session-events"
     monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(event_root))
+    retained_config = config_path or tmp_path / f"{session_id}.yaml"
+    retained_config.write_text("{}\n", encoding="utf-8")
+    runtime_config = {"providers": {"default_model": "test/restart"}}
+    lock = SessionService(state_root=tmp_path / "seed-state")._runtime_lock(
+        session_id, runtime_config, str(retained_config)
+    )
     ProductSession.start(
-        EffectiveHarnessLock._from_record(
-            {"graph_hash": "sha256:" + "a" * 64}
-        ),
+        lock,
         "retained session",
         session_id=session_id,
         sink=JsonlEventSink(event_root / session_id / "session_events.jsonl"),
     )
+    return retained_config, runtime_config
 
 
 def test_completion_sentinel_scrubbing_is_recursive_and_text_scoped() -> None:
@@ -1734,7 +1740,9 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
         status=SessionStatus.RUNNING,
         metadata={"permission_mode": "configured"},
     )
-    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
+    replacement_profile, runtime_config = _seed_product_session_journal(
+        monkeypatch, tmp_path, record.session_id
+    )
     interrupted = TurnRecord(
         input_id="input-interrupted",
         turn_id="turn-interrupted",
@@ -1752,8 +1760,6 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
     record.replay_head_event_id = "event-before-process-death"
     await registry.persist(record)
 
-    replacement_profile = tmp_path / "replacement-session.yaml"
-    replacement_profile.write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr(
         "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
         lambda: SimpleNamespace(
@@ -1763,7 +1769,11 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
             },
         ),
     )
-    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    monkeypatch.setattr(
+        SessionRunner,
+        "prepare_runtime_config",
+        lambda self: runtime_config,
+    )
 
     restarted = SessionRegistry(state_root=tmp_path)
     service = SessionService(registry=restarted)
@@ -1816,7 +1826,12 @@ async def test_retained_restart_preserves_explicit_config_and_workspace(
             "mode": "review",
         },
     )
-    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
+    _, runtime_config = _seed_product_session_journal(
+        monkeypatch,
+        tmp_path,
+        record.session_id,
+        config_path=explicit_config,
+    )
     await registry.create(record)
 
     monkeypatch.setattr(
@@ -1829,7 +1844,7 @@ async def test_retained_restart_preserves_explicit_config_and_workspace(
     def capture_runtime_request(runner: SessionRunner) -> dict[str, Any]:
         prepared_requests.append(runner.request)
         prepared_modes.append(runner._mode)
-        return {}
+        return runtime_config
 
     monkeypatch.setattr(SessionRunner, "prepare_runtime_config", capture_runtime_request)
 
@@ -1921,7 +1936,12 @@ async def test_locked_operation_resumes_retained_session_without_deadlock(
             "permission_mode": "configured",
         },
     )
-    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
+    _, runtime_config = _seed_product_session_journal(
+        monkeypatch,
+        tmp_path,
+        record.session_id,
+        config_path=config_path,
+    )
     await registry.create(record)
     monkeypatch.setattr(
         "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
@@ -1932,7 +1952,11 @@ async def test_locked_operation_resumes_retained_session_without_deadlock(
             },
         ),
     )
-    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    monkeypatch.setattr(
+        SessionRunner,
+        "prepare_runtime_config",
+        lambda self: runtime_config,
+    )
     service = SessionService(registry=SessionRegistry(state_root=state_root))
 
     if operation == "stop":
@@ -3355,12 +3379,17 @@ async def test_retained_registry_first_input_reconciles_journal_before_retry(
 
     state_root = tmp_path / "state"
     session_id = "session-restart-admission-gap"
-    _seed_product_session_journal(monkeypatch, tmp_path, session_id)
     event_root = tmp_path / "session-events"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     config_path = tmp_path / "config.yaml"
     config_path.write_text("{}\n", encoding="utf-8")
+    _, runtime_config = _seed_product_session_journal(
+        monkeypatch,
+        tmp_path,
+        session_id,
+        config_path=config_path,
+    )
 
     from breadboard_engine.api.cli_bridge.session_artifacts import SessionArtifactStore
 
@@ -3422,7 +3451,11 @@ async def test_retained_registry_first_input_reconciles_journal_before_retry(
     assert retained_turn_state["content_hash"] == turn.logical_input_content_hash
     assert retained_turn_state["attachments"] == [attachment_id]
 
-    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    monkeypatch.setattr(
+        SessionRunner,
+        "prepare_runtime_config",
+        lambda self: runtime_config,
+    )
     restarted = SessionRegistry(state_root=state_root)
     service = SessionService(registry=restarted)
     restored = await service.ensure_session(session_id)
@@ -3669,7 +3702,6 @@ async def test_product_transition_after_registry_admission_aborts_input(
 ) -> None:
     import hashlib
 
-    from breadboard.product.harness.lock import EffectiveHarnessLock
     from breadboard.product.runtime import Session as ProductSession
     from breadboard.product.runtime.events import JsonlEventSink
 
@@ -3679,15 +3711,19 @@ async def test_product_transition_after_registry_admission_aborts_input(
     session_id = f"session-transition-race-{transition}"
     event_root = tmp_path / "events"
     event_path = event_root / session_id / "session_events.jsonl"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("{}\n", encoding="utf-8")
+    runtime_config = {"providers": {"default_model": "test/restart"}}
+    registry = SessionRegistry(state_root=tmp_path / "state")
+    lock = SessionService(registry=registry)._runtime_lock(
+        session_id, runtime_config, str(config_path)
+    )
     product_session = ProductSession.start(
-        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "e" * 64}),
+        lock,
         "transition race",
         session_id=session_id,
         sink=JsonlEventSink(event_path),
     )
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text("{}\n", encoding="utf-8")
-    registry = SessionRegistry(state_root=tmp_path / "state")
     record = SessionRecord(
         session_id=session_id,
         status=SessionStatus.RUNNING,
@@ -3725,7 +3761,11 @@ async def test_product_transition_after_registry_admission_aborts_input(
             ),
         )
 
-    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    monkeypatch.setattr(
+        SessionRunner,
+        "prepare_runtime_config",
+        lambda self: runtime_config,
+    )
     restarted = SessionRegistry(state_root=tmp_path / "state")
     recovered_service = SessionService(registry=restarted)
     recovered = await recovered_service.ensure_session(session_id)

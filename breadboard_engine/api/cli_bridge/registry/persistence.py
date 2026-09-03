@@ -748,6 +748,36 @@ class PersistenceMixin:
                 self._records.pop(session_id, None)
 
     @staticmethod
+    def _replace_metadata(record: SessionRecord, replacement: Dict[str, Any]) -> None:
+        if isinstance(record.metadata, dict):
+            record.metadata.clear()
+            record.metadata.update(replacement)
+            return
+        record.metadata = dict(replacement)
+
+    @staticmethod
+    def _copy_turn_fields(target: TurnRecord, source: TurnRecord) -> None:
+        for field_name in (
+            "input_id",
+            "turn_id",
+            "client_message_id",
+            "content",
+            "attachments",
+            "original_disposition",
+            "state",
+            "cancellation_requested",
+            "cancellation_reason",
+            "execution_committed",
+            "terminal_outcome",
+            "terminal_resolution_committed",
+            "body_digest",
+            "logical_event_count_before_admission",
+            "logical_input_content_hash",
+            "logical_input_session_status_before_admission",
+        ):
+            setattr(target, field_name, getattr(source, field_name))
+
+    @staticmethod
     def _apply_durable_fields(target: SessionRecord, source: SessionRecord) -> None:
         target.status = source.status
         target.created_at = source.created_at
@@ -777,13 +807,29 @@ class PersistenceMixin:
             target.active_turn_id = source.active_turn_id
             target.queued_turn_ids.clear()
             target.queued_turn_ids.extend(source.queued_turn_ids)
+            retained_turns: dict[str, TurnRecord] = {}
+            for turn_id, source_turn in source.turns_by_id.items():
+                retained_turn = target.turns_by_id.get(turn_id)
+                if retained_turn is None:
+                    retained_turn = source_turn
+                else:
+                    PersistenceMixin._copy_turn_fields(retained_turn, source_turn)
+                retained_turns[turn_id] = retained_turn
             target.turns_by_id.clear()
-            target.turns_by_id.update(source.turns_by_id)
+            target.turns_by_id.update(retained_turns)
             target.submissions_by_key.clear()
-            target.submissions_by_key.update(source.submissions_by_key)
+            target.submissions_by_key.update(
+                {
+                    key: retained_turns[turn.turn_id]
+                    for key, turn in source.submissions_by_key.items()
+                }
+            )
             target.submissions_by_key_digest.clear()
             target.submissions_by_key_digest.update(
-                source.submissions_by_key_digest
+                {
+                    key: retained_turns[turn.turn_id]
+                    for key, turn in source.submissions_by_key_digest.items()
+                }
             )
             target.cancellations_by_key.clear()
             target.cancellations_by_key.update(source.cancellations_by_key)
@@ -987,6 +1033,11 @@ class PersistenceMixin:
         parent_cancellation = metadata.get("durable_parent_cancellation")
         if not isinstance(parent_cancellation, dict):
             parent_cancellation = None
+        retained_turn_admission = (
+            TurnAdmission.ACTIVE
+            if record.active_turn_id is not None
+            else record.turn_admission
+        )
         durable_head_sequence, durable_head_event_id = self._durable_replay_head(record)
         return {
             "schema_version": _STATE_SCHEMA_VERSION,
@@ -998,7 +1049,7 @@ class PersistenceMixin:
                 "event_seq": record.event_seq,
                 "replay_head_sequence": durable_head_sequence,
                 "event_head_id": durable_head_event_id,
-                "turn_admission": record.turn_admission.value,
+                "turn_admission": retained_turn_admission.value,
                 "active_turn_id": record.active_turn_id,
                 "queued_turn_ids": list(record.queued_turn_ids),
                 "admission_closed": record.admission_closed,
