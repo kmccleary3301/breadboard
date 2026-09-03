@@ -487,6 +487,94 @@ def test_agent_config_does_not_cross_inline_provider_credentials(monkeypatch):
     )
 
 
+@pytest.mark.parametrize(("acknowledgement", "expected"), [(True, True), (False, False)])
+def test_remote_runtime_override_waits_for_actor_acknowledgement(
+    monkeypatch, acknowledgement, expected
+) -> None:
+    import breadboard_engine.agent as agent_module
+    from breadboard_engine.agent import AgenticCoder
+
+    monkeypatch.setattr(
+        AgenticCoder, "_load_config", lambda _self: {"providers": {}}
+    )
+    agent = AgenticCoder("unused.json", force_local_mode=False)
+    reference = object()
+    remote_calls = []
+    observed = []
+
+    class RemoteOverride:
+        def remote(self, overrides):
+            remote_calls.append(overrides)
+            return reference
+
+    def get(candidate):
+        observed.append(candidate)
+        return acknowledgement
+
+    agent.agent = SimpleNamespace(apply_config_overrides=RemoteOverride())
+    monkeypatch.setattr(
+        agent_module, "_get_ray", lambda: SimpleNamespace(get=get)
+    )
+
+    overrides = {"providers.default_model": "mock/reconfigured"}
+    assert agent.apply_runtime_overrides(overrides) is expected
+    assert remote_calls == [overrides]
+    assert observed == [reference]
+
+def test_remote_runtime_config_replacement_preserves_absent_keys(
+    monkeypatch,
+) -> None:
+    import breadboard_engine.agent as agent_module
+    from breadboard_engine.agent import AgenticCoder
+
+    monkeypatch.setattr(
+        AgenticCoder,
+        "_load_config",
+        lambda _self: {
+            "mode": "plan",
+            "providers": {"default_model": "mock/new"},
+        },
+    )
+    agent = AgenticCoder("unused.json", force_local_mode=False)
+    reference = object()
+    remote_calls = []
+
+    class RemoteReplacement:
+        def remote(self, config):
+            remote_calls.append(config)
+            return reference
+
+    agent.agent = SimpleNamespace(replace_config=RemoteReplacement())
+    monkeypatch.setattr(
+        agent_module,
+        "_get_ray",
+        lambda: SimpleNamespace(get=lambda candidate: candidate is reference),
+    )
+    replacement = {"providers": {}}
+
+    assert agent.replace_runtime_config(replacement) is True
+    assert agent.config == replacement
+    assert remote_calls == [replacement]
+
+
+def test_local_runtime_override_honors_conductor_rejection(monkeypatch) -> None:
+    from breadboard_engine.agent import AgenticCoder
+
+    monkeypatch.setattr(
+        AgenticCoder, "_load_config", lambda _self: {"providers": {}}
+    )
+    agent = AgenticCoder("unused.json", force_local_mode=True)
+    agent.agent = SimpleNamespace(
+        apply_config_overrides=lambda _overrides: False
+    )
+
+    assert (
+        agent.apply_runtime_overrides(
+            {"providers.default_model": "mock/rejected"}
+        )
+        is False
+    )
+
 def test_provider_client_construction_uses_one_operation_broker_lease(
     tmp_path, monkeypatch
 ):

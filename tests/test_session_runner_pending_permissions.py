@@ -1777,5 +1777,10 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
     assert all(secret not in json.dumps(captured) for secret in transient)
     assert all(secret not in persisted for secret in transient)
     assert not Path(captured["path"]).exists()
-    with pytest.raises(ValueError, match="denied by policy"): await record.runner.handle_command("set_model", {"model": "blocked-model"})
+    with pytest.raises(ValueError, match="denied by policy"):
+        await record.runner.handle_command(
+            "set_model",
+            {"model": "blocked-model"},
+            durable_reconfigure=lambda _config: None,
+        )
     await service.stop_session(response.session_id); await record.event_queue.put(None); await record.dispatcher_task

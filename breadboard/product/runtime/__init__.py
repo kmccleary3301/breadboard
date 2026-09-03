@@ -2,6 +2,7 @@
 from .artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
 from .events import (
     AnnotationRecord,
+    GenerationAdoptionError,
     KernelEvent,
     Projected,
     ProjectionSource,
@@ -29,6 +30,7 @@ __all__ = [
     "ArtifactRef",
     "ArtifactStore",
     "AnnotationRecord",
+    "GenerationAdoptionError",
     "KernelEvent",
     "Projected",
     "ProjectionSource",
