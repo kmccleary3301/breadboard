@@ -246,19 +246,31 @@ export class RemoteTerminalSessionManager {
       payload: {},
       metadata: this.httpOptions.metadata ?? {},
     })
-    const snapshot = response.payload.snapshot as TerminalRegistrySnapshotV1 | undefined
-    if (snapshot) {
-      const activeSet = new Set(snapshot.active_sessions.map((s) => s.terminal_session_id))
-      const sanitizedEnded = (snapshot.ended_session_ids ?? []).filter((id) => !activeSet.has(id))
-      for (const sessionId of sanitizedEnded) {
-        if (!this.sessions.has(sessionId)) {
-          this.rememberEndedSession(sessionId)
-        }
+    const rawSnapshot = response.payload.snapshot as TerminalRegistrySnapshotV1 | undefined
+    if (rawSnapshot) {
+      const snapshot = assertValid<TerminalRegistrySnapshotV1>(
+        "terminalRegistrySnapshot",
+        rawSnapshot,
+      )
+      const activeSet = new Set(
+        snapshot.active_sessions.map((session) => session.terminal_session_id),
+      )
+      const sanitizedEnded = (snapshot.ended_session_ids ?? []).filter(
+        (sessionId) => !activeSet.has(sessionId),
+      )
+      for (const descriptor of snapshot.active_sessions) {
+        this.sessions.set(descriptor.terminal_session_id, { descriptor })
+        const endedIndex = this.endedSessionIds.indexOf(descriptor.terminal_session_id)
+        if (endedIndex >= 0) this.endedSessionIds.splice(endedIndex, 1)
       }
-      return assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", {
+      for (const sessionId of sanitizedEnded) {
+        this.sessions.delete(sessionId)
+        this.rememberEndedSession(sessionId)
+      }
+      return {
         ...snapshot,
         ended_session_ids: sanitizedEnded,
-      })
+      }
     }
     const activeIds = new Set(this.sessions.keys())
     return assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", {

@@ -386,6 +386,73 @@ test("remote terminal driver can execute through a fetch-backed adapter", async 
   assert.deepEqual(cleanup?.cleaned_session_ids, ["term-remote-1"])
 })
 
+test("remote terminal driver adopts active sessions returned by a backend snapshot", async () => {
+  const descriptor = {
+    schema_version: "bb.terminal_session_descriptor.v1" as const,
+    terminal_session_id: "term-remote-recovered-1",
+    public_handles: [],
+    command: ["python", "worker.py"],
+    cwd: null,
+    startup_call_id: null,
+    owner_task_id: null,
+    stream_mode: "pipes" as const,
+    stream_split: "stdout_stderr" as const,
+    capability_id: remoteCapability.capability_id,
+    placement_id: "place-term-remote-recovered-1",
+    persistence_scope: "thread" as const,
+    continuation_scope: "both" as const,
+  }
+  let interactSeen = false
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "https://example.test/remote-term-recovered",
+    fetchImpl: async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        action: string
+        payload: Record<string, unknown>
+      }
+      if (body.action === "snapshot") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              snapshot: {
+                schema_version: "bb.terminal_registry_snapshot.v1",
+                snapshot_id: "remote-snap-recovered-1",
+                active_sessions: [descriptor],
+                ended_session_ids: [],
+              },
+            },
+          }),
+        } as Response
+      }
+      if (body.action === "interact") {
+        interactSeen = true
+        assert.deepEqual(body.payload.descriptor, descriptor)
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: { output_deltas: [] },
+          }),
+        } as Response
+      }
+      throw new Error(`unexpected remote terminal action: ${body.action}`)
+    },
+  })
+
+  const snapshot = await driver.snapshotTerminalRegistry?.()
+  assert.equal(snapshot?.active_sessions[0]?.terminal_session_id, descriptor.terminal_session_id)
+  const interaction = await driver.interactTerminalSession?.({
+    terminalSessionId: descriptor.terminal_session_id,
+    interactionKind: "poll",
+  })
+  assert.ok(interaction)
+  assert.equal(interactSeen, true)
+})
+
 test("remote terminal driver surfaces endpoint failures cleanly", async () => {
   const driver = makeRemoteTerminalSessionDriver({
     endpointUrl: "https://example.test/remote-term-error",
