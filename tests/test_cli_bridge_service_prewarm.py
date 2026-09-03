@@ -1695,6 +1695,30 @@ async def test_retained_event_journal_rejects_symlinked_directory_and_file(
         _restore_product_session(response.session_id, event_root=event_root)
 
 
+@pytest.mark.asyncio
+async def test_restored_event_sink_revalidates_identity_before_every_append(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    restored = _restore_product_session(response.session_id, event_root=event_root)
+    retained_journal = journal.with_name("retained-events.jsonl")
+    journal.rename(retained_journal)
+    outside = tmp_path / "outside-events.jsonl"
+    outside.write_bytes(retained_journal.read_bytes())
+    outside_before = outside.read_bytes()
+    journal.symlink_to(outside)
+
+    with pytest.raises(RuntimeError, match="event journal identity changed"):
+        restored.complete()
+
+    assert outside.read_bytes() == outside_before
+
+
 def test_retained_manifest_history_rejects_excess_count_before_reads(
     monkeypatch, tmp_path
 ) -> None:
@@ -1848,9 +1872,8 @@ async def test_retained_manifest_ref_wins_over_uncommitted_newer_manifest(
     await initial_service.registry.persist(initial)
     await _stop(initial)
 
-    recovered = await SessionService(state_root=state_root).ensure_session(
-        response.session_id
-    )
+    recovered_service = SessionService(state_root=state_root)
+    recovered = await recovered_service.ensure_session(response.session_id)
     first_id = first.attachments[0].id
     second_id = next(
         attachment_id
@@ -1863,7 +1886,19 @@ async def test_retained_manifest_ref_wins_over_uncommitted_newer_manifest(
     assert set(recovered.runner.artifacts.artifact_refs()) == {first_id}
     with pytest.raises(ValueError, match=f"unknown attachment IDs: {second_id}"):
         recovered.runner.artifacts.selected_artifacts([second_id])
+    third = _Upload()
+    third.filename = "committed-after-recovery.txt"
+    third_upload = await recovered_service.upload_attachments(
+        response.session_id,
+        [third],
+    )
+    third_id = third_upload.attachments[0].id
     await _stop(recovered)
+    restarted = await SessionService(state_root=state_root).ensure_session(
+        response.session_id
+    )
+    assert set(restarted.runner.artifacts.artifact_refs()) == {first_id, third_id}
+    await _stop(restarted)
 
 
 @pytest.mark.asyncio

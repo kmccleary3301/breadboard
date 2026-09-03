@@ -231,6 +231,20 @@ class SessionArtifactStore:
         return restored
 
     def _manifest_names(self, workspace: Path) -> list[str]:
+        prefix = f"{self.session_id}."
+        suffix = ".json"
+
+        def matching_names(entries: Any) -> list[str]:
+            names: list[str] = []
+            for entry in entries:
+                name = entry.name
+                if not name.startswith(prefix) or not name.endswith(suffix):
+                    continue
+                names.append(name)
+                if len(names) > _MAX_ARTIFACT_MANIFESTS:
+                    raise ValueError("too many retained attachment manifests")
+            return sorted(names)
+
         anchor, _, descriptor, windows_handles = _open_workspace_breadboard(workspace)
         artifact_fd = manifest_fd = None
         try:
@@ -245,7 +259,8 @@ class SessionArtifactStore:
                     "manifests",
                     create=False,
                 )
-                return sorted(os.listdir(manifest_fd))
+                with os.scandir(manifest_fd) as entries:
+                    return matching_names(entries)
             manifest_root = anchor / "artifacts" / "manifests"
             windows_handles.append(
                 AnchoredStorage.windows_handle(
@@ -254,9 +269,59 @@ class SessionArtifactStore:
                     create=False,
                 )
             )
-            return sorted(path.name for path in manifest_root.iterdir())
+            with os.scandir(manifest_root) as entries:
+                return matching_names(entries)
         except FileNotFoundError:
             return []
+        finally:
+            if manifest_fd is not None:
+                os.close(manifest_fd)
+            if artifact_fd is not None:
+                os.close(artifact_fd)
+            if descriptor is not None:
+                os.close(descriptor)
+            for handle in reversed(windows_handles):
+                AnchoredStorage.close_windows_handle(handle)
+
+    def _discard_manifest_names(
+        self,
+        workspace: Path,
+        names: Sequence[str],
+    ) -> None:
+        if not names:
+            return
+        anchor, _, descriptor, windows_handles = _open_workspace_breadboard(workspace)
+        artifact_fd = manifest_fd = None
+        try:
+            if descriptor is not None:
+                artifact_fd = AnchoredStorage.open_directory(
+                    descriptor,
+                    "artifacts",
+                    create=False,
+                )
+                manifest_fd = AnchoredStorage.open_directory(
+                    artifact_fd,
+                    "manifests",
+                    create=False,
+                )
+                for name in names:
+                    try:
+                        os.unlink(name, dir_fd=manifest_fd)
+                    except FileNotFoundError:
+                        pass
+                os.fsync(manifest_fd)
+                return
+            manifest_root = anchor / "artifacts" / "manifests"
+            windows_handles.append(
+                AnchoredStorage.windows_handle(
+                    manifest_root,
+                    directory=True,
+                    create=False,
+                )
+            )
+            for name in names:
+                (manifest_root / name).unlink(missing_ok=True)
+            AnchoredStorage.sync_directory(manifest_root)
         finally:
             if manifest_fd is not None:
                 os.close(manifest_fd)
@@ -322,25 +387,36 @@ class SessionArtifactStore:
             if retained_digest is not None:
                 raise ValueError("retained attachment manifest is missing")
             return
-        history_head = max(candidates)
-        if any(
-            any(history_head[3].get(name) != ref for name, ref in candidate.items())
-            for *_, candidate in candidates
-        ):
-            raise ValueError("retained attachment manifests do not form one history")
         if retained_digest is None:
+            history_head = max(candidates)
+            if any(
+                any(
+                    history_head[3].get(name) != ref
+                    for name, ref in candidate.items()
+                )
+                for *_, candidate in candidates
+            ):
+                raise ValueError("retained attachment manifests do not form one history")
             _, _, selected_ref, selected = history_head
         else:
-            selected_ref, selected = next(
+            retained_candidate = next(
                 (
-                    (manifest_ref, candidate)
-                    for _, digest, manifest_ref, candidate in candidates
-                    if digest == retained_digest
+                    candidate
+                    for candidate in candidates
+                    if candidate[1] == retained_digest
                 ),
-                (None, None),
+                None,
             )
-            if selected_ref is None or selected is None:
+            if retained_candidate is None:
                 raise ValueError("retained attachment manifest is missing")
+            _, _, selected_ref, selected = retained_candidate
+            orphan_names = [
+                f"{prefix}{digest}.json"
+                for _, digest, _, candidate in candidates
+                if digest != retained_digest
+                and any(selected.get(name) != ref for name, ref in candidate.items())
+            ]
+            self._discard_manifest_names(workspace, orphan_names)
         workspace_root = workspace.resolve()
         attachment_root = workspace_root / ".breadboard" / "attachments"
         attachment_entries: Dict[str, Dict[str, Any]] = {}

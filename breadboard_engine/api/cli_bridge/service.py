@@ -244,6 +244,103 @@ def _read_retained_event_journal(
         (file_stat.st_dev, file_stat.st_ino),
     )
 
+def _retained_event_journal_identity(
+    event_root: Path,
+    session_id: str,
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    event_path = event_root / session_id / "session_events.jsonl"
+    if os.name == "nt":
+        handles: list[int] = []
+        try:
+            handles.append(
+                AnchoredStorage.windows_handle(
+                    event_root,
+                    directory=True,
+                    create=False,
+                )
+            )
+            handles.append(
+                AnchoredStorage.windows_handle(
+                    event_path.parent,
+                    directory=True,
+                    create=False,
+                )
+            )
+            handles.append(
+                AnchoredStorage.windows_handle(
+                    event_path,
+                    directory=False,
+                    create=False,
+                )
+            )
+            directory_stat = event_path.parent.stat(follow_symlinks=False)
+            file_stat = event_path.stat(follow_symlinks=False)
+        finally:
+            for handle in reversed(handles):
+                AnchoredStorage.close_windows_handle(handle)
+    else:
+        root_descriptor = os.open(
+            event_root,
+            os.O_RDONLY
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        session_descriptor: int | None = None
+        event_descriptor: int | None = None
+        try:
+            session_descriptor = AnchoredStorage.open_directory(
+                root_descriptor,
+                session_id,
+                create=False,
+            )
+            directory_stat = os.fstat(session_descriptor)
+            event_descriptor = os.open(
+                "session_events.jsonl",
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=session_descriptor,
+            )
+            file_stat = os.fstat(event_descriptor)
+            if not stat.S_ISREG(file_stat.st_mode):
+                raise OSError("retained event journal is not a regular file")
+        finally:
+            if event_descriptor is not None:
+                os.close(event_descriptor)
+            if session_descriptor is not None:
+                os.close(session_descriptor)
+            os.close(root_descriptor)
+    return (
+        (directory_stat.st_dev, directory_stat.st_ino),
+        (file_stat.st_dev, file_stat.st_ino),
+    )
+
+
+class _RetainedEventSink:
+    def __init__(
+        self,
+        delegate: JsonlEventSink,
+        event_root: Path,
+        session_id: str,
+        expected_identity: tuple[tuple[int, int], tuple[int, int]],
+    ) -> None:
+        self.path = delegate.path
+        self._delegate = delegate
+        self._event_root = event_root
+        self._session_id = session_id
+        self._expected_identity = expected_identity
+
+    def append(self, event: object) -> None:
+        try:
+            current_identity = _retained_event_journal_identity(
+                self._event_root,
+                self._session_id,
+            )
+        except OSError as exc:
+            raise RuntimeError("retained event journal identity changed") from exc
+        if current_identity != self._expected_identity:
+            raise RuntimeError("retained event journal identity changed")
+        self._delegate.append(event)
+
+
 
 def _unsafe_retained_journal(session_id: str, cause: OSError | None = None) -> ReplayError:
     error = ReplayError(
@@ -304,7 +401,13 @@ def _restore_product_session(
                 if line.strip()
                 for record in (json.loads(line),)
             ]
-            restored = ProductSession.restore(events, sink=sink)
+            protected_sink = _RetainedEventSink(
+                sink,
+                selected_event_root,
+                session_id,
+                retained_journal[1:],
+            )
+            restored = ProductSession.restore(events, sink=protected_sink)
     except FileNotFoundError as exc:
         raise ReplayError(
             "missing_event_stream",
