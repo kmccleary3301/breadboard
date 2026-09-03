@@ -12,7 +12,6 @@ import hashlib
 import json
 import math
 import os
-import struct
 import subprocess
 import sys
 import threading
@@ -22,6 +21,8 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, ClassVar, Protocol
+
+
 
 from breadboard.product.coordination.placement import WorkPlacement
 from breadboard.product.coordination.work_items import (
@@ -52,6 +53,34 @@ from breadboard.product.runtime.session_store import (
     load_session,
     mutate_session,
 )
+
+
+class _DarwinProcBsdInfo(ctypes.Structure):
+    _fields_ = [
+        ("pbi_flags", ctypes.c_uint32),
+        ("pbi_status", ctypes.c_uint32),
+        ("pbi_xstatus", ctypes.c_uint32),
+        ("pbi_pid", ctypes.c_uint32),
+        ("pbi_ppid", ctypes.c_uint32),
+        ("pbi_uid", ctypes.c_uint32),
+        ("pbi_gid", ctypes.c_uint32),
+        ("pbi_ruid", ctypes.c_uint32),
+        ("pbi_rgid", ctypes.c_uint32),
+        ("pbi_svuid", ctypes.c_uint32),
+        ("pbi_svgid", ctypes.c_uint32),
+        ("rfu_1", ctypes.c_uint32),
+        ("pbi_comm", ctypes.c_char * 16),
+        ("pbi_name", ctypes.c_char * 32),
+        ("pbi_nfiles", ctypes.c_uint32),
+        ("pbi_pgid", ctypes.c_uint32),
+        ("pbi_pjobc", ctypes.c_uint32),
+        ("e_tdev", ctypes.c_uint32),
+        ("e_tpgid", ctypes.c_uint32),
+        ("pbi_nice", ctypes.c_int32),
+        ("pbi_start_tvsec", ctypes.c_uint64),
+        ("pbi_start_tvusec", ctypes.c_uint64),
+    ]
+
 
 _TERMINAL = frozenset({"completed", "failed", "canceled"})
 _CHILD_SCHEMA = "bb.durable_child.v1"
@@ -2989,20 +3018,29 @@ class ProcessExecutionAdapter:
                 return None
             return f"{boot_id}:{start_time}"
         if sys.platform == "darwin":
-            libc = ctypes.CDLL(None, use_errno=True)
-            mib = (ctypes.c_int * 4)(1, 14, 1, pid)
-            length = ctypes.c_size_t(0)
-            if libc.sysctl(mib, 4, None, ctypes.byref(length), None, 0) != 0:
+            try:
+                libproc = ctypes.CDLL("libproc.dylib", use_errno=True)
+            except OSError:
                 return None
-            timeval_size = struct.calcsize("<qi")
-            buffer = (ctypes.c_char * length.value)()
-            if (
-                libc.sysctl(mib, 4, buffer, ctypes.byref(length), None, 0) != 0
-                or length.value < timeval_size
-            ):
+            proc_pidinfo = libproc.proc_pidinfo
+            proc_pidinfo.argtypes = [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_uint64,
+                ctypes.c_void_p,
+                ctypes.c_int,
+            ]
+            proc_pidinfo.restype = ctypes.c_int
+            info = _DarwinProcBsdInfo()
+            size = ctypes.sizeof(info)
+            if proc_pidinfo(pid, 3, 0, ctypes.byref(info), size) != size:
                 return None
-            seconds, microseconds = struct.unpack_from("<qi", buffer.raw, 0)
-            return seconds * 1_000_000 + microseconds
+            if info.pbi_start_tvsec == 0 or info.pbi_start_tvusec >= 1_000_000:
+                return None
+            return (
+                int(info.pbi_start_tvsec) * 1_000_000
+                + int(info.pbi_start_tvusec)
+            )
         return None
 
     @classmethod

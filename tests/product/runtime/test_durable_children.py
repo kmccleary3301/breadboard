@@ -7,6 +7,7 @@ import multiprocessing
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import replace
@@ -5371,3 +5372,12 @@ def test_workflow_definition_identity_canonicalizes_graph_order() -> None:
     )
 
     assert first.identity("canonical") == second.identity("canonical")
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Darwin process ABI")
+def test_darwin_process_start_token_uses_process_start_time() -> None:
+    token = ProcessExecutionAdapter._process_start_token(os.getpid())
+
+    assert isinstance(token, int)
+    started_seconds = token // 1_000_000
+    assert 946_684_800 <= started_seconds <= int(time.time())

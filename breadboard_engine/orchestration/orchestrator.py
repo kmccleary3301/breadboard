@@ -110,13 +110,16 @@ class MultiAgentOrchestrator:
         job = self.job_manager.update_state(job_id, "completed", result_payload=payload)
         if job is None:
             return None
-        event_payload = {
-            "job_id": job.job_id,
-            "agent_id": job.agent_id,
-            "state": job.state,
-            "seq": job.seq,
-            "result_payload": payload,
-        }
+        event_payload = dict(payload)
+        event_payload.update(
+            {
+                "job_id": job.job_id,
+                "agent_id": job.agent_id,
+                "state": job.state,
+                "seq": job.seq,
+                "result_payload": payload,
+            }
+        )
         self.event_log.add(
             "agent.job_completed",
             agent_id=job.agent_id,

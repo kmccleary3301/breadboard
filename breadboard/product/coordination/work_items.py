@@ -231,10 +231,20 @@ class WorkItemRepository:
             if any(row.sequence != len(current) + offset for offset, row in enumerate(group, 1)): raise ValueError("appended event sequence is not contiguous")
             rebuild_work_item((*current, *group))
         if self._path is not None:
+            created = not self._path.exists()
             with self._path.open("ab") as stream:
                 stream.write(self._transaction_frame(rows))
                 stream.flush()
                 os.fsync(stream.fileno())
+            if created and os.name != "nt":
+                directory_fd = os.open(
+                    self._path.parent,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+                )
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
         for work_item_id, group in grouped.items():
             self._streams.setdefault(work_item_id, []).extend(group)
 

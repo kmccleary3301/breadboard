@@ -114,6 +114,7 @@ def test_supervisor_validates_complete_separately_from_worker_done() -> None:
     assert completion_events
     assert completion_events[-1].payload["job_id"] == supervisor.job.job_id
     assert completion_events[-1].payload["result_payload"]["trigger_signal_id"] == "signal_complete_reference"
+    assert completion_events[-1].payload["trigger_signal_id"] == "signal_complete_reference"
 
 
 def test_supervisor_keeps_worker_complete_pending_when_required_deliverable_missing() -> None:

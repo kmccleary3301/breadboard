@@ -205,3 +205,48 @@ def test_journal_incomplete_tail_is_the_only_truncatable_corruption(tmp_path: Pa
     path.write_bytes(original + b'{"checksum":"incomplete"')
     WorkItemRepository(path)
     assert path.read_bytes() == original
+
+
+def test_journal_semantic_corruption_is_typed_and_never_truncated(tmp_path: Path) -> None:
+    path = tmp_path / "work-items.jsonl"
+    repository = WorkItemRepository(path)
+    WorkItem.create("journal item", work_item_id="journal-item", repository=repository, clock=CLOCK)
+    original = path.read_bytes()
+    path.write_bytes(original + original)
+    corrupted = path.read_bytes()
+    with pytest.raises(WorkItemJournalCorruptionError, match="corrupt Work Item journal"):
+        WorkItemRepository(path)
+    assert path.read_bytes() == corrupted
+
+
+def test_first_journal_append_syncs_parent_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+    import stat
+
+    if os.name == "nt":
+        pytest.skip("directory fsync is a POSIX durability operation")
+    path = tmp_path / "work-items.jsonl"
+    synced_directory_fds = 0
+    real_fsync = os.fsync
+
+    def capture_fsync(fd: int) -> None:
+        nonlocal synced_directory_fds
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            synced_directory_fds += 1
+        real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", capture_fsync)
+    repository = WorkItemRepository(path)
+    item = WorkItem.create(
+        "durable owner",
+        work_item_id="work-1",
+        repository=repository,
+        clock=CLOCK,
+    )
+    assert synced_directory_fds == 1
+
+    item.acquire_lease("worker", lease_id="lease-1")
+    assert synced_directory_fds == 1
