@@ -57,7 +57,7 @@ def _finalize_model_surface(
         for index, message in enumerate(messages)
         if isinstance(message, dict) and message.get("role") == "system"
     ]
-    surface["prompt_sections"] = {
+    surface["wire_prompt_sections"] = {
         "system": [
             {
                 "order": order,
@@ -80,7 +80,7 @@ def _finalize_model_surface(
             else []
         ),
     }
-    surface["tools"] = [
+    surface["wire_tools"] = [
         {
             "order": index,
             "source_ref": f"provider_request.tools[{index}]",

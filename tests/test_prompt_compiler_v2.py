@@ -89,8 +89,25 @@ def test_final_model_surface_hashes_transformed_provider_request() -> None:
     }
     surface = _finalize_model_surface(
         {
-            "prompt_sections": {"system": [], "per_turn": []},
-            "tools": [],
+            "prompt_sections": {
+                "system": [
+                    {
+                        "order": 0,
+                        "source_ref": "@pack(base).system",
+                        "content_sha256": "compiled-source-digest",
+                        "uncertainty": None,
+                    }
+                ],
+                "per_turn": [],
+            },
+            "tools": [
+                {
+                    "order": 0,
+                    "source_ref": "tool_registry[0]",
+                    "schema_sha256": "compiled-tool-digest",
+                    "uncertainty": None,
+                }
+            ],
         },
         messages,
         [],
@@ -99,8 +116,12 @@ def test_final_model_surface_hashes_transformed_provider_request() -> None:
     )
 
     assert surface is not None
-    assert surface["prompt_sections"]["per_turn"] == []
-    assert surface["prompt_sections"]["system"][0]["content_sha256"] == (
+    assert surface["prompt_sections"]["system"][0]["source_ref"] == (
+        "@pack(base).system"
+    )
+    assert surface["tools"][0]["source_ref"] == "tool_registry[0]"
+    assert surface["wire_prompt_sections"]["per_turn"] == []
+    assert surface["wire_prompt_sections"]["system"][0]["content_sha256"] == (
         hashlib.sha256(final_system.encode("utf-8")).hexdigest()
     )
     assert surface["provider_request"]["messages_sha256"]
