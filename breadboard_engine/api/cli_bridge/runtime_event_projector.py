@@ -138,7 +138,7 @@ _REPLAY_EVENT_PAYLOAD_FIELDS = {
     EventType.TOOL_EXEC_STDERR_DELTA: frozenset({"call_id", "exec_id", "delta"}),
     EventType.TOOL_EXEC_END: frozenset({"call_id", "exec_id", "exit_code"}),
     EventType.ASSISTANT_MESSAGE: frozenset(
-        {"text", "message", "source", "message_id", "trajectory_id"}
+        {"text", "message", "source", "message_id", "item_id", "trajectory_id"}
     ),
     EventType.ASSISTANT_DELTA: frozenset({"text", "message_id"}),
     EventType.TOOL_CALL: frozenset(

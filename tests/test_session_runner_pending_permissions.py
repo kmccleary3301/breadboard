@@ -675,6 +675,40 @@ async def test_replay_assistant_registers_canonical_message_target(tmp_path) -> 
 
 
 @pytest.mark.asyncio
+async def test_replay_assistant_accepts_item_id_as_message_identity(
+    tmp_path,
+) -> None:
+    fixture = tmp_path / "assistant-item-id-replay.jsonl"
+    fixture.write_text(
+        json.dumps(
+            {
+                "type": "assistant_message",
+                "payload": {
+                    "text": "replayed",
+                    "item_id": "replay-item",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner, session = _product_runner("replay-assistant-item-id")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    await runner._execute_replay_task(
+        f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    product_event = next(
+        event for event in session.events if event.kind == "assistant_message"
+    )
+    assert product_event.payload["message_id"] == "replay-item"
+
+
+@pytest.mark.asyncio
 async def test_replay_assistant_stream_registers_canonical_message_target(
     tmp_path,
 ) -> None:
