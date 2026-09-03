@@ -360,13 +360,60 @@ def test_session_cli_bounds_complete_remote_event_snapshot_to_initial_count(
     assert calls == [(None, 256, False), (256, 1, False)]
 
 
+def test_session_cli_accepts_hidden_internal_sequence_gap(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    class HiddenEventClient:
+        def __init__(self, base_url: str, *, timeout_s: float) -> None:
+            pass
+
+        @staticmethod
+        def get_session(session_id: str) -> dict[str, Any]:
+            result = _result(["session", "get"])
+            result["data"] = {
+                "session": {"session_id": session_id, "event_count": 3}
+            }
+            return result
+
+        @staticmethod
+        def events_session(
+            session_id: str,
+            *,
+            resume_token: int | None = None,
+            limit: int = 256,
+            follow: bool = True,
+        ) -> Iterator[dict[str, Any]]:
+            assert (resume_token, limit, follow) == (None, 3, False)
+            yield {"seq": 1, "kind": "session.started"}
+            yield {"seq": 3, "kind": "session.completed"}
+
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", HiddenEventClient)
+    assert (
+        main(
+            [
+                "--json",
+                "session",
+                "--workspace",
+                str(tmp_path),
+                "--server",
+                "http://breadboard.test",
+                "events",
+                "compacted-session",
+            ]
+        )
+        == 0
+    )
+    output = json.loads(capsys.readouterr().out)
+    assert [event["seq"] for event in output["data"]["events"]] == [1, 3]
+
+
 @pytest.mark.parametrize(
     ("event_count", "events", "expected_error"),
     [
         (
             2,
             [(1, "assistant_message"), (3, "session.completed")],
-            "non-contiguous session event page",
+            "exceeded its initial bound",
         ),
         (
             2,

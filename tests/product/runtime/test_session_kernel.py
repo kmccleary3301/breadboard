@@ -276,20 +276,48 @@ def test_generation_adoption_rejects_incompatible_lock_as_typed_refusal(
     assert session.generation_sequence == (HASH,)
 
 
-def test_session_compaction_reconstructs_exact_context_and_raw_facts() -> None:
-    session = Session.start(_lock(), "task", session_id="compaction-session")
+def test_session_compaction_reconstructs_exact_context_and_raw_facts(
+    tmp_path: Path,
+) -> None:
+    journal = tmp_path / "events.jsonl"
+    session = Session.start(
+        _lock(),
+        "task",
+        session_id="compaction-session",
+        sink=JsonlEventSink(journal),
+    )
     snapshot = CompactionSnapshot(
         effective_context=b'[{\"role\":\"user\",\"content\":\"exact bytes\"}]',
         raw_fact_ids=("ctn_000001", "ctn_000002"),
     )
 
     compacted = session.compact(snapshot)
-    restored = Session.restore(session.events)
+    persisted = tuple(
+        KernelEvent(**json.loads(line))
+        for line in journal.read_text(encoding="utf-8").splitlines()
+    )
+    restored = Session.restore(persisted)
 
     assert compacted.sequence == 2
     assert restored.effective_context == snapshot.effective_context
     assert restored.raw_fact_ids == snapshot.raw_fact_ids
     assert replay_differential(session) == {}
+    assert persisted == session.events
+
+
+def test_replay_differential_compares_live_owner_snapshot_to_durable_replay() -> None:
+    session = Session.start(_lock(), "task")
+    session.compact(CompactionSnapshot(b"durable", ("ctn_000001",)))
+    session._effective_context = b"live divergence"
+    session._raw_fact_ids = ("ctn_000002",)
+
+    difference = replay_differential(session)
+
+    assert set(difference) == {"effective_context", "raw_fact_ids"}
+    assert difference["raw_fact_ids"] == {
+        "missing": ["ctn_000002"],
+        "unexpected": ["ctn_000001"],
+    }
 
 
 @pytest.mark.parametrize(

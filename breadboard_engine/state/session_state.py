@@ -143,6 +143,7 @@ class SessionState:
         self.coordination_directives: List[Dict[str, Any]] = []
         self.provider_metadata: Dict[str, Any] = {}
         self._provider_metadata_lock = threading.RLock()
+        self._compaction_lock = threading.RLock()
         self.reasoning_traces = ReasoningTraceStore()
         self.ir_events: List[IRDeltaEvent] = []
         self.ir_finish: Optional[IRFinish] = None
@@ -521,19 +522,24 @@ class SessionState:
     
     def compaction_snapshot(self) -> CompactionSnapshot:
         """Snapshot model-facing bytes and cumulative C-Tree identities at a quiescent boundary."""
-        effective_context = json.dumps(
-            self.provider_messages,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ).encode("utf-8")
-        return CompactionSnapshot(
-            effective_context=effective_context,
-            raw_fact_ids=tuple(node["id"] for node in self.ctree_store.nodes),
-        )
+        with self._compaction_lock:
+            effective_context = json.dumps(
+                self.provider_messages,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+            return CompactionSnapshot(
+                effective_context=effective_context,
+                raw_fact_ids=tuple(node["id"] for node in self.ctree_store.nodes),
+            )
 
     def add_message(self, message: Dict[str, Any], to_provider: bool = True):
+        with self._compaction_lock:
+            return self._add_message_unlocked(message, to_provider)
+
+    def _add_message_unlocked(self, message: Dict[str, Any], to_provider: bool = True):
         """Add a message to the session state"""
         should_store_message = True
         if to_provider and self.messages:
@@ -913,24 +919,25 @@ class SessionState:
         *,
         turn: Optional[int] = None,
     ) -> Optional[str]:
-        node_id = self.ctree_store.record(kind, payload, turn=turn)
-        try:
-            node = self.ctree_store.nodes[-1] if self.ctree_store.nodes else None
-            if isinstance(node, dict):
-                self._last_ctree_node_id = node.get("id")
-                snapshot = self.ctree_store.snapshot()
-                self._last_ctree_snapshot = snapshot
-                self._emit_event(
-                    "ctree_node",
-                    {
-                        "node": dict(node),
-                        "snapshot": snapshot,
-                    },
-                    turn=turn,
-                )
-        except Exception:
-            pass
-        return node_id
+        with self._compaction_lock:
+            node_id = self.ctree_store.record(kind, payload, turn=turn)
+            try:
+                node = self.ctree_store.nodes[-1] if self.ctree_store.nodes else None
+                if isinstance(node, dict):
+                    self._last_ctree_node_id = node.get("id")
+                    snapshot = self.ctree_store.snapshot()
+                    self._last_ctree_snapshot = snapshot
+                    self._emit_event(
+                        "ctree_node",
+                        {
+                            "node": dict(node),
+                            "snapshot": snapshot,
+                        },
+                        turn=turn,
+                    )
+            except Exception:
+                pass
+            return node_id
 
     def emit_ctree_snapshot(self, payload: Dict[str, Any]) -> None:
         """Emit a summary snapshot for C-Tree metadata."""

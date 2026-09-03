@@ -448,7 +448,24 @@ class Session:
     """Lifecycle owner; adapters may add only validated, minimal runtime observations."""
     def __init__(self, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None, task: str | None = None) -> None:
         if task is not None and (not isinstance(task, str) or not task.strip()): raise ValueError("task must be non-empty when retained")
-        self._task = task; self._transition_lock = RLock(); self._appending = False; self._events = list(events); self._clock = clock if clock is not None else SystemClock(); self._sink = sink if sink is not None else NullEventSink(); self._terminal_annotation_commit: Callable[[AnnotationRecord], tuple[KernelEvent, ...]] | None = None; self._view = rebuild(self._events)
+        self._task = task
+        self._transition_lock = RLock()
+        self._appending = False
+        self._events = list(events)
+        self._clock = clock if clock is not None else SystemClock()
+        self._sink = sink if sink is not None else NullEventSink()
+        self._terminal_annotation_commit: Callable[[AnnotationRecord], tuple[KernelEvent, ...]] | None = None
+        self._view = rebuild(self._events)
+        compaction = next(
+            (row for row in reversed(self._events) if row.kind == "context.compacted"),
+            None,
+        )
+        self._effective_context = (
+            None if compaction is None else _decode_compaction_context(compaction.payload)
+        )
+        self._raw_fact_ids = (
+            () if compaction is None else tuple(compaction.payload["raw_fact_ids"])
+        )
     @classmethod
     def start(cls, lock: EffectiveHarnessLock, task: str, *, session_id: str | None = None, clock: Clock | None = None, ids: IdSource | None = None, sink: EventSink | None = None) -> "Session":
         if not isinstance(lock, EffectiveHarnessLock): raise TypeError("Session.start requires an EffectiveHarnessLock")
@@ -532,30 +549,25 @@ class Session:
     @property
     def effective_context(self) -> bytes | None:
         with self._transition_lock:
-            event = next(
-                (row for row in reversed(self._events) if row.kind == "context.compacted"),
-                None,
-            )
-            return None if event is None else _decode_compaction_context(event.payload)
+            return self._effective_context
     @property
     def raw_fact_ids(self) -> tuple[str, ...]:
         with self._transition_lock:
-            event = next(
-                (row for row in reversed(self._events) if row.kind == "context.compacted"),
-                None,
-            )
-            return () if event is None else tuple(event.payload["raw_fact_ids"])
+            return self._raw_fact_ids
     def projected_read_model(self, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
         return project_session_live(self, as_of=as_of, expected_projector_version=expected_projector_version)
     def compact(self, snapshot: CompactionSnapshot) -> CompactionEvent:
         if not isinstance(snapshot, CompactionSnapshot):
             raise TypeError("compact requires a CompactionSnapshot")
-        event, _ = self._append_event(
-            "compact",
-            "context.compacted",
-            lambda: self._compaction_payload(snapshot),
-        )
-        return _compaction_event(event)
+        with self._transition_lock:
+            event, _ = self._append_event(
+                "compact",
+                "context.compacted",
+                lambda: self._compaction_payload(snapshot),
+            )
+            self._effective_context = snapshot.effective_context
+            self._raw_fact_ids = snapshot.raw_fact_ids
+            return _compaction_event(event)
     def _compaction_payload(self, snapshot: CompactionSnapshot) -> dict[str, Any]:
         previous = next(
             (row for row in reversed(self._events) if row.kind == "context.compacted"),

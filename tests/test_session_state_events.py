@@ -354,6 +354,34 @@ def test_session_state_compaction_snapshot_reconstructs_after_three_boundaries()
         assert replay_differential(session) == {}
 
 
+def test_compaction_snapshot_serializes_message_and_fact_mutation() -> None:
+    state = SessionState("ws", "image", {})
+    started = threading.Event()
+    finished = threading.Event()
+
+    def add_message() -> None:
+        started.set()
+        state.add_message({"role": "user", "content": "after-boundary"})
+        finished.set()
+
+    with state._compaction_lock:
+        writer = threading.Thread(target=add_message)
+        writer.start()
+        assert started.wait(timeout=1)
+        assert not finished.is_set()
+        before = state.compaction_snapshot()
+    writer.join(timeout=1)
+    assert finished.is_set()
+    after = state.compaction_snapshot()
+
+    assert before.effective_context == b"[]"
+    assert before.raw_fact_ids == ()
+    assert json.loads(after.effective_context) == [
+        {"content": "after-boundary", "role": "user"}
+    ]
+    assert len(after.raw_fact_ids) == 1
+
+
 def test_session_state_builds_kernel_event_record_and_normalizes_transcript() -> None:
     collector = EventCollector()
     state = SessionState("ws", "image", {}, event_emitter=collector)

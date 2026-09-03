@@ -321,27 +321,29 @@ def _remote_event_snapshot(
                 "server event snapshot ended before its initial bound"
             )
         terminal_sequence = None
-        for expected_sequence, event in enumerate(
-            page,
-            start=resume_token + 1,
-        ):
-            if event["seq"] != expected_sequence:
+        previous_sequence = resume_token
+        for event in page:
+            sequence = event["seq"]
+            if type(sequence) is not int or sequence <= previous_sequence:
                 raise ValueError(
-                    "server returned a non-contiguous session event page"
+                    "server returned a non-increasing session event page"
+                )
+            if sequence > upper_sequence:
+                raise ValueError(
+                    "server event snapshot exceeded its initial bound"
                 )
             if terminal_sequence is not None:
                 raise ValueError("server returned an event after termination")
             if event["kind"] in _TERMINAL_EVENT_KINDS:
-                if expected_sequence != upper_sequence:
+                if sequence != upper_sequence:
                     raise ValueError(
                         "server event snapshot terminated before its initial bound"
                     )
-                terminal_sequence = expected_sequence
-        next_resume_token = resume_token + len(page)
-        events.extend(
-            event for event in page if event["seq"] <= upper_sequence
-        )
-        if next_resume_token >= upper_sequence:
+                terminal_sequence = sequence
+            previous_sequence = sequence
+        next_resume_token = page[-1]["seq"]
+        events.extend(page)
+        if next_resume_token == upper_sequence:
             return events
         if len(page) < page_limit:
             raise ValueError(
