@@ -700,6 +700,12 @@ async def test_anonymous_stream_identity_cannot_collide_with_provider_id(
             '{"type":"assistant.message.start","payload":{}}',
             '{"type":"assistant.message.end","payload":{"text":"world"}}',
         ),
+        (
+            '{"type":"assistant.message.start","payload":{}}',
+            '{"type":"assistant.message.delta","payload":{"delta":"hello"}}',
+            '{"type":"assistant_message","payload":{"text":"hello"}}',
+            '{"type":"assistant.message.end","payload":{}}',
+        ),
     ],
 )
 async def test_replay_rejects_reused_canonical_message_identity(

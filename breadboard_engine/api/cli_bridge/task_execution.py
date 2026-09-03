@@ -474,6 +474,8 @@ class TaskExecutionOwner:
                         payload["trajectory_id"] = observed_payload["trajectory_id"]
                         active_replay_stream = None
                 elif event_type is EventType.ASSISTANT_MESSAGE:
+                    if active_replay_stream is not None:
+                        raise RuntimeProtocolError("runtime_protocol_error")
                     message = payload.get("message")
                     nested_ids: list[str] = []
                     if isinstance(message, dict):
