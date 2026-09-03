@@ -7,7 +7,11 @@
   },
   "effective_lock": {
     "generation_id": "ft03-generation-v1",
-    "lock_id": "ft03-lock-v1"
+    "lock_id": "ft03-lock-v1",
+    "model": "gpt-5.4-mini",
+    "model_role_lock": null,
+    "provider_id": "openai",
+    "runtime_id": "openai_responses"
   },
   "expected_provider_request": {
     "messages": [
@@ -96,22 +100,45 @@
       "stream": true
     }
   },
+  "runtime_context": {
+    "agent_config": {
+      "active_model_role": null,
+      "model_role_lock": null,
+      "provider_tools": {
+        "openai": {
+          "include_reasoning": false,
+          "responses_stateful": false
+        }
+      }
+    },
+    "extra": {
+      "responses_extra": {
+        "max_output_tokens": 64,
+        "temperature": 0
+      }
+    },
+    "model": "gpt-5.4-mini",
+    "session_provider_metadata": {}
+  },
   "tool_schemas": [
     {
-      "description": "Read one immutable artifact.",
-      "name": "read_artifact",
-      "parameters": {
-        "additionalProperties": false,
-        "properties": {
-          "logical_path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "logical_path"
-        ],
-        "type": "object"
-      }
+      "function": {
+        "description": "Read one immutable artifact.",
+        "name": "read_artifact",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "logical_path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "logical_path"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
     }
   ]
 }

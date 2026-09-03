@@ -14,6 +14,7 @@ EVIDENCE = ROOT / "evidence"
 SPEC = ROOT / "DSH_DONOR_CAMPAIGN_SPEC.md"
 AUDIT = ROOT / "COMPLETION_AUDIT.md"
 PACKETS = EVIDENCE / "05_FIRST_TRANCHE_PACKET_SET.md"
+DONOR_INVENTORY = EVIDENCE / "DONOR_ITEMS.yaml"
 PACKET_REVIEW = EVIDENCE / "05_FIRST_TRANCHE_PACKET_SET_REVIEW.md"
 PROTOTYPE = EVIDENCE / "07_CAMPAIGN_SPEC_PROTOTYPE.md"
 PROTOTYPE_REVIEW = EVIDENCE / "07_CAMPAIGN_SPEC_PROTOTYPE_REVIEW.md"
@@ -41,7 +42,7 @@ DAG_INPUT_DIGESTS = {
     DAG_ROUTING: "b43ded4b1b69dc4c77857af00c951697f550b7d3005f64c7319dab1607df5fb1",
 }
 FIXTURES = {
-    EVIDENCE / "fixtures/ft03-request-fixture-v1.json": "76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3",
+    EVIDENCE / "fixtures/ft03-request-fixture-v1.json": "a817d3b243f0f9c0e67d51dddf8dfe04ae3b04dffc13afc03f484dc8299c4af8",
     EVIDENCE / "fixtures/ft03_openai_responses_capture_v1.py": "67346f2db2906107cde1684c9eec920bad43e471f1001825d080c9776682fbab",
     EVIDENCE / "fixtures/ft06_surface_inventory_v1.py": "d3025ad346b13b699dd315ea71375888a79c905dd31cd01d24ea6a3dd1037445",
 }
@@ -52,6 +53,7 @@ HEADS = (
 REQUIRED = (
     SPEC,
     AUDIT,
+    DONOR_INVENTORY,
     *(path for _, candidate, review, _ in REVIEWED_GATES for path in (candidate, review)),
     SURFACE,
     EXTRACTED_SURFACE,
@@ -149,6 +151,15 @@ def main() -> int:
                 f"{label} exact-artifact review does not approve candidate "
                 f"SHA-256 {digest}"
             )
+        if label == "G-A":
+            inventory_digest = hashlib.sha256(
+                DONOR_INVENTORY.read_bytes()
+            ).hexdigest()
+            if inventory_digest not in binding:
+                findings.append(
+                    "G-A exact-artifact review does not bind donor inventory "
+                    f"SHA-256 {inventory_digest}"
+                )
     for required_text in (
         "effective adapter payload bytes",
         "started:false",

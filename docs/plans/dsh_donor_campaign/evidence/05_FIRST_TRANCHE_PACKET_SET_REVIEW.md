@@ -58,6 +58,14 @@ Escalation verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F
 
 Final escalation review date: 2026-09-03. Exact packet SHA-256 `5f9f42ef7b826518cfa3b25ae6059cf0142eb2352f4f4d47bc03d2bfc9412aae`; pinned heads unchanged.
 
-The independent final read verified FT-01's 2/16 schedule with intra-cell retries and authenticated writable L1/L2 worktree boundaries; terminal GEN-INTERNAL repair/NOT-TAKEN prerequisites and GEN-ACTIVATION; H/I ordering and the seven-piece gate; FT-03's product runtime adapter wrapper, error detail, and client-side capture; and FT-06's executable extractor, generated fixed point, and preserved historical baseline. The source package contains 22 exact evidence copies; the self-contained publication package requires 26 exact inputs, including exact-artifact bindings for every blocking G-A through G-H review and the executable DAG validator with its machine inputs.
+The independent final read verified FT-01's 2/16 schedule with intra-cell retries and authenticated writable L1/L2 worktree boundaries; terminal GEN-INTERNAL repair/NOT-TAKEN prerequisites and GEN-ACTIVATION; H/I ordering and the seven-piece gate; FT-03's product runtime adapter wrapper, error detail, and client-side capture; and FT-06's executable extractor, generated fixed point, and preserved historical baseline. The source package contains 22 exact evidence copies; the self-contained publication package requires 27 exact inputs, including the donor inventory and exact-artifact bindings for every blocking G-A through G-H review and the executable DAG validator with its machine inputs.
 
 Final escalation verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F passes on the exact packet digest above.
+
+## Post-contract escalation review — exact command, tool, and inventory closure
+
+Final exact review date: 2026-09-03. Exact packet SHA-256 `4b79244897f67df7498a8443b7c49ebfc9a4d1ea6da4a5dba28804209dc4cb82`; pinned heads unchanged. Exact FT-03 fixture SHA-256 `a817d3b243f0f9c0e67d51dddf8dfe04ae3b04dffc13afc03f484dc8299c4af8`.
+
+The independent exact read verified all four publication-blocking corrections. FT-02 now invokes only `SessionService.execute_command` with concrete supported `set_mode` and `set_model` requests and forbids the nonexistent general reconfigure command or direct use of its nested closure. FT-03 now supplies the canonical function wrapper, independently normalizes it to the public request oracle, converts it to a Responses `type:"function"` tool, and pins `model:"gpt-5.4-mini"` plus the closed model-role, provider-tool, extra-option, and provider-metadata runtime context. Package validation now requires `DONOR_ITEMS.yaml` and requires G-A's latest exact binding to name its current digest.
+
+Final exact verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F passes on the exact packet and fixture digests above.
