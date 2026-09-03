@@ -18,7 +18,7 @@ from breadboard_engine.provider.contracts import (
 from breadboard_engine.permissions import PermissionAuthority
 
 from .events import EventType, SessionEvent
-from .registry import TurnRecord
+from .registry import TurnRecord, identity_digest
 from .runtime_event_projector import (
     RuntimeEventContract,
     RuntimeProtocolError,
@@ -360,8 +360,19 @@ class TaskExecutionOwner:
                                 replay_assistant_content.get(stream_id, ())
                             )
                         }
-                        if stream_id not in anonymous_stream_ids:
-                            observed_payload["message_id"] = stream_id
+                        observed_payload["message_id"] = (
+                            identity_digest(
+                                "\0".join(
+                                    (
+                                        str(runner.session.session_id),
+                                        str(correlation["turn_id"]),
+                                        stream_id,
+                                    )
+                                )
+                            )
+                            if stream_id in anonymous_stream_ids
+                            else stream_id
+                        )
                         observed_payload["trajectory_id"] = str(correlation["turn_id"])
                         if stream_id not in registered_assistant_ids:
                             runner._record_product_observation(

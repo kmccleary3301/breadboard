@@ -330,14 +330,10 @@ async def test_idless_replay_stream_gets_deterministic_annotation_target(
     fixture = tmp_path / "idless-assistant-replay.jsonl"
     fixture.write_text(
         "\n".join(
-            json.dumps(row)
-            for row in (
-                {"type": "assistant.message.start", "payload": {}},
-                {
-                    "type": "assistant.message.delta",
-                    "payload": {"delta": "hello"},
-                },
-                {"type": "assistant.message.end", "payload": {}},
+            (
+                '{"type":"assistant.message.start","payload":{}}',
+                '{"type":"assistant.message.delta","payload":{"delta":"hello"}}',
+                '{"type":"assistant.message.end","payload":{}}',
             )
         )
         + "\n",
@@ -363,6 +359,41 @@ async def test_idless_replay_stream_gets_deterministic_annotation_target(
     )
     assert public_end.payload["message_id"] == product_event.payload["message_id"]
     assert product_event.payload["trajectory_id"] == "turn-test"
+
+
+@pytest.mark.asyncio
+async def test_idless_replay_stream_remains_valid_without_product_session(
+    tmp_path,
+) -> None:
+    fixture = tmp_path / "legacy-idless-assistant-replay.jsonl"
+    fixture.write_text(
+        "\n".join(
+            (
+                '{"type":"assistant.message.start","payload":{}}',
+                '{"type":"assistant.message.delta","payload":{"delta":"hello"}}',
+                '{"type":"assistant.message.end","payload":{}}',
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner = _runner("legacy-replay-idless-assistant")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    await runner._execute_replay_task(
+        f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    public_end = next(
+        event
+        for event in runner.session.event_queue._queue
+        if event is not None and event.type is EventType.ASSISTANT_MESSAGE_END
+    )
+    assert public_end.payload["message_id"]
+    assert public_end.payload["trajectory_id"] == "turn-test"
 
 
 def test_product_observations_pair_canonical_and_message_tool_results() -> None:
