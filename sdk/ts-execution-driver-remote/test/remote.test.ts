@@ -1561,3 +1561,57 @@ test("remote terminal manager same-ID successful restart removes ID from ended_s
   assert.equal(snap?.active_sessions[0]?.terminal_session_id, "term-rem-restart-id")
   assert.equal(Boolean(snap?.ended_session_ids?.includes("term-rem-restart-id")), false)
 })
+
+test("Remote terminal scope-all filters foreign cleanup confirmations and does not poison unknown IDs", async () => {
+  const targetId = "term-remote-scope-all-target"
+  const foreignId = "term-remote-scope-all-foreign"
+  const customFetch: typeof fetch = async (_input, init) => {
+    const request = JSON.parse(init?.body as string)
+    if (request.action === "cleanup") {
+      assert.deepEqual(request.payload.session_ids, [targetId])
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          payload: {
+            cleaned_session_ids: [targetId, foreignId],
+            failed_session_ids: [foreignId],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }
+    return new Response(
+      JSON.stringify({
+        schema_version: "bb.remote_terminal_response.v1",
+        payload: { output_deltas: [] },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )
+  }
+
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "https://example.test/remote-terminal-scope-all",
+    fetchImpl: customFetch,
+  })
+  await driver.startTerminalSession!({
+    terminalSessionId: targetId,
+    command: ["python", "-i"],
+    capability: remoteCapability,
+  })
+
+  const cleanup = await driver.cleanupTerminalSessions!({
+    cleanupId: "clean-remote-scope-all-foreign",
+    scope: "all",
+  })
+  assert.deepEqual(cleanup.cleaned_session_ids, [targetId])
+  assert.deepEqual(cleanup.failed_session_ids, [])
+
+  await assert.rejects(
+    () =>
+      driver.interactTerminalSession!({
+        terminalSessionId: foreignId,
+        interactionKind: "poll",
+      }),
+    /Unknown remote terminal session/,
+  )
+})

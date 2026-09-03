@@ -4656,3 +4656,136 @@ test("execution world snapshot merges ended IDs only for the selected driver", a
   assert.equal(result.kind, "terminal_snapshot")
   assert.deepEqual(result.result?.ended_session_ids, ["term-snapshot-local"])
 })
+
+test("execution world scope-all adopts selected-driver snapshot sessions and ignores foreign confirmations", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-scope-all-discovered",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-scope-all-discovered",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: capability.capability_id,
+  }
+  const discoveredId = "term-discovered-by-snapshot"
+  const discoveredEndedId = "term-ended-discovered-by-snapshot"
+  const foreignId = "term-owned-by-foreign-driver"
+  const cleanupInputs: string[][] = []
+  let snapshotCalls = 0
+
+  const descriptor = (sessionId: string): TerminalSessionDescriptorV1 => ({
+    schema_version: "bb.terminal_session_descriptor.v1",
+    terminal_session_id: sessionId,
+    startup_call_id: null,
+    owner_task_id: null,
+    public_handles: [],
+    command: ["bash"],
+    cwd: null,
+    stream_mode: "pipes",
+    stream_split: "stdout_stderr",
+    capability_id: capability.capability_id,
+    placement_id: placement.placement_id,
+    persistence_scope: "thread",
+    continuation_scope: "both",
+  })
+
+  const selectedDriver: TerminalSessionDriverV1 = {
+    driverId: "selected-snapshot-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    startTerminalSession: async (input) => ({
+      descriptor: descriptor(input.terminalSessionId),
+      outputDeltas: [],
+    }),
+    interactTerminalSession: async (input) => ({
+      interaction: {
+        schema_version: "bb.terminal_interaction.v1",
+        terminal_session_id: input.terminalSessionId,
+        startup_call_id: null,
+        causing_call_id: null,
+        interaction_kind: input.interactionKind,
+        input_b64: null,
+        signal: null,
+      },
+      outputDeltas: [],
+    }),
+    snapshotTerminalRegistry: async () => {
+      snapshotCalls++
+      return {
+        schema_version: "bb.terminal_registry_snapshot.v1",
+        snapshot_id: `snapshot-${snapshotCalls}`,
+        active_sessions: snapshotCalls === 1 ? [descriptor(discoveredId)] : [],
+        ended_session_ids: snapshotCalls === 1 ? [discoveredEndedId, foreignId] : [],
+      }
+    },
+    cleanupTerminalSessions: async (input) => {
+      cleanupInputs.push([...(input.sessionIds ?? [])])
+      return {
+        schema_version: "bb.terminal_cleanup_result.v1",
+        cleanup_id: input.cleanupId,
+        scope: input.scope,
+        cleaned_session_ids: [...(input.sessionIds ?? []), foreignId],
+        failed_session_ids: [foreignId],
+      }
+    },
+  }
+  const foreignDriver: TerminalSessionDriverV1 = {
+    driverId: "foreign-snapshot-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    startTerminalSession: async (input) => ({
+      descriptor: descriptor(input.terminalSessionId),
+      outputDeltas: [],
+    }),
+    interactTerminalSession: async (input) => ({
+      interaction: {
+        schema_version: "bb.terminal_interaction.v1",
+        terminal_session_id: input.terminalSessionId,
+        startup_call_id: null,
+        causing_call_id: null,
+        interaction_kind: input.interactionKind,
+        input_b64: null,
+        signal: null,
+      },
+      outputDeltas: [],
+    }),
+  }
+  const world = createExecutionWorld({ drivers: [selectedDriver, foreignDriver] })
+
+  await world.execute({
+    kind: "terminal_start",
+    capability,
+    placement,
+    driverId: foreignDriver.driverId,
+    input: { terminalSessionId: foreignId, command: ["bash"] },
+  })
+
+  const cleanup = await world.execute({
+    kind: "terminal_cleanup",
+    capability,
+    placement,
+    input: { cleanupId: "cleanup-discovered-snapshot", scope: "all" },
+  })
+  assert.equal(cleanup.kind, "terminal_cleanup")
+  assert.deepEqual(cleanup.result?.cleaned_session_ids, [discoveredId, discoveredEndedId])
+  assert.deepEqual(cleanup.result?.failed_session_ids, [])
+  assert.deepEqual(cleanupInputs, [[discoveredId, discoveredEndedId]])
+
+  const foreignInteraction = await world.execute({
+    kind: "terminal_interact",
+    capability,
+    placement,
+    input: { terminalSessionId: foreignId, interactionKind: "poll" },
+  })
+  assert.equal(foreignInteraction.kind, "terminal_interact")
+  assert.equal(foreignInteraction.driverId, foreignDriver.driverId)
+  assert.ok(foreignInteraction.result)
+})

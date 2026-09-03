@@ -309,16 +309,16 @@ export class RemoteTerminalSessionManager {
       validatedCleaned ??
       (validatedFailed ? targetIds.filter((id) => !failedSet.has(id)) : targetIds)
 
-    // Validate disjoint before any state mutation
-    const cleanedSetCheck = new Set(cleanedRaw)
-    for (const failedId of failedRaw) {
+    const cleanedTargeted = cleanedRaw.filter((id) => targetSet.has(id))
+    const failedTargeted = failedRaw.filter((id) => targetSet.has(id))
+
+    // Validate disjointness only for the requested target set.
+    const cleanedSetCheck = new Set(cleanedTargeted)
+    for (const failedId of failedTargeted) {
       if (cleanedSetCheck.has(failedId)) {
         throw new Error(`Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`)
       }
     }
-
-    const cleanedTargeted = input.scope === "all" ? cleanedRaw : cleanedRaw.filter((id) => targetSet.has(id))
-    const failedTargeted = input.scope === "all" ? failedRaw : failedRaw.filter((id) => targetSet.has(id))
     const cleanedSessionIds = [
       ...new Set([...cleanedTargeted, ...alreadyEnded]),
     ]

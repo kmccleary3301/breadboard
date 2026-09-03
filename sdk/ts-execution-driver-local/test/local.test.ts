@@ -125,12 +125,48 @@ test("trusted local direct execution classifies an ordinary abort as cancelled",
   })
   const controller = new AbortController()
   controller.abort()
+  let executorCalls = 0
   const result = await executeLocalProcessSandboxRequest(request, {
     signal: controller.signal,
-    commandExecutor: async () => ({ exitCode: 143, stdout: "", stderr: "" }),
+    commandExecutor: async () => {
+      executorCalls++
+      return { exitCode: 143, stdout: "", stderr: "" }
+    },
   })
   assert.equal(result.status, "cancelled")
   assert.equal(result.error?.reason, "execution_cancelled")
+  assert.equal(executorCalls, 0)
+})
+test("trusted local direct execution classifies an already-deadline-aborted request without invoking executor", async () => {
+  const request = buildLocalProcessSandboxRequest({
+    requestId: "sandbox-deadline-pre-abort-1",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-deadline-pre-abort-1",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "60"],
+    workspaceRef: "/tmp",
+  })
+  const controller = new AbortController()
+  controller.abort("deadline")
+  let executorCalls = 0
+  const result = await executeLocalProcessSandboxRequest(request, {
+    signal: controller.signal,
+    commandExecutor: async () => {
+      executorCalls++
+      return { exitCode: 0, stdout: "unexpected", stderr: "" }
+    },
+  })
+  assert.equal(result.status, "timed_out")
+  assert.equal(result.error?.reason, "deadline_exceeded")
+  assert.ok(result.stdout_ref?.startsWith("file://"))
+  assert.ok(result.stderr_ref?.startsWith("file://"))
+  assert.ok(result.side_effect_digest?.startsWith("sha256:"))
+  assert.equal(executorCalls, 0)
 })
 
 test("trusted local driver can manage a persistent terminal session lifecycle", async () => {
@@ -464,15 +500,18 @@ test("trusted local driver terminate bounds settlement when executor ignores abo
     driverId: "local-process",
   })
 
-  // Terminate should complete boundedly despite neverSettlingExecutor
+  // Terminate must reject when the injected executor never settles.
   const startMs = Date.now()
-  await driver.terminate!(request, {
-    reason: "cancelled",
-    signal: controller.signal,
-    deadlineAtMs: null,
-  })
+  await assert.rejects(
+    async () =>
+      driver.terminate!(request, {
+        reason: "cancelled",
+        signal: controller.signal,
+        deadlineAtMs: null,
+      }),
+  )
   const durationMs = Date.now() - startMs
-  assert.ok(durationMs < 3000, `terminate resolved boundedly in ${durationMs}ms`)
+  assert.ok(durationMs >= 1900 && durationMs < 3000, `terminate timed out in ${durationMs}ms`)
 })
 
 test("trusted local driver cleanup terminates live descendants in process group when parent process exited first", async () => {

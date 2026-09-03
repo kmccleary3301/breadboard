@@ -1194,6 +1194,34 @@ export function createExecutionWorld(input: {
           },
         }
       }
+      if (typeof selectedCleanupDriver.snapshotTerminalRegistry === "function") {
+        try {
+          const snapshot = assertValid<TerminalRegistrySnapshotV1>(
+            "terminalRegistrySnapshot",
+            await selectedCleanupDriver.snapshotTerminalRegistry(),
+          )
+          const activeSnapshotIds = new Set(
+            snapshot.active_sessions.map((session) => session.terminal_session_id),
+          )
+          for (const session of snapshot.active_sessions) {
+            const sessionId = session.terminal_session_id
+            const knownOwner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId)
+            if (knownOwner && knownOwner.driverId !== selectedCleanupDriver.driverId) continue
+            sessions.set(sessionId, selectedCleanupDriver)
+            endedSessionOwners.delete(sessionId)
+          }
+          for (const sessionId of snapshot.ended_session_ids ?? []) {
+            if (activeSnapshotIds.has(sessionId)) continue
+            const knownOwner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId)
+            if (knownOwner && knownOwner.driverId !== selectedCleanupDriver.driverId) continue
+            if (!sessions.has(sessionId)) {
+              endedSessionOwners.set(sessionId, selectedCleanupDriver)
+            }
+          }
+        } catch {
+          // Registry discovery is best effort; retain locally owned targets.
+        }
+      }
       const activeKnownIds = Array.from(sessions.entries())
         .filter(([, owner]) => owner.driverId === selectedCleanupDriver.driverId)
         .map(([sessionId]) => sessionId)
@@ -1257,8 +1285,11 @@ export function createExecutionWorld(input: {
               err instanceof Error ? `Invalid cleanup result: ${err.message}` : "Invalid cleanup result",
             )
           }
-          const driverCleanedSet = new Set(res.cleaned_session_ids)
-          for (const failedId of res.failed_session_ids ?? []) {
+          const allowedIds = new Set(ownedSessionIds)
+          driverCleaned = res.cleaned_session_ids.filter((id) => allowedIds.has(id))
+          driverFailed = (res.failed_session_ids ?? []).filter((id) => allowedIds.has(id))
+          const driverCleanedSet = new Set(driverCleaned)
+          for (const failedId of driverFailed) {
             if (driverCleanedSet.has(failedId)) {
               throw new ExecutionDriverResultValidationError(
                 `Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`,
@@ -1267,14 +1298,14 @@ export function createExecutionWorld(input: {
           }
 
           // Cross-adapter / overbroad conflict checks
-          for (const failedId of res.failed_session_ids ?? []) {
+          for (const failedId of driverFailed) {
             if (reportedCleanedSet.has(failedId)) {
               throw new ExecutionDriverResultValidationError(
                 `Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`,
               )
             }
           }
-          for (const cleanedId of res.cleaned_session_ids) {
+          for (const cleanedId of driverCleaned) {
             if (reportedFailedSet.has(cleanedId)) {
               throw new ExecutionDriverResultValidationError(
                 `Invalid cleanup result: session ID '${cleanedId}' appears in both cleaned_session_ids and failed_session_ids`,
@@ -1282,16 +1313,12 @@ export function createExecutionWorld(input: {
             }
           }
 
-          for (const id of res.cleaned_session_ids) {
+          for (const id of driverCleaned) {
             reportedCleanedSet.add(id)
           }
-          for (const id of res.failed_session_ids ?? []) {
+          for (const id of driverFailed) {
             reportedFailedSet.add(id)
           }
-
-          const allowedIds = new Set(ownedSessionIds)
-          driverCleaned = res.cleaned_session_ids.filter((id) => allowedIds.has(id))
-          driverFailed = (res.failed_session_ids ?? []).filter((id) => allowedIds.has(id))
         } catch (driverError) {
           if (driverError instanceof ExecutionDriverResultValidationError) {
             throw driverError

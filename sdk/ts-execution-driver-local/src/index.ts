@@ -119,6 +119,15 @@ export function defaultLocalCommandExecutor(input: {
   })
 }
 
+function isDeadlineAbort(signal?: AbortSignal): boolean {
+  if (!signal?.aborted) return false
+  const reason = signal.reason
+  return (
+    reason === "deadline" ||
+    (reason instanceof Error &&
+      (reason.name === "TimeoutError" || reason.message.toLowerCase().includes("deadline")))
+  )
+}
 function buildLocalSideEffectDigest(request: SandboxRequestV1, result: LocalCommandExecutionResult): string {
   return `sha256:${createHash("sha256")
     .update(
@@ -142,18 +151,26 @@ export async function executeLocalProcessSandboxRequest(
 ): Promise<SandboxResultV1> {
   const executeCommand = options.commandExecutor ?? defaultLocalCommandExecutor
   const cwd = request.workspace_ref && request.workspace_ref.startsWith("/") ? request.workspace_ref : null
-  const result = await executeCommand({
-    command: request.command,
-    cwd,
-    signal: options.signal,
-  })
+  const preAborted = options.signal?.aborted === true
+  const deadlineBeforeExecution = isDeadlineAbort(options.signal)
+  const result = preAborted
+    ? {
+        exitCode: deadlineBeforeExecution ? 124 : 130,
+        stdout: "",
+        stderr: "",
+      }
+    : await executeCommand({
+        command: request.command,
+        cwd,
+        signal: options.signal,
+      })
+  const isAborted = preAborted || options.signal?.aborted === true
+  const isDeadline = deadlineBeforeExecution || isDeadlineAbort(options.signal)
   const captureDir = await mkdtemp(join(options.tempDirRoot ?? tmpdir(), "breadboard-local-exec-"))
   const stdoutPath = join(captureDir, "stdout.log")
   const stderrPath = join(captureDir, "stderr.log")
   await writeFile(stdoutPath, result.stdout, "utf8")
   await writeFile(stderrPath, result.stderr, "utf8")
-  const isAborted = options.signal?.aborted === true
-  const isDeadline = isAborted && options.signal?.reason === "deadline"
   const status: SandboxResultV1["status"] = isAborted
     ? isDeadline
       ? "timed_out"
@@ -240,14 +257,24 @@ export function makeTrustedLocalExecutionDriver(commandExecutor?: LocalCommandEx
       const active = activeExecutions.get(request.request_id)
       if (!active) return
       active.controller.abort(context.reason)
-      const boundedCompletion = new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 2000)
-        active.completion.catch(() => {}).finally(() => {
-          clearTimeout(timer)
-          resolve()
-        })
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const timeout = new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), 2000)
       })
-      await boundedCompletion
+      try {
+        const terminationObserved = await Promise.race([
+          active.completion.then(
+            () => true,
+            () => true,
+          ),
+          timeout,
+        ])
+        if (!terminationObserved) {
+          throw new Error("Local process termination was not observed within 2000ms")
+        }
+      } finally {
+        clearTimeout(timer)
+      }
     },
     supportsTerminalSessions(capability, placementClass) {
       return terminalDriver.supportsTerminalSessions(capability, placementClass)
