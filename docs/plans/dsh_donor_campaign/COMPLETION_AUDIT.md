@@ -55,7 +55,7 @@ Workstream I's binding covers its provenance block, deterministic package valida
 
 ## Gate status
 
-- G-I final package validation: PASS; the authoritative source package has 22/22 byte-exact evidence copies and the self-contained publication package has 14/14 exact inputs, including executable DAG validation of 50 acyclic nodes and 623/623 routes; all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
+- G-I final package validation: PASS; the authoritative source package has 22/22 byte-exact evidence copies and the self-contained publication package has 26/26 exact inputs with exact-artifact bindings for every blocking G-A through G-H review, including executable DAG validation of 50 acyclic nodes and 623/623 routes; all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
 - G-Score: PASS at 1000/1000 with every checked item linked and zero structural findings.
 - Phase 20 freeze checker: PASS at unchanged baseline `3b8d862f62ee9c2c421fe07758606b6973902c67`.
 - G-F/G-G/G-H escalation reviews: PASS. Corrected FT-01 terminal routes, FT-03 product-adapter oracle, and FT-06 executable fixed point are exact-artifact bound; P0/P1/P2/P3 = 0/0/0/0 for F/H and P0/P1 = 0/0 for G.

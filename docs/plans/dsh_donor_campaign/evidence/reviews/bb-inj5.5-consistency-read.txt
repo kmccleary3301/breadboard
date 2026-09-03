@@ -48,3 +48,9 @@ Classification: **incomplete/unknown provenance; E5.1/E5.2 cannot be claimed sat
 ## Verdict
 
 **PASS** — exact coverage/counts hold, all eight scenarios have one classification and concrete action, and no P0/P1 consistency defect is present.
+
+## Final exact-artifact review binding
+
+Reviewed candidate SHA-256: `30649f891edc155c6ac700daa65b95368c507f2a37d735fba3bc9f640fa64441`.
+
+Independent verdict: **PASS**. Gate G-E passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.

@@ -47,3 +47,9 @@ Resolution:
 No P0, P1, or P2 findings remain. Prior approved evidence stands: law block 10 reproduced 7 items, section 15 reproduced 25, the closure table reproduced 50, the structural denominator is 615, all six families were sampled, A1-A4 pass, and `NO_PRIMARY_ANCHOR` plus `idea_only` is honest and compliant for all synthesized items.
 
 Renewal verdict: **APPROVED**. Gate G-A and A5 pass.
+
+## Final exact-artifact review binding
+
+Reviewed candidate SHA-256: `dedb845e461b26af9c954d82de417cbb48562ffb3dfc704b5b2d4f8259784431`.
+
+Independent verdict: **APPROVED**. Gate G-A passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.

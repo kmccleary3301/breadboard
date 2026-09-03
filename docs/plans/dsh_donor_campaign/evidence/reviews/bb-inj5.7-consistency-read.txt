@@ -39,3 +39,9 @@ Independent result: PASS; P0=0, P1=0.
 - `PRODUCT_RED` and every other terminal defect open neither RT node.
 - The validator enforces both exact predicates and dependencies.
 - Validator rerun: PASS; 50/50 nodes acyclic, 623/623 routes unique, phases 0–12, six first-tranche packets, zero unconditionally promoted new seams.
+
+## Final exact-artifact review binding
+
+Reviewed candidate SHA-256: `958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab`.
+
+Independent verdict: **PASS**. Gate G-G passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.

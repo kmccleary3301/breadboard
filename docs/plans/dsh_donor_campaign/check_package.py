@@ -17,6 +17,16 @@ PACKETS = EVIDENCE / "05_FIRST_TRANCHE_PACKET_SET.md"
 PACKET_REVIEW = EVIDENCE / "05_FIRST_TRANCHE_PACKET_SET_REVIEW.md"
 PROTOTYPE = EVIDENCE / "07_CAMPAIGN_SPEC_PROTOTYPE.md"
 PROTOTYPE_REVIEW = EVIDENCE / "07_CAMPAIGN_SPEC_PROTOTYPE_REVIEW.md"
+REVIEWED_GATES = (
+    ("G-A", EVIDENCE / "00_PROVENANCE_AND_REUSE.md", EVIDENCE / "00_PROVENANCE_AND_REUSE_REVIEW.md", "Final exact-artifact review binding"),
+    ("G-B", EVIDENCE / "01_CURRENT_STATE_DONOR_LEDGER.md", EVIDENCE / "01_CURRENT_STATE_DONOR_REVIEW.md", "Final exact-artifact review binding"),
+    ("G-C", EVIDENCE / "02_FAULT_BOUNDARY_EVIDENCE.md", EVIDENCE / "02_FAULT_BOUNDARY_REVIEW.md", "Final exact-artifact review binding"),
+    ("G-D", EVIDENCE / "03_EVIDENCE_AND_APPROVAL_CONTRACT.md", EVIDENCE / "reviews/bb-inj5.4-consistency-read.txt", "Final exact-artifact review binding"),
+    ("G-E", EVIDENCE / "04_NORMATIVE_SEMANTIC_LAWS.md", EVIDENCE / "reviews/bb-inj5.5-consistency-read.txt", "Final exact-artifact review binding"),
+    ("G-F", PACKETS, PACKET_REVIEW, "Post-contract escalation review"),
+    ("G-G", EVIDENCE / "06_PROMOTED_WORKSTREAM_DAG.md", EVIDENCE / "reviews/bb-inj5.7-consistency-read.txt", "Final exact-artifact review binding"),
+    ("G-H", PROTOTYPE, PROTOTYPE_REVIEW, "Post-contract escalation review"),
+)
 SURFACE = EVIDENCE / "raw/bb-inj5.2/surface-inventory.json"
 EXTRACTED_SURFACE = (
     EVIDENCE / "raw/bb-inj5.2/surface-inventory-extracted-v1.json"
@@ -42,11 +52,7 @@ HEADS = (
 REQUIRED = (
     SPEC,
     AUDIT,
-    EVIDENCE / "03_EVIDENCE_AND_APPROVAL_CONTRACT.md",
-    PACKETS,
-    PACKET_REVIEW,
-    PROTOTYPE,
-    PROTOTYPE_REVIEW,
+    *(path for _, candidate, review, _ in REVIEWED_GATES for path in (candidate, review)),
     SURFACE,
     EXTRACTED_SURFACE,
     DAG_VALIDATOR,
@@ -69,8 +75,6 @@ def main() -> int:
     spec = SPEC.read_text(encoding="utf-8")
     audit = AUDIT.read_text(encoding="utf-8")
     packets = PACKETS.read_text(encoding="utf-8")
-    packet_review = PACKET_REVIEW.read_text(encoding="utf-8")
-    prototype_review = PROTOTYPE_REVIEW.read_text(encoding="utf-8")
 
     dag_validation = subprocess.run(
         [sys.executable, str(DAG_VALIDATOR)],
@@ -131,19 +135,19 @@ def main() -> int:
     for packet in (f"FT-0{index}" for index in range(1, 7)):
         if packet not in packets:
             findings.append(f"reviewed packet contract missing: {packet}")
-    for label, candidate, review in (
-        ("G-F", PACKETS, packet_review),
-        ("G-H", PROTOTYPE, prototype_review),
-    ):
-        escalation = review.rpartition("Post-contract escalation review")[2]
+    for label, candidate, review_path, marker in REVIEWED_GATES:
+        review = review_path.read_text(encoding="utf-8")
+        binding = review.rpartition(marker)[2]
         digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
         if (
-            "APPROVED" not in escalation
-            or "P0/P1/P2/P3" not in escalation
-            or digest not in escalation
+            not any(verdict in binding for verdict in ("APPROVED", "PASS"))
+            or "P0/P1/P2/P3" not in binding
+            or "0/0/0/0" not in binding
+            or digest not in binding
         ):
             findings.append(
-                f"{label} exact-artifact escalation review does not approve candidate SHA-256 {digest}"
+                f"{label} exact-artifact review does not approve candidate "
+                f"SHA-256 {digest}"
             )
     for required_text in (
         "effective adapter payload bytes",

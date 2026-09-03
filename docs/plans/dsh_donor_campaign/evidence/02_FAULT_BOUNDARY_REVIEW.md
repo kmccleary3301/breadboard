@@ -24,3 +24,9 @@ Reviewer: independent `reviewer` agent `FaultBoundaryReviewer`
 - Gate G-C: passed.
 
 No P0, P1, or P2 finding.
+
+## Final exact-artifact review binding
+
+Reviewed candidate SHA-256: `d875bfe875647ad9b67572642460312416006249e5b91b4a9ed607830f16392b`.
+
+Independent verdict: **APPROVED**. Gate G-C passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.

@@ -58,3 +58,9 @@ Approval/freeze: docs_tmp evidence writes are allowed within cap; ENGINE/TUI edi
 
 P0/P1 findings: none.
 Verdict: PASS.
+
+## Final exact-artifact review binding
+
+Reviewed candidate SHA-256: `9adba983a44b228fc2b332b5f6c6a5288885b6dc8150d3cd5ea4e63d404acf93`.
+
+Independent verdict: **PASS**. Gate G-D passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.

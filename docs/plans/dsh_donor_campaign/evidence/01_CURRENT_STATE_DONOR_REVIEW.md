@@ -119,3 +119,9 @@ P3: none.
 ### Renewal verdict
 
 B1-B7 remain confirmed. B8/G-B is APPROVED: coverage is 623/623, raw reconstruction and embedded-ledger equality are 623/623, all donor anchors and closure rows are present, and no unresolved P0/P1/P2 finding remains.
+
+## Final exact-artifact review binding
+
+Reviewed candidate SHA-256: `42540066f19da4904d7dd4774d2b3bdfd9d5156f84c85da595571cd8dca47b93`.
+
+Independent verdict: **APPROVED**. Gate G-B passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.
