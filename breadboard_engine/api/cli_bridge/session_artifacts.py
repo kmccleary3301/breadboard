@@ -13,7 +13,11 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 from fastapi import HTTPException, UploadFile, status
 
 from breadboard.product.runtime import AnchoredStorage, ArtifactStore
-from breadboard.product.runtime.artifacts import ArtifactRef, _validate_artifact_name
+from breadboard.product.runtime.artifacts import (
+    ArtifactRef,
+    _validate_artifact_name,
+    workspace_artifact_ref,
+)
 from breadboard.product.runtime.session_store import (
     authorize_session_artifact_manifest,
 )
@@ -171,15 +175,11 @@ class SessionArtifactStore:
         candidate = candidate.replace("\\", "/")
         return os.path.basename(candidate)
 
-    def restore_manifest(self, workspace: Path) -> None:
-        manifest_value = self.metadata.get("artifact_manifest_ref")
-        if not isinstance(manifest_value, Mapping):
-            return
-        manifest_ref = ArtifactRef(
-            digest=manifest_value.get("digest"),
-            size_bytes=manifest_value.get("size_bytes"),
-            media_type=manifest_value.get("media_type"),
-        )
+    def _read_manifest(
+        self,
+        workspace: Path,
+        manifest_ref: ArtifactRef,
+    ) -> Dict[str, ArtifactRef]:
         anchor, _, descriptor, windows_handles = _open_workspace_breadboard(workspace)
         artifact_fd = None
         try:
@@ -223,6 +223,72 @@ class SessionArtifactStore:
                 size_bytes=row["size_bytes"],
                 media_type=row["media_type"],
             )
+        return restored
+
+    def _manifest_names(self, workspace: Path) -> list[str]:
+        anchor, _, descriptor, windows_handles = _open_workspace_breadboard(workspace)
+        artifact_fd = manifest_fd = None
+        try:
+            if descriptor is not None:
+                artifact_fd = AnchoredStorage.open_directory(
+                    descriptor,
+                    "artifacts",
+                    create=False,
+                )
+                manifest_fd = AnchoredStorage.open_directory(
+                    artifact_fd,
+                    "manifests",
+                    create=False,
+                )
+                return sorted(os.listdir(manifest_fd))
+            manifest_root = anchor / "artifacts" / "manifests"
+            windows_handles.append(
+                AnchoredStorage.windows_handle(
+                    manifest_root,
+                    directory=True,
+                    create=False,
+                )
+            )
+            return sorted(path.name for path in manifest_root.iterdir())
+        except FileNotFoundError:
+            return []
+        finally:
+            if manifest_fd is not None:
+                os.close(manifest_fd)
+            if artifact_fd is not None:
+                os.close(artifact_fd)
+            if descriptor is not None:
+                os.close(descriptor)
+            for handle in reversed(windows_handles):
+                AnchoredStorage.close_windows_handle(handle)
+
+    def restore_manifest(self, workspace: Path) -> None:
+        prefix = f"{self.session_id}."
+        candidates: list[
+            tuple[int, str, ArtifactRef, Dict[str, ArtifactRef]]
+        ] = []
+        for name in self._manifest_names(workspace):
+            if not name.startswith(prefix) or not name.endswith(".json"):
+                continue
+            digest = name[len(prefix) : -len(".json")]
+            if len(digest) != 64 or any(
+                character not in "0123456789abcdef" for character in digest
+            ):
+                raise ValueError("invalid retained attachment manifest name")
+            manifest_ref = workspace_artifact_ref(
+                workspace,
+                f"sha256:{digest}",
+                media_type="application/json",
+            )
+            restored = self._read_manifest(workspace, manifest_ref)
+            candidates.append((len(restored), digest, manifest_ref, restored))
+        if not candidates:
+            return
+        _, _, manifest_ref, restored = max(candidates)
+        restored_names = set(restored)
+        if any(not set(candidate).issubset(restored_names) for *_, candidate in candidates):
+            raise ValueError("retained attachment manifests do not form one history")
+        self.metadata["artifact_manifest_ref"] = manifest_ref.as_dict()
         self._artifact_refs = restored
 
 

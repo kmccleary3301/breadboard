@@ -2092,13 +2092,11 @@ class SessionService:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, detail="workspace not ready"
                 )
-            response = await runner.artifacts.upload(
+            return await runner.artifacts.upload(
                 files,
                 workspace_dir=workspace_dir,
                 metadata=metadata,
             )
-            await self.registry.persist(record)
-            return response
 
 
     @staticmethod

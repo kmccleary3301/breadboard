@@ -943,6 +943,7 @@ async def test_managed_session_persists_actual_journal_root(monkeypatch, tmp_pat
         event_root=workspace / ".breadboard" / "sessions",
     )
     record = await service.ensure_session(response.session_id)
+    await service.registry.persist(record)
     first_upload = await service.upload_attachments(
         response.session_id,
         [_Upload()],
@@ -954,7 +955,6 @@ async def test_managed_session_persists_actual_journal_root(monkeypatch, tmp_pat
         expected_root / response.session_id / "session_events.jsonl"
     ).is_file()
     await _stop(record)
-    await service.registry.persist(record)
 
     recovered_service = SessionService()
     recovered = await recovered_service.ensure_session(response.session_id)
