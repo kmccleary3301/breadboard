@@ -157,6 +157,16 @@ _START_PENDING, _START_COMMITTED, _START_OWNER = (
 )
 _SESSION_EVENT_ROOT_METADATA_KEY = "session_event_root"
 _SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY = "durable_product_workspace"
+_MAX_RETAINED_EVENT_JOURNAL_BYTES = 64 * 1024 * 1024
+
+
+def _read_bounded_event_journal(stream: Any, size: int) -> bytes:
+    if size > _MAX_RETAINED_EVENT_JOURNAL_BYTES:
+        raise OSError("retained event journal exceeds byte limit")
+    payload = stream.read(_MAX_RETAINED_EVENT_JOURNAL_BYTES + 1)
+    if len(payload) > _MAX_RETAINED_EVENT_JOURNAL_BYTES:
+        raise OSError("retained event journal exceeds byte limit")
+    return payload
 
 
 def _event_root(state_paths: ManagedStatePaths | None = None) -> Path:
@@ -201,7 +211,8 @@ def _read_retained_event_journal(
             )
             directory_stat = event_path.parent.stat(follow_symlinks=False)
             file_stat = event_path.stat(follow_symlinks=False)
-            payload = event_path.read_bytes()
+            with event_path.open("rb") as stream:
+                payload = _read_bounded_event_journal(stream, file_stat.st_size)
         finally:
             for handle in reversed(handles):
                 AnchoredStorage.close_windows_handle(handle)
@@ -231,7 +242,7 @@ def _read_retained_event_journal(
                 raise OSError("retained event journal is not a regular file")
             with os.fdopen(event_descriptor, "rb") as stream:
                 event_descriptor = None
-                payload = stream.read()
+                payload = _read_bounded_event_journal(stream, file_stat.st_size)
         finally:
             if event_descriptor is not None:
                 os.close(event_descriptor)

@@ -1696,6 +1696,30 @@ async def test_retained_event_journal_rejects_symlinked_directory_and_file(
 
 
 @pytest.mark.asyncio
+async def test_retained_event_journal_rejects_oversized_file_before_read(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard.product.runtime import ReplayError
+    from breadboard_engine.api.cli_bridge.service import (
+        _MAX_RETAINED_EVENT_JOURNAL_BYTES,
+        _restore_product_session,
+    )
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    with journal.open("r+b") as stream:
+        stream.truncate(_MAX_RETAINED_EVENT_JOURNAL_BYTES + 1)
+
+    with pytest.raises(ReplayError, match="unsafe logical event journal") as error:
+        _restore_product_session(response.session_id, event_root=event_root)
+
+    assert error.value.__cause__ is not None
+    assert "exceeds byte limit" in str(error.value.__cause__)
+
+
+@pytest.mark.asyncio
 async def test_restored_event_sink_revalidates_identity_before_every_append(
     monkeypatch, tmp_path
 ) -> None:
