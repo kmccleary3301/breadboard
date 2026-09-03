@@ -464,12 +464,31 @@ class _RetainedEventSink:
         )
         session_descriptor: int | None = None
         event_descriptor: int | None = None
+        process_lock_descriptor: int | None = None
         try:
             session_descriptor = AnchoredStorage.open_directory(
                 root_descriptor,
                 self._session_id,
                 create=False,
             )
+            process_lock_descriptor = os.open(
+                ".session_events.jsonl.lock",
+                os.O_RDWR
+                | os.O_CREAT
+                | getattr(os, "O_NONBLOCK", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=session_descriptor,
+            )
+            process_lock_stat = os.fstat(process_lock_descriptor)
+            if (
+                not stat.S_ISREG(process_lock_stat.st_mode)
+                or process_lock_stat.st_nlink != 1
+            ):
+                raise OSError("unsafe retained event process lock")
+            import fcntl
+
+            fcntl.flock(process_lock_descriptor, fcntl.LOCK_EX)
             event_descriptor = os.open(
                 "session_events.jsonl",
                 os.O_RDWR
@@ -482,8 +501,6 @@ class _RetainedEventSink:
                 os.fstat(session_descriptor),
                 os.fstat(event_descriptor),
             )
-            import fcntl
-
             fcntl.flock(event_descriptor, fcntl.LOCK_EX)
             self._recover_transaction_posix(
                 session_descriptor,
@@ -536,10 +553,15 @@ class _RetainedEventSink:
                     raise RuntimeError("retained event journal identity changed")
                 remove_transaction = True
             except BaseException:
-                os.ftruncate(event_descriptor, original_offset)
-                os.fsync(event_descriptor)
-                remove_transaction = True
-                raise
+                try:
+                    os.ftruncate(event_descriptor, original_offset)
+                    os.fsync(event_descriptor)
+                except BaseException:
+                    remove_transaction = False
+                    raise
+                else:
+                    remove_transaction = True
+                    raise
             finally:
                 if remove_transaction:
                     self._unlink_regular_at(
@@ -551,6 +573,8 @@ class _RetainedEventSink:
         finally:
             if event_descriptor is not None:
                 os.close(event_descriptor)
+            if process_lock_descriptor is not None:
+                os.close(process_lock_descriptor)
             if session_descriptor is not None:
                 os.close(session_descriptor)
             os.close(root_descriptor)

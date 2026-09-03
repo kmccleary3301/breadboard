@@ -966,6 +966,48 @@ async def test_restore_reads_under_the_existing_process_lock(
 
 
 @pytest.mark.asyncio
+async def test_retained_append_uses_standard_process_lock(
+    monkeypatch, tmp_path
+) -> None:
+    if os.name == "nt":
+        pytest.skip("POSIX advisory-lock regression")
+    import fcntl
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    restored = _restore_product_session(response.session_id, event_root=event_root)
+    lock_path = (
+        event_root
+        / response.session_id
+        / ".session_events.jsonl.lock"
+    )
+    lock_acquired = threading.Event()
+    release_lock = threading.Event()
+
+    def hold_process_lock() -> None:
+        descriptor = os.open(lock_path, os.O_RDWR)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            lock_acquired.set()
+            release_lock.wait()
+        finally:
+            os.close(descriptor)
+
+    holder = threading.Thread(target=hold_process_lock)
+    holder.start()
+    assert lock_acquired.wait(timeout=2)
+    append_task = asyncio.create_task(asyncio.to_thread(restored.complete))
+    await asyncio.sleep(0.05)
+    assert not append_task.done()
+    release_lock.set()
+    await append_task
+    holder.join(timeout=2)
+    assert restored.read_model.status == "completed"
+
+
+@pytest.mark.asyncio
 async def test_retained_append_preserves_wal_when_rollback_fsync_fails(
     monkeypatch, tmp_path
 ) -> None:
@@ -1518,9 +1560,100 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
     upload_task = asyncio.create_task(service.upload_attachments(response.session_id, [BlockingUpload()])); await entered.wait()
     delete_task = asyncio.create_task(service.delete_session(response.session_id)); await asyncio.sleep(0); assert not delete_task.done()
     release.set(); raced_upload = await upload_task; await delete_task
-    assert raced_upload.attachments and await service.registry.get(response.session_id) is None and manifest_path.is_file() and record.dispatcher_task.done()
+    assert raced_upload.attachments and await service.registry.get(response.session_id) is None and not manifest_path.exists() and record.dispatcher_task.done()
     with pytest.raises(HTTPException) as missing: await service.ensure_session(response.session_id)
     assert missing.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_successive_uploads_rotate_manifest_history_before_recovery_cap(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.session_artifacts._MAX_ARTIFACT_MANIFESTS",
+        2,
+    )
+    workspace = tmp_path / "workspace"
+    service, response, record = await _create(
+        monkeypatch, tmp_path, workspace=str(workspace)
+    )
+    first = _Upload()
+    first.filename = "first.txt"
+    second = _Upload()
+    second.filename = "second.txt"
+
+    await service.upload_attachments(response.session_id, [first])
+    await service.upload_attachments(response.session_id, [second])
+
+    manifests = list(
+        (workspace / ".breadboard" / "artifacts" / "manifests").iterdir()
+    )
+    assert len(manifests) == 1
+    restored = SessionArtifactStore(
+        session_id=response.session_id,
+        metadata=dict(record.metadata),
+    )
+    restored.restore_manifest(workspace)
+    assert len(restored.artifact_refs()) == 2
+    await service.delete_session(response.session_id)
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_excess_manifest_history_before_commit(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.session_artifacts._MAX_ARTIFACT_MANIFESTS",
+        2,
+    )
+    session_id = "bounded-upload"
+    manifest_root = tmp_path / ".breadboard" / "artifacts" / "manifests"
+    manifest_root.mkdir(parents=True)
+    for index in range(3):
+        (manifest_root / f"{session_id}.{index:064x}.json").write_text("{}")
+    owner = SessionArtifactStore(session_id=session_id, metadata={})
+
+    with pytest.raises(HTTPException) as rejected:
+        await owner.upload([_Upload()], workspace_dir=tmp_path)
+
+    assert rejected.value.status_code == 409
+    assert len(list(manifest_root.iterdir())) == 3
+    assert owner.artifact_refs() == {}
+
+
+@pytest.mark.asyncio
+async def test_manifest_prune_failure_rejects_before_recovery_cap(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.session_artifacts._MAX_ARTIFACT_MANIFESTS",
+        2,
+    )
+    workspace = tmp_path / "workspace"
+    service, response, record = await _create(
+        monkeypatch, tmp_path, workspace=str(workspace)
+    )
+
+    def fail_prune(*_args, **_kwargs) -> None:
+        raise HTTPException(status_code=400, detail="workspace changed")
+
+    monkeypatch.setattr(record.runner.artifacts, "_discard_manifest_names", fail_prune)
+    await service.upload_attachments(response.session_id, [_Upload()])
+    await service.upload_attachments(response.session_id, [_Upload()])
+    before = (
+        dict(record.metadata),
+        dict(record.runner.artifacts.artifact_refs()),
+    )
+
+    with pytest.raises(HTTPException) as rejected:
+        await service.upload_attachments(response.session_id, [_Upload()])
+
+    assert rejected.value.status_code == 409
+    assert before == (
+        record.metadata,
+        record.runner.artifacts.artifact_refs(),
+    )
+    await service.delete_session(response.session_id)
 
 
 @pytest.mark.asyncio
