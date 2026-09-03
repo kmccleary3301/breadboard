@@ -209,6 +209,7 @@ function selectWorldDriver(
     capability: ExecutionCapabilityV1
     placement: ExecutionPlacementV1
     terminal?: boolean
+    terminalOperation?: "start" | "interact" | "snapshot" | "cleanup"
     driverId?: string | null
     driverIdHint?: ExecutionDriverHintV1
   },
@@ -224,20 +225,50 @@ function selectWorldDriver(
     if (!directMatch.supportsCapability(input.capability, input.placement.placement_class)) {
       return null
     }
+    if (input.terminal) {
+      if (input.terminalOperation === "start" && typeof directMatch.startTerminalSession !== "function") {
+        return null
+      }
+      if (input.terminalOperation === "interact" && typeof directMatch.interactTerminalSession !== "function") {
+        return null
+      }
+      if (input.terminalOperation === "snapshot" && typeof directMatch.snapshotTerminalRegistry !== "function") {
+        return null
+      }
+      if (input.terminalOperation === "cleanup" && typeof directMatch.cleanupTerminalSessions !== "function") {
+        return null
+      }
+      if (
+        typeof directMatch.startTerminalSession !== "function" &&
+        typeof directMatch.interactTerminalSession !== "function" &&
+        typeof directMatch.snapshotTerminalRegistry !== "function" &&
+        typeof directMatch.cleanupTerminalSessions !== "function"
+      ) {
+        return null
+      }
+    }
     return directMatch
   }
   const orderedDrivers = orderDrivers(drivers, input.driverIdHint)
-  return input.terminal
-    ? selectTerminalSessionDriver({
-        capability: input.capability,
-        placement: input.placement,
-        drivers: orderedDrivers,
-      })
-    : (selectExecutionDriver({
-        capability: input.capability,
-        placement: input.placement,
-        drivers: orderedDrivers,
-      }) as TerminalSessionDriverV1 | null)
+  if (input.terminal) {
+    const eligibleDrivers = orderedDrivers.filter((d) => {
+      if (input.terminalOperation === "start" && typeof d.startTerminalSession !== "function") return false
+      if (input.terminalOperation === "interact" && typeof d.interactTerminalSession !== "function") return false
+      if (input.terminalOperation === "snapshot" && typeof d.snapshotTerminalRegistry !== "function") return false
+      if (input.terminalOperation === "cleanup" && typeof d.cleanupTerminalSessions !== "function") return false
+      return true
+    })
+    return selectTerminalSessionDriver({
+      capability: input.capability,
+      placement: input.placement,
+      drivers: eligibleDrivers,
+    })
+  }
+  return (selectExecutionDriver({
+    capability: input.capability,
+    placement: input.placement,
+    drivers: orderedDrivers,
+  }) as TerminalSessionDriverV1 | null)
 }
 
 function buildLivenessEvidence(input: {
@@ -342,16 +373,11 @@ export function createExecutionWorld(input: {
   const defaultTerminationGraceMs = input.terminationGraceMs ?? 2000
   const sessions = new Map<string, TerminalSessionDriverV1>()
   const endedSessionOwners = new Map<string, TerminalSessionDriverV1>()
-  const MAX_ENDED_SESSIONS = 32
   function rememberEndedSessionOwner(sessionId: string, driver: TerminalSessionDriverV1): void {
     if (endedSessionOwners.has(sessionId)) {
       endedSessionOwners.delete(sessionId)
     }
     endedSessionOwners.set(sessionId, driver)
-    if (endedSessionOwners.size > MAX_ENDED_SESSIONS) {
-      const oldest = endedSessionOwners.keys().next().value
-      if (oldest) endedSessionOwners.delete(oldest)
-    }
   }
   async function executeSandbox(operation: ExecutionWorldSandboxInputV1): Promise<ExecutionWorldSandboxResultV1> {
     const driver = selectWorldDriver(drivers, {
@@ -751,10 +777,30 @@ export function createExecutionWorld(input: {
   }
 
   async function executeTerminalStart(operation: ExecutionWorldTerminalStartOperationV1): Promise<ExecutionWorldTerminalStartResultV1> {
+    const existingOwner =
+      sessions.get(operation.input.terminalSessionId) ??
+      endedSessionOwners.get(operation.input.terminalSessionId)
+    if (existingOwner) {
+      return {
+        kind: "terminal_start",
+        driverId: existingOwner.driverId ?? null,
+        capability: operation.capability,
+        placement: operation.placement,
+        result: null,
+        unsupportedCase: buildTerminalUnsupportedCase(
+          operation.capability,
+          operation.placement,
+          `Terminal session '${operation.input.terminalSessionId}' is already active or pending cleanup. Clean up the existing session before restarting with the same ID.`,
+          "terminal_session_already_active",
+          { terminal_session_id: operation.input.terminalSessionId },
+        ),
+      }
+    }
     const driver = selectWorldDriver(drivers, {
       capability: operation.capability,
       placement: operation.placement,
       terminal: true,
+      terminalOperation: "start",
       driverId: operation.driverId,
       driverIdHint: operation.driverIdHint,
     })
@@ -864,6 +910,7 @@ export function createExecutionWorld(input: {
         capability: operation.capability,
         placement: operation.placement,
         terminal: true,
+        terminalOperation: "interact",
         driverId: operation.driverId,
         driverIdHint: operation.driverIdHint,
       })
@@ -942,6 +989,7 @@ export function createExecutionWorld(input: {
       capability: operation.capability,
       placement: operation.placement,
       terminal: true,
+      terminalOperation: "snapshot",
       driverId: operation.driverId,
       driverIdHint: operation.driverIdHint,
     })
@@ -963,7 +1011,12 @@ export function createExecutionWorld(input: {
         throw new Error("Terminal snapshot driver returned null or invalid result")
       }
       const result = assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", rawResult)
-      return { kind: "terminal_snapshot", driverId: driver.driverId, result }
+      const mergedEnded = Array.from(new Set([...(result.ended_session_ids ?? []), ...endedSessionOwners.keys()]))
+      const mergedResult: TerminalRegistrySnapshotV1 = {
+        ...result,
+        ended_session_ids: mergedEnded,
+      }
+      return { kind: "terminal_snapshot", driverId: driver.driverId, result: mergedResult }
     } catch (error) {
       return {
         kind: "terminal_snapshot",
@@ -984,7 +1037,34 @@ export function createExecutionWorld(input: {
       (d): d is TerminalSessionDriverV1 & { cleanupTerminalSessions: NonNullable<TerminalSessionDriverV1["cleanupTerminalSessions"]> } =>
         typeof d.cleanupTerminalSessions === "function",
     )
-    if (cleanupDrivers.length === 0) {
+    // 1. Validate explicit driverId pin first
+    let pinnedTerminalDriver: TerminalSessionDriverV1 | null = null
+    if (operation.driverId) {
+      pinnedTerminalDriver = selectWorldDriver(drivers, {
+        capability: operation.capability,
+        placement: operation.placement,
+        terminal: true,
+        driverId: operation.driverId,
+        driverIdHint: operation.driverIdHint,
+      })
+      if (!pinnedTerminalDriver) {
+        return {
+          kind: "terminal_cleanup",
+          driverId: null,
+          result: null,
+          unsupportedCase: buildTerminalUnsupportedCase(
+            operation.capability,
+            operation.placement,
+            `No terminal driver found for '${operation.driverId}'.`,
+            "unsupported_terminal_driver",
+            { driver_id: operation.driverId },
+          ),
+        }
+      }
+    }
+
+    // 2. If no cleanup drivers exist in world and no pinned driver
+    if (cleanupDrivers.length === 0 && !pinnedTerminalDriver) {
       return {
         kind: "terminal_cleanup",
         driverId: null,
@@ -997,16 +1077,37 @@ export function createExecutionWorld(input: {
       }
     }
 
+    // 3. Scope === "all"
     if (operation.input.scope === "all") {
+      if (pinnedTerminalDriver && typeof pinnedTerminalDriver.cleanupTerminalSessions !== "function") {
+        const ownedIds = [
+          ...Array.from(sessions.entries()).filter(([_, o]) => o.driverId === pinnedTerminalDriver!.driverId).map(([id]) => id),
+          ...Array.from(endedSessionOwners.entries()).filter(([_, o]) => o.driverId === pinnedTerminalDriver!.driverId).map(([id]) => id),
+        ]
+        return {
+          kind: "terminal_cleanup",
+          driverId: pinnedTerminalDriver.driverId,
+          result: {
+            schema_version: "bb.terminal_cleanup_result.v1",
+            cleanup_id: operation.input.cleanupId,
+            scope: "all",
+            cleaned_session_ids: [],
+            failed_session_ids: ownedIds,
+          },
+        }
+      }
       const activeKnownIds = Array.from(sessions.keys())
-      const pendingCleanedSet = new Set<string>(endedSessionOwners.keys())
+      const pendingCleanedSet = new Set<string>()
       const pendingFailedSet = new Set<string>()
-      const reportedCleanedSet = new Set<string>(endedSessionOwners.keys())
+      const reportedCleanedSet = new Set<string>()
       const reportedFailedSet = new Set<string>()
 
-      // Group active session IDs by owning driver
+      const targetCleanupDrivers = pinnedTerminalDriver
+        ? [pinnedTerminalDriver as TerminalSessionDriverV1 & { cleanupTerminalSessions: NonNullable<TerminalSessionDriverV1["cleanupTerminalSessions"]> }]
+        : cleanupDrivers
+
       const driverToSessions = new Map<TerminalSessionDriverV1, string[]>()
-      for (const d of cleanupDrivers) {
+      for (const d of targetCleanupDrivers) {
         driverToSessions.set(d, [])
       }
       for (const [id, owner] of sessions.entries()) {
@@ -1014,26 +1115,41 @@ export function createExecutionWorld(input: {
         if (list) {
           list.push(id)
         } else {
-          const matchingDriver = cleanupDrivers.find((d) => d.driverId === owner.driverId)
+          const matchingDriver = targetCleanupDrivers.find((d) => d.driverId === owner.driverId)
           if (matchingDriver) {
             const mList = driverToSessions.get(matchingDriver) ?? []
             mList.push(id)
             driverToSessions.set(matchingDriver, mList)
-          } else {
+          } else if (!pinnedTerminalDriver) {
             pendingFailedSet.add(id)
             reportedFailedSet.add(id)
           }
         }
       }
-
-      for (const d of cleanupDrivers) {
+      for (const [id, owner] of endedSessionOwners.entries()) {
+        const list = driverToSessions.get(owner)
+        if (list) {
+          if (!list.includes(id)) list.push(id)
+        } else {
+          const matchingDriver = targetCleanupDrivers.find((d) => d.driverId === owner.driverId)
+          if (matchingDriver) {
+            const mList = driverToSessions.get(matchingDriver) ?? []
+            if (!mList.includes(id)) mList.push(id)
+            driverToSessions.set(matchingDriver, mList)
+          } else if (!pinnedTerminalDriver) {
+            pendingFailedSet.add(id)
+            reportedFailedSet.add(id)
+          }
+        }
+      }
+      for (const d of targetCleanupDrivers) {
         const ownedSessionIds = driverToSessions.get(d) ?? []
         let driverCleaned: readonly string[] = []
         let driverFailed: readonly string[] = []
         try {
           const rawRes = await d.cleanupTerminalSessions({
             cleanupId: operation.input.cleanupId,
-            scope: "filtered",
+            scope: "all",
             sessionIds: ownedSessionIds,
             signal: operation.input.signal,
           })
@@ -1108,21 +1224,28 @@ export function createExecutionWorld(input: {
         }
       }
 
-      for (const id of activeKnownIds) {
-        if (!pendingCleanedSet.has(id)) {
-          pendingFailedSet.add(id)
+      if (!pinnedTerminalDriver) {
+        for (const id of activeKnownIds) {
+          if (!pendingCleanedSet.has(id)) {
+            pendingFailedSet.add(id)
+          }
+        }
+        for (const id of endedSessionOwners.keys()) {
+          if (!pendingCleanedSet.has(id)) {
+            pendingFailedSet.add(id)
+          }
         }
       }
 
-      // Now that all drivers have been verified and global disjointness is guaranteed, apply state mutations
-      endedSessionOwners.clear()
+      // Only delete confirmed cleaned sessions, retaining unconfirmed for retry
       for (const id of pendingCleanedSet) {
         sessions.delete(id)
+        endedSessionOwners.delete(id)
       }
 
       return {
         kind: "terminal_cleanup",
-        driverId: cleanupDrivers[0]?.driverId ?? null,
+        driverId: pinnedTerminalDriver?.driverId ?? cleanupDrivers[0]?.driverId ?? null,
         result: {
           schema_version: "bb.terminal_cleanup_result.v1",
           cleanup_id: operation.input.cleanupId,
@@ -1133,30 +1256,36 @@ export function createExecutionWorld(input: {
       }
     }
 
+    // 4. Scope === "single" or "filtered"
     const requestedIds =
       operation.input.scope === "single"
         ? (operation.input.sessionIds?.slice(0, 1) ?? [])
         : (operation.input.sessionIds ?? [])
+
     const defaultDriver =
-      selectWorldDriver(drivers, {
+      pinnedTerminalDriver ??
+      (selectWorldDriver(cleanupDrivers, {
         capability: operation.capability,
         placement: operation.placement,
         terminal: true,
+        terminalOperation: "cleanup",
         driverIdHint: operation.driverIdHint,
-      }) ?? cleanupDrivers[0]!
-
+      }) ??
+        cleanupDrivers[0] ??
+        null)
     const pendingCleanedSet = new Set<string>()
     const pendingFailedSet = new Set<string>()
-    let primaryDriverId: string | null = null
-
-    // Group active session IDs by owning driver, treating already ended sessions as idempotently cleaned
+    const reportedCleanedSet = new Set<string>()
+    const reportedFailedSet = new Set<string>()
+    let primaryDriverId: string | null = operation.driverId ?? defaultDriver?.driverId ?? null
+    // Group requested session IDs by owning driver, routing ended owners through driver cleanup
     const driverToSessions = new Map<TerminalSessionDriverV1, string[]>()
     for (const sessionId of requestedIds) {
-      if (endedSessionOwners.has(sessionId)) {
-        pendingCleanedSet.add(sessionId)
+      const owner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId) ?? defaultDriver
+      if (!owner) {
+        pendingFailedSet.add(sessionId)
         continue
       }
-      const owner = sessions.get(sessionId) ?? defaultDriver
       const list = driverToSessions.get(owner) ?? []
       list.push(sessionId)
       driverToSessions.set(owner, list)
@@ -1207,6 +1336,18 @@ export function createExecutionWorld(input: {
           throw driverError
         }
         driverFailed = sessionIds
+      }
+
+      for (const id of driverCleaned) {
+        pendingCleanedSet.add(id)
+      }
+      for (const id of driverFailed) {
+        pendingFailedSet.add(id)
+      }
+      for (const id of sessionIds) {
+        if (!pendingCleanedSet.has(id) && !pendingFailedSet.has(id)) {
+          pendingFailedSet.add(id)
+        }
       }
 
       // Validate cross-adapter / intra-call disjointness

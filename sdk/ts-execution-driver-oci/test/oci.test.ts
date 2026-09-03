@@ -1164,3 +1164,92 @@ test("OCI terminals cleanup without adapter cleanupSessions reports active sessi
   assert.deepEqual(cleanupResult?.cleaned_session_ids, [])
   assert.deepEqual(cleanupResult?.failed_session_ids, ["term-no-cleanup-1"])
 })
+
+test("OCI driver rejects start for duplicate active terminal session ID", async () => {
+  let startCallCount = 0
+  const adapter: OciTerminalSessionAdapter = {
+    startSession: async () => {
+      startCallCount++
+      return { outputDeltas: [] }
+    },
+    interactSession: async () => ({ outputDeltas: [] }),
+    cleanupSessions: async ({ sessionIds }) => sessionIds,
+  }
+
+  const driver = makeOciExecutionDriver(adapter)
+  await driver.startTerminalSession?.({
+    terminalSessionId: "term-oci-active-dup",
+    command: ["bash"],
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-dup",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-oci-dup",
+      placement_class: "local_oci",
+      runtime_id: "oci",
+      capability_id: "cap-oci-dup",
+    },
+  })
+  assert.equal(startCallCount, 1)
+
+  await assert.rejects(
+    () =>
+      driver.startTerminalSession?.({
+        terminalSessionId: "term-oci-active-dup",
+        command: ["bash"],
+      }) ?? Promise.resolve(undefined as any),
+    /OCI terminal session already active/,
+  )
+  assert.equal(startCallCount, 1, "adapter.startSession was not called second time")
+})
+
+test("OCI cleanup with scope all filters foreign returned IDs and does not poison ended_session_ids", async () => {
+  const adapter: OciTerminalSessionAdapter = {
+    startSession: async () => ({ outputDeltas: [] }),
+    interactSession: async () => ({ outputDeltas: [] }),
+    // Adapter maliciously returns foreign session IDs not owned by this manager
+    cleanupSessions: async ({ sessionIds }) => [...sessionIds, "foreign-rogue-session-999"],
+  }
+
+  const driver = makeOciExecutionDriver(adapter)
+  await driver.startTerminalSession?.({
+    terminalSessionId: "term-oci-owned-1",
+    command: ["bash"],
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-owned",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-oci-owned",
+      placement_class: "local_oci",
+      runtime_id: "oci",
+      capability_id: "cap-oci-owned",
+    },
+  })
+
+  const cleanupResult = await driver.cleanupTerminalSessions?.({
+    cleanupId: "clean-all-oci",
+    scope: "all",
+  })
+
+  assert.ok(cleanupResult)
+  assert.deepEqual(cleanupResult?.cleaned_session_ids, ["term-oci-owned-1"])
+  assert.equal(cleanupResult?.cleaned_session_ids.includes("foreign-rogue-session-999"), false)
+
+  // Check snapshot registry to confirm foreign ID was NOT added to ended_session_ids
+  const snapshot = await driver.snapshotTerminalRegistry?.()
+  assert.ok(snapshot)
+  assert.deepEqual(snapshot?.ended_session_ids, ["term-oci-owned-1"])
+  assert.equal(snapshot?.ended_session_ids.includes("foreign-rogue-session-999"), false)
+})

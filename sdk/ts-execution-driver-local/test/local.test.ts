@@ -1,3 +1,4 @@
+import fs from "node:fs"
 import test from "node:test"
 import assert from "node:assert/strict"
 import { setTimeout as sleep } from "node:timers/promises"
@@ -7,6 +8,7 @@ import {
   chooseTrustedLocalPlacement,
   defaultLocalCommandExecutor,
   executeLocalProcessSandboxRequest,
+  LocalTerminalSessionManager,
   makeTrustedLocalExecutionDriver,
   trustedLocalExecutionDriver,
   type LocalCommandExecutor,
@@ -395,48 +397,6 @@ test("trusted local driver cleanup escalates to SIGKILL for SIGTERM-ignoring pro
   )
 })
 
-test("trusted local driver cleanup handles simulated windows platform without hanging or false failure", async () => {
-  const originalPlatform = process.platform
-  try {
-    Object.defineProperty(process, "platform", { value: "win32" })
-    const start = await trustedLocalExecutionDriver.startTerminalSession?.({
-      terminalSessionId: "term-local-win32-1",
-      command: ["node", "-e", "console.log('ready'); setInterval(() => {}, 1000);"],
-      cwd: "/tmp",
-      capability: {
-        schema_version: "bb.execution_capability.v1",
-        capability_id: "cap-term-win32-1",
-        security_tier: "trusted_dev",
-        isolation_class: "process",
-        secret_mode: "ref_only",
-        evidence_mode: "minimal",
-      },
-      placement: {
-        schema_version: "bb.execution_placement.v1",
-        placement_id: "place-term-win32-1",
-        placement_class: "local_process",
-        runtime_id: "local",
-        capability_id: "cap-term-win32-1",
-      },
-      startupCallId: "call-win32-1",
-    })
-    assert.ok(start)
-    await sleep(50)
-
-    const cleanupResult = await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
-      cleanupId: "cleanup-win32-1",
-      scope: "single",
-      sessionIds: ["term-local-win32-1"],
-      signal: "SIGTERM",
-    })
-
-    assert.ok(cleanupResult)
-    assert.deepEqual(cleanupResult?.cleaned_session_ids, ["term-local-win32-1"])
-    assert.deepEqual(cleanupResult?.failed_session_ids, [])
-  } finally {
-    Object.defineProperty(process, "platform", { value: originalPlatform })
-  }
-})
 
 test("trusted local driver terminate bounds settlement when executor ignores abort and never settles", async () => {
   const neverSettlingExecutor = () => new Promise<{ exitCode: number; stdout: string; stderr: string }>(() => {})
@@ -494,12 +454,13 @@ test("trusted local driver terminate bounds settlement when executor ignores abo
 test("trusted local driver cleanup terminates live descendants in process group when parent process exited first", async () => {
   if (process.platform === "win32") return
 
+  const pidFile = `/tmp/bb-test-orphan-${Date.now()}-${Math.random().toString(36).slice(2)}.pid`
   const start = await trustedLocalExecutionDriver.startTerminalSession?.({
     terminalSessionId: "term-local-orphan-descendant-1",
     command: [
       "node",
       "-e",
-      "const { spawn } = require('node:child_process'); const c = spawn('sleep', ['60'], { stdio: 'ignore' }); console.log(c.pid); process.exit(0);",
+      `const { spawn } = require('node:child_process'); const fs = require('node:fs'); const c = spawn('sleep', ['60'], { stdio: 'ignore' }); fs.writeFileSync('${pidFile}', String(c.pid)); process.exit(0);`,
     ],
     cwd: "/tmp",
     capability: {
@@ -520,33 +481,24 @@ test("trusted local driver cleanup terminates live descendants in process group 
   })
   assert.ok(start)
 
-  // Give the process enough time to spawn descendant and exit
-  await sleep(100)
-
-  // Read the descendant PID from the output delta
-  const stdoutChunk = start.outputDeltas?.[0]?.chunk_b64
+  // Wait for pid file to be written
   let descendantPid = 0
-  if (stdoutChunk) {
-    descendantPid = parseInt(Buffer.from(stdoutChunk, "base64").toString("utf8").trim(), 10)
-  }
-  if (!descendantPid || isNaN(descendantPid)) {
-    const interact = await trustedLocalExecutionDriver.interactTerminalSession?.({
-      terminalSessionId: "term-local-orphan-descendant-1",
-      interactionKind: "stdin",
-      inputText: "",
-    })
-    for (const delta of interact?.outputDeltas ?? []) {
-      const text = Buffer.from(delta.chunk_b64, "base64").toString("utf8").trim()
-      const parsed = parseInt(text, 10)
+  for (let i = 0; i < 20; i++) {
+    if (fs.existsSync(pidFile)) {
+      const content = fs.readFileSync(pidFile, "utf8").trim()
+      const parsed = parseInt(content, 10)
       if (!isNaN(parsed) && parsed > 0) {
         descendantPid = parsed
         break
       }
     }
+    await sleep(25)
   }
+  try {
+    fs.unlinkSync(pidFile)
+  } catch {}
 
   assert.ok(descendantPid > 0, "descendant pid was parsed")
-
   // Verify descendant process is currently running even though parent exited
   let isDescendantAlive = false
   try {
@@ -580,40 +532,324 @@ test("trusted local driver cleanup terminates live descendants in process group 
   assert.equal(isDescendantStillAlive, false, "descendant process was terminated by process-group cleanup")
 })
 
-test("trusted local driver cleanup handles process tree termination on Windows preserving graceful signal semantics before force-kill", async () => {
+
+test("trusted local driver rejects start for duplicate active terminal session ID", async () => {
+  const start1 = await trustedLocalExecutionDriver.startTerminalSession?.({
+    terminalSessionId: "term-local-active-dup",
+    command: ["node", "-e", "setInterval(() => {}, 1000)"],
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-local-dup",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-local-dup",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-local-dup",
+    },
+  })
+  assert.ok(start1)
+
+  try {
+    await assert.rejects(
+      () =>
+        trustedLocalExecutionDriver.startTerminalSession?.({
+          terminalSessionId: "term-local-active-dup",
+          command: ["node", "-e", "console.log('hi')"],
+        }) ?? Promise.resolve(undefined as any),
+      /Terminal session already active/,
+    )
+  } finally {
+    await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
+      cleanupId: "cleanup-local-dup",
+      scope: "single",
+      sessionIds: ["term-local-active-dup"],
+    })
+  }
+})
+
+test("trusted local manager drops PGID when group is gone and never signals reused PGID on idempotent cleanup", async () => {
+  let aliveCheckCount = 0
+  const killedCalls: Array<{ pgid: number | null | undefined; signal: NodeJS.Signals }> = []
+  let simulateGroupAlive = true
+
+  const manager = new LocalTerminalSessionManager({
+    isGroupAlive: (pgid: number | null | undefined) => {
+      aliveCheckCount++
+      return simulateGroupAlive
+    },
+    killProcessTree: (child: unknown, pgid: number | null | undefined, signal: NodeJS.Signals) => {
+      killedCalls.push({ pgid, signal })
+      if (child && typeof (child as any).kill === "function") {
+        try {
+          ;(child as any).kill("SIGKILL")
+        } catch {}
+      }
+      // When killed, simulate group exiting
+      simulateGroupAlive = false
+    },
+  })
+
+  // Start session
+  await manager.startSession({
+    terminalSessionId: "term-reused-pgid-1",
+    command: ["node", "-e", "setInterval(() => {}, 1000)"],
+  })
+
+  // First cleanup - terminates the active session group
+  const cleanup1 = await manager.cleanupSessions({
+    cleanupId: "clean-1",
+    scope: "single",
+    sessionIds: ["term-reused-pgid-1"],
+  })
+  assert.deepEqual(cleanup1.cleaned_session_ids, ["term-reused-pgid-1"])
+  assert.ok(killedCalls.length > 0, "killProcessTree was called on active session")
+
+  const killCountAfterFirstCleanup = killedCalls.length
+
+  // Now simulate OS reusing that exact PGID for an unrelated process group
+  simulateGroupAlive = true
+
+  // Idempotent second cleanup on already ended session
+  const cleanup2 = await manager.cleanupSessions({
+    cleanupId: "clean-2",
+    scope: "single",
+    sessionIds: ["term-reused-pgid-1"],
+  })
+  assert.deepEqual(cleanup2.cleaned_session_ids, ["term-reused-pgid-1"])
+
+  // Verify killProcessTree was NEVER called during second cleanup because PGID was dropped
+  assert.equal(
+    killedCalls.length,
+    killCountAfterFirstCleanup,
+    "killProcessTree was NOT called on reused PGID during idempotent cleanup",
+  )
+})
+
+test("trusted local driver cleanup with scope all cleans parent-exited session with live descendant", async () => {
+  if (process.platform === "win32") return
+
+  const pidFile = `/tmp/bb-test-orphan-all-${Date.now()}-${Math.random().toString(36).slice(2)}.pid`
+  const start = await trustedLocalExecutionDriver.startTerminalSession?.({
+    terminalSessionId: "term-orphan-all-1",
+    command: [
+      "node",
+      "-e",
+      `const { spawn } = require('node:child_process'); const fs = require('node:fs'); const c = spawn('sleep', ['60'], { stdio: 'ignore' }); fs.writeFileSync('${pidFile}', String(c.pid)); process.exit(0);`,
+    ],
+    cwd: "/tmp",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-orphan-all",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-orphan-all",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-orphan-all",
+    },
+  })
+  assert.ok(start)
+
+  // Wait for pid file
+  let descendantPid = 0
+  for (let i = 0; i < 20; i++) {
+    if (fs.existsSync(pidFile)) {
+      const content = fs.readFileSync(pidFile, "utf8").trim()
+      const parsed = parseInt(content, 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        descendantPid = parsed
+        break
+      }
+    }
+    await sleep(25)
+  }
+  try {
+    fs.unlinkSync(pidFile)
+  } catch {}
+
+  assert.ok(descendantPid > 0, "descendant pid was parsed")
+
+  // Poll interaction to deliver end of parent process, moving session to endedSessionIds while descendant is live
+  await trustedLocalExecutionDriver.interactTerminalSession?.({
+    terminalSessionId: "term-orphan-all-1",
+    interactionKind: "poll",
+    settleMs: 50,
+  })
+
+  // Verify descendant is alive
+  let isAlive = false
+  try {
+    process.kill(descendantPid, 0)
+    isAlive = true
+  } catch {
+    isAlive = false
+  }
+  assert.equal(isAlive, true, "descendant is alive")
+
+  // Global cleanup with scope: "all"
+  const cleanupResult = await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
+    cleanupId: "clean-all-local",
+    scope: "all",
+    signal: "SIGTERM",
+  })
+  assert.ok(cleanupResult)
+  assert.ok(cleanupResult?.cleaned_session_ids.includes("term-orphan-all-1"))
+
+  // Verify descendant process was terminated
+  await sleep(100)
+  let isStillAlive = true
+  try {
+    process.kill(descendantPid, 0)
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "ESRCH") {
+      isStillAlive = false
+    }
+  }
+  assert.equal(isStillAlive, false, "descendant was terminated by global cleanup")
+})
+
+test("trusted local driver rejects local terminal sessions on Windows", async () => {
   const originalPlatform = process.platform
   Object.defineProperty(process, "platform", { value: "win32", configurable: true })
   try {
-    const start = await trustedLocalExecutionDriver.startTerminalSession?.({
-      terminalSessionId: "term-win-test-1",
-      command: ["node", "-e", "console.log('hi'); process.exit(0);"],
-      capability: {
+    const supports = trustedLocalExecutionDriver.supportsTerminalSessions?.(
+      {
         schema_version: "bb.execution_capability.v1",
-        capability_id: "cap-win-1",
+        capability_id: "cap-win",
         security_tier: "trusted_dev",
         isolation_class: "process",
         secret_mode: "ref_only",
         evidence_mode: "minimal",
       },
-      placement: {
-        schema_version: "bb.execution_placement.v1",
-        placement_id: "place-win-1",
-        placement_class: "local_process",
-        runtime_id: "local",
-        capability_id: "cap-win-1",
-      },
-    })
-    assert.ok(start)
-    const cleanup = await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
-      cleanupId: "cleanup-win-test-1",
-      scope: "single",
-      sessionIds: ["term-win-test-1"],
-      signal: "SIGTERM",
-    })
-    assert.ok(cleanup)
-    assert.deepEqual(cleanup?.cleaned_session_ids, ["term-win-test-1"])
-    assert.deepEqual(cleanup?.failed_session_ids, [])
+      "local_process",
+    )
+    assert.equal(supports, false, "supportsTerminalSessions returns false on Windows")
+
+    await assert.rejects(
+      () =>
+        trustedLocalExecutionDriver.startTerminalSession?.({
+          terminalSessionId: "term-win-reject",
+          command: ["node", "-e", "console.log('hi')"],
+        }) ?? Promise.resolve(undefined as any),
+      /not supported on Windows/,
+    )
   } finally {
     Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true })
   }
+})
+
+test("trusted local manager retains >32 ended sessions with live descendants without eviction", async () => {
+  const livePgids = new Set<number>()
+  const manager = new LocalTerminalSessionManager({
+    isGroupAlive: (pgid: number | null | undefined) => (pgid != null ? livePgids.has(pgid) : false),
+    killProcessTree: (child: unknown, pgid: number | null | undefined, signal: NodeJS.Signals) => {
+      if (pgid != null) {
+        livePgids.delete(pgid)
+      }
+    },
+  })
+
+  // Start 40 sessions whose descendant groups are simulated live
+  for (let i = 1; i <= 40; i++) {
+    livePgids.add(1000 + i)
+  }
+
+  // Remember 40 ended sessions each with a live group
+  for (let i = 1; i <= 40; i++) {
+    ;(manager as any).rememberEndedSession(`term-descendant-${i}`, 1000 + i)
+  }
+
+  // Cleanup scope all must target all 40 un-evicted live-descendant sessions
+  const cleanupResult = await manager.cleanupSessions({
+    cleanupId: "clean-40-descendants",
+    scope: "all",
+  })
+
+  assert.equal(cleanupResult.cleaned_session_ids.length, 40)
+  for (let i = 1; i <= 40; i++) {
+    assert.ok(cleanupResult.cleaned_session_ids.includes(`term-descendant-${i}`))
+  }
+  assert.equal(livePgids.size, 0, "all 40 live descendant groups were killed and cleaned")
+})
+
+test("trusted local driver cleanup does not call probeKillTree with PGID when probeGroupAlive is false", async () => {
+  const killedPgids: Array<number | null | undefined> = []
+  const manager = new LocalTerminalSessionManager({
+    isGroupAlive: () => false, // Group is already dead
+    killProcessTree: (child, pgid) => {
+      killedPgids.push(pgid)
+    },
+  })
+
+  // Start session
+  await manager.startSession({
+    terminalSessionId: "term-false-probe-1",
+    command: ["node", "-e", "process.exit(0)"],
+  })
+
+  // Cleanup active session where probeGroupAlive is false
+  const cleanupResult = await manager.cleanupSessions({
+    cleanupId: "clean-false-probe",
+    scope: "single",
+    sessionIds: ["term-false-probe-1"],
+  })
+
+  assert.deepEqual(cleanupResult.cleaned_session_ids, ["term-false-probe-1"])
+  // Verify probeKillTree was NEVER called with a PGID
+  assert.equal(killedPgids.length, 0, "probeKillTree was not called when probeGroupAlive returned false")
+})
+
+test("trusted local driver rejects start reuse of session ID with uncleaned ended descendant PGID", async () => {
+  let groupAlive = true
+  const manager = new LocalTerminalSessionManager({
+    isGroupAlive: () => groupAlive,
+    killProcessTree: () => {
+      groupAlive = false
+    },
+  })
+
+  // Start session
+  await manager.startSession({
+    terminalSessionId: "term-reuse-descendant-1",
+    command: ["node", "-e", "process.exit(0)"],
+  })
+
+  // Simulate parent exit with live descendant by verifying state
+  // Attempting to restart with the same ID must throw pending cleanup error
+  await assert.rejects(
+    async () => {
+      await manager.startSession({
+        terminalSessionId: "term-reuse-descendant-1",
+        command: ["node", "-e", "process.exit(0)"],
+      })
+    },
+    /Terminal session already active or pending cleanup: term-reuse-descendant-1/,
+  )
+
+  // Cleanup the session
+  const cleanRes = await manager.cleanupSessions({
+    cleanupId: "clean-reuse-1",
+    scope: "single",
+    sessionIds: ["term-reuse-descendant-1"],
+  })
+  assert.deepEqual(cleanRes.cleaned_session_ids, ["term-reuse-descendant-1"])
+
+  // Now starting with the same ID succeeds because ownership was properly cleared
+  const restarted = await manager.startSession({
+    terminalSessionId: "term-reuse-descendant-1",
+    command: ["node", "-e", "process.exit(0)"],
+  })
+  assert.ok(restarted.descriptor)
+  assert.equal(restarted.descriptor.terminal_session_id, "term-reuse-descendant-1")
 })

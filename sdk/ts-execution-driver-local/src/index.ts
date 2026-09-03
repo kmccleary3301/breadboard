@@ -254,8 +254,8 @@ export function makeTrustedLocalExecutionDriver(commandExecutor?: LocalCommandEx
       })
       await boundedCompletion
     },
-    supportsTerminalSessions() {
-      return true
+    supportsTerminalSessions(capability, placementClass) {
+      return terminalDriver.supportsTerminalSessions(capability, placementClass)
     },
     startTerminalSession: terminalDriver.startSession.bind(terminalDriver),
     interactTerminalSession: terminalDriver.interactSession.bind(terminalDriver),

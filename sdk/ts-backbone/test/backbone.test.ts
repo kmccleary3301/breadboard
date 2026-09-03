@@ -995,3 +995,83 @@ test("Backbone terminals cleanup then restart with same session ID creates fresh
   assert.equal(start2.session.summary().lastEndState, null)
   assert.equal(start2.session.summary().outputChunkCount, 1)
 })
+
+test("Backbone terminals session.cleanup after poll-delivered end routes cleanup to driver", async () => {
+  let cleanupCalledWith: string[] = []
+  const driver = {
+    driverId: "poll-end-driver",
+    supportedPlacements: ["local_process" as const],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    startTerminalSession: async (input: { terminalSessionId: string; command: string[] }) => ({
+      descriptor: {
+        schema_version: "bb.terminal_session_descriptor.v1" as const,
+        terminal_session_id: input.terminalSessionId,
+        command: input.command,
+        startup_call_id: null,
+        owner_task_id: null,
+        public_handles: [],
+        capability_id: "cap-life",
+        placement_id: "place-life",
+        persistence_scope: "thread" as const,
+        continuation_scope: "both" as const,
+        stream_mode: "pipes" as const,
+      },
+      outputDeltas: [],
+    }),
+    interactTerminalSession: async (input: { terminalSessionId: string; interactionKind: any }) => ({
+      interaction: {
+        schema_version: "bb.terminal_interaction.v1" as const,
+        terminal_session_id: input.terminalSessionId,
+        startup_call_id: null,
+        causing_call_id: null,
+        interaction_kind: input.interactionKind,
+        input_b64: null,
+        signal: null,
+      },
+      outputDeltas: [],
+      end: {
+        schema_version: "bb.terminal_session_end.v1" as const,
+        terminal_session_id: input.terminalSessionId,
+        terminal_state: "completed" as const,
+        exit_code: 0,
+      },
+    }),
+    cleanupTerminalSessions: async (input: { sessionIds?: readonly string[]; cleanupId: string }) => {
+      cleanupCalledWith.push(...(input.sessionIds ?? []))
+      return {
+        schema_version: "bb.terminal_cleanup_result.v1" as const,
+        cleanup_id: input.cleanupId,
+        scope: "single" as const,
+        cleaned_session_ids: input.sessionIds ? [...input.sessionIds] : [],
+        failed_session_ids: [],
+      }
+    },
+  }
+
+  const world = createExecutionWorld({ drivers: [driver] })
+  const workspace = createWorkspace({
+    workspaceId: "ws-poll-end",
+    rootDir: "/tmp",
+    defaultExecutionProfileId: "trusted_local",
+    capabilitySet: buildWorkspaceCapabilitySet({}),
+  })
+  const backbone = createBackbone({ workspace, executionWorld: world })
+  const session = backbone.openSession({ sessionId: "sess-poll-end-1" })
+
+  const start = await session.terminals.start({
+    terminalSessionId: "term-poll-end-1",
+    command: ["bash"],
+  })
+  assert.ok(start.session)
+  assert.equal(start.session.status, "running")
+
+  // Poll interaction delivers end of process
+  const poll = await start.session.poll()
+  assert.equal(start.session.status, "ended")
+  assert.equal(start.session.summary().lastEndState, "completed")
+  // Call session.cleanup() on the ended session
+  const cleanRes = await start.session.cleanup()
+  assert.deepEqual(cleanRes.result?.cleaned_session_ids, ["term-poll-end-1"])
+  assert.deepEqual(cleanupCalledWith, ["term-poll-end-1"])
+})

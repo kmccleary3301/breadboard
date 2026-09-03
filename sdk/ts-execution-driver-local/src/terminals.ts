@@ -129,20 +129,22 @@ async function terminateChildProcessTree(
   initialSignal: NodeJS.Signals,
   graceMs = 250,
   storedPgid?: number | null,
+  probeGroupAlive: (pgid: number | null | undefined) => boolean = isGroupAlive,
+  probeKillTree: (child: ChildProcessWithoutNullStreams | undefined, pgid: number | null | undefined, signal: NodeJS.Signals) => void = killProcessTree,
 ): Promise<boolean> {
   const pgid = storedPgid ?? child?.pid
   if (pgid == null) return true
 
-  if (!isGroupAlive(pgid)) {
+  if (!probeGroupAlive(pgid)) {
     return true
   }
 
-  killProcessTree(child, pgid, initialSignal)
+  probeKillTree(child, pgid, initialSignal)
 
   const exitedGracefully = await new Promise<boolean>((resolve) => {
     let done = false
     const checkTimer = setInterval(() => {
-      if (!isGroupAlive(pgid)) {
+      if (!probeGroupAlive(pgid)) {
         cleanup()
         resolve(true)
       }
@@ -150,7 +152,7 @@ async function terminateChildProcessTree(
 
     const timeoutTimer = setTimeout(() => {
       cleanup()
-      resolve(!isGroupAlive(pgid))
+      resolve(!probeGroupAlive(pgid))
     }, graceMs)
 
     function cleanup() {
@@ -166,12 +168,12 @@ async function terminateChildProcessTree(
     return true
   }
 
-  killProcessTree(child, pgid, "SIGKILL")
+  probeKillTree(child, pgid, "SIGKILL")
 
   return new Promise<boolean>((resolve) => {
     let done = false
     const checkTimer = setInterval(() => {
-      if (!isGroupAlive(pgid)) {
+      if (!probeGroupAlive(pgid)) {
         cleanup()
         resolve(true)
       }
@@ -179,7 +181,7 @@ async function terminateChildProcessTree(
 
     const timeoutTimer = setTimeout(() => {
       cleanup()
-      resolve(!isGroupAlive(pgid))
+      resolve(!probeGroupAlive(pgid))
     }, 500)
 
     function cleanup() {
@@ -192,10 +194,30 @@ async function terminateChildProcessTree(
   })
 }
 
+export interface LocalTerminalSessionManagerOptions {
+  readonly isGroupAlive?: (pgid: number | null | undefined) => boolean
+  readonly killProcessTree?: (
+    child: ChildProcessWithoutNullStreams | undefined,
+    pgid: number | null | undefined,
+    signal: NodeJS.Signals,
+  ) => void
+}
+
 export class LocalTerminalSessionManager {
   private readonly sessions = new Map<string, LocalTerminalSessionRecord>()
   private readonly endedSessionIds: string[] = []
   private readonly endedSessionPgids = new Map<string, number | null>()
+  private readonly probeGroupAlive: (pgid: number | null | undefined) => boolean
+  private readonly probeKillTree: (
+    child: ChildProcessWithoutNullStreams | undefined,
+    pgid: number | null | undefined,
+    signal: NodeJS.Signals,
+  ) => void
+
+  constructor(options?: LocalTerminalSessionManagerOptions) {
+    this.probeGroupAlive = options?.isGroupAlive ?? isGroupAlive
+    this.probeKillTree = options?.killProcessTree ?? killProcessTree
+  }
 
   private rememberEndedSession(sessionId: string, pgid: number | null = null): void {
     const existingIndex = this.endedSessionIds.indexOf(sessionId)
@@ -203,18 +225,36 @@ export class LocalTerminalSessionManager {
       this.endedSessionIds.splice(existingIndex, 1)
     }
     this.endedSessionIds.push(sessionId)
-    if (pgid != null) {
+    if (pgid != null && this.probeGroupAlive(pgid)) {
       this.endedSessionPgids.set(sessionId, pgid)
+    } else {
+      this.endedSessionPgids.delete(sessionId)
     }
-    if (this.endedSessionIds.length > 32) {
-      const removed = this.endedSessionIds.splice(0, this.endedSessionIds.length - 32)
-      for (const id of removed) {
-        this.endedSessionPgids.delete(id)
+
+    // Only cap inert history entries that have NO live descendant group
+    const inertIds = this.endedSessionIds.filter((id) => !this.endedSessionPgids.has(id))
+    if (inertIds.length > 32) {
+      const toRemove = inertIds.slice(0, inertIds.length - 32)
+      for (const id of toRemove) {
+        const idx = this.endedSessionIds.indexOf(id)
+        if (idx >= 0) {
+          this.endedSessionIds.splice(idx, 1)
+        }
       }
     }
   }
 
+  supportsTerminalSessions(capability?: ExecutionCapabilityV1, placementClass?: ExecutionPlacementV1["placement_class"]): boolean {
+    return (process.platform as string) !== "win32" && (placementClass === undefined || placementClass === "local_process") && (capability === undefined || capability.isolation_class === "process" || capability.isolation_class === "none")
+  }
+
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
+    if ((process.platform as string) === "win32") {
+      throw new Error("Local terminal sessions with durable process tree cleanup are not supported on Windows (POSIX process groups unavailable)")
+    }
+    if (this.sessions.has(input.terminalSessionId) || this.endedSessionPgids.has(input.terminalSessionId)) {
+      throw new Error(`Terminal session already active or pending cleanup: ${input.terminalSessionId}`)
+    }
     if (input.command.length === 0) {
       throw new Error("Terminal sessions require a non-empty command")
     }
@@ -233,7 +273,7 @@ export class LocalTerminalSessionManager {
       persistence_scope: input.persistenceScope ?? "thread",
       continuation_scope: input.continuationScope ?? "both",
     })
-    const isPosix = process.platform !== "win32"
+    const isPosix = (process.platform as string) !== "win32"
     const child = spawn(input.command[0]!, input.command.slice(1), {
       cwd: input.cwd ?? undefined,
       stdio: ["pipe", "pipe", "pipe"],
@@ -344,7 +384,13 @@ export class LocalTerminalSessionManager {
         ? input.sessionIds?.slice(0, 1) ?? []
         : input.scope === "filtered"
           ? input.sessionIds ?? []
-          : [...this.sessions.keys()]
+          : [
+              ...new Set([
+                ...this.sessions.keys(),
+                ...this.endedSessionIds,
+                ...this.endedSessionPgids.keys(),
+              ]),
+            ]
     const cleaned: string[] = []
     const failed: string[] = []
     for (const sessionId of targetIds) {
@@ -353,10 +399,17 @@ export class LocalTerminalSessionManager {
       const child = record?.child
       const initialSignal = normalizeSignal(input.signal)
 
-      if (pgid != null && isGroupAlive(pgid)) {
-        const exited = await terminateChildProcessTree(child, initialSignal, 250, pgid)
-        if (exited) {
-          if (record) {
+      if (record) {
+        if (pgid != null && this.probeGroupAlive(pgid)) {
+          const exited = await terminateChildProcessTree(
+            child,
+            initialSignal,
+            250,
+            pgid,
+            this.probeGroupAlive,
+            this.probeKillTree,
+          )
+          if (exited) {
             record.pendingEnd =
               record.pendingEnd ??
               buildTerminalEnd({
@@ -365,29 +418,50 @@ export class LocalTerminalSessionManager {
                 durationMs: Date.now() - record.startedAtMs,
               })
             this.sessions.delete(sessionId)
+            this.endedSessionPgids.delete(sessionId)
+            this.rememberEndedSession(sessionId, null)
+            cleaned.push(sessionId)
+          } else {
+            failed.push(sessionId)
           }
-          this.rememberEndedSession(sessionId, pgid)
-          cleaned.push(sessionId)
         } else {
-          failed.push(sessionId)
+          record.pendingEnd =
+            record.pendingEnd ??
+            buildTerminalEnd({
+              descriptor: record.descriptor,
+              state: "cleaned_up",
+              durationMs: Date.now() - record.startedAtMs,
+            })
+          this.sessions.delete(sessionId)
+          this.endedSessionPgids.delete(sessionId)
+          this.rememberEndedSession(sessionId, null)
+          cleaned.push(sessionId)
         }
-      } else if (record) {
-        killProcessTree(record.child, pgid, initialSignal)
-        record.pendingEnd =
-          record.pendingEnd ??
-          buildTerminalEnd({
-            descriptor: record.descriptor,
-            state: "cleaned_up",
-            durationMs: Date.now() - record.startedAtMs,
-          })
-        this.sessions.delete(sessionId)
-        this.rememberEndedSession(sessionId, pgid)
-        cleaned.push(sessionId)
-      } else if (this.endedSessionIds.includes(sessionId)) {
-        if (pgid != null) {
-          killProcessTree(undefined, pgid, initialSignal)
+      } else if (this.endedSessionIds.includes(sessionId) || this.endedSessionPgids.has(sessionId)) {
+        if (this.endedSessionPgids.has(sessionId)) {
+          const orphanPgid = this.endedSessionPgids.get(sessionId)
+          if (orphanPgid != null && this.probeGroupAlive(orphanPgid)) {
+            const exited = await terminateChildProcessTree(
+              undefined,
+              initialSignal,
+              250,
+              orphanPgid,
+              this.probeGroupAlive,
+              this.probeKillTree,
+            )
+            if (exited) {
+              this.endedSessionPgids.delete(sessionId)
+              cleaned.push(sessionId)
+            } else {
+              failed.push(sessionId)
+            }
+          } else {
+            this.endedSessionPgids.delete(sessionId)
+            cleaned.push(sessionId)
+          }
+        } else {
+          cleaned.push(sessionId)
         }
-        cleaned.push(sessionId)
       } else {
         failed.push(sessionId)
       }
@@ -410,7 +484,7 @@ export const trustedLocalTerminalSessionDriver: Pick<
   "supportsTerminalSessions" | "startTerminalSession" | "interactTerminalSession" | "snapshotTerminalRegistry" | "cleanupTerminalSessions"
 > = {
   supportsTerminalSessions(capability: ExecutionCapabilityV1, placementClass: ExecutionPlacementV1["placement_class"]): boolean {
-    return placementClass === "local_process" && (capability.isolation_class === "process" || capability.isolation_class === "none")
+    return sharedLocalTerminalSessionManager.supportsTerminalSessions(capability, placementClass)
   },
   startTerminalSession(input) {
     return sharedLocalTerminalSessionManager.startSession(input)

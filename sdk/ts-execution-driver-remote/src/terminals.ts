@@ -156,6 +156,9 @@ export class RemoteTerminalSessionManager {
   }
 
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
+    if (this.sessions.has(input.terminalSessionId)) {
+      throw new Error(`Remote terminal session already active: ${input.terminalSessionId}`)
+    }
     const descriptor = buildDescriptor(input)
     const response = await executeRemoteTerminalRequest(this.httpOptions, {
       schema_version: "bb.remote_terminal_request.v1",
@@ -263,7 +266,7 @@ export class RemoteTerminalSessionManager {
         ? input.sessionIds?.slice(0, 1) ?? []
         : input.scope === "filtered"
           ? input.sessionIds ?? []
-          : [...this.sessions.keys()]
+          : [...new Set([...this.sessions.keys(), ...this.endedSessionIds])]
     const targetSet = new Set(targetIds)
     const alreadyEnded = targetIds.filter((sessionId) => !this.sessions.has(sessionId) && this.endedSessionIds.includes(sessionId))
     const response = await executeRemoteTerminalRequest(this.httpOptions, {

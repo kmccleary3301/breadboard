@@ -109,6 +109,9 @@ export class OciTerminalSessionManager {
   constructor(private readonly adapter: OciTerminalSessionAdapter) {}
 
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
+    if (this.sessions.has(input.terminalSessionId)) {
+      throw new Error(`OCI terminal session already active: ${input.terminalSessionId}`)
+    }
     const descriptor = buildDescriptor(input)
     const result = await this.adapter.startSession({ descriptor })
     try {
@@ -207,7 +210,7 @@ export class OciTerminalSessionManager {
         ? input.sessionIds?.slice(0, 1) ?? []
         : input.scope === "filtered"
           ? input.sessionIds ?? []
-          : [...this.sessions.keys()]
+          : [...new Set([...this.sessions.keys(), ...this.endedSessionIds])]
     const targetSet = new Set(targetIds)
     const alreadyEnded = targetIds.filter((sessionId) => !this.sessions.has(sessionId) && this.endedSessionIds.includes(sessionId))
     const rawResult = this.adapter.cleanupSessions
@@ -253,14 +256,16 @@ export class OciTerminalSessionManager {
       }
     }
 
-    const cleaned = input.scope === "all" ? rawCleaned : rawCleaned.filter((id) => targetSet.has(id))
-    const failed = input.scope === "all" ? rawFailed : rawFailed.filter((id) => targetSet.has(id))
+    const cleaned = rawCleaned.filter((id) => targetSet.has(id))
+    const failed = rawFailed.filter((id) => targetSet.has(id))
     const cleanedSet = new Set([...cleaned, ...alreadyEnded])
     const finalFailed = Array.from(new Set([...failed, ...targetIds.filter((sessionId) => !cleanedSet.has(sessionId))]))
 
     for (const sessionId of cleanedSet) {
-      this.sessions.delete(sessionId)
-      this.rememberEndedSession(sessionId)
+      if (targetSet.has(sessionId)) {
+        this.sessions.delete(sessionId)
+        this.rememberEndedSession(sessionId)
+      }
     }
     return assertValid<TerminalCleanupResultV1>("terminalCleanupResult", {
       schema_version: "bb.terminal_cleanup_result.v1",
