@@ -2,8 +2,8 @@
 
 Ticket: `bb-inj5.8`
 Date: 2026-09-02
-Candidate: `docs_tmp/bb_direction_assessment/dsh_donor_campaign/07_CAMPAIGN_SPEC_PROTOTYPE.md`
-Reviewed SHA-256: `5c8b389bc9f6c6286dfdac8592d1f4125545116deaae7bd7dfdf8334f7f84050`
+Candidate: `docs/plans/dsh_donor_campaign/evidence/07_CAMPAIGN_SPEC_PROTOTYPE.md`
+Reviewed SHA-256: `5ece52ceca94d0ff99f455ab8ac5329ea28ebcc573dafad70da812ac95dabc17`
 ENGINE: `b3cacc7356244253305f8a6f84308a993485bfe2`
 TUI: `73d6e6f55a238fc9ff0486bbcc9ecffe85705715`
 
@@ -53,6 +53,15 @@ One material renewal corrected every initial finding and all consistency defects
 - incorporated the full packet-contract envelope and exact later-packet links/outputs;
 - made FT-01 self-contained: fixed fixture bytes/IDs, error classes, deadlines, typed append-only records, content identities, independent comparators, receipt rules, branch precedence, nullable receipt identities, process authority, cleanup/finalization, preflight-abort encoding, lock audit, and invalidation;
 - restored exact Phase 20 schema exceptions and existing-schema tightening allowlist route.
+
+Binding renewal (2026-09-02, PR head `159e6ed7`) independently
+recomputed the candidate digest above and revalidated the corrected raw DAG
+after `SEVEN-PIECE-AUDIT` gained explicit `GEN-INTERNAL` and terminal
+`GEN-ACTIVATION` prerequisites. The raw validator passed 50 acyclic nodes,
+623/623 unique routes, phases 0–12, six packets, and zero unconditional seams.
+The package validator passed 14 exact evidence copies, 13 relative links, six
+guard pairs, and no findings. The renewal found no new P0/P1/P2/P3 defects, so
+the prior review's substantive approval remains valid at this exact binding.
 
 Independent renewal verdict: **APPROVED**.
 P0/P1/P2/P3: **0/0/0/0**.

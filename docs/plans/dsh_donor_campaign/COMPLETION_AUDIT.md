@@ -45,9 +45,9 @@ Digest method: SHA-256 over each raw store's sorted `relative-path NUL file-SHA2
 | `bb-inj5.4` | 4 | `97405c3815eba39021962705b9c152a95400c680a04a2d24efd69b0a52b648b3` |
 | `bb-inj5.5` | 7 | `911575b2f1a09fa434790389650be216614ab66d424852372f0433d7f76bc4f6` |
 | `bb-inj5.6` | 3 | `2424661ac0a7e124d155c204be2e7607eda1545276d60c61d15be0db44943706` |
-| `bb-inj5.7` | 8 | `e907cce0d0c52a443583bd24b6d4186f70dfd1ce7c8a76f7a983c89b9fc924b2` |
+| `bb-inj5.7` | 8 | `f68b2053b6667e5da4b489d3f7542fb1317b6d2b6cb808471f562da48da2019f` |
 | `bb-inj5.8` | 6 | `73ef4c6a118bf0f0a4dedcec99005e1f42480bb5f2acc23af7aa27b90f0b1c82` |
-| `bb-inj5.9` | 3 | `3200268917e9c75a16d8c43bff51e2e97a49adba363f80ae74e6b6a63d0130a7` |
+| `bb-inj5.9` | 3 | `c780e6cb50508916eacbebe4239f915647b58d52f438ba325f07add7a46b36d9` |
 
 Workstream I's binding covers its provenance block, deterministic package validator, and final validator result.
 
