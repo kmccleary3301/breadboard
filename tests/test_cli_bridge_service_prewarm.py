@@ -2079,6 +2079,48 @@ async def test_retained_event_journal_rejects_oversized_file_before_read(
     assert "exceeds byte limit" in str(error.value.__cause__)
 
 
+def test_windows_retained_process_lock_rejects_replaced_lock_identity(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge import service as service_module
+    from breadboard_engine.api.cli_bridge.service import _RetainedProcessLock
+
+    event_path = tmp_path / ".session.events.starting" / "session_events.jsonl"
+    event_path.parent.mkdir()
+    stable_root = tmp_path / "events"
+    stable_root.mkdir()
+    lock_path = service_module._retained_event_lock_path(stable_root, "session")
+    lock_path.write_bytes(b"\0")
+    replacement = tmp_path / "replacement.lock"
+    os.link(lock_path, replacement)
+    opened_paths: list[Path] = []
+
+    def open_windows_file_descriptor(path, *, create=True):
+        opened_paths.append(Path(path))
+        return os.open(replacement, os.O_RDWR)
+
+    monkeypatch.setattr(
+        service_module,
+        "os",
+        SimpleNamespace(
+            name="nt",
+            fdopen=os.fdopen,
+            fstat=os.fstat,
+            close=os.close,
+        ),
+    )
+    monkeypatch.setattr(
+        service_module.AnchoredStorage,
+        "windows_file_descriptor",
+        staticmethod(open_windows_file_descriptor),
+    )
+    with pytest.raises(OSError, match="unsafe retained event process lock"):
+        with _RetainedProcessLock(event_path, lock_path=lock_path):
+            raise AssertionError("unreachable")
+    assert opened_paths == [lock_path]
+    assert lock_path.parent != event_path.parent
+
+
 @pytest.mark.asyncio
 @pytest.mark.skipif(os.name == "nt", reason="POSIX FIFO semantics")
 async def test_retained_event_journal_rejects_fifo_without_blocking(
@@ -2250,6 +2292,285 @@ async def test_restored_event_sink_rejects_stale_writer_head_advance(
         "session.paused",
     ]
     assert journal.read_bytes().count(b"\n") == 2
+
+
+@pytest.mark.asyncio
+async def test_live_event_sink_rejects_append_past_restored_writer_head(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge import service as service_module
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    restored = service_module._restore_product_session(
+        response.session_id,
+        event_root=event_root,
+    )
+
+    restored.pause("restored writer advanced the journal head")
+    with pytest.raises(
+        RuntimeError,
+        match="event journal advanced since",
+    ):
+        record.product_session.pause("stale original writer")
+
+    replayed = service_module._restore_product_session(
+        response.session_id,
+        event_root=event_root,
+    )
+    assert [event.sequence for event in replayed.events] == [1, 2]
+    assert [event.kind for event in replayed.events] == [
+        "session.started",
+        "session.paused",
+    ]
+    assert journal.read_bytes().count(b"\n") == 2
+
+
+@pytest.mark.asyncio
+async def test_start_publication_serializes_writer_before_sink_binding(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge import service as service_module
+
+    event_root = tmp_path / "events"
+    state_root = tmp_path / "state"
+    runtime_root = tmp_path / "records"
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    service = SessionService(state_root=state_root)
+    recovery_started = threading.Event()
+    writer_done = threading.Event()
+    writer_errors: list[BaseException] = []
+    real_recover = service_module._RetainedEventSink.recover
+
+    def signal_recover(sink):
+        recovery_started.set()
+        return real_recover(sink)
+
+    monkeypatch.setattr(
+        service_module._RetainedEventSink,
+        "recover",
+        signal_recover,
+    )
+    real_publish = service._publish_start_bundle
+    writer_thread: threading.Thread | None = None
+
+    def interleaved_writer(session_id, event_dir):
+        try:
+            retained = service_module._restore_product_session(
+                session_id,
+                event_root=event_dir.parent,
+            )
+            retained.pause("writer raced live sink binding")
+        except BaseException as error:
+            writer_errors.append(error)
+        finally:
+            writer_done.set()
+
+    def publish_with_interleaved_writer(
+        session_id,
+        staged_record_dir,
+        staging_record_root,
+        runtime_record_dir,
+        staged_event_dir,
+        event_dir,
+        publish_records,
+    ):
+        nonlocal writer_thread
+        real_publish(
+            session_id,
+            staged_record_dir,
+            staging_record_root,
+            runtime_record_dir,
+            staged_event_dir,
+            event_dir,
+            publish_records,
+        )
+        writer_thread = threading.Thread(
+            target=interleaved_writer,
+            args=(session_id, event_dir),
+        )
+        writer_thread.start()
+        if not recovery_started.wait(2):
+            raise RuntimeError("interleaved writer did not reach retained recovery")
+
+    monkeypatch.setattr(
+        service,
+        "_publish_start_bundle",
+        publish_with_interleaved_writer,
+    )
+    session_id = "publication-binding-race"
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="serialize publication binding",
+        ),
+        session_id=session_id,
+        event_root=event_root,
+        runtime_root=runtime_root,
+    )
+    assert response.session_id == session_id
+    assert writer_thread is not None
+    writer_thread.join(timeout=2)
+    assert writer_done.is_set()
+    assert writer_errors == []
+
+    record = await service.ensure_session(session_id)
+    retained = await service.registry.get(session_id)
+    assert retained is record
+    assert retained.status is SessionStatus.STARTING
+    assert [event.sequence for event in record.product_session.events] == [1]
+    with pytest.raises(
+        RuntimeError,
+        match="event journal advanced since session recovery",
+    ):
+        record.product_session.pause("stale live writer")
+
+    replayed = service_module._restore_product_session(
+        session_id,
+        event_root=event_root,
+    )
+    assert [event.sequence for event in replayed.events] == [1, 2]
+    assert [event.kind for event in replayed.events] == [
+        "session.started",
+        "session.paused",
+    ]
+    await _stop(record)
+@pytest.mark.asyncio
+async def test_start_refreshes_retained_writer_before_authorize(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge import service as service_module
+
+    event_root = tmp_path / "events"
+    state_root = tmp_path / "state"
+    runtime_root = tmp_path / "records"
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    service = SessionService(state_root=state_root)
+    prewarm_started = threading.Event()
+    release_prewarm = threading.Event()
+    writer_done = threading.Event()
+    writer_errors: list[BaseException] = []
+
+    async def gated_prewarm(*_args) -> None:
+        prewarm_started.set()
+        await asyncio.to_thread(release_prewarm.wait)
+
+    monkeypatch.setattr(service, "_maybe_prewarm_request_runtime", gated_prewarm)
+    session_id = "preauthorize-retained-refresh"
+    create_task = asyncio.create_task(
+        service.create_session(
+            SessionCreateRequest(
+                config_path=CONFIG,
+                task="refresh before authorize",
+            ),
+            session_id=session_id,
+            event_root=event_root,
+            runtime_root=runtime_root,
+        )
+    )
+    assert await asyncio.to_thread(prewarm_started.wait, 2)
+
+    def interleaved_writer() -> None:
+        try:
+            retained = service_module._restore_product_session(
+                session_id,
+                event_root=event_root,
+            )
+            retained.pause("writer raced before authorize")
+        except BaseException as error:
+            writer_errors.append(error)
+        finally:
+            writer_done.set()
+
+    writer = threading.Thread(target=interleaved_writer)
+    writer.start()
+    writer.join(timeout=2)
+    assert writer_done.is_set()
+    assert writer_errors == []
+    release_prewarm.set()
+    response = await create_task
+
+    record = await service.ensure_session(response.session_id)
+    assert await service.registry.get(response.session_id) is record
+    assert record.status is SessionStatus.STARTING
+    assert [event.sequence for event in record.product_session.events] == [1, 2]
+    record.product_session.resume()
+    assert [event.sequence for event in record.product_session.events] == [1, 2, 3]
+    replayed = service_module._restore_product_session(
+        session_id,
+        event_root=event_root,
+    )
+    assert [event.sequence for event in replayed.events] == [1, 2, 3]
+    await _stop(record)
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_sequence",
+    [
+        pytest.param(True, id="boolean"),
+        pytest.param(1.0, id="float"),
+        pytest.param("1", id="string"),
+        pytest.param(float("inf"), id="infinity"),
+    ],
+)
+async def test_restore_rejects_non_exact_committed_event_sequence(
+    monkeypatch, tmp_path, invalid_sequence
+) -> None:
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    original_record = json.loads(journal.read_text(encoding="utf-8"))
+    original_record["sequence"] = invalid_sequence
+    corrupted = (
+        json.dumps(original_record, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    journal.write_bytes(corrupted)
+
+    with pytest.raises(runtime_ports.ReplayError) as raised:
+        _restore_product_session(response.session_id, event_root=event_root)
+
+    assert raised.value.code == "invalid_event_record"
+    assert journal.read_bytes() == corrupted
+
+@pytest.mark.asyncio
+async def test_live_event_sink_delegates_with_retained_journal_cap(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard.product.runtime.events import KernelEvent
+    from breadboard_engine.api.cli_bridge import service as service_module
+    from breadboard_engine.api.cli_bridge.service import _RetainedEventSink
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    sink = record.product_session._sink
+    assert isinstance(sink, _RetainedEventSink)
+    assert sink._delegate is not None
+    assert sink._delegate._max_bytes == (
+        service_module._MAX_RETAINED_EVENT_JOURNAL_BYTES
+    )
+    before = journal.read_bytes()
+    sink._delegate._max_bytes = len(before)
+    oversized = KernelEvent.create(
+        response.session_id,
+        2,
+        "session.paused",
+        "2026-09-03T00:00:00Z",
+        {"reason": "x" * len(before)},
+    )
+    with pytest.raises(RuntimeError, match="event journal exceeds byte limit"):
+        sink._delegate.append(oversized)
+    assert journal.read_bytes() == before
 
 
 @pytest.mark.asyncio

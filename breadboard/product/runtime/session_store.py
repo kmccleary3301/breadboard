@@ -43,9 +43,12 @@ def legacy_session_metadata_path(workspace: Path, session_id: str) -> Path:
 
 
 def event_from_record(record: Mapping[str, Any]) -> KernelEvent:
+    sequence = record["sequence"]
+    if type(sequence) is not int:
+        raise ValueError("event sequence must be an exact integer")
     return KernelEvent(
         session_id=str(record["session_id"]),
-        sequence=int(record["sequence"]),
+        sequence=sequence,
         kind=str(record["kind"]),
         occurred_at=str(record["occurred_at"]),
         payload=record.get("payload", {}),

@@ -336,6 +336,70 @@ def _retained_event_journal_identity(
         (directory_stat.st_dev, directory_stat.st_ino),
         (file_stat.st_dev, file_stat.st_ino),
     )
+def _retained_event_lock_path(event_root: Path, session_id: str) -> Path:
+    return event_root / f".{session_id}.session_events.lock"
+
+
+
+class _RetainedProcessLock:
+    def __init__(self, path: Path, *, lock_path: Path | None = None) -> None:
+        self._path = Path(path)
+        self._lock_path = (
+            Path(lock_path)
+            if lock_path is not None
+            else self._path.with_name(f".{self._path.name}.lock")
+        )
+        self._generic: ProcessLock | None = None
+        self._stream: Any | None = None
+
+    def __enter__(self) -> "_RetainedProcessLock":
+        if os.name != "nt":
+            self._generic = ProcessLock(self._path)
+            self._generic.__enter__()
+            return self
+        descriptor = AnchoredStorage.windows_file_descriptor(
+            self._lock_path,
+            create=True,
+        )
+        stream: Any | None = None
+        try:
+            stream = os.fdopen(descriptor, "a+b", buffering=0)
+            metadata = os.fstat(stream.fileno())
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                raise OSError("unsafe retained event process lock")
+            import msvcrt
+
+            stream.seek(0, os.SEEK_END)
+            if stream.tell() == 0:
+                stream.write(b"\0")
+                stream.flush()
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+        except BaseException:
+            if stream is None:
+                os.close(descriptor)
+            else:
+                stream.close()
+            raise
+        self._stream = stream
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._generic is not None:
+            self._generic.__exit__(*exc)
+            self._generic = None
+            return
+        stream = self._stream
+        if stream is None:
+            return
+        try:
+            import msvcrt
+
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        finally:
+            stream.close()
+            self._stream = None
 
 
 class _RetainedEventSink:
@@ -620,11 +684,13 @@ class _RetainedEventSink:
                     event_path.parent.stat(follow_symlinks=False),
                     event_path.stat(follow_symlinks=False),
                 )
-                delegate = JsonlEventSink(
+                with _RetainedProcessLock(
                     event_path,
-                    max_bytes=_MAX_RETAINED_EVENT_JOURNAL_BYTES,
-                )
-                with ProcessLock(event_path):
+                    lock_path=_retained_event_lock_path(
+                        self._event_root,
+                        self._session_id,
+                    ),
+                ):
                     retained = _read_retained_event_journal(
                         self._event_root,
                         self._session_id,
@@ -632,6 +698,10 @@ class _RetainedEventSink:
                     self._verify_identity(
                         event_path.parent.stat(follow_symlinks=False),
                         event_path.stat(follow_symlinks=False),
+                    )
+                    delegate = JsonlEventSink._for_existing_path(
+                        event_path,
+                        max_bytes=_MAX_RETAINED_EVENT_JOURNAL_BYTES,
                     )
                 self._delegate = delegate
                 self.path = delegate.path
@@ -748,13 +818,31 @@ class _RetainedEventSink:
                     create=False,
                 )
             )
-            self._verify_identity(
-                event_path.parent.stat(follow_symlinks=False),
-                event_path.stat(follow_symlinks=False),
-            )
-            if self._delegate is None:
-                raise RuntimeError("retained event sink was not recovered")
-            self._delegate.append(event)
+            with _RetainedProcessLock(
+                event_path,
+                lock_path=_retained_event_lock_path(
+                    self._event_root,
+                    self._session_id,
+                ),
+            ):
+                self._verify_identity(
+                    event_path.parent.stat(follow_symlinks=False),
+                    event_path.stat(follow_symlinks=False),
+                )
+                if self._delegate is None:
+                    raise RuntimeError("retained event sink was not recovered")
+                current_size = event_path.stat(follow_symlinks=False).st_size
+                if (
+                    self._expected_size is not None
+                    and current_size != self._expected_size
+                ):
+                    raise RuntimeError(
+                        "retained event journal advanced since session recovery"
+                    )
+                self._delegate._append_with_process_lock(event)
+                self._expected_size = event_path.stat(
+                    follow_symlinks=False
+                ).st_size
         finally:
             for handle in reversed(handles):
                 AnchoredStorage.close_windows_handle(handle)
@@ -853,7 +941,7 @@ def _restore_product_session(
             "invalid_event_record",
             f"retained session {session_id!r} has an invalid logical event journal",
         ) from exc
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, OverflowError) as exc:
         raise ReplayError(
             "invalid_event_record",
             f"retained session {session_id!r} has an invalid logical event journal",
@@ -1564,6 +1652,7 @@ class SessionService:
         if emit_primitives:
             metadata.setdefault("runtime_record_dir", str(runtime_record_dir))
         record.runner, published = runner, False
+        retained_refresh_failed = False
         try:
             if emit_primitives:
                 staged_paths = emit_session_start_records(
@@ -1584,24 +1673,54 @@ class SessionService:
                         for name, path in staged_paths.items()
                     },
                 )
-            event_sink = JsonlEventSink(staged_event_dir / "session_events.jsonl")
+            event_sink = JsonlEventSink(
+                staged_event_dir / "session_events.jsonl",
+                max_bytes=_MAX_RETAINED_EVENT_JOURNAL_BYTES,
+            )
             product_session = ProductSession.start(
                 runtime_lock, session_title, session_id=session_id, sink=event_sink
             )
+            initial_event_journal_size = (
+                staged_event_dir / "session_events.jsonl"
+            ).stat(follow_symlinks=False).st_size
             record.product_session = product_session
             async with self.registry.publish_session(record, runner):
-                runner.schedule_start()
-                self._publish_start_bundle(
-                    session_id,
-                    staged_record_dir,
-                    staging_record_root,
-                    runtime_record_dir,
-                    staged_event_dir,
-                    event_dir,
-                    emit_primitives,
-                )
-                event_sink.path = event_dir / "session_events.jsonl"
-                published = True
+                with _RetainedProcessLock(
+                    staged_event_dir / "session_events.jsonl",
+                    lock_path=_retained_event_lock_path(
+                        event_base,
+                        session_id,
+                    ),
+                ):
+                    runner.schedule_start()
+                    self._publish_start_bundle(
+                        session_id,
+                        staged_record_dir,
+                        staging_record_root,
+                        runtime_record_dir,
+                        staged_event_dir,
+                        event_dir,
+                        emit_primitives,
+                    )
+                    event_sink.path = event_dir / "session_events.jsonl"
+                    live_sink = _RetainedEventSink(
+                        event_sink,
+                        event_base,
+                        session_id,
+                        _retained_event_journal_identity(
+                            event_base,
+                            session_id,
+                        ),
+                    )
+                    live_sink._expected_size = initial_event_journal_size
+                    if event_sink.path.stat(
+                        follow_symlinks=False
+                    ).st_size != initial_event_journal_size:
+                        raise RuntimeError(
+                            "retained event journal advanced before live sink binding"
+                        )
+                    product_session._sink = live_sink
+                    published = True
             if durable_product_workspace is not None:
                 runner.bind_durable_product_session(
                     durable_product_workspace,
@@ -1612,7 +1731,49 @@ class SessionService:
                 )
             await self._ensure_dispatcher(record)
             await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)
-            runner.authorize_start()
+            final_event_path = event_dir / "session_events.jsonl"
+            final_lock_path = _retained_event_lock_path(event_base, session_id)
+            for _ in range(2):
+                with _RetainedProcessLock(
+                    final_event_path,
+                    lock_path=final_lock_path,
+                ):
+                    bound_sink = getattr(product_session, "_sink", None)
+                    expected_identity = getattr(
+                        bound_sink,
+                        "_expected_identity",
+                        None,
+                    )
+                    current_identity = _retained_event_journal_identity(
+                        event_base,
+                        session_id,
+                    )
+                    expected_size = getattr(bound_sink, "_expected_size", None)
+                    current_size = final_event_path.stat(
+                        follow_symlinks=False
+                    ).st_size
+                    if (
+                        expected_identity == current_identity
+                        and expected_size == current_size
+                    ):
+                        runner.authorize_start()
+                        break
+                try:
+                    product_session = _restore_product_session(
+                        session_id,
+                        event_root=event_base,
+                    )
+                except BaseException:
+                    retained_refresh_failed = True
+                    record.product_session = None
+                    raise
+                record.product_session = product_session
+            else:
+                retained_refresh_failed = True
+                record.product_session = None
+                raise RuntimeError(
+                    "retained event journal advanced before start authorization"
+                )
         except BaseException:
             published = (
                 published
@@ -1629,14 +1790,16 @@ class SessionService:
                 ) / "session_events.jsonl"
             if published:
                 (staged_event_dir / _START_OWNER).unlink(missing_ok=True)
-            try:
-                runner.transition_product_session(
-                    "fail", "session_setup_failed", "session setup failed"
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to terminalize session %s after setup failure", session_id
-                )
+            if not retained_refresh_failed:
+                try:
+                    runner.transition_product_session(
+                        "fail", "session_setup_failed", "session setup failed"
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to terminalize session %s after setup failure",
+                        session_id,
+                    )
             try:
                 await runner.stop()
             except Exception:

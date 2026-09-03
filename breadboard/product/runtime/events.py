@@ -31,6 +31,17 @@ class JsonlEventSink:
         self.path = Path(path).resolve(); self._max_bytes = max_bytes; path, state = self.path, _STATES[hash(self.path) % len(_STATES)]
         with state.lock: self._mkdir_parent(path.parent)
         with state.lock, ProcessLock(path): self._recover(path, state)
+    @classmethod
+    def _for_existing_path(
+        cls,
+        path: str | Path,
+        *,
+        max_bytes: int | None = None,
+    ) -> "JsonlEventSink":
+        sink = cls.__new__(cls)
+        sink.path = Path(path).resolve()
+        sink._max_bytes = max_bytes
+        return sink
     def _mkdir_parent(self, path: Path) -> None:
         if path.exists(): return
         self._mkdir_parent(path.parent)
@@ -62,29 +73,34 @@ class JsonlEventSink:
         os.replace(temporary, wal); self._sync_parent(path)
     def _finish(self, path: Path) -> None:
         wal, temporary = self._transaction_paths(path); temporary.unlink(missing_ok=True); wal.unlink(missing_ok=True); self._sync_parent(path)
-    def append(self, event: object) -> None:
-        payload = (json.dumps(event.as_dict(), sort_keys=True, separators=(",", ":")) + "\n").encode(); path = Path(self.path).resolve(); state = _STATES[hash(path) % len(_STATES)]  # type: ignore[attr-defined]
-        with state.lock, ProcessLock(path):
-            if path in state.poisoned: raise RuntimeError("event sink is poisoned after an unconfirmed rollback")
-            self._recover(path, state)
-            try: stream = path.open("x+b", buffering=0); created = True
-            except FileExistsError: stream = path.open("a+b", buffering=0); created = False
+    def _append_body(self, event: object, path: Path, state: _SinkState) -> None:
+        payload = (json.dumps(event.as_dict(), sort_keys=True, separators=(",", ":")) + "\n").encode()  # type: ignore[attr-defined]
+        if path in state.poisoned: raise RuntimeError("event sink is poisoned after an unconfirmed rollback")
+        self._recover(path, state)
+        try: stream = path.open("x+b", buffering=0); created = True
+        except FileExistsError: stream = path.open("a+b", buffering=0); created = False
+        try:
+            stream.seek(0, os.SEEK_END); offset = stream.tell()
+            if self._max_bytes is not None and offset + len(payload) > self._max_bytes: raise RuntimeError("event journal exceeds byte limit")
             try:
-                stream.seek(0, os.SEEK_END); offset = stream.tell()
-                if self._max_bytes is not None and offset + len(payload) > self._max_bytes: raise RuntimeError("event journal exceeds byte limit")
+                self._begin(path, offset)
+                if stream.write(payload) != len(payload): raise OSError("short event sink write")
+                _sync(stream); self._finish(path)
+            except BaseException:
                 try:
-                    self._begin(path, offset)
-                    if stream.write(payload) != len(payload): raise OSError("short event sink write")
-                    _sync(stream); self._finish(path)
-                except BaseException:
-                    try:
-                        stream.seek(offset); stream.truncate(); _sync(stream); self._finish(path)
-                        if created: stream.close(); path.unlink(); self._sync_parent(path)
-                    except BaseException: state.poisoned.add(path)
-                    raise
-            finally:
-                try: stream.close()
-                except OSError: pass
+                    stream.seek(offset); stream.truncate(); _sync(stream); self._finish(path)
+                    if created: stream.close(); path.unlink(); self._sync_parent(path)
+                except BaseException: state.poisoned.add(path)
+                raise
+        finally:
+            try: stream.close()
+            except OSError: pass
+    def append(self, event: object) -> None:
+        path = Path(self.path).resolve(); state = _STATES[hash(path) % len(_STATES)]  # type: ignore[attr-defined]
+        with state.lock, ProcessLock(path): self._append_body(event, path, state)
+    def _append_with_process_lock(self, event: object) -> None:
+        path = Path(self.path).resolve(); state = _STATES[hash(path) % len(_STATES)]  # type: ignore[attr-defined]
+        with state.lock: self._append_body(event, path, state)
     def _sync_parent(self, path: Path) -> None:
         if os.name == "nt": return
         descriptor = os.open(path.parent, os.O_RDONLY)
