@@ -64,12 +64,14 @@ class MultiAgentOrchestrator:
         async_mode: bool = False,
         payload: Optional[Dict[str, Any]] = None,
         task_descriptor: Optional[Dict[str, Any]] = None,
+        job_id: Optional[str] = None,
     ) -> SpawnResult:
         job = self.job_manager.create_job(
             agent_id=agent_id,
             owner_agent=owner_agent,
             kind=kind,
             task_descriptor=task_descriptor,
+            job_id=job_id,
         )
         ack_payload = dict(payload or {})
         ack_payload.setdefault("job_id", job.job_id)
@@ -100,6 +102,11 @@ class MultiAgentOrchestrator:
 
     def mark_job_completed(self, job_id: str, *, result_payload: Optional[Dict[str, Any]] = None) -> Optional[JobRef]:
         payload = dict(result_payload or {})
+        existing = self.job_manager.get(job_id)
+        if existing is not None and existing.state in {"completed", "failed", "killed"}:
+            if existing.state == "completed" and existing.result_payload == payload:
+                return existing
+            return None
         job = self.job_manager.update_state(job_id, "completed", result_payload=payload)
         if job is None:
             return None
@@ -939,7 +946,18 @@ class MultiAgentOrchestrator:
             elif event.type == "agent.job_completed":
                 job_id = str(payload.get("job_id") or "")
                 if job_id:
-                    self.job_manager.update_state(job_id, str(payload.get("state") or "completed"))
+                    result_payload = payload.get("result_payload")
+                    if not isinstance(result_payload, dict):
+                        result_payload = {
+                            key: payload[key]
+                            for key in ("artifact_ref", "result", "result_bytes")
+                            if key in payload
+                        }
+                    self.job_manager.update_state(
+                        job_id,
+                        str(payload.get("state") or "completed"),
+                        result_payload=result_payload or None,
+                    )
             elif event.type == "agent.wakeup_emitted":
                 job_id = str(payload.get("job_id") or "")
                 subscription_id = str(payload.get("subscription_id") or "")

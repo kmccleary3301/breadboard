@@ -1,5 +1,5 @@
 import hashlib, json, pytest; from concurrent.futures import ThreadPoolExecutor; from dataclasses import asdict; from operator import setitem; from pathlib import Path; from threading import Barrier, Event, current_thread; from types import SimpleNamespace; from typing import Any
-from breadboard_engine.compilation.primitive_records import PrimitiveCompileError, finalize_record, get_spec, validate_record; from breadboard.product.coordination.placement import WorkPlacement; from breadboard.product.coordination.views import CoordinationProjector; from breadboard.product.coordination.work_items import Budget, CancellationPolicy, ResumePolicy, RetryPolicy, WorkItem, WorkItemEvent, WorkItemRepository, WorkItemSnapshot, rebuild_work_item
+from breadboard_engine.compilation.primitive_records import PrimitiveCompileError, finalize_record, get_spec, validate_record; from breadboard.product.coordination.placement import WorkPlacement; from breadboard.product.coordination.views import CoordinationProjector; from breadboard.product.coordination.work_items import Budget, CancellationPolicy, ResumePolicy, RetryPolicy, WorkItem, WorkItemEvent, WorkItemJournalCorruptionError, WorkItemRepository, WorkItemSnapshot, rebuild_work_item
 CLOCK = SimpleNamespace(now=lambda: "2026-07-17T00:00:04Z")
 def _new(**policies: Any) -> WorkItem: return WorkItem.create("ship packet", work_item_id="work-1", clock=CLOCK, **policies)
 def _run(item: WorkItem, number: int = 1) -> None: item.acquire_lease(f"worker-{number}", lease_id=f"lease-{number}"); item.start_attempt(f"session-{number}", lease_id=f"lease-{number}", attempt_id=f"attempt-{number}")
@@ -166,3 +166,42 @@ def test_policies_use_current_checkpoints_and_make_terminals_immutable() -> None
     final = limited.fail_attempt("retry", attempt_id="attempt-1", retryable=True)
     assert final.status == "failed" and final.budget_usage.tokens == 1
     before = limited.events; _fails(RuntimeError, lambda: limited.cancel("operator")); assert limited.events == before
+
+
+def test_journal_corruption_is_typed_and_never_truncated(tmp_path: Path) -> None:
+    path = tmp_path / "work-items.jsonl"
+    WorkItemRepository(path)
+    WorkItem.create("journal item", work_item_id="journal-item", repository=WorkItemRepository(path), clock=CLOCK)
+    original = path.read_bytes()
+    record = json.loads(original)
+    record["checksum"] = "sha256:" + ("0" * 64)
+    path.write_bytes(json.dumps(record, sort_keys=True, separators=(",", ":")).encode() + b"\n")
+    corrupted = path.read_bytes()
+    with pytest.raises(WorkItemJournalCorruptionError, match="corrupt Work Item journal"):
+        WorkItemRepository(path)
+    assert path.read_bytes() == corrupted
+
+
+def test_journal_schema_corruption_is_typed_and_never_truncated(tmp_path: Path) -> None:
+    path = tmp_path / "work-items.jsonl"
+    repository = WorkItemRepository(path)
+    WorkItem.create("journal item", work_item_id="journal-item", repository=repository, clock=CLOCK)
+    record = json.loads(path.read_bytes())
+    record["payload"]["schema_version"] = "bb.work_item.transaction.invalid"
+    encoded = json.dumps(record["payload"], sort_keys=True, separators=(",", ":")).encode()
+    record["checksum"] = "sha256:" + hashlib.sha256(encoded).hexdigest()
+    path.write_bytes(json.dumps(record, sort_keys=True, separators=(",", ":")).encode() + b"\n")
+    corrupted = path.read_bytes()
+    with pytest.raises(WorkItemJournalCorruptionError, match="corrupt Work Item journal"):
+        WorkItemRepository(path)
+    assert path.read_bytes() == corrupted
+
+
+def test_journal_incomplete_tail_is_the_only_truncatable_corruption(tmp_path: Path) -> None:
+    path = tmp_path / "work-items.jsonl"
+    repository = WorkItemRepository(path)
+    WorkItem.create("journal item", work_item_id="journal-item", repository=repository, clock=CLOCK)
+    original = path.read_bytes()
+    path.write_bytes(original + b'{"checksum":"incomplete"')
+    WorkItemRepository(path)
+    assert path.read_bytes() == original

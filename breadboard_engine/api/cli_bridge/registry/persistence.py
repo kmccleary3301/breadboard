@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import (
@@ -15,6 +16,7 @@ from typing import (
 
 from breadboard.product.runtime.artifacts import ArtifactRef
 
+from breadboard.product.runtime.events import ProcessLock
 from ..events import EventType, SessionEvent
 from ..models import (
     SessionStatus,
@@ -214,19 +216,30 @@ class PersistenceMixin:
 
     async def create(self, record: SessionRecord) -> SessionRecord:
         async with self._lock:
-            self._records[record.session_id] = record
-            self._persist_record_locked(record)
+            with self._record_file_lock(record.session_id):
+                self._records[record.session_id] = record
+                self._persist_record_locked(record)
         return record
 
     async def get(self, session_id: str) -> Optional[SessionRecord]:
         async with self._lock:
-            return self._records.get(session_id)
+            record = self._records.get(session_id)
+            if record is None or self._state_root is None:
+                return record
+            metadata = record.metadata if isinstance(record.metadata, dict) else {}
+            require_disk = record.loaded_from_retained_state or isinstance(metadata.get("durable_child"), dict) or isinstance(metadata.get("durable_parent_cancellation"), dict)
+            try:
+                with self._record_file_lock(session_id):
+                    return self._refresh_record_from_disk_locked(session_id, record, require_disk=require_disk)
+            except SessionRecordDeletedError:
+                self._records.pop(session_id, None)
+                return None
 
     async def resolve_session_id(self, candidate: str) -> str | None:
         """Return the canonical stored id for a case-insensitive candidate."""
-
         folded = candidate.casefold()
         async with self._lock:
+            self._refresh_records_from_disk_locked()
             return next(
                 (
                     session_id
@@ -239,25 +252,29 @@ class PersistenceMixin:
 
     async def records(self) -> list[SessionRecord]:
         async with self._lock:
+            self._refresh_records_from_disk_locked()
             return list(self._records.values())
-
     async def list(self) -> Iterable[SessionSummary]:
         async with self._lock:
+            self._refresh_records_from_disk_locked()
             return [record.to_summary() for record in self._records.values()]
-
     async def update_status(self, session_id: str, status: SessionStatus) -> None:
         async with self._lock:
-            record = self._records.get(session_id)
-            if not record:
-                return
-            if (
-                record.product_session is not None
-                and status is not record.projected_status()
-            ):
-                raise RuntimeError("bridge status disagrees with product Session")
-            record.status = status
-            record.last_activity_at = _utcnow()
-            self._persist_record_locked(record)
+            with self._record_file_lock(session_id):
+                record = self._records.get(session_id)
+                if not record:
+                    return
+                metadata = record.metadata if isinstance(record.metadata, dict) else {}
+                require_disk = record.loaded_from_retained_state or isinstance(metadata.get("durable_child"), dict) or isinstance(metadata.get("durable_parent_cancellation"), dict)
+                record = self._refresh_record_from_disk_locked(session_id, record, require_disk=require_disk)
+                if (
+                    record.product_session is not None
+                    and status is not record.projected_status()
+                ):
+                    raise RuntimeError("bridge status disagrees with product Session")
+                record.status = status
+                record.last_activity_at = _utcnow()
+                self._persist_record_locked(record)
 
     async def update_metadata(
         self,
@@ -269,36 +286,56 @@ class PersistenceMixin:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         async with self._lock:
-            record = self._records.get(session_id)
-            if not record:
-                return
-            previous = (
-                record.logging_dir,
-                record.completion_summary,
-                record.reward_summary,
-                record.metadata,
-                record.last_activity_at,
-            )
-            if logging_dir:
-                record.logging_dir = logging_dir
-            if completion_summary is not None:
-                record.completion_summary = completion_summary
-            if reward_summary is not None:
-                record.reward_summary = reward_summary
-            if metadata is not None:
-                record.metadata = metadata
-            record.last_activity_at = _utcnow()
-            try:
-                self._persist_record_locked(record)
-            except Exception:
-                (
+            with self._record_file_lock(session_id):
+                record = self._records.get(session_id)
+                if not record:
+                    return
+                current_metadata = record.metadata if isinstance(record.metadata, dict) else {}
+                require_disk = record.loaded_from_retained_state or isinstance(current_metadata.get("durable_child"), dict) or isinstance(current_metadata.get("durable_parent_cancellation"), dict)
+                record = self._refresh_record_from_disk_locked(session_id, record, require_disk=require_disk)
+                previous = (
                     record.logging_dir,
                     record.completion_summary,
                     record.reward_summary,
                     record.metadata,
                     record.last_activity_at,
-                ) = previous
-                raise
+                )
+                durable_child = (record.metadata or {}).get("durable_child")
+                durable_parent_cancellation = (record.metadata or {}).get(
+                    "durable_parent_cancellation"
+                )
+                if logging_dir:
+                    record.logging_dir = logging_dir
+                if completion_summary is not None:
+                    record.completion_summary = completion_summary
+                if reward_summary is not None:
+                    record.reward_summary = reward_summary
+                if metadata is not None:
+                    replacement_metadata = dict(metadata)
+                    if isinstance(durable_child, dict):
+                        replacement_metadata["durable_child"] = dict(durable_child)
+                    if (
+                        "durable_parent_cancellation" not in replacement_metadata
+                        and isinstance(durable_parent_cancellation, dict)
+                    ):
+                        replacement_metadata["durable_parent_cancellation"] = dict(
+                            durable_parent_cancellation
+                        )
+                    if replacement_metadata.get("durable_parent_cancellation") is None:
+                        replacement_metadata.pop("durable_parent_cancellation", None)
+                    record.metadata = replacement_metadata
+                record.last_activity_at = _utcnow()
+                try:
+                    self._persist_record_locked(record)
+                except Exception:
+                    (
+                        record.logging_dir,
+                        record.completion_summary,
+                        record.reward_summary,
+                        record.metadata,
+                        record.last_activity_at,
+                    ) = previous
+                    raise
     async def update_durable_child(
         self,
         session_id: str,
@@ -308,39 +345,53 @@ class PersistenceMixin:
     ) -> None:
         """CAS-update private child coordination retained on a SessionRecord."""
         async with self._lock:
-            record = self._records.get(session_id)
-            if record is None:
-                raise KeyError(f"session {session_id} is not retained")
-            metadata = dict(record.metadata or {})
-            current = metadata.get("durable_child")
-            actual_revision = (
-                int(current.get("revision", 0))
-                if isinstance(current, dict)
-                else 0
-            )
-            if actual_revision != expected_revision:
-                raise RuntimeError(
-                    f"stale durable child revision: expected {expected_revision}, actual {actual_revision}"
+            with self._record_file_lock(session_id):
+                record = self._records.get(session_id)
+                if record is None:
+                    raise KeyError(f"session {session_id} is not retained")
+                record = self._refresh_record_from_disk_locked(session_id, record, require_disk=True)
+                metadata = dict(record.metadata or {})
+                current = metadata.get("durable_child")
+                if not isinstance(current, dict):
+                    raise RuntimeError("session has no retained durable child state")
+                actual_revision = int(current.get("revision", 0))
+                if actual_revision != expected_revision:
+                    raise RuntimeError(
+                        f"stale durable child revision: expected {expected_revision}, actual {actual_revision}"
+                    )
+                immutable = (
+                    "child_session_id",
+                    "child_work_item_id",
+                    "parent_session_id",
+                    "root_session_id",
+                    "parent_work_item_id",
+                    "recovery_ref",
+                    "adapter_family",
                 )
-            metadata["durable_child"] = dict(child_state)
-            previous = record.metadata
-            record.metadata = metadata
-            record.last_activity_at = _utcnow()
-            try:
-                self._persist_record_locked(record)
-            except Exception:
-                record.metadata = previous
-                raise
+                for field_name in immutable:
+                    expected_value = session_id if field_name == "child_session_id" else current.get(field_name)
+                    if child_state.get(field_name) != expected_value:
+                        raise ValueError(f"durable child identity field is immutable: {field_name}")
+                metadata["durable_child"] = dict(child_state)
+                previous = record.metadata
+                record.metadata = metadata
+                record.last_activity_at = _utcnow()
+                try:
+                    self._persist_record_locked(record)
+                except Exception:
+                    record.metadata = previous
+                    raise
 
     async def delete(self, session_id: str) -> None:
         async with self._lock:
-            self._records.pop(session_id, None)
-            path = self._state_path(session_id)
-            if path is not None:
-                try:
-                    path.unlink()
-                except FileNotFoundError:
-                    pass
+            with self._record_file_lock(session_id):
+                self._records.pop(session_id, None)
+                path = self._state_path(session_id)
+                if path is not None:
+                    try:
+                        path.unlink()
+                    except FileNotFoundError:
+                        pass
 
     async def persist(
         self,
@@ -350,69 +401,185 @@ class PersistenceMixin:
         cursor_event: SessionEvent | None = None,
     ) -> None:
         async with self._lock:
-            if self._records.get(record.session_id) is not record:
-                raise SessionRecordDeletedError(
-                    f"session {record.session_id} was deleted before persistence"
+            with self._record_file_lock(record.session_id):
+                state_path = self._state_path(record.session_id)
+                metadata = record.metadata if isinstance(record.metadata, dict) else {}
+                disk_authority = (
+                    record.loaded_from_retained_state
+                    or isinstance(metadata.get("durable_child"), dict)
+                    or isinstance(metadata.get("durable_parent_cancellation"), dict)
                 )
-            if terminal_event is not None and self._state_root is None:
-                raise RuntimeError("durable terminal retention is unavailable")
-            head_event = terminal_event or cursor_event
-            resolution_turn: TurnRecord | None = None
-            resolution_was_committed = False
-            if terminal_event is not None and terminal_event.turn_id is not None:
-                resolution_turn = record.turns_by_id.get(terminal_event.turn_id)
-                if resolution_turn is None or resolution_turn.terminal_outcome is None:
-                    raise RuntimeError("terminal event does not resolve an admitted turn")
-                resolution_was_committed = resolution_turn.terminal_resolution_committed
-
-            previous_event_seq = record.event_seq
-            previous_event_seq_value = head_event.seq if head_event is not None else None
-            if head_event is not None:
-                if head_event.seq is None:
-                    record.event_seq += 1
-                    head_event.seq = record.event_seq
-                else:
-                    record.event_seq = max(record.event_seq, int(head_event.seq))
-            candidate = (
-                self._retained_terminal_envelope(terminal_event)
-                if terminal_event is not None
-                else None
-            )
-            retained: Dict[str, Any] | None = None
-            previous_replay_head_sequence = record.replay_head_sequence
-            previous_replay_head_event_id = record.replay_head_event_id
-            if head_event is not None:
-                record.replay_head_sequence = int(head_event.seq)
-                record.replay_head_event_id = head_event.event_id
-            if candidate is not None and not any(
-                item.get("id") == candidate.get("id")
-                for item in record.terminal_event_envelopes
-            ):
-                retained = candidate
-                record.terminal_event_envelopes.append(candidate)
-            if resolution_turn is not None:
-                resolution_turn.terminal_resolution_committed = True
-            try:
-                self._persist_record_locked(record)
-            except Exception:
-                record.event_seq = previous_event_seq
-                if head_event is not None:
-                    head_event.seq = previous_event_seq_value
-                record.replay_head_sequence = previous_replay_head_sequence
-                record.replay_head_event_id = previous_replay_head_event_id
-                if retained is not None:
-                    record.terminal_event_envelopes.remove(retained)
-                if resolution_turn is not None:
-                    resolution_turn.terminal_resolution_committed = (
-                        resolution_was_committed
+                if disk_authority and (state_path is None or not state_path.exists()):
+                    raise SessionRecordDeletedError(
+                        f"session {record.session_id} was deleted before persistence"
                     )
-                raise
+                if disk_authority and self._records.get(record.session_id) is not record:
+                    raise SessionRecordDeletedError(
+                        f"session {record.session_id} was deleted before persistence"
+                    )
+                self._merge_durable_child_from_disk_locked(record, require_disk=disk_authority)
+                if terminal_event is not None and self._state_root is None:
+                    raise RuntimeError("durable terminal retention is unavailable")
+                head_event = terminal_event or cursor_event
+                resolution_turn: TurnRecord | None = None
+                resolution_was_committed = False
+                if terminal_event is not None and terminal_event.turn_id is not None:
+                    resolution_turn = record.turns_by_id.get(terminal_event.turn_id)
+                    if resolution_turn is None or resolution_turn.terminal_outcome is None:
+                        raise RuntimeError("terminal event does not resolve an admitted turn")
+                    resolution_was_committed = resolution_turn.terminal_resolution_committed
+                previous_event_seq = record.event_seq
+                previous_event_seq_value = head_event.seq if head_event is not None else None
+                if head_event is not None:
+                    if head_event.seq is None:
+                        record.event_seq += 1
+                        head_event.seq = record.event_seq
+                    else:
+                        record.event_seq = max(record.event_seq, int(head_event.seq))
+                candidate = self._retained_terminal_envelope(terminal_event) if terminal_event is not None else None
+                retained: Dict[str, Any] | None = None
+                previous_replay_head_sequence = record.replay_head_sequence
+                previous_replay_head_event_id = record.replay_head_event_id
+                if head_event is not None:
+                    record.replay_head_sequence = int(head_event.seq)
+                    record.replay_head_event_id = head_event.event_id
+                if candidate is not None and not any(item.get("id") == candidate.get("id") for item in record.terminal_event_envelopes):
+                    retained = candidate
+                    record.terminal_event_envelopes.append(candidate)
+                if resolution_turn is not None:
+                    resolution_turn.terminal_resolution_committed = True
+                try:
+                    self._persist_record_locked(record)
+                except Exception:
+                    record.event_seq = previous_event_seq
+                    if head_event is not None:
+                        head_event.seq = previous_event_seq_value
+                    record.replay_head_sequence = previous_replay_head_sequence
+                    record.replay_head_event_id = previous_replay_head_event_id
+                    if retained is not None:
+                        record.terminal_event_envelopes.remove(retained)
+                    if resolution_turn is not None:
+                        resolution_turn.terminal_resolution_committed = resolution_was_committed
+                    raise
 
     def _state_path(self, session_id: str) -> Path | None:
         if self._state_root is None:
             return None
         filename = hashlib.sha256(session_id.encode("utf-8")).hexdigest() + ".json"
         return self._state_root / filename
+    @contextmanager
+    def _record_file_lock(self, session_id: str):
+        state_path = self._state_path(session_id)
+        if state_path is None:
+            yield
+            return
+        lock_path = state_path.with_suffix(".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with ProcessLock(lock_path):
+            yield
+    def _refresh_records_from_disk_locked(self) -> None:
+        if self._state_root is None:
+            return
+        for path in sorted(self._state_root.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                refreshed = self._deserialize_record(payload)
+            except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+                continue
+            current = self._records.get(refreshed.session_id)
+            if current is not None:
+                self._apply_durable_fields(current, refreshed)
+            else:
+                self._records[refreshed.session_id] = refreshed
+        for session_id, record in tuple(self._records.items()):
+            metadata = record.metadata if isinstance(record.metadata, dict) else {}
+            if not (record.loaded_from_retained_state or isinstance(metadata.get("durable_child"), dict) or isinstance(metadata.get("durable_parent_cancellation"), dict)):
+                continue
+            path = self._state_path(session_id)
+            if path is not None and not path.exists():
+                self._records.pop(session_id, None)
+
+    @staticmethod
+    def _apply_durable_fields(target: SessionRecord, source: SessionRecord) -> None:
+        target.status = source.status
+        target.created_at = source.created_at
+        target.last_activity_at = source.last_activity_at
+        target.logging_dir = source.logging_dir
+        previous_metadata = target.metadata if isinstance(target.metadata, dict) else {}
+        target.metadata = dict(source.metadata or {})
+        for key, value in previous_metadata.items():
+            if key not in target.metadata and key not in {
+                "durable_child",
+                "durable_parent_cancellation",
+            }:
+                target.metadata[key] = value
+        target.reward_summary = source.reward_summary
+        target.event_seq = source.event_seq
+        target.replay_history_partial = source.replay_history_partial
+        target.replay_head_event_id = source.replay_head_event_id
+        target.replay_head_sequence = source.replay_head_sequence
+        target.terminal_event_envelopes[:] = source.terminal_event_envelopes
+    def _merge_durable_child_from_disk_locked(
+        self,
+        record: SessionRecord,
+        *,
+        require_disk: bool = False,
+    ) -> None:
+        path = self._state_path(record.session_id)
+        if path is None:
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            disk_record = self._deserialize_record(payload)
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
+            if require_disk:
+                raise SessionRecordDeletedError(
+                    f"session {record.session_id} retained state is unreadable"
+                ) from error
+            return
+        metadata = dict(record.metadata or {})
+        disk_child = (disk_record.metadata or {}).get("durable_child")
+        local_child = metadata.get("durable_child")
+        disk_revision = int(disk_child.get("revision", -1)) if isinstance(disk_child, dict) else -1
+        local_revision = int(local_child.get("revision", -1)) if isinstance(local_child, dict) else -1
+        if isinstance(disk_child, dict) and disk_revision > local_revision:
+            metadata["durable_child"] = dict(disk_child)
+        disk_parent_cancellation = (disk_record.metadata or {}).get("durable_parent_cancellation")
+        if isinstance(disk_parent_cancellation, dict):
+            metadata["durable_parent_cancellation"] = dict(disk_parent_cancellation)
+        elif "durable_parent_cancellation" in metadata:
+            metadata.pop("durable_parent_cancellation", None)
+        record.metadata = metadata
+
+
+    def _refresh_record_from_disk_locked(
+        self,
+        session_id: str,
+        record: SessionRecord,
+        *,
+        require_disk: bool = False,
+    ) -> SessionRecord:
+        path = self._state_path(session_id)
+        if path is None:
+            return record
+        if not path.exists():
+            if require_disk:
+                raise SessionRecordDeletedError(
+                    f"session {session_id} was deleted before persistence"
+                )
+            return record
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            refreshed = self._deserialize_record(payload)
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
+            if require_disk:
+                raise SessionRecordDeletedError(
+                    f"session {session_id} retained state is unreadable"
+                ) from error
+            return record
+        self._apply_durable_fields(record, refreshed)
+        self._records[session_id] = record
+        return record
 
     def _persist_record_locked(self, record: SessionRecord) -> None:
         path = self._state_path(record.session_id)
@@ -536,6 +703,9 @@ class PersistenceMixin:
         durable_child = metadata.get("durable_child")
         if not isinstance(durable_child, dict):
             durable_child = None
+        parent_cancellation = metadata.get("durable_parent_cancellation")
+        if not isinstance(parent_cancellation, dict):
+            parent_cancellation = None
         durable_head_sequence, durable_head_event_id = self._durable_replay_head(record)
         return {
             "schema_version": _STATE_SCHEMA_VERSION,
@@ -578,6 +748,7 @@ class PersistenceMixin:
                     metadata.get("skills_selection")
                 ),
                 **({"durable_child": durable_child} if durable_child is not None else {}),
+                **({"durable_parent_cancellation": parent_cancellation} if parent_cancellation is not None else {}),
             },
             "turns": turns,
             "submissions": submissions,
@@ -716,6 +887,11 @@ class PersistenceMixin:
             if not isinstance(durable_child, dict):
                 raise ValueError("retained durable child metadata is invalid")
             metadata["durable_child"] = dict(durable_child)
+        parent_cancellation = session.get("durable_parent_cancellation")
+        if parent_cancellation is not None:
+            if not isinstance(parent_cancellation, dict):
+                raise ValueError("retained parent cancellation metadata is invalid")
+            metadata["durable_parent_cancellation"] = dict(parent_cancellation)
         if model is not None:
             metadata["model"] = model
         mode = session.get("mode")

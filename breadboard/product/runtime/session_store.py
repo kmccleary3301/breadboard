@@ -232,6 +232,20 @@ def _session_lock_path(workspace: Path, session_id: str) -> Path:
     if os.name != "nt":
         os.chmod(locks, 0o700)
     return locks / f"{digest}.lock"
+def _session_transition_lock_path(workspace: Path, session_id: str) -> Path:
+    lock_path = _session_lock_path(workspace, session_id)
+    return lock_path.with_name(f"{lock_path.stem}.transition.lock")
+
+
+@contextmanager
+def _session_transition_guard(
+    workspace: str | Path,
+    session_id: str,
+) -> Iterator[None]:
+    root = _workspace_root(workspace)
+    validate_session_id(session_id)
+    with ProcessLock(_session_transition_lock_path(root, session_id)):
+        yield
 
 
 @contextmanager
@@ -1666,14 +1680,13 @@ def bootstrap_local_session_authority(
         return _load_anchored(root, session_id, bootstrap_authority=True)
 
 
-def mutate_session(
+def _mutate_session_locked(
     workspace: str | Path,
     session_id: str,
     mutation: Callable[[Session], _T],
     *,
     expected_session_directory_identity: SessionDirectoryIdentity | None = None,
 ) -> tuple[_T, Path]:
-    """Run one domain mutation while holding the durable session guard."""
     with _session_guard(workspace, session_id, create=False) as root:
         _recover_pending_intents(root, session_id)
         session, event_path = _load_anchored(root, session_id)
@@ -1687,6 +1700,14 @@ def mutate_session(
         return result, event_path
 
 
+def mutate_session(
+    workspace: str | Path,
+    session_id: str,
+    mutation: Callable[[Session], _T],
+) -> tuple[_T, Path]:
+    """Run one domain mutation while holding the durable session guard."""
+    with _session_transition_guard(workspace, session_id):
+        return _mutate_session_locked(workspace, session_id, mutation)
 def create_session(
     workspace: str | Path,
     session: Session,

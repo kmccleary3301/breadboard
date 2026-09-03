@@ -33,9 +33,12 @@ class JobManager:
         owner_agent: str,
         kind: str,
         task_descriptor: Optional[Dict[str, Any]] = None,
+        job_id: Optional[str] = None,
     ) -> JobRef:
         with self._lock:
-            job_id = uuid.uuid4().hex[:12]
+            job_id = str(job_id or uuid.uuid4().hex[:12])
+            if job_id in self._jobs:
+                raise ValueError(f"job id already exists: {job_id}")
             seq = self._next_seq
             self._next_seq += 1
             job = JobRef(
@@ -64,8 +67,12 @@ class JobManager:
             job = self._jobs.get(job_id)
             if job is None:
                 return None
-            if job.state in {"completed", "failed", "killed"} and state != job.state:
-                return None
+            if job.state in {"completed", "failed", "killed"}:
+                if state != job.state:
+                    return None
+                if result_payload is not None and job.result_payload != dict(result_payload):
+                    return None
+                return job
             job.state = state
             if result_payload is not None:
                 job.result_payload = dict(result_payload)

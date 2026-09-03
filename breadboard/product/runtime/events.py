@@ -345,24 +345,28 @@ def _assistant_payload(
     return payload
 class Session:
     """Lifecycle owner; adapters may add only validated, minimal runtime observations."""
-    def __init__(self, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> None:
-        self._transition_lock = RLock(); self._appending = False; self._events = list(events); self._clock = clock if clock is not None else SystemClock(); self._sink = sink if sink is not None else NullEventSink(); self._terminal_annotation_commit: Callable[[AnnotationRecord], tuple[KernelEvent, ...]] | None = None; self._view = rebuild(self._events)
+    def __init__(self, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None, task: str | None = None) -> None:
+        if task is not None and (not isinstance(task, str) or not task.strip()): raise ValueError("task must be non-empty when retained")
+        self._task = task; self._transition_lock = RLock(); self._appending = False; self._events = list(events); self._clock = clock if clock is not None else SystemClock(); self._sink = sink if sink is not None else NullEventSink(); self._terminal_annotation_commit: Callable[[AnnotationRecord], tuple[KernelEvent, ...]] | None = None; self._view = rebuild(self._events)
     @classmethod
     def start(cls, lock: EffectiveHarnessLock, task: str, *, session_id: str | None = None, clock: Clock | None = None, ids: IdSource | None = None, sink: EventSink | None = None) -> "Session":
         if not isinstance(lock, EffectiveHarnessLock): raise TypeError("Session.start requires an EffectiveHarnessLock")
         if not isinstance(task, str) or not task.strip(): raise ValueError("task must be non-empty")
         active_clock, active_ids = clock if clock is not None else SystemClock(), ids if ids is not None else UUIDSource(); graph_hash, active_session_id = _graph_hash(lock), session_id if session_id is not None else active_ids.new_id()
         event = KernelEvent.create(active_session_id, 1, "session.started", active_clock.now(), {"effective_lock_hash": graph_hash, "task_hash": _hash(task)}); active_sink = sink if sink is not None else NullEventSink(); active_sink.append(event)
-        return cls((event,), clock=active_clock, sink=active_sink)
+        return cls((event,), clock=active_clock, sink=active_sink, task=task)
     @classmethod
-    def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> "Session":
+    def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None, task: str | None = None) -> "Session":
         try:
-            return cls(events, clock=clock, sink=sink)
+            return cls(events, clock=clock, sink=sink, task=task)
         except (AttributeError, TypeError, ValueError) as error:
             raise ReplayError("invalid_event_stream", str(error)) from error
     @property
     def events(self) -> tuple[KernelEvent, ...]:
         with self._transition_lock: return tuple(self._events)
+    @property
+    def task(self) -> str | None:
+        return self._task
     @property
     def read_model(self) -> SessionView:
         with self._transition_lock: return self._view

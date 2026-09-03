@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Sequence
 
 import ray
 
@@ -30,6 +30,7 @@ class OpenCodeAgent:
         sandbox_image: str = "python-dev:latest",
         network: str = "none",
         protected_paths: Optional[Sequence[str]] = None,
+        artifact_store_root: str | None = None,
     ) -> None:
         captured = tuple(
             str(path)
@@ -41,6 +42,8 @@ class OpenCodeAgent:
         )
         purge_provider_credentials()
         self.session_id = str(uuid.uuid4())
+        self.artifact_store_root = artifact_store_root or f"{workspace}/.breadboard/artifacts"
+        self.workspace = workspace
         self.time_created = _now_ms()
         self.lsp = LSPManager.remote(protected_paths=captured)
         ray.get(self.lsp.register_root.remote(workspace))
@@ -52,12 +55,26 @@ class OpenCodeAgent:
         )
         self.messages: List[Dict[str, Any]] = []
         self.storage_root: Optional[str] = None
+        self.state = "accepted"
+        self.result_payload: Optional[Dict[str, Any]] = None
+        self.error: Optional[str] = None
+
+    def get_state(self) -> str:
+        return self.state
+
+    def get_result(self) -> Optional[Dict[str, Any]]:
+        return dict(self.result_payload) if self.result_payload is not None else None
+
+    def cancel(self) -> str:
+        self.state = "killed"
+        return self.state
 
     def get_session_info(self) -> Dict[str, Any]:
         return {
             "id": self.session_id,
             "created": self.time_created,
             "messages": len(self.messages),
+            "state": self.state,
         }
 
     def run_message(self, parts: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -68,20 +85,33 @@ class OpenCodeAgent:
         Returns a response with parts, where tool results appear as
         {type: 'tool_result', name, output, metadata}.
         """
-        response_parts: List[Dict[str, Any]] = []
-        for p in parts:
-            if p.get("type") == "text":
-                response_parts.append({"type": "echo", "text": p.get("text", "")})
-                continue
-            if p.get("type") == "tool_call":
-                name = p.get("name")
-                args = p.get("args", {})
-                result = self._execute_tool(name, args)
-                response_parts.append({"type": "tool_result", "name": name, **result})
-                continue
-        msg = {"time": _now_ms(), "request": parts, "response": response_parts}
-        self.messages.append(msg)
-        return msg
+        if self.state == "killed":
+            raise RuntimeError("agent has been canceled")
+        self.state = "running"
+        try:
+            response_parts: List[Dict[str, Any]] = []
+            for p in parts:
+                if p.get("type") == "text":
+                    response_parts.append({"type": "echo", "text": p.get("text", "")})
+                    continue
+                if p.get("type") == "tool_call":
+                    name = p.get("name")
+                    args = p.get("args", {})
+                    result = self._execute_tool(name, args)
+                    response_parts.append({"type": "tool_result", "name": name, **result})
+                    continue
+            msg = {"time": _now_ms(), "request": parts, "response": response_parts}
+            self.messages.append(msg)
+            from breadboard.product.runtime.artifacts import ArtifactStore
+            output = json.dumps(msg, sort_keys=True, separators=(",", ":")).encode()
+            artifact = ArtifactStore(self.artifact_store_root).put(output, media_type="application/json")
+            self.result_payload = {"artifact_ref": artifact.as_dict()}
+            self.state = "completed"
+            return msg
+        except BaseException as error:
+            self.error = type(error).__name__
+            self.state = "failed"
+            raise
 
     def enable_storage(self, storage_root: str) -> None:
         from breadboard.storage import JSONStorage
