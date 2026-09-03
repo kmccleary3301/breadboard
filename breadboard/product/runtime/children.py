@@ -306,6 +306,8 @@ class DurableChildFactory:
         with cls._owner_locks_guard:
             return cls._owner_locks.setdefault(key, threading.RLock())
     def cancel_tree(self, *, parent_session_id: str, parent_work_item_id: str, reason: str = "operator request") -> tuple[ChildState, ...]:
+        if type(reason) is not str or not reason.strip():
+            raise ValueError("reason must be a non-empty string")
         with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(parent_session_id, parent_session_id):
             return self._cancel_tree(parent_session_id=parent_session_id, parent_work_item_id=parent_work_item_id, reason=reason)
     def _cancel_tree(self, *, parent_session_id: str, parent_work_item_id: str, reason: str = "operator request") -> tuple[ChildState, ...]:
@@ -350,14 +352,46 @@ class DurableChildFactory:
             policy = parent_work.read_model.cancellation_policy
             if policy.mode == "never" or "operator" not in policy.cancellable_by:
                 raise ChildError("operator is not authorized to cancel the parent Work Item")
+            current_attempt = parent_work.read_model.current_attempt
+            if (
+                current_attempt is not None
+                and policy.cleanup == "checkpoint_then_stop"
+                and current_attempt.checkpoint_ref is None
+            ):
+                raise ValueError("checkpoint_then_stop requires a current checkpoint")
         if any(state.settlement is not None for state in descendants if not state.terminal_count):
             raise ExpectedRevisionConflict("child settlement is already reserved")
         for state in descendants:
             if state.terminal_count or state.cancellation_requested:
                 continue
-            policy = CancellationPolicy.from_dict(state.child_spec["cancellation_policy"])
+            try:
+                child = WorkItem.restore(
+                    self.repository,
+                    state.child_work_item_id,
+                    clock=self.clock,
+                    ids=self.ids,
+                )
+            except (FileNotFoundError, ValueError):
+                child = None
+            if child is not None and child.read_model.status in _TERMINAL:
+                continue
+            policy = (
+                child.read_model.cancellation_policy
+                if child is not None
+                else CancellationPolicy.from_dict(state.child_spec["cancellation_policy"])
+            )
             if policy.mode == "never" or "operator" not in policy.cancellable_by:
                 raise ChildError("operator is not authorized to cancel a child Work Item")
+            if child is not None:
+                current_attempt = child.read_model.current_attempt
+                if (
+                    current_attempt is not None
+                    and policy.cleanup == "checkpoint_then_stop"
+                    and current_attempt.checkpoint_ref is None
+                ):
+                    raise ValueError(
+                        "checkpoint_then_stop requires a current checkpoint"
+                    )
         parent_record = self._registry("get", parent_session_id)
         parent_metadata = dict(parent_record.metadata or {}) if parent_record is not None else {}
         parent_metadata["durable_parent_cancellation"] = {
@@ -424,16 +458,23 @@ class DurableChildFactory:
                 clock=self.clock,
                 ids=self.ids,
             )
-            if child.read_model.status in _TERMINAL:
-                adopted.append(self._adopt_terminal_work_item(state, child))
+            if child.read_model.status in _TERMINAL and not state.cancellation_requested:
+                adopted.append(self._adopt_terminal_work_item(state, child, allow_cancellation_intent=True))
             else:
                 remaining_descendants.append(state)
         descendants = remaining_descendants
         pending = []
         for state in descendants:
-            if state.terminal_count or state.cancellation_requested:
+            if state.terminal_count:
                 continue
-            pending.append(self._cas(state, status="cancel_requested", cancellation_requested=True, cancellation_reason=reason))
+            if not state.cancellation_requested:
+                state = self._cas(
+                    state,
+                    status="cancel_requested",
+                    cancellation_requested=True,
+                    cancellation_reason=reason,
+                )
+            pending.append(state)
         if parent_work.read_model.status not in _TERMINAL:
             parent_work.cancel("operator", reason)
         if parent.read_model.status not in _TERMINAL:
@@ -820,6 +861,8 @@ class DurableChildFactory:
         return self._cas(state, result_prepared=True, result_refs=refs)
 
     def cancel(self, child_session_id: str, *, expected_revision: int, reason: str = "operator request") -> ChildState:
+        if type(reason) is not str or not reason.strip():
+            raise ValueError("reason must be a non-empty string")
         parent_work_item_id = self._record_state(child_session_id).parent_work_item_id
         with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id):
             return self._cancel(child_session_id, expected_revision=expected_revision, reason=reason)
@@ -846,6 +889,13 @@ class DurableChildFactory:
         policy = child.read_model.cancellation_policy
         if policy.mode == "never" or "operator" not in policy.cancellable_by:
             raise ChildError("operator is not authorized to cancel this Work Item")
+        current_attempt = child.read_model.current_attempt
+        if (
+            current_attempt is not None
+            and policy.cleanup == "checkpoint_then_stop"
+            and current_attempt.checkpoint_ref is None
+        ):
+            raise ValueError("checkpoint_then_stop requires a current checkpoint")
         if child.read_model.current_attempt is None:
             state = self._cas(
                 state,
@@ -888,13 +938,22 @@ class DurableChildFactory:
             raise ExpectedRevisionConflict("child settlement is already reserved")
         if state.cancellation_requested and outcome != "canceled" and not _allow_cancellation_intent:
             raise LateResultRejected("late child result arrived after cancellation intent")
+        if outcome != "canceled" and not _allow_cancellation_intent:
+            parent_record = self._registry("get", state.parent_session_id)
+            parent_metadata = (
+                parent_record.metadata
+                if parent_record is not None and isinstance(parent_record.metadata, Mapping)
+                else {}
+            )
+            if isinstance(parent_metadata.get("durable_parent_cancellation"), Mapping):
+                raise LateResultRejected("child settlement cannot follow parent cancellation")
         if outcome not in _TERMINAL:
             raise ValueError("child outcome must be completed, failed, or canceled")
         if outcome == "completed" and not state.result_prepared:
             raise PreparationRequired("result/artifact preparation must precede settlement")
         if state.revision != expected_revision:
             raise ExpectedRevisionConflict(f"stale child revision: expected {expected_revision}, actual {state.revision}")
-        if result_refs and tuple(result_refs) != state.result_refs:
+        if result_refs is not None and tuple(result_refs) != state.result_refs:
             raise ExpectedRevisionConflict("settlement result refs do not match prepared refs")
         reserved = self._cas(state, settlement={"outcome": outcome, "result_refs": list(state.result_refs)})
         return self._settle(reserved, outcome, state.result_refs, allow_unprepared=outcome != "completed")
@@ -1000,6 +1059,7 @@ class DurableChildFactory:
                         "task_hash": state.child_spec["task_hash"],
                     },
                     "workspace": str(self.workspace),
+                    "artifact_store_root": str(self.artifacts._root),
                 }
             }
         return target
@@ -1308,6 +1368,12 @@ class DurableChildFactory:
             if target is not None:
                 state = self._publish_target(state, target)
             else:
+                try:
+                    observed = str(adapter.observe(state.execution_target)).lower()
+                except BaseException:
+                    return state
+                if observed != "absent":
+                    return state
                 state = self._launch(state, activation, self._spec(state))
         if state.status == "running":
             try:
@@ -1327,6 +1393,8 @@ class DurableChildFactory:
                 return state
             return self._settle(state, "canceled", (), allow_unprepared=True)
         observed = str(self.adapters[state.adapter_family].observe(state.execution_target)).lower()
+        if observed == "pending":
+            return state
         if observed in {"running", "started", "live", "accepted"}:
             adapter = self.adapters[state.adapter_family]
             release_pending = getattr(adapter, "release_pending", None)
@@ -1368,6 +1436,11 @@ class DurableChildFactory:
                 state = self.prepare_result(child_session_id, expected_revision=state.revision, attempt_id=state.attempt_id)
             return self.settle(child_session_id, expected_revision=state.revision, outcome="completed", result_refs=state.result_refs, attempt_id=state.attempt_id)
         child = WorkItem.restore(self.repository, state.child_work_item_id, clock=self.clock, ids=self.ids)
+        adapter = self.adapters[state.adapter_family]
+        if observed == "absent" and getattr(adapter, "absence_is_terminal", False):
+            if child.read_model.status in _TERMINAL:
+                return self._adopt_terminal_work_item(state, child)
+            return self._settle(state, "failed", (), allow_unprepared=True)
         return self._retry(state, child)
     def _spec(self, state: ChildState) -> ChildSpec:
         value = state.child_spec
@@ -1761,26 +1834,30 @@ class RayJobAdapter:
             if job is not None and job.state not in {"failed", "killed"}:
                 self.orchestrator.job_manager.update_state(job_id, "failed")
             return "absent"
+        if self._invocation_state(actor, self._invocation_id(job_id)) == "missing":
+            return "absent"
         try:
             state = str(self._ray_get(getattr(actor, "get_state", None))).lower()
         except BaseException:
-            self._actors.pop(job_id, None)
-            job = self.orchestrator.job_manager.get(job_id)
-            if job is not None and job.state == "completed":
-                return "completed"
-            if job is not None and job.state not in {"failed", "killed"}:
-                self.orchestrator.job_manager.update_state(job_id, "failed")
-            return "absent"
+            return "pending"
         if state == "completed":
             result = getattr(actor, "get_result", None)
             if result is None:
-                raise ChildError("completed Ray child has no result payload")
+                if job is not None and job.state not in {"failed", "killed"}:
+                    self.orchestrator.job_manager.update_state(job_id, "failed")
+                return "failed"
             result_payload = self._ray_get(result)
             if not isinstance(result_payload, Mapping):
-                raise ChildError("completed Ray child result is not a mapping")
+                if job is not None and job.state not in {"failed", "killed"}:
+                    self.orchestrator.job_manager.update_state(job_id, "failed")
+                return "failed"
             try:
                 durable_payload = self._durably_prepare_result(target, result_payload)
-            except (ChildError, KeyError, OSError, RuntimeError, TypeError, ValueError):
+            except ChildError:
+                if job is not None and job.state not in {"failed", "killed"}:
+                    self.orchestrator.job_manager.update_state(job_id, "failed")
+                return "failed"
+            except (KeyError, OSError, RuntimeError, TypeError, ValueError):
                 return "accepted"
             metadata = target.get("metadata")
             job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
@@ -1811,31 +1888,30 @@ class RayJobAdapter:
             job_data["state"] = "completed"
             job_data["seq"] = marked.seq
             job_data["result_payload"] = dict(payload)
-    def cancel(self, target: Mapping[str, Any]) -> None:
+    def cancel(self, target: Mapping[str, Any]) -> bool:
         job_id = str(target.get("ref", "")).removeprefix("job:")
         job = self.orchestrator.job_manager.get(job_id)
         if job is not None and job.state in {"completed", "failed", "killed"}:
-            return
+            return True
         actor = self._lookup_actor(job_id)
         if actor is not None:
             try:
                 cancel = getattr(actor, "cancel", None)
                 if cancel is not None and not hasattr(cancel, "remote"):
-                    cancel()
-                elif cancel is not None:
-                    import ray
-                    ray.kill(actor, no_restart=True)
+                    if cancel() is False:
+                        return False
                 else:
                     import ray
                     ray.kill(actor, no_restart=True)
             except BaseException:
-                self._actors.pop(job_id, None)
+                return False
         marked = self.orchestrator.job_manager.update_state(job_id, "killed")
         metadata = target.get("metadata")
         job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
         if isinstance(job_data, dict) and marked is not None:
             job_data["state"] = "killed"
             job_data["seq"] = marked.seq
+        return True
 
     def prepare_result(
         self, target: Mapping[str, Any], spec: ChildSpec
@@ -1886,11 +1962,11 @@ class ProcessExecutionAdapter:
     _KILL_TIMEOUT_SECONDS = 0.5
 
     @staticmethod
-    def _group_alive(group: int) -> bool:
+    def _group_alive(group: int) -> bool | None:
         try:
             output = subprocess.check_output(["ps", "-axo", "pgid=,stat="], text=True)
         except (OSError, subprocess.CalledProcessError):
-            return False
+            return None
         for line in output.splitlines():
             fields = line.strip().split()
             if len(fields) < 2:
@@ -1928,12 +2004,16 @@ class ProcessExecutionAdapter:
                 ["ps", "-p", str(pid), "-o", "lstart=,pgid="],
                 text=True,
             ).strip()
-        except (OSError, subprocess.CalledProcessError) as error:
+        except subprocess.CalledProcessError as error:
             raise ProcessLookupError(pid) from error
         fields = raw.rsplit(None, 1)
         if len(fields) != 2:
-            raise ProcessLookupError(pid)
-        return "sha256:" + hashlib.sha256(fields[0].encode()).hexdigest(), int(fields[1])
+            raise RuntimeError(f"process identity inspection returned malformed data for pid {pid}")
+        try:
+            group = int(fields[1])
+        except ValueError as error:
+            raise RuntimeError(f"process identity inspection returned malformed group for pid {pid}") from error
+        return "sha256:" + hashlib.sha256(fields[0].encode()).hexdigest(), group
     def _publish(self, target: ExecutionTarget) -> None:
         return None
     @staticmethod
@@ -1983,21 +2063,59 @@ class ProcessExecutionAdapter:
         target_ref = str(target.get("ref", ""))
         process = self._processes.get(target_ref)
         pid, token, group = target.get("pid"), target.get("start_token"), target.get("process_group_id")
+        if type(group) is not int:
+            if process is not None:
+                return "pending"
+            return "pending" if self._pending_pid(target_ref) is not None else "absent"
+
+        def group_state() -> bool | None:
+            try:
+                return self._group_alive(group)
+            except (OSError, subprocess.CalledProcessError, RuntimeError):
+                return None
+
         if process is not None and process.poll() is not None:
-            if type(group) is int and self._group_alive(group):
-                return "running"
+            alive = group_state()
+            if alive is True:
+                return "pending"
+            if alive is None:
+                return "pending"
             self._processes.pop(target_ref, None)
             return "absent"
-        if type(pid) is not int or type(token) is not str or type(group) is not int:
-            return "absent"
+        if type(pid) is not int or type(token) is not str:
+            return "pending"
         try:
             observed_token, observed_group = self._identity(pid)
+        except ProcessLookupError:
+            alive = group_state()
+            if alive is False:
+                return "absent"
+            return "running" if alive is True else "pending"
+        except (OSError, subprocess.CalledProcessError, RuntimeError):
+            alive = group_state()
+            if alive is False:
+                return "absent"
+            return "running" if alive is True else "pending"
+        if observed_token != token or observed_group != group:
+            return "absent" if group_state() is False else "pending"
+        try:
             state = subprocess.check_output(["ps", "-p", str(pid), "-o", "stat="], text=True).strip()
-        except (OSError, ProcessLookupError, subprocess.CalledProcessError):
-            return "running" if self._group_alive(group) else "absent"
+        except ProcessLookupError:
+            alive = group_state()
+            if alive is False:
+                return "absent"
+            return "running" if alive is True else "pending"
+        except (OSError, subprocess.CalledProcessError, RuntimeError):
+            alive = group_state()
+            if alive is False:
+                return "absent"
+            return "running" if alive is True else "pending"
         if not state or state.startswith("Z"):
-            return "running" if self._group_alive(group) else "absent"
-        return "running" if observed_token == token and observed_group == group else "absent"
+            alive = group_state()
+            if alive is False:
+                return "absent"
+            return "running" if alive is True else "pending"
+        return "running"
     def release_pending(self, target: Mapping[str, Any]) -> bool:
         metadata = target.get("metadata")
         if not isinstance(metadata, Mapping) or metadata.get("launch_phase") != "pending":
@@ -2023,7 +2141,7 @@ class ProcessExecutionAdapter:
                     return None
                 try:
                     pending_token, pending_group = self._identity(pending_pid)
-                except ProcessLookupError:
+                except (OSError, ProcessLookupError, RuntimeError):
                     return None
                 pending_target = {
                     "ref": str(target.get("ref", "")),
@@ -2042,27 +2160,34 @@ class ProcessExecutionAdapter:
                 return None
             try:
                 token, group = self._identity(pid)
-            except ProcessLookupError:
+            except (OSError, ProcessLookupError, RuntimeError):
                 return None
         if self.observe({"pid": pid, "start_token": token, "process_group_id": group}) != "running":
             return None
         return ExecutionTarget(str(target["ref"]), pid, token, group, metadata=dict(target.get("metadata") or {}))
     def cancel(self, target: Mapping[str, Any]) -> bool:
-        if self.observe(target) != "running":
+        observed = self.observe(target)
+        if observed == "absent":
             return True
+        if observed != "running":
+            return False
         group = target.get("process_group_id")
         if type(group) is not int:
-            return True
+            return False
         try:
             os.killpg(group, 15)
-        except (ProcessLookupError, PermissionError):
+        except ProcessLookupError:
             return True
+        except PermissionError:
+            return False
         if self._wait_for_exit(target, self._TERM_TIMEOUT_SECONDS):
             return True
         try:
             os.killpg(group, 9)
-        except (ProcessLookupError, PermissionError):
-            return self._wait_for_exit(target, self._KILL_TIMEOUT_SECONDS)
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            return False
         return self._wait_for_exit(target, self._KILL_TIMEOUT_SECONDS)
 
     def prepare_result(self, target: Mapping[str, Any], spec: ChildSpec) -> bytes | None:

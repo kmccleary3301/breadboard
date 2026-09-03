@@ -2179,9 +2179,12 @@ class SessionService:
             if inspect.isawaitable(reconciled):
                 reconciled = await reconciled
             if (
-                getattr(reconciled, "status", None) == "starting"
-                and not getattr(reconciled, "terminal_count", 0)
+                not getattr(reconciled, "terminal_count", 0)
                 and not isinstance(metadata.get("durable_parent_cancellation"), Mapping)
+                and (
+                    getattr(reconciled, "status", None) == "starting"
+                    or getattr(reconciled, "cancellation_requested", False)
+                )
             ):
                 record.runner = None
                 return
@@ -2205,8 +2208,8 @@ class SessionService:
             else:
                 record.product_session = product
             record.runner = None
-            record.loaded_from_retained_state = False
             if not isinstance(metadata.get("durable_parent_cancellation"), Mapping):
+                record.loaded_from_retained_state = False
                 return
         parent_cancellation = metadata.get("durable_parent_cancellation")
         if record.status in {

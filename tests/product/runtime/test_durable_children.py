@@ -20,6 +20,7 @@ from breadboard.product.runtime.children import (
     ChildError,
     ChildSpec,
     ChildState,
+    DurableChildReconciler,
     DurableChildFactory,
     ExpectedRevisionConflict,
     ExecutionTarget,
@@ -27,6 +28,7 @@ from breadboard.product.runtime.children import (
     PreparationRequired,
     ProcessExecutionAdapter,
     RayJobAdapter,
+    UnavailableChildAdapter,
 )
 from breadboard.product.runtime.artifacts import ArtifactRef, ArtifactStore
 from breadboard.product.runtime.session_store import create_session, load_session, mutate_session
@@ -337,6 +339,305 @@ def test_process_cancel_leaves_recovery_pending_when_exit_unverified(
         "canceled",
         1,
     )
+
+
+def test_pending_child_cancel_reconciles_after_later_exit_once(tmp_path: Path) -> None:
+    class PendingCancelAdapter:
+        family = "pending-cancel"
+
+        def __init__(self) -> None:
+            self.exited = False
+            self.cancel_calls = 0
+
+        def start(self, activation, spec):
+            return ExecutionTarget(activation.execution_target_ref)
+
+        def observe(self, target):
+            return "absent" if self.exited else "running"
+
+        def cancel(self, target):
+            self.cancel_calls += 1
+            return self.exited
+
+        def prepare_result(self, target, spec):
+            return None
+
+    repository = WorkItemRepository(tmp_path / "work-items.jsonl")
+    workspace, repository, parent, registry = _running_parent(tmp_path, repository)
+    adapter = PendingCancelAdapter()
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "pending cancellation"),
+    )
+    state = factory._record_state(activation.child_session_id)
+    requested = factory.cancel(activation.child_session_id, expected_revision=state.revision)
+    assert requested.cancellation_requested is True
+    assert requested.terminal_count == 0
+    adapter.exited = True
+    settled = factory.reconcile(activation.recovery_ref)
+    assert (settled.status, settled.terminal_outcome, settled.terminal_count) == (
+        "canceled",
+        "canceled",
+        1,
+    )
+    assert factory.reconcile(activation.recovery_ref) == settled
+    assert adapter.cancel_calls == 2
+
+
+def test_cancel_checkpoint_policy_refusal_does_not_signal_adapter(tmp_path: Path) -> None:
+    class SignalTrackingAdapter:
+        family = "checkpoint-refusal"
+
+        def __init__(self) -> None:
+            self.cancel_calls = 0
+
+        def start(self, activation, spec):
+            return ExecutionTarget(activation.execution_target_ref)
+
+        def observe(self, target):
+            return "running"
+
+        def cancel(self, target):
+            self.cancel_calls += 1
+            return True
+
+        def prepare_result(self, target, spec):
+            return None
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = SignalTrackingAdapter()
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    spec = ChildSpec(
+        "checkpoint refusal",
+        "child task",
+        _lock(),
+        "child-worker",
+        adapter.family,
+        cancellation_policy=CancellationPolicy(
+            mode="immediate",
+            cancellable_by=("operator",),
+            propagate_to_children=True,
+            cleanup="checkpoint_then_stop",
+        ),
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=spec,
+    )
+    state = factory._record_state(activation.child_session_id)
+    with pytest.raises(ValueError, match="checkpoint"):
+        factory.cancel(activation.child_session_id, expected_revision=state.revision)
+    assert adapter.cancel_calls == 0
+    retained = factory._record_state(activation.child_session_id)
+    assert retained.cancellation_requested is False
+    assert retained.terminal_count == 0
+
+def test_cancel_tree_parent_checkpoint_refusal_precedes_all_mutation(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    class SignalTrackingAdapter(RetryAdapter):
+        family = "tree-checkpoint-refusal"
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.cancel_calls = 0
+
+        def cancel(self, target):
+            self.cancel_calls += 1
+            return True
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    parent_session = Session.start(
+        _lock(), "parent task", session_id="parent-session"
+    )
+    create_session(workspace, parent_session)
+    repository = WorkItemRepository(tmp_path / "work-items.jsonl")
+    parent_work = WorkItem.create(
+        "parent work",
+        work_item_id="parent-work",
+        cancellation_policy=CancellationPolicy(
+            mode="immediate",
+            cancellable_by=("operator",),
+            propagate_to_children=True,
+            cleanup="checkpoint_then_stop",
+        ),
+        repository=repository,
+    )
+    parent_work.acquire_lease("parent-worker", lease_id="parent-lease")
+    parent_work.start_attempt(
+        "parent-session",
+        lease_id="parent-lease",
+        attempt_id="parent-attempt",
+    )
+    registry = SessionRegistry(state_root=tmp_path / "registry")
+    asyncio_run(
+        registry.create(
+            SessionRecord(
+                "parent-session",
+                status=SessionStatus.RUNNING,
+                metadata={"workspace": str(workspace)},
+            )
+        )
+    )
+    adapter = SignalTrackingAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    child = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        spec=_spec(adapter.family, "checkpoint child"),
+    )
+    child_before = factory._record_state(child.child_session_id)
+
+    with pytest.raises(ValueError, match="checkpoint"):
+        factory.cancel_tree(
+            parent_session_id="parent-session",
+            parent_work_item_id="parent-work",
+        )
+
+    parent_record = await_record(registry, "parent-session")
+    child_after = factory._record_state(child.child_session_id)
+    assert "durable_parent_cancellation" not in parent_record.metadata
+    assert adapter.cancel_calls == 0
+    assert child_after == child_before
+    assert child_after.cancellation_requested is False
+    assert WorkItem.restore(repository, "parent-work").read_model.status == "running"
+    restored_parent, _ = load_session(workspace, "parent-session")
+    assert restored_parent.read_model.status == "running"
+
+
+def test_cancel_empty_reason_rejects_before_adapter_signal(tmp_path: Path) -> None:
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = RetryAdapter()
+    signals: list[object] = []
+    adapter.cancel = lambda target: signals.append(target)
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "empty cancellation reason"),
+    )
+    state = factory._record_state(activation.child_session_id)
+    with pytest.raises(ValueError, match="non-empty"):
+        factory.cancel(activation.child_session_id, expected_revision=state.revision, reason="")
+    assert signals == []
+    retained = factory._record_state(activation.child_session_id)
+    assert retained.cancellation_requested is False
+    assert retained.revision == state.revision
+
+def test_process_cancel_permission_denied_stays_recovery_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = ProcessExecutionAdapter()
+    target = {
+        "ref": "pid:permission-denied",
+        "pid": 12345,
+        "start_token": "sha256:" + "a" * 64,
+        "process_group_id": 12345,
+    }
+    monkeypatch.setattr(adapter, "observe", lambda _target: "running")
+
+    def deny_kill(_group: int, _signum: int) -> None:
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(os, "killpg", deny_kill)
+    assert adapter.cancel(target) is False
+
+
+def test_process_observe_inspection_failure_stays_recovery_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = ProcessExecutionAdapter()
+    target = {
+        "ref": "pid:inspection-failure",
+        "pid": 12345,
+        "start_token": "sha256:" + "a" * 64,
+        "process_group_id": 12345,
+    }
+
+    def fail_identity(_pid: int) -> tuple[str, int]:
+        raise PermissionError("identity inspection denied")
+
+    def fail_group(_group: int) -> bool | None:
+        raise OSError("group inspection unavailable")
+
+    monkeypatch.setattr(adapter, "_identity", fail_identity)
+    monkeypatch.setattr(adapter, "_group_alive", fail_group)
+    assert adapter.observe(target) == "pending"
+
+
+def test_process_recover_inspection_failure_stays_unresolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = ProcessExecutionAdapter()
+    target = {
+        "ref": "pid:recover-inspection-failure",
+        "pid": 12345,
+        "start_token": "sha256:" + "a" * 64,
+        "process_group_id": 12345,
+    }
+    def fail_identity(_pid: int) -> tuple[str, int]:
+        raise RuntimeError("malformed ps output")
+
+    monkeypatch.setattr(adapter, "_identity", fail_identity)
+    assert adapter.recover(target) is None
+
+
+def test_process_observe_identity_mismatch_waits_for_retained_group_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = ProcessExecutionAdapter()
+    target = {
+        "ref": "pid:identity-mismatch",
+        "pid": 12345,
+        "start_token": "sha256:" + "a" * 64,
+        "process_group_id": 12345,
+    }
+    monkeypatch.setattr(adapter, "_identity", lambda _pid: ("sha256:" + "b" * 64, 54321))
+    monkeypatch.setattr(adapter, "_group_alive", lambda _group: True)
+    assert adapter.observe(target) == "pending"
+    monkeypatch.setattr(adapter, "_group_alive", lambda _group: False)
+    assert adapter.observe(target) == "absent"
+
+
+def test_process_leader_exit_with_live_group_stays_unresolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ExitedProcess:
+        def poll(self) -> int:
+            return 0
+
+    adapter = ProcessExecutionAdapter()
+    target = {
+        "ref": "pid:leader-exited",
+        "pid": 12345,
+        "start_token": "sha256:" + "a" * 64,
+        "process_group_id": 12345,
+    }
+    adapter._processes[target["ref"]] = ExitedProcess()
+    monkeypatch.setattr(adapter, "_group_alive", lambda _group: True)
+    monkeypatch.setattr(
+        os,
+        "killpg",
+        lambda *_args: pytest.fail("unverified group must not be signaled"),
+    )
+    assert adapter.observe(target) == "pending"
+    assert adapter.cancel(target) is False
 def test_process_start_publishes_pending_then_released_target(tmp_path: Path) -> None:
     repository = WorkItemRepository(tmp_path / "work-items.jsonl")
     workspace, repository, parent, registry = _running_parent(tmp_path, repository)
@@ -353,6 +654,31 @@ def test_process_start_publishes_pending_then_released_target(tmp_path: Path) ->
     assert state.execution_target["metadata"]["launch_phase"] == "released"
     canceled = factory.cancel(state.child_session_id, expected_revision=state.revision)
     assert (canceled.status, canceled.terminal_outcome, canceled.terminal_count) == ("canceled", "canceled", 1)
+
+
+def test_unavailable_adapter_absence_settles_without_retry(tmp_path: Path) -> None:
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    source = RetryAdapter()
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[source])
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(source.family, "unavailable child"),
+    )
+    restarted = DurableChildFactory(
+        workspace,
+        registry=SessionRegistry(state_root=tmp_path / "registry"),
+        repository=WorkItemRepository(tmp_path / "work-items.jsonl"),
+        adapters=[UnavailableChildAdapter(source.family)],
+    )
+    recovered = restarted.reconcile(activation.recovery_ref)
+    assert (recovered.status, recovered.terminal_outcome, recovered.terminal_count) == (
+        "failed",
+        "failed",
+        1,
+    )
+    assert restarted.reconcile(activation.recovery_ref) == recovered
 
 
 def await_record(registry, session_id):
@@ -383,6 +709,8 @@ def test_two_existing_adapter_families_share_session_settlement_boundary(tmp_pat
         with pytest.raises(PreparationRequired):
             factory.settle(activation.child_session_id, expected_revision=current.revision, outcome="completed", attempt_id=current.attempt_id)
         prepared = factory.prepare_result(activation.child_session_id, expected_revision=current.revision, result=f"result-{index}".encode(), attempt_id=current.attempt_id)
+        with pytest.raises(ExpectedRevisionConflict, match="result refs"):
+            factory.settle(activation.child_session_id, expected_revision=prepared.revision, outcome="completed", result_refs=(), attempt_id=current.attempt_id)
         settled = factory.settle(activation.child_session_id, expected_revision=prepared.revision, outcome="completed", result_refs=prepared.result_refs, attempt_id=current.attempt_id)
         assert (settled.status, settled.terminal_outcome, settled.terminal_count, settled.joined, settled.result_prepared) == ("completed", "completed", 1, True, True)
         joined = [event for event in WorkItem.restore(repository, parent.read_model.work_item_id).events if event.kind == "child.joined" and event.payload["child_work_item_id"] == activation.child_work_item_id]
@@ -393,6 +721,62 @@ def test_two_existing_adapter_families_share_session_settlement_boundary(tmp_pat
     process_target = factory._record_state(activations[1].child_session_id).execution_target
     process_adapter.cancel(process_target)
 
+
+
+def test_parent_cancellation_marker_blocks_late_child_settlement(tmp_path: Path) -> None:
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = RetryAdapter()
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "parent marker fence"),
+    )
+    state = factory._record_state(activation.child_session_id)
+    prepared = factory.prepare_result(
+        activation.child_session_id,
+        expected_revision=state.revision,
+        result=b"late result",
+        attempt_id=state.attempt_id,
+    )
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    asyncio_run(
+        registry.create(
+            SessionRecord(
+                "parent-session",
+                status=SessionStatus.RUNNING,
+                metadata={"workspace": str(workspace)},
+            )
+        )
+    )
+    parent_record = await_record(registry, "parent-session")
+    asyncio_run(
+        registry.update_metadata(
+            "parent-session",
+            metadata={
+                **parent_record.metadata,
+                "durable_parent_cancellation": {
+                    "work_item_id": parent.read_model.work_item_id,
+                    "reason": "parent canceled",
+                    "child_recovery_refs": [activation.recovery_ref],
+                },
+            },
+        )
+    )
+    with pytest.raises(LateResultRejected, match="parent cancellation"):
+        factory.settle(
+            activation.child_session_id,
+            expected_revision=prepared.revision,
+            outcome="completed",
+            result_refs=prepared.result_refs,
+            attempt_id=prepared.attempt_id,
+        )
+    retained = factory._record_state(activation.child_session_id)
+    assert retained.terminal_count == 0
+    assert retained.settlement is None
 def test_result_callbacks_require_exact_attempt_identity(tmp_path: Path) -> None:
     workspace, repository, parent, registry = _running_parent(tmp_path)
     adapter = RetryAdapter()
@@ -583,6 +967,119 @@ def test_cancel_tree_adopts_terminal_child_work_item(
     assert WorkItem.restore(repository, activation.child_work_item_id).read_model.status == outcome
 
 
+
+
+def test_cancel_tree_skips_authorization_for_terminal_never_child(
+    tmp_path: Path,
+) -> None:
+    class NoSignalAdapter(RetryAdapter):
+        family = "terminal-never-child"
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.cancel_calls = 0
+
+        def cancel(self, target):
+            self.cancel_calls += 1
+            return True
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = NoSignalAdapter()
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    spec = ChildSpec(
+        "terminal never child",
+        "child task",
+        _lock(),
+        "child-worker",
+        adapter.family,
+        cancellation_policy=CancellationPolicy(
+            mode="never",
+            cancellable_by=(),
+            propagate_to_children=False,
+        ),
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=spec,
+    )
+    child = WorkItem.restore(repository, activation.child_work_item_id)
+    attempt = child.read_model.current_attempt
+    assert attempt is not None
+    child.complete("already complete", attempt_id=attempt.attempt_id)
+    settled = factory.cancel_tree(
+        parent_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+    )
+    assert len(settled) == 1
+    assert settled[0].terminal_outcome == "completed"
+    assert adapter.cancel_calls == 0
+
+
+def test_cancel_tree_retries_prior_pending_child_signal(tmp_path: Path) -> None:
+    class PendingCancelAdapter:
+        family = "tree-pending-cancel"
+
+        def __init__(self) -> None:
+            self.exited = False
+            self.cancel_calls = 0
+
+        def start(self, activation, spec):
+            return ExecutionTarget(activation.execution_target_ref)
+
+        def observe(self, target):
+            return "absent" if self.exited else "running"
+
+        def cancel(self, target):
+            self.cancel_calls += 1
+            return self.exited
+
+        def prepare_result(self, target, spec):
+            return None
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = PendingCancelAdapter()
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "tree pending child"),
+    )
+    state = factory._record_state(activation.child_session_id)
+    requested = factory.cancel(activation.child_session_id, expected_revision=state.revision)
+    assert requested.terminal_count == 0
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    asyncio_run(
+        registry.create(
+            SessionRecord(
+                "parent-session",
+                status=SessionStatus.RUNNING,
+                metadata={"workspace": str(workspace)},
+            )
+        )
+    )
+    first = factory.cancel_tree(
+        parent_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+    )
+    assert first[0].terminal_count == 0
+    assert await_record(registry, "parent-session").metadata["durable_parent_cancellation"] is not None
+    adapter.exited = True
+    second = factory.cancel_tree(
+        parent_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+    )
+    assert (second[0].status, second[0].terminal_outcome, second[0].terminal_count) == (
+        "canceled",
+        "canceled",
+        1,
+    )
+    assert await_record(registry, "parent-session").metadata.get("durable_parent_cancellation") is None
+    assert adapter.cancel_calls == 3
 def test_cancel_adopts_terminal_child_work_item_without_signaling(
     tmp_path: Path,
 ) -> None:
@@ -1098,11 +1595,9 @@ def test_launch_claimed_before_adapter_start_relaunches_same_attempt(tmp_path: P
                 raise RuntimeError("adapter start interrupted")
             return ExecutionTarget("live-after-restart")
 
-        def observe(self, target):
-            return "running"
 
-        def cancel(self, target):
-            return None
+        def observe(self, target):
+            return "running" if self.starts >= 2 else "absent"
 
         def prepare_result(self, target, spec):
             return None
@@ -1121,6 +1616,52 @@ def test_launch_claimed_before_adapter_start_relaunches_same_attempt(tmp_path: P
     state = ChildState.from_retained(retained.metadata["durable_child"])
     recovered = factory.reconcile(state.recovery_ref)
     assert (adapter.starts, recovered.status, recovered.attempt_id) == (2, "running", state.attempt_id)
+
+
+def test_reserved_launch_claim_does_not_relaunch_on_pending_observation(tmp_path: Path) -> None:
+    class PendingRecoveryAdapter:
+        family = "pending-recovery"
+
+        def __init__(self) -> None:
+            self.starts = 0
+
+        def start(self, activation, spec):
+            self.starts += 1
+            return ExecutionTarget(activation.execution_target_ref)
+
+        def recover(self, target):
+            return None
+
+        def observe(self, target):
+            return "pending"
+
+        def cancel(self, target):
+            return None
+
+        def prepare_result(self, target, spec):
+            return None
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = PendingRecoveryAdapter()
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "pending launch recovery"),
+    )
+    state = factory._record_state(activation.child_session_id)
+    state = factory._cas(
+        state,
+        launch_claimed=True,
+        launch_claim_owner=None,
+        launch_claim_until=0.0,
+        launch_published=False,
+    )
+    recovered = factory.reconcile(activation.recovery_ref)
+    assert recovered.terminal_count == 0
+    assert recovered.launch_published is False
+    assert adapter.starts == 1
 def test_reserved_empty_target_published_once(tmp_path: Path) -> None:
     class ReservedAdapter:
         family = "reserved-empty"
@@ -1275,6 +1816,70 @@ def test_service_restart_routes_retained_child_to_reconciler_not_session_runner(
     assert record.runner is None
 
 
+def test_service_retries_retained_pending_cancel_until_verified_exit(tmp_path: Path) -> None:
+    from breadboard_engine.api.cli_bridge.service import SessionService
+
+    class PendingCancelAdapter:
+        family = "service-pending-cancel"
+
+        def __init__(self) -> None:
+            self.exited = False
+            self.cancel_calls = 0
+
+        def start(self, activation, spec):
+            return ExecutionTarget(activation.execution_target_ref)
+
+        def observe(self, target):
+            return "absent" if self.exited else "running"
+
+        def cancel(self, target):
+            self.cancel_calls += 1
+            return self.exited
+
+        def prepare_result(self, target, spec):
+            return None
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = PendingCancelAdapter()
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "service pending cancellation"),
+    )
+    state = factory._record_state(activation.child_session_id)
+    requested = factory.cancel(activation.child_session_id, expected_revision=state.revision)
+    assert requested.cancellation_requested is True
+    restarted_registry = SessionRegistry(state_root=tmp_path / "registry")
+    service = SessionService(
+        registry=restarted_registry,
+        state_root=tmp_path / "registry",
+        durable_child_reconciler=DurableChildReconciler(
+            registry=restarted_registry,
+            repository=repository,
+            adapters=[adapter],
+        ),
+    )
+    pending = asyncio_run(service.ensure_session(activation.child_session_id))
+    assert pending.loaded_from_retained_state is True
+    assert ChildState.from_retained(
+        await_record(restarted_registry, activation.child_session_id).metadata["durable_child"]
+    ).terminal_count == 0
+    adapter.exited = True
+    settled = asyncio_run(service.ensure_session(activation.child_session_id))
+    assert settled.loaded_from_retained_state is False
+    assert settled.status.value == "stopped"
+    retained = ChildState.from_retained(
+        await_record(restarted_registry, activation.child_session_id).metadata["durable_child"]
+    )
+    assert (retained.terminal_outcome, retained.terminal_count) == ("canceled", 1)
+    again = asyncio_run(service.ensure_session(activation.child_session_id))
+    assert again.loaded_from_retained_state is False
+    assert again.status.value == "stopped"
+    assert adapter.cancel_calls == 3
+
+
 def test_nested_parent_cancellation_replays_after_child_reconcile(tmp_path: Path) -> None:
     from breadboard_engine.api.cli_bridge.service import SessionService
 
@@ -1351,6 +1956,103 @@ def test_nested_parent_cancellation_replays_after_child_reconcile(tmp_path: Path
     assert load_session(workspace, second.child_session_id)[0].read_model.status == "canceled"
 
 
+def test_nested_parent_cancellation_keeps_resume_pending_on_unverified_child(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.service import SessionService
+
+    class PendingCancelAdapter:
+        family = "nested-pending-cancel"
+
+        def __init__(self) -> None:
+            self.cancel_ready = False
+
+        def start(self, activation, spec):
+            return ExecutionTarget(activation.execution_target_ref)
+
+        def observe(self, target):
+            return "running"
+
+        def cancel(self, target):
+            return self.cancel_ready
+
+        def prepare_result(self, target, spec):
+            return None
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = PendingCancelAdapter()
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    first = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "nested pending parent"),
+    )
+    second_parent = WorkItem.restore(repository, first.child_work_item_id)
+    second = factory.start(
+        parent_session_id=first.child_session_id,
+        root_session_id="parent-session",
+        parent_work_item_id=second_parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "nested pending child"),
+    )
+    first_record = await_record(registry, first.child_session_id)
+    asyncio_run(
+        registry.update_metadata(
+            first.child_session_id,
+            metadata={
+                **first_record.metadata,
+                "durable_parent_cancellation": {
+                    "work_item_id": first.child_work_item_id,
+                    "reason": "nested pending cancellation",
+                    "child_recovery_refs": [second.recovery_ref],
+                },
+            },
+        )
+    )
+    restarted_registry = SessionRegistry(state_root=tmp_path / "registry")
+    restarted_factory = DurableChildFactory(
+        workspace,
+        registry=restarted_registry,
+        repository=WorkItemRepository(tmp_path / "work-items.jsonl"),
+        adapters=[adapter],
+    )
+
+    class Reconciler:
+        async def __call__(self, recovery_ref: str):
+            return await asyncio.to_thread(restarted_factory.reconcile, recovery_ref)
+
+        async def cancel(self, recovery_ref: str, *, reason: str = "operator request"):
+            child_session_id = recovery_ref.split("/attempt/", 1)[0].removeprefix("child://")
+            state = await asyncio.to_thread(restarted_factory._record_state, child_session_id)
+            return await asyncio.to_thread(
+                restarted_factory.cancel,
+                child_session_id,
+                expected_revision=state.revision,
+                reason=reason,
+            )
+
+        async def cancel_tree(self, parent_session_id: str, *, reason: str = "operator request"):
+            raise AssertionError("parent cancellation replay should not call cancel_tree")
+
+    service = SessionService(
+        registry=restarted_registry,
+        state_root=tmp_path / "registry",
+        durable_child_reconciler=Reconciler(),
+        durable_child_repository=WorkItemRepository(tmp_path / "work-items.jsonl"),
+    )
+    with pytest.raises(RuntimeError, match="did not settle child"):
+        asyncio_run(service.ensure_session(first.child_session_id))
+    assert (
+        await_record(restarted_registry, first.child_session_id).loaded_from_retained_state
+        is True
+    )
+    adapter.cancel_ready = True
+    record = asyncio_run(service.ensure_session(first.child_session_id))
+    assert record.loaded_from_retained_state is False
+    assert record.status.value == "stopped"
+    assert "durable_parent_cancellation" not in (record.metadata or {})
+
+
 def test_ray_completed_result_uses_custom_artifact_store(tmp_path: Path) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
@@ -1371,6 +2073,8 @@ def test_ray_completed_result_uses_custom_artifact_store(tmp_path: Path) -> None
     adapter = RayJobAdapter(orchestrator, actor_launcher=lambda *_args: FakeActor())
     factory = DurableChildFactory(
         workspace,
+
+
         registry=registry,
         repository=repository,
         adapters=[adapter],
@@ -1396,6 +2100,56 @@ def test_ray_completed_result_uses_custom_artifact_store(tmp_path: Path) -> None
     )
     assert custom_store.read(artifact) == b"custom ray actor output"
 
+
+
+def test_ray_cancel_signal_failure_retains_recovery_state() -> None:
+    from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
+
+    class Actor:
+        def cancel(self) -> None:
+            raise RuntimeError("transient cancellation failure")
+
+    orchestrator = MultiAgentOrchestrator(TeamConfig("ray-cancel-recovery"))
+    spawned = orchestrator.spawn_subagent(
+        owner_agent="parent-session",
+        agent_id="child-session",
+        async_mode=True,
+    )
+    actor = Actor()
+    adapter = RayJobAdapter(orchestrator)
+    adapter._actors[spawned.job.job_id] = actor
+    target = {
+        "ref": f"job:{spawned.job.job_id}",
+        "metadata": {"job": {"job_id": spawned.job.job_id}},
+    }
+    assert adapter.cancel(target) is False
+    assert adapter._actors[spawned.job.job_id] is actor
+    assert orchestrator.job_manager.get(spawned.job.job_id).state == "accepted"
+
+
+def test_ray_observe_state_failure_stays_recovery_pending() -> None:
+    from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
+
+    class Actor:
+        def get_state(self) -> str:
+            raise RuntimeError("transient state inspection failure")
+
+    orchestrator = MultiAgentOrchestrator(TeamConfig("ray-observe-recovery"))
+    spawned = orchestrator.spawn_subagent(
+        owner_agent="parent-session",
+        agent_id="child-session",
+        async_mode=True,
+    )
+    actor = Actor()
+    adapter = RayJobAdapter(orchestrator)
+    adapter._actors[spawned.job.job_id] = actor
+    target = {
+        "ref": f"job:{spawned.job.job_id}",
+        "metadata": {"job": {"job_id": spawned.job.job_id}},
+    }
+    assert adapter.observe(target) == "pending"
+    assert adapter._actors[spawned.job.job_id] is actor
+    assert orchestrator.job_manager.get(spawned.job.job_id).state == "accepted"
 
 def test_ray_cancel_kills_actor_without_waiting_for_actor_method(
     monkeypatch: pytest.MonkeyPatch,
@@ -1680,6 +2434,33 @@ def test_ray_result_persistence_failure_stays_retryable(tmp_path: Path, monkeypa
     assert adapter.observe(target) == "accepted"
     job = orchestrator.job_manager.get(target["ref"].removeprefix("job:"))
     assert job is not None and job.state == "accepted" and job.result_payload is None
+
+
+def test_ray_malformed_completed_payload_fails_once(tmp_path: Path) -> None:
+    from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
+
+    class Actor:
+        def get_state(self):
+            return "completed"
+
+        def get_result(self):
+            return "malformed"
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    orchestrator = MultiAgentOrchestrator(TeamConfig("ray-malformed-result"))
+    adapter = RayJobAdapter(orchestrator, actor_launcher=lambda job_id, launch_workspace, task: Actor())
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "malformed result"),
+    )
+    target = factory._record_state(activation.child_session_id).execution_target
+    assert adapter.observe(target) == "failed"
+    assert adapter.observe(target) == "failed"
+    job = orchestrator.job_manager.get(target["ref"].removeprefix("job:"))
+    assert job is not None and job.state == "failed"
 
 
 
