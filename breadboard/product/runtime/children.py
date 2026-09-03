@@ -56,6 +56,14 @@ from breadboard.product.runtime.session_store import (
 _TERMINAL = frozenset({"completed", "failed", "canceled"})
 _CHILD_SCHEMA = "bb.durable_child.v1"
 
+def _is_sha256(value: object) -> bool:
+    return (
+        type(value) is str
+        and len(value) == 71
+        and value.startswith("sha256:")
+        and all(character in "0123456789abcdef" for character in value[7:])
+    )
+
 
 def _parent_cancellation_requests(
     value: object,
@@ -163,13 +171,7 @@ class ChildSpec:
                 raise ValueError(
                     "child workflow identity fields must be non-empty strings"
                 )
-            digest = self.workflow_definition_hash
-            if (
-                type(digest) is not str
-                or len(digest) != 71
-                or not digest.startswith("sha256:")
-                or any(character not in "0123456789abcdef" for character in digest[7:])
-            ):
+            if not _is_sha256(self.workflow_definition_hash):
                 raise ValueError("child workflow definition hash is invalid")
 
     def retained(self) -> dict[str, Any]:
@@ -391,14 +393,16 @@ class ChildState:
         execution_target = value.get("execution_target")
         if (
             type(execution_target_ref) is not str
-            or not execution_target_ref
+            or not execution_target_ref.strip()
             or not isinstance(execution_target, Mapping)
             or execution_target.get("ref") != execution_target_ref
         ):
             raise ValueError("durable child execution target identity is invalid")
         result_refs_value = value.get("result_refs", ())
-        if not isinstance(result_refs_value, (list, tuple)) or any(
-            type(ref) is not str for ref in result_refs_value
+        if (
+            not isinstance(result_refs_value, (list, tuple))
+            or any(not _is_sha256(ref) for ref in result_refs_value)
+            or len(set(result_refs_value)) != len(result_refs_value)
         ):
             raise ValueError("durable child result refs are invalid")
         result_refs = tuple(result_refs_value)
@@ -448,16 +452,7 @@ class ChildState:
                 for field in workflow_fields
             ):
                 raise ValueError("durable child workflow identity is invalid")
-            workflow_hash = workflow_fields[2]
-            if (
-                type(workflow_hash) is not str
-                or len(workflow_hash) != 71
-                or not workflow_hash.startswith("sha256:")
-                or any(
-                    character not in "0123456789abcdef"
-                    for character in workflow_hash[7:]
-                )
-            ):
+            if not _is_sha256(workflow_fields[2]):
                 raise ValueError("durable child workflow identity is invalid")
         if (
             child_spec["adapter_family"] != value.get("adapter_family")

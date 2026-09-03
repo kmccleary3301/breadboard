@@ -376,8 +376,7 @@ class ReplayableWorkflowController:
     def advance(self) -> WorkflowDecision:
         with self._thread_lock(self._lock_key), ProcessLock(self._process_lock_path):
             for state in self._children():
-                if state.terminal_count == 0:
-                    self.factory.reconcile(state.recovery_ref)
+                self.factory.reconcile(state.recovery_ref)
             pending = self._projection().value
             if pending.action == "start":
                 step_id = pending.ready_step_ids[0]

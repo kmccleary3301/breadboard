@@ -3833,6 +3833,9 @@ def test_child_state_rejects_inconsistent_terminal_cardinality(
         {"launch_claim_until": float("nan")},
         {"cancellation_reason": ""},
         {"startup_phase": "invented"},
+        {"execution_target_ref": " ", "execution_target": {"ref": " "}},
+        {"result_refs": ["not-a-digest"]},
+        {"result_refs": [HASH, HASH]},
     ),
 )
 def test_child_state_rejects_malformed_core_identity(
@@ -5210,3 +5213,49 @@ def test_workflow_lock_path_exists_with_external_artifact_store(
 
     assert controller.decision().action == "start"
     assert (workspace / ".breadboard").is_dir()
+
+
+def test_workflow_advance_repairs_terminal_child_owner_gap(
+    tmp_path: Path,
+) -> None:
+    workspace, repository, _parent, registry = _running_parent(tmp_path)
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[WorkflowAdapter()],
+    )
+    controller = ReplayableWorkflowController(
+        factory,
+        workflow_id="terminal-repair",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        definition=_workflow_definition(),
+    )
+    controller.advance()
+    state = factory.child_states(parent_work_item_id="parent-work")[0]
+    factory._cas(
+        state,
+        status="failed",
+        terminal_outcome="failed",
+        terminal_count=1,
+        joined=True,
+    )
+
+    with pytest.raises(ChildError, match="diverged"):
+        controller.decision()
+    repaired = controller.advance()
+
+    assert repaired.action == "fail"
+    assert repaired.failed_step_ids == ("inspect",)
+    child = WorkItem.restore(repository, state.child_work_item_id)
+    assert child.read_model.status == "failed"
+    parent = WorkItem.restore(repository, "parent-work")
+    joined = [
+        event
+        for event in parent.events
+        if event.kind == "child.joined"
+        and event.payload["child_work_item_id"] == state.child_work_item_id
+    ]
+    assert len(joined) == 1
