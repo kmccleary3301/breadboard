@@ -3,7 +3,7 @@
 Ticket: `bb-inj5.8`
 Date: 2026-09-02
 Candidate: `docs/plans/dsh_donor_campaign/evidence/07_CAMPAIGN_SPEC_PROTOTYPE.md`
-Reviewed SHA-256: `e01c1fc0dc111cfa32904ef90879d7b1142dbf0118ac8103c38ac0b5614e2f36`
+Reviewed SHA-256: `937896d907e17383b2b2d5174efabe7d20b9613e1245dd5fa6ca68e368afa42c`
 ENGINE: `b3cacc7356244253305f8a6f84308a993485bfe2`
 TUI: `73d6e6f55a238fc9ff0486bbcc9ecffe85705715`
 
@@ -54,17 +54,19 @@ One material renewal corrected every initial finding and all consistency defects
 - made FT-01 self-contained: fixed fixture bytes/IDs, error classes, deadlines, typed append-only records, content identities, independent comparators, receipt rules, branch precedence, nullable receipt identities, process authority, cleanup/finalization, preflight-abort encoding, lock audit, and invalidation;
 - restored exact Phase 20 schema exceptions and existing-schema tightening allowlist route.
 
-Binding renewal (2026-09-02, correction atop PR head `f46b7565`)
+Binding renewal (2026-09-02, correction atop PR head `3b82027a`)
 independently recomputed the candidate digest above and revalidated the raw
-DAG. `GEN-INTERNAL` and `GEN-ACTIVATION` now have reachable terminal repair,
-implementation, or evidence-backed `NOT-TAKEN` outcomes; annotation owner
-selection admits the existing Session; and `SEVEN-PIECE-AUDIT` requires
-`WF-IMPLEMENT`, not merely the child pilot. The raw validator passed 50
+DAG. Runtime repair, generation, and annotation gates now have reachable
+terminal outcomes; `SEVEN-PIECE-AUDIT` requires `WF-IMPLEMENT`; and the
+substrate command requires the complete public rollout through E4. FT-01
+retains every retry in append-only attempt streams with closed fail-closed
+classifications, complete permission/cardinality evidence, authenticated
+process identity, and test-only L1/L2 writes. The raw validator passed 50
 acyclic nodes, 623/623 unique routes, phases 0–12, six packets, and zero
 unconditional seams. The package validator passed 14 exact evidence copies,
 13 relative links, six guard pairs, and no findings. The renewal found
-P0/P1/P2/P3 = 0/0/0/0, so the prior review's substantive approval remains
-valid at this exact binding.
+P0/P1/P2/P3 = 0/0/0/0; the prior substantive approval remains valid at this
+exact binding.
 
 Independent renewal verdict: **APPROVED**.
 P0/P1/P2/P3: **0/0/0/0**.

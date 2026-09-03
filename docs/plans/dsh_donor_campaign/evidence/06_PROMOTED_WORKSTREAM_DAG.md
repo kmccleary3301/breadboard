@@ -111,7 +111,7 @@ graph TD
   F5 --> F6
   F6 --> G{EVIDENCE-GATE}
 
-  G -->|journal divergence| RR[RT-REPAIR]
+  G -->|journal outcome: repair or NOT-TAKEN| RR[RT-REPAIR]
   RR --> RP[RT-REPLAY]
   F4 --> RP
   RP --> PC[PROJ-CHAR]
@@ -166,6 +166,7 @@ graph TD
   RQA --> SC[SUBSTRATE-COMMAND]
   PI --> SC
   EP --> SC
+  E4 --> SC
   SC --> SA[SEVEN-PIECE-AUDIT]
   AI --> SA
   WI --> SA
@@ -174,7 +175,7 @@ graph TD
   GA --> SA
 ```
 
-The machine graph contains the same dependencies plus bounded research leaves. `RQ-ABLATION` is an `ANY` join: either an exact FT-03 pass or a later repaired reconstruction may feed it. No other join is disjunctive. `GEN-INTERNAL` is a required terminal outcome after FT-02 evidence: repair a current-owner gap or record evidence-backed `NOT-TAKEN`. `DIT-GENERATION` is also terminal: compare three activation designs when coordination is needed or record `NOT-TAKEN`; `GEN-ACTIVATION` then terminates as approved implementation or evidence-backed `NOT-TAKEN`. Annotation characterization always reaches owner selection—the existing Session is a valid choice, not a skipped DIT. The final audit requires both generation outcomes, approved annotation implementation, and `WF-IMPLEMENT`, not merely the child pilot.
+The machine graph contains the same dependencies plus bounded research leaves. `RQ-ABLATION` is an `ANY` join: either an exact FT-03 pass or a later repaired reconstruction may feed it. No other join is disjunctive. `RT-REPAIR` terminalizes as the existing-owner repair or evidence-backed `NOT-TAKEN` when FT-01 is coherent, so every terminal journal outcome reaches replay conformance. `GEN-INTERNAL` is a required terminal outcome after FT-02 evidence: repair a current-owner gap or record evidence-backed `NOT-TAKEN`. `DIT-GENERATION` is also terminal: compare three activation designs when coordination is needed or record `NOT-TAKEN`; `GEN-ACTIVATION` then terminates as approved implementation or evidence-backed `NOT-TAKEN`. Annotation characterization always reaches owner selection—the existing Session is a valid choice, not a skipped DIT. The substrate command additionally requires the complete public rollout through E4. The final audit requires both generation outcomes, approved annotation implementation, and `WF-IMPLEMENT`, not merely the child pilot.
 
 ## First tranche execution windows
 
