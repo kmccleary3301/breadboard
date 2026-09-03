@@ -46,9 +46,9 @@ Verdict: `APPROVED`, confidence 0.99. Gate G-F passes. Future packet observation
 
 ## Second renewal review — APPROVED
 
-Renewal date: 2026-09-02. Exact packet SHA-256 `b11afb51d72ea2597042b404dcfa6204474a4b0997ddbf9ecd6fbab14525ba3e`; reviewed PR head `10ae04c5`; pinned ENGINE/TUI heads unchanged.
+Renewal date: 2026-09-02. Exact packet SHA-256 `ea3bcbaf05f145d6cb6302735189618146c653350113b5b775652ad2843043b5`; reviewed PR head `598fbdca`; pinned ENGINE/TUI heads unchanged.
 
-The independent renewal revalidated FT-02's fixed four-case barrier, exact commands and payloads, pinned ENGINE working directory and provenance, 30-second case deadlines, 240-second total deadline, observations, and cleanup contract. FT-03 now binds immutable fixture `ft03-request-v1` at SHA-256 `e8cfac26efd0210997ecc31241d95d805d656b0436f2ccd42f3b58523da4dcd2`, with exact prompt-section, tool-schema, history, default, adapter-override, canonicalization, and independent held-out-oracle inputs. FT-01 permits only qualifying test-only L1/L2 changes, including the named separate-TUI installed-product test for L2; production ENGINE and TUI bytes remain forbidden.
+The independent renewal revalidated FT-02's fixed four-case barrier, exact commands and payloads, pinned ENGINE working directory and provenance, 30-second case deadlines, 240-second total deadline, observations, and cleanup contract. Its provider-free fixture replaces both the actually selected `openai_responses` runtime and possible `openai_chat` route with `MockRuntime`, asserts the resolved class before dispatch, guards concrete live runtimes and sockets, and records zero external-provider/network calls. FT-03 binds immutable fixture `ft03-request-v1` at SHA-256 `e8cfac26efd0210997ecc31241d95d805d656b0436f2ccd42f3b58523da4dcd2`, with exact prompt-section, tool-schema, history, default, adapter-override, canonicalization, and independent held-out-oracle inputs. FT-01 permits only qualifying test-only L1/L2 changes, including the named separate-TUI installed-product test for L2; production ENGINE and TUI bytes remain forbidden.
 
 Residual findings: P0 0, P1 0, P2 0, P3 0.
 
