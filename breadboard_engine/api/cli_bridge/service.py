@@ -1271,7 +1271,7 @@ class SessionService:
         workspace = Path(workspace_value).expanduser().resolve()
         runner.bind_durable_product_session(
             workspace,
-            session_directory_identity(workspace),
+            session_directory_identity(workspace, create=True),
         )
 
     @staticmethod
@@ -1309,15 +1309,23 @@ class SessionService:
             not isinstance(recorded_event_root, str)
             or not recorded_event_root.strip()
         ) and retained_workspace is not None:
+            managed_event_root = _event_root(self._managed_state_paths)
             workspace_event_root = session_event_path(
                 retained_workspace,
                 record.session_id,
             ).parent.parent.resolve()
-            if (workspace_event_root / record.session_id / "session_events.jsonl").is_file():
+            if (
+                workspace_event_root / record.session_id / "session_events.jsonl"
+            ).is_file():
                 retained_event_root = workspace_event_root
                 discovered_workspace_journal = True
+            elif (
+                managed_event_root / record.session_id / "session_events.jsonl"
+            ).is_file():
+                retained_event_root = managed_event_root
+                discovered_workspace_journal = True
             else:
-                retained_event_root = _event_root(self._managed_state_paths)
+                retained_event_root = managed_event_root
         else:
             retained_event_root = (
                 Path(recorded_event_root).expanduser().resolve()
@@ -1343,14 +1351,6 @@ class SessionService:
             self._managed_state_paths,
             event_root=retained_event_root,
         )
-        if record.product_session.read_model.status == "awaiting_approval":
-            pending_approval = record.product_session.read_model.pending_approval
-            if pending_approval is None:
-                raise ReplayError(
-                    "invalid_event_record",
-                    f"retained session {record.session_id!r} has no pending approval identity",
-                )
-            record.product_session.resolve_approval(pending_approval, "deny")
         restored_status = record.projected_status()
         if restored_status in {
             SessionStatus.COMPLETED,
@@ -1430,13 +1430,21 @@ class SessionService:
                 permission_mode=permission_mode,
             ),
         )
-        runner.prepare_runtime_config()
         self._bind_restored_durable_product_session(
             record,
             runner,
         )
         self._restore_retained_workspace_attachments(record, runner)
         runner.reconcile_retained_input_admissions()
+        if record.product_session.read_model.status == "awaiting_approval":
+            pending_approval = record.product_session.read_model.pending_approval
+            if pending_approval is None:
+                raise ReplayError(
+                    "invalid_event_record",
+                    f"retained session {record.session_id!r} has no pending approval identity",
+                )
+            record.product_session.resolve_approval(pending_approval, "deny")
+        runner.prepare_runtime_config()
         for turn in record.turns_by_id.values():
             if turn.terminal_outcome is not None:
                 continue

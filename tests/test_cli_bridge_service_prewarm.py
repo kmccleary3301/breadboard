@@ -1020,11 +1020,46 @@ async def test_recovery_denies_orphaned_approval_and_reopens_admission(
         task="request approval before a process crash",
     )
     initial.product_session.request_approval("approval-before-crash", "write")
+    import hashlib
+    from breadboard_engine.api.cli_bridge.registry import TurnRecord
+    from breadboard_engine.api.cli_bridge.registry import submission_body_digest
+    from breadboard_engine.api.cli_bridge.registry import identity_digest
+
+    admitted_content = "must not consume the approval journal slot"
+    retained_turn = TurnRecord(
+        input_id="input-approval-slot",
+        turn_id="turn-approval-slot",
+        client_message_id="approval-slot",
+        content=admitted_content,
+        attachments=(),
+        original_disposition="started",
+        state="active",
+        body_digest=submission_body_digest(admitted_content, ()),
+        logical_event_count_before_admission=(
+            initial.product_session.read_model.event_count
+        ),
+        logical_input_content_hash=(
+            "sha256:" + hashlib.sha256(admitted_content.encode()).hexdigest()
+        ),
+        logical_input_session_status_before_admission="awaiting_approval",
+    )
+    initial.turns_by_id[retained_turn.turn_id] = retained_turn
+    initial.submissions_by_key[retained_turn.client_message_id] = retained_turn
+    initial.submissions_by_key_digest[
+        identity_digest(retained_turn.client_message_id)
+    ] = retained_turn
+    initial.active_turn_id = retained_turn.turn_id
+    initial.turn_admission = initial.turn_admission.__class__.ACTIVE
     await initial_service.registry.persist(initial)
     await _stop(initial)
 
     recovered_service = SessionService(state_root=state_root)
     recovered = await recovered_service.ensure_session(response.session_id)
+    assert [
+        event
+        for event in recovered.product_session.events
+        if event.kind == "input.accepted"
+    ] == []
     scheduled = []
     receipt = await recovered_service.send_input(
         response.session_id,
@@ -1041,6 +1076,9 @@ async def test_recovery_denies_orphaned_approval_and_reopens_admission(
         event.kind
         for event in recovered.product_session.events
     } >= {"approval.requested", "approval.resolved"}
+    recovered_turn = recovered.turns_by_id[retained_turn.turn_id]
+    assert recovered_turn.cancellation_requested is True
+    assert recovered_turn.terminal_outcome == "cancelled"
     assert receipt.disposition == "started"
     assert len(scheduled) == 1
     await _stop(recovered)
@@ -1648,4 +1686,87 @@ async def test_retained_manifest_ref_wins_over_uncommitted_newer_manifest(
     assert set(recovered.runner.artifacts.artifact_refs()) == {first_id}
     with pytest.raises(ValueError, match=f"unknown attachment IDs: {second_id}"):
         recovered.runner.artifacts.selected_artifacts([second_id])
+    await _stop(recovered)
+
+
+@pytest.mark.asyncio
+async def test_legacy_managed_retained_session_rebinds_durable_workspace(
+    monkeypatch, tmp_path
+) -> None:
+    managed_root = tmp_path / "managed"
+    managed_root.mkdir(mode=0o700)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("BREADBOARD_ENGINE_LAUNCH_ID", "legacy-managed-binding")
+    monkeypatch.setenv("BREADBOARD_ENGINE_STATE_ROOT", str(managed_root))
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+
+    service = SessionService()
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="restore legacy managed binding",
+            workspace=str(workspace),
+        ),
+        session_id="legacy-managed-binding",
+        event_root=workspace / ".breadboard" / "sessions",
+    )
+    record = await service.ensure_session(response.session_id)
+    record.metadata.pop("session_event_root", None)
+    record.metadata.pop("durable_product_workspace", None)
+    await service.registry.persist(record)
+    await _stop(record)
+
+    recovered = await SessionService().ensure_session(response.session_id)
+    assert recovered.metadata["durable_product_workspace"] == str(
+        workspace.resolve()
+    )
+    assert recovered.runner is not None
+    assert recovered.runner._durable_product_session is not None
+
+    recovered.product_session.complete()
+    recovered.runner._commit_terminal_product_session_locked()
+    assert session_store.session_metadata_path(
+        workspace, response.session_id
+    ).is_file()
+    await _stop(recovered)
+
+
+@pytest.mark.asyncio
+async def test_recovery_creates_missing_durable_workspace_session_directory(
+    monkeypatch, tmp_path
+) -> None:
+    managed_root = tmp_path / "managed"
+    managed_root.mkdir(mode=0o700)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("BREADBOARD_ENGINE_LAUNCH_ID", "recovery-creates-binding")
+    monkeypatch.setenv("BREADBOARD_ENGINE_STATE_ROOT", str(managed_root))
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+
+    service = SessionService()
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="recover missing durable session directory",
+            workspace=str(workspace),
+        ),
+        session_id="recovery-creates-binding",
+        event_root=workspace / ".breadboard" / "sessions",
+    )
+    record = await service.ensure_session(response.session_id)
+    record.metadata["durable_product_workspace"] = str(workspace.resolve())
+    await service.registry.persist(record)
+    await _stop(record)
+
+    session_directory = workspace / ".breadboard" / "sessions"
+    assert session_directory.is_dir()
+    session_directory.rmdir()
+
+    recovered = await SessionService().ensure_session(response.session_id)
+    assert session_directory.is_dir()
+    assert recovered.runner is not None
+    assert recovered.runner._durable_product_session is not None
     await _stop(recovered)
