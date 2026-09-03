@@ -262,6 +262,10 @@ def _validate_replay_event_payload(
             not isinstance(normalized[field], str) or not normalized[field]
         ):
             raise RuntimeProtocolError("runtime_protocol_error")
+    if "source" in normalized and (
+        not isinstance(normalized["source"], str) or not normalized["source"]
+    ):
+        raise RuntimeProtocolError("runtime_protocol_error")
     for field in ("call_id", "exec_id", "name"):
         if field in normalized and not isinstance(normalized[field], str):
             raise RuntimeProtocolError("runtime_protocol_error")

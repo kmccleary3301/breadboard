@@ -580,6 +580,7 @@ async def test_replay_rejects_reused_canonical_message_identity(
     [
         '{"type":"assistant_message","payload":{"text":"bad","message_id":""}}',
         '{"type":"assistant_message","payload":{"text":"bad","message_id":"top","message":{"id":"nested"}}}',
+        '{"type":"assistant_message","payload":{"text":"bad","source":123}}',
     ],
 )
 async def test_replay_rejects_invalid_or_conflicting_message_identity(
