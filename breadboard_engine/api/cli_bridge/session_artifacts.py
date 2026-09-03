@@ -7,6 +7,7 @@ import os
 import shutil
 import stat
 import uuid
+from itertools import islice
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence
@@ -347,7 +348,7 @@ class SessionArtifactStore:
             attachment_dir = attachment_root / attachment_id
             try:
                 directory_stat = attachment_dir.stat(follow_symlinks=False)
-                children = tuple(attachment_dir.iterdir())
+                children = tuple(islice(attachment_dir.iterdir(), 2))
             except FileNotFoundError as exc:
                 raise ValueError("retained attachment materialization is missing") from exc
             if not stat.S_ISDIR(directory_stat.st_mode) or len(children) != 1:

@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+import stat
 import time
 import uuid
 import weakref
@@ -169,6 +170,92 @@ def _event_root(state_paths: ManagedStatePaths | None = None) -> Path:
         )
     ).resolve()
 
+def _read_retained_event_journal(
+    event_root: Path,
+    session_id: str,
+) -> tuple[bytes, tuple[int, int], tuple[int, int]]:
+    event_path = event_root / session_id / "session_events.jsonl"
+    if os.name == "nt":
+        handles: list[int] = []
+        try:
+            handles.append(
+                AnchoredStorage.windows_handle(
+                    event_root,
+                    directory=True,
+                    create=False,
+                )
+            )
+            handles.append(
+                AnchoredStorage.windows_handle(
+                    event_path.parent,
+                    directory=True,
+                    create=False,
+                )
+            )
+            handles.append(
+                AnchoredStorage.windows_handle(
+                    event_path,
+                    directory=False,
+                    create=False,
+                )
+            )
+            directory_stat = event_path.parent.stat(follow_symlinks=False)
+            file_stat = event_path.stat(follow_symlinks=False)
+            payload = event_path.read_bytes()
+        finally:
+            for handle in reversed(handles):
+                AnchoredStorage.close_windows_handle(handle)
+    else:
+        root_descriptor = os.open(
+            event_root,
+            os.O_RDONLY
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        session_descriptor: int | None = None
+        event_descriptor: int | None = None
+        try:
+            session_descriptor = AnchoredStorage.open_directory(
+                root_descriptor,
+                session_id,
+                create=False,
+            )
+            directory_stat = os.fstat(session_descriptor)
+            event_descriptor = os.open(
+                "session_events.jsonl",
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=session_descriptor,
+            )
+            file_stat = os.fstat(event_descriptor)
+            if not stat.S_ISREG(file_stat.st_mode):
+                raise OSError("retained event journal is not a regular file")
+            with os.fdopen(event_descriptor, "rb") as stream:
+                event_descriptor = None
+                payload = stream.read()
+        finally:
+            if event_descriptor is not None:
+                os.close(event_descriptor)
+            if session_descriptor is not None:
+                os.close(session_descriptor)
+            os.close(root_descriptor)
+    return (
+        payload,
+        (directory_stat.st_dev, directory_stat.st_ino),
+        (file_stat.st_dev, file_stat.st_ino),
+    )
+
+
+def _unsafe_retained_journal(session_id: str, cause: OSError | None = None) -> ReplayError:
+    error = ReplayError(
+        "unsafe_event_journal",
+        f"retained session {session_id!r} has an unsafe logical event journal",
+    )
+    if cause is not None:
+        error.__cause__ = cause
+    return error
+
+
+
 
 def _restore_product_session(
     session_id: str,
@@ -176,19 +263,48 @@ def _restore_product_session(
     *,
     event_root: Path | None = None,
 ) -> ProductSession:
-    selected_event_root = event_root if event_root is not None else _event_root(state_paths)
+    selected_event_root = (
+        event_root if event_root is not None else _event_root(state_paths)
+    )
     event_path = selected_event_root / session_id / "session_events.jsonl"
+    initial_journal: tuple[bytes, tuple[int, int], tuple[int, int]] | None
+    try:
+        initial_journal = _read_retained_event_journal(
+            selected_event_root,
+            session_id,
+        )
+    except FileNotFoundError:
+        initial_journal = None
+    except OSError as exc:
+        raise _unsafe_retained_journal(session_id, exc)
     try:
         sink = JsonlEventSink(event_path)
         with ProcessLock(event_path):
-            with event_path.open("r", encoding="utf-8") as stream:
-                events = [
-                    event_from_record(record)
-                    for line in stream
-                    if line.strip()
-                    for record in (json.loads(line),)
-                ]
-        restored = ProductSession.restore(events, sink=sink)
+            try:
+                retained_journal = _read_retained_event_journal(
+                    selected_event_root,
+                    session_id,
+                )
+            except FileNotFoundError:
+                raise
+            except OSError as exc:
+                raise _unsafe_retained_journal(session_id, exc)
+            retained_payload = retained_journal[0]
+            if (
+                sink.path != event_path.absolute()
+                or (
+                    initial_journal is not None
+                    and retained_journal[1:] != initial_journal[1:]
+                )
+            ):
+                raise _unsafe_retained_journal(session_id)
+            events = [
+                event_from_record(record)
+                for line in retained_payload.decode("utf-8").splitlines()
+                if line.strip()
+                for record in (json.loads(line),)
+            ]
+            restored = ProductSession.restore(events, sink=sink)
     except FileNotFoundError as exc:
         raise ReplayError(
             "missing_event_stream",

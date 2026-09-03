@@ -842,6 +842,29 @@ def test_restore_wraps_invalid_event_transaction_as_typed_replay_error(tmp_path)
 
 
 
+@pytest.mark.asyncio
+async def test_restore_accepts_identity_stable_event_transaction_recovery(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    original = journal.read_bytes()
+    journal.write_bytes(original + b'{"partial":')
+    journal.with_name(".session_events.jsonl.txn").write_text(
+        str(len(original)),
+        encoding="ascii",
+    )
+
+    restored = _restore_product_session(response.session_id, event_root=event_root)
+
+    assert restored.read_model.session_id == response.session_id
+    assert journal.read_bytes() == original
+
+
 def test_restore_does_not_misclassify_event_sink_infrastructure_failure(
     monkeypatch, tmp_path
 ) -> None:
@@ -1643,6 +1666,35 @@ async def test_managed_retained_workspace_restores_attachments_without_binding(
     await _stop(recovered)
 
 
+@pytest.mark.asyncio
+async def test_retained_event_journal_rejects_symlinked_directory_and_file(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard.product.runtime import ReplayError
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    session_directory = event_root / response.session_id
+    journal = session_directory / "session_events.jsonl"
+    retained_directory = event_root / "retained-directory"
+    session_directory.rename(retained_directory)
+    session_directory.symlink_to(retained_directory, target_is_directory=True)
+
+    with pytest.raises(ReplayError, match="unsafe logical event journal"):
+        _restore_product_session(response.session_id, event_root=event_root)
+
+    session_directory.unlink()
+    retained_directory.rename(session_directory)
+    retained_journal = session_directory / "retained-events.jsonl"
+    journal.rename(retained_journal)
+    journal.symlink_to(retained_journal)
+
+    with pytest.raises(ReplayError, match="unsafe logical event journal"):
+        _restore_product_session(response.session_id, event_root=event_root)
+
+
 def test_retained_manifest_history_rejects_excess_count_before_reads(
     monkeypatch, tmp_path
 ) -> None:
@@ -1663,6 +1715,44 @@ def test_retained_manifest_history_rejects_excess_count_before_reads(
         owner.restore_manifest(tmp_path)
 
     assert reads == []
+
+
+@pytest.mark.asyncio
+async def test_retained_attachment_materialization_reads_at_most_two_children(
+    monkeypatch, tmp_path
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    service, response, record = await _create(
+        monkeypatch,
+        tmp_path,
+        workspace=str(workspace),
+    )
+    uploaded = await service.upload_attachments(response.session_id, [_Upload()])
+    attachment_directory = (
+        workspace
+        / ".breadboard"
+        / "attachments"
+        / uploaded.attachments[0].id
+    )
+    (attachment_directory / "extra-a").write_bytes(b"a")
+    (attachment_directory / "extra-b").write_bytes(b"b")
+    owner = SessionArtifactStore(
+        session_id=response.session_id,
+        metadata=dict(record.metadata),
+    )
+    await _stop(record)
+    real_iterdir = Path.iterdir
+
+    def fail_after_two(path: Path):
+        for index, child in enumerate(real_iterdir(path)):
+            if path == attachment_directory and index == 2:
+                raise AssertionError("enumerated a third attachment child")
+            yield child
+
+    monkeypatch.setattr(Path, "iterdir", fail_after_two)
+    with pytest.raises(ValueError, match="invalid retained attachment materialization"):
+        owner.restore_manifest(workspace)
 
 
 def test_retained_manifest_history_rejects_oversized_entry_before_read(
