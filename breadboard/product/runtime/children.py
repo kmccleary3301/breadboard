@@ -436,6 +436,11 @@ class ChildState:
             terminal_outcome not in _TERMINAL or status != terminal_outcome
         ):
             raise ValueError("terminal durable child status and outcome must agree")
+        joined = value.get("joined", False)
+        if joined and terminal_count != 1:
+            raise ValueError(
+                "joined durable child must have one terminal outcome"
+            )
         execution_target_ref = value.get("execution_target_ref")
         execution_target = value.get("execution_target")
         if (
@@ -573,7 +578,7 @@ class ChildState:
             result_refs=result_refs,
             terminal_outcome=terminal_outcome,
             terminal_count=terminal_count,
-            joined=value.get("joined", False),
+            joined=joined,
             settlement=settlement,
             child_spec=child_spec,
             execution_target=execution_target,
@@ -2472,6 +2477,8 @@ class DurableChildFactory:
             raise ExpectedRevisionConflict("stale child recovery reference")
         if state.terminal_count:
             self._repair_terminal_owners(state)
+            if not state.joined:
+                state = self._cas(state, joined=True)
             self._status(state)
             return state
         if state.cancellation_requested:
