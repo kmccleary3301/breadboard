@@ -63,6 +63,28 @@ CAMPAIGN_PATTERNS = (
     "start_tmux",
 )
 
+GENERIC_BASENAMES = frozenset({"__init__.py"})
+
+
+def _reference_pattern(full: str) -> re.Pattern[str]:
+    """Match script references without treating generic basenames as calls."""
+    name = Path(full).name
+    relative = full.removeprefix("scripts/")
+    module = relative.removesuffix(".py").replace("/", ".")
+    terms = [full, f"scripts.{module}"]
+    if name not in GENERIC_BASENAMES:
+        terms.insert(0, name)
+        return re.compile(
+            r"(?<![\w/])(?:%s)(?![\w])" % "|".join(map(re.escape, terms))
+        )
+
+    package = relative.removesuffix("/__init__.py")
+    package = "scripts" if package == relative else f"scripts.{package.replace('/', '.')}"
+    direct = r"(?<![\w/])(?:%s)(?![\w])" % "|".join(map(re.escape, terms))
+    package_import = rf"(?<![\w.])(?:from|import)\s+{re.escape(package)}(?=\s|[.;])"
+    return re.compile(rf"(?:{direct}|{package_import})")
+
+
 
 def tracked_scripts() -> list[str]:
     out = subprocess.run(
@@ -98,19 +120,22 @@ def reference_map(scripts: list[str]) -> dict[str, set[str]]:
             except Exception:
                 continue
     for p, (name, full) in names.items():
-        stem = Path(name).stem
-        module = full.removeprefix("scripts/").removesuffix(".py").replace("/", ".")
-        pat = re.compile(
-            r"(?<![\w/])(?:%s|%s|scripts\.%s)(?![\w])"
-            % (re.escape(name), re.escape(full), re.escape(module))
-        )
+        pat = _reference_pattern(full)
+        relative = full.removeprefix("scripts/")
+        module = relative.removesuffix(".py").replace("/", ".")
+        candidate_terms = [full, f"scripts.{module}"]
+        if name in GENERIC_BASENAMES:
+            package = relative.removesuffix("/__init__.py")
+            candidate_terms.append(
+                "scripts" if package == relative else f"scripts.{package.replace('/', '.')}"
+            )
+        else:
+            candidate_terms.extend((name, Path(name).stem))
         for rel, text in haystacks:
-            if rel == full:
+            if rel == full or not any(term in text for term in candidate_terms):
                 continue
-            if name in text or f"scripts.{module}" in text:
-                if pat.search(text):
-                    refs[p].add(rel)
-        _ = stem
+            if pat.search(text):
+                refs[p].add(rel)
     return refs
 
 

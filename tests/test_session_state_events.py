@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from fastapi import HTTPException
 
+from breadboard.product.runtime import ReplayError, session_store
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest,
@@ -53,6 +54,27 @@ class EventCollector:
         self, event_type: str
     ) -> List[Tuple[str, Dict[str, Any], Optional[int]]]:
         return [evt for evt in self.events if evt[0] == event_type]
+
+
+def _seed_product_session_journal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    session_id: str,
+) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+
+    event_root = tmp_path / "session-events"
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(event_root))
+    ProductSession.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "retained session",
+        session_id=session_id,
+        sink=JsonlEventSink(event_root / session_id / "session_events.jsonl"),
+    )
 
 
 def test_completion_sentinel_scrubbing_is_recursive_and_text_scoped() -> None:
@@ -745,7 +767,7 @@ async def test_session_runner_can_defer_execution_until_after_admission_response
 
     assert accepted == "continue"
     assert runner._input_queue.empty()
-    assert product_inputs == []
+    assert product_inputs == [("continue", [])]
     assert len(deferred) == 1
     await deferred[0]()
     assert product_inputs == [("continue", [])]
@@ -769,6 +791,19 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
             self.inputs: list[
                 tuple[str, list[str], str | None, str | None, str | None]
             ] = []
+
+        def prepare_input_content(self, content: str) -> str:
+            return content
+        def validate_input_admission(
+            self,
+            _content: str,
+            _attachments: tuple[str, ...],
+            *,
+            input_id: str,
+            turn_id: str,
+        ) -> None:
+            assert input_id
+            assert turn_id
 
         async def enqueue_input(
             self,
@@ -798,6 +833,14 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
 
     first = await service.send_input(record.session_id, request)
     duplicate = await service.send_input(record.session_id, request)
+    with pytest.raises(HTTPException) as conflict:
+        await service.send_input(
+            record.session_id,
+            SessionInputRequest(
+                content="different",
+                client_message_id="client-1",
+            ),
+        )
 
     assert first.model_dump() == {
         "status": "accepted",
@@ -811,10 +854,114 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
         **first.model_dump(),
         "disposition": "deduplicated",
     }
+    assert conflict.value.status_code == 409
+    assert conflict.value.detail == {
+        "code": "input_idempotency_conflict",
+        "turn_id": first.turn_id,
+    }
     assert runner.inputs == [
         ("continue", [], first.input_id, first.turn_id, first.turn_id),
     ]
     assert record.active_turn_id == first.turn_id
+
+
+@pytest.mark.asyncio
+async def test_parallel_sends_remain_separate_in_durable_admission_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+
+    registry = SessionRegistry(state_root=tmp_path / "registry")
+    record = SessionRecord(
+        session_id="sess-parallel-admission",
+        status=SessionStatus.RUNNING,
+    )
+    journal = tmp_path / "events" / record.session_id / "session_events.jsonl"
+    record.product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "parallel admission",
+        session_id=record.session_id,
+        sink=JsonlEventSink(journal),
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    record.runner = runner
+    await registry.create(record)
+    original_persist = registry.persist
+    first_persist_started = asyncio.Event()
+    release_first_persist = asyncio.Event()
+    persist_count = 0
+
+    async def controlled_persist(
+        persisted_record: SessionRecord,
+        **kwargs: Any,
+    ) -> None:
+        nonlocal persist_count
+        persist_count += 1
+        if persist_count == 1:
+            first_persist_started.set()
+            await release_first_persist.wait()
+        await original_persist(persisted_record, **kwargs)
+
+    monkeypatch.setattr(registry, "persist", controlled_persist)
+    service = SessionService(registry=registry)
+    first_task = asyncio.create_task(
+        service.send_input(
+            record.session_id,
+            SessionInputRequest(content="first", client_message_id="parallel-1"),
+        )
+    )
+    await asyncio.wait_for(first_persist_started.wait(), timeout=2)
+    second_task = asyncio.create_task(
+        service.send_input(
+            record.session_id,
+            SessionInputRequest(content="second", client_message_id="parallel-2"),
+        )
+    )
+    await asyncio.sleep(0)
+    assert second_task.done() is False
+    release_first_persist.set()
+
+    first, second = await asyncio.wait_for(
+        asyncio.gather(first_task, second_task),
+        timeout=2,
+    )
+    restored = await SessionRegistry(state_root=tmp_path / "registry").get(
+        record.session_id
+    )
+
+    assert [first.disposition, second.disposition] == ["started", "queued"]
+    assert restored is not None
+    assert [
+        (turn.original_disposition, turn.body_digest)
+        for turn in restored.turns_by_id.values()
+    ] == [
+        ("started", submission_body_digest("first", ())),
+        ("queued", submission_body_digest("second", ())),
+    ]
+    accepted_events = [
+        event
+        for event in map(json.loads, journal.read_text(encoding="utf-8").splitlines())
+        if event["kind"] == "input.accepted"
+    ]
+    assert [event["payload"]["content_hash"] for event in accepted_events] == [
+        "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
+        for content in ("first", "second")
+    ]
+    assert [
+        runner._input_queue.get_nowait()["content"],
+        runner._input_queue.get_nowait()["content"],
+    ] == ["first", "second"]
 
 
 @pytest.mark.asyncio
@@ -848,8 +995,111 @@ async def test_session_input_is_durable_before_deferred_execution(tmp_path: Path
     assert queued["input_id"] == receipt.input_id
     assert queued["turn_id"] == receipt.turn_id
 
+
 @pytest.mark.asyncio
-async def test_terminal_product_session_rejects_input_before_persistence(
+async def test_sanitized_input_is_staged_before_registry_persistence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-sanitized-admission",
+        status=SessionStatus.RUNNING,
+    )
+    record.product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "sanitized admission",
+        session_id=record.session_id,
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    runner._accepted_task_texts = ["hello"]
+    persisted_contents: list[str] = []
+    original_persist = registry.persist
+
+    async def capture_persist(persisted_record: SessionRecord) -> None:
+        persisted_contents.extend(
+            turn.content for turn in persisted_record.turns_by_id.values()
+        )
+        await original_persist(persisted_record)
+
+    monkeypatch.setattr(registry, "persist", capture_persist)
+    record.runner = runner
+    await registry.create(record)
+    deferred: list[Any] = []
+
+    receipt = await SessionService(registry=registry).send_input(
+        record.session_id,
+        SessionInputRequest(
+            content="hello world",
+            client_message_id="client-sanitized",
+        ),
+        defer_execution=deferred.append,
+    )
+
+    restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+    assert restored is not None
+    assert record.turns_by_id[receipt.turn_id].content == "world"
+    assert persisted_contents == ["world"]
+    assert restored.turns_by_id[receipt.turn_id].content == ""
+    assert record.product_session.events[-1].payload["content_hash"] == (
+        "sha256:" + hashlib.sha256(b"world").hexdigest()
+    )
+    assert len(deferred) == 1
+@pytest.mark.asyncio
+async def test_input_normalization_is_applied_once_for_two_prior_prefixes(
+    tmp_path: Path,
+) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="sess-two-prefix-admission",
+        status=SessionStatus.RUNNING,
+    )
+    record.product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}),
+        "two-prefix admission",
+        session_id=record.session_id,
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    runner._accepted_task_texts = ["alpha", "beta"]
+    record.runner = runner
+    await registry.create(record)
+    deferred: list[Any] = []
+
+    receipt = await SessionService(registry=registry).send_input(
+        record.session_id,
+        SessionInputRequest(
+            content="alphabeta new",
+            client_message_id="client-two-prefix",
+        ),
+        defer_execution=deferred.append,
+    )
+
+    assert record.turns_by_id[receipt.turn_id].content == "beta new"
+    assert len(deferred) == 1
+    await deferred[0]()
+    queued = await runner._input_queue.get()
+    assert queued["content"] == "beta new"
+
+@pytest.mark.asyncio
+async def test_terminal_product_session_rejects_before_durable_admission(
     tmp_path: Path,
 ) -> None:
     registry = SessionRegistry(state_root=tmp_path)
@@ -872,7 +1122,7 @@ async def test_terminal_product_session_rejects_input_before_persistence(
     await registry.create(record)
     deferred: list[Any] = []
 
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(HTTPException) as rejected:
         await SessionService(registry=registry).send_input(
             record.session_id,
             SessionInputRequest(
@@ -882,12 +1132,14 @@ async def test_terminal_product_session_rejects_input_before_persistence(
             defer_execution=deferred.append,
         )
 
-    assert error.value.status_code == 409
-    assert deferred == []
+    retained = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+    assert rejected.value.status_code == 409
+    assert retained is not None
+    assert retained.turns_by_id == {}
     assert record.turns_by_id == {}
     assert record.active_turn_id is None
+    assert deferred == []
     assert runner._input_queue.empty()
-
 
 @pytest.mark.asyncio
 async def test_retained_submission_digest_deduplicates_after_restart(
@@ -941,55 +1193,80 @@ async def test_retained_submission_digest_deduplicates_after_restart(
 
 
 @pytest.mark.asyncio
-async def test_admission_persistence_failure_rolls_back_unscheduled_turn(
+async def test_admission_persistence_failure_precedes_logical_input_append(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+
+    class RecordingSink:
+        def __init__(self) -> None:
+            self.events: list[Any] = []
+
+        def append(self, event: Any) -> None:
+            self.events.append(event)
+
     registry = SessionRegistry(state_root=tmp_path)
     record = SessionRecord(
         session_id="sess-admission-persist-failure",
         status=SessionStatus.RUNNING,
     )
-
-    class Runner:
-        async def enqueue_input(
-            self,
-            content: str,
-            attachments: list[str],
-            *,
-            defer_execution: Any,
-            **_kwargs: Any,
-        ) -> str:
-            async def execute() -> None:
-                raise AssertionError("failed admission must not execute")
-
-            defer_execution(execute)
-            return content
-
-    record.runner = Runner()
+    sink = RecordingSink()
+    record.product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "durable admission",
+        session_id=record.session_id,
+        sink=sink,
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    record.runner = runner
     await registry.create(record)
+    original_persist = registry.persist
 
     async def fail_persist(*_args: Any, **_kwargs: Any) -> None:
         raise OSError("injected admission persistence failure")
 
     monkeypatch.setattr(registry, "persist", fail_persist)
     deferred: list[Any] = []
+    request = SessionInputRequest(
+        content="continue",
+        client_message_id="client-persist-failure",
+    )
     with pytest.raises(OSError, match="injected admission persistence failure"):
         await SessionService(registry=registry).send_input(
             record.session_id,
-            SessionInputRequest(
-                content="continue",
-                client_message_id="client-persist-failure",
-            ),
+            request,
             defer_execution=deferred.append,
         )
 
+    assert [event.kind for event in sink.events] == ["session.started"]
     assert deferred == []
     assert record.turns_by_id == {}
     assert record.submissions_by_key == {}
     assert record.submissions_by_key_digest == {}
     assert record.active_turn_id is None
     assert record.turn_admission.value == "idle"
+
+    monkeypatch.setattr(registry, "persist", original_persist)
+    receipt = await SessionService(registry=registry).send_input(
+        record.session_id,
+        request,
+        defer_execution=deferred.append,
+    )
+
+    assert receipt.disposition == "started"
+    assert [event.kind for event in sink.events] == [
+        "session.started",
+        "input.accepted",
+    ]
+    assert len(deferred) == 1
 
 @pytest.mark.asyncio
 async def test_cancel_turn_requests_only_the_active_turn_and_is_idempotent(
@@ -1457,6 +1734,7 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
         status=SessionStatus.RUNNING,
         metadata={"permission_mode": "configured"},
     )
+    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
     interrupted = TurnRecord(
         input_id="input-interrupted",
         turn_id="turn-interrupted",
@@ -1538,6 +1816,7 @@ async def test_retained_restart_preserves_explicit_config_and_workspace(
             "mode": "review",
         },
     )
+    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
     await registry.create(record)
 
     monkeypatch.setattr(
@@ -1567,6 +1846,32 @@ async def test_retained_restart_preserves_explicit_config_and_workspace(
     finally:
         if restored.runner is not None:
             await restored.runner.stop()
+
+
+
+@pytest.mark.asyncio
+async def test_retained_restart_without_logical_journal_fails_typed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "BREADBOARD_SESSION_EVENT_ROOT",
+        str(tmp_path / "session-events"),
+    )
+    state_root = tmp_path / "state"
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id="session-missing-logical-journal",
+        status=SessionStatus.RUNNING,
+    )
+    await registry.create(record)
+
+    service = SessionService(registry=SessionRegistry(state_root=state_root))
+    with pytest.raises(ReplayError) as captured:
+        await service.ensure_session(record.session_id)
+
+    assert captured.value.code == "missing_event_stream"
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -1616,6 +1921,7 @@ async def test_locked_operation_resumes_retained_session_without_deadlock(
             "permission_mode": "configured",
         },
     )
+    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
     await registry.create(record)
     monkeypatch.setattr(
         "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
@@ -3039,3 +3345,472 @@ async def test_runner_stop_terminalizes_active_and_queued_turns_once(
     assert record.active_turn_id is None
     assert list(record.queued_turn_ids) == []
     assert record.status is SessionStatus.STOPPED
+
+@pytest.mark.asyncio
+async def test_retained_registry_first_input_reconciles_journal_before_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    state_root = tmp_path / "state"
+    session_id = "session-restart-admission-gap"
+    _seed_product_session_journal(monkeypatch, tmp_path, session_id)
+    event_root = tmp_path / "session-events"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("{}\n", encoding="utf-8")
+
+    from breadboard_engine.api.cli_bridge.session_artifacts import SessionArtifactStore
+
+    class Upload:
+        filename = "proof.txt"
+        content_type = "text/plain"
+
+        def __init__(self) -> None:
+            self.data = b"proof"
+
+        async def read(self, size: int = -1) -> bytes:
+            data = self.data if size < 0 else self.data[:size]
+            self.data = self.data[len(data) :]
+            return data
+
+    metadata = {
+        "config_path": str(config_path),
+        "permission_mode": "configured",
+        "session_event_root": str(event_root),
+        "workspace": str(workspace),
+    }
+    artifacts = SessionArtifactStore(session_id=session_id, metadata=metadata)
+    uploaded = await artifacts.upload([Upload()], workspace_dir=workspace)
+    attachment_id = uploaded.attachments[0].id
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id=session_id,
+        status=SessionStatus.RUNNING,
+        metadata=metadata,
+    )
+    turn = TurnRecord(
+        input_id="input-admission-gap",
+        turn_id="turn-admission-gap",
+        client_message_id="client-admission-gap",
+        content="recover this input",
+        attachments=(attachment_id,),
+        original_disposition="started",
+        state="active",
+        body_digest=submission_body_digest(
+            "recover this input", (attachment_id,)
+        ),
+        logical_event_count_before_admission=1,
+        logical_input_content_hash=(
+            "sha256:"
+            + hashlib.sha256("recover this input".encode("utf-8")).hexdigest()
+        ),
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.submissions_by_key[turn.client_message_id] = turn
+    record.submissions_by_key_digest[identity_digest(turn.client_message_id)] = turn
+    record.active_turn_id = turn.turn_id
+    await registry.create(record)
+    state_path = registry._state_path(session_id)
+    assert state_path is not None
+    retained_state = json.loads(state_path.read_text(encoding="utf-8"))
+    retained_turn_state = retained_state["turns"][0]
+    assert "recover this input" not in state_path.read_text(encoding="utf-8")
+    assert "content" not in retained_turn_state
+    assert retained_turn_state["content_hash"] == turn.logical_input_content_hash
+    assert retained_turn_state["attachments"] == [attachment_id]
+
+    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    restarted = SessionRegistry(state_root=state_root)
+    service = SessionService(registry=restarted)
+    restored = await service.ensure_session(session_id)
+    try:
+        assert restored.runner is not None
+        retained_turn = restored.turns_by_id[turn.turn_id]
+        assert retained_turn.content == ""
+        assert retained_turn.logical_input_content_hash == (
+            turn.logical_input_content_hash
+        )
+        assert retained_turn.attachments == (attachment_id,)
+        accepted_events = [
+            event
+            for event in restored.product_session.events
+            if event.kind == "input.accepted"
+        ]
+        assert len(accepted_events) == 1
+        assert dict(accepted_events[0].payload) == {
+            "content_hash": turn.logical_input_content_hash,
+            "attachments": (
+                restored.runner.artifacts.selected_artifacts((attachment_id,))[0].as_dict(),
+            ),
+        }
+
+        deferred: list[Any] = []
+        duplicate = await service.send_input(
+            session_id,
+            SessionInputRequest(
+                content=turn.content,
+                attachments=[attachment_id],
+                client_message_id=turn.client_message_id,
+            ),
+            defer_execution=deferred.append,
+        )
+        assert duplicate.disposition == "deduplicated"
+        assert deferred == []
+        assert len(
+            [
+                event
+                for event in restored.product_session.events
+                if event.kind == "input.accepted"
+            ]
+        ) == 1
+    finally:
+        if restored.runner is not None:
+            await restored.runner.stop()
+
+
+@pytest.mark.asyncio
+async def test_legacy_workspace_journal_binds_before_terminal_publication(
+    tmp_path: Path,
+) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+
+    workspace = tmp_path / "workspace"
+    session_id = "session-legacy-workspace-binding"
+    event_path = session_store.session_event_path(workspace, session_id)
+    event_path.parent.mkdir(parents=True, exist_ok=True)
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "b" * 64}),
+        "legacy workspace session",
+        session_id=session_id,
+        sink=JsonlEventSink(event_path),
+    )
+    product_session.complete()
+
+    state_root = tmp_path / "state"
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id=session_id,
+        status=SessionStatus.RUNNING,
+        metadata={"workspace": str(workspace)},
+    )
+    await registry.create(record)
+
+    restarted = SessionRegistry(state_root=state_root)
+    service = SessionService(registry=restarted)
+    restored = await service.ensure_session(session_id)
+
+    assert restored.metadata["durable_product_workspace"] == str(workspace)
+    projection, _ = session_store.load_session(workspace, session_id)
+    assert projection.read_model.status == "completed"
+    assert projection.read_model.session_id == session_id
+
+
+def test_retained_admission_reconciliation_accepts_interleaved_observations() -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+
+    record = SessionRecord(
+        session_id="session-interleaved-admission",
+        status=SessionStatus.RUNNING,
+    )
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "c" * 64}),
+        "interleaved admission",
+        session_id=record.session_id,
+    )
+    record.product_session = product_session
+    content_hash = "sha256:" + (
+        __import__("hashlib").sha256(b"interleaved input").hexdigest()
+    )
+    turn = TurnRecord(
+        input_id="input-interleaved-admission",
+        turn_id="turn-interleaved-admission",
+        client_message_id="client-interleaved-admission",
+        content="interleaved input",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+        logical_event_count_before_admission=1,
+        logical_input_content_hash=content_hash,
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+    product_session.assistant_message("observation raced with admission")
+    product_session.input(turn.content, [])
+
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(config_path="cfg.yaml", task=""),
+    )
+    runner.reconcile_retained_input_admissions()
+
+    accepted_events = [
+        event for event in product_session.events if event.kind == "input.accepted"
+    ]
+    assert len(accepted_events) == 1
+    assert accepted_events[0].payload["content_hash"] == content_hash
+
+
+@pytest.mark.asyncio
+async def test_duplicate_attachment_ids_are_canonical_before_registry_persist(
+    tmp_path: Path,
+) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+    from breadboard_engine.api.cli_bridge.session_artifacts import SessionArtifactStore
+
+    class Upload:
+        filename = "proof.txt"
+        content_type = "text/plain"
+
+        def __init__(self) -> None:
+            self.data = b"proof"
+
+        async def read(self, size: int = -1) -> bytes:
+            data = self.data if size < 0 else self.data[:size]
+            self.data = self.data[len(data) :]
+            return data
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    metadata = {"workspace": str(workspace)}
+    session_id = "session-duplicate-attachment-ids"
+    artifacts = SessionArtifactStore(session_id=session_id, metadata=metadata)
+    uploaded = await artifacts.upload([Upload()], workspace_dir=workspace)
+    attachment_id = uploaded.attachments[0].id
+    runner_metadata = dict(metadata)
+    runner_artifacts = SessionArtifactStore(
+        session_id=session_id, metadata=runner_metadata
+    )
+    runner_artifacts.restore_manifest(workspace)
+
+    event_root = tmp_path / "events"
+    event_path = event_root / session_id / "session_events.jsonl"
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "d" * 64}),
+        "duplicate attachment IDs",
+        session_id=session_id,
+        sink=JsonlEventSink(event_path),
+    )
+    state_root = tmp_path / "state"
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id=session_id,
+        status=SessionStatus.RUNNING,
+        metadata={**runner_metadata, "session_event_root": str(event_root)},
+    )
+    record.product_session = product_session
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(
+            config_path="cfg.yaml", task="", workspace=str(workspace)
+        ),
+    )
+    runner.artifacts = runner_artifacts
+    record.runner = runner
+    await registry.create(record)
+
+    deferred: list[Any] = []
+    service = SessionService(registry=registry)
+    receipt = await service.send_input(
+        session_id,
+        SessionInputRequest(
+            content="use attachment",
+            attachments=[attachment_id, attachment_id],
+            client_message_id="client-duplicate-attachment-ids",
+        ),
+        defer_execution=deferred.append,
+    )
+
+    assert receipt.disposition == "started"
+    turn = record.turns_by_id[receipt.turn_id]
+    assert turn.attachments == (attachment_id,)
+    state_path = registry._state_path(session_id)
+    assert state_path is not None
+    retained = json.loads(state_path.read_text(encoding="utf-8"))
+    assert retained["turns"][0]["attachments"] == [attachment_id]
+    assert len(
+        [event for event in product_session.events if event.kind == "input.accepted"]
+    ) == 1
+    assert len(deferred) == 1
+    with pytest.raises(HTTPException) as invalid:
+        await service.send_input(
+            session_id,
+            SessionInputRequest(
+                content="invalid attachment",
+                attachments=["missing-attachment"],
+                client_message_id="client-invalid-attachment",
+            ),
+            defer_execution=deferred.append,
+        )
+    assert invalid.value.status_code == 400
+    assert len(record.turns_by_id) == 1
+    retained_after_invalid = json.loads(state_path.read_text(encoding="utf-8"))
+    assert len(retained_after_invalid["turns"]) == 1
+    assert len(deferred) == 1
+    await runner.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transition", ["pause", "complete", "request_approval"])
+async def test_product_transition_after_registry_admission_aborts_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    transition: str,
+) -> None:
+    import hashlib
+
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+
+    class Crash(BaseException):
+        pass
+
+    session_id = f"session-transition-race-{transition}"
+    event_root = tmp_path / "events"
+    event_path = event_root / session_id / "session_events.jsonl"
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "e" * 64}),
+        "transition race",
+        session_id=session_id,
+        sink=JsonlEventSink(event_path),
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("{}\n", encoding="utf-8")
+    registry = SessionRegistry(state_root=tmp_path / "state")
+    record = SessionRecord(
+        session_id=session_id,
+        status=SessionStatus.RUNNING,
+        metadata={
+            "config_path": str(config_path),
+            "permission_mode": "configured",
+            "session_event_root": str(event_root),
+        },
+    )
+    record.product_session = product_session
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path=str(config_path), task=""),
+    )
+    record.runner = runner
+    await registry.create(record)
+
+    async def crash_enqueue(*_args: Any, **_kwargs: Any) -> str:
+        if transition == "request_approval":
+            runner.transition_product_session(
+                "request_approval", "approval-race", "shell"
+            )
+        else:
+            runner.transition_product_session(transition, f"{transition}-race")
+        raise Crash()
+
+    monkeypatch.setattr(runner, "enqueue_input", crash_enqueue)
+    with pytest.raises(Crash):
+        await SessionService(registry=registry).send_input(
+            session_id,
+            SessionInputRequest(
+                content="input lost at lifecycle boundary",
+                client_message_id="client-transition-race",
+            ),
+        )
+
+    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    restarted = SessionRegistry(state_root=tmp_path / "state")
+    recovered_service = SessionService(registry=restarted)
+    recovered = await recovered_service.ensure_session(session_id)
+    try:
+        accepted_events = [
+            event
+            for event in recovered.product_session.events
+            if event.kind == "input.accepted"
+        ]
+        assert accepted_events == []
+        recovered_turn = recovered.turns_by_id[next(iter(recovered.turns_by_id))]
+        assert recovered_turn.cancellation_requested is True
+        assert recovered_turn.terminal_outcome in {"cancelled", "completed"}
+        if transition == "pause":
+            assert recovered.product_session.read_model.status == "paused"
+            assert recovered.projected_status() is SessionStatus.RUNNING
+        elif transition == "request_approval":
+            assert recovered.product_session.read_model.status == "running"
+            assert recovered.projected_status() is SessionStatus.RUNNING
+        else:
+            assert recovered.product_session.read_model.status == "completed"
+            assert recovered.projected_status() is SessionStatus.COMPLETED
+        assert recovered_turn.logical_input_content_hash == (
+            "sha256:"
+            + hashlib.sha256(
+                "input lost at lifecycle boundary".encode("utf-8")
+            ).hexdigest()
+        )
+    finally:
+        if recovered.runner is not None:
+            await recovered.runner.stop()
+
+
+@pytest.mark.parametrize("terminal_kind", ["completed", "failed"])
+def test_terminal_retained_turn_is_unchanged_by_later_lifecycle_event(
+    tmp_path: Path,
+    terminal_kind: str,
+) -> None:
+    from dataclasses import asdict
+
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+
+    session_id = f"session-terminal-retained-{terminal_kind}"
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "f" * 64}),
+        "terminal retained turn",
+        session_id=session_id,
+        sink=JsonlEventSink(
+            tmp_path / session_id / "session_events.jsonl"
+        ),
+    )
+    if terminal_kind == "completed":
+        product_session.complete("already completed")
+        session_status = SessionStatus.COMPLETED
+    else:
+        product_session.fail("worker_failure", "already failed")
+        session_status = SessionStatus.FAILED
+    turn = TurnRecord(
+        input_id="input-terminal-retained",
+        turn_id="turn-terminal-retained",
+        client_message_id="client-terminal-retained",
+        content="",
+        attachments=(),
+        original_disposition="started",
+        state=terminal_kind,
+        terminal_outcome=terminal_kind,
+        terminal_resolution_committed=True,
+        logical_event_count_before_admission=1,
+        logical_input_content_hash="sha256:" + "a" * 64,
+    )
+    record = SessionRecord(
+        session_id=session_id,
+        status=session_status,
+    )
+    record.product_session = product_session
+    record.turns_by_id[turn.turn_id] = turn
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(task=""),
+    )
+    before = asdict(turn)
+
+    runner.reconcile_retained_input_admissions()
+
+    assert asdict(turn) == before
