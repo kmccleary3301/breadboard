@@ -285,6 +285,57 @@ def test_live_assistant_stream_registers_delta_identity_and_content() -> None:
     assert public_end.payload["message_id"] == "live-message-1"
 
 
+def test_live_stream_end_normalizes_content_blocks() -> None:
+    runner, session = _product_runner("live-assistant-content-block")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        emit = kwargs["event_emitter"]
+        emit("assistant.message.start", {"message_id": "live-block"})
+        emit(
+            "assistant.message.end",
+            {
+                "message_id": "live-block",
+                "content": [{"type": "text", "text": "done"}],
+            },
+        )
+        return {"completion_summary": {"completed": True}}
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    _execute_task(runner)
+
+    product_event = next(
+        event for event in session.events if event.kind == "assistant_message"
+    )
+    assert product_event.payload["message_id"] == "live-block"
+    assert product_event.payload["metadata"]["has_content"] is True
+
+
+def test_live_stream_rejects_canonical_message_before_end() -> None:
+    runner, session = _product_runner("live-assistant-overlap")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        emit = kwargs["event_emitter"]
+        emit("assistant.message.start", {})
+        emit("assistant_message", {"text": "overlap"})
+        return {"completion_summary": {"completed": True}}
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
+        _execute_task(runner)
+
+    assert all(event.kind != "assistant_message" for event in session.events)
+
+
 def test_legacy_assistant_delta_remains_forwarded() -> None:
     runner, _session = _product_runner("legacy-assistant-delta")
 
@@ -338,6 +389,36 @@ def test_aborted_live_stream_allows_result_message_fallback_target() -> None:
         event is not None and event.type is EventType.ASSISTANT_MESSAGE
         for event in runner.session.event_queue._queue
     )
+
+
+@pytest.mark.asyncio
+async def test_replay_stream_end_normalizes_content_blocks(tmp_path) -> None:
+    fixture = tmp_path / "assistant-replay-content-block.jsonl"
+    fixture.write_text(
+        "\n".join(
+            (
+                '{"type":"assistant.message.start","payload":{"item_id":"replay-block"}}',
+                '{"type":"assistant.message.end","payload":{"item_id":"replay-block","content":[{"type":"text","text":"done"}]}}',
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner, session = _product_runner("replay-assistant-content-block")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    await runner._execute_replay_task(
+        f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    product_event = next(
+        event for event in session.events if event.kind == "assistant_message"
+    )
+    assert product_event.payload["message_id"] == "replay-block"
+    assert product_event.payload["metadata"]["has_content"] is True
 
 
 @pytest.mark.asyncio

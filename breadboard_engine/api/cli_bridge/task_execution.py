@@ -392,13 +392,18 @@ class TaskExecutionOwner:
                         )
                     )
                     if stream_key is not None:
-                        fragment = next(
+                        fragment_value = next(
                             (
-                                payload.get(field)
+                                payload[field]
                                 for field in ("delta", "text", "content")
-                                if isinstance(payload.get(field), str)
+                                if field in payload
                             ),
                             None,
+                        )
+                        fragment = (
+                            _assistant_visible_text(fragment_value)
+                            if fragment_value is not None
+                            else None
                         )
                         if fragment is not None:
                             replay_assistant_content.setdefault(
@@ -420,13 +425,18 @@ class TaskExecutionOwner:
                             else None
                         )
                     if stream_key is not None:
-                        final_text = next(
+                        final_value = next(
                             (
-                                payload.get(field)
+                                payload[field]
                                 for field in ("text", "content")
-                                if isinstance(payload.get(field), str)
+                                if field in payload
                             ),
                             None,
+                        )
+                        final_text = (
+                            _assistant_visible_text(final_value)
+                            if final_value is not None
+                            else None
                         )
                         observed_message_id = (
                             message_id
@@ -653,13 +663,18 @@ class TaskExecutionOwner:
             if len(set(supplied_ids)) > 1:
                 raise RuntimeProtocolError("runtime_protocol_error")
             message_id = supplied_ids[0] if supplied_ids else None
-            fragment = next(
+            fragment_value = next(
                 (
-                    evt_payload.get(field)
+                    evt_payload[field]
                     for field in ("delta", "text", "content")
-                    if isinstance(evt_payload.get(field), str)
+                    if field in evt_payload
                 ),
                 None,
+            )
+            fragment = (
+                _assistant_visible_text(fragment_value)
+                if fragment_value is not None
+                else None
             )
             with live_stream_lock:
                 if evt_type is EventType.ASSISTANT_MESSAGE_START:
@@ -818,6 +833,15 @@ class TaskExecutionOwner:
                             "trajectory_id"
                         ]
                 else:
+                    if (
+                        event_family == "message.assistant"
+                        and evt_type is EventType.ASSISTANT_MESSAGE
+                    ):
+                        with live_stream_lock:
+                            if active_live_stream is not None:
+                                raise RuntimeProtocolError(
+                                    "runtime_protocol_error"
+                                )
                     runner._record_product_observation(
                         event_family,
                         evt_payload,
