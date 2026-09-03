@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import sys
 from collections import defaultdict
@@ -63,13 +64,23 @@ def _relative(path: Path, root: Path, label: str) -> str:
 def _iter_files(root: Path, suffixes: Iterable[str]) -> list[Path]:
     allowed = frozenset(suffixes)
     files: list[Path] = []
-    for path in root.rglob("*"):
-        if not path.is_file() or path.is_symlink() or path.suffix not in allowed:
-            continue
-        if any(part in EXCLUDED_PARTS for part in path.relative_to(root).parts):
-            continue
-        files.append(path)
-    return sorted(files, key=lambda item: item.relative_to(root).as_posix())
+    for directory, directory_names, file_names in os.walk(
+        root,
+        topdown=True,
+        followlinks=False,
+    ):
+        directory_path = Path(directory)
+        directory_names[:] = sorted(
+            name
+            for name in directory_names
+            if name not in EXCLUDED_PARTS
+            and not (directory_path / name).is_symlink()
+        )
+        for name in sorted(file_names):
+            path = directory_path / name
+            if path.suffix in allowed and path.is_file() and not path.is_symlink():
+                files.append(path)
+    return files
 
 
 def _load_json(path: Path) -> dict[str, Any]:

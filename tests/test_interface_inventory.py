@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-from scripts.interface_inventory import EXCLUDED_PARTS, canonical_bytes, inventory
+from scripts.interface_inventory import (
+    EXCLUDED_PARTS,
+    _iter_files,
+    canonical_bytes,
+    inventory,
+)
 
 
 SAMPLE = {
@@ -313,3 +319,22 @@ def test_inventory_cli_writes_and_checks_fixed_point(tmp_path: Path) -> None:
     assert written.returncode == 0, written.stdout + written.stderr
     checked = subprocess.run([*command, "--check"], check=False, capture_output=True, text=True)
     assert checked.returncode == 0, checked.stdout + checked.stderr
+
+
+def test_iter_files_prunes_excluded_directories(monkeypatch, tmp_path) -> None:
+    root = tmp_path / "root"
+    included = root / "src" / "kept.py"
+    excluded = root / ".git"
+    included.parent.mkdir(parents=True)
+    excluded.mkdir(parents=True)
+    included.write_text("kept = True\n", encoding="utf-8")
+    (excluded / "ignored.py").write_text("ignored = True\n", encoding="utf-8")
+    real_scandir = os.scandir
+
+    def tracked_scandir(path):  # type: ignore[no-untyped-def]
+        assert Path(path) != excluded
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", tracked_scandir)
+
+    assert _iter_files(root, {".py"}) == [included]
