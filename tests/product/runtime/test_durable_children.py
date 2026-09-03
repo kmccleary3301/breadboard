@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import hashlib
 import asyncio
+import hashlib
 import json
+import multiprocessing
 import os
 import signal
 import subprocess
@@ -12,30 +13,46 @@ from pathlib import Path
 
 import pytest
 
-from breadboard.product.coordination.work_items import CancellationPolicy, WorkItem, WorkItemRepository
+from breadboard.product.coordination.work_items import (
+    CancellationPolicy,
+    ResumePolicy,
+    RetryPolicy,
+    WorkItem,
+    WorkItemRepository,
+)
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.events import Session
+from breadboard.product.runtime import children as children_module
+from breadboard.product.runtime.artifacts import ArtifactRef, ArtifactStore
 from breadboard.product.runtime.children import (
     ChildActivation,
     ChildError,
     ChildSpec,
     ChildState,
-    DurableChildReconciler,
     DurableChildFactory,
-    ExpectedRevisionConflict,
+    DurableChildReconciler,
     ExecutionTarget,
+    ExpectedRevisionConflict,
     LateResultRejected,
     PreparationRequired,
     ProcessExecutionAdapter,
     RayJobAdapter,
     UnavailableChildAdapter,
 )
-from breadboard.product.runtime.artifacts import ArtifactRef, ArtifactStore
-from breadboard.product.runtime.session_store import create_session, load_session, mutate_session
+from breadboard.product.runtime.events import Session
+from breadboard.product.runtime.session_store import (
+    create_session,
+    load_session,
+    mutate_session,
+)
+from breadboard.product.runtime.workflows import (
+    WORKFLOW_PROJECTOR_VERSION,
+    ReplayableWorkflowController,
+    WorkflowDefinition,
+    WorkflowStep,
+    project_workflow_decision,
+)
 from breadboard_engine.api.cli_bridge.registry.registry_impl import SessionRegistry
 
-from breadboard.product.coordination.work_items import ResumePolicy, RetryPolicy
-from breadboard.product.runtime import children as children_module
 HASH = "sha256:" + "a" * 64
 
 
@@ -4708,3 +4725,347 @@ def test_settlement_reservation_clears_when_child_attempt_is_paused(
     recovered = factory._record_state(activation.child_session_id)
     assert recovered.settlement is None
     assert recovered.terminal_count == 0
+
+
+class WorkflowAdapter:
+    family = "workflow-adapter"
+
+    def start(self, activation, spec):
+        return ExecutionTarget(activation.execution_target_ref)
+
+    def observe(self, target):
+        return "running"
+
+    def cancel(self, target):
+        return None
+
+    def prepare_result(self, target, spec):
+        return b"workflow result"
+
+
+def _workflow_definition(*, verify_title: str = "verify") -> WorkflowDefinition:
+    return WorkflowDefinition(
+        (
+            WorkflowStep("inspect", _spec("workflow-adapter", "inspect")),
+            WorkflowStep(
+                "verify",
+                _spec("workflow-adapter", verify_title),
+                depends_on=("inspect",),
+            ),
+        )
+    )
+
+
+def _hold_replayed_workflow_decision(
+    workspace: str,
+    registry_root: str,
+    repository_path: str,
+    marker_path: str,
+) -> None:
+    repository = WorkItemRepository(repository_path)
+    factory = DurableChildFactory(
+        workspace,
+        registry=SessionRegistry(state_root=registry_root),
+        repository=repository,
+        adapters=[UnavailableChildAdapter("workflow-adapter")],
+    )
+    decision = ReplayableWorkflowController(
+        factory,
+        workflow_id="research",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        definition=_workflow_definition(),
+    ).decision()
+    Path(marker_path).write_text(
+        json.dumps(decision.as_dict(), sort_keys=True),
+        encoding="utf-8",
+    )
+    while True:
+        time.sleep(1)
+
+
+def test_workflow_decision_replays_across_controller_restart(tmp_path: Path) -> None:
+    workspace, repository, _parent, registry = _running_parent(tmp_path)
+    adapter = WorkflowAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    definition = _workflow_definition()
+    controller = ReplayableWorkflowController(
+        factory,
+        workflow_id="research",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        definition=definition,
+    )
+
+    first = controller.advance()
+    assert first.started_step_ids == ("inspect",)
+    assert first.action == "wait"
+    inspect = factory.child_states(parent_work_item_id="parent-work")[0]
+    projected = project_workflow_decision(
+        definition,
+        workflow_id="research",
+        parent_work_item_events=repository.read("parent-work"),
+        children=((inspect, repository.read(inspect.child_work_item_id)),),
+    )
+    assert projected.projector_version == WORKFLOW_PROJECTOR_VERSION
+    assert projected.value.action == "wait"
+    assert tuple(source.stream for source in projected.source.components) == (
+        "work_item:parent-work",
+        f"work_item:{inspect.child_work_item_id}",
+    )
+    prepared = factory.prepare_result(
+        inspect.child_session_id,
+        expected_revision=inspect.revision,
+        result=b"inspect result",
+        attempt_id=inspect.attempt_id,
+    )
+    factory.settle(
+        inspect.child_session_id,
+        expected_revision=prepared.revision,
+        outcome="completed",
+        attempt_id=prepared.attempt_id,
+    )
+
+    expected_after_kill = controller.decision()
+    assert expected_after_kill.action == "start"
+    assert expected_after_kill.ready_step_ids == ("verify",)
+    event_counts = {
+        "parent-work": len(repository.read("parent-work")),
+        inspect.child_work_item_id: len(repository.read(inspect.child_work_item_id)),
+    }
+    marker = tmp_path / "controller-decision.json"
+    process = multiprocessing.get_context("spawn").Process(
+        target=_hold_replayed_workflow_decision,
+        args=(
+            str(workspace),
+            str(tmp_path / "registry"),
+            str(tmp_path / "work-items.jsonl"),
+            str(marker),
+        ),
+    )
+    process.start()
+    deadline = time.monotonic() + 10
+    while (
+        not marker.exists()
+        and process.is_alive()
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.01)
+    try:
+        assert marker.exists(), f"controller process exited with {process.exitcode}"
+    finally:
+        if process.is_alive():
+            process.terminate()
+        process.join(timeout=5)
+        if process.is_alive():
+            process.kill()
+            process.join(timeout=5)
+    assert process.exitcode not in {None, 0}
+    assert json.loads(marker.read_text(encoding="utf-8")) == (
+        expected_after_kill.as_dict()
+    )
+    after_kill_repository = WorkItemRepository(tmp_path / "work-items.jsonl")
+    assert {
+        work_item_id: len(after_kill_repository.read(work_item_id))
+        for work_item_id in event_counts
+    } == event_counts
+
+    restarted_factory = DurableChildFactory(
+        workspace,
+        registry=SessionRegistry(state_root=tmp_path / "registry"),
+        repository=WorkItemRepository(tmp_path / "work-items.jsonl"),
+        adapters=[adapter],
+    )
+    restarted = ReplayableWorkflowController(
+        restarted_factory,
+        workflow_id="research",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        definition=definition,
+    )
+    assert restarted.decision() == expected_after_kill
+    second = restarted.advance()
+    assert second.started_step_ids == ("verify",)
+    verify = {
+        state.child_spec["workflow_step_id"]: state
+        for state in restarted_factory.child_states(parent_work_item_id="parent-work")
+    }["verify"]
+    prepared_verify = restarted_factory.prepare_result(
+        verify.child_session_id,
+        expected_revision=verify.revision,
+        result=b"verify result",
+        attempt_id=verify.attempt_id,
+    )
+    restarted_factory.settle(
+        verify.child_session_id,
+        expected_revision=prepared_verify.revision,
+        outcome="completed",
+        attempt_id=prepared_verify.attempt_id,
+    )
+
+    terminal = ReplayableWorkflowController(
+        restarted_factory,
+        workflow_id="research",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        definition=definition,
+    ).decision()
+    assert terminal.action == "complete"
+    assert terminal.completed_step_ids == ("inspect", "verify")
+
+
+def test_workflow_rejects_definition_drift_after_child_start(tmp_path: Path) -> None:
+    workspace, repository, _parent, registry = _running_parent(tmp_path)
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[WorkflowAdapter()],
+    )
+    ReplayableWorkflowController(
+        factory,
+        workflow_id="research",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        definition=_workflow_definition(),
+    ).advance()
+
+    changed = ReplayableWorkflowController(
+        factory,
+        workflow_id="research",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        definition=_workflow_definition(verify_title="changed verify"),
+    )
+    with pytest.raises(ChildError, match="definition does not match"):
+        changed.decision()
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected_action"),
+    (("failed", "fail"), ("canceled", "cancel")),
+)
+def test_workflow_rule_table_terminal_outcome_precedence(
+    tmp_path: Path,
+    outcome: str,
+    expected_action: str,
+) -> None:
+    workspace, repository, _parent, registry = _running_parent(tmp_path)
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[WorkflowAdapter()],
+    )
+    controller = ReplayableWorkflowController(
+        factory,
+        workflow_id="terminal-rule",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        definition=_workflow_definition(),
+    )
+    controller.advance()
+    state = factory.child_states(parent_work_item_id="parent-work")[0]
+    factory.settle(
+        state.child_session_id,
+        expected_revision=state.revision,
+        outcome=outcome,
+        attempt_id=state.attempt_id,
+    )
+
+    decision = controller.decision()
+    assert decision.action == expected_action
+    assert decision.ready_step_ids == ()
+    assert decision.blocked_step_ids == ("verify",)
+
+
+def test_workflow_concurrent_advance_starts_each_step_once(tmp_path: Path) -> None:
+    workspace, repository, _parent, registry = _running_parent(tmp_path)
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[WorkflowAdapter()],
+    )
+    controllers = [
+        ReplayableWorkflowController(
+            factory,
+            workflow_id="concurrent",
+            parent_session_id="parent-session",
+            root_session_id="parent-session",
+            parent_work_item_id="parent-work",
+            definition=_workflow_definition(),
+        )
+        for _ in range(2)
+    ]
+    results = []
+
+    def advance(controller: ReplayableWorkflowController) -> None:
+        results.append(controller.advance())
+
+    threads = [
+        threading.Thread(target=advance, args=(controller,))
+        for controller in controllers
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(result.started_step_ids for result in results) == [(), ("inspect",)]
+    states = factory.child_states(parent_work_item_id="parent-work")
+    assert len(states) == 1
+    assert states[0].child_spec["workflow_step_id"] == "inspect"
+
+
+def test_workflow_definition_rejects_cycles() -> None:
+    with pytest.raises(ValueError, match="cycle"):
+        WorkflowDefinition(
+            (
+                WorkflowStep(
+                    "a",
+                    _spec("workflow-adapter", "a"),
+                    depends_on=("b",),
+                ),
+                WorkflowStep(
+                    "b",
+                    _spec("workflow-adapter", "b"),
+                    depends_on=("a",),
+                ),
+            )
+        )
+
+
+def test_child_state_rejects_malformed_workflow_binding(tmp_path: Path) -> None:
+    workspace, repository, _parent, registry = _running_parent(tmp_path)
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[WorkflowAdapter()],
+    )
+    ReplayableWorkflowController(
+        factory,
+        workflow_id="retained-validation",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        definition=_workflow_definition(),
+    ).advance()
+    retained = factory.child_states(parent_work_item_id="parent-work")[0].retained()
+    retained["child_spec"]["workflow_definition_hash"] = "not-a-digest"
+
+    with pytest.raises(ValueError, match="workflow identity"):
+        ChildState.from_retained(retained)

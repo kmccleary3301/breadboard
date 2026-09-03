@@ -140,6 +140,9 @@ class ChildSpec:
     retry_policy: RetryPolicy = field(default_factory=RetryPolicy)
     resume_policy: ResumePolicy = field(default_factory=lambda: ResumePolicy("restart"))
     cancellation_policy: CancellationPolicy = field(default_factory=CancellationPolicy)
+    workflow_id: str | None = None
+    workflow_step_id: str | None = None
+    workflow_definition_hash: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.lock, EffectiveHarnessLock):
@@ -147,13 +150,34 @@ class ChildSpec:
         for value, name in ((self.title, "title"), (self.task, "task"), (self.worker_id, "worker_id"), (self.adapter_family, "adapter_family")):
             if type(value) is not str or not value.strip():
                 raise ValueError(f"child {name} must be non-empty")
+        workflow_fields = (
+            self.workflow_id,
+            self.workflow_step_id,
+            self.workflow_definition_hash,
+        )
+        if any(value is not None for value in workflow_fields):
+            if any(
+                type(value) is not str or not value.strip()
+                for value in workflow_fields
+            ):
+                raise ValueError(
+                    "child workflow identity fields must be non-empty strings"
+                )
+            digest = self.workflow_definition_hash
+            if (
+                type(digest) is not str
+                or len(digest) != 71
+                or not digest.startswith("sha256:")
+                or any(character not in "0123456789abcdef" for character in digest[7:])
+            ):
+                raise ValueError("child workflow definition hash is invalid")
 
     def retained(self) -> dict[str, Any]:
         task_hash = "sha256:" + hashlib.sha256(self.task.encode()).hexdigest()
         lock_hash = self.lock.as_dict().get("graph_hash")
         if type(lock_hash) is not str:
             raise ValueError("child lock has no graph hash")
-        return {
+        retained = {
             "title": self.title,
             "task_hash": task_hash,
             "task_ref": "child-task://" + task_hash,
@@ -164,6 +188,15 @@ class ChildSpec:
             "resume_policy": self.resume_policy.as_dict(),
             "cancellation_policy": self.cancellation_policy.as_dict(),
         }
+        if self.workflow_id is not None:
+            retained.update(
+                {
+                    "workflow_id": self.workflow_id,
+                    "workflow_step_id": self.workflow_step_id,
+                    "workflow_definition_hash": self.workflow_definition_hash,
+                }
+            )
+        return retained
 
 
 
@@ -404,6 +437,28 @@ class ChildState:
             for field_name in required_spec_strings
         ):
             raise ValueError("durable child specification is invalid")
+        workflow_fields = (
+            child_spec.get("workflow_id"),
+            child_spec.get("workflow_step_id"),
+            child_spec.get("workflow_definition_hash"),
+        )
+        if any(field is not None for field in workflow_fields):
+            if any(
+                type(field) is not str or not field.strip()
+                for field in workflow_fields
+            ):
+                raise ValueError("durable child workflow identity is invalid")
+            workflow_hash = workflow_fields[2]
+            if (
+                type(workflow_hash) is not str
+                or len(workflow_hash) != 71
+                or not workflow_hash.startswith("sha256:")
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in workflow_hash[7:]
+                )
+            ):
+                raise ValueError("durable child workflow identity is invalid")
         if (
             child_spec["adapter_family"] != value.get("adapter_family")
             or child_spec["task_ref"] != "child-task://" + child_spec["task_hash"]
@@ -555,6 +610,19 @@ class DurableChildFactory:
     def _owner_lock(cls, key: str) -> threading.RLock:
         with cls._owner_locks_guard:
             return cls._owner_locks.setdefault(key, threading.RLock())
+    def child_states(self, *, parent_work_item_id: str) -> tuple[ChildState, ...]:
+        if type(parent_work_item_id) is not str or not parent_work_item_id.strip():
+            raise ValueError("parent_work_item_id must be a non-empty string")
+        states: list[ChildState] = []
+        for record in self._registry("records"):
+            metadata = record.metadata if isinstance(record.metadata, dict) else {}
+            retained = metadata.get("durable_child")
+            if (
+                isinstance(retained, Mapping)
+                and retained.get("parent_work_item_id") == parent_work_item_id
+            ):
+                states.append(self._record_state(record.session_id))
+        return tuple(sorted(states, key=lambda state: state.child_session_id))
     def cancel_tree(self, *, parent_session_id: str, parent_work_item_id: str, reason: str = "operator request") -> tuple[ChildState, ...]:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
