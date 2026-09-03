@@ -326,6 +326,12 @@ class TaskExecutionOwner:
                     )
                 )
             else:
+                if event_type is EventType.ASSISTANT_MESSAGE:
+                    runner._record_product_observation(
+                        "message.assistant",
+                        payload,
+                        trajectory_id=str(correlation["turn_id"]),
+                    )
                 await runner.publish_event_async(
                     event_type,
                     payload,

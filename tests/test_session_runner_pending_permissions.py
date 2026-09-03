@@ -234,6 +234,42 @@ def test_fallback_assistant_registers_canonical_message_target() -> None:
 
 
 
+@pytest.mark.asyncio
+async def test_replay_assistant_registers_canonical_message_target(tmp_path) -> None:
+    fixture = tmp_path / "assistant-replay.jsonl"
+    fixture.write_text(
+        json.dumps(
+            {
+                "type": "assistant_message",
+                "payload": {
+                    "text": "replayed",
+                    "message": {"role": "assistant", "content": "replayed"},
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner, session = _product_runner("replay-assistant")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    await runner._execute_replay_task(
+        f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    product_payload = session.events[-1].payload
+    public_event = next(
+        event
+        for event in runner.session.event_queue._queue
+        if event is not None and event.type is EventType.ASSISTANT_MESSAGE
+    )
+    assert public_event.payload["message_id"] == product_payload["message_id"]
+    assert public_event.payload["trajectory_id"] == "turn-test"
+
+
 def test_product_observations_pair_canonical_and_message_tool_results() -> None:
     runner, session = _product_runner("paired-observations")
     runner._agent = type(
