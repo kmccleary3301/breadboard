@@ -10,7 +10,7 @@ Status: COMPLETE — all nine children and map `bb-inj5` closed; post-contract F
 - TUI evidence baseline: `/Users/kylemccleary/projects/breadboard-tui-dsh-baseline-73d6e6f5` at `73d6e6f55a238fc9ff0486bbcc9ecffe85705715`
 - Donor: first-party `deepseek-ai/deepseek-harness`, tag `dsh-v0.1.0-rc.8`, commit `141eb6fef83422698aef7a981029e843e8161534`; [frozen inventory](evidence/DONOR_ITEMS.yaml)
 - Local tracker: map `bb-inj5`; children `bb-inj5.1` through `bb-inj5.9`
-- Post-contract escalation bindings: packet `890ac7893ae6b3a80eb19dbe221f2e625d735ff6732f1bea1cdeba1f39c24d6b`; promoted DAG `958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab`; prototype `f69d100faaa4bd63a0e4c88080ccffdd9e003ddb8aba82f3e38723db64dec6d0`; FT-03 fixture `76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3`.
+- Post-contract escalation bindings: packet `5f9f42ef7b826518cfa3b25ae6059cf0142eb2352f4f4d47bc03d2bfc9412aae`; promoted DAG `958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab`; prototype `f2665cd1fc0ff4f8573756941150913f2b871f7ac7835be6de3ea71f6eb63f59`; FT-03 fixture `67346f2db2906107cde1684c9eec920bad43e471f1001825d080c9776682fbab`; FT-06 extractor `d3025ad346b13b699dd315ea71375888a79c905dd31cd01d24ea6a3dd1037445`.
 
 ## Coverage and decisions
 
@@ -54,10 +54,10 @@ Workstream I's binding covers its provenance block, deterministic package valida
 
 ## Gate status
 
-- G-I final package validation: PASS; 19/19 reviewed evidence, fixtures, and escalated-review inputs are byte-exact, all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
+- G-I final package validation: PASS; the authoritative source package has 19/19 byte-exact evidence copies and the self-contained publication package has 11/11 exact inputs, all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
 - G-Score: PASS at 1000/1000 with every checked item linked and zero structural findings.
 - Phase 20 freeze checker: PASS at unchanged baseline `3b8d862f62ee9c2c421fe07758606b6973902c67`.
-- G-F/G-G/G-H escalation reviews: PASS. Corrected FT-03 oracle/history and FT-01 terminal routes are exact-artifact bound; P0/P1/P2/P3 = 0/0/0/0 for F/H and P0/P1 = 0/0 for G.
+- G-F/G-G/G-H escalation reviews: PASS. Corrected FT-01 terminal routes, FT-03 product-adapter oracle, and FT-06 executable fixed point are exact-artifact bound; P0/P1/P2/P3 = 0/0/0/0 for F/H and P0/P1 = 0/0 for G.
 - Tickets: `bb-inj5.1`–`bb-inj5.9` CLOSED in dependency order; map `bb-inj5` CLOSED.
 
 ## Known fog and tranche boundary

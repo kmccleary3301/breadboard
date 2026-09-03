@@ -53,3 +53,11 @@ Escalation review date: 2026-09-03. Exact packet SHA-256 `890ac7893ae6b3a80eb19d
 The escalation review independently verified the corrected FT-01 terminal route and FT-03 fixture/oracle contract. FT-03 binds immutable fixture `ft03-request-v1` at SHA-256 `76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3`. Ordered provider history is derived only from logical `assistant_message` and `user_message` events; expected normalized message blocks are independent oracle data and forbidden reconstruction inputs. The reviewed FT-03 contract requires two isolated observation points and two independent byte equalities: public `ProviderRequest` normalization against the fixture, and the fully effective runtime-adapter payload capture against a reconstruction that cannot read either held-out capture. The effective capture and reconstruction must both prove `stream:true`, default `temperature:0`, and adapter override `max_output_tokens:64` at their actual outbound locations; public-request equality cannot conceal an omitted or misplaced effective field. The raw DAG and validator enforce `KNOWN_DIVERGENCE`-only repair, coherent direct replay, and closed PRODUCT_RED/terminal-defect branches. Package validation passed with 16 exact evidence, fixture, and escalated-review copies, 13 links, six guard pairs, and no findings.
 
 Escalation verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F passes on the exact packet digest above.
+
+## Post-contract escalation review — reproducible fixture and inventory closure
+
+Final escalation review date: 2026-09-03. Exact packet SHA-256 `5f9f42ef7b826518cfa3b25ae6059cf0142eb2352f4f4d47bc03d2bfc9412aae`; pinned heads unchanged.
+
+The independent final read verified FT-01's 2/16 schedule with intra-cell retries and authenticated writable L1/L2 worktree boundaries; terminal GEN-INTERNAL repair/NOT-TAKEN prerequisites and GEN-ACTIVATION; H/I ordering and the seven-piece gate; FT-03's product runtime adapter wrapper, error detail, and client-side capture; and FT-06's executable extractor, generated fixed point, and preserved historical baseline. The source package contains 19 exact evidence copies; the self-contained publication package requires 11 exact inputs.
+
+Final escalation verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F passes on the exact packet digest above.
