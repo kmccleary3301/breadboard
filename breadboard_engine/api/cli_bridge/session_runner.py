@@ -57,6 +57,18 @@ from .session_lifecycle import SessionLifecycleOwner
 
 from .session_artifacts import MAX_ATTACHMENT_BYTES, SessionArtifactStore
 
+_ADMISSION_BLOCKING_PRODUCT_EVENTS = frozenset(
+    {
+        "approval.requested",
+        "approval.resolved",
+        "session.paused",
+        "session.resumed",
+        "session.reconfigured",
+        "session.completed",
+        "session.failed",
+        "session.canceled",
+    }
+)
 logger = logging.getLogger(__name__)
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
 
@@ -525,8 +537,13 @@ class SessionRunner:
                     if next_before is not None
                     else len(events)
                 )
-                matches = []
-                for event in events[before:upper_bound]:
+                matches: list[int] = []
+                blocking_positions: list[int] = []
+                for position, event in enumerate(
+                    events[before:upper_bound], start=before
+                ):
+                    if event.kind in _ADMISSION_BLOCKING_PRODUCT_EVENTS:
+                        blocking_positions.append(position)
                     actual_payload = (
                         {
                             "content_hash": event.payload.get("content_hash"),
@@ -541,13 +558,32 @@ class SessionRunner:
                         event.kind == "input.accepted"
                         and actual_payload == expected_payload
                     ):
-                        matches.append(event)
+                        matches.append(position)
                 if len(matches) > 1:
                     raise ReplayError(
                         "admission_journal_mismatch",
                         "retained input admission has duplicate journal events",
                     )
+                before_status = (
+                    turn.logical_input_session_status_before_admission
+                )
                 if matches:
+                    match_position = matches[0]
+                    if before_status not in {None, "running"} or any(
+                        position < match_position for position in blocking_positions
+                    ):
+                        turn.cancellation_requested = True
+                        turn.cancellation_reason = (
+                            turn.cancellation_reason
+                            or "product_transition_interrupted_admission"
+                        )
+                    continue
+                if before_status not in {None, "running"} or blocking_positions:
+                    turn.cancellation_requested = True
+                    turn.cancellation_reason = (
+                        turn.cancellation_reason
+                        or "product_transition_interrupted_admission"
+                    )
                     continue
                 if next_before is not None:
                     raise ReplayError(
@@ -555,10 +591,12 @@ class SessionRunner:
                         "retained input admission is ordered after a later admission",
                     )
                 if product_session.read_model.status != "running":
-                    raise ReplayError(
-                        "admission_journal_mismatch",
-                        "retained input admission cannot be appended to a terminal session",
+                    turn.cancellation_requested = True
+                    turn.cancellation_reason = (
+                        turn.cancellation_reason
+                        or "product_transition_interrupted_admission"
                     )
+                    continue
                 product_session.input_digest(content_hash, selected_artifacts)
                 events = product_session.events
 

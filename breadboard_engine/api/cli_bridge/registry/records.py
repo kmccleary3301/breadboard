@@ -174,6 +174,7 @@ class TurnRecord:
     body_digest: Optional[str] = None
     logical_event_count_before_admission: Optional[int] = None
     logical_input_content_hash: Optional[str] = None
+    logical_input_session_status_before_admission: Optional[str] = None
 
 
 @dataclass(frozen=True)

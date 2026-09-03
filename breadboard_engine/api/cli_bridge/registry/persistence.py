@@ -449,6 +449,22 @@ class PersistenceMixin:
                 serialized_turn["logical_event_count_before_admission"] = (
                     turn.logical_event_count_before_admission
                 )
+                session_status = (
+                    turn.logical_input_session_status_before_admission
+                )
+                if session_status is not None:
+                    if session_status not in {
+                        "running",
+                        "awaiting_approval",
+                        "paused",
+                        "completed",
+                        "failed",
+                        "canceled",
+                    }:
+                        raise ValueError("retained turn session status is invalid")
+                    serialized_turn[
+                        "logical_input_session_status_before_admission"
+                    ] = session_status
             turns.append(serialized_turn)
         metadata = record.metadata if isinstance(record.metadata, dict) else {}
         role_lock = metadata.get("model_role_lock")
@@ -695,6 +711,22 @@ class PersistenceMixin:
                 type(marker) is not int or marker < 1
             ):
                 raise ValueError("retained turn journal position is invalid")
+            session_status = item.get(
+                "logical_input_session_status_before_admission"
+            )
+            if session_status is not None and (
+                not isinstance(session_status, str)
+                or session_status
+                not in {
+                    "running",
+                    "awaiting_approval",
+                    "paused",
+                    "completed",
+                    "failed",
+                    "canceled",
+                }
+            ):
+                raise ValueError("retained turn session status is invalid")
             if marker is not None and (
                 "content_hash" not in item or "attachments" not in item
             ):
@@ -737,6 +769,7 @@ class PersistenceMixin:
                 body_digest=str(item["body_digest"]),
                 logical_event_count_before_admission=marker,
                 logical_input_content_hash=content_hash,
+                logical_input_session_status_before_admission=session_status,
             )
             record.turns_by_id[turn.turn_id] = turn
         for item in payload.get("submissions") or []:

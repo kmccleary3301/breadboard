@@ -794,6 +794,16 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
 
         def prepare_input_content(self, content: str) -> str:
             return content
+        def validate_input_admission(
+            self,
+            _content: str,
+            _attachments: tuple[str, ...],
+            *,
+            input_id: str,
+            turn_id: str,
+        ) -> None:
+            assert input_id
+            assert turn_id
 
         async def enqueue_input(
             self,
@@ -3648,3 +3658,102 @@ async def test_duplicate_attachment_ids_are_canonical_before_registry_persist(
     assert len(retained_after_invalid["turns"]) == 1
     assert len(deferred) == 1
     await runner.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transition", ["pause", "complete", "request_approval"])
+async def test_product_transition_after_registry_admission_aborts_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    transition: str,
+) -> None:
+    import hashlib
+
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+
+    class Crash(BaseException):
+        pass
+
+    session_id = f"session-transition-race-{transition}"
+    event_root = tmp_path / "events"
+    event_path = event_root / session_id / "session_events.jsonl"
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "e" * 64}),
+        "transition race",
+        session_id=session_id,
+        sink=JsonlEventSink(event_path),
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("{}\n", encoding="utf-8")
+    registry = SessionRegistry(state_root=tmp_path / "state")
+    record = SessionRecord(
+        session_id=session_id,
+        status=SessionStatus.RUNNING,
+        metadata={
+            "config_path": str(config_path),
+            "permission_mode": "configured",
+            "session_event_root": str(event_root),
+        },
+    )
+    record.product_session = product_session
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path=str(config_path), task=""),
+    )
+    record.runner = runner
+    await registry.create(record)
+
+    async def crash_enqueue(*_args: Any, **_kwargs: Any) -> str:
+        if transition == "request_approval":
+            runner.transition_product_session(
+                "request_approval", "approval-race", "shell"
+            )
+        else:
+            runner.transition_product_session(transition, f"{transition}-race")
+        raise Crash()
+
+    monkeypatch.setattr(runner, "enqueue_input", crash_enqueue)
+    with pytest.raises(Crash):
+        await SessionService(registry=registry).send_input(
+            session_id,
+            SessionInputRequest(
+                content="input lost at lifecycle boundary",
+                client_message_id="client-transition-race",
+            ),
+        )
+
+    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    restarted = SessionRegistry(state_root=tmp_path / "state")
+    recovered_service = SessionService(registry=restarted)
+    recovered = await recovered_service.ensure_session(session_id)
+    try:
+        accepted_events = [
+            event
+            for event in recovered.product_session.events
+            if event.kind == "input.accepted"
+        ]
+        assert accepted_events == []
+        recovered_turn = recovered.turns_by_id[next(iter(recovered.turns_by_id))]
+        assert recovered_turn.cancellation_requested is True
+        assert recovered_turn.terminal_outcome in {"cancelled", "completed"}
+        if transition == "pause":
+            assert recovered.product_session.read_model.status == "paused"
+            assert recovered.projected_status() is SessionStatus.RUNNING
+        elif transition == "request_approval":
+            assert recovered.product_session.read_model.status == "running"
+            assert recovered.projected_status() is SessionStatus.RUNNING
+        else:
+            assert recovered.product_session.read_model.status == "completed"
+            assert recovered.projected_status() is SessionStatus.COMPLETED
+        assert recovered_turn.logical_input_content_hash == (
+            "sha256:"
+            + hashlib.sha256(
+                "input lost at lifecycle boundary".encode("utf-8")
+            ).hexdigest()
+        )
+    finally:
+        if recovered.runner is not None:
+            await recovered.runner.stop()

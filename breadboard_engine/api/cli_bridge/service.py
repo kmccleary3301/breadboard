@@ -1976,6 +1976,9 @@ class SessionService:
                     if product_session is not None
                     else None
                 )
+                session_status = getattr(
+                    getattr(product_session, "read_model", None), "status", None
+                )
                 event_count_is_valid = type(event_count) is int and event_count >= 1
                 content_hash = (
                     "sha256:"
@@ -1996,6 +1999,9 @@ class SessionService:
                     logical_event_count_before_admission=(
                         event_count if event_count_is_valid else None
                     ),
+                    logical_input_session_status_before_admission=(
+                        session_status if event_count_is_valid else None
+                    ),
                 )
                 record.turns_by_id[turn.turn_id] = turn
                 record.submissions_by_key[client_message_id] = turn
@@ -2009,14 +2015,12 @@ class SessionService:
                 admission_persisted = False
                 logical_input_committed = False
                 try:
-                    validator = getattr(runner, "validate_input_admission", None)
-                    if callable(validator):
-                        validator(
-                            accepted_content,
-                            attachments,
-                            input_id=turn.input_id,
-                            turn_id=turn.turn_id,
-                        )
+                    runner.validate_input_admission(
+                        accepted_content,
+                        attachments,
+                        input_id=turn.input_id,
+                        turn_id=turn.turn_id,
+                    )
                     await self.registry.persist(record)
                     admission_persisted = True
                     accepted_content = await runner.enqueue_input(
