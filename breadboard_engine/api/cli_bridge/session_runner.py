@@ -54,6 +54,7 @@ from .runtime_event_projector import (
 from .session_control import SessionControlController
 from .task_execution import TaskExecutionOwner
 from .session_lifecycle import SessionLifecycleOwner
+from breadboard.product.runtime.events import GenerationAdoptionError
 
 from .session_artifacts import MAX_ATTACHMENT_BYTES, SessionArtifactStore
 
@@ -108,6 +109,8 @@ class SessionRunner:
         ) = None
         self._checkpoint_manager: Optional[CheckpointManager] = None
         self._closed = False
+        self._admission_lock_owner: Optional[asyncio.Task[Any]] = None
+        self._attachment_store: Dict[str, Dict[str, Any]] = {}
         self._active_attachment_capabilities: Dict[str, Dict[str, Any]] = {}
         self._active_input_media: List[Dict[str, str]] = []
         self._permission_queue: Any = None
@@ -360,6 +363,8 @@ class SessionRunner:
     async def stop(self, reason: str = "operator request") -> None:
         if self._closed:
             return
+        async with self.session.admission_lock:
+            self.session.admission_closed = True
         cancelled_before_start = (
             self._task is None or not self._start_authority.is_set()
         )
@@ -674,19 +679,25 @@ class SessionRunner:
             product_session = getattr(self.session, "product_session", None)
             if product_session is None:
                 return
-            if transition in {
-                "complete",
-                "fail",
-                "cancel",
-            } and product_session.read_model.status in {
-                "completed",
-                "failed",
-                "canceled",
-            }:
-                return
-            getattr(product_session, transition)(*args)
+            if transition == "reconfigure":
+                if self.session.active_turn_id is not None or self.session.queued_turn_ids:
+                    raise GenerationAdoptionError(
+                        "non_quiescent",
+                        "generation adoption requires a quiescent turn boundary",
+                    )
+                if not args or not hasattr(product_session, "adopt_generation"):
+                    raise GenerationAdoptionError(
+                        "incompatible",
+                        "generation candidate is not Lock-compatible",
+                    )
+                product_session.adopt_generation(*args)
+            else:
+                if transition in {"complete", "fail", "cancel"} and product_session.read_model.status in {"completed", "failed", "canceled"}:
+                    return
+                getattr(product_session, transition)(*args)
             if transition in {"complete", "fail", "cancel"}:
                 self._commit_terminal_product_session_locked()
+
 
     # Provider-supplied names are not public identities until they resolve into
     # the active, configured tool surface.
@@ -982,6 +993,14 @@ class SessionRunner:
                 overrides[key] = value
         self.request.overrides = overrides
         self._prepared_runtime_config = apply_dotted_overrides(base_cfg, overrides)
+        if isinstance(self._model_role_lock, Mapping):
+            self._prepared_runtime_config["model_role_lock"] = dict(
+                self._model_role_lock
+            )
+            if self._active_model_role is not None:
+                self._prepared_runtime_config["active_model_role"] = (
+                    self._active_model_role
+                )
         permissions = self._prepared_runtime_config.get("permissions")
         options = permissions.get("options") if isinstance(permissions, dict) else None
         effective_permission_mode = (

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from types import SimpleNamespace; from pathlib import Path; import asyncio, hashlib, json, os, threading, pytest, yaml
+import copy
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from breadboard.product.harness import default_profile as harness_operations
@@ -110,7 +111,7 @@ async def test_default_session_create_uses_exact_profile_authority(
     await _stop(record)
 
 @pytest.mark.asyncio
-async def test_create_strips_caller_artifact_manifest_metadata(
+async def test_create_strips_caller_internal_runtime_metadata(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
@@ -122,6 +123,8 @@ async def test_create_strips_caller_artifact_manifest_metadata(
             task="reject caller manifest metadata",
             metadata={
                 "artifact_manifest_ref": "caller-owned-value",
+                "runtime_overrides": {"mode": "plan"},
+                "skills_selection": {"mode": "allowlist", "allowlist": ["caller"]},
                 "safe": "retained",
             },
         ),
@@ -131,7 +134,11 @@ async def test_create_strips_caller_artifact_manifest_metadata(
     record = await service.ensure_session(response.session_id)
     await service.registry.persist(record)
 
-    assert "artifact_manifest_ref" not in record.metadata
+    assert {
+        "artifact_manifest_ref",
+        "runtime_overrides",
+        "skills_selection",
+    }.isdisjoint(record.metadata)
     assert record.metadata["safe"] == "retained"
     await service.stop_session(response.session_id)
     await _stop(record)
@@ -1428,16 +1435,168 @@ async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_p
     assert persisted == [True] and record.metadata["permission_rules"][0]["rule"] == "*.sh"
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.FAILED; await _stop(record)
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("command", "payload"), [("set_model", {"model": "openrouter/openai/gpt-5-nano"}), ("set_skills", {"allowlist": ["test-skill"]}), ("set_mode", {"mode": "plan"})])
-async def test_failed_durable_reconfigure_rolls_back_runtime_mutation(monkeypatch, tmp_path, command, payload) -> None:
-    service, response, record = await _create(monkeypatch, tmp_path); runner = record.runner
-    calls = []; model_config = runner.current_runtime_config(); model_config["providers"].pop("default_model", None); model_config.pop("mode", None); runtime_config = model_config; runner._agent = SimpleNamespace(config=runtime_config) if command == "set_model" else SimpleNamespace(config=runtime_config, apply_runtime_overrides=lambda overrides: calls.append(overrides) or runtime_config.update(apply_dotted_overrides(runtime_config, overrides)) or True)
-    before_config, before_metadata, before_model, before_mode = runner.current_runtime_config(), dict(record.metadata), runner._model_override, runner._mode; sink, record.product_session._sink = record.product_session._sink, _Failing()
-    with pytest.raises(OSError, match="sink unavailable"): await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload))
-    assert runner.current_runtime_config() == before_config; assert record.metadata == before_metadata; assert (runner._model_override, runner._mode) == (before_model, before_mode)
-    assert [event.kind for event in record.product_session.events] == ["session.started"]; assert "default_model" not in runner._agent.config["providers"] if command == "set_model" else len(calls) == 2
+@pytest.mark.parametrize(
+    ("command", "payload"),
+    [
+        ("set_model", {"model": "openrouter/openai/gpt-5-nano"}),
+        ("set_skills", {"allowlist": ["test-skill"]}),
+        ("set_mode", {"mode": "plan"}),
+    ],
+)
+async def test_failed_durable_reconfigure_rolls_back_runtime_mutation(
+    monkeypatch, tmp_path, command, payload
+) -> None:
+    service, response, record = await _create(monkeypatch, tmp_path, task="")
+    runner = record.runner
+    calls, replacements = [], []
+    runtime_config = runner.current_runtime_config()
+    runtime_config["providers"].pop("default_model", None)
+    runtime_config.pop("mode", None)
+
+    class ActiveAgent:
+        def __init__(self, config):
+            self.config = config
+
+        def apply_runtime_overrides(self, overrides):
+            calls.append(copy.deepcopy(overrides))
+            updated = apply_dotted_overrides(self.config, overrides)
+            self.config.clear()
+            self.config.update(updated)
+            return True
+
+        def replace_runtime_config(self, config):
+            replacements.append(copy.deepcopy(config))
+            self.config.clear()
+            self.config.update(copy.deepcopy(config))
+            return True
+
+    runner._agent = ActiveAgent(runtime_config)
+    before_config = runner.current_runtime_config()
+    before_metadata = dict(record.metadata)
+    before_model = runner._model_override
+    before_mode = runner._mode
+    sink, record.product_session._sink = record.product_session._sink, _Failing()
+
+    with pytest.raises(OSError, match="sink unavailable"):
+        await service.execute_command(
+            response.session_id,
+            SessionCommandRequest(command=command, payload=payload),
+        )
+
+    assert runner.current_runtime_config() == before_config
+    assert record.metadata == before_metadata
+    assert (runner._model_override, runner._mode) == (before_model, before_mode)
+    assert [event.kind for event in record.product_session.events] == [
+        "session.started"
+    ]
+    assert len(calls) == 1
+    assert replacements == [before_config]
+    assert runner._agent.config == before_config
+    if command == "set_model":
+        assert "default_model" not in runner._agent.config["providers"]
     if command == "set_mode":
-        record.product_session._sink = sink; await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload)); assert (record.product_session.events[-1].kind, runner.current_runtime_config()["mode"], record.metadata["mode"]) == ("session.reconfigured", "plan", "plan")
+        record.product_session._sink = sink
+        await service.execute_command(
+            response.session_id,
+            SessionCommandRequest(command=command, payload=payload),
+        )
+        assert (
+            record.product_session.events[-1].kind,
+            runner.current_runtime_config()["mode"],
+            record.metadata["mode"],
+        ) == ("session.reconfigured", "plan", "plan")
+    await _stop(record)
+@pytest.mark.asyncio
+async def test_generation_adoption_rejects_non_quiescent_session_and_rolls_back(
+    monkeypatch, tmp_path
+) -> None:
+    service, response, record = await _create(monkeypatch, tmp_path)
+    before = (
+        record.runner.current_runtime_config(),
+        dict(record.metadata),
+        record.product_session.events,
+    )
+
+    with pytest.raises(HTTPException) as captured:
+        await service.execute_command(
+            response.session_id,
+            SessionCommandRequest(command="set_mode", payload={"mode": "plan"}),
+        )
+
+    assert captured.value.status_code == 409
+    assert captured.value.detail["code"] == "non_quiescent"
+    assert (
+        record.runner.current_runtime_config(),
+        record.metadata,
+        record.product_session.events,
+    ) == before
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_stop_command_closes_admission_when_cancel_append_fails(
+    monkeypatch, tmp_path
+) -> None:
+    service, response, record = await _create(monkeypatch, tmp_path, task="")
+    record.product_session._sink = _Failing()
+
+    with pytest.raises(OSError, match="sink unavailable"):
+        await service.execute_command(
+            response.session_id,
+            SessionCommandRequest(command="stop"),
+        )
+    assert record.admission_closed is True
+    with pytest.raises(HTTPException) as late:
+        await service.send_input(
+            response.session_id,
+            SessionInputRequest(content="late admission"),
+        )
+    assert late.value.status_code == 409
+    assert late.value.detail == "session admission is closed"
+    record.product_session._sink = runtime_ports.NullEventSink()
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_stop_closes_session_admission_before_teardown(
+    monkeypatch, tmp_path
+) -> None:
+    service, response, record = await _create(monkeypatch, tmp_path, task="")
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    terminalize = record.runner._terminalize_admitted_turns
+
+    async def blocked_terminalize(**kwargs):
+        entered.set()
+        await release.wait()
+        await terminalize(**kwargs)
+
+    monkeypatch.setattr(
+        record.runner, "_terminalize_admitted_turns", blocked_terminalize
+    )
+    stopping = asyncio.create_task(record.runner.stop())
+    await entered.wait()
+
+    with pytest.raises(HTTPException) as captured:
+        await service.send_input(
+            response.session_id,
+            SessionInputRequest(content="late admission"),
+        )
+
+    assert captured.value.status_code == 409
+    assert captured.value.detail == "session admission is closed"
+    before = record.product_session.events
+    with pytest.raises(HTTPException) as reconfigure:
+        await service.execute_command(
+            response.session_id,
+            SessionCommandRequest(command="set_mode", payload={"mode": "plan"}),
+        )
+    assert reconfigure.value.status_code == 409
+    assert reconfigure.value.detail["code"] == "admission_closed"
+    assert record.product_session.events == before
+    release.set()
+    await stopping
+    assert record.status is SessionStatus.STOPPED
     await _stop(record)
 @pytest.mark.asyncio
 async def test_runtime_failure_does_not_advance_registry_past_failed_sink(monkeypatch, tmp_path) -> None:
@@ -1453,7 +1612,7 @@ async def test_runtime_reconfigure_failure_never_claims_effective_config(monkeyp
     RejectingModelConfig = type("RejectingModelConfig", (dict,), {"setdefault": lambda self, *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("model propagation failed"))})
     if command == "set_model": agent = SimpleNamespace(config=RejectingModelConfig()); payload = {"model": "openrouter/openai/gpt-5-nano"}
     else: agent = SimpleNamespace(config={}, apply_runtime_overrides=lambda _overrides: False); payload = {"allowlist": ["test-skill"]}
-    service, response, record = await _create(monkeypatch, tmp_path); record.runner._agent = agent
+    service, response, record = await _create(monkeypatch, tmp_path, task=""); record.runner._agent = agent
     with pytest.raises(HTTPException) as error: await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload))
     assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["session.started", "session.failed"]; assert record.status is SessionStatus.FAILED
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.FAILED and record.product_session.events[-1].kind == "session.failed"; await _stop(record)
@@ -1959,6 +2118,257 @@ async def test_completed_dispatch_replay_is_ordered_and_finite(monkeypatch, tmp_
     replay = service.event_stream(response.session_id, replay=True); replayed = [event async for event in replay]; assert replayed == list(record.event_log); assert [event.type for event in replayed] == [EventType.WARNING, EventType.WARNING, EventType.TURN_COMPLETED]
     nonreplay = service.event_stream(response.session_id); snapshot = await asyncio.wait_for(anext(nonreplay), 0.1); assert snapshot.type is EventType.TOOL_RESULT and "todo" in snapshot.payload
     outcomes = await asyncio.wait_for(asyncio.gather(anext(replay), anext(nonreplay), return_exceptions=True), 0.1); assert len(outcomes) == 2 and all(isinstance(item, StopAsyncIteration) for item in outcomes)
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "payload", "path", "expected"),
+    [
+        (
+            "set_model",
+            {"model": "openrouter/openai/gpt-5-nano"},
+            ("providers", "default_model"),
+            "openrouter/openai/gpt-5-nano",
+        ),
+        ("set_mode", {"mode": "plan"}, ("mode",), "plan"),
+        (
+            "set_skills",
+            {"allowlist": ["test-skill"]},
+            ("skills", "allowlist"),
+            ["test-skill"],
+        ),
+    ],
+)
+async def test_runtime_reconfigure_survives_fresh_retained_resume(
+    monkeypatch, tmp_path, command, payload, path, expected
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    state_root = tmp_path / "state"
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(config_path=CONFIG, task=""),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    await service.execute_command(
+        response.session_id,
+        SessionCommandRequest(command=command, payload=payload),
+    )
+    pinned_generation = record.product_session.pinned_generation_id
+    await _stop(record)
+
+    fresh = SessionService(state_root=state_root)
+    restored = await fresh.ensure_session(response.session_id)
+    config = restored.runner.current_runtime_config()
+    selected = config
+    for key in path:
+        selected = selected[key]
+    assert selected == expected
+    rebuilt_lock = fresh._runtime_lock(
+        response.session_id, config, restored.runner.request.config_path
+    )
+    assert rebuilt_lock["graph_hash"] == pinned_generation
+    await _stop(restored)
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "payload"),
+    [
+        ("set_model", {"model": "openrouter/openai/gpt-5-nano"}),
+        ("set_mode", {"mode": "plan"}),
+        ("set_skills", {"allowlist": ["test-skill"]}),
+    ],
+)
+async def test_direct_runner_runtime_mutation_requires_durable_generation(
+    monkeypatch, tmp_path, command, payload
+) -> None:
+    service, response, record = await _create(monkeypatch, tmp_path, task="")
+    before_config = record.runner.current_runtime_config()
+    before_metadata = copy.deepcopy(record.metadata)
+    before_events = tuple(record.product_session.events)
+
+    with pytest.raises(
+        RuntimeError, match="runtime mutations require durable generation"
+    ):
+        await record.runner.handle_command(command, payload)
+
+    assert record.runner.current_runtime_config() == before_config
+    assert record.metadata == before_metadata
+    assert tuple(record.product_session.events) == before_events
+    await _stop(record)
+
+
+@pytest.mark.asyncio
+async def test_create_overrides_survive_fresh_retained_resume(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    state_root = tmp_path / "state"
+    overrides = {
+        "skills.allowlist": ["test-skill"],
+        "completion.natural_finish.idle_turn_limit": 7,
+    }
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(config_path=CONFIG, task="", overrides=overrides),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    pinned_generation = record.product_session.pinned_generation_id
+    await service.registry.persist(record)
+    assert record.metadata["runtime_overrides"] == overrides
+    await _stop(record)
+
+    fresh = SessionService(state_root=state_root)
+    restored = await fresh.ensure_session(response.session_id)
+    config = restored.runner.current_runtime_config()
+    assert config["skills"]["allowlist"] == ["test-skill"]
+    assert config["completion"]["natural_finish"]["idle_turn_limit"] == 7
+    rebuilt_lock = fresh._runtime_lock(
+        response.session_id, config, restored.runner.request.config_path
+    )
+    assert rebuilt_lock["graph_hash"] == pinned_generation
+    await _stop(restored)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("overrides", "rejected_key"),
+    [
+        ({"secrets.api_key": "must-not-persist"}, "secrets.api_key"),
+        ({"workspace.root": {"api_key": "must-not-persist"}}, "workspace.root"),
+        (
+            {"skills.allowlist": {"api_key": "must-not-persist"}},
+            "skills.allowlist",
+        ),
+    ],
+)
+async def test_create_rejects_override_that_cannot_be_retained(
+    monkeypatch, tmp_path, overrides, rejected_key
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    service = SessionService(state_root=tmp_path / "state")
+
+    with pytest.raises(
+        ValueError, match=rf"cannot be retained.*{rejected_key}"
+    ):
+        await service.create_session(
+            SessionCreateRequest(
+                config_path=CONFIG,
+                task="",
+                overrides=overrides,
+            ),
+            event_root=tmp_path / "events",
+            runtime_root=tmp_path / "records",
+        )
+
+    assert service.registry._records == {}
+
+
+@pytest.mark.asyncio
+async def test_retained_resume_refuses_runtime_generation_drift(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    state_root = tmp_path / "state"
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(config_path=CONFIG, task=""),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    durable_events = tuple(record.product_session.events)
+    await service.registry.persist(record)
+    await _stop(record)
+    real_load = load_agent_config
+
+    def load_changed_config(path):
+        config = real_load(path)
+        config["mode"] = "plan" if config.get("mode") != "plan" else "implementation"
+        return config
+
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.session_runner.load_agent_config",
+        load_changed_config,
+    )
+    fresh = SessionService(state_root=state_root)
+    with pytest.raises(runtime_ports.ReplayError) as error:
+        await fresh.ensure_session(response.session_id)
+    assert error.value.code == "generation_mismatch"
+    await fresh.delete_session(response.session_id)
+    with pytest.raises(HTTPException) as deleted:
+        await fresh.ensure_session(response.session_id)
+    assert deleted.value.status_code == 404
+    assert tuple(record.product_session.events) == durable_events
+
+
+@pytest.mark.parametrize("failure", [FileNotFoundError, yaml.YAMLError])
+@pytest.mark.asyncio
+async def test_retained_resume_wraps_unavailable_generation_and_remains_deletable(
+    monkeypatch, tmp_path, failure
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    state_root = tmp_path / "state"
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(config_path=CONFIG, task=""),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    await service.registry.persist(record)
+    await _stop(record)
+
+    monkeypatch.setattr(
+        RUNNER + "prepare_runtime_config",
+        lambda _runner: (_ for _ in ()).throw(failure("config unavailable")),
+    )
+    fresh = SessionService(state_root=state_root)
+    with pytest.raises(runtime_ports.ReplayError) as error:
+        await fresh.ensure_session(response.session_id)
+    assert error.value.code == "generation_unavailable"
+    await fresh.delete_session(response.session_id)
+    with pytest.raises(HTTPException) as deleted:
+        await fresh.ensure_session(response.session_id)
+    assert deleted.value.status_code == 404
+
+@pytest.mark.asyncio
+async def test_retained_resume_wraps_default_profile_resolution_failure(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    state_root = tmp_path / "state"
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(config_path=None, task=""),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    await service.registry.persist(record)
+    await _stop(record)
+
+    def fail_profile_resolution():
+        raise RuntimeError("default profile unavailable")
+
+    monkeypatch.setattr(
+        SERVICE + "resolve_default_profile", fail_profile_resolution
+    )
+    fresh = SessionService(state_root=state_root)
+    with pytest.raises(runtime_ports.ReplayError) as error:
+        await fresh.ensure_session(response.session_id)
+    assert error.value.code == "generation_unavailable"
+    await fresh.delete_session(response.session_id)
+    with pytest.raises(HTTPException) as deleted:
+        await fresh.ensure_session(response.session_id)
+    assert deleted.value.status_code == 404
 
 @pytest.mark.asyncio
 async def test_managed_retained_workspace_restores_attachments_without_binding(
@@ -2507,6 +2917,48 @@ async def test_start_refreshes_retained_writer_before_authorize(
     assert [event.sequence for event in replayed.events] == [1, 2, 3]
     await _stop(record)
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "payload"),
+    [
+        ("set_model", {"model": "openrouter/openai/gpt-5-nano"}),
+        ("set_mode", {"mode": "plan"}),
+        ("set_skills", {"allowlist": ["test-skill"]}),
+    ],
+)
+@pytest.mark.parametrize("failure", [OSError, asyncio.CancelledError])
+async def test_runtime_reconfigure_metadata_failure_restores_authority(
+    monkeypatch, tmp_path, command, payload, failure
+) -> None:
+    service, response, record = await _create(
+        monkeypatch,
+        tmp_path,
+        task="",
+        service=SessionService(state_root=tmp_path / "state"),
+    )
+    runner = record.runner
+    before = (
+        runner.current_runtime_config(),
+        json.loads(json.dumps(record.metadata)),
+        runner._prepared_runtime_config,
+        record.product_session.pinned_generation_id,
+    )
+
+    async def fail_update_metadata(*_args, **_kwargs):
+        raise failure("metadata persistence unavailable")
+
+    monkeypatch.setattr(service.registry, "update_metadata", fail_update_metadata)
+    with pytest.raises(failure):
+        await service.execute_command(
+            response.session_id,
+            SessionCommandRequest(command=command, payload=payload),
+        )
+    assert runner.current_runtime_config() == before[0]
+    assert record.metadata == before[1]
+    assert runner._prepared_runtime_config == before[2]
+    assert record.product_session.pinned_generation_id == before[3]
+    await _stop(record)
 
 
 @pytest.mark.asyncio

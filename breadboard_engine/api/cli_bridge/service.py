@@ -23,7 +23,11 @@ from breadboard.product.runtime import (
     ReplayError,
     Session as ProductSession,
 )
-from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
+from breadboard.product.runtime.events import (
+    GenerationAdoptionError,
+    JsonlEventSink,
+    ProcessLock,
+)
 from breadboard.product.runtime.session_store import (
     authorize_session_artifact_manifest,
     event_from_record,
@@ -114,6 +118,7 @@ from .runtime_emission import (
     emit_session_start_records,
     managed_state_paths,
     prepare_managed_state,
+    retained_runtime_overrides,
     primitive_emission_enabled,
 )
 from ...compilation.v2_loader import load_agent_config
@@ -1496,6 +1501,9 @@ class SessionService:
                     )
                 }
             )
+        retained_request_overrides = retained_runtime_overrides(
+            request.overrides, reject_unsupported=True
+        )
         default_profile_overridden = any(
             key != "workspace.root" for key in (request.overrides or {})
         )
@@ -1526,6 +1534,8 @@ class SessionService:
             _SESSION_EVENT_ROOT_METADATA_KEY,
             _SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY,
             "artifact_manifest_ref",
+            "runtime_overrides",
+            "skills_selection",
         ):
             request_metadata.pop(reserved_key, None)
         if default_profile is not None:
@@ -1546,6 +1556,8 @@ class SessionService:
         )
         runner = SessionRunner(session=record, registry=self.registry, request=request)
         runtime_config = runner.prepare_runtime_config()
+        if retained_request_overrides:
+            metadata["runtime_overrides"] = retained_request_overrides
         if runner.request.workspace:
             metadata["workspace"] = str(
                 Path(runner.request.workspace).expanduser().resolve()
@@ -2214,48 +2226,74 @@ class SessionService:
                 setattr(record, "_dispatcher_complete", True)
             record.loaded_from_retained_state = False
             return
-        metadata = dict(record.metadata or {})
-        recorded_config_path = str(metadata.get("config_path") or "").strip()
-        retained_config_path = (
-            Path(recorded_config_path).expanduser()
-            if recorded_config_path
-            else None
-        )
-        if retained_config_path is not None and retained_config_path.is_absolute():
-            config_path = str(retained_config_path)
-        else:
-            profile = resolve_default_profile()
-            default_identity = profile.public_identity()
-            config_path = (
-                str(profile.source_path)
-                if not recorded_config_path
-                or recorded_config_path == default_identity["definition_ref"]
-                else recorded_config_path
+        try:
+            metadata = dict(record.metadata or {})
+            recorded_config_path = str(metadata.get("config_path") or "").strip()
+            retained_config_path = (
+                Path(recorded_config_path).expanduser()
+                if recorded_config_path
+                else None
             )
-        recorded_workspace = metadata.get("workspace")
-        workspace = (
-            str(recorded_workspace).strip()
-            if isinstance(recorded_workspace, str) and recorded_workspace.strip()
-            else None
-        )
-        permission_mode = str(
-            metadata.get("permission_mode") or "configured"
-        ).strip().lower()
-        if permission_mode not in {"prompt", "ask", "interactive", "configured"}:
-            permission_mode = "configured"
-        metadata["permission_mode"] = permission_mode
-        record.metadata = metadata
-        runner = SessionRunner(
-            session=record,
-            registry=self.registry,
-            request=SessionCreateRequest(
-                config_path=config_path,
-                task="",
-                metadata=metadata,
-                workspace=workspace,
-                permission_mode=permission_mode,
-            ),
-        )
+            if retained_config_path is not None and retained_config_path.is_absolute():
+                config_path = str(retained_config_path)
+            else:
+                profile = resolve_default_profile()
+                default_identity = profile.public_identity()
+                config_path = (
+                    str(profile.source_path)
+                    if not recorded_config_path
+                    or recorded_config_path == default_identity["definition_ref"]
+                    else recorded_config_path
+                )
+            recorded_workspace = metadata.get("workspace")
+            workspace = (
+                str(recorded_workspace).strip()
+                if isinstance(recorded_workspace, str)
+                and recorded_workspace.strip()
+                else None
+            )
+            permission_mode = str(
+                metadata.get("permission_mode") or "configured"
+            ).strip().lower()
+            if permission_mode not in {
+                "prompt",
+                "ask",
+                "interactive",
+                "configured",
+            }:
+                permission_mode = "configured"
+            metadata["permission_mode"] = permission_mode
+            runtime_overrides = metadata.get("runtime_overrides")
+            request_overrides = retained_runtime_overrides(runtime_overrides)
+            record.metadata = metadata
+            runner = SessionRunner(
+                session=record,
+                registry=self.registry,
+                request=SessionCreateRequest(
+                    config_path=config_path,
+                    task="",
+                    overrides=request_overrides,
+                    metadata=metadata,
+                    workspace=workspace,
+                    permission_mode=permission_mode,
+                ),
+            )
+            runtime_config = runner.prepare_runtime_config()
+            rebuilt_generation = self._runtime_lock(
+                record.session_id,
+                runtime_config,
+                runner.request.config_path,
+            ).as_dict()["graph_hash"]
+        except Exception as error:
+            raise ReplayError(
+                "generation_unavailable",
+                f"retained session {record.session_id!r} runtime generation cannot be restored",
+            ) from error
+        if rebuilt_generation != record.product_session.pinned_generation_id:
+            raise ReplayError(
+                "generation_mismatch",
+                f"retained session {record.session_id!r} runtime generation does not match its durable journal",
+            )
         self._bind_restored_durable_product_session(
             record,
             runner,
@@ -2270,7 +2308,6 @@ class SessionService:
                     f"retained session {record.session_id!r} has no pending approval identity",
                 )
             record.product_session.resolve_approval(pending_approval, "deny")
-        runner.prepare_runtime_config()
         for turn in record.turns_by_id.values():
             if turn.terminal_outcome is not None:
                 continue
@@ -2748,7 +2785,10 @@ class SessionService:
 
     async def delete_session(self, session_id: str) -> None:
         async with self._session_lock(session_id):
-            await self._stop_session_locked(session_id)
+            try:
+                await self._stop_session_locked(session_id)
+            except ReplayError:
+                pass
             await self.registry.delete(session_id)
     async def send_input(
         self,
@@ -2797,6 +2837,11 @@ class SessionService:
                         turn_id=existing.turn_id,
                         disposition="deduplicated",
                         original_disposition=existing.original_disposition,
+                    )
+                if record.admission_closed:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="session admission is closed",
                     )
                 accepted_content = runner.prepare_input_content(payload.content)
                 disposition = "started" if record.active_turn_id is None else "queued"
@@ -2957,26 +3002,66 @@ class SessionService:
             )
 
         def durable_reconfigure(runtime_config: dict[str, Any]) -> None:
+            # Use the applied agent config when present; before agent setup the
+            # prepared candidate is the authoritative immutable input.
+            agent_config = getattr(getattr(runner, "_agent", None), "config", None)
+            candidate_config = (
+                dict(agent_config)
+                if isinstance(agent_config, dict)
+                else dict(runtime_config)
+            )
+            candidate_lock = self._runtime_lock(
+                session_id, candidate_config, runner.request.config_path
+            )
             runner.transition_product_session(
                 "reconfigure",
-                self._runtime_lock(
-                    session_id, runtime_config, runner.request.config_path
-                ),
+                candidate_lock,
                 payload.command,
             )
 
+        reconfigure_commands = {
+            "set_model",
+            "set_mode",
+            "set_skills",
+            "set_role",
+            "set_model_role",
+        }
         try:
-            detail = await runner.handle_command(
-                payload.command,
-                payload.payload,
-                durable_reconfigure=durable_reconfigure
-                if payload.command
-                in {"set_model", "set_mode", "set_skills", "set_role", "set_model_role"}
-                else None,
-            )
+            if payload.command in reconfigure_commands:
+                async with record.admission_lock:
+                    if record.admission_closed:
+                        raise GenerationAdoptionError(
+                            "admission_closed",
+                            "generation adoption is closed for this session",
+                        )
+                    if record.active_turn_id is not None or record.queued_turn_ids:
+                        raise GenerationAdoptionError(
+                            "non_quiescent",
+                            "generation adoption requires a quiescent turn boundary",
+                        )
+                    runner._admission_lock_owner = asyncio.current_task()
+                    try:
+                        detail = await runner.handle_command(
+                            payload.command,
+                            payload.payload,
+                            durable_reconfigure=durable_reconfigure,
+                        )
+                    finally:
+                        runner._admission_lock_owner = None
+            else:
+                detail = await runner.handle_command(
+                    payload.command,
+                    payload.payload,
+                    durable_reconfigure=None,
+                )
         except ModelRoleResolutionError as exc:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail=exc.problem.to_dict()
+            ) from exc
+        except GenerationAdoptionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": exc.code, "detail": exc.detail},
             ) from exc
         except ValueError as exc:
             raise HTTPException(

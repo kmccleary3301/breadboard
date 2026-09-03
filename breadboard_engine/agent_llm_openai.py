@@ -504,6 +504,22 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         except Exception:
             return False
 
+    def replace_config(self, config: Dict[str, Any]) -> bool:
+        """Replace runtime configuration exactly for transactional rollback."""
+        if not isinstance(config, dict):
+            return False
+        if redaction.contains_provider_auth_runtime(config):
+            return False
+        self.config = copy.deepcopy(config)
+        lock_value = self.config.get("model_role_lock")
+        self._model_role_lock = (
+            dict(lock_value) if isinstance(lock_value, dict) else None
+        )
+        self._active_model_role = str(
+            self.config.get("active_model_role") or ""
+        ).strip()
+        return True
+
     def _prepare_replay_session(
         self,
         session_state: SessionState,

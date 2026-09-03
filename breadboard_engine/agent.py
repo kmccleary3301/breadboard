@@ -6,6 +6,7 @@ abstracting away implementation details.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
@@ -129,6 +130,44 @@ class AgenticCoder:
             except Exception:
                 continue
 
+    def _invoke_remote_config_update(
+        self, method_name: str, payload: Dict[str, Any]
+    ) -> bool:
+        try:
+            method = getattr(self.agent, method_name)
+            reference = method.remote(payload)
+            ray_mod = _get_ray()
+            if ray_mod is None:
+                return False
+            return ray_mod.get(reference) is not False
+        except Exception:
+            return False
+
+    def replace_runtime_config(self, config: Dict[str, Any]) -> bool:
+        """Replace the active config exactly, including absent keys."""
+        if not isinstance(config, dict):
+            return False
+        if redaction.contains_provider_auth_runtime(config):
+            logger.warning(
+                "Rejecting runtime provider credentials; attach credentials through the provider broker."
+            )
+            return False
+        replacement = copy.deepcopy(config)
+        self.config = replacement
+        if not self.agent:
+            return True
+        if self._local_mode:
+            try:
+                if hasattr(self.agent, "replace_config"):
+                    return self.agent.replace_config(replacement) is not False
+                setattr(self.agent, "config", replacement)
+                return True
+            except Exception:
+                return False
+        if not hasattr(self.agent, "replace_config"):
+            return False
+        return self._invoke_remote_config_update("replace_config", replacement)
+
     def apply_runtime_overrides(self, overrides: Dict[str, Any]) -> bool:
         """Best-effort update to the active config (local or remote)."""
         if not isinstance(overrides, dict) or not overrides:
@@ -148,18 +187,15 @@ class AgenticCoder:
             try:
                 setattr(self.agent, "config", self.config)
                 if hasattr(self.agent, "apply_config_overrides"):
-                    self.agent.apply_config_overrides(overrides)
+                    return self.agent.apply_config_overrides(overrides) is not False
                 return True
             except Exception:
                 return False
-        # Ray actor: attempt remote method if present
-        try:
-            if hasattr(self.agent, "apply_config_overrides"):
-                self.agent.apply_config_overrides.remote(overrides)
-                return True
-        except Exception:
+        # Ray actor: wait for the actor to acknowledge the update so callers can
+        # safely persist or roll back the corresponding generation change.
+        if not hasattr(self.agent, "apply_config_overrides"):
             return False
-        return False
+        return self._invoke_remote_config_update("apply_config_overrides", overrides)
 
     @staticmethod
     def _tokenize_path(path: str) -> List[Any]:
