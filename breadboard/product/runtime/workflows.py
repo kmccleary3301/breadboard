@@ -47,7 +47,7 @@ class WorkflowStep:
             )
         ):
             raise ValueError("workflow definitions require unbound child specifications")
-        dependencies = tuple(self.depends_on)
+        dependencies = tuple(sorted(self.depends_on))
         if any(
             type(dependency) is not str or not dependency.strip()
             for dependency in dependencies
@@ -213,6 +213,10 @@ def project_workflow_decision(
             if state.startup_phase != "recorded":
                 raise ChildError(
                     "retained workflow child has no delegated Work Item stream"
+                )
+            if state.terminal_outcome == "completed":
+                raise ChildError(
+                    "pre-delegation workflow child cannot be completed"
                 )
             statuses[step_id] = state.terminal_outcome or "starting"
             child_session_ids[step_id] = state.child_session_id

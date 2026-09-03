@@ -40,7 +40,7 @@ Focused behavior proof:
 
 ```text
 pytest tests/product/runtime/test_durable_children.py -k 'workflow or malformed_core_identity' -q
-# pytest: 25 passed, 145 deselected, 9 warnings
+# pytest: 26 passed, 145 deselected, 9 warnings
 ```
 
-The tests cover a real spawned controller process terminated between workflow steps, restart-equivalent and structurally identical decisions from existing owner persistence, unchanged Work Item event counts across that process death, projection version/source lineage, pre-delegation retained-child repair, terminal-child owner repair after an injected crash boundary, dependency activation and terminal completion, serialized lexical activation while another step is active, definition-drift rejection, failed/canceled precedence, concurrent controller activation with one child start, external artifact-store lock layout, canonical retained target/result references, cycle rejection, and malformed retained workflow identity rejection. The full durable-child suite is the integration gate recorded in the PR evidence.
+The tests cover a real spawned controller process terminated between workflow steps, restart-equivalent and structurally identical decisions from existing owner persistence, unchanged Work Item event counts across that process death, projection version/source lineage, pre-delegation retained-child repair, terminal-child owner repair after an injected crash boundary, dependency activation and terminal completion, serialized lexical activation while another step is active, canonical graph identity, definition-drift rejection, failed/canceled precedence, concurrent controller activation with one child start, external artifact-store lock layout, canonical retained target/result references, cycle rejection, and malformed retained workflow identity rejection. The full durable-child suite is the integration gate recorded in the PR evidence.

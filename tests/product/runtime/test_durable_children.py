@@ -5259,3 +5259,30 @@ def test_workflow_advance_repairs_terminal_child_owner_gap(
         and event.payload["child_work_item_id"] == state.child_work_item_id
     ]
     assert len(joined) == 1
+
+
+def test_workflow_definition_identity_canonicalizes_graph_order() -> None:
+    first = WorkflowDefinition(
+        (
+            WorkflowStep("a", _spec("workflow-adapter", "a")),
+            WorkflowStep("b", _spec("workflow-adapter", "b")),
+            WorkflowStep(
+                "c",
+                _spec("workflow-adapter", "c"),
+                depends_on=("b", "a"),
+            ),
+        )
+    )
+    second = WorkflowDefinition(
+        (
+            WorkflowStep(
+                "c",
+                _spec("workflow-adapter", "c"),
+                depends_on=("a", "b"),
+            ),
+            WorkflowStep("b", _spec("workflow-adapter", "b")),
+            WorkflowStep("a", _spec("workflow-adapter", "a")),
+        )
+    )
+
+    assert first.identity("canonical") == second.identity("canonical")
