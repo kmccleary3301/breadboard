@@ -490,3 +490,130 @@ test("trusted local driver terminate bounds settlement when executor ignores abo
   const durationMs = Date.now() - startMs
   assert.ok(durationMs < 3000, `terminate resolved boundedly in ${durationMs}ms`)
 })
+
+test("trusted local driver cleanup terminates live descendants in process group when parent process exited first", async () => {
+  if (process.platform === "win32") return
+
+  const start = await trustedLocalExecutionDriver.startTerminalSession?.({
+    terminalSessionId: "term-local-orphan-descendant-1",
+    command: [
+      "node",
+      "-e",
+      "const { spawn } = require('node:child_process'); const c = spawn('sleep', ['60'], { stdio: 'ignore' }); console.log(c.pid); process.exit(0);",
+    ],
+    cwd: "/tmp",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-term-descendant-1",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-term-descendant-1",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-term-descendant-1",
+    },
+  })
+  assert.ok(start)
+
+  // Give the process enough time to spawn descendant and exit
+  await sleep(100)
+
+  // Read the descendant PID from the output delta
+  const stdoutChunk = start.outputDeltas?.[0]?.chunk_b64
+  let descendantPid = 0
+  if (stdoutChunk) {
+    descendantPid = parseInt(Buffer.from(stdoutChunk, "base64").toString("utf8").trim(), 10)
+  }
+  if (!descendantPid || isNaN(descendantPid)) {
+    const interact = await trustedLocalExecutionDriver.interactTerminalSession?.({
+      terminalSessionId: "term-local-orphan-descendant-1",
+      interactionKind: "stdin",
+      inputText: "",
+    })
+    for (const delta of interact?.outputDeltas ?? []) {
+      const text = Buffer.from(delta.chunk_b64, "base64").toString("utf8").trim()
+      const parsed = parseInt(text, 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        descendantPid = parsed
+        break
+      }
+    }
+  }
+
+  assert.ok(descendantPid > 0, "descendant pid was parsed")
+
+  // Verify descendant process is currently running even though parent exited
+  let isDescendantAlive = false
+  try {
+    process.kill(descendantPid, 0)
+    isDescendantAlive = true
+  } catch {
+    isDescendantAlive = false
+  }
+  assert.equal(isDescendantAlive, true, "descendant is alive while parent has exited")
+
+  // Cleanup should signal process group and terminate the descendant
+  const cleanupResult = await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
+    cleanupId: "cleanup-descendant-1",
+    scope: "single",
+    sessionIds: ["term-local-orphan-descendant-1"],
+    signal: "SIGTERM",
+  })
+  assert.ok(cleanupResult)
+  assert.deepEqual(cleanupResult?.cleaned_session_ids, ["term-local-orphan-descendant-1"])
+
+  // Verify descendant process is dead
+  await sleep(100)
+  let isDescendantStillAlive = true
+  try {
+    process.kill(descendantPid, 0)
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "ESRCH") {
+      isDescendantStillAlive = false
+    }
+  }
+  assert.equal(isDescendantStillAlive, false, "descendant process was terminated by process-group cleanup")
+})
+
+test("trusted local driver cleanup handles process tree termination on Windows preserving graceful signal semantics before force-kill", async () => {
+  const originalPlatform = process.platform
+  Object.defineProperty(process, "platform", { value: "win32", configurable: true })
+  try {
+    const start = await trustedLocalExecutionDriver.startTerminalSession?.({
+      terminalSessionId: "term-win-test-1",
+      command: ["node", "-e", "console.log('hi'); process.exit(0);"],
+      capability: {
+        schema_version: "bb.execution_capability.v1",
+        capability_id: "cap-win-1",
+        security_tier: "trusted_dev",
+        isolation_class: "process",
+        secret_mode: "ref_only",
+        evidence_mode: "minimal",
+      },
+      placement: {
+        schema_version: "bb.execution_placement.v1",
+        placement_id: "place-win-1",
+        placement_class: "local_process",
+        runtime_id: "local",
+        capability_id: "cap-win-1",
+      },
+    })
+    assert.ok(start)
+    const cleanup = await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
+      cleanupId: "cleanup-win-test-1",
+      scope: "single",
+      sessionIds: ["term-win-test-1"],
+      signal: "SIGTERM",
+    })
+    assert.ok(cleanup)
+    assert.deepEqual(cleanup?.cleaned_session_ids, ["term-win-test-1"])
+    assert.deepEqual(cleanup?.failed_session_ids, [])
+  } finally {
+    Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true })
+  }
+})

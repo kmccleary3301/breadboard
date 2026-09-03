@@ -25,6 +25,7 @@ import type {
 interface LocalTerminalSessionRecord {
   readonly descriptor: TerminalSessionDescriptorV1
   readonly child: ChildProcessWithoutNullStreams
+  readonly pgid: number | null
   readonly startedAtMs: number
   nextChunkSeq: number
   pendingOutput: TerminalOutputDeltaV1[]
@@ -70,60 +71,78 @@ function normalizeSignal(signal?: string | null): NodeJS.Signals {
   return (signal ?? "SIGTERM") as NodeJS.Signals
 }
 
-function isProcessAlive(pid: number, child?: ChildProcessWithoutNullStreams): boolean {
-  if (child && (child.exitCode !== null || child.signalCode !== null)) {
-    return false
+function isGroupAlive(pgid: number | null | undefined): boolean {
+  if (pgid == null) return false
+  if (process.platform === "win32") {
+    try {
+      process.kill(pgid, 0)
+      return true
+    } catch {
+      return false
+    }
   }
   try {
-    process.kill(pid, 0)
+    process.kill(-pgid, 0)
     return true
-  } catch {
+  } catch (e: any) {
+    if (e && e.code === "EPERM") return true
     return false
   }
 }
 
-function killProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
-  if (child.pid == null) return
-  if (process.platform !== "win32") {
+function killProcessTree(
+  child: ChildProcessWithoutNullStreams | undefined,
+  pgid: number | null | undefined,
+  signal: NodeJS.Signals,
+): void {
+  const pid = pgid ?? child?.pid
+  if (pid != null && process.platform === "win32") {
     try {
-      process.kill(-child.pid, signal)
-    } catch {
+      const args = ["/pid", String(pid), "/T"]
+      if (signal === "SIGKILL") {
+        args.push("/F")
+      }
+      const taskkill = spawn("taskkill", args, { stdio: "ignore" })
+      taskkill.on("error", () => {})
+    } catch {}
+    if (child) {
       try {
         child.kill(signal)
       } catch {}
     }
-  } else {
+    return
+  }
+  if (pgid != null && process.platform !== "win32") {
+    try {
+      process.kill(-pgid, signal)
+      return
+    } catch {}
+  }
+  if (child) {
     try {
       child.kill(signal)
     } catch {}
   }
 }
-
 async function terminateChildProcessTree(
-  child: ChildProcessWithoutNullStreams,
+  child: ChildProcessWithoutNullStreams | undefined,
   initialSignal: NodeJS.Signals,
   graceMs = 250,
+  storedPgid?: number | null,
 ): Promise<boolean> {
-  const pid = child.pid
-  if (pid == null) return true
+  const pgid = storedPgid ?? child?.pid
+  if (pgid == null) return true
 
-  if (!isProcessAlive(pid, child)) {
+  if (!isGroupAlive(pgid)) {
     return true
   }
 
-  killProcessTree(child, initialSignal)
+  killProcessTree(child, pgid, initialSignal)
 
   const exitedGracefully = await new Promise<boolean>((resolve) => {
     let done = false
-    const onExit = () => {
-      cleanup()
-      resolve(true)
-    }
-    child.once("exit", onExit)
-    child.once("close", onExit)
-
     const checkTimer = setInterval(() => {
-      if (!isProcessAlive(pid, child)) {
+      if (!isGroupAlive(pgid)) {
         cleanup()
         resolve(true)
       }
@@ -131,14 +150,12 @@ async function terminateChildProcessTree(
 
     const timeoutTimer = setTimeout(() => {
       cleanup()
-      resolve(!isProcessAlive(pid, child))
+      resolve(!isGroupAlive(pgid))
     }, graceMs)
 
     function cleanup() {
       if (!done) {
         done = true
-        child.removeListener("exit", onExit)
-        child.removeListener("close", onExit)
         clearInterval(checkTimer)
         clearTimeout(timeoutTimer)
       }
@@ -149,19 +166,12 @@ async function terminateChildProcessTree(
     return true
   }
 
-  killProcessTree(child, "SIGKILL")
+  killProcessTree(child, pgid, "SIGKILL")
 
   return new Promise<boolean>((resolve) => {
     let done = false
-    const onExit = () => {
-      cleanup()
-      resolve(true)
-    }
-    child.once("exit", onExit)
-    child.once("close", onExit)
-
     const checkTimer = setInterval(() => {
-      if (!isProcessAlive(pid, child)) {
+      if (!isGroupAlive(pgid)) {
         cleanup()
         resolve(true)
       }
@@ -169,14 +179,12 @@ async function terminateChildProcessTree(
 
     const timeoutTimer = setTimeout(() => {
       cleanup()
-      resolve(!isProcessAlive(pid, child))
+      resolve(!isGroupAlive(pgid))
     }, 500)
 
     function cleanup() {
       if (!done) {
         done = true
-        child.removeListener("exit", onExit)
-        child.removeListener("close", onExit)
         clearInterval(checkTimer)
         clearTimeout(timeoutTimer)
       }
@@ -187,15 +195,22 @@ async function terminateChildProcessTree(
 export class LocalTerminalSessionManager {
   private readonly sessions = new Map<string, LocalTerminalSessionRecord>()
   private readonly endedSessionIds: string[] = []
+  private readonly endedSessionPgids = new Map<string, number | null>()
 
-  private rememberEndedSession(sessionId: string): void {
+  private rememberEndedSession(sessionId: string, pgid: number | null = null): void {
     const existingIndex = this.endedSessionIds.indexOf(sessionId)
     if (existingIndex >= 0) {
       this.endedSessionIds.splice(existingIndex, 1)
     }
     this.endedSessionIds.push(sessionId)
+    if (pgid != null) {
+      this.endedSessionPgids.set(sessionId, pgid)
+    }
     if (this.endedSessionIds.length > 32) {
-      this.endedSessionIds.splice(0, this.endedSessionIds.length - 32)
+      const removed = this.endedSessionIds.splice(0, this.endedSessionIds.length - 32)
+      for (const id of removed) {
+        this.endedSessionPgids.delete(id)
+      }
     }
   }
 
@@ -227,6 +242,7 @@ export class LocalTerminalSessionManager {
     const record: LocalTerminalSessionRecord = {
       descriptor,
       child,
+      pgid: child.pid ?? null,
       startedAtMs: Date.now(),
       nextChunkSeq: 0,
       pendingOutput: [],
@@ -263,7 +279,7 @@ export class LocalTerminalSessionManager {
         exitCode: exitCode ?? null,
         durationMs: Date.now() - record.startedAtMs,
       })
-      this.rememberEndedSession(descriptor.terminal_session_id)
+      this.rememberEndedSession(descriptor.terminal_session_id, record.pgid)
     })
 
     this.sessions.set(descriptor.terminal_session_id, record)
@@ -294,7 +310,7 @@ export class LocalTerminalSessionManager {
     if (input.interactionKind === "stdin") {
       record.child.stdin.write(decodeChunk(input))
     } else if (input.interactionKind === "signal") {
-      killProcessTree(record.child, normalizeSignal(input.signal))
+      killProcessTree(record.child, record.pgid ?? record.child.pid, normalizeSignal(input.signal))
     }
 
     if ((input.settleMs ?? 0) > 0) {
@@ -308,7 +324,7 @@ export class LocalTerminalSessionManager {
       end = record.pendingEnd
       record.deliveredEnd = true
       this.sessions.delete(record.descriptor.terminal_session_id)
-      this.rememberEndedSession(record.descriptor.terminal_session_id)
+      this.rememberEndedSession(record.descriptor.terminal_session_id, record.pgid)
     }
     return { interaction, outputDeltas, end }
   }
@@ -333,18 +349,30 @@ export class LocalTerminalSessionManager {
     const failed: string[] = []
     for (const sessionId of targetIds) {
       const record = this.sessions.get(sessionId)
-      if (!record) {
-        if (this.endedSessionIds.includes(sessionId)) {
+      const pgid = record?.pgid ?? this.endedSessionPgids.get(sessionId) ?? null
+      const child = record?.child
+      const initialSignal = normalizeSignal(input.signal)
+
+      if (pgid != null && isGroupAlive(pgid)) {
+        const exited = await terminateChildProcessTree(child, initialSignal, 250, pgid)
+        if (exited) {
+          if (record) {
+            record.pendingEnd =
+              record.pendingEnd ??
+              buildTerminalEnd({
+                descriptor: record.descriptor,
+                state: "cleaned_up",
+                durationMs: Date.now() - record.startedAtMs,
+              })
+            this.sessions.delete(sessionId)
+          }
+          this.rememberEndedSession(sessionId, pgid)
           cleaned.push(sessionId)
-          this.rememberEndedSession(sessionId)
         } else {
           failed.push(sessionId)
         }
-        continue
-      }
-      const initialSignal = normalizeSignal(input.signal)
-      const exited = await terminateChildProcessTree(record.child, initialSignal)
-      if (exited) {
+      } else if (record) {
+        killProcessTree(record.child, pgid, initialSignal)
         record.pendingEnd =
           record.pendingEnd ??
           buildTerminalEnd({
@@ -352,9 +380,14 @@ export class LocalTerminalSessionManager {
             state: "cleaned_up",
             durationMs: Date.now() - record.startedAtMs,
           })
-        cleaned.push(sessionId)
         this.sessions.delete(sessionId)
-        this.rememberEndedSession(sessionId)
+        this.rememberEndedSession(sessionId, pgid)
+        cleaned.push(sessionId)
+      } else if (this.endedSessionIds.includes(sessionId)) {
+        if (pgid != null) {
+          killProcessTree(undefined, pgid, initialSignal)
+        }
+        cleaned.push(sessionId)
       } else {
         failed.push(sessionId)
       }

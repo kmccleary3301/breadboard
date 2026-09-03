@@ -821,3 +821,177 @@ test("BackboneSession with custom executionWorld routes both terminal API and to
   assert.equal(toolTurnRes.driverTurn?.driverId, "unified-custom-world-driver")
   assert.equal(toolTurnRes.driverTurn?.sandboxResult.status, "completed")
 })
+
+test("Backbone terminals preserves one-time selected driver across dynamic capability changes during execution", async () => {
+  let dynamicSupport = true
+  let executedDriverId = ""
+
+  const dynamicDriver = {
+    driverId: "dynamic-terminal-driver",
+    supportedPlacements: ["local_process" as const, "local_oci" as const],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => dynamicSupport,
+    startTerminalSession: async (input: { terminalSessionId: string; command: string[] }) => {
+      executedDriverId = "dynamic-terminal-driver"
+      return {
+        descriptor: {
+          schema_version: "bb.terminal_session_descriptor.v1" as const,
+          terminal_session_id: input.terminalSessionId,
+          command: input.command,
+          startup_call_id: null,
+          owner_task_id: null,
+          public_handles: [],
+          capability_id: "cap-dynamic",
+          placement_id: "place-dynamic",
+          persistence_scope: "thread" as const,
+          continuation_scope: "both" as const,
+          stream_mode: "pipes" as const,
+          stream_split: "stdout_stderr" as const,
+        },
+        outputDeltas: [],
+      }
+    },
+  }
+
+  const world = createExecutionWorld({ drivers: [dynamicDriver] })
+  const workspace = createWorkspace({
+    workspaceId: "ws-dynamic",
+    rootDir: "/tmp",
+    defaultExecutionProfileId: "sandboxed_local",
+    capabilitySet: buildWorkspaceCapabilitySet({}),
+  })
+  const backbone = createBackbone({ workspace, executionWorld: world })
+  const session = backbone.openSession({ sessionId: "sess-dynamic-1" })
+  // Select driver while dynamicSupport is true
+  const classification = session.terminals.classify({ executionProfileId: "sandboxed_local" })
+
+  // Mutate dynamicSupport to false before start executes
+  dynamicSupport = false
+
+  // Start with reserved driver selection carried through execute
+  const startResult = await session.terminals.start({
+    terminalSessionId: "term-dynamic-1",
+    command: ["echo", "dynamic"],
+    executionProfileId: "sandboxed_local",
+    driverId: "dynamic-terminal-driver",
+  })
+
+  assert.ok(startResult.session)
+  assert.equal(executedDriverId, "dynamic-terminal-driver")
+})
+
+test("Backbone terminals supported driver interacting with unknown session returns supported supportClaim and typed unsupportedCase", async () => {
+  const driver = {
+    driverId: "mock-terminal-driver",
+    supportedPlacements: ["local_process" as const],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    interactTerminalSession: async () => {
+      throw new Error("Unknown terminal session term-nonexistent-1")
+    },
+  }
+  const world = createExecutionWorld({ drivers: [driver] })
+  const workspace = createWorkspace({
+    workspaceId: "ws-support-claim",
+    rootDir: "/tmp",
+    defaultExecutionProfileId: "trusted_local",
+    capabilitySet: buildWorkspaceCapabilitySet({}),
+  })
+  const backbone = createBackbone({ workspace, executionWorld: world })
+  const session = backbone.openSession({ sessionId: "sess-support-1" })
+
+  const interactResult = await session.terminals.interact({
+    terminalSessionId: "term-nonexistent-1",
+    interactionKind: "stdin",
+    inputText: "hello\n",
+  })
+
+  assert.equal(interactResult.supportClaim.level, "supported")
+  assert.equal(interactResult.interaction, null)
+  assert.ok(interactResult.unsupportedCase !== null)
+  assert.equal(interactResult.unsupportedCase?.reason_code, "terminal_interaction_failed")
+})
+
+test("Backbone terminals cleanup then restart with same session ID creates fresh running session view", async () => {
+  const startedSessions: string[] = []
+  const cleanedSessions: string[] = []
+  const driver = {
+    driverId: "lifecycle-terminal-driver",
+    supportedPlacements: ["local_process" as const],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    startTerminalSession: async (input: { terminalSessionId: string; command: string[] }) => {
+      startedSessions.push(input.terminalSessionId)
+      return {
+        descriptor: {
+          schema_version: "bb.terminal_session_descriptor.v1" as const,
+          terminal_session_id: input.terminalSessionId,
+          command: input.command,
+          startup_call_id: null,
+          owner_task_id: null,
+          public_handles: [],
+          capability_id: "cap-life",
+          placement_id: "place-life",
+          persistence_scope: "thread" as const,
+          continuation_scope: "both" as const,
+          stream_mode: "pipes" as const,
+        },
+        outputDeltas: [
+          {
+            schema_version: "bb.terminal_output_delta.v1" as const,
+            terminal_session_id: input.terminalSessionId,
+            chunk_seq: 1,
+            stream: "stdout" as const,
+            chunk_b64: Buffer.from(`start-${startedSessions.length}\n`).toString("base64"),
+          },
+        ],
+      }
+    },
+    cleanupTerminalSessions: async (input: { sessionIds?: readonly string[]; cleanupId: string }) => {
+      cleanedSessions.push(...(input.sessionIds ?? []))
+      return {
+        schema_version: "bb.terminal_cleanup_result.v1" as const,
+        cleanup_id: input.cleanupId,
+        scope: "single" as const,
+        cleaned_session_ids: input.sessionIds ? [...input.sessionIds] : [],
+        failed_session_ids: [],
+      }
+    },
+  }
+  const world = createExecutionWorld({ drivers: [driver] })
+  const workspace = createWorkspace({
+    workspaceId: "ws-lifecycle",
+    rootDir: "/tmp",
+    defaultExecutionProfileId: "trusted_local",
+    capabilitySet: buildWorkspaceCapabilitySet({}),
+  })
+  const backbone = createBackbone({ workspace, executionWorld: world })
+  const session = backbone.openSession({ sessionId: "sess-life-1" })
+
+  // Start session first time
+  const start1 = await session.terminals.start({
+    terminalSessionId: "term-reused-1",
+    command: ["bash"],
+  })
+  assert.ok(start1.session)
+  assert.equal(start1.session.status, "running")
+  assert.equal(start1.session.summary().outputChunkCount, 1)
+  assert.equal(start1.session.summary().lastEndState, null)
+
+  // Cleanup session
+  const cleanup = await session.terminals.cleanup({
+    scope: "single",
+    sessionIds: ["term-reused-1"],
+  })
+  assert.deepEqual(cleanup.result?.cleaned_session_ids, ["term-reused-1"])
+
+  // Restart session with same ID
+  const start2 = await session.terminals.start({
+    terminalSessionId: "term-reused-1",
+    command: ["bash"],
+  })
+  assert.ok(start2.session)
+  assert.equal(start2.session.status, "running")
+  assert.equal(start2.session.summary().lastEndState, null)
+  assert.equal(start2.session.summary().outputChunkCount, 1)
+})

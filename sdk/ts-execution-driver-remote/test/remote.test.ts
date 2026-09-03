@@ -1256,3 +1256,41 @@ test("Remote cleanup response omitting cleaned_session_ids but reporting failed_
     /already ended/,
   )
 })
+
+test("remote execution driver direct execute enforces bounded deadline when fetch transport ignores abort", async () => {
+  const abortIgnoringFetch: typeof fetch = async () => new Promise<Response>(() => {})
+  const driver = makeRemoteExecutionDriver(undefined, {
+    endpointUrl: "http://remote-backend:8080/sandbox",
+    fetchImpl: abortIgnoringFetch,
+    timeoutMs: 5000,
+  })
+
+  const request = buildRemoteSandboxRequest({
+    requestId: "req-remote-deadline-direct",
+    capability: remoteCapability,
+    command: ["python", "-c", "print(1)"],
+    placementClass: "remote_worker",
+  })
+
+  const startMs = Date.now()
+  await assert.rejects(
+    () =>
+      driver.execute!(request, {
+        signal: new AbortController().signal,
+        deadlineAtMs: Date.now() + 100,
+        terminationGraceMs: 50,
+        capability: remoteCapability,
+        placement: {
+          schema_version: "bb.execution_placement.v1",
+          placement_id: "place-remote-direct",
+          placement_class: "remote_worker",
+          runtime_id: "remote",
+          capability_id: remoteCapability.capability_id,
+        },
+        driverId: "remote",
+      }),
+    /Remote execution timed out/,
+  )
+  const durationMs = Date.now() - startMs
+  assert.ok(durationMs < 2000, `execute rejected boundedly in ${durationMs}ms despite abort-ignoring transport`)
+})

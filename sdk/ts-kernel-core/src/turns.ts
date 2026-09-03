@@ -62,12 +62,21 @@ function buildDriverMediatedToolOutcome(input: {
             tool: input.toolName,
             status: "completed",
             exit_code: input.sandboxResult.usage?.exit_code ?? 0,
+            ...(input.sandboxResult.stdout_ref ? { stdout_ref: input.sandboxResult.stdout_ref } : {}),
+            ...(input.sandboxResult.stderr_ref ? { stderr_ref: input.sandboxResult.stderr_ref } : {}),
+            ...(input.sandboxResult.artifact_refs?.length ? { artifact_refs: input.sandboxResult.artifact_refs } : {}),
+            ...(input.sandboxResult.evidence_refs?.length ? { evidence_refs: input.sandboxResult.evidence_refs } : {}),
           }
         : null,
     visibility: { model_visible: false, provider_visible: false, host_visible: true, redaction_state: "none" },
     metadata: {
       tool: input.toolName,
       sandbox_status: input.sandboxResult.status,
+      ...(input.sandboxResult.stdout_ref ? { stdout_ref: input.sandboxResult.stdout_ref } : {}),
+      ...(input.sandboxResult.stderr_ref ? { stderr_ref: input.sandboxResult.stderr_ref } : {}),
+      ...(input.sandboxResult.artifact_refs?.length ? { artifact_refs: input.sandboxResult.artifact_refs } : {}),
+      ...(input.sandboxResult.evidence_refs?.length ? { evidence_refs: input.sandboxResult.evidence_refs } : {}),
+      ...(input.sandboxResult.side_effect_digest ? { side_effect_digest: input.sandboxResult.side_effect_digest } : {}),
     },
   }
   if (input.sandboxResult.status !== "completed") {
@@ -105,6 +114,10 @@ function buildDriverMediatedToolRender(input: {
     metadata: {
       tool: input.toolName,
       sandbox_status: input.sandboxResult.status,
+      ...(input.sandboxResult.stdout_ref ? { stdout_ref: input.sandboxResult.stdout_ref } : {}),
+      ...(input.sandboxResult.stderr_ref ? { stderr_ref: input.sandboxResult.stderr_ref } : {}),
+      ...(input.sandboxResult.artifact_refs?.length ? { artifact_refs: input.sandboxResult.artifact_refs } : {}),
+      ...(input.sandboxResult.evidence_refs?.length ? { evidence_refs: input.sandboxResult.evidence_refs } : {}),
     },
   })
 }
@@ -183,7 +196,13 @@ export async function executeDriverMediatedToolTurn(
       evidence_mode: capability.evidence_mode,
       metadata: { driver: driverId },
     }
+  const expectedSandboxRequestId = `${request.request_id}:sandbox`
   const sandboxResult = assertValid<SandboxResultV1>("sandboxResult", worldResult.sandboxResult)
+  if (sandboxResult.request_id !== expectedSandboxRequestId) {
+    throw new Error(
+      `Execution world returned sandbox result with request_id '${sandboxResult.request_id}' which does not match expected '${expectedSandboxRequestId}'`,
+    )
+  }
   const sideEffectExpectation =
     worldResult.plan?.sideEffectExpectation ?? buildExecutionDriverSideEffectExpectation(placementClass)
   const evidenceExpectation =
@@ -204,6 +223,8 @@ export async function executeDriverMediatedToolTurn(
     tool_name: options.toolName,
     args: {
       command: options.command,
+      ...(options.imageRef ? { image_ref: options.imageRef } : {}),
+      ...(options.workspaceRef ? { workspace_ref: options.workspaceRef } : {}),
     },
     state: toolCallState,
     requested_at_utc: completedAtUtc,
@@ -414,6 +435,7 @@ export function executeScriptedToolTurn(
       content_schema_version: null,
       event_id: toolResultEventId,
       provenance: { source: "live", source_ref: "ts_scripted_tool_turn" },
+      ...(toolRender.metadata ? { metadata: toolRender.metadata } : {}),
     },
   ]
   if (typeof options.assistantText === "string" && options.assistantText.length > 0) {

@@ -261,16 +261,18 @@ async function runBoundedCleanupCommand(
     }, timeoutMs)
   })
   try {
-    const execPromise = Promise.resolve(
-      executor({
-        runtimeCommand,
-        runtimeArgs,
-        signal: controller.signal,
-      }),
-    ).then(
-      (result) => ({ ok: result.exitCode === 0, exitCode: result.exitCode }),
-      () => ({ ok: false }),
-    )
+    const execPromise = Promise.resolve()
+      .then(() =>
+        executor({
+          runtimeCommand,
+          runtimeArgs,
+          signal: controller.signal,
+        }),
+      )
+      .then(
+        (result) => ({ ok: result.exitCode === 0, exitCode: result.exitCode }),
+        () => ({ ok: false }),
+      )
     return await Promise.race([execPromise, timeoutPromise])
   } finally {
     if (timer !== undefined) clearTimeout(timer)

@@ -958,3 +958,209 @@ test("OCI driver termination advances through stop/kill/rm and settles boundedly
   assert.ok(invokedCommands.includes("kill"), "kill was invoked after stop timed out")
   assert.ok(invokedCommands.includes("rm"), "rm was invoked")
 })
+
+test("OCI driver termination continues to kill/rm when commandExecutor throws synchronously during stop", async () => {
+  const invokedCommands: string[] = []
+  const throwingExecutor: OciCommandExecutor = ({ runtimeArgs }) => {
+    const op = runtimeArgs[0]
+    invokedCommands.push(op)
+    if (op === "stop") {
+      throw new Error("Synchronous stop crash")
+    }
+    return Promise.resolve({ exitCode: 0, stdout: "", stderr: "" })
+  }
+
+  const driver = makeConfiguredOciExecutionDriver({
+    commandExecutor: throwingExecutor,
+  })
+
+  const request = buildOciSandboxRequest({
+    requestId: "req-oci-sync-throw",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-sync-throw",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "10"],
+    imageRef: "docker://breadboard/base:latest",
+  })
+
+  const controller = new AbortController()
+  const cap = {
+    schema_version: "bb.execution_capability.v1" as const,
+    capability_id: "cap-oci-sync-throw",
+    security_tier: "single_tenant" as const,
+    isolation_class: "oci" as const,
+    secret_mode: "ref_only" as const,
+    evidence_mode: "minimal" as const,
+  }
+  const place = {
+    schema_version: "bb.execution_placement.v1" as const,
+    placement_id: "place-oci-sync-throw",
+    placement_class: "local_oci" as const,
+    runtime_id: "oci",
+    capability_id: cap.capability_id,
+  }
+  driver.execute!(request, {
+    signal: controller.signal,
+    deadlineAtMs: null,
+    terminationGraceMs: 100,
+    capability: cap,
+    placement: place,
+    driverId: "oci",
+  }).catch(() => {})
+
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: controller.signal,
+    deadlineAtMs: null,
+  })
+
+  assert.ok(invokedCommands.includes("stop"), "stop was invoked and threw synchronously")
+  assert.ok(invokedCommands.includes("kill"), "kill was invoked after stop threw")
+  assert.ok(invokedCommands.includes("rm"), "rm was invoked")
+})
+
+test("OCI terminals cleanup rejects invalid response shapes with typed error", async () => {
+  const invalidAdapter: OciTerminalSessionAdapter = {
+    startSession: async () => ({
+      outputDeltas: [],
+    }),
+    interactSession: async () => ({
+      outputDeltas: [],
+    }),
+    cleanupSessions: async () => {
+      // Return invalid non-string array inside object
+      return {
+        cleaned_session_ids: [123 as any],
+        failed_session_ids: ["ok"],
+      } as any
+    },
+  }
+
+  const driver = makeOciExecutionDriver(invalidAdapter)
+  await driver.startTerminalSession?.({
+    terminalSessionId: "term-invalid-cleanup",
+    command: ["bash"],
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-invalid-1",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-oci-invalid-1",
+      placement_class: "local_oci",
+      runtime_id: "oci",
+      capability_id: "cap-oci-invalid-1",
+    },
+  })
+
+  await assert.rejects(
+    () =>
+      driver.cleanupTerminalSessions?.({
+        cleanupId: "clean-1",
+        scope: "single",
+        sessionIds: ["term-invalid-cleanup"],
+      }) ?? Promise.resolve(undefined as any),
+    /Invalid cleanup result/,
+  )
+})
+
+test("OCI terminals start cleans up backend on launched-then-invalid-result", async () => {
+  let backendCleaned = false
+  const adapter: OciTerminalSessionAdapter = {
+    startSession: async () => ({
+      outputDeltas: [
+        {
+          schema_version: "bb.terminal_output_delta.v1",
+          terminal_session_id: "mismatched-session-id",
+          chunk_seq: 1,
+          stream: "stdout",
+          chunk_b64: Buffer.from("hi").toString("base64"),
+          text: "hi",
+          bytes_b64: null,
+          occurred_at_utc: new Date().toISOString(),
+        },
+      ],
+    }),
+    interactSession: async () => ({ outputDeltas: [] }),
+    cleanupSessions: async ({ sessionIds }) => {
+      if (sessionIds.includes("term-launched-invalid-1")) {
+        backendCleaned = true
+      }
+      return sessionIds
+    },
+  }
+
+  const driver = makeOciExecutionDriver(adapter)
+  await assert.rejects(
+    () =>
+      driver.startTerminalSession?.({
+        terminalSessionId: "term-launched-invalid-1",
+        command: ["bash"],
+        capability: {
+          schema_version: "bb.execution_capability.v1",
+          capability_id: "cap-1",
+          security_tier: "single_tenant",
+          isolation_class: "oci",
+          secret_mode: "ref_only",
+          evidence_mode: "minimal",
+        },
+        placement: {
+          schema_version: "bb.execution_placement.v1",
+          placement_id: "place-1",
+          placement_class: "local_oci",
+          runtime_id: "oci",
+          capability_id: "cap-1",
+        },
+      }) ?? Promise.resolve(undefined as any),
+    /Terminal output delta session ID/,
+  )
+
+  assert.equal(backendCleaned, true, "backend was cleaned up after startSession returned invalid result")
+})
+
+test("OCI terminals cleanup without adapter cleanupSessions reports active sessions as failed", async () => {
+  const adapterWithoutCleanup: OciTerminalSessionAdapter = {
+    startSession: async () => ({ outputDeltas: [] }),
+    interactSession: async () => ({ outputDeltas: [] }),
+  }
+
+  const driver = makeOciExecutionDriver(adapterWithoutCleanup)
+  await driver.startTerminalSession?.({
+    terminalSessionId: "term-no-cleanup-1",
+    command: ["bash"],
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-2",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-2",
+      placement_class: "local_oci",
+      runtime_id: "oci",
+      capability_id: "cap-2",
+    },
+  })
+
+  const cleanupResult = await driver.cleanupTerminalSessions?.({
+    cleanupId: "clean-no-cleanup-1",
+    scope: "single",
+    sessionIds: ["term-no-cleanup-1"],
+  })
+
+  assert.ok(cleanupResult)
+  assert.deepEqual(cleanupResult?.cleaned_session_ids, [])
+  assert.deepEqual(cleanupResult?.failed_session_ids, ["term-no-cleanup-1"])
+})

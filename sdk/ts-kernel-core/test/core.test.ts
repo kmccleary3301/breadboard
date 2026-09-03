@@ -925,14 +925,22 @@ test("kernel core preserves provider-neutral equality across full Session produc
     toolName: "pytest_runner",
     command: ["pytest", "tests/unit"],
     workspaceRef: "/tmp/workspace",
-    imageRef: null,
+    imageRef: "docker://breadboard/python-base:latest",
     isolationClass: "process",
     securityTier: "trusted_dev",
     startedAt: "2026-03-08T12:00:00.000Z",
-    localCommandExecutor: async () => ({
-      exitCode: 0,
-      stdout: "10 passed\n",
-      stderr: "",
+    executeSandbox: async (sandboxRequest) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: sandboxRequest.request_id,
+      status: "completed",
+      placement_id: `local-process:${sandboxRequest.request_id}`,
+      stdout_ref: "sha256:pytest-stdout-digest",
+      stderr_ref: "sha256:pytest-stderr-digest",
+      artifact_refs: ["artifact://pytest-report.xml"],
+      side_effect_digest: "sha256:pytest-run-digest",
+      usage: { exit_code: 0 },
+      evidence_refs: ["evidence://test/pytest-1"],
+      error: null,
     }),
   })
 
@@ -945,10 +953,18 @@ test("kernel core preserves provider-neutral equality across full Session produc
     isolationClass: "oci",
     securityTier: "single_tenant",
     startedAt: "2026-03-08T12:00:00.000Z",
-    ociCommandExecutor: async () => ({
-      exitCode: 0,
-      stdout: "10 passed\n",
-      stderr: "",
+    executeSandbox: async (sandboxRequest) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: sandboxRequest.request_id,
+      status: "completed",
+      placement_id: `oci:${sandboxRequest.request_id}`,
+      stdout_ref: "sha256:pytest-stdout-digest",
+      stderr_ref: "sha256:pytest-stderr-digest",
+      artifact_refs: ["artifact://pytest-report.xml"],
+      side_effect_digest: "sha256:pytest-run-digest",
+      usage: { exit_code: 0 },
+      evidence_refs: ["evidence://test/pytest-1"],
+      error: null,
     }),
   })
 
@@ -1670,4 +1686,141 @@ test("createKernelExecutionWorld with executeSandbox override advertises and exe
   assert.ok(injectedCalled, "injected executeSandbox was called for remote placement")
   assert.equal(result.sandboxResult.status, "completed")
   assert.equal(result.driverId, "remote")
+})
+
+test("executeDriverMediatedToolTurn preserves image_ref, workspace_ref, and observable refs in tool call, outcome, and render", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-preserve-refs-1",
+    entry_mode: "interactive",
+    task: "Run tool with full observable refs",
+    workspace_root: "/workspace",
+  } as const
+
+  const world = createKernelExecutionWorld({
+    executeSandbox: async (req) => {
+      return {
+        schema_version: "bb.sandbox_result.v1",
+        request_id: req.request_id,
+        status: "completed",
+        placement_id: "place-preserve-1",
+        stdout_ref: "sha256:preserve-stdout-digest",
+        stderr_ref: "sha256:preserve-stderr-digest",
+        artifact_refs: ["artifact://file1.txt", "artifact://file2.txt"],
+        evidence_refs: ["evidence://test/1"],
+        side_effect_digest: "sha256:preserve-side-effect",
+        usage: { exit_code: 0 },
+        error: null,
+      }
+    },
+  })
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-preserve-refs-1",
+    toolName: "oci_tool",
+    command: ["python", "-c", "print('preserve')"],
+    imageRef: "docker://breadboard/custom:v1",
+    workspaceRef: "/custom/workspace",
+    isolationClass: "oci",
+    securityTier: "single_tenant",
+    driverIdHint: "oci",
+    executionWorld: world,
+  })
+
+  // Verify toolCall args preserve image_ref and workspace_ref
+  const toolCallEvent = result.events.find((e) => e.kind === "tool_call")
+  assert.ok(toolCallEvent)
+  const toolCall = toolCallEvent.payload as { args?: Record<string, unknown> }
+  assert.equal(toolCall.args?.image_ref, "docker://breadboard/custom:v1")
+  assert.equal(toolCall.args?.workspace_ref, "/custom/workspace")
+
+  // Verify tool_result preserves stdout, stderr, artifact, evidence refs and side effect digest
+  const toolResultEvent = result.events.find((e) => e.kind === "tool_result")
+  assert.ok(toolResultEvent)
+  const toolOutcome = toolResultEvent.payload as {
+    result?: Record<string, unknown>
+    metadata?: Record<string, unknown>
+  }
+  assert.equal(toolOutcome.result?.stdout_ref, "sha256:preserve-stdout-digest")
+  assert.equal(toolOutcome.result?.stderr_ref, "sha256:preserve-stderr-digest")
+  assert.deepEqual(toolOutcome.result?.artifact_refs, ["artifact://file1.txt", "artifact://file2.txt"])
+  assert.deepEqual(toolOutcome.result?.evidence_refs, ["evidence://test/1"])
+  assert.equal(toolOutcome.metadata?.side_effect_digest, "sha256:preserve-side-effect")
+
+  // Verify transcript tool_result item preserves render parts and metadata
+  const transcriptToolItem = result.transcript.items.find((item) => item.kind === "tool_result")
+  assert.ok(transcriptToolItem)
+  assert.equal(transcriptToolItem.metadata?.stdout_ref, "sha256:preserve-stdout-digest")
+  assert.equal(transcriptToolItem.metadata?.stderr_ref, "sha256:preserve-stderr-digest")
+  assert.deepEqual(transcriptToolItem.metadata?.artifact_refs, ["artifact://file1.txt", "artifact://file2.txt"])
+  assert.deepEqual(transcriptToolItem.metadata?.evidence_refs, ["evidence://test/1"])
+})
+
+test("executeDriverMediatedToolTurn rejects when injected executionWorld returns sandboxResult with mismatched request_id", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-hostile-world-1",
+    entry_mode: "interactive",
+    task: "Verify request_id identity enforcement",
+    workspace_root: "/workspace",
+  } as const
+
+  const hostileWorld = {
+    select: () => ({
+      driverId: "hostile-driver",
+      capability: {
+        schema_version: "bb.execution_capability.v1" as const,
+        capability_id: "cap-hostile",
+        security_tier: "trusted_dev" as const,
+        isolation_class: "process" as const,
+        secret_mode: "ref_only" as const,
+        evidence_mode: "minimal" as const,
+      },
+      placement: {
+        schema_version: "bb.execution_placement.v1" as const,
+        placement_id: "place-hostile",
+        placement_class: "local_process" as const,
+        runtime_id: "local",
+        capability_id: "cap-hostile",
+      },
+    }),
+    execute: async () => ({
+      kind: "sandbox" as const,
+      driverId: "hostile-driver",
+      plan: null,
+      sandboxResult: {
+        schema_version: "bb.sandbox_result.v1" as const,
+        request_id: "run-different-request-id:sandbox", // Mismatched request_id
+        status: "completed" as const,
+        placement_id: "place-hostile",
+        stdout_ref: null,
+        stderr_ref: null,
+        artifact_refs: [],
+        evidence_refs: [],
+        side_effect_digest: "sha256:hostile",
+        usage: { exit_code: 0 },
+        error: null,
+      },
+      livenessEvidence: {
+        observed: true,
+        executionStarted: true,
+        state: "completed" as const,
+        terminationRequested: false,
+        terminationObserved: false,
+        observedAtUtc: new Date().toISOString(),
+        evidenceRefs: [],
+      },
+    }),
+  }
+
+  await assert.rejects(
+    () =>
+      executeDriverMediatedToolTurn(request, {
+        sessionId: "sess-hostile-1",
+        toolName: "hostile_tool",
+        command: ["echo", "test"],
+        executionWorld: hostileWorld,
+      }),
+    /does not match expected 'run-hostile-world-1:sandbox'/,
+  )
 })

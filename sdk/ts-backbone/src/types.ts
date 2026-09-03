@@ -107,6 +107,8 @@ export interface BackboneTerminalStartInput {
   readonly cwd?: string | null
   readonly executionProfileId?: ExecutionProfileId
   readonly terminalSessionId?: string
+  readonly driverId?: string | null
+  readonly driverIdHint?: "trusted_local" | "oci" | "remote"
   readonly startupCallId?: string | null
   readonly ownerTaskId?: string | null
   readonly publicHandles?: TerminalSessionDescriptorV1["public_handles"]

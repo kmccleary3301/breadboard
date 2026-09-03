@@ -2816,3 +2816,339 @@ test("execution world scope-all cleanup rejects cross-adapter overlap between cl
   assert.equal(interactB.kind, "terminal_interact")
   assert.ok(interactB.result !== null, "victim B remains active after cross-adapter cleanup rejection")
 })
+
+test("execution world cleanup treats adapter error with 'Invalid cleanup result:' prefix as adapter failure and marks session failed", async () => {
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-cleanup-err-prefix-1",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-cleanup-err-prefix-1",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: cap.capability_id,
+  }
+
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "err-prefix-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    startTerminalSession: async (input) => ({
+      descriptor: {
+        schema_version: "bb.terminal_session_descriptor.v1",
+        terminal_session_id: input.terminalSessionId,
+        command: input.command,
+        startup_call_id: null,
+        owner_task_id: null,
+        public_handles: [],
+        capability_id: cap.capability_id,
+        placement_id: place.placement_id,
+        persistence_scope: "thread",
+        continuation_scope: "both",
+        stream_mode: "pipes",
+        stream_split: "stdout_stderr",
+        created_at_utc: new Date().toISOString(),
+      },
+      outputDeltas: [],
+    }),
+    cleanupTerminalSessions: async () => {
+      // Malicious or accidental error text matching validation error prefix
+      throw new Error("Invalid cleanup result: adapter internal failure during kill")
+    },
+  }
+
+  const world = createExecutionWorld({ drivers: [driver] })
+
+  await world.execute({
+    kind: "terminal_start",
+    capability: cap,
+    placement: place,
+    input: { terminalSessionId: "sess-err-prefix-1", command: ["bash"] },
+  })
+
+  // Cleanup should not throw ExecutionDriverResultValidationError, but return failed session IDs
+  const cleanupResult = await world.execute({
+    kind: "terminal_cleanup",
+    capability: cap,
+    placement: place,
+    input: {
+      cleanupId: "clean-err-prefix-1",
+      scope: "single",
+      sessionIds: ["sess-err-prefix-1"],
+    },
+  })
+
+  assert.equal(cleanupResult.kind, "terminal_cleanup")
+  assert.ok(cleanupResult.result !== null)
+  assert.deepEqual(cleanupResult.result?.cleaned_session_ids, [])
+  assert.deepEqual(cleanupResult.result?.failed_session_ids, ["sess-err-prefix-1"])
+})
+
+test("execution world pinned driver with wrong placement returns unsupported with no fallback", async () => {
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-wrong-placement-1",
+    security_tier: "single_tenant",
+    isolation_class: "oci",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-wrong-placement-1",
+    placement_class: "local_oci",
+    runtime_id: "oci",
+    capability_id: cap.capability_id,
+  }
+
+  let ociDriverExecuted = false
+  const localDriver: TerminalSessionDriverV1 = {
+    driverId: "local-process",
+    supportedPlacements: ["local_process"], // Does NOT support local_oci
+    supportsCapability: () => true,
+    buildSandboxRequest: ({ requestId }) => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: requestId,
+      capability_id: cap.capability_id,
+      placement_class: "local_process",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: null,
+      snapshot_ref: null,
+      command: ["echo", "local"],
+      network_policy: { allow: [] },
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: "minimal",
+      metadata: {},
+    }),
+    execute: async () => {
+      throw new Error("local driver should not execute for local_oci")
+    },
+  }
+
+  const ociDriver: TerminalSessionDriverV1 = {
+    driverId: "oci",
+    supportedPlacements: ["local_oci"],
+    supportsCapability: () => true,
+    buildSandboxRequest: ({ requestId }) => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: requestId,
+      capability_id: cap.capability_id,
+      placement_class: "local_oci",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: "docker://test:latest",
+      snapshot_ref: null,
+      command: ["echo", "oci"],
+      network_policy: { allow: [] },
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: "minimal",
+      metadata: {},
+    }),
+    execute: async (req) => {
+      ociDriverExecuted = true
+      return {
+        schema_version: "bb.sandbox_result.v1",
+        request_id: req.request_id,
+        status: "completed",
+        placement_id: place.placement_id,
+        stdout_ref: null,
+        stderr_ref: null,
+        artifact_refs: [],
+        evidence_refs: [],
+        side_effect_digest: "sha256:oci",
+        usage: { exit_code: 0 },
+        error: null,
+      }
+    },
+  }
+
+  const world = createExecutionWorld({ drivers: [localDriver, ociDriver] })
+
+  // Pinning local-process for local_oci placement must return unsupported, not execute OCI driver fallback
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: cap,
+    placement: place,
+    requestId: "req-wrong-placement-1",
+    command: ["echo", "test"],
+    driverId: "local-process",
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.driverId, null)
+  assert.ok(result.unsupportedCase !== undefined)
+  assert.equal(ociDriverExecuted, false, "must not fall back to OCI driver when local-process is pinned")
+})
+
+test("execution world pinned driver with missing capability returns unsupported with no fallback", async () => {
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-missing-capability-1",
+    security_tier: "single_tenant",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-missing-capability-1",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: cap.capability_id,
+  }
+
+  const pickyDriver: TerminalSessionDriverV1 = {
+    driverId: "picky-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => false, // Rejects capability
+    buildSandboxRequest: ({ requestId }) => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: requestId,
+      capability_id: cap.capability_id,
+      placement_class: "local_process",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: null,
+      snapshot_ref: null,
+      command: ["echo", "picky"],
+      network_policy: { allow: [] },
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: "minimal",
+      metadata: {},
+    }),
+    execute: async () => {
+      throw new Error("picky driver should not execute when supportsCapability is false")
+    },
+  }
+
+  const fallbackDriver: TerminalSessionDriverV1 = {
+    driverId: "fallback-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    buildSandboxRequest: ({ requestId }) => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: requestId,
+      capability_id: cap.capability_id,
+      placement_class: "local_process",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: null,
+      snapshot_ref: null,
+      command: ["echo", "fallback"],
+      network_policy: { allow: [] },
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: "minimal",
+      metadata: {},
+    }),
+    execute: async (req) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: req.request_id,
+      status: "completed",
+      placement_id: place.placement_id,
+      stdout_ref: null,
+      stderr_ref: null,
+      artifact_refs: [],
+      evidence_refs: [],
+      side_effect_digest: "sha256:fallback",
+      usage: { exit_code: 0 },
+      error: null,
+    }),
+  }
+
+  const world = createExecutionWorld({ drivers: [pickyDriver, fallbackDriver] })
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: cap,
+    placement: place,
+    requestId: "req-missing-cap-1",
+    command: ["echo", "test"],
+    driverId: "picky-driver",
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.driverId, null)
+  assert.ok(result.unsupportedCase !== undefined)
+})
+
+test("execution world terminal_start validation failure bounds never-settling cleanup and returns typed unsupportedCase", async () => {
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-never-settle-1",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-never-settle-1",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: cap.capability_id,
+  }
+
+  let cleanupCalled = false
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "never-settle-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    startTerminalSession: async (input) => ({
+      descriptor: {
+        schema_version: "bb.terminal_session_descriptor.v1",
+        // Mismatched session ID triggers validation failure
+        terminal_session_id: "wrong-session-id",
+        command: input.command,
+        startup_call_id: null,
+        owner_task_id: null,
+        public_handles: [],
+        capability_id: cap.capability_id,
+        placement_id: place.placement_id,
+        persistence_scope: "thread",
+        continuation_scope: "both",
+        stream_mode: "pipes",
+        stream_split: "stdout_stderr",
+        created_at_utc: new Date().toISOString(),
+      },
+      outputDeltas: [],
+    }),
+    cleanupTerminalSessions: async () => {
+      cleanupCalled = true
+      // Never settles
+      return new Promise(() => {})
+    },
+  }
+
+  const world = createExecutionWorld({
+    drivers: [driver],
+    terminationGraceMs: 30,
+  })
+
+  const result = await world.execute({
+    kind: "terminal_start",
+    capability: cap,
+    placement: place,
+    input: {
+      terminalSessionId: "term-req-1",
+      command: ["bash"],
+    },
+  })
+
+  assert.equal(result.kind, "terminal_start")
+  assert.equal(result.result, null)
+  assert.ok(result.unsupportedCase !== null)
+  assert.equal(result.unsupportedCase?.reason_code, "terminal_start_failed")
+  assert.equal(cleanupCalled, true)
+})

@@ -111,21 +111,33 @@ export class OciTerminalSessionManager {
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
     const descriptor = buildDescriptor(input)
     const result = await this.adapter.startSession({ descriptor })
-    if (result.outputDeltas) {
-      for (const delta of result.outputDeltas) {
-        if (delta.terminal_session_id !== descriptor.terminal_session_id) {
+    try {
+      if (result.outputDeltas) {
+        for (const delta of result.outputDeltas) {
+          if (delta.terminal_session_id !== descriptor.terminal_session_id) {
+            throw new Error(
+              `Terminal output delta session ID '${delta.terminal_session_id}' does not match session ID '${descriptor.terminal_session_id}'`,
+            )
+          }
+        }
+      }
+      if (result.end) {
+        if (result.end.terminal_session_id !== descriptor.terminal_session_id) {
           throw new Error(
-            `Terminal output delta session ID '${delta.terminal_session_id}' does not match session ID '${descriptor.terminal_session_id}'`,
+            `Terminal session end session ID '${result.end.terminal_session_id}' does not match session ID '${descriptor.terminal_session_id}'`,
           )
         }
       }
-    }
-    if (result.end) {
-      if (result.end.terminal_session_id !== descriptor.terminal_session_id) {
-        throw new Error(
-          `Terminal session end session ID '${result.end.terminal_session_id}' does not match session ID '${descriptor.terminal_session_id}'`,
-        )
+    } catch (validationError) {
+      if (this.adapter.cleanupSessions) {
+        try {
+          await this.adapter.cleanupSessions({
+            sessionIds: [descriptor.terminal_session_id],
+            signal: "SIGKILL",
+          })
+        } catch {}
       }
+      throw validationError
     }
     this.sessions.set(descriptor.terminal_session_id, {
       descriptor,
@@ -200,23 +212,37 @@ export class OciTerminalSessionManager {
     const alreadyEnded = targetIds.filter((sessionId) => !this.sessions.has(sessionId) && this.endedSessionIds.includes(sessionId))
     const rawResult = this.adapter.cleanupSessions
       ? await this.adapter.cleanupSessions({ sessionIds: targetIds, signal: normalizeSignal(input.signal) })
-      : targetIds
-
+      : {
+          cleaned_session_ids: alreadyEnded,
+          failed_session_ids: targetIds.filter((id) => !alreadyEnded.includes(id)),
+        }
     let rawCleaned: readonly string[]
     let rawFailed: readonly string[]
     if (Array.isArray(rawResult)) {
+      if (!rawResult.every((id) => typeof id === "string")) {
+        throw new Error("Invalid cleanup result: array items must be strings")
+      }
       rawCleaned = rawResult
       rawFailed = []
     } else if (rawResult && typeof rawResult === "object" && !Array.isArray(rawResult)) {
-      const obj = rawResult as { readonly cleaned_session_ids?: readonly string[]; readonly failed_session_ids?: readonly string[] }
-      rawFailed = obj.failed_session_ids ?? []
+      const obj = rawResult as { readonly cleaned_session_ids?: unknown; readonly failed_session_ids?: unknown }
+      if (obj.failed_session_ids !== undefined) {
+        if (!Array.isArray(obj.failed_session_ids) || !obj.failed_session_ids.every((id) => typeof id === "string")) {
+          throw new Error("Invalid cleanup result: failed_session_ids must be an array of strings")
+        }
+      }
+      if (obj.cleaned_session_ids !== undefined) {
+        if (!Array.isArray(obj.cleaned_session_ids) || !obj.cleaned_session_ids.every((id) => typeof id === "string")) {
+          throw new Error("Invalid cleanup result: cleaned_session_ids must be an array of strings")
+        }
+      }
+      rawFailed = (obj.failed_session_ids as readonly string[] | undefined) ?? []
       const failedSet = new Set(rawFailed)
       rawCleaned =
-        obj.cleaned_session_ids ??
+        (obj.cleaned_session_ids as readonly string[] | undefined) ??
         (obj.failed_session_ids ? targetIds.filter((id) => !failedSet.has(id)) : targetIds)
     } else {
-      rawCleaned = targetIds
-      rawFailed = []
+      throw new Error("Invalid cleanup result: expected array of session IDs or cleanup result object")
     }
 
     // Validate disjoint before any state mutation

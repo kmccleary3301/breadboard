@@ -38,6 +38,13 @@ export interface ExecutionDriverExecutionContextV1 {
   readonly driverId?: string
 }
 
+export class ExecutionDriverResultValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "ExecutionDriverResultValidationError"
+  }
+}
+
 export interface ExecutionDriverTerminationContextV1 {
   readonly reason: "deadline" | "cancelled"
   readonly signal: AbortSignal
@@ -63,6 +70,7 @@ export interface ExecutionWorldSandboxInputV1 {
   readonly workspaceRef?: string | null
   readonly imageRef?: string | null
   readonly metadata?: Record<string, unknown>
+  readonly driverId?: string | null
   readonly driverIdHint?: ExecutionDriverHintV1
   readonly deadlineMs?: number | null
   readonly terminationGraceMs?: number
@@ -88,6 +96,7 @@ export interface ExecutionWorldTerminalStartOperationV1 {
   readonly capability: ExecutionCapabilityV1
   readonly placement: ExecutionPlacementV1
   readonly input: TerminalSessionStartInputV1
+  readonly driverId?: string | null
   readonly driverIdHint?: ExecutionDriverHintV1
 }
 
@@ -96,6 +105,7 @@ export interface ExecutionWorldTerminalInteractionOperationV1 {
   readonly capability: ExecutionCapabilityV1
   readonly placement: ExecutionPlacementV1
   readonly input: TerminalSessionInteractionInputV1
+  readonly driverId?: string | null
   readonly driverIdHint?: ExecutionDriverHintV1
 }
 
@@ -103,6 +113,7 @@ export interface ExecutionWorldTerminalSnapshotOperationV1 {
   readonly kind: "terminal_snapshot"
   readonly capability: ExecutionCapabilityV1
   readonly placement: ExecutionPlacementV1
+  readonly driverId?: string | null
   readonly driverIdHint?: ExecutionDriverHintV1
 }
 
@@ -111,6 +122,7 @@ export interface ExecutionWorldTerminalCleanupOperationV1 {
   readonly capability: ExecutionCapabilityV1
   readonly placement: ExecutionPlacementV1
   readonly input: TerminalSessionCleanupInputV1
+  readonly driverId?: string | null
   readonly driverIdHint?: ExecutionDriverHintV1
 }
 
@@ -197,9 +209,23 @@ function selectWorldDriver(
     capability: ExecutionCapabilityV1
     placement: ExecutionPlacementV1
     terminal?: boolean
+    driverId?: string | null
     driverIdHint?: ExecutionDriverHintV1
   },
 ): TerminalSessionDriverV1 | null {
+  if (input.driverId) {
+    const directMatch = drivers.find((d) => d.driverId === input.driverId)
+    if (!directMatch) {
+      return null
+    }
+    if (!directMatch.supportedPlacements.includes(input.placement.placement_class)) {
+      return null
+    }
+    if (!directMatch.supportsCapability(input.capability, input.placement.placement_class)) {
+      return null
+    }
+    return directMatch
+  }
   const orderedDrivers = orderDrivers(drivers, input.driverIdHint)
   return input.terminal
     ? selectTerminalSessionDriver({
@@ -331,6 +357,7 @@ export function createExecutionWorld(input: {
     const driver = selectWorldDriver(drivers, {
       capability: operation.capability,
       placement: operation.placement,
+      driverId: operation.driverId,
       driverIdHint: operation.driverIdHint,
     })
     const driverId = driver?.driverId ?? null
@@ -728,6 +755,7 @@ export function createExecutionWorld(input: {
       capability: operation.capability,
       placement: operation.placement,
       terminal: true,
+      driverId: operation.driverId,
       driverIdHint: operation.driverIdHint,
     })
     if (!driver?.startTerminalSession) {
@@ -800,11 +828,14 @@ export function createExecutionWorld(input: {
       endedSessionOwners.delete(operation.input.terminalSessionId)
       if (typeof driver.cleanupTerminalSessions === "function") {
         try {
-          await driver.cleanupTerminalSessions({
-            cleanupId: `cleanup-validation-fail-${Date.now()}`,
-            scope: "filtered",
-            sessionIds: [operation.input.terminalSessionId],
-          })
+          const cleanupPromise = Promise.resolve().then(() =>
+            driver.cleanupTerminalSessions!({
+              cleanupId: `cleanup-validation-fail-${Date.now()}`,
+              scope: "filtered",
+              sessionIds: [operation.input.terminalSessionId],
+            }),
+          )
+          await settleWithin(cleanupPromise, defaultTerminationGraceMs)
         } catch {
           // Bounded cleanup best effort
         }
@@ -833,6 +864,7 @@ export function createExecutionWorld(input: {
         capability: operation.capability,
         placement: operation.placement,
         terminal: true,
+        driverId: operation.driverId,
         driverIdHint: operation.driverIdHint,
       })
     if (!driver?.interactTerminalSession) {
@@ -910,6 +942,7 @@ export function createExecutionWorld(input: {
       capability: operation.capability,
       placement: operation.placement,
       terminal: true,
+      driverId: operation.driverId,
       driverIdHint: operation.driverIdHint,
     })
     if (!driver?.snapshotTerminalRegistry) {
@@ -1004,11 +1037,18 @@ export function createExecutionWorld(input: {
             sessionIds: ownedSessionIds,
             signal: operation.input.signal,
           })
-          const res = assertValid<TerminalCleanupResultV1>("terminalCleanupResult", rawRes)
+          let res: TerminalCleanupResultV1
+          try {
+            res = assertValid<TerminalCleanupResultV1>("terminalCleanupResult", rawRes)
+          } catch (err) {
+            throw new ExecutionDriverResultValidationError(
+              err instanceof Error ? `Invalid cleanup result: ${err.message}` : "Invalid cleanup result",
+            )
+          }
           const driverCleanedSet = new Set(res.cleaned_session_ids)
           for (const failedId of res.failed_session_ids ?? []) {
             if (driverCleanedSet.has(failedId)) {
-              throw new Error(
+              throw new ExecutionDriverResultValidationError(
                 `Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`,
               )
             }
@@ -1017,14 +1057,14 @@ export function createExecutionWorld(input: {
           // Cross-adapter / overbroad conflict checks
           for (const failedId of res.failed_session_ids ?? []) {
             if (reportedCleanedSet.has(failedId)) {
-              throw new Error(
+              throw new ExecutionDriverResultValidationError(
                 `Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`,
               )
             }
           }
           for (const cleanedId of res.cleaned_session_ids) {
             if (reportedFailedSet.has(cleanedId)) {
-              throw new Error(
+              throw new ExecutionDriverResultValidationError(
                 `Invalid cleanup result: session ID '${cleanedId}' appears in both cleaned_session_ids and failed_session_ids`,
               )
             }
@@ -1041,13 +1081,13 @@ export function createExecutionWorld(input: {
           driverCleaned = res.cleaned_session_ids.filter((id) => allowedIds.has(id))
           driverFailed = (res.failed_session_ids ?? []).filter((id) => allowedIds.has(id))
         } catch (driverError) {
-          if (driverError instanceof Error && driverError.message.startsWith("Invalid cleanup result:")) {
+          if (driverError instanceof ExecutionDriverResultValidationError) {
             throw driverError
           }
           driverFailed = ownedSessionIds
           for (const id of ownedSessionIds) {
             if (reportedCleanedSet.has(id)) {
-              throw new Error(
+              throw new ExecutionDriverResultValidationError(
                 `Invalid cleanup result: session ID '${id}' appears in both cleaned_session_ids and failed_session_ids`,
               )
             }
@@ -1143,11 +1183,18 @@ export function createExecutionWorld(input: {
           sessionIds,
           signal: operation.input.signal,
         })
-        const res = assertValid<TerminalCleanupResultV1>("terminalCleanupResult", rawRes)
+        let res: TerminalCleanupResultV1
+        try {
+          res = assertValid<TerminalCleanupResultV1>("terminalCleanupResult", rawRes)
+        } catch (err) {
+          throw new ExecutionDriverResultValidationError(
+            err instanceof Error ? `Invalid cleanup result: ${err.message}` : "Invalid cleanup result",
+          )
+        }
         const driverCleanedSet = new Set(res.cleaned_session_ids)
         for (const failedId of res.failed_session_ids ?? []) {
           if (driverCleanedSet.has(failedId)) {
-            throw new Error(
+            throw new ExecutionDriverResultValidationError(
               `Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`,
             )
           }
@@ -1156,7 +1203,7 @@ export function createExecutionWorld(input: {
         driverCleaned = res.cleaned_session_ids.filter((id) => allowedIds.has(id))
         driverFailed = (res.failed_session_ids ?? []).filter((id) => allowedIds.has(id))
       } catch (driverError) {
-        if (driverError instanceof Error && driverError.message.startsWith("Invalid cleanup result:")) {
+        if (driverError instanceof ExecutionDriverResultValidationError) {
           throw driverError
         }
         driverFailed = sessionIds
@@ -1165,19 +1212,18 @@ export function createExecutionWorld(input: {
       // Validate cross-adapter / intra-call disjointness
       for (const failedId of driverFailed) {
         if (pendingCleanedSet.has(failedId)) {
-          throw new Error(
+          throw new ExecutionDriverResultValidationError(
             `Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`,
           )
         }
       }
       for (const cleanedId of driverCleaned) {
         if (pendingFailedSet.has(cleanedId)) {
-          throw new Error(
+          throw new ExecutionDriverResultValidationError(
             `Invalid cleanup result: session ID '${cleanedId}' appears in both cleaned_session_ids and failed_session_ids`,
           )
         }
       }
-
       for (const id of driverCleaned) {
         pendingCleanedSet.add(id)
       }

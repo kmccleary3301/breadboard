@@ -160,24 +160,33 @@ export async function executeRemoteSandboxRequest(
       options.signal.addEventListener("abort", forwardAbort, { once: true })
     }
   }
-  const timeoutHandle =
+  let timeoutHandle: NodeJS.Timeout | undefined
+  const timeoutPromise =
     options.timeoutMs != null
-      ? setTimeout(() => {
-          if (!internalController.signal.aborted) {
-            internalController.abort(new Error(`Remote execution timed out after ${options.timeoutMs}ms`))
-          }
-        }, options.timeoutMs)
-      : undefined
+      ? new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            if (!internalController.signal.aborted) {
+              internalController.abort(new Error(`Remote execution timed out after ${options.timeoutMs}ms`))
+            }
+            const err = new Error(`Remote execution timed out after ${options.timeoutMs}ms`)
+            err.name = "TimeoutError"
+            reject(err)
+          }, options.timeoutMs)
+        })
+      : null
   try {
-    const response = await fetchImpl(options.endpointUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(options.headers ?? {}),
-      },
-      body: JSON.stringify(envelope),
-      signal: internalController.signal,
-    })
+    const fetchPromise = Promise.resolve(
+      fetchImpl(options.endpointUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(options.headers ?? {}),
+        },
+        body: JSON.stringify(envelope),
+        signal: internalController.signal,
+      }),
+    )
+    const response = timeoutPromise ? await Promise.race([fetchPromise, timeoutPromise]) : await fetchPromise
     const payload = (await response.json()) as RemoteExecutionResponseEnvelopeV1 | SandboxResultV1
     if (!response.ok) {
       throw new Error(buildRemoteExecutionErrorSummary(payload, response.status))
@@ -290,10 +299,16 @@ export function makeRemoteExecutionDriver(
         cleanup()
         return Promise.reject(new Error("remote driver has no configured executor or http endpoint"))
       } else {
+        const deadlineTimeoutMs =
+          context?.deadlineAtMs != null ? Math.max(0, context.deadlineAtMs - Date.now()) : undefined
+        const effectiveTimeoutMs =
+          deadlineTimeoutMs != null && httpOptions.timeoutMs != null
+            ? Math.min(deadlineTimeoutMs, httpOptions.timeoutMs)
+            : deadlineTimeoutMs ?? httpOptions.timeoutMs
         executionPromise = executeRemoteSandboxRequest(request, {
           ...httpOptions,
           signal: controller.signal,
-          timeoutMs: context?.deadlineAtMs != null ? undefined : httpOptions.timeoutMs,
+          timeoutMs: effectiveTimeoutMs,
         })
       }
       activeExecutions.set(request.request_id, {
