@@ -775,10 +775,10 @@ class SessionService:
             "profile_hash",
             "effective_lock_schema_version",
             "effective_lock_hash",
-            "resources",
             "workspace",
             _SESSION_EVENT_ROOT_METADATA_KEY,
             _SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY,
+            "artifact_manifest_ref",
         ):
             request_metadata.pop(reserved_key, None)
         if default_profile is not None:

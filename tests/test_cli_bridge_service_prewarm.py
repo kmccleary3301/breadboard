@@ -108,6 +108,33 @@ async def test_default_session_create_uses_exact_profile_authority(
     await _stop(record)
 
 @pytest.mark.asyncio
+async def test_create_strips_caller_artifact_manifest_metadata(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    service = SessionService(state_root=tmp_path / "state")
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="reject caller manifest metadata",
+            metadata={
+                "artifact_manifest_ref": "caller-owned-value",
+                "safe": "retained",
+            },
+        ),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    await service.registry.persist(record)
+
+    assert "artifact_manifest_ref" not in record.metadata
+    assert record.metadata["safe"] == "retained"
+    await service.stop_session(response.session_id)
+    await _stop(record)
+
+@pytest.mark.asyncio
 async def test_default_event_root_preserves_internal_session_authority(
     monkeypatch,
     tmp_path,

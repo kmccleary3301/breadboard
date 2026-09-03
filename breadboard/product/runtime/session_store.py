@@ -1684,6 +1684,12 @@ def create_session(
     validate_session_id(session_id)
     with _session_guard(workspace, session_id, create=True) as root:
         _recover_pending_intents(root, session_id)
+        if (
+            expected_session_directory_identity is not None
+            and session_directory_identity(root)
+            != expected_session_directory_identity
+        ):
+            raise OSError("durable session directory identity changed")
         collision = next(
             (
                 existing
