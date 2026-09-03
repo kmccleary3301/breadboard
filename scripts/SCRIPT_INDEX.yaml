@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 441
+live_script_count: 439
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -103,11 +103,6 @@ entries:
     class: live-wired
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, tests/e4_parity/test_phase20_lane_manifest_schema.py, tests/e4_parity/test_phase20_pilot_lane_manifest_lock.py, tests/e4_parity/test_validate_lane.py, tests/product/evidence/test_e4_owner.py]
-    expiry: none (durable tooling)
-  - path: scripts/authoring/explain_agent_config.py
-    class: live-wired
-    owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, tests/e4_parity/test_config_explanation.py]
     expiry: none (durable tooling)
   - path: scripts/authoring/render_field_table.py
     class: live-owned
@@ -1002,7 +997,7 @@ entries:
   - path: scripts/e4_parity/__init__.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/authoring/validate_lane.py, scripts/build_python_reference_contract_fixtures.py, scripts/dev/make_rename_compat_fixtures.py, scripts/e4_parity/build_e4_final_readiness_packet.py, scripts/e4_parity/build_north_star_proof_packets.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/authoring/validate_lane.py, scripts/build_python_reference_contract_fixtures.py, scripts/e4_parity/build_e4_final_readiness_packet.py, scripts/e4_parity/build_north_star_proof_packets.py, scripts/e4_parity/build_source_index.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/adapters/__init__.py
     class: live-wired

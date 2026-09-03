@@ -203,7 +203,7 @@
     },
     {
       "classification": "operational",
-      "consumer": "breadboard_engine.conductor.execution",
+      "consumer": "breadboard_engine.conductor.turn_runtime",
       "entry_id": "turn_strategy",
       "identifier_field": "id",
       "registry_id": "config_surface_fields",
@@ -326,7 +326,7 @@
       "consumers": [
         {
           "kind": "evidence_machinery",
-          "path": "scripts/authoring/explain_agent_config.py"
+          "path": "breadboard/product/harness/config_explanation.py"
         }
       ],
       "disposition": "keep",
@@ -4352,7 +4352,7 @@
           "consumers": [
             {
               "kind": "evidence_machinery",
-              "path": "scripts/authoring/explain_agent_config.py"
+              "path": "breadboard/product/harness/config_explanation.py"
             }
           ],
           "disposition": "keep",
@@ -6288,34 +6288,34 @@
     "reconfiguration": [
       {
         "line_numbers": [
-          1952,
-          1965
+          1886,
+          1899
         ],
         "occurrence_count": 2,
         "path": "engine_root/breadboard_engine/api/cli_bridge/service.py"
       },
       {
         "line_numbers": [
-          237,
-          519,
-          520,
-          621,
-          660,
-          661,
-          683,
-          684,
-          741,
-          742,
-          796,
-          797
+          156,
+          420,
+          421,
+          522,
+          561,
+          562,
+          584,
+          585,
+          642,
+          643,
+          697,
+          698
         ],
         "occurrence_count": 12,
         "path": "engine_root/breadboard_engine/api/cli_bridge/session_control.py"
       },
       {
         "line_numbers": [
-          639,
-          642
+          635,
+          638
         ],
         "occurrence_count": 2,
         "path": "engine_root/breadboard_engine/api/cli_bridge/session_runner.py"
@@ -6423,7 +6423,7 @@
           "tier_consumers": [
             {
               "kind": "evidence_machinery",
-              "path": "scripts/authoring/explain_agent_config.py"
+              "path": "breadboard/product/harness/config_explanation.py"
             }
           ],
           "tier_disposition": "keep"
@@ -7755,21 +7755,6 @@
         ]
       },
       {
-        "path": "engine_root/breadboard_engine/compat/alias_import.py",
-        "signals": [
-          "compat",
-          "deprecated",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/breadboard_engine/compat/legacy_names.py",
-        "signals": [
-          "compat",
-          "legacy"
-        ]
-      },
-      {
         "path": "engine_root/breadboard_engine/compat/request_body_contract.py",
         "signals": [
           "compat"
@@ -7794,14 +7779,6 @@
         ]
       },
       {
-        "path": "engine_root/breadboard_engine/legacy/logging_v2/provider_native_logger.py",
-        "signals": [
-          "compat",
-          "deprecated",
-          "legacy"
-        ]
-      },
-      {
         "path": "engine_root/breadboard_engine/legacy/openai_conductor.py",
         "signals": [
           "compat",
@@ -7811,8 +7788,7 @@
       {
         "path": "engine_root/breadboard_sdk/compat.py",
         "signals": [
-          "compat",
-          "legacy"
+          "compat"
         ]
       },
       {
@@ -7822,66 +7798,9 @@
         ]
       },
       {
-        "path": "engine_root/scripts/dev/make_rename_compat_fixtures.py",
-        "signals": [
-          "compat",
-          "legacy",
-          "supersed"
-        ]
-      },
-      {
         "path": "engine_root/scripts/migration/compat_dump_request_bodies.py",
         "signals": [
           "compat"
-        ]
-      },
-      {
-        "path": "engine_root/tests/rename_compat/test_alias_matrix.py",
-        "signals": [
-          "compat",
-          "deprecated",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/tests/rename_compat/test_frozen_provenance.py",
-        "signals": [
-          "compat",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/tests/rename_compat/test_legacy_artifact_loading.py",
-        "signals": [
-          "compat",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/tests/rename_compat/test_legacy_names.py",
-        "signals": [
-          "compat",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/tests/rename_compat/test_pickle_compat.py",
-        "signals": [
-          "compat",
-          "legacy"
-        ]
-      },
-      {
-        "path": "engine_root/tests/rename_compat/test_rename_codemod.py",
-        "signals": [
-          "compat"
-        ]
-      },
-      {
-        "path": "engine_root/tests/rename_compat/test_shim_guard.py",
-        "signals": [
-          "compat",
-          "legacy"
         ]
       },
       {
@@ -7894,12 +7813,6 @@
         "path": "engine_root/tests/test_ctrees_phase13_runner_compatibility.py",
         "signals": [
           "compat"
-        ]
-      },
-      {
-        "path": "engine_root/tests/test_legacy_root_alias_deprecations.py",
-        "signals": [
-          "legacy"
         ]
       },
       {
@@ -9396,6 +9309,23 @@
     },
     {
       "evidence": [
+        "contract_tiers:consumer"
+      ],
+      "exists": true,
+      "path": "engine_root/breadboard/product/harness/config_explanation.py",
+      "symbols": [
+        {
+          "kind": "function",
+          "name": "build_explanation"
+        },
+        {
+          "kind": "function",
+          "name": "main"
+        }
+      ]
+    },
+    {
+      "evidence": [
         "campaign-owner-root"
       ],
       "exists": true,
@@ -10127,19 +10057,64 @@
         "config_surface_fields:consumer"
       ],
       "exists": true,
-      "path": "engine_root/breadboard_engine/conductor/execution.py",
-      "symbols": []
+      "path": "engine_root/breadboard_engine/conductor/plan_bootstrapper.py",
+      "symbols": [
+        {
+          "kind": "class",
+          "name": "PlanBootstrapper"
+        }
+      ]
     },
     {
       "evidence": [
         "config_surface_fields:consumer"
       ],
       "exists": true,
-      "path": "engine_root/breadboard_engine/conductor/plan_bootstrapper.py",
+      "path": "engine_root/breadboard_engine/conductor/turn_runtime.py",
       "symbols": [
         {
           "kind": "class",
-          "name": "PlanBootstrapper"
+          "name": "AgentRuntime"
+        },
+        {
+          "kind": "class",
+          "name": "PreparedProviderExchange"
+        },
+        {
+          "kind": "class",
+          "name": "TurnPolicy"
+        },
+        {
+          "kind": "function",
+          "name": "apply_turn_guards"
+        },
+        {
+          "kind": "function",
+          "name": "build_turn_context"
+        },
+        {
+          "kind": "function",
+          "name": "emit_turn_snapshot"
+        },
+        {
+          "kind": "function",
+          "name": "finalize_turn_context_snapshot"
+        },
+        {
+          "kind": "function",
+          "name": "handle_blocked_calls"
+        },
+        {
+          "kind": "function",
+          "name": "hydrate_turn_context_signals"
+        },
+        {
+          "kind": "function",
+          "name": "maybe_transition_plan_mode"
+        },
+        {
+          "kind": "function",
+          "name": "summarize_execution_results"
         }
       ]
     },
@@ -10284,23 +10259,6 @@
       "exists": true,
       "path": "engine_root/conformance/comparators/registry.json",
       "symbols": []
-    },
-    {
-      "evidence": [
-        "contract_tiers:consumer"
-      ],
-      "exists": true,
-      "path": "engine_root/scripts/authoring/explain_agent_config.py",
-      "symbols": [
-        {
-          "kind": "function",
-          "name": "build_explanation"
-        },
-        {
-          "kind": "function",
-          "name": "main"
-        }
-      ]
     },
     {
       "evidence": [
@@ -11097,7 +11055,7 @@
         },
         {
           "classification": "operational",
-          "consumer": "breadboard_engine.conductor.execution",
+          "consumer": "breadboard_engine.conductor.turn_runtime",
           "entry_id": "turn_strategy",
           "identifier_field": "id",
           "registry_id": "config_surface_fields",
@@ -11227,7 +11185,7 @@
           "consumers": [
             {
               "kind": "evidence_machinery",
-              "path": "scripts/authoring/explain_agent_config.py"
+              "path": "breadboard/product/harness/config_explanation.py"
             }
           ],
           "disposition": "keep",
