@@ -684,7 +684,7 @@ class BreadBoardClient:
                         yield event
                         if terminal:
                             return last_cursor
-                        sse_id = None
+                    sse_id = None
                     continue
                 if line.startswith("id:"):
                     sse_id = line[len("id:") :].lstrip()
