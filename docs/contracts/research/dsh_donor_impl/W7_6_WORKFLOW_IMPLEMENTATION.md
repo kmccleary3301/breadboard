@@ -7,8 +7,8 @@ Status: implemented after the W7 DIT selected Design A, a recomputed controller 
 - **Boundary:** `breadboard.product.runtime.workflows.ReplayableWorkflowController`.
 - **Durable truth:** `WorkflowDefinition` is immutable caller input and owns the DAG. `WorkItemRepository` event streams own parent and child lifecycle, attempt, placement, and join facts. `DurableChildFactory` owns child identity, recovery, execution-target, cancellation, result, and settlement facts. The controller writes no workflow journal, cursor, or checkpoint.
 - **Definition identity:** `WorkflowDefinition.identity(workflow_id)` hashes the canonical ordered step graph and each retained `ChildSpec`. Every child started by a workflow persists the workflow ID, step ID, and definition digest. A changed graph or step contract is rejected after the first child exists.
-- **Decision replay:** `project_workflow_decision()` is a pure, versioned multi-stream projection. It folds the parent and child Work Item event streams plus immutable retained child bindings, validates definition and lineage identity, and returns the decision with exact source cursors. `decision()` supplies only those owner facts. Controller restart therefore changes no decision input.
-- **Activation:** `advance()` holds an in-process lock and a workspace process lock, reconciles active children, then starts each lexically ordered ready step through `DurableChildFactory`. No provider path or fallback exists in the controller.
+- **Decision replay:** `project_workflow_decision()` is a pure, versioned multi-stream projection. It folds the parent and child Work Item event streams plus immutable retained child bindings, validates definition and lineage identity, and returns the decision with exact source cursors. `decision()` supplies only those owner facts. `advance()` returns that same replayable decision shape; transient “started now” telemetry is deliberately absent. Controller restart therefore changes no decision input or output.
+- **Activation:** `advance()` holds an in-process lock and a workspace process lock, reconciles active children, then starts the lexically first ready step through `DurableChildFactory`. A nonterminal step forces `wait`, so activation remains serial and replay-safe. No provider path or fallback exists in the controller.
 
 ## Rule table
 
@@ -40,7 +40,7 @@ Focused behavior proof:
 
 ```text
 pytest tests/product/runtime/test_durable_children.py::{workflow tests} -q
-# pytest: 7 passed, 9 warnings
+# pytest: 10 passed, 9 warnings
 ```
 
-The tests cover a real spawned controller process terminated between workflow steps, restart-equivalent decisions from existing owner persistence, unchanged Work Item event counts across that process death, projection version/source lineage, dependency activation and terminal completion, definition-drift rejection, failed/canceled precedence, concurrent controller activation with one child start, cycle rejection, and malformed retained workflow identity rejection. The full durable-child suite is the integration gate recorded in the PR evidence.
+The tests cover a real spawned controller process terminated between workflow steps, restart-equivalent and structurally identical decisions from existing owner persistence, unchanged Work Item event counts across that process death, projection version/source lineage, pre-delegation retained-child repair, dependency activation and terminal completion, serialized lexical activation while another step is active, definition-drift rejection, failed/canceled precedence, concurrent controller activation with one child start, external artifact-store lock layout, cycle rejection, and malformed retained workflow identity rejection. The full durable-child suite is the integration gate recorded in the PR evidence.

@@ -6,7 +6,7 @@ W7.4 found two authoritative runtime inputs: the immutable workflow definition s
 
 ## Design A — recomputed WorkItem/child controller
 
-Expose one `advance()` operation over an immutable DAG definition plus a pure `project_workflow_decision()` fold. The projection reads parent/child Work Item event streams and matching retained child bindings, returns exact W4-style source cursors, and computes the next rule-table decision. The effect edge reconciles active children and starts lexically ordered ready steps. A workflow-definition hash and step ID are retained in the child record before launch. A controller restart supplies the same definition and recomputes the same decision.
+Expose one `advance()` operation over an immutable DAG definition plus a pure `project_workflow_decision()` fold. The projection reads parent/child Work Item event streams and matching retained child bindings, returns exact W4-style source cursors, and computes the next rule-table decision. The effect edge reconciles an active child or starts the lexically first ready step. A workflow-definition hash and step ID are retained in the child record before launch. A controller restart supplies the same definition and recomputes the same decision.
 
 - **Hidden:** cycle validation, definition hashing, retained-binding validation, reconciliation, ready-set selection, and per-workflow process locking.
 - **Deletion/avoidance:** no caller-side ready-set loop, no workflow journal, no scheduler shadow state.

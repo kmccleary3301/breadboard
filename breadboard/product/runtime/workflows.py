@@ -133,7 +133,6 @@ class WorkflowDecision:
     canceled_step_ids: tuple[str, ...]
     blocked_step_ids: tuple[str, ...]
     child_session_ids: tuple[tuple[str, str], ...]
-    started_step_ids: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -147,9 +146,9 @@ class WorkflowDecision:
             "canceled_step_ids": list(self.canceled_step_ids),
             "blocked_step_ids": list(self.blocked_step_ids),
             "child_session_ids": {
-                step_id: session_id for step_id, session_id in self.child_session_ids
+                step_id: session_id
+                for step_id, session_id in self.child_session_ids
             },
-            "started_step_ids": list(self.started_step_ids),
         }
 
 
@@ -209,7 +208,16 @@ def project_workflow_decision(
         ).retained()
         if any(child_spec.get(key) != value for key, value in expected.items()):
             raise ChildError("retained workflow child specification changed")
-        projected_child = project_work_item_replay(tuple(child_events))
+        child_event_rows = tuple(child_events)
+        if not child_event_rows:
+            if state.startup_phase != "recorded":
+                raise ChildError(
+                    "retained workflow child has no delegated Work Item stream"
+                )
+            statuses[step_id] = state.terminal_outcome or "starting"
+            child_session_ids[step_id] = state.child_session_id
+            continue
+        projected_child = project_work_item_replay(child_event_rows)
         child_snapshot = projected_child.value
         if (
             child_snapshot.work_item_id != state.child_work_item_id
@@ -280,6 +288,8 @@ def project_workflow_decision(
         action = "cancel"
     elif len(completed) == len(definition.steps):
         action = "complete"
+    elif active:
+        action = "wait"
     elif ready:
         action = "start"
     else:
@@ -352,6 +362,7 @@ class ReplayableWorkflowController:
         self._process_lock_path = (
             factory.workspace / ".breadboard" / f"workflow-{lock_identity}.lock"
         )
+        self._process_lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def _thread_lock(cls, key: str) -> threading.RLock:
@@ -368,25 +379,22 @@ class ReplayableWorkflowController:
                 if state.terminal_count == 0:
                     self.factory.reconcile(state.recovery_ref)
             pending = self._projection().value
-            started: list[str] = []
             if pending.action == "start":
-                for step_id in pending.ready_step_ids:
-                    step = self.definition.step(step_id)
-                    tagged = replace(
-                        step.child,
-                        workflow_id=self.workflow_id,
-                        workflow_step_id=step_id,
-                        workflow_definition_hash=self.definition_hash,
-                    )
-                    self.factory.start(
-                        parent_session_id=self.parent_session_id,
-                        root_session_id=self.root_session_id,
-                        parent_work_item_id=self.parent_work_item_id,
-                        spec=tagged,
-                    )
-                    started.append(step_id)
-            current = self._projection().value
-            return replace(current, started_step_ids=tuple(started))
+                step_id = pending.ready_step_ids[0]
+                step = self.definition.step(step_id)
+                tagged = replace(
+                    step.child,
+                    workflow_id=self.workflow_id,
+                    workflow_step_id=step_id,
+                    workflow_definition_hash=self.definition_hash,
+                )
+                self.factory.start(
+                    parent_session_id=self.parent_session_id,
+                    root_session_id=self.root_session_id,
+                    parent_work_item_id=self.parent_work_item_id,
+                    spec=tagged,
+                )
+            return self._projection().value
 
     def _children(self) -> tuple[ChildState, ...]:
         return tuple(
