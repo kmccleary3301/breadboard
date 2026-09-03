@@ -67,13 +67,22 @@ GENERIC_BASENAMES = frozenset({"__init__.py"})
 
 
 def _reference_pattern(full: str) -> re.Pattern[str]:
-    """Match real script references without treating generic basenames as calls."""
+    """Match script references without treating generic basenames as calls."""
     name = Path(full).name
-    module = full.removeprefix("scripts/").removesuffix(".py").replace("/", ".")
+    relative = full.removeprefix("scripts/")
+    module = relative.removesuffix(".py").replace("/", ".")
     terms = [full, f"scripts.{module}"]
     if name not in GENERIC_BASENAMES:
         terms.insert(0, name)
-    return re.compile(r"(?<![\w/])(?:%s)(?![\w])" % "|".join(map(re.escape, terms)))
+        return re.compile(
+            r"(?<![\w/])(?:%s)(?![\w])" % "|".join(map(re.escape, terms))
+        )
+
+    package = relative.removesuffix("/__init__.py")
+    package = "scripts" if package == relative else f"scripts.{package.replace('/', '.')}"
+    direct = r"(?<![\w/])(?:%s)(?![\w])" % "|".join(map(re.escape, terms))
+    package_import = rf"(?<![\w.])(?:from|import)\s+{re.escape(package)}(?=\s|[.;])"
+    return re.compile(rf"(?:{direct}|{package_import})")
 
 
 

@@ -35,6 +35,7 @@ EXCLUDED_PARTS = frozenset(
         "vendor",
         "dist",
         "build",
+        "generated",
         "target",
         ".next",
     }
@@ -506,6 +507,58 @@ def _consumer_roots(engine_root: Path, tui_root: Path) -> list[tuple[str, Path, 
     ]
 
 
+AMBIGUOUS_EVENT_IDS = frozenset({"error", "warning"})
+SDK_MODULE_RE = re.compile(r"^(?:@breadboard/sdk|@breadboard/sdk/)")
+
+
+def _event_pattern(token: str) -> re.Pattern[str]:
+    quoted = rf"""['"`]{re.escape(token)}['"`]"""
+    if token not in AMBIGUOUS_EVENT_IDS:
+        return re.compile(quoted)
+    return re.compile(
+        rf"(?:"
+        rf"\b(?:type|kind|event|event_type|eventType|event_kind|eventKind)\s*[:=]\s*{quoted}"
+        rf"|"
+        rf"\b(?:event|event_data|eventData|message|payload)\s*\.\s*"
+        rf"(?:type|kind|event_type|eventType|event_kind|eventKind)\s*(?:===|!==|==|!=)\s*{quoted}"
+        rf"|"
+        rf"\b(?:type|kind|event_type|eventType|event_kind|eventKind)\s*"
+        rf"(?:===|!==|==|!=)\s*{quoted}"
+        rf")"
+    )
+
+
+def _sdk_imported_exports(text: str, export_names: set[str]) -> set[str]:
+    imported: set[str] = set()
+    import_pattern = re.compile(
+        r"\b(?:import|export)\s+(?:type\s+)?\{(?P<body>.*?)\}\s+from\s+"
+        r"(?P<quote>['\"])(?P<module>[^'\"]+)(?P=quote)",
+        re.DOTALL,
+    )
+    for match in import_pattern.finditer(text):
+        if not SDK_MODULE_RE.match(match.group("module")):
+            continue
+        for fragment in match.group("body").split(","):
+            fragment = fragment.split("//", 1)[0].strip()
+            if not fragment:
+                continue
+            imported_name = re.split(r"\s+as\s+", fragment)[0].strip()
+            imported_name = imported_name.removeprefix("type ").strip()
+            if imported_name in export_names:
+                imported.add(imported_name)
+    namespace_pattern = re.compile(
+        r"\bimport\s+\*\s+as\s+(?P<alias>[A-Za-z_$][\w$]*)\s+from\s+"
+        r"(?P<quote>['\"])(?P<module>[^'\"]+)(?P=quote)"
+    )
+    for match in namespace_pattern.finditer(text):
+        if SDK_MODULE_RE.match(match.group("module")):
+            alias = re.escape(match.group("alias"))
+            imported.update(
+                name for name in export_names if re.search(rf"\b{alias}\.{re.escape(name)}\b", text)
+            )
+    return imported
+
+
 def _tui_consumers(
     engine_root: Path,
     tui_root: Path,
@@ -519,33 +572,16 @@ def _tui_consumers(
     schema_tokens = {
         str(row["id"]) for row in schema_rows if isinstance(row.get("id"), str)
     }
-    export_tokens = {
+    sdk_export_names = {
         str(row["name"])
-        for language in ("python", "typescript")
-        for row in sdk_exports[language]["exports"]
+        for row in sdk_exports["typescript"]["exports"]
         if isinstance(row.get("name"), str)
     }
-    # Generic exported helper names create false-positive consumers. Session and
-    # event names are the stable public tokens relevant to this inventory.
-    export_tokens = {
-        token
-        for token in export_tokens
-        if "session" in token.lower()
-        or "event" in token.lower()
-        or token.startswith("Public")
+    schema_patterns = {
+        token: re.compile(rf"""['"`]{re.escape(token)}['"`]""")
+        for token in schema_tokens
     }
-    contract_tokens = event_tokens | schema_tokens
-    tokens = sorted(contract_tokens | export_tokens, key=lambda item: (-len(item), item))
-    token_patterns = {
-        token: (
-            re.compile(rf"""(?P<quote>['"`]){re.escape(token)}(?P=quote)""")
-            if token in contract_tokens
-            else re.compile(
-                rf"(?<![A-Za-z0-9_$]){re.escape(token)}(?![A-Za-z0-9_$])"
-            )
-        )
-        for token in tokens
-    }
+    event_patterns = {token: _event_pattern(token) for token in event_tokens}
     roots: list[dict[str, Any]] = []
     files: list[dict[str, Any]] = []
     for root_id, root, label in _consumer_roots(engine_root, tui_root):
@@ -562,12 +598,23 @@ def _tui_consumers(
             for path in _iter_files(root, TS_SUFFIXES):
                 root_row["files_scanned"] += 1
                 text = path.read_text(encoding="utf-8", errors="replace")
-                matched = sorted(token for token, pattern in token_patterns.items() if pattern.search(text))
+                imported_exports = _sdk_imported_exports(text, sdk_export_names)
+                matched_events = {
+                    token for token, pattern in event_patterns.items() if pattern.search(text)
+                }
+                matched_schemas = {
+                    token for token, pattern in schema_patterns.items() if pattern.search(text)
+                }
+                matched = sorted(matched_events | matched_schemas | imported_exports)
                 if not matched:
                     continue
                 signals = sorted(
                     {
-                        "event-kind" if token in event_tokens else "schema" if token in schema_tokens else "sdk-export"
+                        "event-kind"
+                        if token in event_tokens
+                        else "schema"
+                        if token in schema_tokens
+                        else "sdk-export"
                         for token in matched
                     }
                 )
@@ -634,22 +681,23 @@ def _source_signals(engine_root: Path, tui_root: Path) -> list[dict[str, Any]]:
 
 def _reconfiguration(engine_root: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for path in _iter_files(engine_root, PY_SUFFIXES):
-        text = path.read_text(encoding="utf-8", errors="replace")
-        line_numbers = [
-            index
-            for index, line in enumerate(text.splitlines(), start=1)
-            if "durable_reconfigure" in line
-        ]
-        if line_numbers:
-            rows.append(
-                {
-                    "path": _relative(path, engine_root, "engine_root"),
-                    "line_numbers": line_numbers,
-                    "occurrence_count": len(line_numbers),
-                }
-            )
-    return rows
+    for root in (engine_root / "breadboard_engine", engine_root / "breadboard"):
+        for path in _iter_files(root, PY_SUFFIXES):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            line_numbers = [
+                index
+                for index, line in enumerate(text.splitlines(), start=1)
+                if "durable_reconfigure" in line
+            ]
+            if line_numbers:
+                rows.append(
+                    {
+                        "path": _relative(path, engine_root, "engine_root"),
+                        "line_numbers": line_numbers,
+                        "occurrence_count": len(line_numbers),
+                    }
+                )
+    return sorted(rows, key=lambda item: str(item["path"]))
 
 
 def _compatibility(
@@ -675,6 +723,16 @@ def _compatibility(
         for row in registry_entries
         if row.get("registry_id") == "contract_tiers"
     ]
+    tier_by_schema = {
+        str(row["schema_id"]): row
+        for row in tiers
+        if isinstance(row.get("schema_id"), str)
+    }
+    for row in lifecycle:
+        tier_row = tier_by_schema.get(str(row.get("schema_id")))
+        if tier_row is not None:
+            row["tier_disposition"] = tier_row.get("disposition")
+            row["tier_consumers"] = tier_row.get("consumers", [])
     deletion_candidates = [
         row
         for row in tiers
@@ -682,7 +740,11 @@ def _compatibility(
     ] + [
         row
         for row in lifecycle
-        if row.get("superseded_by") or row.get("lifecycle") in {"frozen_accepted_evidence", "validate_only"}
+        if (
+            row.get("superseded_by")
+            or row.get("lifecycle") in {"frozen_accepted_evidence", "validate_only"}
+        )
+        and tier_by_schema.get(str(row.get("schema_id")), {}).get("disposition") != "keep"
     ]
     for row in (lifecycle, tiers, deletion_candidates):
         row.sort(key=lambda item: str(item.get("schema_id") or item.get("entry_id") or ""))

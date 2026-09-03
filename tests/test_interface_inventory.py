@@ -28,7 +28,13 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
     registry_root = engine / "contracts" / "kernel" / "registries"
     _json(
         registry_root / "kernel_event_kinds.v1.json",
-        {"registry_id": "kernel_event_kinds", "entries": [{"id": "tool_result", "status": "active"}]},
+        {
+            "registry_id": "kernel_event_kinds",
+            "entries": [
+                {"id": "error", "status": "active"},
+                {"id": "tool_result", "status": "active"},
+            ],
+        },
     )
     _json(
         registry_root / "kernel_families.v1.json",
@@ -38,7 +44,22 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
         registry_root / "schema_lifecycle.v1.json",
         {
             "registry_id": "schema_lifecycle",
-            "entries": [{"schema_id": "bb.context_resource_pack.v1", "family": "context_resource_pack", "lifecycle": "active_production", "default_for_generation": True, "superseded_by": None}],
+            "entries": [
+                {
+                    "schema_id": "bb.context_resource_pack.v1",
+                    "family": "context_resource_pack",
+                    "lifecycle": "active_production",
+                    "default_for_generation": True,
+                    "superseded_by": None,
+                },
+                {
+                    "schema_id": "bb.keep.v1",
+                    "family": "keep",
+                    "lifecycle": "validate_only",
+                    "default_for_generation": False,
+                    "superseded_by": None,
+                },
+            ],
         },
     )
     _json(
@@ -47,23 +68,61 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
     )
     _json(
         registry_root / "contract_tiers.v1.json",
-        {"registry_id": "contract_tiers", "entries": [{"schema_id": "bb.checkpoint_metadata.v1", "tier": "host_protocol", "disposition": "keep", "consumers": []}]},
+        {
+            "registry_id": "contract_tiers",
+            "entries": [
+                {
+                    "schema_id": "bb.checkpoint_metadata.v1",
+                    "tier": "host_protocol",
+                    "disposition": "keep",
+                    "consumers": [],
+                },
+                {
+                    "schema_id": "bb.keep.v1",
+                    "tier": "host_protocol",
+                    "disposition": "keep",
+                    "consumers": [],
+                },
+            ],
+        },
     )
     schema = engine / "contracts" / "kernel" / "schemas" / "bb.context_resource_pack.v1.schema.json"
     _json(schema, {"$id": "bb.context_resource_pack.v1", "type": "object", "properties": {"items": {"type": "array"}}, "required": ["items"]})
+    keep_schema = engine / "contracts" / "kernel" / "schemas" / "bb.keep.v1.schema.json"
+    _json(keep_schema, {"$id": "bb.keep.v1", "type": "object", "properties": {"value": {"type": "string"}}})
     (engine / "breadboard_engine" / "api" / "cli_bridge").mkdir(parents=True)
     (engine / "breadboard_engine" / "api" / "cli_bridge" / "events.py").write_text("class EventType:\n    TOOL_RESULT = 'tool_result'\n", encoding="utf-8")
     (engine / "breadboard_sdk").mkdir(parents=True)
     (engine / "breadboard_sdk" / "__init__.py").write_text("__all__ = ['SessionEvent']\n", encoding="utf-8")
     (engine / "sdk" / "ts" / "src").mkdir(parents=True)
-    (engine / "sdk" / "ts" / "src" / "index.ts").write_text("export type { SessionEvent } from './types.js'\n", encoding="utf-8")
-    tui_source = tui / "packages" / "coding-agent" / "src" / "consumer.ts"
-    tui_source.parent.mkdir(parents=True)
-    tui_source.write_text("export const eventKind = 'tool_result';\n", encoding="utf-8")
-    (tui_source.parent / "not-a-consumer.ts").write_text(
-        "const error = new Error('failure');\n",
+    (engine / "sdk" / "ts" / "src" / "index.ts").write_text(
+        "export { ApiError } from './public-client.js'\n"
+        "export type { SessionEvent } from './types.js'\n",
         encoding="utf-8",
     )
+    tui_source = tui / "packages" / "coding-agent" / "src" / "consumer.ts"
+    tui_source.parent.mkdir(parents=True)
+    tui_source.write_text(
+        "import { ApiError } from '@breadboard/sdk'\n"
+        "export const eventKind = 'tool_result';\n"
+        "export const errorType = 'error';\n"
+        "void ApiError;\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "not-a-consumer.ts").write_text(
+        "const child = { once: (_event: string, _callback: () => void) => undefined };\n"
+        "child.once('error', () => {});\n",
+        encoding="utf-8",
+    )
+    generated_source = tui_source.parent / "generated" / "generated.ts"
+    generated_source.parent.mkdir(parents=True)
+    generated_source.write_text(
+        "export const generatedEvent = 'tool_result';\n",
+        encoding="utf-8",
+    )
+    test_source = engine / "tests" / "test_reconfigure.py"
+    test_source.parent.mkdir(parents=True)
+    test_source.write_text("durable_reconfigure = None\n", encoding="utf-8")
     return engine, tui
 
 
@@ -86,6 +145,22 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     assert SAMPLE <= found
     assert str(engine) not in canonical_bytes(first).decode()
     assert first["tui_consumers"]["consumer_count"] == 1
+    consumer_rows = first["tui_consumers"]["files"]
+    consumer = next(row for row in consumer_rows if row["path"].endswith("consumer.ts"))
+    assert {"ApiError", "tool_result"} <= set(consumer["matched_tokens"])
+    assert not any("generated/" in row["path"] for row in consumer_rows)
+    assert not any(row["path"].startswith("engine_root/tests/") for row in first["compatibility_surfaces"]["reconfiguration"])
+    deletion_ids = {
+        row.get("schema_id") or row.get("entry_id")
+        for row in first["compatibility_surfaces"]["deletion_candidates"]
+    }
+    assert "bb.keep.v1" not in deletion_ids
+    lifecycle_keep = next(
+        row
+        for row in first["compatibility_surfaces"]["schema_lifecycle"]["entries"]
+        if row.get("schema_id") == "bb.keep.v1"
+    )
+    assert lifecycle_keep["tier_disposition"] == "keep"
 
 
 def test_inventory_cli_writes_and_checks_fixed_point(tmp_path: Path) -> None:
